@@ -9,9 +9,38 @@ import {
   productsTable,
   walletTransactionsTable,
   notificationsTable,
+  platformSettingsTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+
+/* ── Default Platform Settings ── */
+export const DEFAULT_PLATFORM_SETTINGS = [
+  { key: "delivery_fee_mart",      value: "80",   label: "Mart Delivery Fee (Rs.)",       category: "delivery" },
+  { key: "delivery_fee_food",      value: "60",   label: "Food Delivery Fee (Rs.)",        category: "delivery" },
+  { key: "delivery_fee_pharmacy",  value: "50",   label: "Pharmacy Delivery Fee (Rs.)",    category: "delivery" },
+  { key: "delivery_fee_parcel",    value: "100",  label: "Parcel Base Delivery Fee (Rs.)", category: "delivery" },
+  { key: "ride_bike_base_fare",    value: "15",   label: "Bike Base Fare (Rs.)",           category: "rides" },
+  { key: "ride_bike_per_km",       value: "8",    label: "Bike Per KM Rate (Rs.)",         category: "rides" },
+  { key: "ride_car_base_fare",     value: "25",   label: "Car Base Fare (Rs.)",            category: "rides" },
+  { key: "ride_car_per_km",        value: "12",   label: "Car Per KM Rate (Rs.)",          category: "rides" },
+  { key: "platform_commission_pct",value: "10",   label: "Platform Commission (%)",        category: "finance" },
+  { key: "min_order_amount",       value: "100",  label: "Minimum Order Amount (Rs.)",     category: "orders" },
+  { key: "max_cod_amount",         value: "5000", label: "Max COD Order Amount (Rs.)",     category: "orders" },
+  { key: "free_delivery_above",    value: "1000", label: "Free Delivery Above (Rs.)",      category: "delivery" },
+  { key: "app_name",               value: "AJKMart", label: "App Name",                   category: "general" },
+  { key: "support_phone",          value: "03001234567", label: "Support Phone Number",    category: "general" },
+  { key: "app_status",             value: "active", label: "App Status (active/maintenance)", category: "general" },
+];
+
+export async function getPlatformSettings(): Promise<Record<string, string>> {
+  const rows = await db.select().from(platformSettingsTable);
+  if (rows.length === 0) {
+    await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+    return Object.fromEntries(DEFAULT_PLATFORM_SETTINGS.map(s => [s.key, s.value]));
+  }
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
 
 const router: IRouter = Router();
 
@@ -503,6 +532,81 @@ router.get("/transactions", async (_req, res) => {
     total: transactions.length,
     totalCredit,
     totalDebit,
+  });
+});
+
+/* ── Platform Settings ── */
+router.get("/platform-settings", async (_req, res) => {
+  let rows = await db.select().from(platformSettingsTable);
+  if (rows.length === 0) {
+    await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+    rows = await db.select().from(platformSettingsTable);
+  }
+  const grouped: Record<string, any[]> = {};
+  for (const row of rows) {
+    if (!grouped[row.category]) grouped[row.category] = [];
+    grouped[row.category]!.push({ key: row.key, value: row.value, label: row.label, updatedAt: row.updatedAt.toISOString() });
+  }
+  res.json({ settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })), grouped });
+});
+
+router.put("/platform-settings", async (req, res) => {
+  const { settings } = req.body as { settings: Array<{ key: string; value: string }> };
+  if (!Array.isArray(settings)) { res.status(400).json({ error: "settings array required" }); return; }
+  for (const { key, value } of settings) {
+    await db
+      .update(platformSettingsTable)
+      .set({ value: String(value), updatedAt: new Date() })
+      .where(eq(platformSettingsTable.key, key));
+  }
+  const rows = await db.select().from(platformSettingsTable);
+  res.json({ success: true, settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })) });
+});
+
+router.patch("/platform-settings/:key", async (req, res) => {
+  const { value } = req.body;
+  const [row] = await db
+    .update(platformSettingsTable)
+    .set({ value: String(value), updatedAt: new Date() })
+    .where(eq(platformSettingsTable.key, req.params["key"]!))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Setting not found" }); return; }
+  res.json({ ...row, updatedAt: row.updatedAt.toISOString() });
+});
+
+/* ── Overview with user enrichment (orders + user info) ── */
+router.get("/orders-enriched", async (_req, res) => {
+  const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(200);
+  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  res.json({
+    orders: orders.map(o => ({
+      ...o,
+      total: parseFloat(String(o.total)),
+      createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
+      userName: userMap[o.userId]?.name || null,
+      userPhone: userMap[o.userId]?.phone || null,
+    })),
+    total: orders.length,
+  });
+});
+
+router.get("/rides-enriched", async (_req, res) => {
+  const rides = await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(200);
+  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  res.json({
+    rides: rides.map(r => ({
+      ...r,
+      fare: parseFloat(r.fare),
+      distance: parseFloat(r.distance),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      userName: userMap[r.userId]?.name || null,
+      userPhone: userMap[r.userId]?.phone || null,
+    })),
+    total: rides.length,
   });
 });
 

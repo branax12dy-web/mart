@@ -1,17 +1,17 @@
 import { useState } from "react";
-import { useRides, useUpdateRide } from "@/hooks/use-admin";
+import { useRidesEnriched, useUpdateRide } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Car, Search } from "lucide-react";
+import { Car, Search, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 const STATUSES = ["searching", "accepted", "arrived", "in_transit", "completed", "cancelled"];
 
 export default function Rides() {
-  const { data, isLoading } = useRides();
+  const { data, isLoading } = useRidesEnriched();
   const updateMutation = useUpdateRide();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -23,7 +23,12 @@ export default function Rides() {
   };
 
   const rides = data?.rides || [];
-  const filtered = rides.filter((r: any) => r.id.toLowerCase().includes(search.toLowerCase()));
+  const q = search.toLowerCase();
+  const filtered = rides.filter((r: any) =>
+    r.id.toLowerCase().includes(q)
+    || (r.userName || "").toLowerCase().includes(q)
+    || (r.userPhone || "").includes(q)
+  );
 
   return (
     <div className="space-y-6">
@@ -43,7 +48,7 @@ export default function Rides() {
         <div className="relative w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Search by Ride ID..." 
+            placeholder="Search by Ride ID, Name or Phone..." 
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9 h-11 rounded-xl bg-muted/30 border-border/50"
@@ -57,8 +62,8 @@ export default function Rides() {
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead className="font-semibold">Ride ID / Type</TableHead>
+                <TableHead className="font-semibold">Customer</TableHead>
                 <TableHead className="font-semibold">Route</TableHead>
-                <TableHead className="font-semibold">Distance</TableHead>
                 <TableHead className="font-semibold">Fare</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="font-semibold text-right">Date</TableHead>
@@ -76,6 +81,21 @@ export default function Rides() {
                       <p className="font-mono font-medium text-sm">{ride.id.slice(-8).toUpperCase()}</p>
                       <p className="text-xs font-bold uppercase text-primary tracking-wide mt-1">{ride.type}</p>
                     </TableCell>
+                    <TableCell>
+                      {ride.userName ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                            <User className="w-3.5 h-3.5 text-green-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{ride.userName}</p>
+                            <p className="text-xs text-muted-foreground">{ride.userPhone}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Unknown</span>
+                      )}
+                    </TableCell>
                     <TableCell className="max-w-[200px]">
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
@@ -88,8 +108,10 @@ export default function Rides() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm font-medium">{ride.distance} km</TableCell>
-                    <TableCell className="font-bold text-foreground">{formatCurrency(ride.fare)}</TableCell>
+                    <TableCell className="font-bold text-foreground">
+                      <p>{formatCurrency(ride.fare)}</p>
+                      <p className="text-xs text-muted-foreground font-normal">{ride.distance} km</p>
+                    </TableCell>
                     <TableCell>
                       <Select value={ride.status} onValueChange={(val) => handleUpdateStatus(ride.id, val)}>
                         <SelectTrigger className={`w-36 h-8 text-[11px] font-bold uppercase tracking-wider border-2 ${getStatusColor(ride.status)}`}>

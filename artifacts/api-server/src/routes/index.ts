@@ -15,6 +15,7 @@ import addressesRouter from "./addresses.js";
 import settingsRouter from "./settings.js";
 import seedRouter from "./seed.js";
 import adminRouter from "./admin.js";
+import platformConfigRouter from "./platform-config.js";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use("/addresses", addressesRouter);
 router.use("/settings", settingsRouter);
 router.use("/seed", seedRouter);
 router.use("/admin", adminRouter);
+router.use("/platform-config", platformConfigRouter);
 
 export default router;

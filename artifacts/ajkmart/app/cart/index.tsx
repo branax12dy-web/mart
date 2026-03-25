@@ -106,7 +106,23 @@ export default function CartScreen() {
   const [addrLoading, setAddrLoading] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const deliveryFee = cartType === "food" ? 60 : 80;
+  const [deliveryFeeConfig, setDeliveryFeeConfig] = useState<{ mart: number; food: number }>({ mart: 80, food: 60 });
+  const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(1000);
+
+  useEffect(() => {
+    const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+    fetch(`${API}/platform-config`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.deliveryFee) {
+          setDeliveryFeeConfig({ mart: d.deliveryFee.mart, food: d.deliveryFee.food });
+        }
+        if (d.platform?.freeDeliveryAbove) setFreeDeliveryAbove(d.platform.freeDeliveryAbove);
+      })
+      .catch(() => {});
+  }, []);
+
+  const deliveryFee = total >= freeDeliveryAbove ? 0 : (cartType === "food" ? deliveryFeeConfig.food : deliveryFeeConfig.mart);
   const grandTotal = total + deliveryFee;
 
   const selectedAddr = addresses.find(a => a.id === selectedAddrId);

@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { notificationsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { notificationsTable, platformSettingsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+import { getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -14,16 +15,21 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function calcFare(distance: number, type: string): number {
-  const baseRate = type === "bike" ? 15 : 25;
-  const perKm = type === "bike" ? 8 : 12;
+async function calcFare(distance: number, type: string): Promise<number> {
+  const settings = await getPlatformSettings();
+  const baseRate = type === "bike"
+    ? parseFloat(settings["ride_bike_base_fare"] ?? "15")
+    : parseFloat(settings["ride_car_base_fare"] ?? "25");
+  const perKm = type === "bike"
+    ? parseFloat(settings["ride_bike_per_km"] ?? "8")
+    : parseFloat(settings["ride_car_per_km"] ?? "12");
   return Math.round(baseRate + distance * perKm);
 }
 
 router.post("/estimate", async (req, res) => {
   const { pickupLat, pickupLng, dropLat, dropLng, type } = req.body;
   const distance = calcDistance(pickupLat, pickupLng, dropLat, dropLng);
-  const fare = calcFare(distance, type);
+  const fare = await calcFare(distance, type);
   const duration = `${Math.round(distance * 3 + 5)} min`;
   res.json({ distance: Math.round(distance * 10) / 10, fare, duration, type });
 });
@@ -31,7 +37,7 @@ router.post("/estimate", async (req, res) => {
 router.post("/", async (req, res) => {
   const { userId, type, pickupAddress, dropAddress, pickupLat, pickupLng, dropLat, dropLng, paymentMethod } = req.body;
   const distance = pickupLat && dropLat ? calcDistance(pickupLat, pickupLng, dropLat, dropLng) : 5;
-  const fare = calcFare(distance, type);
+  const fare = await calcFare(distance, type);
   if (paymentMethod === "wallet") {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!user || parseFloat(user.walletBalance ?? "0") < fare) {

@@ -10,6 +10,7 @@ import {
   PackageSearch, 
   Megaphone, 
   Receipt,
+  Settings2,
   LogOut,
   Menu,
   X
@@ -26,6 +27,7 @@ const navItems = [
   { name: "Products", href: "/products", icon: PackageSearch },
   { name: "Broadcast", href: "/broadcast", icon: Megaphone },
   { name: "Transactions", href: "/transactions", icon: Receipt },
+  { name: "Settings", href: "/settings", icon: Settings2 },
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {

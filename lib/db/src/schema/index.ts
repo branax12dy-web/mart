@@ -9,3 +9,4 @@ export * from "./parcel_bookings";
 export * from "./notifications";
 export * from "./saved_addresses";
 export * from "./user_settings";
+export * from "./platform_settings";

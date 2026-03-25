@@ -228,3 +228,40 @@ export const useTransactions = () => {
     refetchInterval: REFETCH_INTERVAL,
   });
 };
+
+// Enriched endpoints (orders + user info)
+export const useOrdersEnriched = () => {
+  return useQuery({
+    queryKey: ["admin-orders-enriched"],
+    queryFn: () => fetcher("/orders-enriched"),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+export const useRidesEnriched = () => {
+  return useQuery({
+    queryKey: ["admin-rides-enriched"],
+    queryFn: () => fetcher("/rides-enriched"),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+// Platform Settings
+export const usePlatformSettings = () => {
+  return useQuery({
+    queryKey: ["admin-platform-settings"],
+    queryFn: () => fetcher("/platform-settings"),
+  });
+};
+
+export const useUpdatePlatformSettings = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: Array<{ key: string; value: string }>) =>
+      fetcher("/platform-settings", {
+        method: "PUT",
+        body: JSON.stringify({ settings }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-platform-settings"] }),
+  });
+};

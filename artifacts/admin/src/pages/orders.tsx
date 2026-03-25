@@ -1,18 +1,18 @@
 import { useState } from "react";
-import { useOrders, useUpdateOrder } from "@/hooks/use-admin";
+import { useOrdersEnriched, useUpdateOrder } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ShoppingBag, Search } from "lucide-react";
+import { ShoppingBag, Search, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 const STATUSES = ["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"];
 
 export default function Orders() {
-  const { data, isLoading } = useOrders();
+  const { data, isLoading } = useOrdersEnriched();
   const updateMutation = useUpdateOrder();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -27,7 +27,10 @@ export default function Orders() {
 
   const orders = data?.orders || [];
   const filtered = orders.filter((o: any) => {
-    const matchesSearch = o.id.toLowerCase().includes(search.toLowerCase());
+    const q = search.toLowerCase();
+    const matchesSearch = o.id.toLowerCase().includes(q)
+      || (o.userName || "").toLowerCase().includes(q)
+      || (o.userPhone || "").includes(q);
     const matchesStatus = statusFilter === "all" || o.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -50,7 +53,7 @@ export default function Orders() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Search by Order ID..." 
+            placeholder="Search by Order ID, Name or Phone..." 
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9 h-11 rounded-xl bg-muted/30 border-border/50"
@@ -77,8 +80,8 @@ export default function Orders() {
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead className="font-semibold">Order ID</TableHead>
+                <TableHead className="font-semibold">Customer</TableHead>
                 <TableHead className="font-semibold">Type</TableHead>
-                <TableHead className="font-semibold">Items</TableHead>
                 <TableHead className="font-semibold">Total</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="font-semibold text-right">Date</TableHead>
@@ -92,16 +95,29 @@ export default function Orders() {
               ) : (
                 filtered.map((order: any) => (
                   <TableRow key={order.id} className="hover:bg-muted/30">
-                    <TableCell className="font-mono font-medium text-sm">
-                      {order.id.slice(-8).toUpperCase()}
+                    <TableCell>
+                      <p className="font-mono font-medium text-sm">{order.id.slice(-8).toUpperCase()}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{Array.isArray(order.items) ? `${order.items.length} items` : 'N/A'}</p>
+                    </TableCell>
+                    <TableCell>
+                      {order.userName ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <User className="w-3.5 h-3.5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{order.userName}</p>
+                            <p className="text-xs text-muted-foreground">{order.userPhone}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Guest</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={order.type === 'food' ? 'default' : 'secondary'} className="capitalize">
                         {order.type}
                       </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {Array.isArray(order.items) ? `${order.items.length} items` : 'N/A'}
                     </TableCell>
                     <TableCell className="font-bold text-foreground">
                       {formatCurrency(order.total)}

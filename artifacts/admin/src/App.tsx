@@ -16,6 +16,7 @@ import Parcel from "@/pages/parcel";
 import Products from "@/pages/products";
 import Broadcast from "@/pages/broadcast";
 import Transactions from "@/pages/transactions";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -66,6 +67,7 @@ function Router() {
       <Route path="/products"><ProtectedRoute component={Products} /></Route>
       <Route path="/broadcast"><ProtectedRoute component={Broadcast} /></Route>
       <Route path="/transactions"><ProtectedRoute component={Transactions} /></Route>
+      <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
 
       <Route component={NotFound} />
     </Switch>
