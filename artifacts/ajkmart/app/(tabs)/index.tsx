@@ -20,89 +20,55 @@ import { useCart } from "@/context/CartContext";
 
 const C = Colors.light;
 const { width } = Dimensions.get("window");
-const CARD_GAP = 12;
 const H_PAD = 16;
-const INNER = width - H_PAD * 2;
-const HALF = (INNER - CARD_GAP) / 2;
 
-/* ── animated press wrapper ── */
-function Tappable({
-  children,
-  onPress,
-  style,
-  delay = 0,
-}: {
-  children: React.ReactNode;
-  onPress: () => void;
-  style?: any;
-  delay?: number;
-}) {
-  const scale = useRef(new Animated.Value(0.92)).current;
+/* ── animated card wrapper ── */
+function Tappable({ children, onPress, style, delay = 0 }: { children: React.ReactNode; onPress: () => void; style?: any; delay?: number }) {
+  const scale   = useRef(new Animated.Value(0.93)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(scale, { toValue: 1, useNativeDriver: true, delay, bounciness: 8 }),
-      Animated.timing(opacity, { toValue: 1, duration: 350, delay, useNativeDriver: true }),
+      Animated.spring(scale,   { toValue: 1, useNativeDriver: true, delay, bounciness: 6 }),
+      Animated.timing(opacity, { toValue: 1, duration: 300, delay, useNativeDriver: true }),
     ]).start();
   }, []);
-
-  const pressIn = () =>
-    Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 40 }).start();
-  const pressOut = () => {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
-    onPress();
-  };
-
+  const onIn  = () => Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 40 }).start();
+  const onOut = () => { Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start(); onPress(); };
   return (
     <Animated.View style={[{ opacity, transform: [{ scale }] }, style]}>
-      <Pressable onPressIn={pressIn} onPressOut={pressOut} style={{ flex: 1 }}>
-        {children}
-      </Pressable>
+      <Pressable onPressIn={onIn} onPressOut={onOut} style={{ flex: 1 }}>{children}</Pressable>
     </Animated.View>
   );
 }
 
-/* ── HERO CARD — AJKMart Grocery ── */
+/* ── HERO CARD ── */
 function HeroCard({ onPress }: { onPress: () => void }) {
   return (
-    <Tappable onPress={onPress} style={styles.heroWrapper} delay={80}>
-      <LinearGradient
-        colors={["#1A56DB", "#2563EB", "#3B82F6"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.heroCard}
-      >
-        {/* background pattern circles */}
-        <View style={[styles.circle, { width: 160, height: 160, top: -40, right: -30, opacity: 0.12 }]} />
-        <View style={[styles.circle, { width: 90, height: 90, bottom: 10, right: 60, opacity: 0.1 }]} />
+    <Tappable onPress={onPress} style={styles.heroWrap} delay={80}>
+      <LinearGradient colors={["#0D47C0", "#1A56DB", "#2563EB"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+        <View style={[styles.blob, { width: 200, height: 200, top: -60, right: -40, opacity: 0.12 }]} />
+        <View style={[styles.blob, { width: 80,  height: 80,  bottom: 10, right: 80, opacity: 0.1 }]} />
 
         <View style={styles.heroLeft}>
           <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>🛒  Grocery</Text>
+            <Ionicons name="storefront" size={11} color="#fff" />
+            <Text style={styles.heroBadgeTxt}>Grocery Mart</Text>
           </View>
           <Text style={styles.heroTitle}>AJKMart</Text>
-          <Text style={styles.heroSub}>Fresh groceries & daily{"\n"}essentials delivered fast</Text>
+          <Text style={styles.heroSub}>Fresh groceries & daily{"\n"}essentials at your door</Text>
+          <View style={styles.heroMetaRow}>
+            <View style={styles.heroMeta}><Ionicons name="cube-outline" size={11} color="rgba(255,255,255,0.8)" /><Text style={styles.heroMetaTxt}>500+ items</Text></View>
+            <View style={styles.heroMeta}><Ionicons name="time-outline" size={11} color="rgba(255,255,255,0.8)" /><Text style={styles.heroMetaTxt}>20 min delivery</Text></View>
+          </View>
           <View style={styles.heroBtn}>
-            <Text style={styles.heroBtnText}>Shop Now</Text>
+            <Text style={styles.heroBtnTxt}>Shop Now</Text>
             <Ionicons name="arrow-forward" size={13} color={C.primary} />
           </View>
         </View>
 
         <View style={styles.heroRight}>
-          <View style={styles.heroIconRing}>
-            <Ionicons name="storefront" size={42} color="#fff" />
-          </View>
-          <View style={styles.heroStats}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatNum}>500+</Text>
-              <Text style={styles.heroStatLab}>Products</Text>
-            </View>
-            <View style={styles.heroStatDiv} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatNum}>20 min</Text>
-              <Text style={styles.heroStatLab}>Delivery</Text>
-            </View>
+          <View style={styles.heroRing}>
+            <Ionicons name="storefront" size={44} color="#fff" />
           </View>
         </View>
       </LinearGradient>
@@ -110,255 +76,269 @@ function HeroCard({ onPress }: { onPress: () => void }) {
   );
 }
 
-/* ── FOOD CARD ── */
-function FoodCard({ onPress }: { onPress: () => void }) {
+/* ── SERVICE CARD (Food / Ride) ── */
+function ServiceCard({ onPress, delay, gradient, iconGrad, icon, title, sub, tag, tagIcon, textColor, tagColor, tagBg }: any) {
   return (
-    <Tappable onPress={onPress} style={[styles.halfWrapper, { height: 170 }]} delay={160}>
-      <LinearGradient
-        colors={["#FFFBEB", "#FEF3C7"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.halfCard}
-      >
-        <View style={[styles.circle, { width: 100, height: 100, top: -25, right: -25, backgroundColor: "#F59E0B", opacity: 0.12 }]} />
-        <View style={styles.halfIconBox}>
-          <LinearGradient colors={["#F59E0B", "#FBBF24"]} style={styles.halfIconGrad}>
-            <Ionicons name="restaurant" size={24} color="#fff" />
-          </LinearGradient>
-        </View>
-        <Text style={[styles.halfTitle, { color: "#92400E" }]}>Food{"\n"}Delivery</Text>
-        <Text style={[styles.halfSub, { color: "#B45309" }]}>Restaurants{"\n"}near you</Text>
-        <View style={[styles.halfTag, { backgroundColor: "#FDE68A" }]}>
-          <Ionicons name="time-outline" size={11} color="#92400E" />
-          <Text style={[styles.halfTagText, { color: "#92400E" }]}>30 min</Text>
+    <Tappable onPress={onPress} style={styles.svcWrap} delay={delay}>
+      <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.svcCard}>
+        <View style={[styles.blob, { width: 110, height: 110, top: -28, right: -28, opacity: 0.13, backgroundColor: "white" }]} />
+        <LinearGradient colors={iconGrad} style={styles.svcIconBox}>
+          <Ionicons name={icon} size={26} color="#fff" />
+        </LinearGradient>
+        <Text style={[styles.svcTitle, { color: textColor }]}>{title}</Text>
+        <Text style={[styles.svcSub, { color: textColor, opacity: 0.75 }]}>{sub}</Text>
+        <View style={[styles.svcTag, { backgroundColor: tagBg }]}>
+          <Ionicons name={tagIcon} size={11} color={tagColor} />
+          <Text style={[styles.svcTagTxt, { color: tagColor }]}>{tag}</Text>
         </View>
       </LinearGradient>
     </Tappable>
   );
 }
 
-/* ── RIDE CARD ── */
-function RideCard({ onPress }: { onPress: () => void }) {
+/* ── WALLET STRIP ── */
+function WalletStrip({ balance, onPress }: { balance: number; onPress: () => void }) {
   return (
-    <Tappable onPress={onPress} style={[styles.halfWrapper, { height: 170 }]} delay={240}>
-      <LinearGradient
-        colors={["#F0FDF4", "#DCFCE7"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.halfCard}
-      >
-        <View style={[styles.circle, { width: 100, height: 100, top: -25, right: -25, backgroundColor: "#10B981", opacity: 0.12 }]} />
-        <View style={styles.halfIconBox}>
-          <LinearGradient colors={["#10B981", "#34D399"]} style={styles.halfIconGrad}>
-            <Ionicons name="car" size={24} color="#fff" />
-          </LinearGradient>
-        </View>
-        <Text style={[styles.halfTitle, { color: "#065F46" }]}>Bike &{"\n"}Car Ride</Text>
-        <Text style={[styles.halfSub, { color: "#047857" }]}>Safe & fast{"\n"}booking</Text>
-        <View style={[styles.halfTag, { backgroundColor: "#A7F3D0" }]}>
-          <Ionicons name="flash-outline" size={11} color="#065F46" />
-          <Text style={[styles.halfTagText, { color: "#065F46" }]}>Instant</Text>
-        </View>
-      </LinearGradient>
-    </Tappable>
-  );
-}
-
-/* ── WALLET CARD ── */
-function WalletCard({ balance, onPress }: { balance: number; onPress: () => void }) {
-  return (
-    <Tappable onPress={onPress} style={styles.walletWrapper} delay={320}>
-      <View style={styles.walletCard}>
+    <Tappable onPress={onPress} style={styles.walletWrap} delay={300}>
+      <LinearGradient colors={["#0F3BA8", "#1A56DB"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.walletCard}>
+        <View style={[styles.blob, { width: 130, height: 130, top: -40, right: 40, opacity: 0.1 }]} />
         <View style={styles.walletLeft}>
-          <View style={styles.walletIconCircle}>
-            <Ionicons name="wallet" size={22} color={C.primary} />
-          </View>
+          <View style={styles.walletIcon}><Ionicons name="wallet" size={22} color="#fff" /></View>
           <View>
-            <Text style={styles.walletLabel}>AJKMart Wallet</Text>
+            <Text style={styles.walletLbl}>AJKMart Wallet</Text>
             <Text style={styles.walletBal}>Rs. {balance.toLocaleString()}</Text>
           </View>
         </View>
-        <View style={styles.walletRight}>
-          <View style={styles.walletTopUpBtn}>
-            <Ionicons name="add" size={14} color="#fff" />
-            <Text style={styles.walletTopUpText}>Top Up</Text>
-          </View>
-        </View>
-      </View>
+        <Pressable style={styles.walletTopUpBtn} onPress={onPress}>
+          <Ionicons name="add" size={15} color={C.primary} />
+          <Text style={styles.walletTopUpTxt}>Top Up</Text>
+        </Pressable>
+      </LinearGradient>
     </Tappable>
   );
 }
 
-/* ── QUICK ACTION PILL ── */
-function QuickPill({
-  icon,
-  label,
-  color,
-  bg,
-  onPress,
-  delay,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  color: string;
-  bg: string;
-  onPress: () => void;
-  delay: number;
-}) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const tx = useRef(new Animated.Value(20)).current;
+/* ── QUICK PILL ── */
+function QuickPill({ icon, label, color, bg, onPress, delay }: { icon: keyof typeof Ionicons.glyphMap; label: string; color: string; bg: string; onPress: () => void; delay: number }) {
+  const op = useRef(new Animated.Value(0)).current;
+  const ty = useRef(new Animated.Value(18)).current;
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 300, delay, useNativeDriver: true }),
-      Animated.timing(tx, { toValue: 0, duration: 300, delay, useNativeDriver: true }),
+      Animated.timing(op, { toValue: 1, duration: 280, delay, useNativeDriver: true }),
+      Animated.timing(ty, { toValue: 0, duration: 280, delay, useNativeDriver: true }),
     ]).start();
   }, []);
   return (
-    <Animated.View style={{ opacity, transform: [{ translateY: tx }] }}>
-      <Pressable onPress={onPress} style={styles.quickPill}>
-        <View style={[styles.quickPillIcon, { backgroundColor: bg }]}>
-          <Ionicons name={icon} size={18} color={color} />
-        </View>
-        <Text style={styles.quickPillLabel}>{label}</Text>
+    <Animated.View style={{ opacity: op, transform: [{ translateY: ty }] }}>
+      <Pressable onPress={onPress} style={styles.pill}>
+        <View style={[styles.pillIcon, { backgroundColor: bg }]}><Ionicons name={icon} size={19} color={color} /></View>
+        <Text style={styles.pillLbl}>{label}</Text>
       </Pressable>
     </Animated.View>
   );
 }
 
-/* ── PROMO BANNER ── */
-function PromoBanner({
-  title,
-  desc,
-  tag,
-  c1,
-  c2,
-  icon,
-}: {
+/* ── DEAL BANNER (full-width stacked cards) ── */
+interface DealBannerProps {
   title: string;
   desc: string;
   tag: string;
+  emoji: string;
   c1: string;
   c2: string;
   icon: keyof typeof Ionicons.glyphMap;
-}) {
+  route: string;
+  cta: string;
+}
+function DealBanner({ title, desc, tag, emoji, c1, c2, icon, route, cta }: DealBannerProps) {
   return (
-    <LinearGradient colors={[c1, c2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.promoBanner}>
-      <View style={[styles.circle, { width: 80, height: 80, top: -20, right: 50, opacity: 0.15 }]} />
-      <View style={{ flex: 1 }}>
-        <View style={styles.promoTag}>
-          <Text style={styles.promoTagText}>{tag}</Text>
+    <Pressable onPress={() => router.push(route as any)} style={styles.dealWrap}>
+      <LinearGradient colors={[c1, c2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.dealCard}>
+        <View style={[styles.blob, { width: 120, height: 120, top: -30, right: 60, opacity: 0.15 }]} />
+        <View style={[styles.blob, { width: 60, height: 60, bottom: -10, right: 20, opacity: 0.12 }]} />
+
+        <View style={{ flex: 1 }}>
+          <View style={styles.dealTagRow}>
+            <Text style={styles.dealEmoji}>{emoji}</Text>
+            <View style={styles.dealTagChip}>
+              <Text style={styles.dealTagTxt}>{tag}</Text>
+            </View>
+          </View>
+          <Text style={styles.dealTitle}>{title}</Text>
+          <Text style={styles.dealDesc}>{desc}</Text>
+          <View style={styles.dealCta}>
+            <Text style={styles.dealCtaTxt}>{cta}</Text>
+            <Ionicons name="arrow-forward" size={13} color="#fff" />
+          </View>
         </View>
-        <Text style={styles.promoTitle}>{title}</Text>
-        <Text style={styles.promoDesc}>{desc}</Text>
-      </View>
-      <Ionicons name={icon} size={52} color="rgba(255,255,255,0.25)" />
-    </LinearGradient>
+
+        <View style={styles.dealIconBox}>
+          <Ionicons name={icon} size={52} color="rgba(255,255,255,0.22)" />
+        </View>
+      </LinearGradient>
+    </Pressable>
   );
 }
 
-/* ══════════════════════════════════ MAIN SCREEN ══════════════════════════════════ */
+/* ══════════════════════════════════════════ MAIN ══════════════════════════════════════════ */
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
+  const insets   = useSafeAreaInsets();
   const { user } = useAuth();
   const { itemCount } = useCart();
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad   = Platform.OS === "web" ? 67 : insets.top;
+  const headerOp = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+    Animated.timing(headerOp, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
+  const HALF = (width - H_PAD * 2 - 12) / 2;
+
   const quickActions = [
-    { icon: "leaf-outline" as const, label: "Fruits", color: C.mart, bg: C.martLight, route: "/mart" },
-    { icon: "fish-outline" as const, label: "Meat", color: "#EF4444", bg: "#FEE2E2", route: "/mart" },
-    { icon: "pizza-outline" as const, label: "Pizza", color: C.food, bg: C.foodLight, route: "/food" },
-    { icon: "bicycle-outline" as const, label: "Bike", color: "#8B5CF6", bg: "#EDE9FE", route: "/ride" },
-    { icon: "cafe-outline" as const, label: "Drinks", color: "#0891B2", bg: "#E0F2FE", route: "/mart" },
-    { icon: "time-outline" as const, label: "Track", color: C.primary, bg: C.rideLight, route: "/(tabs)/orders" },
+    { icon: "leaf-outline"      as const, label: "Fruits",  color: C.mart,      bg: C.martLight,  route: "/mart" },
+    { icon: "fish-outline"      as const, label: "Meat",    color: "#EF4444",    bg: "#FEE2E2",    route: "/mart" },
+    { icon: "pizza-outline"     as const, label: "Pizza",   color: C.food,       bg: C.foodLight,  route: "/food" },
+    { icon: "bicycle-outline"   as const, label: "Bike",    color: "#8B5CF6",    bg: "#EDE9FE",    route: "/ride" },
+    { icon: "cafe-outline"      as const, label: "Drinks",  color: "#0891B2",    bg: "#E0F2FE",    route: "/mart" },
+    { icon: "flash-outline"     as const, label: "Deals",   color: "#DC2626",    bg: "#FEE2E2",    route: "/mart" },
+    { icon: "time-outline"      as const, label: "Track",   color: C.primary,    bg: C.rideLight,  route: "/(tabs)/orders" },
+    { icon: "car-outline"       as const, label: "Car",     color: "#059669",    bg: "#D1FAE5",    route: "/ride" },
+  ];
+
+  const deals: DealBannerProps[] = [
+    {
+      title: "Free Delivery",
+      desc:  "Apnay pehle order pe delivery bilkul free — ajj hi try karein!",
+      tag:   "Naye Users",
+      emoji: "🎉",
+      c1:    "#1A56DB", c2: "#2563EB",
+      icon:  "cart-outline",
+      route: "/mart",
+      cta:   "Shop Karo",
+    },
+    {
+      title: "Bike Ride 10% Off",
+      desc:  "Is hafte sirf Rs. 45 se bike book karein — AJK mein kahin bhi!",
+      tag:   "Weekend Special",
+      emoji: "🏍️",
+      c1:    "#059669", c2: "#10B981",
+      icon:  "bicycle-outline",
+      route: "/ride",
+      cta:   "Ride Book Karo",
+    },
+    {
+      title: "Desi Khana Deal",
+      desc:  "2 food orders karo, agla order 20% off pao — limited time!",
+      tag:   "Food Deal",
+      emoji: "🍽️",
+      c1:    "#D97706", c2: "#F59E0B",
+      icon:  "restaurant-outline",
+      route: "/food",
+      cta:   "Order Karo",
+    },
+    {
+      title: "Flash Deals — Groceries",
+      desc:  "Roz nayi deals — fruits, sabziyan, doodh sab pe 15–20% bachao!",
+      tag:   "⚡ Flash Sale",
+      emoji: "🛒",
+      c1:    "#7C3AED", c2: "#8B5CF6",
+      icon:  "flash-outline",
+      route: "/mart",
+      cta:   "Deals Dekho",
+    },
   ];
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      {/* ── HEADER ── */}
-      <Animated.View style={{ opacity: headerAnim }}>
+      {/* HEADER */}
+      <Animated.View style={{ opacity: headerOp }}>
         <LinearGradient
           colors={["#0F3BA8", C.primary, "#2563EB"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={[styles.header, { paddingTop: topPad + 14 }]}
         >
-          <View style={styles.headerRow}>
+          <View style={styles.hdrRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.greeting}>
-                {user?.name ? `Salam, ${user.name.split(" ")[0]} 👋` : "Salam! 👋"}
-              </Text>
-              <Text style={styles.headerTitle}>Kya chahiye aaj?</Text>
+              <Text style={styles.greeting}>{user?.name ? `Salam, ${user.name.split(" ")[0]} 👋` : "Salam! 👋"}</Text>
+              <Text style={styles.hdrTitle}>Kya chahiye aaj?</Text>
               <View style={styles.locRow}>
                 <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.75)" />
-                <Text style={styles.locText}>AJK, Pakistan</Text>
+                <Text style={styles.locTxt}>AJK, Pakistan</Text>
               </View>
             </View>
             <Pressable onPress={() => router.push("/cart")} style={styles.cartBubble}>
               <Ionicons name="bag-outline" size={22} color="#fff" />
               {itemCount > 0 && (
                 <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>{itemCount > 9 ? "9+" : itemCount}</Text>
+                  <Text style={styles.cartBadgeTxt}>{itemCount > 9 ? "9+" : itemCount}</Text>
                 </View>
               )}
             </Pressable>
           </View>
 
-          {/* search bar */}
+          {/* Search */}
           <Pressable onPress={() => router.push("/mart")} style={styles.searchBar}>
-            <View style={styles.searchIcon}>
-              <Ionicons name="search" size={16} color={C.primary} />
-            </View>
-            <Text style={styles.searchText}>Products, food, restaurants...</Text>
-            <View style={styles.searchFilter}>
-              <Ionicons name="options-outline" size={16} color={C.textMuted} />
-            </View>
+            <View style={styles.searchIcon}><Ionicons name="search" size={16} color={C.primary} /></View>
+            <Text style={styles.searchTxt}>Products, food, restaurants...</Text>
+            <View style={styles.searchFilter}><Ionicons name="options-outline" size={16} color={C.textMuted} /></View>
           </Pressable>
         </LinearGradient>
       </Animated.View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-      >
-        {/* ── SECTION LABEL ── */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+
+        {/* SERVICES SECTION LABEL */}
         <View style={styles.secRow}>
           <Text style={styles.secTitle}>Our Services</Text>
           <Text style={styles.secSub}>Sab kuch ek jagah</Text>
         </View>
 
-        {/* ── BENTO GRID ── */}
-        <View style={styles.bentoGrid}>
-
-          {/* ROW 1 — Hero full width */}
+        {/* BENTO GRID */}
+        <View style={styles.grid}>
+          {/* Hero */}
           <HeroCard onPress={() => router.push("/mart")} />
 
-          {/* ROW 2 — Food + Ride side by side */}
+          {/* Food + Ride side by side */}
           <View style={styles.halfRow}>
-            <FoodCard onPress={() => router.push("/food")} />
-            <RideCard onPress={() => router.push("/ride")} />
+            <ServiceCard
+              onPress={() => router.push("/food")}
+              delay={160}
+              gradient={["#FFFBEB", "#FEF3C7"]}
+              iconGrad={["#F59E0B", "#FBBF24"]}
+              icon="restaurant"
+              title={"Food\nDelivery"}
+              sub={"Restaurants\nnear you"}
+              tag="30 min"
+              tagIcon="time-outline"
+              textColor="#92400E"
+              tagColor="#92400E"
+              tagBg="#FDE68A"
+            />
+            <ServiceCard
+              onPress={() => router.push("/ride")}
+              delay={240}
+              gradient={["#F0FDF4", "#DCFCE7"]}
+              iconGrad={["#10B981", "#34D399"]}
+              icon="car"
+              title={"Bike &\nCar Ride"}
+              sub={"Safe & fast\nbooking"}
+              tag="Instant"
+              tagIcon="flash-outline"
+              textColor="#065F46"
+              tagColor="#065F46"
+              tagBg="#A7F3D0"
+            />
           </View>
 
-          {/* ROW 3 — Wallet wide */}
-          <WalletCard
-            balance={user?.walletBalance || 0}
-            onPress={() => router.push("/(tabs)/wallet")}
-          />
+          {/* Wallet */}
+          <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} />
         </View>
 
-        {/* ── QUICK ACTIONS ── */}
+        {/* QUICK PILLS */}
         <View style={styles.secRow}>
-          <Text style={styles.secTitle}>Quick Order</Text>
+          <Text style={styles.secTitle}>Quick Access</Text>
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickRow}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
           {quickActions.map((q, i) => (
             <QuickPill
               key={q.label}
@@ -367,45 +347,21 @@ export default function HomeScreen() {
               color={q.color}
               bg={q.bg}
               onPress={() => router.push(q.route as any)}
-              delay={100 + i * 60}
+              delay={80 + i * 55}
             />
           ))}
         </ScrollView>
 
-        {/* ── PROMO BANNERS ── */}
+        {/* DEALS SECTION */}
         <View style={styles.secRow}>
           <Text style={styles.secTitle}>Today's Deals</Text>
+          <Text style={styles.secSub}>Limited time offers</Text>
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.promoRow}
-        >
-          <PromoBanner
-            title="Free Delivery"
-            desc="Pehle order pe bilkul free"
-            tag="🎉 New User"
-            c1="#1A56DB"
-            c2="#3B82F6"
-            icon="cart-outline"
-          />
-          <PromoBanner
-            title="Bike Ride 10% Off"
-            desc="Is weekend special discount"
-            tag="🏍️ Weekend"
-            c1="#059669"
-            c2="#10B981"
-            icon="bicycle-outline"
-          />
-          <PromoBanner
-            title="Desi Khana Deal"
-            desc="2 order karo, 1 free pao"
-            tag="🍽️ Food"
-            c1="#D97706"
-            c2="#F59E0B"
-            icon="restaurant-outline"
-          />
-        </ScrollView>
+        <View style={styles.dealsCol}>
+          {deals.map((d, i) => (
+            <DealBanner key={i} {...d} />
+          ))}
+        </View>
 
         <View style={{ height: Platform.OS === "web" ? 50 : 30 }} />
       </ScrollView>
@@ -417,12 +373,12 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
 
   /* header */
-  header: { paddingHorizontal: 16, paddingBottom: 18 },
-  headerRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
+  header: { paddingHorizontal: H_PAD, paddingBottom: 18 },
+  hdrRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
   greeting: { fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.8)", marginBottom: 2 },
-  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 22, color: "#fff", marginBottom: 5 },
+  hdrTitle: { fontFamily: "Inter_700Bold", fontSize: 22, color: "#fff", marginBottom: 5 },
   locRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  locText: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.75)" },
+  locTxt: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.75)" },
   cartBubble: {
     width: 44, height: 44, borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.18)",
@@ -433,160 +389,89 @@ const styles = StyleSheet.create({
     backgroundColor: "#F59E0B", borderRadius: 9,
     minWidth: 18, height: 18,
     alignItems: "center", justifyContent: "center",
-    paddingHorizontal: 3,
-    borderWidth: 1.5, borderColor: "#fff",
+    paddingHorizontal: 3, borderWidth: 1.5, borderColor: "#fff",
   },
-  cartBadgeText: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#fff" },
+  cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#fff" },
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: "#fff", borderRadius: 14,
     paddingHorizontal: 12, paddingVertical: 11,
-    shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
-  searchIcon: {
-    width: 30, height: 30, borderRadius: 8,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center", justifyContent: "center",
-  },
-  searchText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
-  searchFilter: {
-    width: 30, height: 30, borderRadius: 8,
-    backgroundColor: "#F8FAFC",
-    alignItems: "center", justifyContent: "center",
-  },
+  searchIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center" },
+  searchTxt: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
+  searchFilter: { width: 30, height: 30, borderRadius: 8, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center" },
 
   /* section */
-  secRow: {
-    flexDirection: "row", alignItems: "baseline",
-    justifyContent: "space-between",
-    paddingHorizontal: H_PAD, marginTop: 22, marginBottom: 12,
-  },
+  secRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: H_PAD, marginTop: 22, marginBottom: 12 },
   secTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
   secSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
 
-  /* scroll */
   scroll: { paddingBottom: 16 },
 
-  /* bento */
-  bentoGrid: { paddingHorizontal: H_PAD, gap: CARD_GAP },
-  halfRow: { flexDirection: "row", gap: CARD_GAP },
+  /* bento grid */
+  grid: { paddingHorizontal: H_PAD, gap: 12 },
+  halfRow: { flexDirection: "row", gap: 12 },
 
   /* hero */
-  heroWrapper: { borderRadius: 22, overflow: "hidden" },
-  heroCard: {
-    borderRadius: 22, padding: 20,
-    flexDirection: "row", alignItems: "center",
-    minHeight: 160, overflow: "hidden",
-  },
-  heroLeft: { flex: 1, gap: 6 },
-  heroBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.22)",
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 20,
-  },
-  heroBadgeText: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#fff" },
-  heroTitle: { fontFamily: "Inter_700Bold", fontSize: 26, color: "#fff", lineHeight: 30 },
-  heroSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.85)", lineHeight: 18 },
-  heroBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: "#fff", alignSelf: "flex-start",
-    paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 20, marginTop: 4,
-  },
-  heroBtnText: { fontFamily: "Inter_700Bold", fontSize: 12, color: C.primary },
-  heroRight: { alignItems: "center", gap: 14, marginLeft: 12 },
-  heroIconRing: {
-    width: 72, height: 72, borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.25)",
-  },
-  heroStats: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7, gap: 10,
-  },
-  heroStat: { alignItems: "center" },
-  heroStatNum: { fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" },
-  heroStatLab: { fontFamily: "Inter_400Regular", fontSize: 9, color: "rgba(255,255,255,0.8)" },
-  heroStatDiv: { width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.25)" },
+  heroWrap: { borderRadius: 22, overflow: "hidden" },
+  heroCard: { borderRadius: 22, padding: 20, flexDirection: "row", alignItems: "center", minHeight: 165, overflow: "hidden" },
+  heroLeft: { flex: 1, gap: 7 },
+  heroBadge: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,0.22)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  heroBadgeTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#fff" },
+  heroTitle: { fontFamily: "Inter_700Bold", fontSize: 28, color: "#fff", lineHeight: 32 },
+  heroSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.85)", lineHeight: 17 },
+  heroMetaRow: { flexDirection: "row", gap: 12, marginTop: 2 },
+  heroMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
+  heroMetaTxt: { fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.8)" },
+  heroBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#fff", alignSelf: "flex-start", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginTop: 2 },
+  heroBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 12, color: C.primary },
+  heroRight: { alignItems: "center", marginLeft: 12 },
+  heroRing: { width: 76, height: 76, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.25)" },
 
-  /* half cards */
-  halfWrapper: { flex: 1, borderRadius: 18, overflow: "hidden" },
-  halfCard: {
-    flex: 1, borderRadius: 18, padding: 14,
-    overflow: "hidden", gap: 4,
-  },
-  halfIconBox: { marginBottom: 4 },
-  halfIconGrad: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  halfTitle: { fontFamily: "Inter_700Bold", fontSize: 15, lineHeight: 20 },
-  halfSub: { fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 15, flex: 1 },
-  halfTag: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    alignSelf: "flex-start",
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
-  },
-  halfTagText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  /* service cards */
+  svcWrap: { flex: 1, borderRadius: 18, overflow: "hidden" },
+  svcCard: { flex: 1, borderRadius: 18, padding: 16, minHeight: 175, overflow: "hidden", gap: 5 },
+  svcIconBox: { width: 50, height: 50, borderRadius: 15, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  svcTitle: { fontFamily: "Inter_700Bold", fontSize: 16, lineHeight: 21 },
+  svcSub: { fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 15, flex: 1 },
+  svcTag: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20 },
+  svcTagTxt: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
 
-  /* wallet */
-  walletWrapper: { borderRadius: 16, overflow: "hidden" },
-  walletCard: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: C.surface, borderRadius: 16,
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderWidth: 1.5, borderColor: "#DBEAFE",
-    shadowColor: "#1A56DB", shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+  /* wallet strip */
+  walletWrap: { borderRadius: 16, overflow: "hidden" },
+  walletCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, overflow: "hidden" },
   walletLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  walletIconCircle: {
-    width: 46, height: 46, borderRadius: 14,
-    backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center",
-  },
-  walletLabel: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginBottom: 2 },
-  walletBal: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text },
-  walletRight: {},
-  walletTopUpBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.primary, paddingHorizontal: 14, paddingVertical: 9,
-    borderRadius: 12,
-  },
-  walletTopUpText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
+  walletIcon: { width: 44, height: 44, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+  walletLbl: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)", marginBottom: 2 },
+  walletBal: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
+  walletTopUpBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#fff", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },
+  walletTopUpTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
 
   /* quick pills */
-  quickRow: { paddingHorizontal: H_PAD, gap: 10 },
-  quickPill: { alignItems: "center", gap: 7, width: 62 },
-  quickPillIcon: {
-    width: 54, height: 54, borderRadius: 16,
-    alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  quickPillLabel: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary, textAlign: "center" },
+  pillsRow: { paddingHorizontal: H_PAD, gap: 10 },
+  pill: { alignItems: "center", gap: 7, width: 64 },
+  pillIcon: { width: 56, height: 56, borderRadius: 17, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  pillLbl: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary, textAlign: "center" },
 
-  /* promo banners */
-  promoRow: { paddingHorizontal: H_PAD, gap: 12 },
-  promoBanner: {
-    width: width * 0.72, borderRadius: 18,
-    padding: 18, flexDirection: "row",
-    alignItems: "center", overflow: "hidden",
-    minHeight: 110,
+  /* deal banners (stacked vertical) */
+  dealsCol: { paddingHorizontal: H_PAD, gap: 12 },
+  dealWrap: { borderRadius: 20, overflow: "hidden" },
+  dealCard: {
+    borderRadius: 20, padding: 20, minHeight: 120,
+    flexDirection: "row", alignItems: "center",
+    overflow: "hidden",
   },
-  promoTag: {
-    backgroundColor: "rgba(255,255,255,0.25)",
-    alignSelf: "flex-start",
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 20, marginBottom: 6,
-  },
-  promoTagText: { fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" },
-  promoTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff", marginBottom: 3 },
-  promoDesc: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.88)" },
+  dealTagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  dealEmoji: { fontSize: 16 },
+  dealTagChip: { backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  dealTagTxt: { fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" },
+  dealTitle: { fontFamily: "Inter_700Bold", fontSize: 18, color: "#fff", marginBottom: 4 },
+  dealDesc: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.88)", lineHeight: 17, marginBottom: 10, flex: 1 },
+  dealCta: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.22)", alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
+  dealCtaTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#fff" },
+  dealIconBox: { marginLeft: 12, opacity: 0.9 },
 
   /* shared */
-  circle: {
-    position: "absolute", borderRadius: 999,
-    backgroundColor: "#fff",
-  },
+  blob: { position: "absolute", borderRadius: 999, backgroundColor: "#fff" },
 });
