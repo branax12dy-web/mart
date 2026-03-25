@@ -117,7 +117,7 @@ export default function Transactions() {
 
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[580px]">
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead>Txn ID</TableHead>

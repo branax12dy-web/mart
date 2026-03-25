@@ -107,7 +107,7 @@ export default function Products() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">{editingId ? 'Edit Product' : 'Add New Product'}</DialogTitle>
           </DialogHeader>
@@ -181,7 +181,7 @@ export default function Products() {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
-        <DialogContent className="max-w-sm rounded-3xl p-6">
+        <DialogContent className="w-[95vw] max-w-sm rounded-3xl p-6">
           <DialogHeader>
             <DialogTitle className="text-red-600">Delete Product?</DialogTitle>
           </DialogHeader>
@@ -232,7 +232,7 @@ export default function Products() {
 
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[600px]">
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead>Product</TableHead>

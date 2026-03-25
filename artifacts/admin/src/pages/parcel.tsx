@@ -62,7 +62,7 @@ export default function Parcel() {
 
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[640px]">
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead>Booking ID</TableHead>
@@ -134,7 +134,7 @@ export default function Parcel() {
 
       {/* Booking Detail Modal */}
       <Dialog open={!!selectedBooking} onOpenChange={open => { if (!open) setSelectedBooking(null); }}>
-        <DialogContent className="max-w-lg rounded-3xl">
+        <DialogContent className="w-[95vw] max-w-lg rounded-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Box className="w-5 h-5 text-orange-600" />

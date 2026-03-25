@@ -95,12 +95,37 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground antialiased font-sans;
+    overscroll-behavior: none;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply tracking-tight;
+  }
+  /* Ensure touch scrolling works on iOS */
+  .overflow-x-auto, .overflow-y-auto, main {
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Mobile safe area for bottom nav */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+@layer utilities {
+  /* Dialog mobile override - ensure dialogs fit on small screens */
+  [role="dialog"] > div {
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+  /* Prevent text overflow in tables */
+  .table-cell-truncate {
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

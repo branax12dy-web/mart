@@ -17,7 +17,7 @@ function UserActivityModal({ userId, userName, onClose }: { userId: string; user
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[85dvh] overflow-y-auto rounded-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-primary" />
@@ -242,7 +242,7 @@ export default function Users() {
 
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[700px]">
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead className="font-semibold">User</TableHead>
@@ -339,7 +339,7 @@ export default function Users() {
 
       {/* Wallet Top-up Modal */}
       <Dialog open={!!topupUser} onOpenChange={(open) => { if (!open) setTopupUser(null); }}>
-        <DialogContent className="max-w-md rounded-3xl p-6">
+        <DialogContent className="w-[95vw] max-w-md rounded-3xl p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="font-display text-xl flex items-center gap-2">
               <Wallet className="w-5 h-5 text-green-600" /> Wallet Top-up
@@ -402,7 +402,7 @@ export default function Users() {
 
       {/* Delete User Confirmation */}
       <Dialog open={!!deleteUser} onOpenChange={open => { if (!open) setDeleteUser(null); }}>
-        <DialogContent className="max-w-sm rounded-3xl p-6">
+        <DialogContent className="w-[95vw] max-w-sm rounded-3xl p-6">
           <DialogHeader>
             <DialogTitle className="text-red-600">Delete User?</DialogTitle>
           </DialogHeader>

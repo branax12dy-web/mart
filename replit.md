@@ -1,4 +1,5 @@
 # AJKMart Super App — Workspace
+<!-- Last updated: 2026-03-25 — Admin panel fully mobile-responsive + all enriched endpoints added -->
 
 ## Project Overview
 
