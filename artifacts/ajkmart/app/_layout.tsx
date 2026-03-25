@@ -34,20 +34,20 @@ function AuthGuard() {
   const segments = useSegments();
 
   useEffect(() => {
-    if (isLoading) return; // wait until auth is resolved
+    if (isLoading) return; // wait until auth is fully resolved
 
-    const inAuthGroup  = segments[0] === "auth";
-    const inTabsGroup  = segments[0] === "(tabs)";
-    const inRootIndex  = segments.length === 0;
+    const inAuthGroup = segments[0] === "auth";
+    const inRootIndex = segments.length === 0;
 
     if (!user && !inAuthGroup) {
-      // Logged out — go to auth screen
+      // User logged out or not authenticated → send to auth
       router.replace("/auth");
     } else if (user && (inAuthGroup || inRootIndex)) {
-      // Logged in — go to tabs
+      // User authenticated but on auth/root screen → send to app
       router.replace("/(tabs)");
     }
-  }, [user, isLoading, segments]);
+    // Otherwise stay where we are (user on tabs, stays on tabs)
+  }, [user, isLoading]); // intentionally NOT including segments to avoid loop
 
   return null;
 }

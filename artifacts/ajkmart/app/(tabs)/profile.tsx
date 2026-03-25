@@ -469,7 +469,8 @@ export default function ProfileScreen() {
   const [unread,      setUnread]      = useState(0);
   const [stats,       setStats]       = useState({ orders: 0, rides: 0, spent: 0 });
   const [statsLoading,setStatsLoading]= useState(true);
-  const [signingOut,  setSigningOut]  = useState(false);
+  const [signingOut,        setSigningOut]        = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!user?.id) return;
@@ -498,28 +499,15 @@ export default function ProfileScreen() {
     setRefreshing(false);
   }, [fetchAll]);
 
-  const handleSignOut = () => {
-    Alert.alert(
-      "Sign Out",
-      "Aap sign out karna chahte hain?",
-      [
-        { text: "Nahi", style: "cancel" },
-        {
-          text: "Haan, Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            setSigningOut(true);
-            try {
-              /* Just clear auth — the root AuthGuard watches user state
-                 and will automatically navigate to /auth when user is null. */
-              await logout();
-            } catch {
-              setSigningOut(false);
-            }
-          },
-        },
-      ]
-    );
+  const doSignOut = async () => {
+    setSigningOut(true);
+    setShowSignOutConfirm(false);
+    try {
+      await logout();
+      /* AuthGuard in _layout.tsx detects user=null and navigates to /auth */
+    } catch {
+      setSigningOut(false);
+    }
   };
 
   const roleMap: Record<string, { label: string; colors: [string, string] }> = {
@@ -675,20 +663,45 @@ export default function ProfileScreen() {
 
         {/* ── Sign Out ── */}
         <View style={{ paddingHorizontal: 16, paddingBottom: 40 }}>
-          <Pressable
-            onPress={handleSignOut}
-            disabled={signingOut}
-            style={[so.btn, signingOut && { opacity: 0.7 }]}
-          >
-            {signingOut ? (
-              <ActivityIndicator color={C.danger} size="small" />
-            ) : (
-              <>
-                <Ionicons name="log-out-outline" size={20} color={C.danger} />
-                <Text style={so.txt}>Sign Out</Text>
-              </>
-            )}
-          </Pressable>
+          {showSignOutConfirm ? (
+            /* Inline confirmation — no Alert.alert (doesn't work in web iframe) */
+            <View style={so.confirmBox}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="log-out-outline" size={18} color={C.danger} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={so.confirmTitle}>Sign Out</Text>
+                  <Text style={so.confirmSub}>Aap waqai sign out karna chahte hain?</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={() => setShowSignOutConfirm(false)}
+                  style={so.confirmCancel}
+                >
+                  <Text style={so.confirmCancelTxt}>Nahi</Text>
+                </Pressable>
+                <Pressable
+                  onPress={doSignOut}
+                  disabled={signingOut}
+                  style={[so.confirmOk, signingOut && { opacity: 0.7 }]}
+                >
+                  {signingOut
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={so.confirmOkTxt}>Haan, Sign Out</Text>}
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setShowSignOutConfirm(true)}
+              style={so.btn}
+            >
+              <Ionicons name="log-out-outline" size={20} color={C.danger} />
+              <Text style={so.txt}>Sign Out</Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={{ height: Platform.OS === "web" ? 60 : 20 }} />
@@ -761,6 +774,13 @@ const ai = StyleSheet.create({
 const so = StyleSheet.create({
   btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 15, backgroundColor: "#FEE2E2", borderRadius: 16 },
   txt: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.danger },
+  confirmBox: { backgroundColor: "#fff", borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: "#FEE2E2" },
+  confirmTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text },
+  confirmSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 },
+  confirmCancel: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
+  confirmCancelTxt: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary },
+  confirmOk: { flex: 2, backgroundColor: C.danger, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
+  confirmOkTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 });
 
 /* Edit Profile Sheet */
