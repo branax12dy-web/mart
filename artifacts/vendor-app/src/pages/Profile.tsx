@@ -1,22 +1,19 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
-import { useQuery } from "@tanstack/react-query";
 import { Header } from "../components/Header";
+import { fc, CARD, CARD_HEADER, INPUT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, PAGE, SECTION } from "../lib/ui";
 
-function fc(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
-function fd(d: string | Date) { return new Date(d).toLocaleDateString("en-PK", { day: "numeric", month: "long", year: "numeric" }); }
+function fd(d: string | Date) { return new Date(d).toLocaleDateString("en-PK", { day:"numeric", month:"long", year:"numeric" }); }
 
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
-  const [editing, setEditing]   = useState(false);
-  const [name, setName]         = useState(user?.name || "");
-  const [email, setEmail]       = useState(user?.email || "");
-  const [saving, setSaving]     = useState(false);
-  const [toast, setToast]       = useState("");
+  const [editing, setEditing] = useState(false);
+  const [name, setName]       = useState(user?.name || "");
+  const [email, setEmail]     = useState(user?.email || "");
+  const [saving, setSaving]   = useState(false);
+  const [toast, setToast]     = useState("");
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
-
-  const { data: statsData } = useQuery({ queryKey: ["vendor-stats"], queryFn: () => api.getStats() });
 
   const saveProfile = async () => {
     setSaving(true);
@@ -30,58 +27,58 @@ export default function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 page-enter">
-      <Header pb="pb-20">
-        <div className="flex items-center justify-between">
+    <div className={PAGE}>
+      {/* ── Header ── */}
+      <Header pb="pb-5">
+        <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">My Account</h1>
+            <h1 className="text-2xl font-extrabold text-white">My Account</h1>
             <p className="text-orange-100 text-sm mt-0.5">Vendor settings & info</p>
           </div>
-          <button
-            onClick={logout}
-            className="text-orange-100 text-sm bg-white/20 px-3.5 py-2 rounded-xl font-bold android-press min-h-0"
-          >Logout</button>
+          <button onClick={logout} className="h-9 px-4 bg-white/20 text-white text-sm font-bold rounded-xl android-press min-h-0">
+            Logout
+          </button>
         </div>
       </Header>
 
-      <div className="px-4 -mt-12 pb-4 space-y-3">
-        {/* Vendor Card */}
-        <div className="bg-white rounded-3xl card-2 p-5 flex items-center gap-4">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-4xl font-extrabold text-white flex-shrink-0 shadow-lg">
-            {(user?.storeName || user?.name || "V")[0].toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-extrabold text-gray-900 truncate">{user?.storeName || "My Store"}</h2>
-            <p className="text-gray-500 text-sm mt-0.5">{user?.name || user?.phone}</p>
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              {user?.storeCategory && (
-                <span className="text-xs bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full font-bold capitalize">{user.storeCategory}</span>
-              )}
-              <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold">✓ Verified</span>
+      <div className={SECTION}>
+        {/* ── Vendor Card ── */}
+        <div className={CARD}>
+          <div className="p-4 flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-3xl font-extrabold text-white flex-shrink-0">
+              {(user?.storeName || user?.name || "V")[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-extrabold text-gray-900 truncate">{user?.storeName || "My Store"}</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{user?.name || user?.phone}</p>
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                {user?.storeCategory && <span className="text-xs bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full font-bold capitalize">{user.storeCategory}</span>}
+                <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold">✓ Verified</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Revenue Stats */}
+        {/* ── Stats Grid ── */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-2xl p-4 text-center card-1">
-            <p className="text-3xl font-extrabold text-orange-500">{user?.stats?.totalOrders || statsData?.month?.orders || 0}</p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Total Orders</p>
+          <div className={CARD + " p-4 text-center"}>
+            <p className="text-3xl font-extrabold text-orange-500">{user?.stats?.totalOrders || 0}</p>
+            <p className="text-xs text-gray-500 font-medium mt-1">Total Orders</p>
           </div>
-          <div className="bg-white rounded-2xl p-4 text-center card-1">
-            <p className="text-xl font-extrabold text-amber-500">{fc(user?.stats?.totalRevenue || 0)}</p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Total Earned</p>
+          <div className={CARD + " p-4 text-center"}>
+            <p className="text-xl font-extrabold text-amber-600">{fc(user?.stats?.totalRevenue || 0)}</p>
+            <p className="text-xs text-gray-500 font-medium mt-1">Total Earned</p>
           </div>
         </div>
 
-        {/* Wallet */}
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-5 text-white card-2">
+        {/* ── Wallet ── */}
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-sm">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-orange-100 font-medium">Wallet Balance</p>
               <p className="text-4xl font-extrabold mt-0.5 tracking-tight">{fc(user?.walletBalance || 0)}</p>
             </div>
-            <div className="text-right bg-white/15 rounded-2xl px-4 py-2">
+            <div className="text-right bg-white/15 rounded-2xl px-4 py-2.5">
               <p className="text-xs text-orange-100 font-medium">Commission</p>
               <p className="text-3xl font-extrabold">85%</p>
             </div>
@@ -91,14 +88,12 @@ export default function Profile() {
           </p>
         </div>
 
-        {/* Personal Info */}
-        <div className="bg-white rounded-2xl card-1 overflow-hidden">
-          <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-bold text-gray-800">Personal Information</h3>
-            <button
-              onClick={() => { setEditing(!editing); setName(user?.name||""); setEmail(user?.email||""); }}
-              className="text-orange-500 text-sm font-bold android-press min-h-0 py-1 px-2"
-            >
+        {/* ── Personal Info ── */}
+        <div className={CARD}>
+          <div className={CARD_HEADER}>
+            <p className="font-bold text-gray-800 text-sm">Personal Information</p>
+            <button onClick={() => { setEditing(!editing); setName(user?.name||""); setEmail(user?.email||""); }}
+              className="text-orange-500 text-sm font-bold android-press min-h-0 py-1">
               {editing ? "Cancel" : "✏️ Edit"}
             </button>
           </div>
@@ -106,25 +101,14 @@ export default function Profile() {
             {editing ? (
               <>
                 <div>
-                  <label className="text-xs font-bold text-gray-400 mb-1.5 block uppercase tracking-wide">Full Name</label>
-                  <input
-                    value={name} onChange={e => setName(e.target.value)}
-                    className="w-full h-12 px-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
-                    placeholder="Your name"
-                  />
+                  <label className={LABEL}>Full Name</label>
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" className={INPUT}/>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-400 mb-1.5 block uppercase tracking-wide">Email</label>
-                  <input
-                    value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email"
-                    className="w-full h-12 px-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
-                    placeholder="email@example.com"
-                  />
+                  <label className={LABEL}>Email</label>
+                  <input value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email" placeholder="email@example.com" className={INPUT}/>
                 </div>
-                <button
-                  onClick={saveProfile} disabled={saving}
-                  className="w-full h-12 bg-orange-500 text-white font-bold rounded-xl disabled:opacity-60 android-press"
-                >
+                <button onClick={saveProfile} disabled={saving} className={BTN_PRIMARY}>
                   {saving ? "Saving..." : "Save Changes"}
                 </button>
               </>
@@ -134,7 +118,7 @@ export default function Profile() {
                 { label: "Phone", value: user?.phone },
                 { label: "Email", value: user?.email },
               ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
+                <div key={label} className={ROW}>
                   <span className="text-sm text-gray-400 font-medium">{label}</span>
                   <span className="text-sm font-semibold text-gray-800">{value || "—"}</span>
                 </div>
@@ -143,38 +127,33 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Security */}
-        <div className="bg-white rounded-2xl card-1 overflow-hidden">
-          <div className="px-4 py-3.5 border-b border-gray-100">
-            <h3 className="font-bold text-gray-800">🔒 Security & Session</h3>
+        {/* ── Security ── */}
+        <div className={CARD}>
+          <div className={CARD_HEADER}>
+            <p className="font-bold text-gray-800 text-sm">🔒 Security & Session</p>
           </div>
-          <div className="p-4 space-y-2.5">
+          <div className="p-4">
             {[
-              { label: "Last Login",    value: user?.lastLoginAt ? fd(user.lastLoginAt) : "Just now" },
-              { label: "Member Since",  value: user?.createdAt ? fd(user.createdAt) : "—" },
-              { label: "Account Status",value: "✓ Active & Verified", highlight: true },
-            ].map(({ label, value, highlight }) => (
-              <div key={label} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
+              { label:"Last Login",     value: user?.lastLoginAt ? fd(user.lastLoginAt) : "Just now",    hl:false },
+              { label:"Member Since",   value: user?.createdAt ? fd(user.createdAt) : "—",               hl:false },
+              { label:"Account Status", value: "✓ Active & Verified",                                     hl:true  },
+            ].map(({ label, value, hl }) => (
+              <div key={label} className={ROW}>
                 <span className="text-sm text-gray-400 font-medium">{label}</span>
-                <span className={`text-sm font-bold ${highlight ? "text-green-600" : "text-gray-700"}`}>{value}</span>
+                <span className={`text-sm font-bold ${hl ? "text-green-600" : "text-gray-700"}`}>{value}</span>
               </div>
             ))}
-            <div className="bg-blue-50 rounded-xl p-3 mt-2">
-              <p className="text-xs text-blue-700 font-medium leading-relaxed">🔐 Your session is secured with a unique token. Logout if using a shared device.</p>
+            <div className="bg-blue-50 rounded-xl p-3 mt-3">
+              <p className="text-xs text-blue-700 font-medium leading-relaxed">🔐 Your session is secured. Logout if using a shared device.</p>
             </div>
           </div>
         </div>
 
-        {/* Logout */}
-        <div className="bg-white rounded-2xl card-1 p-4">
-          <button
-            onClick={logout}
-            className="w-full h-13 bg-red-50 border border-red-200 text-red-600 font-bold rounded-xl android-press"
-          >
-            🚪 Logout from This Device
-          </button>
-          <p className="text-center text-xs text-gray-400 mt-2">To report issues, contact AJKMart admin</p>
-        </div>
+        {/* ── Logout ── */}
+        <button onClick={logout} className={BTN_SECONDARY + " border-red-200 text-red-600"}>
+          🚪 Logout from This Device
+        </button>
+        <p className="text-center text-xs text-gray-400 pb-2">To report issues, contact AJKMart admin</p>
       </div>
 
       {toast && (
