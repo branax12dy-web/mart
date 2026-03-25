@@ -8,6 +8,8 @@ import walletRouter from "./wallet.js";
 import ridesRouter from "./rides.js";
 import locationsRouter from "./locations.js";
 import categoriesRouter from "./categories.js";
+import pharmacyRouter from "./pharmacy.js";
+import parcelRouter from "./parcel.js";
 
 const router: IRouter = Router();
 
@@ -20,5 +22,7 @@ router.use("/wallet", walletRouter);
 router.use("/rides", ridesRouter);
 router.use("/locations", locationsRouter);
 router.use("/categories", categoriesRouter);
+router.use("/pharmacy-orders", pharmacyRouter);
+router.use("/parcel-bookings", parcelRouter);
 
 export default router;

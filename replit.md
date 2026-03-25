@@ -48,6 +48,8 @@ artifacts/
 │   │   ├── mart/index.tsx      # Grocery shopping screen
 │   │   ├── food/index.tsx      # Food delivery screen
 │   │   ├── ride/index.tsx      # Bike/car booking screen
+│   │   ├── pharmacy/index.tsx  # On-demand pharmacy (medicine ordering)
+│   │   ├── parcel/index.tsx    # Parcel delivery booking (4-step flow)
 │   │   ├── cart/index.tsx      # Cart + checkout
 │   │   └── (tabs)/
 │   │       ├── _layout.tsx     # Tab navigation (Liquid Glass / Classic)

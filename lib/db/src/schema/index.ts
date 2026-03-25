@@ -4,3 +4,5 @@ export * from "./orders";
 export * from "./wallet_transactions";
 export * from "./rides";
 export * from "./live_locations";
+export * from "./pharmacy_orders";
+export * from "./parcel_bookings";

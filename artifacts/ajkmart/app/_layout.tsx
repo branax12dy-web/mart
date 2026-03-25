@@ -34,6 +34,8 @@ function RootLayoutNav() {
       <Stack.Screen name="food/index" options={{ headerShown: false }} />
       <Stack.Screen name="ride/index" options={{ headerShown: false }} />
       <Stack.Screen name="cart/index" options={{ headerShown: false }} />
+      <Stack.Screen name="pharmacy/index" options={{ headerShown: false }} />
+      <Stack.Screen name="parcel/index" options={{ headerShown: false }} />
     </Stack>
   );
 }

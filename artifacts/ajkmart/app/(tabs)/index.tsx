@@ -198,6 +198,24 @@ const BANNERS = [
     route: "/mart",
     cta: "Deals Dekho",
   },
+  {
+    title: "💊 Pharmacy",
+    desc:  "Ghar baithe medicines mangao — 25-40 min mein delivery!",
+    tag:   "🏥 On-Demand",
+    c1: "#7C3AED", c2: "#A855F7",
+    icon: "medkit-outline" as const,
+    route: "/pharmacy",
+    cta: "Order Karo",
+  },
+  {
+    title: "📦 Parcel Delivery",
+    desc:  "AJK mein kahin bhi parcel bhejein — Rs. 150 se shuru!",
+    tag:   "🚀 Fast Delivery",
+    c1: "#D97706", c2: "#F59E0B",
+    icon: "cube-outline" as const,
+    route: "/parcel",
+    cta: "Book Karo",
+  },
 ];
 
 function BannerCarousel() {
@@ -301,14 +319,14 @@ export default function HomeScreen() {
   }, []);
 
   const quickActions = [
-    { icon: "leaf-outline"    as const, label: "Fruits",   color: C.mart,    bg: C.martLight,  route: "/mart" },
-    { icon: "fish-outline"    as const, label: "Meat",     color: "#EF4444", bg: "#FEE2E2",    route: "/mart" },
-    { icon: "pizza-outline"   as const, label: "Pizza",    color: C.food,    bg: C.foodLight,  route: "/food" },
-    { icon: "bicycle-outline" as const, label: "Bike",     color: "#8B5CF6", bg: "#EDE9FE",    route: "/ride" },
-    { icon: "cafe-outline"    as const, label: "Drinks",   color: "#0891B2", bg: "#E0F2FE",    route: "/mart" },
-    { icon: "flash-outline"   as const, label: "Deals",    color: "#DC2626", bg: "#FEE2E2",    route: "/mart" },
-    { icon: "car-outline"     as const, label: "Car",      color: "#059669", bg: "#D1FAE5",    route: "/ride" },
-    { icon: "time-outline"    as const, label: "Track",    color: C.primary, bg: C.rideLight,  route: "/(tabs)/orders" },
+    { icon: "leaf-outline"    as const, label: "Fruits",    color: C.mart,    bg: C.martLight,  route: "/mart" },
+    { icon: "medkit-outline"  as const, label: "Pharmacy",  color: "#7C3AED", bg: "#F5F3FF",    route: "/pharmacy" },
+    { icon: "pizza-outline"   as const, label: "Pizza",     color: C.food,    bg: C.foodLight,  route: "/food" },
+    { icon: "bicycle-outline" as const, label: "Bike",      color: "#8B5CF6", bg: "#EDE9FE",    route: "/ride" },
+    { icon: "cube-outline"    as const, label: "Parcel",    color: "#D97706", bg: "#FFFBEB",    route: "/parcel" },
+    { icon: "flash-outline"   as const, label: "Deals",     color: "#DC2626", bg: "#FEE2E2",    route: "/mart" },
+    { icon: "car-outline"     as const, label: "Car",       color: "#059669", bg: "#D1FAE5",    route: "/ride" },
+    { icon: "time-outline"    as const, label: "Track",     color: C.primary, bg: C.rideLight,  route: "/(tabs)/orders" },
   ];
 
   return (
@@ -388,6 +406,34 @@ export default function HomeScreen() {
               tag="Instant"
               tagIcon="flash-outline"
               textC="#065F46" tagC="#065F46" tagBg="#A7F3D0"
+            />
+          </View>
+
+          {/* On-Demand Services Row */}
+          <View style={styles.halfRow}>
+            <SvcCard
+              onPress={() => router.push("/pharmacy")}
+              delay={340}
+              g1="#F5F3FF" g2="#EDE9FE"
+              ig1="#7C3AED" ig2="#A78BFA"
+              icon="medkit"
+              title={"💊 Pharmacy"}
+              sub={"Medicines\ndelivered fast"}
+              tag="25-40 min"
+              tagIcon="medkit-outline"
+              textC="#4C1D95" tagC="#4C1D95" tagBg="#DDD6FE"
+            />
+            <SvcCard
+              onPress={() => router.push("/parcel")}
+              delay={420}
+              g1="#FFFBEB" g2="#FEF3C7"
+              ig1="#D97706" ig2="#F59E0B"
+              icon="cube"
+              title={"📦 Parcel"}
+              sub={"Send parcels\nanywhere in AJK"}
+              tag="Rs. 150+"
+              tagIcon="cube-outline"
+              textC="#78350F" tagC="#78350F" tagBg="#FDE68A"
             />
           </View>
 
