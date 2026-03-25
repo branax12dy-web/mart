@@ -1,96 +1,153 @@
-# Workspace
+# AJKMart Super App — Workspace
 
-## Overview
+## Project Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+**AJKMart** is a full-stack "Super App" combining Grocery Shopping (Mart), Food Delivery, and Taxi/Bike Booking with a unified digital wallet. Built for Azad Jammu & Kashmir (AJK), Pakistan.
 
-## Stack
+### Artifacts
+- **`artifacts/ajkmart`** — Expo React Native mobile app (web-compatible via Expo Go)
+- **`artifacts/api-server`** — Express 5 REST API backend
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+### User Roles
+- `customer` — shops, orders food, books rides
+- `rider` — delivery/taxi driver (rider dashboard in profile)
+- `vendor` — store owner (vendor dashboard in profile)
+
+---
+
+## Tech Stack
+
+- **Monorepo**: pnpm workspaces (TypeScript composite projects)
+- **Frontend**: Expo React Native + NativeWind, Blue/White theme
+- **Backend**: Express 5 + PostgreSQL + Drizzle ORM
+- **Auth**: Phone number + OTP (dev mode returns OTP in response)
+- **API**: OpenAPI 3.1 → Orval codegen → React Query hooks + Zod schemas
+- **State**: AuthContext + CartContext (AsyncStorage persistence)
+- **Navigation**: expo-router file-based routing with native tabs
+
+---
+
+## Theme & Design
+
+- Primary: `#1A56DB` (blue)
+- Accent: `#F59E0B` (amber)
+- Success: `#10B981` (green)
+- Font: Inter (400, 500, 600, 700)
+
+---
 
 ## Structure
 
-```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+```
+artifacts/
+├── ajkmart/             # Expo mobile app
+│   ├── app/
+│   │   ├── index.tsx           # Root redirect (auth or tabs)
+│   │   ├── _layout.tsx         # Root stack layout + providers
+│   │   ├── auth/index.tsx      # Phone + OTP auth screen
+│   │   ├── mart/index.tsx      # Grocery shopping screen
+│   │   ├── food/index.tsx      # Food delivery screen
+│   │   ├── ride/index.tsx      # Bike/car booking screen
+│   │   ├── cart/index.tsx      # Cart + checkout
+│   │   └── (tabs)/
+│   │       ├── _layout.tsx     # Tab navigation (Liquid Glass / Classic)
+│   │       ├── index.tsx       # Home dashboard
+│   │       ├── orders.tsx      # Order history
+│   │       ├── wallet.tsx      # AJKMart Wallet
+│   │       └── profile.tsx     # User profile (role-aware)
+│   ├── context/
+│   │   ├── AuthContext.tsx     # Auth state + OTP flow
+│   │   └── CartContext.tsx     # Cart state + AsyncStorage
+│   └── constants/colors.ts    # Blue/white theme tokens
+│
+└── api-server/          # Express REST API
+    └── src/routes/
+        ├── auth.ts         # POST /auth/send-otp, /auth/verify-otp
+        ├── products.ts     # GET /products (filter by type/category/search)
+        ├── orders.ts       # GET/POST /orders
+        ├── wallet.ts       # GET /wallet/:userId, POST /wallet/topup
+        ├── rides.ts        # POST /rides/estimate, POST /rides, GET /rides/:id
+        ├── locations.ts    # Location tracking
+        └── categories.ts  # GET /categories (mart/food)
+
+lib/
+├── db/src/schema/         # Drizzle schemas: users, products, orders,
+│                          #   wallet_transactions, rides, live_locations
+├── api-spec/openapi.yaml  # OpenAPI 3.1 spec for all endpoints
+├── api-client-react/      # Generated React Query hooks + fetch client
+└── api-zod/               # Generated Zod schemas
+
+scripts/src/
+└── seed.ts                # Seeds 20 demo products (12 mart + 8 food)
 ```
 
-## TypeScript & Composite Projects
+---
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+## Key API Endpoints
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/send-otp` | Send OTP (returns OTP in dev) |
+| POST | `/api/auth/verify-otp` | Verify OTP, returns token + user |
+| GET | `/api/products?type=mart&category=&search=` | List products |
+| GET | `/api/categories?type=mart` | List categories |
+| GET | `/api/orders?userId=` | User orders |
+| POST | `/api/orders` | Place order |
+| GET | `/api/wallet/:userId` | Wallet balance + transactions |
+| POST | `/api/wallet/topup` | Add funds to wallet |
+| POST | `/api/rides/estimate` | Fare estimate (distance/fare/duration) |
+| POST | `/api/rides` | Book a ride |
+
+---
+
+## Ride Fare Formula
+- **Bike**: Rs. 15 base + Rs. 8/km
+- **Car**: Rs. 25 base + Rs. 12/km
+
+---
+
+## Running Locally
+
+```bash
+# API server (port from $PORT, default 8080)
+pnpm --filter @workspace/api-server run dev
+
+# Expo app (web preview via Expo)
+pnpm --filter @workspace/ajkmart run dev
+
+# Seed demo products
+pnpm --filter @workspace/scripts run seed
+
+# Push DB schema changes
+pnpm --filter @workspace/db run push
+
+# Regenerate API client (after changing openapi.yaml)
+pnpm --filter @workspace/api-spec run codegen
+```
+
+---
 
 ## Root Scripts
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- `pnpm run build` — typecheck then build all packages
+- `pnpm run typecheck` — `tsc --build --emitDeclarationOnly`
+
+---
 
 ## Packages
 
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
-
 ### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+Drizzle ORM + PostgreSQL. Exports `db` client and schema tables. Schema includes: `usersTable`, `productsTable`, `ordersTable`, `walletTransactionsTable`, `ridesTable`, `liveLocationsTable`.
 
 ### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+OpenAPI 3.1 spec (`openapi.yaml`) + Orval codegen config. Run `pnpm --filter @workspace/api-spec run codegen` to regenerate client.
 
 ### `lib/api-client-react` (`@workspace/api-client-react`)
+Generated React Query hooks (e.g. `useGetProducts`, `useGetWallet`) and raw fetch functions (e.g. `estimateFare`, `bookRide`, `topUpWallet`). Also exports `setBaseUrl` for configuring the API base URL.
 
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
+### `lib/api-zod` (`@workspace/api-zod`)
+Generated Zod schemas from OpenAPI spec used in the API server for validation.
 
 ### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Utility scripts. Run via `pnpm --filter @workspace/scripts run <script>`. Current scripts:
+- `seed` — seeds demo products and food items

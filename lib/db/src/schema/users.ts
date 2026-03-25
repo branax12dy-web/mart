@@ -1,0 +1,22 @@
+import { boolean, decimal, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const usersTable = pgTable("users", {
+  id: text("id").primaryKey(),
+  phone: text("phone").notNull().unique(),
+  name: text("name"),
+  email: text("email"),
+  role: text("role").notNull().default("customer"),
+  avatar: text("avatar"),
+  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0"),
+  otpCode: text("otp_code"),
+  otpExpiry: timestamp("otp_expiry"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertUserSchema = createInsertSchema(usersTable).omit({ createdAt: true, updatedAt: true });
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof usersTable.$inferSelect;
