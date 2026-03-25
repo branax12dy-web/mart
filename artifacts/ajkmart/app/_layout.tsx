@@ -3,14 +3,13 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
   Inter_700Bold,
-  useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl } from "@workspace/api-client-react";
+import * as Font from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -24,23 +23,6 @@ setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
-
-/* Suppress fontfaceobserver timeout errors on web — these are non-fatal
-   and only occur because the sandboxed iframe blocks scroll-based detection. */
-if (Platform.OS === "web" && typeof window !== "undefined") {
-  const _origOnError = window.onerror;
-  window.onerror = (msg, src, line, col, err) => {
-    if (typeof msg === "string" && msg.includes("timeout exceeded")) return true;
-    if (_origOnError) return _origOnError(msg, src, line, col, err);
-    return false;
-  };
-  const _origUnhandled = window.onunhandledrejection;
-  window.addEventListener("unhandledrejection", (e) => {
-    if (e?.reason?.message?.includes("timeout exceeded")) {
-      e.preventDefault();
-    }
-  });
-}
 
 function RootLayoutNav() {
   return (
@@ -59,26 +41,41 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
+  const [ready, setReady] = useState(false);
 
-  /* Fallback: if fonts haven't resolved after 4 s, show the app anyway.
-     This prevents a blank screen when fontfaceobserver times out on web. */
-  const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), 4000);
-    return () => clearTimeout(t);
+    let cancelled = false;
+
+    const loadFonts = async () => {
+      try {
+        /* Attach .catch() to the font promise BEFORE the race so that
+           if fontfaceobserver rejects AFTER the timeout resolves, the
+           rejection is already handled and never becomes unhandled. */
+        const fontPromise = Font.loadAsync({
+          Inter_400Regular,
+          Inter_500Medium,
+          Inter_600SemiBold,
+          Inter_700Bold,
+        }).catch(() => { /* handled — fall back to system fonts */ });
+
+        /* Race: whichever wins (font loaded or 4-second timeout), continue. */
+        await Promise.race([
+          fontPromise,
+          new Promise<void>(resolve => setTimeout(resolve, 2000)),
+        ]);
+      } catch {
+        /* Extra safety net for any other unexpected errors. */
+      } finally {
+        if (!cancelled) {
+          setReady(true);
+          SplashScreen.hideAsync();
+        }
+      }
+    };
+
+    loadFonts();
+    return () => { cancelled = true; };
   }, []);
-
-  const ready = fontsLoaded || !!fontError || timedOut;
-
-  useEffect(() => {
-    if (ready) SplashScreen.hideAsync();
-  }, [ready]);
 
   if (!ready) return null;
 
