@@ -7,12 +7,14 @@ export interface CartItem {
   price: number;
   quantity: number;
   image?: string;
+  type: "mart" | "food";
 }
 
 interface CartContextType {
   items: CartItem[];
   itemCount: number;
   total: number;
+  cartType: "mart" | "food" | "mixed";
   addItem: (item: CartItem) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
@@ -40,7 +42,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (existing) {
       save(items.map(i => i.productId === item.productId ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
-      save([...items, item]);
+      save([...items, { ...item, type: item.type || "mart" }]);
     }
   };
 
@@ -56,8 +58,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
   const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
+  const types = [...new Set(items.map(i => i.type))];
+  const cartType: "mart" | "food" | "mixed" =
+    types.length === 0 ? "mart" :
+    types.length === 1 ? (types[0] as "mart" | "food") :
+    "mixed";
+
   return (
-    <CartContext.Provider value={{ items, itemCount, total, addItem, removeItem, updateQuantity, clearCart }}>
+    <CartContext.Provider value={{ items, itemCount, total, cartType, addItem, removeItem, updateQuantity, clearCart }}>
       {children}
     </CartContext.Provider>
   );

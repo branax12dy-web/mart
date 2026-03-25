@@ -24,7 +24,7 @@ function FoodCard({ item }: { item: any }) {
   const [added, setAdded] = useState(false);
 
   const handleAdd = () => {
-    addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image });
+    addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: "food" });
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
   };
