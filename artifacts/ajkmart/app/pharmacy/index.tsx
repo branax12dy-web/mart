@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useState, useRef } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   Modal,
   Platform,
@@ -18,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 
 const C = Colors.light;
 const W = Dimensions.get("window").width;
@@ -107,6 +107,7 @@ export default function PharmacyScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user, updateUser } = useAuth();
+  const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState("All");
   const [search, setSearch] = useState("");
@@ -143,11 +144,11 @@ export default function PharmacyScreen() {
 
   const placeOrder = async () => {
     if (!address.trim() || !phone.trim()) {
-      Alert.alert("Required", "Please enter delivery address and phone number");
+      showToast("Delivery address aur phone number enter karein", "error");
       return;
     }
     if (cartItems.length === 0) {
-      Alert.alert("Empty Cart", "Please add at least one medicine");
+      showToast("Cart mein kam az kam ek medicine add karein", "error");
       return;
     }
     setLoading(true);
@@ -167,7 +168,7 @@ export default function PharmacyScreen() {
       });
       const data = await res.json();
       if (!res.ok) {
-        Alert.alert("Error", data.error || "Could not place order");
+        showToast(data.error || "Order place nahi ho saka", "error");
         return;
       }
       if (payMethod === "wallet" && user) {
@@ -177,7 +178,7 @@ export default function PharmacyScreen() {
       setConfirmed(true);
       setCart({});
     } catch {
-      Alert.alert("Error", "Network error. Please try again.");
+      showToast("Network error. Dobara try karein.", "error");
     } finally {
       setLoading(false);
     }

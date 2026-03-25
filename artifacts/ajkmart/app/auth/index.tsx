@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -29,30 +28,34 @@ export default function AuthScreen() {
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [devOtp, setDevOtp] = useState("");
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const handleSendOtp = async () => {
+    setError("");
     if (!phone || phone.length < 10) {
-      Alert.alert("Invalid", "Enter a valid phone number");
+      setError("Valid phone number enter karein (10 digits)");
       return;
     }
     setLoading(true);
     try {
       const res = await sendOtp({ phone });
-      if (res.otp) Alert.alert("Dev Mode", `Your OTP is: ${res.otp}`);
+      if (res.otp) setDevOtp(res.otp); // show OTP inline in dev mode
       Animated.timing(slideAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
       setStep("otp");
     } catch {
-      Alert.alert("Error", "Failed to send OTP. Please try again.");
+      setError("OTP send nahi ho saka. Dobara try karein.");
     }
     setLoading(false);
   };
 
   const handleVerifyOtp = async () => {
+    setError("");
     if (!otp || otp.length < 4) {
-      Alert.alert("Invalid", "Enter the OTP you received");
+      setError("OTP enter karein jo aapko mila");
       return;
     }
     setLoading(true);
@@ -61,7 +64,7 @@ export default function AuthScreen() {
       await login(res.user as any, res.token);
       router.replace("/(tabs)");
     } catch {
-      Alert.alert("Error", "Invalid OTP. Please try again.");
+      setError("OTP galat hai. Dobara try karein.");
     }
     setLoading(false);
   };
@@ -97,7 +100,7 @@ export default function AuthScreen() {
               <TextInput
                 style={styles.input}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={v => { setPhone(v); setError(""); }}
                 placeholder="3XX XXX XXXX"
                 placeholderTextColor={C.textMuted}
                 keyboardType="phone-pad"
@@ -107,20 +110,33 @@ export default function AuthScreen() {
           ) : (
             <View>
               <TextInput
-                style={[styles.input, styles.otpInput]}
+                style={[styles.input, styles.otpInput, error ? styles.inputError : null]}
                 value={otp}
-                onChangeText={setOtp}
+                onChangeText={v => { setOtp(v); setError(""); }}
                 placeholder="Enter 6-digit OTP"
                 placeholderTextColor={C.textMuted}
                 keyboardType="number-pad"
                 maxLength={6}
                 autoFocus
               />
+              {devOtp ? (
+                <View style={styles.devOtpBox}>
+                  <Ionicons name="key-outline" size={14} color="#059669" />
+                  <Text style={styles.devOtpTxt}>Dev Mode — OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{devOtp}</Text></Text>
+                </View>
+              ) : null}
               <Pressable onPress={handleSendOtp} style={styles.resendBtn}>
                 <Text style={styles.resendText}>Resend OTP</Text>
               </Pressable>
             </View>
           )}
+
+          {error ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={15} color="#DC2626" />
+              <Text style={styles.errorTxt}>{error}</Text>
+            </View>
+          ) : null}
 
           <Pressable
             onPress={step === "phone" ? handleSendOtp : handleVerifyOtp}
@@ -137,7 +153,7 @@ export default function AuthScreen() {
           </Pressable>
 
           {step === "otp" && (
-            <Pressable onPress={() => setStep("phone")} style={styles.backBtn}>
+            <Pressable onPress={() => { setStep("phone"); setError(""); setDevOtp(""); }} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={16} color={C.primary} />
               <Text style={styles.backBtnText}>Change number</Text>
             </Pressable>
@@ -161,12 +177,17 @@ const styles = StyleSheet.create({
   tagline: { fontFamily: "Inter_400Regular", fontSize: 16, color: "rgba(255,255,255,0.85)" },
   card: { backgroundColor: "#fff", borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 28, flex: 1 },
   cardTitle: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, marginBottom: 6 },
-  cardSubtitle: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, marginBottom: 28 },
-  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: C.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 },
+  cardSubtitle: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, marginBottom: 24 },
+  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: C.border, borderRadius: 14, overflow: "hidden", marginBottom: 8 },
   countryCode: { paddingHorizontal: 14, paddingVertical: 16, backgroundColor: C.surfaceSecondary, borderRightWidth: 1, borderRightColor: C.border },
   countryCodeText: { fontFamily: "Inter_600SemiBold", fontSize: 16, color: C.text },
   input: { flex: 1, paddingHorizontal: 16, paddingVertical: 16, fontFamily: "Inter_500Medium", fontSize: 16, color: C.text },
-  otpInput: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 16, marginBottom: 12, letterSpacing: 6, textAlign: "center", fontSize: 22 },
+  otpInput: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 16, marginBottom: 8, letterSpacing: 6, textAlign: "center", fontSize: 22 },
+  inputError: { borderColor: "#EF4444" },
+  errorBox: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FEF2F2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: "#FECACA" },
+  errorTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#DC2626", flex: 1 },
+  devOtpBox: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#ECFDF5", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: "#A7F3D0" },
+  devOtpTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#059669", flex: 1 },
   btn: { backgroundColor: C.primary, borderRadius: 14, paddingVertical: 17, alignItems: "center", marginTop: 8 },
   btnDisabled: { opacity: 0.7 },
   btnText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },

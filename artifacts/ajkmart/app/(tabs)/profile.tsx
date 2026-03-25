@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
   Pressable,
@@ -19,6 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 
 const C   = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
@@ -38,16 +38,19 @@ function relativeTime(iso: string) {
 ══════════════════════════════════════════ */
 function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { user, updateUser } = useAuth();
+  const { showToast } = useToast();
   const [name,   setName]   = useState(user?.name  || "");
   const [email,  setEmail]  = useState(user?.email || "");
   const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState("");
 
   useEffect(() => {
-    if (visible) { setName(user?.name || ""); setEmail(user?.email || ""); }
+    if (visible) { setName(user?.name || ""); setEmail(user?.email || ""); setError(""); }
   }, [visible, user]);
 
   const save = async () => {
-    if (!name.trim()) { Alert.alert("Required", "Naam zaroor likhein"); return; }
+    if (!name.trim()) { setError("Naam zaroor likhein"); return; }
+    setError("");
     setSaving(true);
     try {
       const res = await fetch(`${API}/users/profile`, {
@@ -58,8 +61,8 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
       if (!res.ok) throw new Error();
       updateUser({ name: name.trim(), email: email.trim() });
       onClose();
-      Alert.alert("✅ Profile Updated", "Aapki info save ho gayi!");
-    } catch { Alert.alert("Error", "Update fail. Dobara try karein."); }
+      showToast("Profile update ho gayi!", "success");
+    } catch { showToast("Update fail. Dobara try karein.", "error"); }
     setSaving(false);
   };
 
@@ -118,7 +121,14 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
             />
           </View>
 
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 20 }}>
+          {error ? (
+            <View style={st.errorBox}>
+              <Ionicons name="alert-circle-outline" size={14} color="#DC2626" />
+              <Text style={st.errorTxt}>{error}</Text>
+            </View>
+          ) : null}
+
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
             <Pressable onPress={onClose} style={st.cancelBtn}>
               <Text style={st.cancelTxt}>Cancel</Text>
             </Pressable>
@@ -242,6 +252,7 @@ function NotificationsModal({ visible, userId, onClose }: {
    PRIVACY & SECURITY MODAL
 ══════════════════════════════════════════ */
 function PrivacyModal({ visible, userId, onClose }: { visible: boolean; userId: string; onClose: () => void }) {
+  const { showToast } = useToast();
   const [cfg,     setCfg]     = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState<string | null>(null);
@@ -312,7 +323,7 @@ function PrivacyModal({ visible, userId, onClose }: { visible: boolean; userId: 
             <View>
               <Text style={pv.secTitle}>⚙️ Account Actions</Text>
               <View style={pv.card}>
-                <Pressable onPress={() => Alert.alert("Data Export", "Aapka data 24 ghante mein email par bheja jayega.")} style={[pv.row, { borderBottomWidth: 0 }]}>
+                <Pressable onPress={() => showToast("Aapka data 24 ghante mein email par bheja jayega.", "info")} style={[pv.row, { borderBottomWidth: 0 }]}>
                   <View style={[pv.rIcon, { backgroundColor: "#F1F5F9" }]}><Ionicons name="download-outline" size={17} color="#64748B" /></View>
                   <View style={{ flex: 1 }}><Text style={pv.rLabel}>Download My Data</Text><Text style={pv.rSub}>Apna pura data export karein</Text></View>
                   <Ionicons name="chevron-forward" size={15} color={C.textMuted} />
@@ -337,6 +348,7 @@ const LABEL_OPTS = [
 const AJK_CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Poonch","Neelum Valley"];
 
 function AddressesModal({ visible, userId, onClose }: { visible: boolean; userId: string; onClose: () => void }) {
+  const { showToast } = useToast();
   const [list,    setList]    = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -355,20 +367,25 @@ function AddressesModal({ visible, userId, onClose }: { visible: boolean; userId
 
   useEffect(() => { if (visible) load(); }, [visible, load]);
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   const add = async () => {
-    if (!addr.trim()) { Alert.alert("Required", "Address likhein"); return; }
+    if (!addr.trim()) { showToast("Address zaroor likhein", "error"); return; }
     setSaving(true);
     const opt = LABEL_OPTS.find(o => o.label === label)!;
     try {
       await fetch(`${API}/addresses`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, label, address: addr.trim(), city, icon: opt.icon, isDefault: list.length === 0 }) });
       setAddr(""); setCity("Muzaffarabad"); setShowAdd(false); await load();
-    } catch { Alert.alert("Error", "Save nahi ho saka"); }
+      showToast("Address save ho gaya!", "success");
+    } catch { showToast("Address save nahi ho saka", "error"); }
     setSaving(false);
   };
-  const del = (id: string) => Alert.alert("Delete?", "Is address ko delete karein?", [
-    { text: "Nahi", style: "cancel" },
-    { text: "Delete", style: "destructive", onPress: async () => { await fetch(`${API}/addresses/${id}`, { method: "DELETE" }); setList(p => p.filter(a => a.id !== id)); } },
-  ]);
+  const del = async (id: string) => {
+    await fetch(`${API}/addresses/${id}`, { method: "DELETE" });
+    setList(p => p.filter(a => a.id !== id));
+    setDeleteConfirmId(null);
+    showToast("Address delete ho gaya", "info");
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -439,9 +456,20 @@ function AddressesModal({ visible, userId, onClose }: { visible: boolean; userId
                     <Text style={ad.iAddr}>{a.address}</Text>
                     <Text style={ad.iCity}>{a.city}, AJK</Text>
                   </View>
-                  <Pressable onPress={() => del(a.id)} style={ad.delBtn}>
-                    <Ionicons name="trash-outline" size={16} color={C.danger} />
-                  </Pressable>
+                  {deleteConfirmId === a.id ? (
+                    <View style={{ flexDirection: "row", gap: 6 }}>
+                      <Pressable onPress={() => del(a.id)} style={[ad.delBtn, { backgroundColor: "#FEE2E2", paddingHorizontal: 8, borderRadius: 6, width: "auto" as any }]}>
+                        <Text style={{ fontSize: 11, color: C.danger, fontWeight: "600" }}>Haan</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setDeleteConfirmId(null)} style={[ad.delBtn, { backgroundColor: "#F1F5F9", paddingHorizontal: 8, borderRadius: 6, width: "auto" as any }]}>
+                        <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: "600" }}>Nahi</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable onPress={() => setDeleteConfirmId(a.id)} style={ad.delBtn}>
+                      <Ionicons name="trash-outline" size={16} color={C.danger} />
+                    </Pressable>
+                  )}
                 </View>
               );
             })}
@@ -459,6 +487,7 @@ function AddressesModal({ visible, userId, onClose }: { visible: boolean; userId
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout, updateUser } = useAuth();
+  const { showToast } = useToast();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [showEdit,    setShowEdit]    = useState(false);
@@ -634,24 +663,24 @@ export default function ProfileScreen() {
         {/* ── Vendor / Rider dashboard ── */}
         {user?.role === "vendor" && (
           <SectionCard title="VENDOR DASHBOARD">
-            <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => Alert.alert("Coming Soon", "Product management jald aa raha hai!")} iconColor={C.mart} iconBg={C.martLight} />
-            <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue aur sales"     onPress={() => Alert.alert("Coming Soon", "Analytics jald aa raha hai!")}           iconColor={C.primary} iconBg={C.rideLight} />
-            <Row icon="receipt-outline"    label="Incoming Orders" sub="Naye orders dekho"     onPress={() => Alert.alert("Coming Soon", "Order management jald aa raha hai!")}    iconColor={C.food} iconBg={C.foodLight} />
+            <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => showToast("Product management jald aa raha hai!", "info")} iconColor={C.mart} iconBg={C.martLight} />
+            <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue aur sales"     onPress={() => showToast("Analytics jald aa raha hai!", "info")}           iconColor={C.primary} iconBg={C.rideLight} />
+            <Row icon="receipt-outline"    label="Incoming Orders" sub="Naye orders dekho"     onPress={() => showToast("Order management jald aa raha hai!", "info")}    iconColor={C.food} iconBg={C.foodLight} />
           </SectionCard>
         )}
         {user?.role === "rider" && (
           <SectionCard title="RIDER DASHBOARD">
-            <Row icon="bicycle-outline" label="Active Deliveries" sub="Current deliveries"    onPress={() => Alert.alert("Coming Soon", "Active deliveries jald!")}     iconColor={C.success} iconBg="#D1FAE5" />
-            <Row icon="cash-outline"    label="My Earnings"       sub="Daily/monthly earnings" onPress={() => Alert.alert("Coming Soon", "Earnings tracking jald!")}      iconColor={C.food}    iconBg={C.foodLight} />
-            <Row icon="star-outline"    label="My Rating"         sub="4.9 ⭐ • 250+ trips"   onPress={() => Alert.alert("Rating", "⭐⭐⭐⭐⭐ 4.9/5.0\n250+ trips completed")} iconColor="#F59E0B" iconBg="#FEF3C7" />
+            <Row icon="bicycle-outline" label="Active Deliveries" sub="Current deliveries"    onPress={() => showToast("Active deliveries feature jald aa raha hai!", "info")}     iconColor={C.success} iconBg="#D1FAE5" />
+            <Row icon="cash-outline"    label="My Earnings"       sub="Daily/monthly earnings" onPress={() => showToast("Earnings tracking jald aa raha hai!", "info")}      iconColor={C.food}    iconBg={C.foodLight} />
+            <Row icon="star-outline"    label="My Rating"         sub="4.9 ⭐ • 250+ trips"   onPress={() => showToast("Rating: ⭐⭐⭐⭐⭐ 4.9/5.0 • 250+ trips completed", "success")} iconColor="#F59E0B" iconBg="#FEF3C7" />
           </SectionCard>
         )}
 
         {/* ── Support ── */}
         <SectionCard title="SUPPORT">
-          <Row icon="help-circle-outline"   label="Help & FAQ"       sub="Aam sawaal aur jawab"   onPress={() => Alert.alert("Help Center", "📞 Helpline: 0300-AJKMART\n📧 help@ajkmart.pk\n⏰ 8AM–10PM daily")} iconColor="#64748B" iconBg="#F1F5F9" />
-          <Row icon="chatbubble-outline"    label="Live Chat"        sub="Online support"          onPress={() => Alert.alert("Live Chat", "📞 0300-AJKMART\n📧 support@ajkmart.pk\nAvg response: 5 min")} iconColor="#0891B2" iconBg="#E0F2FE" />
-          <Row icon="document-text-outline" label="Terms of Service" sub="Terms aur conditions"   onPress={() => Alert.alert("Terms", "AJKMart use karte hue aap hamare terms se agree karte hain.\najkmart.pk/terms")} iconColor="#64748B" iconBg="#F1F5F9" />
+          <Row icon="help-circle-outline"   label="Help & FAQ"       sub="Aam sawaal aur jawab"   onPress={() => showToast("📞 0300-AJKMART  📧 help@ajkmart.pk  ⏰ 8AM–10PM", "info")} iconColor="#64748B" iconBg="#F1F5F9" />
+          <Row icon="chatbubble-outline"    label="Live Chat"        sub="Online support"          onPress={() => showToast("📞 0300-AJKMART  📧 support@ajkmart.pk  ⏱ Avg 5 min", "info")} iconColor="#0891B2" iconBg="#E0F2FE" />
+          <Row icon="document-text-outline" label="Terms of Service" sub="Terms aur conditions"   onPress={() => showToast("AJKMart use karte hue aap hamare terms se agree karte hain — ajkmart.pk/terms", "info")} iconColor="#64748B" iconBg="#F1F5F9" />
         </SectionCard>
 
         {/* ── App Info ── */}
@@ -803,6 +832,8 @@ const st = StyleSheet.create({
   cancelTxt: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary },
   saveBtn: { flex: 2, backgroundColor: C.primary, borderRadius: 13, paddingVertical: 14, alignItems: "center" },
   saveTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
+  errorBox: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FEF2F2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8, borderWidth: 1, borderColor: "#FECACA" },
+  errorTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#DC2626", flex: 1 },
 });
 
 /* Notifications */

@@ -3,7 +3,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
   Pressable,
@@ -18,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { useGetWallet, topUpWallet } from "@workspace/api-client-react";
 
 const C   = Colors.light;
@@ -57,6 +57,7 @@ function TxItem({ tx }: { tx: any }) {
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
+  const { showToast } = useToast();
   const qc = useQueryClient();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -88,8 +89,8 @@ export default function WalletScreen() {
 
   const handleTopUp = async () => {
     const num = parseFloat(amount);
-    if (!num || num < 100)   { Alert.alert("Invalid", "Minimum Rs. 100 add karein"); return; }
-    if (num > 50000)         { Alert.alert("Limit",   "Maximum Rs. 50,000 per top-up"); return; }
+    if (!num || num < 100)   { showToast("Minimum Rs. 100 add karein", "error"); return; }
+    if (num > 50000)         { showToast("Maximum Rs. 50,000 per top-up", "error"); return; }
     setLoading(true);
     try {
       const result = await topUpWallet({ userId: user!.id, amount: num });
@@ -98,16 +99,16 @@ export default function WalletScreen() {
       qc.invalidateQueries({ queryKey: ["getWallet"] });
       setShowTopUp(false);
       setAmount("");
-      Alert.alert("✅ Top-Up Successful!", `Rs. ${num.toLocaleString()} aapke wallet mein add ho gaya!`);
-    } catch { Alert.alert("Error", "Top-up fail. Please try again."); }
+      showToast(`Rs. ${num.toLocaleString()} wallet mein add ho gaya!`, "success");
+    } catch { showToast("Top-up fail. Dobara try karein.", "error"); }
     setLoading(false);
   };
 
   const handleSend = async () => {
-    if (!sendPhone.trim()) { Alert.alert("Required", "Receiver ka phone number enter karein"); return; }
+    if (!sendPhone.trim()) { showToast("Receiver ka phone number enter karein", "error"); return; }
     const num = parseFloat(sendAmount);
-    if (!num || num < 50)  { Alert.alert("Invalid", "Minimum Rs. 50 transfer"); return; }
-    if (num > (balance))   { Alert.alert("Insufficient", "Wallet mein enough balance nahi"); return; }
+    if (!num || num < 50)  { showToast("Minimum Rs. 50 transfer karein", "error"); return; }
+    if (num > balance)     { showToast("Wallet mein enough balance nahi", "error"); return; }
     setSendLoading(true);
     try {
       const res = await fetch(`${API}/wallet/send`, {
@@ -116,13 +117,13 @@ export default function WalletScreen() {
         body: JSON.stringify({ senderUserId: user!.id, receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
       });
       const data = await res.json();
-      if (!res.ok) { Alert.alert("Error", data.error || "Transfer failed"); setSendLoading(false); return; }
+      if (!res.ok) { showToast(data.error || "Transfer fail ho gaya", "error"); setSendLoading(false); return; }
       updateUser({ walletBalance: data.newBalance });
       qc.invalidateQueries({ queryKey: ["getWallet"] });
       setShowSend(false);
       setSendPhone(""); setSendAmount(""); setSendNote("");
-      Alert.alert("✅ Transfer Complete!", `Rs. ${num.toLocaleString()} ${data.receiverName || sendPhone} ko bhej diye!`);
-    } catch { Alert.alert("Error", "Network error. Try again."); }
+      showToast(`Rs. ${num.toLocaleString()} ${data.receiverName || sendPhone} ko bhej diye!`, "success");
+    } catch { showToast("Network error. Dobara try karein.", "error"); }
     setSendLoading(false);
   };
 

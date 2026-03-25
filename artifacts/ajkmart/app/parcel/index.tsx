@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
   Pressable,
@@ -17,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 
 const C = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
@@ -72,6 +72,7 @@ export default function ParcelScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user, updateUser } = useAuth();
+  const { showToast } = useToast();
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -101,17 +102,17 @@ export default function ParcelScreen() {
 
   const validateStep = (s: number): boolean => {
     if (s === 0) {
-      if (!senderName.trim()) { Alert.alert("Required", "Sender name required"); return false; }
-      if (!senderPhone.trim()) { Alert.alert("Required", "Sender phone required"); return false; }
-      if (!pickupAddress.trim()) { Alert.alert("Required", "Pickup address required"); return false; }
+      if (!senderName.trim()) { showToast("Sender ka naam likhein", "error"); return false; }
+      if (!senderPhone.trim()) { showToast("Sender ka phone number likhein", "error"); return false; }
+      if (!pickupAddress.trim()) { showToast("Pickup address likhein", "error"); return false; }
     }
     if (s === 1) {
-      if (!receiverName.trim()) { Alert.alert("Required", "Receiver name required"); return false; }
-      if (!receiverPhone.trim()) { Alert.alert("Required", "Receiver phone required"); return false; }
-      if (!dropAddress.trim()) { Alert.alert("Required", "Drop address required"); return false; }
+      if (!receiverName.trim()) { showToast("Receiver ka naam likhein", "error"); return false; }
+      if (!receiverPhone.trim()) { showToast("Receiver ka phone number likhein", "error"); return false; }
+      if (!dropAddress.trim()) { showToast("Drop address likhein", "error"); return false; }
     }
     if (s === 2) {
-      if (!parcelType) { Alert.alert("Required", "Please select parcel type"); return false; }
+      if (!parcelType) { showToast("Parcel type select karein", "error"); return false; }
     }
     return true;
   };
@@ -139,7 +140,7 @@ export default function ParcelScreen() {
       });
       const data = await res.json();
       if (!res.ok) {
-        Alert.alert("Error", data.error || "Could not book parcel");
+        showToast(data.error || "Parcel book nahi ho saka", "error");
         return;
       }
       if (payMethod === "wallet" && user) {
@@ -149,7 +150,7 @@ export default function ParcelScreen() {
       setConfirmedFare(data.fare);
       setConfirmed(true);
     } catch {
-      Alert.alert("Error", "Network error. Please try again.");
+      showToast("Network error. Dobara try karein.", "error");
     } finally {
       setLoading(false);
     }

@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Dimensions,
   Modal,
@@ -19,6 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 
 const C   = Colors.light;
 const W   = Dimensions.get("window").width;
@@ -250,6 +250,7 @@ function ConfirmedScreen({ booked, driver, onReset }: { booked: any; driver: typ
 export default function RideScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
+  const { showToast } = useToast();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [pickup,     setPickup]    = useState("");
@@ -286,13 +287,10 @@ export default function RideScreen() {
   const dropSugg   = AJK_LOCS.filter(l => !drop   || l.name.toLowerCase().includes(drop.toLowerCase()));
 
   const handleBook = async () => {
-    if (!pickup || !drop) { Alert.alert("Required", "Pickup aur drop location select karein"); return; }
-    if (!user)            { Alert.alert("Login", "Please login to book a ride"); return; }
+    if (!pickup || !drop) { showToast("Pickup aur drop location select karein", "error"); return; }
+    if (!user)            { showToast("Login karein ride book karne ke liye", "error"); return; }
     if (payMethod === "wallet" && estimate && (user.walletBalance ?? 0) < estimate.fare) {
-      Alert.alert("Insufficient Balance", `Wallet balance: Rs. ${user.walletBalance}\nFare: Rs. ${estimate.fare}`, [
-        { text: "Cancel" },
-        { text: "Top Up", onPress: () => router.push("/(tabs)/wallet") },
-      ]);
+      showToast(`Wallet balance Rs. ${user.walletBalance} — fare Rs. ${estimate.fare} se kam hai. Wallet top up karein.`, "error");
       return;
     }
     setBooking(true);
@@ -309,11 +307,11 @@ export default function RideScreen() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) { Alert.alert("Error", data.error || "Booking failed"); return; }
+      if (!res.ok) { showToast(data.error || "Booking fail ho gayi", "error"); return; }
       if (payMethod === "wallet") updateUser({ walletBalance: (user.walletBalance ?? 0) - data.fare });
       setBooked(data);
       setSearching(true);
-    } catch { Alert.alert("Error", "Network error. Please try again."); }
+    } catch { showToast("Network error. Dobara try karein.", "error"); }
     finally { setBooking(false); }
   };
 

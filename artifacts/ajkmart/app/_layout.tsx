@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { ToastProvider } from "@/context/ToastContext";
 
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 
@@ -114,7 +115,9 @@ export default function RootLayout() {
             <KeyboardProvider>
               <AuthProvider>
                 <CartProvider>
-                  <RootLayoutNav />
+                  <ToastProvider>
+                    <RootLayoutNav />
+                  </ToastProvider>
                 </CartProvider>
               </AuthProvider>
             </KeyboardProvider>

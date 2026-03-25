@@ -3,7 +3,6 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
+import { useToast } from "@/context/ToastContext";
 import { createOrder } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -26,8 +26,11 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
   const { items, total, cartType, updateQuantity, removeItem, clearCart } = useCart();
+  const { showToast } = useToast();
   const [payMethod, setPayMethod] = useState<PayMethod>("cash");
   const [loading, setLoading] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState<{ id: string; time: string } | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const deliveryFee = cartType === "food" ? 60 : 80;
@@ -35,22 +38,15 @@ export default function CartScreen() {
 
   const handleCheckout = async () => {
     if (!user) {
-      Alert.alert("Login Required", "Please login to place an order");
+      showToast("Login karein order place karne ke liye", "error");
       return;
     }
     if (items.length === 0) {
-      Alert.alert("Empty Cart", "Add items to your cart first");
+      showToast("Cart mein koi item nahi hai", "error");
       return;
     }
     if (payMethod === "wallet" && user.walletBalance < grandTotal) {
-      Alert.alert(
-        "Insufficient Balance",
-        `Wallet balance Rs. ${user.walletBalance} is less than Rs. ${grandTotal}. Please top up.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Top Up Wallet", onPress: () => router.push("/(tabs)/wallet") },
-        ]
-      );
+      showToast(`Wallet balance Rs. ${user.walletBalance} kam hai. Rs. ${grandTotal} chahiye — wallet top up karein`, "error");
       return;
     }
 
@@ -70,26 +66,46 @@ export default function CartScreen() {
         paymentMethod: payMethod,
       });
 
-      // Deduct wallet balance locally if wallet payment
       if (payMethod === "wallet") {
         updateUser({ walletBalance: user.walletBalance - grandTotal });
       }
 
       clearCart();
-
-      Alert.alert(
-        "✅ Order Placed!",
-        `Your order #${(order as any).id?.slice(-6).toUpperCase()} has been confirmed.\nEstimated delivery: ${(order as any).estimatedTime || "30-45 min"}`,
-        [
-          { text: "Track Order", onPress: () => router.push("/(tabs)/orders") },
-          { text: "Continue Shopping", onPress: () => router.back() },
-        ]
-      );
+      setOrderSuccess({
+        id: (order as any).id?.slice(-6).toUpperCase() || "------",
+        time: (order as any).estimatedTime || "30-45 min",
+      });
     } catch (e: any) {
-      Alert.alert("Order Failed", e.message || "Something went wrong. Please try again.");
+      showToast(e.message || "Order place nahi ho saka. Dobara try karein.", "error");
     }
     setLoading(false);
   };
+
+  /* ── Order Success Screen ── */
+  if (orderSuccess) {
+    return (
+      <View style={[styles.container, { backgroundColor: C.background }]}>
+        <View style={styles.successWrap}>
+          <LinearGradient colors={["#065F46","#059669"]} style={styles.successCircle}>
+            <Ionicons name="checkmark" size={44} color="#fff" />
+          </LinearGradient>
+          <Text style={styles.successTitle}>Order Placed! 🎉</Text>
+          <Text style={styles.successId}>Order #{orderSuccess.id}</Text>
+          <Text style={styles.successEta}>Estimated delivery: {orderSuccess.time}</Text>
+          <View style={styles.successBtns}>
+            <Pressable onPress={() => router.push("/(tabs)/orders")} style={styles.trackBtn}>
+              <Ionicons name="navigate-outline" size={16} color="#fff" />
+              <Text style={styles.trackBtnTxt}>Track Order</Text>
+            </Pressable>
+            <Pressable onPress={() => router.replace("/(tabs)")} style={styles.homeBtn}>
+              <Ionicons name="home-outline" size={16} color={C.primary} />
+              <Text style={styles.homeBtnTxt}>Home</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -144,15 +160,27 @@ export default function CartScreen() {
             <Text style={styles.headerSub}>{items.length} item{items.length !== 1 ? "s" : ""}</Text>
           </View>
           <Pressable
-            onPress={() => Alert.alert("Clear Cart?", "Remove all items?", [
-              { text: "Cancel", style: "cancel" },
-              { text: "Clear", style: "destructive", onPress: clearCart },
-            ])}
+            onPress={() => setShowClearConfirm(true)}
             style={styles.clearBtn}
           >
             <Text style={styles.clearText}>Clear</Text>
           </Pressable>
         </View>
+
+        {/* Inline clear confirm */}
+        {showClearConfirm && (
+          <View style={styles.clearConfirm}>
+            <Text style={styles.clearConfirmTxt}>Saare items remove karein?</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable onPress={() => setShowClearConfirm(false)} style={styles.clearNo}>
+                <Text style={styles.clearNoTxt}>Nahi</Text>
+              </Pressable>
+              <Pressable onPress={() => { clearCart(); setShowClearConfirm(false); }} style={styles.clearYes}>
+                <Text style={styles.clearYesTxt}>Haan, Clear</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
       </LinearGradient>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -196,9 +224,6 @@ export default function CartScreen() {
               <Text style={styles.infoLabel}>Delivery Address</Text>
               <Text style={styles.infoValue}>Home, AJK, Pakistan</Text>
             </View>
-            <Pressable>
-              <Text style={styles.changeText}>Change</Text>
-            </Pressable>
           </View>
           <View style={[styles.infoRow, { borderTopWidth: 1, borderTopColor: C.borderLight, marginTop: 8, paddingTop: 10 }]}>
             <Ionicons name="time-outline" size={18} color={C.success} />
@@ -227,7 +252,7 @@ export default function CartScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.payLabel, payMethod === "wallet" && { color: C.text }]}>AJKMart Wallet</Text>
-              <Text style={[styles.paySub, user?.walletBalance < grandTotal && { color: C.danger }]}>
+              <Text style={[styles.paySub, user && user.walletBalance < grandTotal && { color: C.danger }]}>
                 Balance: Rs. {user?.walletBalance?.toLocaleString() || 0}
                 {user && user.walletBalance < grandTotal ? " (insufficient)" : ""}
               </Text>
@@ -289,68 +314,42 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 16, paddingBottom: 16 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  backBtn: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center", justifyContent: "center",
-  },
+  backBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
   headerTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)" },
   clearBtn: { padding: 6 },
   clearText: { fontFamily: "Inter_500Medium", fontSize: 14, color: "rgba(255,255,255,0.85)" },
+  clearConfirm: { backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12, padding: 12, marginTop: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  clearConfirmTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#fff", flex: 1 },
+  clearNo: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)" },
+  clearNoTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
+  clearYes: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#EF4444" },
+  clearYesTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
   scroll: { flex: 1 },
   section: { marginTop: 16, marginHorizontal: 16 },
   sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, marginBottom: 10 },
-  cartItem: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: C.surface, borderRadius: 14, padding: 12,
-    marginBottom: 8,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
+  cartItem: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 14, padding: 12, marginBottom: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
   itemThumb: { width: 46, height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   itemInfo: { flex: 1 },
   itemName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text, marginBottom: 3 },
   itemUnit: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
-  qtyControl: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 5,
-  },
-  qtyBtn: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: C.surface, alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2, elevation: 1,
-  },
+  qtyControl: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 5 },
+  qtyBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2, elevation: 1 },
   qtyText: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, minWidth: 18, textAlign: "center" },
   itemTotal: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, width: 62, textAlign: "right" },
-  infoCard: {
-    backgroundColor: C.surface, borderRadius: 14, padding: 14,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
+  infoCard: { backgroundColor: C.surface, borderRadius: 14, padding: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   infoLabel: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginBottom: 2 },
   infoValue: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, flex: 1 },
-  changeText: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.primary },
-  payOption: {
-    flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
-    borderRadius: 14, borderWidth: 1.5, borderColor: C.border,
-    backgroundColor: C.surface, marginBottom: 8,
-  },
+  payOption: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface, marginBottom: 8 },
   payOptionActive: { borderColor: C.primary, backgroundColor: "#F0F7FF" },
   payIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   payLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary, marginBottom: 2 },
   paySub: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
-  radio: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 2, borderColor: C.border,
-    alignItems: "center", justifyContent: "center",
-  },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: C.border, alignItems: "center", justifyContent: "center" },
   radioActive: { borderColor: C.primary },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.primary },
-  summaryCard: {
-    backgroundColor: C.surface, borderRadius: 14, padding: 16,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
+  summaryCard: { backgroundColor: C.surface, borderRadius: 14, padding: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8 },
   summaryLabel: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary },
   summaryValue: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.text },
@@ -364,22 +363,21 @@ const styles = StyleSheet.create({
   emptyBtns: { flexDirection: "row", gap: 12, marginTop: 6 },
   emptyBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
   emptyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" },
-  checkoutBar: {
-    backgroundColor: C.surface,
-    borderTopWidth: 1, borderTopColor: C.border,
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, paddingTop: 12, gap: 14,
-    shadowColor: "#000", shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.08, shadowRadius: 10, elevation: 10,
-  },
+  checkoutBar: { backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, gap: 14, shadowColor: "#000", shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 10 },
   checkoutInfo: { flex: 1 },
   checkoutLabel: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   checkoutAmount: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text },
-  checkoutBtn: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.primary, borderRadius: 16,
-    paddingVertical: 14, paddingHorizontal: 22,
-  },
+  checkoutBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.primary, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 22 },
   checkoutBtnDisabled: { opacity: 0.65 },
   checkoutBtnText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },
+  successWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 32 },
+  successCircle: { width: 100, height: 100, borderRadius: 50, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  successTitle: { fontFamily: "Inter_700Bold", fontSize: 26, color: C.text },
+  successId: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.textSecondary },
+  successEta: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted },
+  successBtns: { flexDirection: "row", gap: 12, marginTop: 12 },
+  trackBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 13, borderRadius: 14 },
+  trackBtnTxt: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" },
+  homeBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1.5, borderColor: C.primary, paddingHorizontal: 20, paddingVertical: 13, borderRadius: 14 },
+  homeBtnTxt: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.primary },
 });
