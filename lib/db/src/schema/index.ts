@@ -12,3 +12,4 @@ export * from "./user_settings";
 export * from "./platform_settings";
 export * from "./flash_deals";
 export * from "./promo_codes";
+export * from "./admin_accounts";

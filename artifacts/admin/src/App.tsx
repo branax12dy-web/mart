@@ -18,6 +18,7 @@ import Broadcast from "@/pages/broadcast";
 import Transactions from "@/pages/transactions";
 import Settings from "@/pages/settings";
 import FlashDeals from "@/pages/flash-deals";
+import AppManagement from "@/pages/app-management";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -70,6 +71,7 @@ function Router() {
       <Route path="/transactions"><ProtectedRoute component={Transactions} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route path="/flash-deals"><ProtectedRoute component={FlashDeals} /></Route>
+      <Route path="/app-management"><ProtectedRoute component={AppManagement} /></Route>
 
       <Route component={NotFound} />
     </Switch>

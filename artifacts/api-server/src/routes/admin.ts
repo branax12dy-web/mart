@@ -12,8 +12,9 @@ import {
   platformSettingsTable,
   flashDealsTable,
   promoCodesTable,
+  adminAccountsTable,
 } from "@workspace/db/schema";
-import { eq, desc, count, sum, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, count, sum, and, gte, lte, sql, or, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 
 /* ── Default Platform Settings ── */
@@ -82,13 +83,19 @@ const router: IRouter = Router();
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "ajkmart-admin-2025";
 
-function adminAuth(req: Request, res: Response, next: NextFunction) {
-  const auth = req.headers["x-admin-secret"] || req.query["secret"];
-  if (auth !== ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized. Invalid admin secret." });
-    return;
+async function adminAuth(req: Request, res: Response, next: NextFunction) {
+  const auth = String(req.headers["x-admin-secret"] || req.query["secret"] || "");
+  if (auth === ADMIN_SECRET) { (req as any).adminRole = "super"; next(); return; }
+  const [sub] = await db.select().from(adminAccountsTable)
+    .where(and(eq(adminAccountsTable.secret, auth), eq(adminAccountsTable.isActive, true)))
+    .limit(1);
+  if (sub) {
+    (req as any).adminRole = sub.role;
+    (req as any).adminId   = sub.id;
+    await db.update(adminAccountsTable).set({ lastLoginAt: new Date() }).where(eq(adminAccountsTable.id, sub.id));
+    next(); return;
   }
-  next();
+  res.status(401).json({ error: "Unauthorized. Invalid admin secret." });
 }
 
 /* ── helpers ── */
@@ -722,6 +729,134 @@ router.get("/rides-enriched", async (_req, res) => {
       userPhone: userMap[r.userId]?.phone || null,
     })),
     total: rides.length,
+  });
+});
+
+/* ── User Security Management ── */
+router.patch("/users/:id/security", async (req, res) => {
+  const { id } = req.params;
+  const body = req.body as any;
+  const updates: Record<string, any> = { updatedAt: new Date() };
+  if (body.isActive     !== undefined) updates.isActive     = body.isActive;
+  if (body.isBanned     !== undefined) updates.isBanned     = body.isBanned;
+  if (body.banReason    !== undefined) updates.banReason    = body.banReason || null;
+  if (body.roles        !== undefined) updates.roles        = body.roles;
+  if (body.role         !== undefined) updates.role         = body.role;
+  if (body.blockedServices !== undefined) updates.blockedServices = body.blockedServices;
+  if (body.securityNote !== undefined) updates.securityNote = body.securityNote || null;
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id!)).returning();
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (body.isBanned && body.notify) {
+    await sendUserNotification(id!, "Account Suspended ⚠️", body.banReason || "Your account has been suspended. Contact support.", "warning", "warning-outline");
+  }
+  res.json({ ...user, walletBalance: parseFloat(String(user.walletBalance)) });
+});
+
+router.post("/users/:id/reset-otp", async (req, res) => {
+  await db.update(usersTable).set({ otpCode: null, otpExpiry: null, updatedAt: new Date() }).where(eq(usersTable.id, req.params["id"]!));
+  res.json({ success: true, message: "OTP cleared — user must re-authenticate" });
+});
+
+/* ── Admin Accounts (Sub-Admins) ── */
+router.get("/admin-accounts", async (_req, res) => {
+  const accounts = await db.select({
+    id: adminAccountsTable.id,
+    name: adminAccountsTable.name,
+    role: adminAccountsTable.role,
+    permissions: adminAccountsTable.permissions,
+    isActive: adminAccountsTable.isActive,
+    lastLoginAt: adminAccountsTable.lastLoginAt,
+    createdAt: adminAccountsTable.createdAt,
+  }).from(adminAccountsTable).orderBy(desc(adminAccountsTable.createdAt));
+  res.json({
+    accounts: accounts.map(a => ({
+      ...a,
+      lastLoginAt: a.lastLoginAt ? a.lastLoginAt.toISOString() : null,
+      createdAt: a.createdAt.toISOString(),
+    })),
+  });
+});
+
+router.post("/admin-accounts", async (req, res) => {
+  const body = req.body as any;
+  if (!body.name || !body.secret) { res.status(400).json({ error: "name and secret required" }); return; }
+  if (body.secret === ADMIN_SECRET) { res.status(400).json({ error: "Cannot use the master secret" }); return; }
+  try {
+    const [account] = await db.insert(adminAccountsTable).values({
+      id:          generateId(),
+      name:        body.name,
+      secret:      body.secret,
+      role:        body.role        || "manager",
+      permissions: body.permissions || "",
+      isActive:    body.isActive !== false,
+    }).returning();
+    res.status(201).json({ ...account, secret: "••••••", createdAt: account.createdAt.toISOString() });
+  } catch (e: any) {
+    if (e.code === "23505") { res.status(409).json({ error: "Secret already in use" }); return; }
+    throw e;
+  }
+});
+
+router.patch("/admin-accounts/:id", async (req, res) => {
+  const body = req.body as any;
+  const updates: Record<string, any> = {};
+  if (body.name        !== undefined) updates.name        = body.name;
+  if (body.role        !== undefined) updates.role        = body.role;
+  if (body.permissions !== undefined) updates.permissions = body.permissions;
+  if (body.isActive    !== undefined) updates.isActive    = body.isActive;
+  if (body.secret      !== undefined) {
+    if (body.secret === ADMIN_SECRET) { res.status(400).json({ error: "Cannot use the master secret" }); return; }
+    updates.secret = body.secret;
+  }
+  const [account] = await db.update(adminAccountsTable).set(updates).where(eq(adminAccountsTable.id, req.params["id"]!)).returning();
+  if (!account) { res.status(404).json({ error: "Admin account not found" }); return; }
+  res.json({ ...account, secret: "••••••", createdAt: account.createdAt.toISOString() });
+});
+
+router.delete("/admin-accounts/:id", async (req, res) => {
+  await db.delete(adminAccountsTable).where(eq(adminAccountsTable.id, req.params["id"]!));
+  res.json({ success: true });
+});
+
+/* ── App Management ── */
+router.get("/app-overview", async (_req, res) => {
+  const [
+    totalUsers, activeUsers, bannedUsers,
+    totalOrders, pendingOrders,
+    totalRides, activeRides,
+    totalPharmacy, totalParcel,
+    settings, adminAccounts,
+  ] = await Promise.all([
+    db.select({ c: count() }).from(usersTable),
+    db.select({ c: count() }).from(usersTable).where(eq(usersTable.isActive, true)),
+    db.select({ c: count() }).from(usersTable).where(eq(usersTable.isBanned, true)),
+    db.select({ c: count() }).from(ordersTable),
+    db.select({ c: count() }).from(ordersTable).where(eq(ordersTable.status, "pending")),
+    db.select({ c: count() }).from(ridesTable),
+    db.select({ c: count() }).from(ridesTable).where(eq(ridesTable.status, "ongoing")),
+    db.select({ c: count() }).from(pharmacyOrdersTable),
+    db.select({ c: count() }).from(parcelBookingsTable),
+    db.select().from(platformSettingsTable),
+    db.select({ c: count() }).from(adminAccountsTable).where(eq(adminAccountsTable.isActive, true)),
+  ]);
+  const settingsMap = Object.fromEntries(settings.map(s => [s.key, s.value]));
+  res.json({
+    users:    { total: totalUsers[0]?.c ?? 0, active: activeUsers[0]?.c ?? 0, banned: bannedUsers[0]?.c ?? 0 },
+    orders:   { total: totalOrders[0]?.c ?? 0, pending: pendingOrders[0]?.c ?? 0 },
+    rides:    { total: totalRides[0]?.c ?? 0, active: activeRides[0]?.c ?? 0 },
+    pharmacy: { total: totalPharmacy[0]?.c ?? 0 },
+    parcel:   { total: totalParcel[0]?.c ?? 0 },
+    adminAccounts: adminAccounts[0]?.c ?? 0,
+    appStatus:    settingsMap["app_status"]    || "active",
+    appName:      settingsMap["app_name"]      || "AJKMart",
+    features: {
+      mart:     settingsMap["feature_mart"]     || "on",
+      food:     settingsMap["feature_food"]     || "on",
+      rides:    settingsMap["feature_rides"]    || "on",
+      pharmacy: settingsMap["feature_pharmacy"] || "on",
+      parcel:   settingsMap["feature_parcel"]   || "on",
+      wallet:   settingsMap["feature_wallet"]   || "on",
+    },
   });
 });
 

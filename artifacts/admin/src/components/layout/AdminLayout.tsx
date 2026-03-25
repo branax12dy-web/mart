@@ -16,6 +16,7 @@ import {
   X,
   ChevronRight,
   Zap,
+  AppWindow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -30,7 +31,8 @@ const navItems = [
   { name: "Flash Deals",  href: "/flash-deals",  icon: Zap },
   { name: "Broadcast",    href: "/broadcast",    icon: Megaphone },
   { name: "Transactions", href: "/transactions", icon: Receipt },
-  { name: "Settings",     href: "/settings",     icon: Settings2 },
+  { name: "App Management", href: "/app-management", icon: AppWindow },
+  { name: "Settings",       href: "/settings",       icon: Settings2 },
 ];
 
 // Bottom nav items (most used pages for mobile)
