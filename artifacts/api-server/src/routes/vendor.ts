@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, productsTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, desc, and, sql, count, sum, gte, or } from "drizzle-orm";
+import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
+import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 
 const router: IRouter = Router();
@@ -18,11 +18,11 @@ async function vendorAuth(req: Request, res: Response, next: NextFunction) {
     const [userId] = decoded.split(":");
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId!)).limit(1);
     if (!user) { res.status(401).json({ error: "User not found" }); return; }
-    if (!user.isActive) { res.status(403).json({ error: "Account is inactive" }); return; }
-    if (user.isBanned) { res.status(403).json({ error: "Account is banned" }); return; }
+    if (!user.isActive) { res.status(403).json({ error: "Account suspended by admin" }); return; }
+    if (user.isBanned)  { res.status(403).json({ error: "Account is banned" }); return; }
     const roles = (user.roles || user.role || "").split(",").map(r => r.trim());
     if (!roles.includes("vendor")) {
-      res.status(403).json({ error: "Access denied. This portal is for vendors only." }); return;
+      res.status(403).json({ error: "Access denied. Vendor role required." }); return;
     }
     (req as any).vendorId = user.id;
     (req as any).vendorUser = user;
@@ -31,49 +31,77 @@ async function vendorAuth(req: Request, res: Response, next: NextFunction) {
     res.status(401).json({ error: "Invalid token" });
   }
 }
-
 router.use(vendorAuth);
 
-/* ── GET /vendor/me — Vendor profile ── */
+function safeNum(v: any, def = 0) { return parseFloat(String(v ?? def)) || def; }
+function formatUser(user: any) {
+  return {
+    id: user.id, phone: user.phone, name: user.name, email: user.email,
+    avatar: user.avatar,
+    storeName: user.storeName, storeCategory: user.storeCategory,
+    storeBanner: user.storeBanner, storeDescription: user.storeDescription,
+    storeHours: user.storeHours ? JSON.parse(user.storeHours) : null,
+    storeAnnouncement: user.storeAnnouncement,
+    storeMinOrder: safeNum(user.storeMinOrder),
+    storeDeliveryTime: user.storeDeliveryTime,
+    storeIsOpen: user.storeIsOpen ?? true,
+    walletBalance: safeNum(user.walletBalance),
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt,
+  };
+}
+
+/* ── GET /vendor/me ── */
 router.get("/me", async (req, res) => {
   const user = (req as any).vendorUser;
   const vendorId = user.id;
   const today = new Date(); today.setHours(0,0,0,0);
-
-  const [todayOrders, totalOrders, totalRevenue, productCount] = await Promise.all([
+  const [todayOrders, todayRev, totalOrders, totalRev] = await Promise.all([
     db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, today))),
+    db.select({ s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, today), or(eq(ordersTable.status, "delivered"), eq(ordersTable.status, "completed")))),
     db.select({ c: count() }).from(ordersTable).where(eq(ordersTable.vendorId, vendorId)),
     db.select({ s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), or(eq(ordersTable.status, "delivered"), eq(ordersTable.status, "completed")))),
-    db.select({ c: count() }).from(productsTable).where(eq(productsTable.vendorId, vendorId)),
   ]);
-
   res.json({
-    id: user.id, phone: user.phone, name: user.name, email: user.email,
-    avatar: user.avatar, storeName: user.storeName || user.name,
-    storeCategory: user.storeCategory || "General",
-    walletBalance: parseFloat(user.walletBalance ?? "0"),
+    ...formatUser(user),
     stats: {
-      ordersToday: todayOrders[0]?.c ?? 0,
-      totalOrders: totalOrders[0]?.c ?? 0,
-      totalRevenue: parseFloat(String(totalRevenue[0]?.s ?? "0")) * 0.85,
-      totalProducts: productCount[0]?.c ?? 0,
+      todayOrders:  todayOrders[0]?.c ?? 0,
+      todayRevenue: safeNum(todayRev[0]?.s) * 0.85,
+      totalOrders:  totalOrders[0]?.c ?? 0,
+      totalRevenue: safeNum(totalRev[0]?.s) * 0.85,
     },
   });
 });
 
-/* ── PATCH /vendor/profile — Update vendor profile ── */
+/* ── PATCH /vendor/profile ── */
 router.patch("/profile", async (req, res) => {
   const vendorId = (req as any).vendorId;
-  const { name, email, storeName, storeCategory } = req.body;
+  const { name, email } = req.body;
   const updates: any = { updatedAt: new Date() };
-  if (name)          updates.name          = name;
-  if (email)         updates.email         = email;
-  if (storeName)     updates.storeName     = storeName;
-  if (storeCategory) updates.storeCategory = storeCategory;
-  await db.update(usersTable).set(updates).where(eq(usersTable.id, vendorId));
-  await db.update(productsTable).set({ vendorName: storeName || name, updatedAt: new Date() }).where(eq(productsTable.vendorId, vendorId)).catch(() => {});
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, vendorId)).limit(1);
-  res.json({ id: user.id, name: user.name, phone: user.phone, email: user.email, storeName: user.storeName, storeCategory: user.storeCategory });
+  if (name  !== undefined) updates.name  = name;
+  if (email !== undefined) updates.email = email;
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, vendorId)).returning();
+  res.json(formatUser(user));
+});
+
+/* ── GET /vendor/store ── */
+router.get("/store", async (req, res) => {
+  const user = (req as any).vendorUser;
+  res.json(formatUser(user));
+});
+
+/* ── PATCH /vendor/store ── */
+router.patch("/store", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  const body = req.body;
+  const updates: any = { updatedAt: new Date() };
+  const fields = ["storeName","storeCategory","storeBanner","storeDescription","storeAnnouncement","storeDeliveryTime","storeIsOpen","storeMinOrder"];
+  for (const f of fields) {
+    if (body[f] !== undefined) updates[f] = body[f];
+  }
+  if (body.storeHours !== undefined) updates.storeHours = typeof body.storeHours === "string" ? body.storeHours : JSON.stringify(body.storeHours);
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, vendorId)).returning();
+  res.json(formatUser(user));
 });
 
 /* ── GET /vendor/stats ── */
@@ -81,110 +109,202 @@ router.get("/stats", async (req, res) => {
   const vendorId = (req as any).vendorId;
   const today = new Date(); today.setHours(0,0,0,0);
   const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
-
-  const [todayData, weekData, pendingOrders, totalProducts] = await Promise.all([
+  const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate() - 30);
+  const [tData, wData, mData, pending, lowStock] = await Promise.all([
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, today))),
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, weekAgo))),
+    db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, monthAgo))),
     db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), eq(ordersTable.status, "pending"))),
-    db.select({ c: count() }).from(productsTable).where(eq(productsTable.vendorId, vendorId)),
+    db.select({ c: count() }).from(productsTable).where(and(eq(productsTable.vendorId, vendorId), sql`stock IS NOT NULL AND stock < 10 AND stock > 0`)),
   ]);
-
   res.json({
-    today:   { orders: todayData[0]?.c??0, revenue: parseFloat(String(todayData[0]?.s??0)) * 0.85 },
-    week:    { orders: weekData[0]?.c??0,  revenue: parseFloat(String(weekData[0]?.s??0)) * 0.85 },
-    pending: pendingOrders[0]?.c ?? 0,
-    products: totalProducts[0]?.c ?? 0,
+    today:    { orders: tData[0]?.c??0, revenue: safeNum(tData[0]?.s)*0.85 },
+    week:     { orders: wData[0]?.c??0, revenue: safeNum(wData[0]?.s)*0.85 },
+    month:    { orders: mData[0]?.c??0, revenue: safeNum(mData[0]?.s)*0.85 },
+    pending:  pending[0]?.c ?? 0,
+    lowStock: lowStock[0]?.c ?? 0,
   });
 });
 
-/* ── GET /vendor/orders — Get orders for this vendor ── */
+/* ── GET /vendor/orders ── */
 router.get("/orders", async (req, res) => {
   const vendorId = (req as any).vendorId;
   const status = req.query["status"] as string | undefined;
   const conditions: any[] = [eq(ordersTable.vendorId, vendorId)];
-  if (status && status !== "all") conditions.push(eq(ordersTable.status, status));
-  const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(50);
-  res.json({ orders: orders.map(o => ({ ...o, total: parseFloat(String(o.total)) })) });
+  if (status && status !== "all") {
+    if (status === "new") conditions.push(or(eq(ordersTable.status, "pending"), eq(ordersTable.status, "confirmed")));
+    else if (status === "active") conditions.push(or(eq(ordersTable.status, "preparing"), eq(ordersTable.status, "ready")));
+    else conditions.push(eq(ordersTable.status, status));
+  }
+  const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(100);
+  res.json({ orders: orders.map(o => ({ ...o, total: safeNum(o.total) })) });
 });
 
-/* ── PATCH /vendor/orders/:id/status — Update order status ── */
+/* ── PATCH /vendor/orders/:id/status ── */
 router.patch("/orders/:id/status", async (req, res) => {
   const vendorId = (req as any).vendorId;
   const { status } = req.body;
-  const validStatuses = ["confirmed", "preparing", "ready", "cancelled"];
+  const validStatuses = ["confirmed","preparing","ready","cancelled"];
   if (!validStatuses.includes(status)) { res.status(400).json({ error: "Invalid status" }); return; }
   const [order] = await db.select().from(ordersTable).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.vendorId, vendorId))).limit(1);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   const [updated] = await db.update(ordersTable).set({ status, updatedAt: new Date() }).where(eq(ordersTable.id, req.params["id"]!)).returning();
-  const statusMessages: Record<string, { title: string; body: string; icon: string }> = {
-    confirmed:  { title: "Order Confirmed! ✅", body: "Your order has been accepted by the store.", icon: "checkmark-circle-outline" },
-    preparing:  { title: "Being Prepared 🍳", body: "The store is preparing your order.", icon: "restaurant-outline" },
-    ready:      { title: "Order Ready! 📦", body: "Your order is ready for pickup.", icon: "bag-check-outline" },
-    cancelled:  { title: "Order Cancelled ❌", body: "Your order was cancelled by the store.", icon: "close-circle-outline" },
+  const msgs: Record<string, { title: string; body: string }> = {
+    confirmed: { title: "Order Confirmed! ✅", body: "Your order has been accepted by the store." },
+    preparing: { title: "Being Prepared 🍳",  body: "The store is preparing your order now." },
+    ready:     { title: "Order Ready! 📦",    body: "Your order is ready and waiting for pickup." },
+    cancelled: { title: "Order Cancelled ❌", body: "Your order was cancelled by the store." },
   };
-  if (statusMessages[status]) {
-    const { title, body, icon } = statusMessages[status];
-    await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title, body, type: "order", icon }).catch(() => {});
+  if (msgs[status]) {
+    await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title: msgs[status]!.title, body: msgs[status]!.body, type: "order", icon: "bag-outline" }).catch(()=>{});
   }
-  if (status === "cancelled") {
-    const refundAmt = parseFloat(String(order.total));
-    if (order.paymentMethod === "wallet") {
-      await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() }).where(eq(usersTable.id, order.userId));
-      await db.insert(walletTransactionsTable).values({ id: generateId(), userId: order.userId, type: "credit", amount: String(refundAmt), description: `Refund — Order #${order.id.slice(-6).toUpperCase()} cancelled` }).catch(() => {});
-    }
+  if (status === "cancelled" && order.paymentMethod === "wallet") {
+    const refundAmt = safeNum(order.total);
+    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() }).where(eq(usersTable.id, order.userId));
+    await db.insert(walletTransactionsTable).values({ id: generateId(), userId: order.userId, type: "credit", amount: String(refundAmt), description: `Refund — Order #${order.id.slice(-6).toUpperCase()} cancelled by store` }).catch(()=>{});
   }
-  res.json({ ...updated, total: parseFloat(String(updated.total)) });
+  res.json({ ...updated, total: safeNum(updated.total) });
 });
 
-/* ── GET /vendor/products — Vendor's products ── */
+/* ── GET /vendor/products ── */
 router.get("/products", async (req, res) => {
   const vendorId = (req as any).vendorId;
-  const products = await db.select().from(productsTable).where(eq(productsTable.vendorId, vendorId)).orderBy(desc(productsTable.createdAt));
-  res.json({ products: products.map(p => ({ ...p, price: parseFloat(String(p.price)), originalPrice: p.originalPrice ? parseFloat(String(p.originalPrice)) : null, rating: parseFloat(String(p.rating ?? "4.0")) })) });
+  const q = req.query["q"] as string | undefined;
+  const cat = req.query["category"] as string | undefined;
+  const conditions: any[] = [eq(productsTable.vendorId, vendorId)];
+  if (q) conditions.push(ilike(productsTable.name, `%${q}%`));
+  if (cat && cat !== "all") conditions.push(eq(productsTable.category, cat));
+  const products = await db.select().from(productsTable).where(and(...conditions)).orderBy(desc(productsTable.createdAt));
+  res.json({ products: products.map(p => ({ ...p, price: safeNum(p.price), originalPrice: p.originalPrice ? safeNum(p.originalPrice) : null, rating: safeNum(p.rating, 4.0) })) });
 });
 
-/* ── POST /vendor/products — Add product ── */
+/* ── POST /vendor/products ── Add single product ── */
 router.post("/products", async (req, res) => {
   const vendorId = (req as any).vendorId;
   const user = (req as any).vendorUser;
   const body = req.body;
-  if (!body.name || !body.price || !body.category) { res.status(400).json({ error: "name, price, category required" }); return; }
+  if (!body.name || !body.price) { res.status(400).json({ error: "name and price required" }); return; }
   const [product] = await db.insert(productsTable).values({
     id: generateId(), vendorId, vendorName: user.storeName || user.name,
     name: body.name, description: body.description || null,
     price: String(body.price), originalPrice: body.originalPrice ? String(body.originalPrice) : null,
-    category: body.category, type: body.type || "mart",
+    category: body.category || "general", type: body.type || "mart",
     image: body.image || null, inStock: body.inStock !== false,
+    stock: body.stock ? Number(body.stock) : null,
     unit: body.unit || null, deliveryTime: body.deliveryTime || null,
   }).returning();
-  res.status(201).json({ ...product, price: parseFloat(String(product.price)) });
+  res.status(201).json({ ...product, price: safeNum(product.price) });
 });
 
-/* ── PATCH /vendor/products/:id — Update product ── */
+/* ── POST /vendor/products/bulk ── Bulk add products ── */
+router.post("/products/bulk", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  const user = (req as any).vendorUser;
+  const { products } = req.body;
+  if (!Array.isArray(products) || products.length === 0) { res.status(400).json({ error: "products array required" }); return; }
+  if (products.length > 50) { res.status(400).json({ error: "Max 50 products at a time" }); return; }
+  const invalid = products.filter(p => !p.name || !p.price);
+  if (invalid.length > 0) { res.status(400).json({ error: `${invalid.length} products missing name or price` }); return; }
+  const inserted = await db.insert(productsTable).values(
+    products.map(p => ({
+      id: generateId(), vendorId, vendorName: user.storeName || user.name,
+      name: p.name, description: p.description || null,
+      price: String(p.price), originalPrice: p.originalPrice ? String(p.originalPrice) : null,
+      category: p.category || "general", type: p.type || "mart",
+      image: p.image || null, inStock: p.inStock !== false,
+      stock: p.stock ? Number(p.stock) : null, unit: p.unit || null,
+    }))
+  ).returning();
+  res.status(201).json({ inserted: inserted.length, products: inserted.map(p => ({ ...p, price: safeNum(p.price) })) });
+});
+
+/* ── PATCH /vendor/products/:id ── Update product ── */
 router.patch("/products/:id", async (req, res) => {
   const vendorId = (req as any).vendorId;
   const body = req.body;
   const updates: any = { updatedAt: new Date() };
-  if (body.name        !== undefined) updates.name        = body.name;
-  if (body.description !== undefined) updates.description = body.description;
-  if (body.price       !== undefined) updates.price       = String(body.price);
+  const fields = ["name","description","category","type","unit","deliveryTime"];
+  for (const f of fields) if (body[f] !== undefined) updates[f] = body[f];
+  if (body.price       !== undefined) updates.price        = String(body.price);
   if (body.originalPrice !== undefined) updates.originalPrice = body.originalPrice ? String(body.originalPrice) : null;
-  if (body.category    !== undefined) updates.category    = body.category;
-  if (body.type        !== undefined) updates.type        = body.type;
-  if (body.inStock     !== undefined) updates.inStock     = body.inStock;
-  if (body.image       !== undefined) updates.image       = body.image;
-  if (body.unit        !== undefined) updates.unit        = body.unit;
-  if (body.deliveryTime !== undefined) updates.deliveryTime = body.deliveryTime;
+  if (body.inStock     !== undefined) updates.inStock      = body.inStock;
+  if (body.stock       !== undefined) updates.stock        = body.stock !== null ? Number(body.stock) : null;
+  if (body.image       !== undefined) updates.image        = body.image;
   const [product] = await db.update(productsTable).set(updates).where(and(eq(productsTable.id, req.params["id"]!), eq(productsTable.vendorId, vendorId))).returning();
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
-  res.json({ ...product, price: parseFloat(String(product.price)) });
+  res.json({ ...product, price: safeNum(product.price) });
 });
 
-/* ── DELETE /vendor/products/:id — Delete product ── */
+/* ── DELETE /vendor/products/:id ── */
 router.delete("/products/:id", async (req, res) => {
   const vendorId = (req as any).vendorId;
-  await db.delete(productsTable).where(and(eq(productsTable.id, req.params["id"]!), eq(productsTable.vendorId, vendorId)));
+  const [del] = await db.delete(productsTable).where(and(eq(productsTable.id, req.params["id"]!), eq(productsTable.vendorId, vendorId))).returning();
+  if (!del) { res.status(404).json({ error: "Product not found" }); return; }
   res.json({ success: true });
+});
+
+/* ── GET /vendor/promos ── Vendor promo codes ── */
+router.get("/promos", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  const promos = await db.select().from(promoCodesTable).where(eq(promoCodesTable.vendorId, vendorId)).orderBy(desc(promoCodesTable.createdAt));
+  res.json({ promos: promos.map(p => ({ ...p, discountPct: safeNum(p.discountPct), discountFlat: safeNum(p.discountFlat), minOrderAmount: safeNum(p.minOrderAmount) })) });
+});
+
+/* ── POST /vendor/promos ── Create promo ── */
+router.post("/promos", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  const body = req.body;
+  if (!body.code || (!body.discountPct && !body.discountFlat)) {
+    res.status(400).json({ error: "code + discount (% or flat) required" }); return;
+  }
+  // Check if code already exists
+  const [existing] = await db.select({ id: promoCodesTable.id }).from(promoCodesTable).where(eq(promoCodesTable.code, body.code.toUpperCase())).limit(1);
+  if (existing) { res.status(400).json({ error: "Promo code already exists" }); return; }
+  const [promo] = await db.insert(promoCodesTable).values({
+    id: generateId(), code: body.code.toUpperCase().trim(),
+    description: body.description || null,
+    discountPct: body.discountPct ? String(body.discountPct) : null,
+    discountFlat: body.discountFlat ? String(body.discountFlat) : null,
+    minOrderAmount: String(body.minOrderAmount || 0),
+    maxDiscount: body.maxDiscount ? String(body.maxDiscount) : null,
+    usageLimit: body.usageLimit ? Number(body.usageLimit) : null,
+    appliesTo: body.appliesTo || "all",
+    expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+    vendorId, isActive: true,
+  }).returning();
+  res.status(201).json({ ...promo, discountPct: safeNum(promo.discountPct), discountFlat: safeNum(promo.discountFlat) });
+});
+
+/* ── PATCH /vendor/promos/:id/toggle ── */
+router.patch("/promos/:id/toggle", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  const [promo] = await db.select().from(promoCodesTable).where(and(eq(promoCodesTable.id, req.params["id"]!), eq(promoCodesTable.vendorId, vendorId))).limit(1);
+  if (!promo) { res.status(404).json({ error: "Promo not found" }); return; }
+  const [updated] = await db.update(promoCodesTable).set({ isActive: !promo.isActive }).where(eq(promoCodesTable.id, promo.id)).returning();
+  res.json(updated);
+});
+
+/* ── DELETE /vendor/promos/:id ── */
+router.delete("/promos/:id", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  await db.delete(promoCodesTable).where(and(eq(promoCodesTable.id, req.params["id"]!), eq(promoCodesTable.vendorId, vendorId)));
+  res.json({ success: true });
+});
+
+/* ── GET /vendor/analytics ── ── */
+router.get("/analytics", async (req, res) => {
+  const vendorId = (req as any).vendorId;
+  const days = parseInt(String(req.query["days"] || "7"));
+  const since = new Date(); since.setDate(since.getDate() - days); since.setHours(0,0,0,0);
+  const [revenueData, topProducts, ordersByStatus] = await Promise.all([
+    db.select({ c: count(), s: sum(ordersTable.total), date: sql<string>`DATE(${ordersTable.createdAt})` }).from(ordersTable)
+      .where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, since))).groupBy(sql`DATE(${ordersTable.createdAt})`).orderBy(sql`DATE(${ordersTable.createdAt})`),
+    db.select({ id: productsTable.id, name: productsTable.name, orderCount: count() }).from(ordersTable)
+      .innerJoin(productsTable, sql`${ordersTable.items}::text LIKE '%' || ${productsTable.id} || '%'`)
+      .where(eq(ordersTable.vendorId, vendorId)).groupBy(productsTable.id, productsTable.name).orderBy(desc(count())).limit(5).catch(() => []),
+    db.select({ status: ordersTable.status, c: count() }).from(ordersTable).where(eq(ordersTable.vendorId, vendorId)).groupBy(ordersTable.status),
+  ]);
+  res.json({ revenueData, topProducts, ordersByStatus, period: days });
 });
 
 export default router;

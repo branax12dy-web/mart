@@ -1,10 +1,19 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { api } from "./api";
 
-interface AuthUser {
-  id: string; phone: string; name?: string; email?: string;
-  storeName?: string; storeCategory?: string;
+export interface StoreHours { [day: string]: { open: string; close: string; closed?: boolean } }
+
+export interface AuthUser {
+  id: string; phone: string; name?: string; email?: string; avatar?: string;
   walletBalance: number;
+  storeName?: string; storeCategory?: string;
+  storeBanner?: string; storeDescription?: string;
+  storeHours?: StoreHours | null;
+  storeAnnouncement?: string;
+  storeMinOrder?: number;
+  storeDeliveryTime?: string;
+  storeIsOpen: boolean;
+  lastLoginAt?: string; createdAt?: string;
   stats: { todayOrders: number; todayRevenue: number; totalOrders: number; totalRevenue: number };
 }
 
@@ -35,20 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else { setLoading(false); }
   }, []);
 
-  const login = (t: string, u: AuthUser) => {
-    localStorage.setItem("vendor_token", t);
-    setToken(t); setUser(u);
-  };
-
-  const logout = () => {
-    localStorage.removeItem("vendor_token");
-    setToken(null); setUser(null);
-  };
-
-  const refreshUser = async () => {
-    const u = await api.getMe();
-    setUser(u);
-  };
+  const login = (t: string, u: AuthUser) => { localStorage.setItem("vendor_token", t); setToken(t); setUser(u); };
+  const logout = () => { localStorage.removeItem("vendor_token"); setToken(null); setUser(null); };
+  const refreshUser = async () => { const u = await api.getMe(); setUser(u); };
 
   return <Ctx.Provider value={{ user, token, loading, login, logout, refreshUser }}>{children}</Ctx.Provider>;
 }

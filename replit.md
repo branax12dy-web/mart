@@ -28,7 +28,11 @@
 - Auth: phone OTP → token stored in `localStorage` as `vendor_token`
 - Vendor earns **85%** of order revenue (15% platform fee)
 - API routes: `/api/vendor/*` (auth middleware checks `roles` includes "vendor")
-- Pages: Login, Dashboard, Orders (with status flow), Products (CRUD), Profile
+- Pages: Login, Dashboard (stats, store toggle, pending orders), Orders (expandable, status flow), Products (CRUD + bulk add up to 50), Store (banner, hours, announcement, promo codes), Profile (wallet, security)
+- BottomNav: 5 tabs — Dashboard, Orders, Products, My Store, Profile
+- Promo codes: vendor-scoped, created and managed per vendor
+- Store fields: storeBanner, storeDescription, storeHours (JSON, per-day), storeAnnouncement, storeMinOrder, storeDeliveryTime, storeIsOpen
+- Product fields: stock (inventory tracking), updatedAt
 
 ---
 
