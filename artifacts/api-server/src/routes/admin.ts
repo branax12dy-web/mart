@@ -574,6 +574,85 @@ router.patch("/platform-settings/:key", async (req, res) => {
   res.json({ ...row, updatedAt: row.updatedAt.toISOString() });
 });
 
+/* ── Pharmacy Orders Enriched ── */
+router.get("/pharmacy-enriched", async (_req, res) => {
+  const orders = await db.select().from(pharmacyOrdersTable).orderBy(desc(pharmacyOrdersTable.createdAt)).limit(200);
+  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  res.json({
+    orders: orders.map(o => ({
+      ...o,
+      total: parseFloat(String(o.total)),
+      createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
+      userName: userMap[o.userId]?.name || null,
+      userPhone: userMap[o.userId]?.phone || null,
+    })),
+    total: orders.length,
+  });
+});
+
+/* ── Parcel Bookings Enriched ── */
+router.get("/parcel-enriched", async (_req, res) => {
+  const bookings = await db.select().from(parcelBookingsTable).orderBy(desc(parcelBookingsTable.createdAt)).limit(200);
+  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  res.json({
+    bookings: bookings.map(b => ({
+      ...b,
+      fare: parseFloat(b.fare),
+      createdAt: b.createdAt.toISOString(),
+      updatedAt: b.updatedAt.toISOString(),
+      userName: userMap[b.userId]?.name || null,
+      userPhone: userMap[b.userId]?.phone || null,
+    })),
+    total: bookings.length,
+  });
+});
+
+/* ── Transactions Enriched ── */
+router.get("/transactions-enriched", async (_req, res) => {
+  const transactions = await db.select().from(walletTransactionsTable).orderBy(desc(walletTransactionsTable.createdAt)).limit(300);
+  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+  const enriched = transactions.map(t => ({
+    ...t,
+    amount: parseFloat(t.amount),
+    createdAt: t.createdAt.toISOString(),
+    userName: userMap[t.userId]?.name || null,
+    userPhone: userMap[t.userId]?.phone || null,
+  }));
+
+  const totalCredit = enriched.filter(t => t.type === "credit").reduce((s, t) => s + t.amount, 0);
+  const totalDebit = enriched.filter(t => t.type === "debit").reduce((s, t) => s + t.amount, 0);
+
+  res.json({ transactions: enriched, total: transactions.length, totalCredit, totalDebit });
+});
+
+/* ── Delete User ── */
+router.delete("/users/:id", async (req, res) => {
+  await db.delete(usersTable).where(eq(usersTable.id, req.params["id"]!));
+  res.json({ success: true });
+});
+
+/* ── User Activity (orders + rides summary) ── */
+router.get("/users/:id/activity", async (req, res) => {
+  const uid = req.params["id"]!;
+  const orders = await db.select().from(ordersTable).where(eq(ordersTable.userId, uid)).orderBy(desc(ordersTable.createdAt)).limit(10);
+  const rides = await db.select().from(ridesTable).where(eq(ridesTable.userId, uid)).orderBy(desc(ridesTable.createdAt)).limit(10);
+  const pharmacy = await db.select().from(pharmacyOrdersTable).where(eq(pharmacyOrdersTable.userId, uid)).orderBy(desc(pharmacyOrdersTable.createdAt)).limit(5);
+  const parcels = await db.select().from(parcelBookingsTable).where(eq(parcelBookingsTable.userId, uid)).orderBy(desc(parcelBookingsTable.createdAt)).limit(5);
+  const txns = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.userId, uid)).orderBy(desc(walletTransactionsTable.createdAt)).limit(10);
+  res.json({
+    orders: orders.map(o => ({ ...o, total: parseFloat(String(o.total)), createdAt: o.createdAt.toISOString(), updatedAt: o.updatedAt.toISOString() })),
+    rides: rides.map(r => ({ ...r, fare: parseFloat(r.fare), distance: parseFloat(r.distance), createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() })),
+    pharmacy: pharmacy.map(p => ({ ...p, total: parseFloat(String(p.total)), createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() })),
+    parcels: parcels.map(p => ({ ...p, fare: parseFloat(p.fare), createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() })),
+    transactions: txns.map(t => ({ ...t, amount: parseFloat(t.amount), createdAt: t.createdAt.toISOString() })),
+  });
+});
+
 /* ── Overview with user enrichment (orders + user info) ── */
 router.get("/orders-enriched", async (_req, res) => {
   const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(200);

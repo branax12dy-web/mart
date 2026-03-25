@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+const EMPTY_FORM = {
+  name: "", description: "", price: "", originalPrice: "",
+  category: "", type: "mart", unit: "", vendorName: "",
+  inStock: true, deliveryTime: "30-45 min"
+};
 
 export default function Products() {
   const { data, isLoading } = useProducts();
@@ -16,31 +22,31 @@ export default function Products() {
   const updateMutation = useUpdateProduct();
   const deleteMutation = useDeleteProduct();
   const { toast } = useToast();
-  
+
   const [search, setSearch] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    name: "", description: "", price: "", originalPrice: "", 
-    category: "", type: "mart", unit: "", vendorName: "", 
-    inStock: true, deliveryTime: "30-45 min"
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_FORM });
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   const openAdd = () => {
     setEditingId(null);
-    setFormData({ name: "", description: "", price: "", originalPrice: "", category: "", type: "mart", unit: "", vendorName: "", inStock: true, deliveryTime: "30-45 min" });
-    setIsDialogOpen(true);
+    setFormData({ ...EMPTY_FORM });
+    setIsFormOpen(true);
   };
 
   const openEdit = (prod: any) => {
     setEditingId(prod.id);
     setFormData({
-      name: prod.name || "", description: prod.description || "", price: String(prod.price || ""),
-      originalPrice: prod.originalPrice ? String(prod.originalPrice) : "", category: prod.category || "",
-      type: prod.type || "mart", unit: prod.unit || "", vendorName: prod.vendorName || "",
-      inStock: prod.inStock, deliveryTime: prod.deliveryTime || ""
+      name: prod.name || "", description: prod.description || "",
+      price: String(prod.price || ""),
+      originalPrice: prod.originalPrice ? String(prod.originalPrice) : "",
+      category: prod.category || "", type: prod.type || "mart",
+      unit: prod.unit || "", vendorName: prod.vendorName || "",
+      inStock: prod.inStock, deliveryTime: prod.deliveryTime || "30-45 min"
     });
-    setIsDialogOpen(true);
+    setIsFormOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -53,23 +59,34 @@ export default function Products() {
 
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...payload }, {
-        onSuccess: () => { toast({ title: "Product updated" }); setIsDialogOpen(false); }
+        onSuccess: () => { toast({ title: "Product updated ✅" }); setIsFormOpen(false); },
+        onError: err => toast({ title: "Update failed", description: err.message, variant: "destructive" })
       });
     } else {
       createMutation.mutate(payload, {
-        onSuccess: () => { toast({ title: "Product created" }); setIsDialogOpen(false); }
+        onSuccess: () => { toast({ title: "Product created ✅" }); setIsFormOpen(false); },
+        onError: err => toast({ title: "Create failed", description: err.message, variant: "destructive" })
       });
     }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this product permanently?")) {
-      deleteMutation.mutate(id, { onSuccess: () => toast({ title: "Product deleted" }) });
-    }
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    deleteMutation.mutate(deleteTarget.id, {
+      onSuccess: () => { toast({ title: "Product deleted" }); setDeleteTarget(null); },
+      onError: err => toast({ title: "Delete failed", description: err.message, variant: "destructive" })
+    });
   };
 
   const products = data?.products || [];
-  const filtered = products.filter((p: any) => p.name.toLowerCase().includes(search.toLowerCase()));
+  const q = search.toLowerCase();
+  const filtered = products.filter((p: any) =>
+    (typeFilter === "all" || p.type === typeFilter) &&
+    (p.name.toLowerCase().includes(q) || (p.category || "").toLowerCase().includes(q))
+  );
+
+  const martCount = products.filter((p: any) => p.type === "mart").length;
+  const foodCount = products.filter((p: any) => p.type === "food").length;
 
   return (
     <div className="space-y-6">
@@ -80,7 +97,7 @@ export default function Products() {
           </div>
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Products</h1>
-            <p className="text-muted-foreground text-sm">Manage inventory for Mart and Food</p>
+            <p className="text-muted-foreground text-sm">{martCount} mart · {foodCount} food · {products.length} total</p>
           </div>
         </div>
         <Button onClick={openAdd} className="h-11 rounded-xl shadow-md">
@@ -88,7 +105,8 @@ export default function Products() {
         </Button>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {/* Add/Edit Dialog */}
+      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">{editingId ? 'Edit Product' : 'Add New Product'}</DialogTitle>
@@ -96,65 +114,119 @@ export default function Products() {
           <form onSubmit={handleSubmit} className="space-y-4 mt-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Name</label>
-                <Input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="h-11 rounded-xl" />
+                <label className="text-sm font-semibold">Name *</label>
+                <Input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. Fresh Milk" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Category</label>
-                <Input required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="h-11 rounded-xl" />
+                <label className="text-sm font-semibold">Category *</label>
+                <Input required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. dairy, vegetables" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Type</label>
-                <select 
-                  className="w-full h-11 rounded-xl border border-input bg-background px-3"
+                <label className="text-sm font-semibold">Type *</label>
+                <select
+                  className="w-full h-11 rounded-xl border border-input bg-background px-3 text-sm"
                   value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}
                 >
-                  <option value="mart">Mart</option>
-                  <option value="food">Food</option>
+                  <option value="mart">🛒 Mart</option>
+                  <option value="food">🍔 Food</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Unit (e.g. 1 kg)</label>
-                <Input value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} className="h-11 rounded-xl" />
+                <label className="text-sm font-semibold">Unit</label>
+                <Input value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 1 kg, 500ml" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Price (Rs.)</label>
-                <Input type="number" required value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="h-11 rounded-xl" />
+                <label className="text-sm font-semibold">Price (Rs.) *</label>
+                <Input type="number" required min="1" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 250" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Original Price (optional)</label>
-                <Input type="number" value={formData.originalPrice} onChange={e => setFormData({...formData, originalPrice: e.target.value})} className="h-11 rounded-xl" />
+                <label className="text-sm font-semibold">Original Price (Rs.)</label>
+                <Input type="number" min="1" value={formData.originalPrice} onChange={e => setFormData({...formData, originalPrice: e.target.value})} className="h-11 rounded-xl" placeholder="optional (for sale)" />
               </div>
               <div className="space-y-2 col-span-2">
                 <label className="text-sm font-semibold">Description</label>
-                <Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="h-11 rounded-xl" />
+                <Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="h-11 rounded-xl" placeholder="Short description..." />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Vendor Name</label>
-                <Input value={formData.vendorName} onChange={e => setFormData({...formData, vendorName: e.target.value})} className="h-11 rounded-xl" />
+                <label className="text-sm font-semibold">Vendor / Restaurant</label>
+                <Input value={formData.vendorName} onChange={e => setFormData({...formData, vendorName: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. AJK Fresh Foods" />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Delivery Time</label>
-                <Input value={formData.deliveryTime} onChange={e => setFormData({...formData, deliveryTime: e.target.value})} className="h-11 rounded-xl" />
+                <Input value={formData.deliveryTime} onChange={e => setFormData({...formData, deliveryTime: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 30-45 min" />
               </div>
             </div>
-            <div className="flex items-center gap-2 mt-4 p-4 bg-muted/50 rounded-xl border border-border/50">
-              <input type="checkbox" id="instock" checked={formData.inStock} onChange={e => setFormData({...formData, inStock: e.target.checked})} className="w-5 h-5 rounded" />
-              <label htmlFor="instock" className="font-semibold text-sm cursor-pointer">Product is in stock</label>
+            <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-xl border border-border/50">
+              <input
+                type="checkbox" id="instock"
+                checked={formData.inStock}
+                onChange={e => setFormData({...formData, inStock: e.target.checked})}
+                className="w-5 h-5 rounded accent-primary"
+              />
+              <label htmlFor="instock" className="font-semibold text-sm cursor-pointer">
+                Product is currently in stock
+              </label>
             </div>
-            <div className="flex justify-end pt-4">
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" className="h-11 px-6 rounded-xl" onClick={() => setIsFormOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="h-11 px-8 rounded-xl">
-                {editingId ? 'Save Changes' : 'Create Product'}
+                {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingId ? 'Save Changes' : 'Create Product'}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Card className="p-4 rounded-2xl border-border/50 shadow-sm max-w-md">
-        <div className="relative w-full">
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm rounded-3xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete Product?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-2">
+            Are you sure you want to delete <strong>"{deleteTarget?.name}"</strong>? This cannot be undone.
+          </p>
+          <div className="flex gap-3 mt-6">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 rounded-xl"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Filters */}
+      <Card className="p-4 rounded-2xl border-border/50 shadow-sm flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-11 rounded-xl" />
+          <Input
+            placeholder="Search by name or category..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 h-11 rounded-xl"
+          />
+        </div>
+        <div className="flex gap-2">
+          {["all", "mart", "food"].map(t => (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-colors border ${
+                typeFilter === t ? "bg-primary text-white border-primary" : "bg-muted/30 border-border/50 hover:border-primary text-muted-foreground"
+              }`}
+            >
+              {t === "mart" ? "🛒 " : t === "food" ? "🍔 " : ""}{t}
+            </button>
+          ))}
         </div>
       </Card>
 
@@ -163,18 +235,19 @@ export default function Products() {
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead>Product Info</TableHead>
+                <TableHead>Product</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Price</TableHead>
+                <TableHead>Vendor</TableHead>
                 <TableHead>Stock</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Loading products...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading products...</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No products found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No products found.</TableCell></TableRow>
               ) : (
                 filtered.map((p: any) => (
                   <TableRow key={p.id} className="hover:bg-muted/30">
@@ -184,25 +257,31 @@ export default function Products() {
                         <Badge variant={p.type === 'food' ? 'default' : 'secondary'} className="text-[10px] uppercase">
                           {p.type}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">{p.unit}</span>
+                        {p.unit && <span className="text-xs text-muted-foreground">{p.unit}</span>}
                       </div>
                     </TableCell>
-                    <TableCell className="capitalize font-medium">{p.category}</TableCell>
+                    <TableCell className="capitalize font-medium text-sm">{p.category}</TableCell>
                     <TableCell>
                       <p className="font-bold text-foreground">{formatCurrency(p.price)}</p>
-                      {p.originalPrice && <p className="text-xs line-through text-muted-foreground">{formatCurrency(p.originalPrice)}</p>}
+                      {p.originalPrice && (
+                        <p className="text-xs line-through text-muted-foreground">{formatCurrency(p.originalPrice)}</p>
+                      )}
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{p.vendorName || "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={p.inStock ? "outline" : "destructive"} className={p.inStock ? "bg-green-50 text-green-700 border-green-200" : ""}>
-                        {p.inStock ? "In Stock" : "Out of Stock"}
+                      <Badge
+                        variant={p.inStock ? "outline" : "destructive"}
+                        className={p.inStock ? "bg-green-50 text-green-700 border-green-200" : ""}
+                      >
+                        {p.inStock ? "✓ In Stock" : "✗ Out of Stock"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="hover:bg-blue-50 hover:text-blue-600">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="hover:bg-blue-50 hover:text-blue-600 h-8 w-8">
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="hover:bg-red-50 hover:text-red-600">
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(p)} className="hover:bg-red-50 hover:text-red-600 h-8 w-8">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>

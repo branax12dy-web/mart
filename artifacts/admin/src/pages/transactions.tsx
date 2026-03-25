@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Receipt, TrendingUp, TrendingDown, DollarSign, Search, RefreshCw } from "lucide-react";
+import { Receipt, TrendingUp, TrendingDown, DollarSign, Search, RefreshCw, User } from "lucide-react";
 
 export default function Transactions() {
   const { data, isLoading, refetch, isFetching } = useTransactions();
@@ -15,10 +15,13 @@ export default function Transactions() {
 
   const transactions = data?.transactions || [];
   const filtered = transactions.filter((t: any) => {
+    const q = search.toLowerCase();
     const matchSearch =
-      t.description?.toLowerCase().includes(search.toLowerCase()) ||
-      t.userId?.toLowerCase().includes(search.toLowerCase()) ||
-      t.id?.toLowerCase().includes(search.toLowerCase());
+      (t.description || "").toLowerCase().includes(q) ||
+      (t.userName || "").toLowerCase().includes(q) ||
+      (t.userPhone || "").includes(q) ||
+      t.userId.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q);
     const matchType = typeFilter === "all" || t.type === typeFilter;
     return matchSearch && matchType;
   });
@@ -32,7 +35,7 @@ export default function Transactions() {
           </div>
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Wallet Transactions</h1>
-            <p className="text-muted-foreground text-sm">History of all digital wallet movements</p>
+            <p className="text-muted-foreground text-sm">Complete history of all digital wallet movements</p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9 rounded-xl gap-2 self-start sm:self-auto">
@@ -43,42 +46,36 @@ export default function Transactions() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="rounded-2xl border-border/50 bg-gradient-to-br from-primary to-blue-700 text-white border-none shadow-lg">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                <DollarSign className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-white/80 text-xs font-medium">Total Transactions</p>
-                <p className="text-xl font-bold">{transactions.length}</p>
-              </div>
+        <Card className="rounded-2xl border-none bg-gradient-to-br from-primary to-blue-700 text-white shadow-lg">
+          <CardContent className="p-5 flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-white/80 text-xs font-medium">Total Transactions</p>
+              <p className="text-xl font-bold">{transactions.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-green-200 bg-green-50 shadow-sm">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-green-700/80 text-xs font-medium">Total Credits</p>
-                <p className="text-xl font-bold text-green-700">{formatCurrency(data?.totalCredit || 0)}</p>
-              </div>
+          <CardContent className="p-5 flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-green-700/80 text-xs font-medium">Total Credits</p>
+              <p className="text-xl font-bold text-green-700">{formatCurrency(data?.totalCredit || 0)}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-red-200 bg-red-50 shadow-sm">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                <TrendingDown className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-red-700/80 text-xs font-medium">Total Debits</p>
-                <p className="text-xl font-bold text-red-700">{formatCurrency(data?.totalDebit || 0)}</p>
-              </div>
+          <CardContent className="p-5 flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+              <TrendingDown className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-red-700/80 text-xs font-medium">Total Debits</p>
+              <p className="text-xl font-bold text-red-700">{formatCurrency(data?.totalDebit || 0)}</p>
             </div>
           </CardContent>
         </Card>
@@ -89,26 +86,30 @@ export default function Transactions() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by description, user ID..."
+            placeholder="Search by user name, phone, or description..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9 h-11 rounded-xl bg-muted/30 border-border/50"
           />
         </div>
         <div className="flex gap-2">
-          {["all", "credit", "debit"].map(t => (
+          {[
+            { value: "all", label: "All" },
+            { value: "credit", label: "▲ Credits" },
+            { value: "debit", label: "▼ Debits" }
+          ].map(t => (
             <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-colors border ${
-                typeFilter === t
-                  ? t === "credit" ? "bg-green-600 text-white border-green-600"
-                  : t === "debit" ? "bg-red-600 text-white border-red-600"
+              key={t.value}
+              onClick={() => setTypeFilter(t.value)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${
+                typeFilter === t.value
+                  ? t.value === "credit" ? "bg-green-600 text-white border-green-600"
+                  : t.value === "debit" ? "bg-red-600 text-white border-red-600"
                   : "bg-primary text-white border-primary"
                   : "bg-muted/30 border-border/50 text-muted-foreground hover:border-primary"
               }`}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
@@ -138,10 +139,22 @@ export default function Transactions() {
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {t.id.slice(-8).toUpperCase()}
                     </TableCell>
-                    <TableCell className="font-mono text-xs font-medium">
-                      {t.userId.slice(-6).toUpperCase()}
+                    <TableCell>
+                      {t.userName ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
+                            <User className="w-3.5 h-3.5 text-sky-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">{t.userName}</p>
+                            <p className="text-xs text-muted-foreground">{t.userPhone}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="font-mono text-xs text-muted-foreground">{t.userId.slice(-6).toUpperCase()}</span>
+                      )}
                     </TableCell>
-                    <TableCell className="font-medium max-w-[200px] truncate">{t.description}</TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate text-sm">{t.description}</TableCell>
                     <TableCell>
                       <Badge
                         variant="outline"

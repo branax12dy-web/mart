@@ -82,6 +82,7 @@ export const useUpdateOrder = () => {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders-enriched"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
     },
   });
@@ -106,6 +107,7 @@ export const useUpdateRide = () => {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-rides"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
     },
   });
@@ -115,7 +117,7 @@ export const useUpdateRide = () => {
 export const usePharmacyOrders = () => {
   return useQuery({
     queryKey: ["admin-pharmacy"],
-    queryFn: () => fetcher("/pharmacy-orders"),
+    queryFn: () => fetcher("/pharmacy-enriched"),
     refetchInterval: REFETCH_INTERVAL,
   });
 };
@@ -139,7 +141,7 @@ export const useUpdatePharmacyOrder = () => {
 export const useParcelBookings = () => {
   return useQuery({
     queryKey: ["admin-parcel"],
-    queryFn: () => fetcher("/parcel-bookings"),
+    queryFn: () => fetcher("/parcel-enriched"),
     refetchInterval: REFETCH_INTERVAL,
   });
 };
@@ -156,6 +158,27 @@ export const useUpdateParcelBooking = () => {
       queryClient.invalidateQueries({ queryKey: ["admin-parcel"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
     },
+  });
+};
+
+// Delete User
+export const useDeleteUser = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/users/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
+  });
+};
+
+// User Activity
+export const useUserActivity = (userId: string | null) => {
+  return useQuery({
+    queryKey: ["admin-user-activity", userId],
+    queryFn: () => fetcher(`/users/${userId}/activity`),
+    enabled: !!userId,
   });
 };
 
@@ -220,11 +243,11 @@ export const useBroadcast = () => {
   });
 };
 
-// Transactions
+// Transactions (enriched with user names)
 export const useTransactions = () => {
   return useQuery({
     queryKey: ["admin-transactions"],
-    queryFn: () => fetcher("/transactions"),
+    queryFn: () => fetcher("/transactions-enriched"),
     refetchInterval: REFETCH_INTERVAL,
   });
 };
