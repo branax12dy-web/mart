@@ -1,33 +1,126 @@
+import { useState } from "react";
 import { useTransactions } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Receipt } from "lucide-react";
+import { Receipt, TrendingUp, TrendingDown, DollarSign, Search, RefreshCw } from "lucide-react";
 
 export default function Transactions() {
-  const { data, isLoading } = useTransactions();
+  const { data, isLoading, refetch, isFetching } = useTransactions();
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+
   const transactions = data?.transactions || [];
+  const filtered = transactions.filter((t: any) => {
+    const matchSearch =
+      t.description?.toLowerCase().includes(search.toLowerCase()) ||
+      t.userId?.toLowerCase().includes(search.toLowerCase()) ||
+      t.id?.toLowerCase().includes(search.toLowerCase());
+    const matchType = typeFilter === "all" || t.type === typeFilter;
+    return matchSearch && matchType;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-xl flex items-center justify-center">
-          <Receipt className="w-6 h-6" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-xl flex items-center justify-center">
+            <Receipt className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-display font-bold text-foreground">Wallet Transactions</h1>
+            <p className="text-muted-foreground text-sm">History of all digital wallet movements</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-3xl font-display font-bold text-foreground">Wallet Transactions</h1>
-          <p className="text-muted-foreground text-sm">History of all digital wallet movements</p>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9 rounded-xl gap-2 self-start sm:self-auto">
+          <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="rounded-2xl border-border/50 bg-gradient-to-br from-primary to-blue-700 text-white border-none shadow-lg">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-white/80 text-xs font-medium">Total Transactions</p>
+                <p className="text-xl font-bold">{transactions.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-green-200 bg-green-50 shadow-sm">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-green-700/80 text-xs font-medium">Total Credits</p>
+                <p className="text-xl font-bold text-green-700">{formatCurrency(data?.totalCredit || 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-red-200 bg-red-50 shadow-sm">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                <TrendingDown className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-red-700/80 text-xs font-medium">Total Debits</p>
+                <p className="text-xl font-bold text-red-700">{formatCurrency(data?.totalDebit || 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card className="p-4 rounded-2xl border-border/50 shadow-sm flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by description, user ID..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 h-11 rounded-xl bg-muted/30 border-border/50"
+          />
+        </div>
+        <div className="flex gap-2">
+          {["all", "credit", "debit"].map(t => (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-colors border ${
+                typeFilter === t
+                  ? t === "credit" ? "bg-green-600 text-white border-green-600"
+                  : t === "debit" ? "bg-red-600 text-white border-red-600"
+                  : "bg-primary text-white border-primary"
+                  : "bg-muted/30 border-border/50 text-muted-foreground hover:border-primary"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </Card>
 
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead>Transaction ID</TableHead>
-                <TableHead>User ID</TableHead>
+                <TableHead>Txn ID</TableHead>
+                <TableHead>User</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
@@ -37,19 +130,27 @@ export default function Transactions() {
             <TableBody>
               {isLoading ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
-              ) : transactions.length === 0 ? (
+              ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No transactions found.</TableCell></TableRow>
               ) : (
-                transactions.map((t: any) => (
+                filtered.map((t: any) => (
                   <TableRow key={t.id} className="hover:bg-muted/30">
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {t.id.slice(-8).toUpperCase()}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{t.userId.slice(-6).toUpperCase()}</TableCell>
-                    <TableCell className="font-medium">{t.description}</TableCell>
+                    <TableCell className="font-mono text-xs font-medium">
+                      {t.userId.slice(-6).toUpperCase()}
+                    </TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate">{t.description}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={t.type === 'credit' ? 'bg-green-50 text-green-700 border-green-200 uppercase text-[10px]' : 'bg-red-50 text-red-700 border-red-200 uppercase text-[10px]'}>
-                        {t.type}
+                      <Badge
+                        variant="outline"
+                        className={t.type === 'credit'
+                          ? 'bg-green-50 text-green-700 border-green-200 uppercase text-[10px] font-bold'
+                          : 'bg-red-50 text-red-700 border-red-200 uppercase text-[10px] font-bold'
+                        }
+                      >
+                        {t.type === 'credit' ? '▲ Credit' : '▼ Debit'}
                       </Badge>
                     </TableCell>
                     <TableCell className={`text-right font-bold ${t.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>

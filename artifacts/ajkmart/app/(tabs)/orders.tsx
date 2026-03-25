@@ -347,6 +347,17 @@ export default function OrdersScreen() {
     }
   }, [user?.id]);
 
+  // Auto-refresh rides, pharmacy, parcel every 30s (same as orders)
+  React.useEffect(() => {
+    if (!user?.id) return;
+    const interval = setInterval(() => {
+      fetchRides();
+      fetchPharmacy();
+      fetchParcel();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id, fetchRides, fetchPharmacy, fetchParcel]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([refetchOrders(), fetchRides(), fetchPharmacy(), fetchParcel()]);

@@ -7,6 +7,7 @@
 ### Artifacts
 - **`artifacts/ajkmart`** — Expo React Native mobile app (web-compatible via Expo Go)
 - **`artifacts/api-server`** — Express 5 REST API backend
+- **`artifacts/admin`** — React-Vite Admin Dashboard (at `/admin/`)
 
 ### User Roles
 - `customer` — shops, orders food, books rides

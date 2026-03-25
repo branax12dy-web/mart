@@ -10,7 +10,7 @@ import {
   walletTransactionsTable,
   notificationsTable,
 } from "@workspace/db/schema";
-import { eq, desc, count, sum, sql } from "drizzle-orm";
+import { eq, desc, count, sum } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 
 const router: IRouter = Router();
@@ -25,6 +25,49 @@ function adminAuth(req: Request, res: Response, next: NextFunction) {
   }
   next();
 }
+
+/* ── helpers ── */
+async function sendUserNotification(userId: string, title: string, body: string, type: string, icon: string) {
+  await db.insert(notificationsTable).values({
+    id: generateId(),
+    userId,
+    title,
+    body,
+    type,
+    icon,
+  }).catch(() => {});
+}
+
+const ORDER_NOTIFICATIONS: Record<string, { title: string; body: string; icon: string }> = {
+  confirmed:         { title: "Order Confirmed! ✅", body: "Your order has been confirmed and is being prepared.", icon: "checkmark-circle-outline" },
+  preparing:         { title: "Order Being Prepared 🍳", body: "The vendor is now preparing your order.", icon: "restaurant-outline" },
+  out_for_delivery:  { title: "On the Way! 🚴", body: "Your order is out for delivery. Track your rider.", icon: "bicycle-outline" },
+  delivered:         { title: "Order Delivered! 🎉", body: "Your order has been delivered. Enjoy!", icon: "bag-check-outline" },
+  cancelled:         { title: "Order Cancelled ❌", body: "Your order has been cancelled by the store.", icon: "close-circle-outline" },
+};
+
+const RIDE_NOTIFICATIONS: Record<string, { title: string; body: string; icon: string }> = {
+  accepted:    { title: "Driver Found! 🚗", body: "A driver has accepted your ride. They are on the way.", icon: "car-outline" },
+  arrived:     { title: "Driver Arrived! 📍", body: "Your driver has arrived at the pickup location.", icon: "location-outline" },
+  in_transit:  { title: "Ride Started 🛣️", body: "Your ride is now in progress. Sit back and relax.", icon: "navigate-outline" },
+  completed:   { title: "Ride Completed! ⭐", body: "Your ride has been completed. Thanks for choosing AJKMart!", icon: "star-outline" },
+  cancelled:   { title: "Ride Cancelled ❌", body: "Your ride has been cancelled.", icon: "close-circle-outline" },
+};
+
+const PHARMACY_NOTIFICATIONS: Record<string, { title: string; body: string; icon: string }> = {
+  confirmed:        { title: "Pharmacy Order Confirmed ✅", body: "Your medicine order has been confirmed.", icon: "checkmark-circle-outline" },
+  preparing:        { title: "Medicines Being Packed 💊", body: "Your medicines are being prepared for delivery.", icon: "medical-outline" },
+  out_for_delivery: { title: "Medicines On the Way! 🚴", body: "Your medicines are out for delivery.", icon: "bicycle-outline" },
+  delivered:        { title: "Medicines Delivered! 💊", body: "Your pharmacy order has been delivered.", icon: "bag-check-outline" },
+  cancelled:        { title: "Order Cancelled ❌", body: "Your pharmacy order has been cancelled.", icon: "close-circle-outline" },
+};
+
+const PARCEL_NOTIFICATIONS: Record<string, { title: string; body: string; icon: string }> = {
+  accepted:    { title: "Rider Assigned! 📦", body: "A rider has been assigned to deliver your parcel.", icon: "person-outline" },
+  in_transit:  { title: "Parcel In Transit 🚚", body: "Your parcel is on the way to the destination.", icon: "cube-outline" },
+  completed:   { title: "Parcel Delivered! ✅", body: "Your parcel has been delivered successfully.", icon: "checkmark-circle-outline" },
+  cancelled:   { title: "Booking Cancelled ❌", body: "Your parcel booking has been cancelled.", icon: "close-circle-outline" },
+};
 
 /* ── Auth check ── */
 router.post("/auth", (req, res) => {
@@ -94,24 +137,27 @@ router.get("/stats", async (_req, res) => {
       ...o,
       total: parseFloat(String(o.total)),
       createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
     })),
     recentRides: recentRides.map(r => ({
       ...r,
       fare: parseFloat(r.fare),
       distance: parseFloat(r.distance),
       createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
     })),
   });
 });
 
 /* ── Users ── */
-router.get("/users", async (req, res) => {
+router.get("/users", async (_req, res) => {
   const users = await db.select().from(usersTable).orderBy(desc(usersTable.createdAt));
   res.json({
     users: users.map(u => ({
       ...u,
       walletBalance: parseFloat(u.walletBalance ?? "0"),
       createdAt: u.createdAt.toISOString(),
+      updatedAt: u.updatedAt.toISOString(),
     })),
     total: users.length,
   });
@@ -126,7 +172,7 @@ router.patch("/users/:id", async (req, res) => {
 
   const [user] = await db
     .update(usersTable)
-    .set(updates)
+    .set({ ...updates, updatedAt: new Date() })
     .where(eq(usersTable.id, req.params["id"]!))
     .returning();
 
@@ -134,12 +180,55 @@ router.patch("/users/:id", async (req, res) => {
   res.json({ ...user, walletBalance: parseFloat(user.walletBalance ?? "0") });
 });
 
+/* ── Wallet Top-up ── */
+router.post("/users/:id/wallet-topup", async (req, res) => {
+  const { amount, description } = req.body;
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    res.status(400).json({ error: "Valid amount is required" });
+    return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!));
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  const currentBalance = parseFloat(user.walletBalance ?? "0");
+  const newBalance = currentBalance + Number(amount);
+
+  const [updatedUser] = await db
+    .update(usersTable)
+    .set({ walletBalance: String(newBalance), updatedAt: new Date() })
+    .where(eq(usersTable.id, req.params["id"]!))
+    .returning();
+
+  await db.insert(walletTransactionsTable).values({
+    id: generateId(),
+    userId: req.params["id"]!,
+    type: "credit",
+    amount: String(amount),
+    description: description || `Admin top-up: Rs. ${amount}`,
+    reference: "admin_topup",
+  });
+
+  await sendUserNotification(
+    req.params["id"]!,
+    "Wallet Topped Up! 💰",
+    `Rs. ${amount} has been added to your AJKMart wallet.`,
+    "system",
+    "wallet-outline"
+  );
+
+  res.json({
+    success: true,
+    newBalance,
+    user: { ...updatedUser!, walletBalance: newBalance },
+  });
+});
+
 /* ── All Orders ── */
 router.get("/orders", async (req, res) => {
   const { status, type, limit: lim } = req.query;
-  let query = db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).$dynamic();
+  const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(Number(lim) || 200);
 
-  const orders = await query.limit(Number(lim) || 100);
   const filtered = orders
     .filter(o => !status || o.status === status)
     .filter(o => !type || o.type === type);
@@ -149,6 +238,7 @@ router.get("/orders", async (req, res) => {
       ...o,
       total: parseFloat(String(o.total)),
       createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
     })),
     total: filtered.length,
   });
@@ -162,32 +252,75 @@ router.patch("/orders/:id/status", async (req, res) => {
     .where(eq(ordersTable.id, req.params["id"]!))
     .returning();
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const notif = ORDER_NOTIFICATIONS[status];
+  if (notif) {
+    await sendUserNotification(order.userId, notif.title, notif.body, "mart", notif.icon);
+  }
+
+  if (status === "delivered") {
+    const total = parseFloat(String(order.total));
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, order.userId));
+    if (user && order.paymentMethod === "wallet") {
+      const newBal = Math.max(0, parseFloat(user.walletBalance ?? "0") - total);
+      await db.update(usersTable).set({ walletBalance: String(newBal), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+      await db.insert(walletTransactionsTable).values({
+        id: generateId(), userId: user.id, type: "debit",
+        amount: String(total), description: `Order payment #${order.id.slice(-6).toUpperCase()}`, reference: order.id,
+      });
+    }
+  }
+
   res.json({ ...order, total: parseFloat(String(order.total)) });
 });
 
 /* ── All Rides ── */
 router.get("/rides", async (_req, res) => {
-  const rides = await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(100);
+  const rides = await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(200);
   res.json({
     rides: rides.map(r => ({
       ...r,
       fare: parseFloat(r.fare),
       distance: parseFloat(r.distance),
       createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
     })),
     total: rides.length,
   });
 });
 
 router.patch("/rides/:id/status", async (req, res) => {
-  const { status } = req.body;
+  const { status, riderName, riderPhone } = req.body;
+  const updateData: any = { status, updatedAt: new Date() };
+  if (riderName) updateData.riderName = riderName;
+  if (riderPhone) updateData.riderPhone = riderPhone;
+
   const [ride] = await db
     .update(ridesTable)
-    .set({ status, updatedAt: new Date() })
+    .set(updateData)
     .where(eq(ridesTable.id, req.params["id"]!))
     .returning();
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
-  res.json({ ...ride, fare: parseFloat(ride.fare) });
+
+  const notif = RIDE_NOTIFICATIONS[status];
+  if (notif) {
+    await sendUserNotification(ride.userId, notif.title, notif.body, "ride", notif.icon);
+  }
+
+  if (status === "completed") {
+    const fare = parseFloat(ride.fare);
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, ride.userId));
+    if (user && ride.paymentMethod === "wallet") {
+      const newBal = Math.max(0, parseFloat(user.walletBalance ?? "0") - fare);
+      await db.update(usersTable).set({ walletBalance: String(newBal), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+      await db.insert(walletTransactionsTable).values({
+        id: generateId(), userId: user.id, type: "debit",
+        amount: String(fare), description: `Ride payment #${ride.id.slice(-6).toUpperCase()}`, reference: ride.id,
+      });
+    }
+  }
+
+  res.json({ ...ride, fare: parseFloat(ride.fare), distance: parseFloat(ride.distance) });
 });
 
 /* ── Pharmacy Orders ── */
@@ -196,12 +329,13 @@ router.get("/pharmacy-orders", async (_req, res) => {
     .select()
     .from(pharmacyOrdersTable)
     .orderBy(desc(pharmacyOrdersTable.createdAt))
-    .limit(100);
+    .limit(200);
   res.json({
     orders: orders.map(o => ({
       ...o,
       total: parseFloat(o.total),
       createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
     })),
     total: orders.length,
   });
@@ -215,6 +349,12 @@ router.patch("/pharmacy-orders/:id/status", async (req, res) => {
     .where(eq(pharmacyOrdersTable.id, req.params["id"]!))
     .returning();
   if (!order) { res.status(404).json({ error: "Not found" }); return; }
+
+  const notif = PHARMACY_NOTIFICATIONS[status];
+  if (notif) {
+    await sendUserNotification(order.userId, notif.title, notif.body, "pharmacy", notif.icon);
+  }
+
   res.json({ ...order, total: parseFloat(order.total) });
 });
 
@@ -224,12 +364,13 @@ router.get("/parcel-bookings", async (_req, res) => {
     .select()
     .from(parcelBookingsTable)
     .orderBy(desc(parcelBookingsTable.createdAt))
-    .limit(100);
+    .limit(200);
   res.json({
     bookings: bookings.map(b => ({
       ...b,
       fare: parseFloat(b.fare),
       createdAt: b.createdAt.toISOString(),
+      updatedAt: b.updatedAt.toISOString(),
     })),
     total: bookings.length,
   });
@@ -243,6 +384,12 @@ router.patch("/parcel-bookings/:id/status", async (req, res) => {
     .where(eq(parcelBookingsTable.id, req.params["id"]!))
     .returning();
   if (!booking) { res.status(404).json({ error: "Not found" }); return; }
+
+  const notif = PARCEL_NOTIFICATIONS[status];
+  if (notif) {
+    await sendUserNotification(booking.userId, notif.title, notif.body, "parcel", notif.icon);
+  }
+
   res.json({ ...booking, fare: parseFloat(booking.fare) });
 });
 
@@ -262,7 +409,11 @@ router.get("/products", async (_req, res) => {
 });
 
 router.post("/products", async (req, res) => {
-  const { name, description, price, originalPrice, category, type, unit, vendorName, inStock, deliveryTime } = req.body;
+  const { name, description, price, originalPrice, category, type, unit, vendorName, inStock, deliveryTime, image } = req.body;
+  if (!name || !price || !category) {
+    res.status(400).json({ error: "name, price, and category are required" });
+    return;
+  }
   const [product] = await db.insert(productsTable).values({
     id: generateId(),
     name,
@@ -278,12 +429,13 @@ router.post("/products", async (req, res) => {
     deliveryTime: deliveryTime || "30-45 min",
     rating: "4.5",
     reviewCount: 0,
+    image: image || null,
   }).returning();
   res.status(201).json({ ...product!, price: parseFloat(product!.price) });
 });
 
 router.patch("/products/:id", async (req, res) => {
-  const { name, description, price, originalPrice, category, unit, inStock, vendorName, deliveryTime } = req.body;
+  const { name, description, price, originalPrice, category, unit, inStock, vendorName, deliveryTime, image } = req.body;
   const updates: Partial<typeof productsTable.$inferInsert> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
@@ -294,6 +446,7 @@ router.patch("/products/:id", async (req, res) => {
   if (inStock !== undefined) updates.inStock = inStock;
   if (vendorName !== undefined) updates.vendorName = vendorName;
   if (deliveryTime !== undefined) updates.deliveryTime = deliveryTime;
+  if (image !== undefined) updates.image = image;
 
   const [product] = await db
     .update(productsTable)
@@ -337,6 +490,10 @@ router.get("/transactions", async (_req, res) => {
     .from(walletTransactionsTable)
     .orderBy(desc(walletTransactionsTable.createdAt))
     .limit(200);
+
+  const totalCredit = transactions.filter(t => t.type === "credit").reduce((s, t) => s + parseFloat(t.amount), 0);
+  const totalDebit = transactions.filter(t => t.type === "debit").reduce((s, t) => s + parseFloat(t.amount), 0);
+
   res.json({
     transactions: transactions.map(t => ({
       ...t,
@@ -344,6 +501,8 @@ router.get("/transactions", async (_req, res) => {
       createdAt: t.createdAt.toISOString(),
     })),
     total: transactions.length,
+    totalCredit,
+    totalDebit,
   });
 });
 

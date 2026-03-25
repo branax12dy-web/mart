@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
 
+const REFETCH_INTERVAL = 30_000;
+
 // Auth
 export const useAdminLogin = () => {
   return useMutation({
-    mutationFn: (secret: string) => 
+    mutationFn: (secret: string) =>
       fetcher("/auth", {
         method: "POST",
         body: JSON.stringify({ secret }),
@@ -17,6 +19,7 @@ export const useStats = () => {
   return useQuery({
     queryKey: ["admin-stats"],
     queryFn: () => fetcher("/stats"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
@@ -25,6 +28,7 @@ export const useUsers = () => {
   return useQuery({
     queryKey: ["admin-users"],
     queryFn: () => fetcher("/users"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
@@ -36,7 +40,26 @@ export const useUpdateUser = () => {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+    },
+  });
+};
+
+export const useWalletTopup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, amount, description }: { id: string; amount: number; description?: string }) =>
+      fetcher(`/users/${id}/wallet-topup`, {
+        method: "POST",
+        body: JSON.stringify({ amount, description }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -45,6 +68,7 @@ export const useOrders = () => {
   return useQuery({
     queryKey: ["admin-orders"],
     queryFn: () => fetcher("/orders"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
@@ -56,7 +80,10 @@ export const useUpdateOrder = () => {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-orders"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -65,18 +92,22 @@ export const useRides = () => {
   return useQuery({
     queryKey: ["admin-rides"],
     queryFn: () => fetcher("/rides"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
 export const useUpdateRide = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
+    mutationFn: ({ id, status, riderName, riderPhone }: { id: string; status: string; riderName?: string; riderPhone?: string }) =>
       fetcher(`/rides/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, riderName, riderPhone }),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-rides"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-rides"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -85,6 +116,7 @@ export const usePharmacyOrders = () => {
   return useQuery({
     queryKey: ["admin-pharmacy"],
     queryFn: () => fetcher("/pharmacy-orders"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
@@ -96,7 +128,10 @@ export const useUpdatePharmacyOrder = () => {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-pharmacy"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-pharmacy"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -105,6 +140,7 @@ export const useParcelBookings = () => {
   return useQuery({
     queryKey: ["admin-parcel"],
     queryFn: () => fetcher("/parcel-bookings"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
@@ -116,7 +152,10 @@ export const useUpdateParcelBooking = () => {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-parcel"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-parcel"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -125,6 +164,7 @@ export const useProducts = () => {
   return useQuery({
     queryKey: ["admin-products"],
     queryFn: () => fetcher("/products"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
 
@@ -136,7 +176,10 @@ export const useCreateProduct = () => {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-products"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -159,7 +202,10 @@ export const useDeleteProduct = () => {
       fetcher(`/products/${id}`, {
         method: "DELETE",
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-products"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
   });
 };
 
@@ -179,5 +225,6 @@ export const useTransactions = () => {
   return useQuery({
     queryKey: ["admin-transactions"],
     queryFn: () => fetcher("/transactions"),
+    refetchInterval: REFETCH_INTERVAL,
   });
 };
