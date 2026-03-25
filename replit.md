@@ -1,19 +1,34 @@
 # AJKMart Super App — Workspace
-<!-- Last updated: 2026-03-25 — App Management page + User Security Modal + Sub-Admin accounts + Security API routes -->
+<!-- Last updated: 2026-03-25 — Rider App + Vendor App added (mobile-first React+Vite web portals) -->
 
 ## Project Overview
 
 **AJKMart** is a full-stack "Super App" combining Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking, Pharmacy, and Parcel Delivery with a unified digital wallet. Built for Azad Jammu & Kashmir (AJK), Pakistan.
 
 ### Artifacts
-- **`artifacts/ajkmart`** — Expo React Native mobile app (web-compatible via Expo Go)
+- **`artifacts/ajkmart`** — Expo React Native mobile app (web-compatible via Expo Go) → customer-facing
 - **`artifacts/api-server`** — Express 5 REST API backend
 - **`artifacts/admin`** — React-Vite Admin Dashboard (at `/admin/`)
+- **`artifacts/rider-app`** — React-Vite mobile-first web app for riders (at `/rider/`, green theme 🏍️)
+- **`artifacts/vendor-app`** — React-Vite mobile-first web app for vendors (at `/vendor/`, orange theme 🏪)
 
 ### User Roles
-- `customer` — shops, orders food, books rides
-- `rider` — delivery/taxi driver (rider dashboard in profile)
-- `vendor` — store owner (vendor dashboard in profile)
+- `customer` — shops, orders food, books rides (uses Expo app)
+- `rider` — delivery/taxi driver (uses Rider Portal at `/rider/`)
+- `vendor` — store owner (uses Vendor Portal at `/vendor/`)
+
+### Rider App Key Info
+- Auth: phone OTP → token stored in `localStorage` as `rider_token`
+- Token format: `Buffer.from(userId:phone:timestamp).toString("base64")`
+- Rider earns **80%** of each order/ride total
+- API routes: `/api/rider/*` (auth middleware checks `roles` includes "rider")
+- Pages: Login, Home (online toggle), Active delivery, History, Earnings, Profile
+
+### Vendor App Key Info
+- Auth: phone OTP → token stored in `localStorage` as `vendor_token`
+- Vendor earns **85%** of order revenue (15% platform fee)
+- API routes: `/api/vendor/*` (auth middleware checks `roles` includes "vendor")
+- Pages: Login, Dashboard, Orders (with status flow), Products (CRUD), Profile
 
 ---
 

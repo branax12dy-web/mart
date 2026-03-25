@@ -12,6 +12,7 @@ export const ordersTable = pgTable("orders", {
   deliveryAddress: text("delivery_address"),
   paymentMethod: text("payment_method").notNull(),
   riderId: text("rider_id"),
+  vendorId: text("vendor_id"),
   estimatedTime: text("estimated_time"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
