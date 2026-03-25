@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**AJKMart** is a full-stack "Super App" combining Grocery Shopping (Mart), Food Delivery, and Taxi/Bike Booking with a unified digital wallet. Built for Azad Jammu & Kashmir (AJK), Pakistan.
+**AJKMart** is a full-stack "Super App" combining Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking, Pharmacy, and Parcel Delivery with a unified digital wallet. Built for Azad Jammu & Kashmir (AJK), Pakistan.
 
 ### Artifacts
 - **`artifacts/ajkmart`** — Expo React Native mobile app (web-compatible via Expo Go)

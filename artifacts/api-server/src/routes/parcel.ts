@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { parcelBookingsTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { notificationsTable, parcelBookingsTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 
@@ -122,6 +122,17 @@ router.post("/", async (req, res) => {
       estimatedTime: "45-60 min",
     })
     .returning();
+
+  await db.insert(notificationsTable).values({
+    id: generateId(),
+    userId,
+    title: "Parcel Booking Confirmed",
+    body: `Aapka ${parcelType} parcel book ho gaya. ${receiverName} tak delivery — Rs. ${fare}. ETA: 45-60 min`,
+    type: "parcel",
+    icon: "cube-outline",
+    link: `/(tabs)/orders`,
+  }).catch(() => {});
+
   res.status(201).json(mapBooking(booking!));
 });
 

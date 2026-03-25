@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { notificationsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 
@@ -48,8 +48,9 @@ router.post("/", async (req, res) => {
       description: `${type === "bike" ? "Bike" : "Car"} ride payment`,
     });
   }
+  const rideId = generateId();
   const [ride] = await db.insert(ridesTable).values({
-    id: generateId(),
+    id: rideId,
     userId,
     type,
     status: "searching",
@@ -63,6 +64,17 @@ router.post("/", async (req, res) => {
     distance: Math.round(distance * 10 / 10).toString(),
     paymentMethod,
   }).returning();
+
+  await db.insert(notificationsTable).values({
+    id: generateId(),
+    userId,
+    title: `${type === "bike" ? "Bike" : "Car"} Ride Booked`,
+    body: `Aapki ride book ho gayi. Rider dhundha ja raha hai. Fare: Rs. ${fare}`,
+    type: "ride",
+    icon: type === "bike" ? "bicycle-outline" : "car-outline",
+    link: `/ride`,
+  }).catch(() => {});
+
   res.status(201).json({
     ...ride!,
     fare: parseFloat(ride!.fare),

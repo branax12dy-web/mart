@@ -13,6 +13,7 @@ import parcelRouter from "./parcel.js";
 import notificationsRouter from "./notifications.js";
 import addressesRouter from "./addresses.js";
 import settingsRouter from "./settings.js";
+import seedRouter from "./seed.js";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use("/parcel-bookings", parcelRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/addresses", addressesRouter);
 router.use("/settings", settingsRouter);
+router.use("/seed", seedRouter);
 
 export default router;

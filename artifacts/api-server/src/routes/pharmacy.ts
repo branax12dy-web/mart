@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { pharmacyOrdersTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { notificationsTable, pharmacyOrdersTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 
@@ -90,6 +90,17 @@ router.post("/", async (req, res) => {
       estimatedTime: "25-40 min",
     })
     .returning();
+
+  await db.insert(notificationsTable).values({
+    id: generateId(),
+    userId,
+    title: "Pharmacy Order Placed",
+    body: `Aapka pharmacy order place ho gaya. Rs. ${total} — Estimated: 25-40 min`,
+    type: "pharmacy",
+    icon: "medical-outline",
+    link: `/(tabs)/orders`,
+  }).catch(() => {});
+
   res.status(201).json(mapOrder(order!));
 });
 
