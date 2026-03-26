@@ -199,7 +199,6 @@ router.get("/", async (req, res) => {
       geoFence:       (s["security_geo_fence"]       ?? "off") === "on",
       spoofDetection: (s["security_spoof_detection"] ?? "on")  === "on",
       maxSpeedKmh:    parseInt(s["security_max_speed_kmh"]    ?? "150"),
-      otpBypass:      (s["security_otp_bypass"]      ?? "off") === "on",
       sessionDays:    parseInt(s["security_session_days"]     ?? "30"),
       riderTokenDays: parseInt(s["security_rider_token_days"] ?? "30"),
       rateLimit:      parseInt(s["security_rate_limit"]       ?? "100"),

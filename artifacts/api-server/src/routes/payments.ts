@@ -476,18 +476,25 @@ router.get("/simulate/:gateway/:txnRef", async (req, res) => {
 //  JazzCash posts payment result here (Return URL)
 // ═══════════════════════════════════════════════════════════════════════════════
 router.post("/callback/jazzcash", async (req, res) => {
-  const s = await getPlatformSettings();
+  const s      = await getPlatformSettings();
   const salt   = s["jazzcash_salt"] ?? "";
+  const mode   = s["jazzcash_mode"] ?? "sandbox";
   const params = req.body as Record<string, string>;
 
-  // Verify HMAC hash
-  const receivedHash        = params["pp_SecureHash"];
-  const paramsWithoutHash   = { ...params };
-  delete paramsWithoutHash["pp_SecureHash"];
-  const computedHash        = buildJazzCashHash(paramsWithoutHash, salt);
-
-  if (salt && receivedHash !== computedHash) {
-    res.status(400).json({ error: "Hash mismatch — possible tampering" }); return;
+  /* ── Hash verification ──
+     Live mode: salt MUST be configured and hash MUST match — no bypass allowed.
+     Sandbox mode: skip hash check (sandbox credentials aren't real keys). ── */
+  if (mode !== "sandbox") {
+    if (!salt) {
+      res.status(500).json({ error: "JazzCash salt not configured — cannot verify callback" }); return;
+    }
+    const receivedHash      = params["pp_SecureHash"];
+    const paramsWithoutHash = { ...params };
+    delete paramsWithoutHash["pp_SecureHash"];
+    const computedHash = buildJazzCashHash(paramsWithoutHash, salt);
+    if (receivedHash !== computedHash) {
+      res.status(400).json({ error: "Hash mismatch — possible tampering" }); return;
+    }
   }
 
   const responseCode = params["pp_ResponseCode"];
@@ -495,11 +502,9 @@ router.post("/callback/jazzcash", async (req, res) => {
   const orderId      = params["pp_BillReference"];
 
   if (responseCode === "000") {
-    // ✅ Payment successful — update order to "confirmed" (NOT pending)
     if (orderId) await confirmOrder(orderId);
     res.json({ success: true, txnRef, orderId, message: "JazzCash payment confirmed — order updated ✅" });
   } else {
-    // ❌ Payment failed/cancelled — keep order in pending, log the failure
     res.json({ success: false, txnRef, responseCode, message: "JazzCash payment failed or cancelled" });
   }
 });
@@ -512,6 +517,7 @@ router.post("/callback/easypaisa", async (req, res) => {
   const s        = await getPlatformSettings();
   const hashKey  = s["easypaisa_hash_key"] ?? "";
   const storeId  = s["easypaisa_store_id"] ?? "";
+  const mode     = s["easypaisa_mode"] ?? "sandbox";
   const body     = req.body as Record<string, string>;
 
   const receivedHash = body["encryptedHashRequest"];
@@ -520,10 +526,17 @@ router.post("/callback/easypaisa", async (req, res) => {
   const txnRefNo     = body["transactionReferenceNumber"];
   const amount       = body["transactionAmount"];
 
-  // Verify hash
-  const computedHash = buildEasyPaisaHash([storeId, orderId, amount, "PKR", ""], hashKey);
-  if (hashKey && receivedHash !== computedHash) {
-    res.status(400).json({ error: "Hash mismatch — verify EasyPaisa credentials" }); return;
+  /* ── Hash verification ──
+     Live mode: hashKey MUST be configured and hash MUST match — no bypass allowed.
+     Sandbox mode: skip hash check (sandbox credentials aren't real keys). ── */
+  if (mode !== "sandbox") {
+    if (!hashKey) {
+      res.status(500).json({ error: "EasyPaisa hash key not configured — cannot verify callback" }); return;
+    }
+    const computedHash = buildEasyPaisaHash([storeId, orderId, amount, "PKR", ""], hashKey);
+    if (receivedHash !== computedHash) {
+      res.status(400).json({ error: "Hash mismatch — verify EasyPaisa credentials" }); return;
+    }
   }
 
   if (responseCode === "0000") {

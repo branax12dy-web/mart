@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, and, gte, sql } from "drizzle-orm";
+import { eq, and, gte, sql, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import {
@@ -211,33 +211,50 @@ router.post("/verify-otp", async (req, res) => {
        any pending OTP which signals last-login is this session. */
   }
 
-  /* ── Signup bonus on first login ── */
-  const isFirstLogin = !user.lastLoginAt;
-  if (isFirstLogin) {
-    const signupBonus = parseFloat(settings["customer_signup_bonus"] ?? "0");
-    if (signupBonus > 0) {
-      await db.update(usersTable)
-        .set({ walletBalance: (parseFloat(user.walletBalance ?? "0") + signupBonus).toFixed(2) })
-        .where(eq(usersTable.id, user.id))
-        .catch(() => {});
-      await db.insert(walletTransactionsTable).values({
+  /* ── Success: clear OTP + update last login atomically ──
+     Using lastLoginAt IS NULL as an atomic gate to detect and credit the
+     signup bonus exactly once — prevents double-credit from concurrent OTP
+     verify requests.  SQL arithmetic (wallet_balance + N) ensures the
+     credit uses the current DB value, not a stale in-memory snapshot. ── */
+  const signupBonus = parseFloat(settings["customer_signup_bonus"] ?? "0");
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    /* Atomically mark first login — only succeeds once (WHERE lastLoginAt IS NULL) */
+    const updated = await tx
+      .update(usersTable)
+      .set({ otpCode: null, otpExpiry: null, lastLoginAt: now })
+      .where(and(eq(usersTable.phone, phone), isNull(usersTable.lastLoginAt)))
+      .returning({ id: usersTable.id });
+
+    const isActualFirstLogin = updated.length > 0;
+
+    if (!isActualFirstLogin) {
+      /* Not first login — just clear OTP without touching lastLoginAt */
+      await tx
+        .update(usersTable)
+        .set({ otpCode: null, otpExpiry: null })
+        .where(eq(usersTable.phone, phone));
+    }
+
+    /* Credit signup bonus only on verified first login */
+    if (isActualFirstLogin && signupBonus > 0) {
+      await tx
+        .update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${signupBonus}` })
+        .where(eq(usersTable.id, user.id));
+      await tx.insert(walletTransactionsTable).values({
         id: generateId(), userId: user.id, type: "bonus",
         amount: signupBonus.toFixed(2),
         description: `Welcome bonus — Thanks for joining AJKMart!`,
-      }).catch(() => {});
-      await db.insert(notificationsTable).values({
+      });
+      await tx.insert(notificationsTable).values({
         id: generateId(), userId: user.id,
         title: "Welcome Bonus! 🎁", body: `Rs. ${signupBonus} has been added to your wallet as a welcome bonus!`,
         type: "wallet", icon: "gift-outline",
-      }).catch(() => {});
+      });
     }
-  }
-
-  /* ── Success: clear OTP + update last login ── */
-  await db
-    .update(usersTable)
-    .set({ otpCode: null, otpExpiry: null, lastLoginAt: new Date() })
-    .where(eq(usersTable.phone, phone));
+  });
 
   resetAttempts(phone);
 
