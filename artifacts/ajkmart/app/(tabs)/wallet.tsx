@@ -60,6 +60,7 @@ export default function WalletScreen() {
   const { showToast } = useToast();
   const qc = useQueryClient();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const TAB_H  = Platform.OS === "web" ? 84 : 49;
 
   const [showTopUp,  setShowTopUp]  = useState(false);
   const [showSend,   setShowSend]   = useState(false);
@@ -236,7 +237,7 @@ export default function WalletScreen() {
           )}
         </View>
 
-        <View style={{ height: Platform.OS === "web" ? 60 : 30 }} />
+        <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
 
       {/* ─── Top Up Modal ─── */}

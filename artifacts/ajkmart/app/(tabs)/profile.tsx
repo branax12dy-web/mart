@@ -530,6 +530,7 @@ export default function ProfileScreen() {
   const { user, logout, updateUser } = useAuth();
   const { showToast } = useToast();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const TAB_H  = Platform.OS === "web" ? 84 : 49;
 
   const [showEdit,    setShowEdit]    = useState(false);
   const [showNotifs,  setShowNotifs]  = useState(false);
@@ -774,7 +775,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        <View style={{ height: Platform.OS === "web" ? 60 : 20 }} />
+        <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
 
       {/* ── Modals ── */}

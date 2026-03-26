@@ -312,6 +312,7 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { itemCount } = useCart();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const TAB_H  = Platform.OS === "web" ? 84 : 49;
   const hdOp   = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -468,7 +469,7 @@ export default function HomeScreen() {
           <BannerCarousel />
         </View>
 
-        <View style={{ height: Platform.OS === "web" ? 50 : 30 }} />
+        <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
     </View>
   );
@@ -498,7 +499,7 @@ const styles = StyleSheet.create({
   secTitle: { fontFamily:"Inter_700Bold", fontSize:17, color:C.text },
   secSub: { fontFamily:"Inter_400Regular", fontSize:12, color:C.textMuted },
 
-  scroll: { paddingBottom: 16 },
+  scroll: { paddingBottom: 0 },
 
   /* bento */
   grid: { paddingHorizontal: H_PAD, gap: 12 },

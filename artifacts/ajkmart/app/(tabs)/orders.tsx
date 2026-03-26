@@ -285,6 +285,7 @@ export default function OrdersScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [refreshing, setRefreshing] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const TAB_H  = Platform.OS === "web" ? 84 : 49;
 
   /* ── Grocery/Food orders ── */
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
@@ -508,7 +509,7 @@ export default function OrdersScreen() {
             {pastParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
           </>
         )}
-        <View style={{ height: Platform.OS === "web" ? 50 : 30 }} />
+        <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
     );
   };
@@ -591,7 +592,7 @@ const styles = StyleSheet.create({
   },
   tabBadgeText: { fontFamily: "Inter_700Bold", fontSize: 9, color: C.textMuted },
 
-  scroll: { paddingBottom: 20 },
+  scroll: { paddingBottom: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
   loadingText: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted },
 
