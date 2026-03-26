@@ -16,6 +16,18 @@ import {
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+import {
+  checkAdminIPWhitelist,
+  addAuditEntry,
+  addSecurityEvent,
+  getClientIp,
+  auditLog,
+  securityEvents,
+  blockedIPs,
+  loginAttempts,
+  unlockPhone,
+  invalidateSettingsCache,
+} from "../middleware/security.js";
 
 /* ── Default Platform Settings ── */
 export const DEFAULT_PLATFORM_SETTINGS = [
@@ -281,17 +293,65 @@ const router: IRouter = Router();
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "ajkmart-admin-2025";
 
 async function adminAuth(req: Request, res: Response, next: NextFunction) {
+  const ip   = getClientIp(req);
   const auth = String(req.headers["x-admin-secret"] || req.query["secret"] || "");
-  if (auth === ADMIN_SECRET) { (req as any).adminRole = "super"; next(); return; }
+
+  if (!auth) {
+    addAuditEntry({ action: "admin_auth_missing", ip, details: `No admin secret provided for ${req.method} ${req.url}`, result: "fail" });
+    res.status(401).json({ error: "Unauthorized. Admin secret is required." });
+    return;
+  }
+
+  /* ── Load settings for IP whitelist & token expiry checks ── */
+  const settings = await getPlatformSettings();
+
+  /* ── Admin IP Whitelist ── */
+  if (!checkAdminIPWhitelist(req, settings)) {
+    addAuditEntry({ action: "admin_ip_blocked", ip, details: `Admin access denied: IP not in whitelist`, result: "fail" });
+    addSecurityEvent({ type: "admin_ip_blocked", ip, details: `Admin access denied from IP: ${ip}`, severity: "critical" });
+    res.status(403).json({ error: "Access denied. Your IP address is not whitelisted for admin access." });
+    return;
+  }
+
+  /* ── Super admin via master secret ── */
+  if (auth === ADMIN_SECRET) {
+    (req as any).adminRole = "super";
+    (req as any).adminIp   = ip;
+    addAuditEntry({ action: "admin_login", ip, details: `Super admin accessed ${req.method} ${req.url}`, result: "success" });
+    next();
+    return;
+  }
+
+  /* ── Sub-admin via stored secret ── */
   const [sub] = await db.select().from(adminAccountsTable)
     .where(and(eq(adminAccountsTable.secret, auth), eq(adminAccountsTable.isActive, true)))
     .limit(1);
+
   if (sub) {
+    /* ── Admin token expiry check ── */
+    const tokenHrs = parseInt(settings["security_admin_token_hrs"] ?? "24", 10);
+    if (sub.lastLoginAt) {
+      const msSinceLogin = Date.now() - sub.lastLoginAt.getTime();
+      const maxMs = tokenHrs * 60 * 60 * 1000;
+      if (msSinceLogin > maxMs) {
+        addAuditEntry({ action: "admin_token_expired", ip, adminId: sub.id, details: `Admin token expired for ${sub.name} (${tokenHrs}h limit)`, result: "fail" });
+        res.status(401).json({ error: `Admin session expired after ${tokenHrs} hours. Please re-authenticate.` });
+        return;
+      }
+    }
+
     (req as any).adminRole = sub.role;
     (req as any).adminId   = sub.id;
+    (req as any).adminName = sub.name;
+    (req as any).adminIp   = ip;
     await db.update(adminAccountsTable).set({ lastLoginAt: new Date() }).where(eq(adminAccountsTable.id, sub.id));
-    next(); return;
+    addAuditEntry({ action: "admin_login", ip, adminId: sub.id, details: `Sub-admin ${sub.name} (${sub.role}) accessed ${req.method} ${req.url}`, result: "success" });
+    next();
+    return;
   }
+
+  addAuditEntry({ action: "admin_auth_failed", ip, details: `Invalid admin secret for ${req.method} ${req.url}`, result: "fail" });
+  addSecurityEvent({ type: "invalid_admin_secret", ip, details: `Invalid admin secret used for ${req.url}`, severity: "high" });
   res.status(401).json({ error: "Unauthorized. Invalid admin secret." });
 }
 
@@ -836,6 +896,8 @@ router.put("/platform-settings", async (req, res) => {
       .set({ value: String(value), updatedAt: new Date() })
       .where(eq(platformSettingsTable.key, key));
   }
+  /* Bust the security settings cache so new values apply immediately */
+  invalidateSettingsCache();
   const rows = await db.select().from(platformSettingsTable);
   res.json({ success: true, settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })) });
 });
@@ -848,6 +910,8 @@ router.patch("/platform-settings/:key", async (req, res) => {
     .where(eq(platformSettingsTable.key, req.params["key"]!))
     .returning();
   if (!row) { res.status(404).json({ error: "Setting not found" }); return; }
+  /* Bust the security settings cache so new values apply immediately */
+  invalidateSettingsCache();
   res.json({ ...row, updatedAt: row.updatedAt.toISOString() });
 });
 
@@ -1435,6 +1499,171 @@ router.get("/all-notifications", async (req, res) => {
     return { ...n, user: user || null };
   }));
   res.json({ notifications: enriched });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   SECURITY MANAGEMENT ENDPOINTS
+══════════════════════════════════════════════════════════════ */
+
+/* ── GET /admin/audit-log — view admin action audit trail ── */
+router.get("/audit-log", adminAuth, (req, res) => {
+  const limit  = Math.min(parseInt(String(req.query["limit"]  || "200")), 1000);
+  const action = req.query["action"] as string | undefined;
+  const result = req.query["result"] as string | undefined;
+
+  let entries = [...auditLog];
+  if (action) entries = entries.filter(e => e.action.includes(action));
+  if (result) entries = entries.filter(e => e.result === result);
+
+  res.json({
+    entries: entries.slice(0, limit),
+    total: entries.length,
+  });
+});
+
+/* ── GET /admin/security-events — suspicious activity log ── */
+router.get("/security-events", adminAuth, (req, res) => {
+  const limit    = Math.min(parseInt(String(req.query["limit"]    || "200")), 1000);
+  const severity = req.query["severity"] as string | undefined;
+  const type     = req.query["type"]     as string | undefined;
+
+  let events = [...securityEvents];
+  if (severity) events = events.filter(e => e.severity === severity);
+  if (type)     events = events.filter(e => e.type.includes(type));
+
+  res.json({
+    events: events.slice(0, limit),
+    total: events.length,
+    summary: {
+      critical: securityEvents.filter(e => e.severity === "critical").length,
+      high:     securityEvents.filter(e => e.severity === "high").length,
+      medium:   securityEvents.filter(e => e.severity === "medium").length,
+      low:      securityEvents.filter(e => e.severity === "low").length,
+    },
+  });
+});
+
+/* ── GET /admin/blocked-ips — list all blocked IPs ── */
+router.get("/blocked-ips", adminAuth, (_req, res) => {
+  res.json({
+    blocked: Array.from(blockedIPs),
+    total: blockedIPs.size,
+  });
+});
+
+/* ── POST /admin/blocked-ips — block an IP ── */
+router.post("/blocked-ips", adminAuth, (req, res) => {
+  const { ip, reason } = req.body as { ip: string; reason?: string };
+  if (!ip) { res.status(400).json({ error: "ip required" }); return; }
+
+  blockedIPs.add(ip.trim());
+  addAuditEntry({
+    action: "manual_block_ip",
+    ip: getClientIp(req),
+    adminId: (req as any).adminId,
+    details: `IP ${ip} manually blocked. Reason: ${reason || "No reason given"}`,
+    result: "success",
+  });
+  addSecurityEvent({ type: "ip_manually_blocked", ip, details: `Admin manually blocked IP: ${ip}. Reason: ${reason || "none"}`, severity: "high" });
+  res.json({ success: true, blocked: ip, totalBlocked: blockedIPs.size });
+});
+
+/* ── DELETE /admin/blocked-ips/:ip — unblock an IP ── */
+router.delete("/blocked-ips/:ip", adminAuth, (req, res) => {
+  const ip = decodeURIComponent(req.params["ip"]!);
+  const wasBlocked = blockedIPs.has(ip);
+  blockedIPs.delete(ip);
+  addAuditEntry({
+    action: "unblock_ip",
+    ip: getClientIp(req),
+    adminId: (req as any).adminId,
+    details: `IP ${ip} unblocked`,
+    result: "success",
+  });
+  res.json({ success: true, unblocked: ip, wasBlocked });
+});
+
+/* ── GET /admin/login-lockouts — view locked accounts ── */
+router.get("/login-lockouts", adminAuth, (_req, res) => {
+  const now = Date.now();
+  const lockouts: Array<{ phone: string; attempts: number; lockedUntil: string | null; minutesLeft: number | null }> = [];
+
+  for (const [phone, record] of loginAttempts.entries()) {
+    const minutesLeft = record.lockedUntil
+      ? Math.max(0, Math.ceil((record.lockedUntil - now) / 60000))
+      : null;
+    lockouts.push({
+      phone,
+      attempts: record.attempts,
+      lockedUntil: record.lockedUntil ? new Date(record.lockedUntil).toISOString() : null,
+      minutesLeft,
+    });
+  }
+
+  res.json({
+    lockouts: lockouts.filter(l => l.lockedUntil !== null || l.attempts > 0),
+    total: lockouts.length,
+  });
+});
+
+/* ── DELETE /admin/login-lockouts/:phone — unlock a phone ── */
+router.delete("/login-lockouts/:phone", adminAuth, (req, res) => {
+  const phone = decodeURIComponent(req.params["phone"]!);
+  unlockPhone(phone);
+  addAuditEntry({
+    action: "admin_unlock_phone",
+    ip: getClientIp(req),
+    adminId: (req as any).adminId,
+    details: `Admin manually unlocked phone: ${phone}`,
+    result: "success",
+  });
+  res.json({ success: true, unlocked: phone });
+});
+
+/* ── GET /admin/security-dashboard — quick security overview ── */
+router.get("/security-dashboard", adminAuth, async (_req, res) => {
+  const settings = await getPlatformSettings();
+  const now = Date.now();
+
+  const activeBlocks = blockedIPs.size;
+  const activeLockouts = Array.from(loginAttempts.values()).filter(r => r.lockedUntil && r.lockedUntil > now).length;
+  const recentCritical = securityEvents.filter(e => e.severity === "critical" && new Date(e.timestamp).getTime() > now - 24 * 60 * 60 * 1000).length;
+  const recentHigh     = securityEvents.filter(e => e.severity === "high"     && new Date(e.timestamp).getTime() > now - 24 * 60 * 60 * 1000).length;
+
+  res.json({
+    status: recentCritical > 0 ? "critical" : recentHigh > 5 ? "warning" : "healthy",
+    activeBlockedIPs: activeBlocks,
+    activeAccountLockouts: activeLockouts,
+    last24hCriticalEvents: recentCritical,
+    last24hHighEvents: recentHigh,
+    totalAuditEntries: auditLog.length,
+    totalSecurityEvents: securityEvents.length,
+    settings: {
+      otpBypass:      settings["security_otp_bypass"]       === "on",
+      mfaRequired:    settings["security_mfa_required"]      === "on",
+      autoBlockIP:    settings["security_auto_block_ip"]     === "on",
+      spoofDetection: settings["security_spoof_detection"]   === "on",
+      fakeOrderDetect:settings["security_fake_order_detect"] === "on",
+      rateLimitGeneral: parseInt(settings["security_rate_limit"]  ?? "100", 10),
+      rateLimitAdmin:   parseInt(settings["security_rate_admin"]  ?? "60",  10),
+      rateLimitRider:   parseInt(settings["security_rate_rider"]  ?? "200", 10),
+      rateLimitVendor:  parseInt(settings["security_rate_vendor"] ?? "150", 10),
+      sessionDays:      parseInt(settings["security_session_days"]      ?? "30", 10),
+      adminTokenHrs:    parseInt(settings["security_admin_token_hrs"]   ?? "24", 10),
+      maxLoginAttempts: parseInt(settings["security_login_max_attempts"]?? "5",  10),
+      lockoutMinutes:   parseInt(settings["security_lockout_minutes"]   ?? "30", 10),
+      maxDailyOrders:   parseInt(settings["security_max_daily_orders"]  ?? "20", 10),
+      maxSpeedKmh:      parseInt(settings["security_max_speed_kmh"]     ?? "150",10),
+      ipWhitelistActive: !!(settings["security_admin_ip_whitelist"] || "").trim(),
+    },
+  });
+});
+
+/* ── POST /admin/settings (override) — invalidate settings cache on save ── */
+/* This wraps the existing settings update to bust the cache */
+router.post("/invalidate-cache", adminAuth, (_req, res) => {
+  invalidateSettingsCache();
+  res.json({ success: true, message: "Settings cache invalidated. New security settings will be applied immediately." });
 });
 
 export default router;

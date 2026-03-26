@@ -1701,6 +1701,72 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
   handleToggle: (k: string, v: boolean) => void;
 }) {
   const [secTab, setSecTab] = useState<SecTab>("auth");
+  const { toast } = useToast();
+
+  /* ── Live Security State ── */
+  const [secDash,    setSecDash]    = useState<any>(null);
+  const [lockouts,   setLockouts]   = useState<any[]>([]);
+  const [blockedIPsList, setBlockedIPsList] = useState<string[]>([]);
+  const [auditEntries, setAuditEntries]   = useState<any[]>([]);
+  const [secEvents,    setSecEvents]      = useState<any[]>([]);
+  const [newBlockIP,   setNewBlockIP]     = useState("");
+  const [liveLoading,  setLiveLoading]    = useState(false);
+
+  const adminSecret = localStorage.getItem("ajkmart_admin_token") || "";
+  const apiHeaders  = { "Content-Type": "application/json", "x-admin-secret": adminSecret };
+
+  const fetchLiveData = useCallback(async () => {
+    if (!adminSecret) return;
+    setLiveLoading(true);
+    try {
+      const [dash, lockoutData, ipsData, auditData, eventsData] = await Promise.all([
+        fetch(`${window.location.origin}/api/admin/security-dashboard`, { headers: apiHeaders }).then(r => r.json()),
+        fetch(`${window.location.origin}/api/admin/login-lockouts`,     { headers: apiHeaders }).then(r => r.json()),
+        fetch(`${window.location.origin}/api/admin/blocked-ips`,        { headers: apiHeaders }).then(r => r.json()),
+        fetch(`${window.location.origin}/api/admin/audit-log?limit=50`, { headers: apiHeaders }).then(r => r.json()),
+        fetch(`${window.location.origin}/api/admin/security-events?limit=50`, { headers: apiHeaders }).then(r => r.json()),
+      ]);
+      setSecDash(dash);
+      setLockouts(lockoutData.lockouts ?? []);
+      setBlockedIPsList(ipsData.blocked ?? []);
+      setAuditEntries(auditData.entries ?? []);
+      setSecEvents(eventsData.events ?? []);
+    } catch {}
+    setLiveLoading(false);
+  }, [adminSecret]);
+
+  useEffect(() => {
+    if (secTab === "auth" || secTab === "fraud" || secTab === "admin") {
+      fetchLiveData();
+    }
+  }, [secTab, fetchLiveData]);
+
+  const unlockPhone = async (phone: string) => {
+    await fetch(`${window.location.origin}/api/admin/login-lockouts/${encodeURIComponent(phone)}`, {
+      method: "DELETE", headers: apiHeaders,
+    });
+    toast({ title: "Account Unlocked", description: `${phone} has been unlocked.` });
+    fetchLiveData();
+  };
+
+  const blockIP = async () => {
+    if (!newBlockIP.trim()) return;
+    await fetch(`${window.location.origin}/api/admin/blocked-ips`, {
+      method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ ip: newBlockIP.trim(), reason: "Manual block by admin" }),
+    });
+    setNewBlockIP("");
+    toast({ title: "IP Blocked", description: `${newBlockIP} has been blocked.` });
+    fetchLiveData();
+  };
+
+  const unblockIP = async (ip: string) => {
+    await fetch(`${window.location.origin}/api/admin/blocked-ips/${encodeURIComponent(ip)}`, {
+      method: "DELETE", headers: apiHeaders,
+    });
+    toast({ title: "IP Unblocked", description: `${ip} has been unblocked.` });
+    fetchLiveData();
+  };
 
   const val  = (k: string, def = "")   => localValues[k] ?? def;
   const dirty = (k: string)            => dirtyKeys.has(k);
@@ -1770,6 +1836,36 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
               <N k="security_login_max_attempts" label="Max Failed Login Attempts" placeholder="5"  hint="Before account lockout" />
               <N k="security_lockout_minutes"    label="Lockout Duration"          suffix="min" placeholder="30" hint="0 = permanent until admin unlocks" />
             </div>
+          </SecPanel>
+
+          {/* ── Live: Locked Accounts ── */}
+          <SecPanel title="Live Account Lockouts" icon={Lock} color="text-indigo-700">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">Real-time locked accounts due to failed OTP attempts</p>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={fetchLiveData} disabled={liveLoading}>
+                <RefreshCw className={`w-3 h-3 ${liveLoading ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            </div>
+            {lockouts.length === 0 ? (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-700">
+                <CheckCircle2 className="w-4 h-4" /> No accounts currently locked. All clear!
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {lockouts.map(l => (
+                  <div key={l.phone} className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-xl">
+                    <div>
+                      <p className="text-xs font-bold font-mono text-red-800">{l.phone}</p>
+                      <p className="text-[10px] text-red-600 mt-0.5">
+                        {l.minutesLeft ? `Locked — ${l.minutesLeft} min remaining` : `${l.attempts} failed attempts`}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                      onClick={() => unlockPhone(l.phone)}>Unlock</Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </SecPanel>
         </div>
       )}
@@ -1999,12 +2095,119 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
               </div>
             </div>
           </SecPanel>
+
+          {/* ── Live: IP Block Manager ── */}
+          <SecPanel title="Live IP Block Manager" icon={Shield} color="text-red-700">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">Manually block or unblock IP addresses in real-time</p>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={fetchLiveData} disabled={liveLoading}>
+                <RefreshCw className={`w-3 h-3 ${liveLoading ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <Input value={newBlockIP} onChange={e => setNewBlockIP(e.target.value)}
+                placeholder="Enter IP address e.g. 192.168.1.100"
+                className="h-8 text-xs font-mono flex-1"
+                onKeyDown={e => e.key === "Enter" && blockIP()}
+              />
+              <Button size="sm" className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white" onClick={blockIP}>Block IP</Button>
+            </div>
+            {blockedIPsList.length === 0 ? (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-700">
+                <CheckCircle2 className="w-4 h-4" /> No IPs currently blocked.
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {blockedIPsList.map(ip => (
+                  <div key={ip} className="flex items-center justify-between px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+                    <span className="text-xs font-mono font-bold text-red-800">{ip}</span>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs text-green-700 hover:text-green-800"
+                      onClick={() => unblockIP(ip)}>Unblock</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SecPanel>
+
+          {/* ── Live: Recent Security Events ── */}
+          {secEvents.length > 0 && (
+            <SecPanel title="Recent Security Events" icon={AlertTriangle} color="text-red-700">
+              <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                {secEvents.slice(0, 20).map((e, i) => (
+                  <div key={i} className={`flex items-start gap-2 p-2 rounded-lg text-xs border ${
+                    e.severity === "critical" ? "bg-red-50 border-red-200" :
+                    e.severity === "high"     ? "bg-orange-50 border-orange-200" :
+                    e.severity === "medium"   ? "bg-amber-50 border-amber-200" :
+                    "bg-gray-50 border-gray-200"
+                  }`}>
+                    <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] flex-shrink-0 mt-0.5 uppercase ${
+                      e.severity === "critical" ? "bg-red-600 text-white" :
+                      e.severity === "high"     ? "bg-orange-500 text-white" :
+                      e.severity === "medium"   ? "bg-amber-500 text-white" :
+                      "bg-gray-400 text-white"
+                    }`}>{e.severity}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground truncate">{e.type.replace(/_/g, " ")}</p>
+                      <p className="text-muted-foreground truncate">{e.details}</p>
+                      <p className="text-[10px] text-muted-foreground/70">{new Date(e.timestamp).toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SecPanel>
+          )}
         </div>
       )}
 
       {/* ─── Admin Access ─── */}
       {secTab === "admin" && (
         <div className="space-y-4">
+
+          {/* ── Live Security Dashboard ── */}
+          {secDash && (
+            <div className={`rounded-2xl border-2 p-4 ${secDash.status === "critical" ? "border-red-400 bg-red-50" : secDash.status === "warning" ? "border-amber-400 bg-amber-50" : "border-green-300 bg-green-50"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`flex items-center gap-2 font-bold text-sm ${secDash.status === "critical" ? "text-red-700" : secDash.status === "warning" ? "text-amber-700" : "text-green-700"}`}>
+                  <Shield className="w-4 h-4" />
+                  Security Status: {secDash.status === "critical" ? "🔴 CRITICAL" : secDash.status === "warning" ? "🟡 WARNING" : "🟢 HEALTHY"}
+                </div>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={fetchLiveData} disabled={liveLoading}>
+                  <RefreshCw className={`w-3 h-3 ${liveLoading ? "animate-spin" : ""}`} /> Refresh
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: "Blocked IPs", value: secDash.activeBlockedIPs, color: "text-red-700" },
+                  { label: "Locked Accounts", value: secDash.activeAccountLockouts, color: "text-orange-700" },
+                  { label: "Critical Events (24h)", value: secDash.last24hCriticalEvents, color: "text-red-700" },
+                  { label: "High Events (24h)", value: secDash.last24hHighEvents, color: "text-amber-700" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="bg-white/70 rounded-xl p-3 text-center">
+                    <p className={`text-xl font-black ${color}`}>{value}</p>
+                    <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-white/50 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {[
+                  { label: "OTP Bypass",       val: secDash.settings?.otpBypass,       danger: true },
+                  { label: "Auto-Block IPs",    val: secDash.settings?.autoBlockIP,      danger: false },
+                  { label: "Spoof Detection",   val: secDash.settings?.spoofDetection,   danger: false },
+                  { label: "Fake Order Detect", val: secDash.settings?.fakeOrderDetect,  danger: false },
+                  { label: "IP Whitelist",      val: secDash.settings?.ipWhitelistActive,danger: false },
+                  { label: "MFA Required",      val: secDash.settings?.mfaRequired,      danger: false },
+                ].map(({ label, val: v, danger }) => (
+                  <div key={label} className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-lg ${
+                    danger && v ? "bg-red-200 text-red-800" : v ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    <span>{v ? (danger ? "⚠️" : "✅") : "⭕"}</span>
+                    <span className="font-medium">{label}: {v ? "ON" : "OFF"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <SecPanel title="Admin Access Control" icon={Users} color="text-purple-700">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
               <T k="security_audit_log"    label="Admin Action Audit Log"   sub="Log all admin changes with timestamp & IP" />
@@ -2055,6 +2258,37 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
                 <Input value={val("api_firebase_key")} disabled className="h-9 text-xs font-mono bg-gray-50" />
               </div>
             </div>
+          </SecPanel>
+
+          {/* ── Live: Audit Log ── */}
+          <SecPanel title="Admin Audit Log" icon={FileText} color="text-purple-700">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">Last 50 admin actions — updates automatically when refreshed</p>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={fetchLiveData} disabled={liveLoading}>
+                <RefreshCw className={`w-3 h-3 ${liveLoading ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            </div>
+            {auditEntries.length === 0 ? (
+              <div className="p-3 bg-muted/40 rounded-xl text-xs text-muted-foreground text-center">No audit entries yet. Actions will appear here after admin operations.</div>
+            ) : (
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {auditEntries.map((e, i) => (
+                  <div key={i} className={`flex items-start gap-2 p-2 rounded-lg text-xs ${e.result === "success" ? "bg-green-50" : e.result === "warn" ? "bg-amber-50" : "bg-red-50"}`}>
+                    <span className={`text-[9px] font-black px-1 py-0.5 rounded mt-0.5 flex-shrink-0 uppercase ${
+                      e.result === "success" ? "bg-green-600 text-white" : e.result === "warn" ? "bg-amber-500 text-white" : "bg-red-600 text-white"
+                    }`}>{e.result}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-foreground">{e.action.replace(/_/g, " ")}</span>
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="text-muted-foreground truncate">{e.details}</p>
+                      <p className="text-[10px] font-mono text-muted-foreground/60">{e.ip}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </SecPanel>
         </div>
       )}
