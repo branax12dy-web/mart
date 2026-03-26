@@ -245,6 +245,31 @@ router.patch("/orders/:id/status", async (req, res) => {
       type: "wallet", icon: "wallet-outline",
     }).catch(() => {});
 
+    /* ── Customer loyalty points (customer_loyalty_enabled + customer_loyalty_pts) ── */
+    const loyaltyEnabled = (s["customer_loyalty_enabled"] ?? "on") === "on";
+    if (loyaltyEnabled && order.userId) {
+      const loyaltyPtsPerHundred = parseFloat(s["customer_loyalty_pts"] ?? "5");
+      const orderTotal = safeNum(order.total);
+      const loyaltyPts = Math.floor((orderTotal / 100) * loyaltyPtsPerHundred);
+      if (loyaltyPts > 0) {
+        /* Store loyalty points as wallet bonus (1 pt = Re 1 equivalent) */
+        await db.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance + ${loyaltyPts}`, updatedAt: new Date() })
+          .where(eq(usersTable.id, order.userId))
+          .catch(() => {});
+        await db.insert(walletTransactionsTable).values({
+          id: generateId(), userId: order.userId, type: "loyalty",
+          amount: loyaltyPts.toFixed(2),
+          description: `Loyalty points (${loyaltyPtsPerHundred} pts/Rs.100) — Order #${order.id.slice(-6).toUpperCase()}`,
+        }).catch(() => {});
+        await db.insert(notificationsTable).values({
+          id: generateId(), userId: order.userId,
+          title: "Loyalty Points Earned! ⭐", body: `+${loyaltyPts} loyalty points added for your order!`,
+          type: "wallet", icon: "star-outline",
+        }).catch(() => {});
+      }
+    }
+
     /* ── Finance cashback credit to customer ── */
     const cashbackEnabled = (s["finance_cashback_enabled"] ?? "off") === "on";
     if (cashbackEnabled && order.userId) {

@@ -231,6 +231,19 @@ router.post("/", async (req, res) => {
     }
   }
 
+  /* ── Online payment min/max limits (JazzCash, EasyPaisa, Bank Transfer) ── */
+  const onlineMethods = ["jazzcash", "easypaisa", "bank"];
+  if (onlineMethods.includes(paymentMethod)) {
+    const payMinOnline = parseFloat(s["payment_min_online"] ?? "50");
+    const payMaxOnline = parseFloat(s["payment_max_online"] ?? "100000");
+    if (total < payMinOnline) {
+      res.status(400).json({ error: `Minimum online payment is Rs. ${payMinOnline}` }); return;
+    }
+    if (total > payMaxOnline) {
+      res.status(400).json({ error: `Maximum online payment is Rs. ${payMaxOnline}. Please split your order or use another method.` }); return;
+    }
+  }
+
   /* ── Wallet payment: deduct on placement ── */
   if (paymentMethod === "wallet") {
     const walletEnabled = (s["feature_wallet"] ?? "on") === "on";

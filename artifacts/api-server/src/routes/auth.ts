@@ -245,7 +245,7 @@ router.post("/verify-otp", async (req, res) => {
 
   /* ── Role-specific session duration ── */
   const sessionDays = user.role === "rider"
-    ? parseInt(settings["security_rider_token_days"] ?? "7",  10)
+    ? parseInt(settings["security_rider_token_days"] ?? "30", 10)
     : parseInt(settings["security_session_days"]     ?? "30", 10);
 
   /* ── Build token: userId:phone:issuedAt ── */
@@ -299,7 +299,7 @@ router.post("/validate-token", async (req, res) => {
     if (!user.isActive) { res.status(403).json({ valid: false, error: "Account inactive" }); return; }
 
     const sessionDays = user.role === "rider"
-      ? parseInt(settings["security_rider_token_days"] ?? "7",  10)
+      ? parseInt(settings["security_rider_token_days"] ?? "30", 10)
       : parseInt(settings["security_session_days"]     ?? "30", 10);
     const expiryMs = sessionDays * 24 * 60 * 60 * 1000;
 

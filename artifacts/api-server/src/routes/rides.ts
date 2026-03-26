@@ -52,8 +52,12 @@ router.post("/", async (req, res) => {
   const s = await getPlatformSettings();
 
   // Maintenance mode gate
-  if ((s["app_status"] ?? "live") !== "live") {
-    res.status(503).json({ error: s["maintenance_message"] ?? "App is under maintenance. Please try again later." }); return;
+  if ((s["app_status"] ?? "active") === "maintenance") {
+    const mainKey = (s["security_maintenance_key"] ?? "").trim();
+    const bypass  = ((req.headers["x-maintenance-key"] as string) ?? "").trim();
+    if (!mainKey || bypass !== mainKey) {
+      res.status(503).json({ error: s["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!" }); return;
+    }
   }
 
   // Feature flag check
@@ -102,7 +106,7 @@ router.post("/", async (req, res) => {
           dropLat: dropLat?.toString(),
           dropLng: dropLng?.toString(),
           fare: fare.toString(),
-          distance: Math.round(distance * 10 / 10).toString(),
+          distance: (Math.round(distance * 10) / 10).toString(),
           paymentMethod,
         }).returning();
         return ride!;
@@ -143,7 +147,7 @@ router.post("/", async (req, res) => {
     dropLat: dropLat?.toString(),
     dropLng: dropLng?.toString(),
     fare: fare.toString(),
-    distance: Math.round(distance * 10 / 10).toString(),
+    distance: (Math.round(distance * 10) / 10).toString(),
     paymentMethod,
   }).returning();
 

@@ -29,20 +29,24 @@ router.post("/update", async (req, res) => {
 
   const settings = await getCachedSettings();
 
+  /* ── GPS Tracking gate (fail-fast before any DB work) ── */
+  if (settings["security_gps_tracking"] === "off" && role === "rider") {
+    res.status(403).json({ error: "GPS tracking is currently disabled by admin." });
+    return;
+  }
+
   /* ── GPS Accuracy check ── */
-  if (accuracy !== undefined && settings["security_gps_tracking"] === "on") {
+  if (accuracy !== undefined) {
     const minAccuracyMeters = parseInt(settings["security_gps_accuracy"] ?? "50", 10);
     if (parseFloat(accuracy) > minAccuracyMeters) {
-      /* We still allow it but flag it */
       req.log?.warn?.({ userId, accuracy }, "GPS accuracy below threshold");
     }
   }
 
-  /* ── GPS Spoof Detection ── */
+  /* ── GPS Spoof Detection (riders only — uses previous stored location) ── */
   if (settings["security_spoof_detection"] === "on" && role === "rider") {
     const maxSpeedKmh = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
 
-    /* Fetch previous location */
     const [prev] = await db
       .select()
       .from(liveLocationsTable)
@@ -64,8 +68,6 @@ router.post("/update", async (req, res) => {
           details: `GPS spoof detected: speed ${speedKmh.toFixed(1)} km/h exceeds limit of ${maxSpeedKmh} km/h`,
           severity: "high",
         });
-
-        /* Reject the spoofed location update */
         res.status(400).json({
           error: "GPS location rejected: movement speed is physically impossible. Please disable mock location apps.",
           detectedSpeedKmh: Math.round(speedKmh),
@@ -76,16 +78,10 @@ router.post("/update", async (req, res) => {
     }
   }
 
-  /* ── GPS Tracking feature check ── */
-  if (settings["security_gps_tracking"] === "off" && role === "rider") {
-    res.status(403).json({ error: "GPS tracking is currently disabled by admin." });
-    return;
-  }
-
-  /* ── Geofence mode — future extensibility ── */
+  /* ── Geofence mode (stub — requires polygon config) ── */
   if (settings["security_geo_fence"] === "on") {
-    /* Strict geofence would check if lat/lon is within allowed boundary.
-       Implementation depends on configured geofence polygon. */
+    /* Strict geofence would reject lat/lon outside allowed boundary polygon.
+       Requires a configured boundary — aspirational without polygon data. */
   }
 
   await db.insert(liveLocationsTable).values({

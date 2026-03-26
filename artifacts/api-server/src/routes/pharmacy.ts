@@ -60,8 +60,12 @@ router.post("/", async (req, res) => {
   const s = await getPlatformSettings();
 
   // Maintenance mode gate
-  if ((s["app_status"] ?? "live") !== "live") {
-    res.status(503).json({ error: s["maintenance_message"] ?? "App is under maintenance. Please try again later." }); return;
+  if ((s["app_status"] ?? "active") === "maintenance") {
+    const mainKey = (s["security_maintenance_key"] ?? "").trim();
+    const bypass  = ((req.headers["x-maintenance-key"] as string) ?? "").trim();
+    if (!mainKey || bypass !== mainKey) {
+      res.status(503).json({ error: s["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!" }); return;
+    }
   }
 
   // Feature flag check
@@ -70,14 +74,37 @@ router.post("/", async (req, res) => {
     res.status(503).json({ error: "Pharmacy service is currently disabled" }); return;
   }
 
-  const total = (items as { price: number; quantity: number }[]).reduce(
+  const itemsTotal = (items as { price: number; quantity: number }[]).reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
   );
 
-  if (total <= 0) {
+  if (itemsTotal <= 0) {
     res.status(400).json({ error: "Order total must be greater than 0" }); return;
   }
+
+  /* ── Min order check ── */
+  const minOrder = parseFloat(s["min_order_amount"] ?? "100");
+  if (itemsTotal < minOrder) {
+    res.status(400).json({ error: `Minimum order amount is Rs. ${minOrder}` }); return;
+  }
+
+  /* ── Delivery fee (delivery_fee_pharmacy) with free threshold ── */
+  const baseFee      = parseFloat(s["delivery_fee_pharmacy"] ?? "50");
+  const freeEnabled  = (s["delivery_free_enabled"] ?? "on") === "on";
+  const freeAbove    = parseFloat(s["free_delivery_above"] ?? "1000");
+  const deliveryFee  = (freeEnabled && itemsTotal >= freeAbove) ? 0 : baseFee;
+
+  /* ── GST (Finance settings) ── */
+  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
+  const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
+  const gstAmount  = gstEnabled ? parseFloat(((itemsTotal * gstPct) / 100).toFixed(2)) : 0;
+
+  const total = itemsTotal + deliveryFee + gstAmount;
+
+  /* ── Estimated time from admin Order settings ── */
+  const preptimeMin   = parseInt(s["order_preptime_min"] ?? "15", 10);
+  const estimatedTime = `${preptimeMin}–${preptimeMin + 25} min`;
 
   // Wallet payment → atomic DB transaction (prevents race condition / double-spend)
   if (paymentMethod === "wallet") {
@@ -97,39 +124,29 @@ router.post("/", async (req, res) => {
         const newBalance = (balance - total).toFixed(2);
         await tx.update(usersTable).set({ walletBalance: newBalance }).where(eq(usersTable.id, userId));
         await tx.insert(walletTransactionsTable).values({
-          id: generateId(),
-          userId,
-          type: "debit",
+          id: generateId(), userId, type: "debit",
           amount: total.toFixed(2),
-          description: "Pharmacy order payment",
+          description: "Pharmacy order payment (items + delivery + GST)",
         });
 
         const [newOrder] = await tx.insert(pharmacyOrdersTable).values({
-          id: generateId(),
-          userId,
-          items,
+          id: generateId(), userId, items,
           prescriptionNote: prescriptionNote || null,
-          deliveryAddress,
-          contactPhone,
-          total: total.toFixed(2),
-          paymentMethod,
-          status: "pending",
-          estimatedTime: "25-40 min",
+          deliveryAddress, contactPhone,
+          total: total.toFixed(2), paymentMethod,
+          status: "pending", estimatedTime,
         }).returning();
         return newOrder!;
       });
 
       await db.insert(notificationsTable).values({
-        id: generateId(),
-        userId,
+        id: generateId(), userId,
         title: "Pharmacy Order Placed",
-        body: `Aapka pharmacy order place ho gaya. Rs. ${total} — Estimated: 25-40 min`,
-        type: "pharmacy",
-        icon: "medical-outline",
-        link: `/(tabs)/orders`,
+        body: `Aapka pharmacy order place ho gaya. Rs. ${total.toFixed(0)} (items + Rs. ${deliveryFee} delivery) — ETA: ${estimatedTime}`,
+        type: "pharmacy", icon: "medical-outline", link: `/(tabs)/orders`,
       }).catch(() => {});
 
-      res.status(201).json(mapOrder(order));
+      res.status(201).json({ ...mapOrder(order), deliveryFee, gstAmount });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -138,29 +155,21 @@ router.post("/", async (req, res) => {
 
   // Cash / other payments
   const [order] = await db.insert(pharmacyOrdersTable).values({
-    id: generateId(),
-    userId,
-    items,
+    id: generateId(), userId, items,
     prescriptionNote: prescriptionNote || null,
-    deliveryAddress,
-    contactPhone,
-    total: total.toFixed(2),
-    paymentMethod,
-    status: "pending",
-    estimatedTime: "25-40 min",
+    deliveryAddress, contactPhone,
+    total: total.toFixed(2), paymentMethod,
+    status: "pending", estimatedTime,
   }).returning();
 
   await db.insert(notificationsTable).values({
-    id: generateId(),
-    userId,
+    id: generateId(), userId,
     title: "Pharmacy Order Placed",
-    body: `Aapka pharmacy order place ho gaya. Rs. ${total} — Estimated: 25-40 min`,
-    type: "pharmacy",
-    icon: "medical-outline",
-    link: `/(tabs)/orders`,
+    body: `Aapka pharmacy order place ho gaya. Rs. ${total.toFixed(0)} (items + Rs. ${deliveryFee} delivery) — ETA: ${estimatedTime}`,
+    type: "pharmacy", icon: "medical-outline", link: `/(tabs)/orders`,
   }).catch(() => {});
 
-  res.status(201).json(mapOrder(order!));
+  res.status(201).json({ ...mapOrder(order!), deliveryFee, gstAmount });
 });
 
 router.patch("/:id/status", async (req, res) => {

@@ -7,18 +7,11 @@ import { getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
-const PARCEL_FARES: Record<string, number> = {
-  document: 150,
-  clothes: 200,
-  electronics: 350,
-  food: 180,
-  other: 250,
-};
-
-function calcParcelFare(type: string, weight?: number): number {
-  const base = PARCEL_FARES[type] ?? 250;
-  const weightCharge = weight && weight > 2 ? Math.round((weight - 2) * 40) : 0;
-  return base + weightCharge;
+/* ── Parcel fare = admin base fee + per-kg charge (from delivery_fee_parcel + delivery_parcel_per_kg) ── */
+function calcParcelFare(baseFee: number, perKgRate: number, weight?: number): number {
+  const weightKg = weight && weight > 0 ? weight : 0;
+  const weightCharge = Math.round(weightKg * perKgRate);
+  return baseFee + weightCharge;
 }
 
 function mapBooking(b: typeof parcelBookingsTable.$inferSelect) {
@@ -43,10 +36,15 @@ function mapBooking(b: typeof parcelBookingsTable.$inferSelect) {
   };
 }
 
-router.post("/estimate", (req, res) => {
+router.post("/estimate", async (req, res) => {
   const { parcelType, weight } = req.body;
-  const fare = calcParcelFare(parcelType, weight);
-  res.json({ fare, estimatedTime: "45-60 min", parcelType });
+  const s = await getPlatformSettings();
+  const baseFee  = parseFloat(s["delivery_fee_parcel"]    ?? "100");
+  const perKgRate = parseFloat(s["delivery_parcel_per_kg"] ?? "40");
+  const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
+  const fare = calcParcelFare(baseFee, perKgRate, weight);
+  const estimatedTime = `${preptimeMin + 30}–${preptimeMin + 60} min`;
+  res.json({ fare, estimatedTime, parcelType, baseFee, perKgRate, weightKg: weight ?? 0 });
 });
 
 router.get("/", async (req, res) => {
@@ -91,8 +89,12 @@ router.post("/", async (req, res) => {
   const s = await getPlatformSettings();
 
   // Maintenance mode gate
-  if ((s["app_status"] ?? "live") !== "live") {
-    res.status(503).json({ error: s["maintenance_message"] ?? "App is under maintenance. Please try again later." }); return;
+  if ((s["app_status"] ?? "active") === "maintenance") {
+    const mainKey = (s["security_maintenance_key"] ?? "").trim();
+    const bypass  = ((req.headers["x-maintenance-key"] as string) ?? "").trim();
+    if (!mainKey || bypass !== mainKey) {
+      res.status(503).json({ error: s["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!" }); return;
+    }
   }
 
   // Feature flag check
@@ -101,7 +103,20 @@ router.post("/", async (req, res) => {
     res.status(503).json({ error: "Parcel delivery service is currently disabled" }); return;
   }
 
-  const fare = calcParcelFare(parcelType, weight);
+  /* ── Delivery fare from admin settings (replaces hardcoded lookup table) ── */
+  const baseFee    = parseFloat(s["delivery_fee_parcel"]    ?? "100");
+  const perKgRate  = parseFloat(s["delivery_parcel_per_kg"] ?? "40");
+  const fare       = calcParcelFare(baseFee, perKgRate, weight);
+
+  /* ── GST (Finance settings) ── */
+  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
+  const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
+  const gstAmount  = gstEnabled ? parseFloat(((fare * gstPct) / 100).toFixed(2)) : 0;
+  const totalFare  = fare + gstAmount;
+
+  /* ── Estimated time from admin Order settings ── */
+  const preptimeMin   = parseInt(s["order_preptime_min"] ?? "15", 10);
+  const estimatedTime = `${preptimeMin + 30}–${preptimeMin + 60} min`;
 
   // Wallet payment → atomic DB transaction (prevents race condition / double-spend)
   if (paymentMethod === "wallet") {
@@ -116,49 +131,35 @@ router.post("/", async (req, res) => {
         if (!user) throw new Error("User not found");
 
         const balance = parseFloat(user.walletBalance ?? "0");
-        if (balance < fare) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${fare}`);
+        if (balance < totalFare) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${totalFare}`);
 
-        const newBalance = (balance - fare).toFixed(2);
+        const newBalance = (balance - totalFare).toFixed(2);
         await tx.update(usersTable).set({ walletBalance: newBalance }).where(eq(usersTable.id, userId));
         await tx.insert(walletTransactionsTable).values({
-          id: generateId(),
-          userId,
-          type: "debit",
-          amount: fare.toFixed(2),
-          description: `Parcel delivery - ${parcelType}`,
+          id: generateId(), userId, type: "debit",
+          amount: totalFare.toFixed(2),
+          description: `Parcel delivery - ${parcelType} (fare + GST)`,
         });
 
         const [newBooking] = await tx.insert(parcelBookingsTable).values({
-          id: generateId(),
-          userId,
-          senderName,
-          senderPhone,
-          pickupAddress,
-          receiverName,
-          receiverPhone,
-          dropAddress,
-          parcelType,
+          id: generateId(), userId, senderName, senderPhone, pickupAddress,
+          receiverName, receiverPhone, dropAddress, parcelType,
           weight: weight ? weight.toString() : null,
           description: description || null,
-          fare: fare.toString(),
-          paymentMethod,
-          status: "pending",
-          estimatedTime: "45-60 min",
+          fare: totalFare.toString(), paymentMethod,
+          status: "pending", estimatedTime,
         }).returning();
         return newBooking!;
       });
 
       await db.insert(notificationsTable).values({
-        id: generateId(),
-        userId,
+        id: generateId(), userId,
         title: "Parcel Booking Confirmed",
-        body: `Aapka ${parcelType} parcel book ho gaya. ${receiverName} tak delivery — Rs. ${fare}. ETA: 45-60 min`,
-        type: "parcel",
-        icon: "cube-outline",
-        link: `/(tabs)/orders`,
+        body: `Aapka ${parcelType} parcel book ho gaya. Rs. ${totalFare.toFixed(0)} — ${receiverName} tak. ETA: ${estimatedTime}`,
+        type: "parcel", icon: "cube-outline", link: `/(tabs)/orders`,
       }).catch(() => {});
 
-      res.status(201).json(mapBooking(booking));
+      res.status(201).json({ ...mapBooking(booking), gstAmount });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -167,34 +168,22 @@ router.post("/", async (req, res) => {
 
   // Cash / other payments
   const [booking] = await db.insert(parcelBookingsTable).values({
-    id: generateId(),
-    userId,
-    senderName,
-    senderPhone,
-    pickupAddress,
-    receiverName,
-    receiverPhone,
-    dropAddress,
-    parcelType,
+    id: generateId(), userId, senderName, senderPhone, pickupAddress,
+    receiverName, receiverPhone, dropAddress, parcelType,
     weight: weight ? weight.toString() : null,
     description: description || null,
-    fare: fare.toString(),
-    paymentMethod,
-    status: "pending",
-    estimatedTime: "45-60 min",
+    fare: totalFare.toString(), paymentMethod,
+    status: "pending", estimatedTime,
   }).returning();
 
   await db.insert(notificationsTable).values({
-    id: generateId(),
-    userId,
+    id: generateId(), userId,
     title: "Parcel Booking Confirmed",
-    body: `Aapka ${parcelType} parcel book ho gaya. ${receiverName} tak delivery — Rs. ${fare}. ETA: 45-60 min`,
-    type: "parcel",
-    icon: "cube-outline",
-    link: `/(tabs)/orders`,
+    body: `Aapka ${parcelType} parcel book ho gaya. Rs. ${totalFare.toFixed(0)} — ${receiverName} tak. ETA: ${estimatedTime}`,
+    type: "parcel", icon: "cube-outline", link: `/(tabs)/orders`,
   }).catch(() => {});
 
-  res.status(201).json(mapBooking(booking!));
+  res.status(201).json({ ...mapBooking(booking!), gstAmount });
 });
 
 router.patch("/:id/status", async (req, res) => {
