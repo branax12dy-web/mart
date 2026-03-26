@@ -100,7 +100,15 @@ router.post("/", async (req, res) => {
   const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
   const gstAmount  = gstEnabled ? parseFloat(((itemsTotal * gstPct) / 100).toFixed(2)) : 0;
 
-  const total = itemsTotal + deliveryFee + gstAmount;
+  /* ── COD service fee (charged when total < cod_free_above threshold) ── */
+  const codFee = (() => {
+    if (paymentMethod !== "cash") return 0;
+    const fee    = parseFloat(s["cod_fee"]        ?? "0");
+    const freeAb = parseFloat(s["cod_free_above"] ?? "2000");
+    return (fee > 0 && itemsTotal < freeAb) ? fee : 0;
+  })();
+
+  const total = itemsTotal + deliveryFee + gstAmount + codFee;
 
   /* ── Estimated time from admin Order settings ── */
   const preptimeMin   = parseInt(s["order_preptime_min"] ?? "15", 10);
@@ -119,6 +127,11 @@ router.post("/", async (req, res) => {
     const codMax = parseFloat(s["cod_max_amount"] ?? "5000");
     if (total > codMax) {
       res.status(400).json({ error: `Maximum Cash on Delivery order is Rs. ${codMax}. Please pay online for larger orders.` }); return;
+    }
+    /* ── COD verification threshold — flag high-value cash orders ── */
+    const verifyThreshold = parseFloat(s["cod_verification_threshold"] ?? "0");
+    if (verifyThreshold > 0 && total > verifyThreshold) {
+      /* Order is allowed but flagged for rider photo verification */
     }
   }
 

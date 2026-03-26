@@ -156,6 +156,9 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "security_geo_fence",         value: "off",    label: "Strict Geofence Mode",                       category: "security" },
   { key: "security_spoof_detection",   value: "on",     label: "GPS Spoofing / Mock Location Detection",     category: "security" },
   { key: "security_max_speed_kmh",     value: "150",    label: "Max Speed Allowed (km/h — flag if exceeded)",category: "security" },
+  /* Service Area */
+  { key: "security_service_city",       value: "Muzaffarabad, AJK", label: "Primary Service City",                   category: "security" },
+  { key: "security_service_radius_km",  value: "30",     label: "Max Service Radius (km from city center)",    category: "security" },
   /* Password & Token Policy */
   { key: "security_pwd_min_length",    value: "8",      label: "Minimum Password Length (characters)",        category: "security" },
   { key: "security_pwd_strong",        value: "on",     label: "Require Strong Password (uppercase+number)",  category: "security" },
@@ -190,6 +193,11 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   /* ═══════════════════  Platform Integrations  ═══════════════════ */
   /* Firebase FCM — Push Notifications */
   { key: "integration_push_notif",    value: "off",      label: "Firebase Push Notifications",            category: "integrations" },
+  /* Notification Channel Toggles */
+  { key: "notif_new_order",           value: "on",       label: "Notify Vendor on New Order Received",    category: "integrations" },
+  { key: "notif_order_ready",         value: "on",       label: "Notify Rider when Order Ready for Pickup", category: "integrations" },
+  { key: "notif_ride_request",        value: "on",       label: "Notify Rider on New Ride Request",       category: "integrations" },
+  { key: "notif_promo",               value: "on",       label: "Send Promotional Notifications to Customers", category: "integrations" },
   { key: "fcm_server_key",            value: "",         label: "FCM Server Key / API Key",               category: "integrations" },
   { key: "fcm_project_id",            value: "",         label: "Firebase Project ID",                    category: "integrations" },
   { key: "fcm_sender_id",             value: "",         label: "Firebase Sender ID",                     category: "integrations" },
