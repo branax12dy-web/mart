@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -543,6 +544,24 @@ export default function ProfileScreen() {
   const [signingOut,        setSigningOut]        = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
+  const [platformCfg, setPlatformCfg] = useState({
+    tncUrl: "", privacyUrl: "", supportMsg: "Need help? Chat with us!",
+    supportPhone: "03001234567", chat: false,
+  });
+
+  useEffect(() => {
+    fetch(`${API}/platform-config`)
+      .then(r => r.json())
+      .then(d => setPlatformCfg({
+        tncUrl:       d.content?.tncUrl      ?? "",
+        privacyUrl:   d.content?.privacyUrl  ?? "",
+        supportMsg:   d.content?.supportMsg  ?? "Need help? Chat with us!",
+        supportPhone: d.platform?.supportPhone ?? "03001234567",
+        chat:         d.features?.chat        ?? false,
+      }))
+      .catch(() => {});
+  }, []);
+
   const fetchAll = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -720,9 +739,38 @@ export default function ProfileScreen() {
 
         {/* ── Support ── */}
         <SectionCard title="SUPPORT">
-          <Row icon="help-circle-outline"   label="Help & FAQ"       sub="Aam sawaal aur jawab"   onPress={() => showToast("📞 0300-AJKMART  📧 help@ajkmart.pk  ⏰ 8AM–10PM", "info")} iconColor="#64748B" iconBg="#F1F5F9" />
-          <Row icon="chatbubble-outline"    label="Live Chat"        sub="Online support"          onPress={() => showToast("📞 0300-AJKMART  📧 support@ajkmart.pk  ⏱ Avg 5 min", "info")} iconColor="#0891B2" iconBg="#E0F2FE" />
-          <Row icon="document-text-outline" label="Terms of Service" sub="Terms aur conditions"   onPress={() => showToast("AJKMart use karte hue aap hamare terms se agree karte hain — ajkmart.pk/terms", "info")} iconColor="#64748B" iconBg="#F1F5F9" />
+          <Row icon="help-circle-outline"
+               label="Help & FAQ"
+               sub={`Call: ${platformCfg.supportPhone}`}
+               onPress={() => showToast(`📞 ${platformCfg.supportPhone}  ⏰ 8AM–10PM`, "info")}
+               iconColor="#64748B" iconBg="#F1F5F9" />
+          {platformCfg.chat && (
+            <Row icon="chatbubble-outline"
+                 label="Live Chat"
+                 sub={platformCfg.supportMsg}
+                 onPress={() => showToast(`📞 ${platformCfg.supportPhone}  ⏱ Avg 5 min`, "info")}
+                 iconColor="#0891B2" iconBg="#E0F2FE" />
+          )}
+          {platformCfg.tncUrl ? (
+            <Row icon="document-text-outline"
+                 label="Terms of Service"
+                 sub="Terms aur conditions parhein"
+                 onPress={() => Linking.openURL(platformCfg.tncUrl).catch(() => {})}
+                 iconColor="#64748B" iconBg="#F1F5F9" />
+          ) : (
+            <Row icon="document-text-outline"
+                 label="Terms of Service"
+                 sub="Terms aur conditions"
+                 onPress={() => showToast("AJKMart use karte hue aap hamare terms se agree karte hain.", "info")}
+                 iconColor="#64748B" iconBg="#F1F5F9" />
+          )}
+          {platformCfg.privacyUrl && (
+            <Row icon="shield-checkmark-outline"
+                 label="Privacy Policy"
+                 sub="Aapka data kaise use hota hai"
+                 onPress={() => Linking.openURL(platformCfg.privacyUrl).catch(() => {})}
+                 iconColor="#0891B2" iconBg="#E0F2FE" />
+          )}
         </SectionCard>
 
         {/* ── App Info ── */}

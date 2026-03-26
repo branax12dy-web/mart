@@ -334,7 +334,15 @@ export default function HomeScreen() {
     pharmacy: true, parcel: true, wallet: true,
     chat: false, liveTracking: true, reviews: true,
   });
-  const [contentBanner, setContentBanner] = useState("");
+  const [contentBanner,       setContentBanner]       = useState("");
+  const [announcement,        setAnnouncement]        = useState("");
+  const [maintenanceMsg,      setMaintenanceMsg]      = useState("");
+  const [appStatus,           setAppStatus]           = useState<"active"|"maintenance">("active");
+  const [supportPhone,        setSupportPhone]        = useState("03001234567");
+  const [tncUrl,              setTncUrl]              = useState("");
+  const [privacyUrl,          setPrivacyUrl]          = useState("");
+  const [supportMsg,          setSupportMsg]          = useState("");
+  const [announceDismissed,   setAnnounceDismissed]   = useState(false);
 
   useEffect(() => {
     Animated.timing(hdOp, { toValue:1, duration:480, useNativeDriver:true }).start();
@@ -342,8 +350,15 @@ export default function HomeScreen() {
     fetch(`${API}/platform-config`)
       .then(r => r.json())
       .then(d => {
-        if (d.features) setFeatures(f => ({ ...f, ...d.features }));
-        if (d.content?.banner) setContentBanner(d.content.banner);
+        if (d.features)           setFeatures(f => ({ ...f, ...d.features }));
+        if (d.content?.banner)    setContentBanner(d.content.banner);
+        if (d.content?.announcement)   setAnnouncement(d.content.announcement);
+        if (d.content?.maintenanceMsg) setMaintenanceMsg(d.content.maintenanceMsg);
+        if (d.content?.tncUrl)    setTncUrl(d.content.tncUrl);
+        if (d.content?.privacyUrl) setPrivacyUrl(d.content.privacyUrl);
+        if (d.content?.supportMsg) setSupportMsg(d.content.supportMsg);
+        if (d.platform?.appStatus)  setAppStatus(d.platform.appStatus);
+        if (d.platform?.supportPhone) setSupportPhone(d.platform.supportPhone);
       })
       .catch(() => {});
   }, []);
@@ -361,6 +376,34 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.root,{ backgroundColor: C.background }]}>
+
+      {/* ──── MAINTENANCE OVERLAY ──── */}
+      {appStatus === "maintenance" && (
+        <View style={{ position:"absolute",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"#1D4ED8",alignItems:"center",justifyContent:"center",padding:24 }}>
+          <View style={{ backgroundColor:"#fff",borderRadius:28,padding:32,maxWidth:340,width:"100%",alignItems:"center" }}>
+            <Text style={{ fontSize:52,marginBottom:12 }}>🔧</Text>
+            <Text style={{ fontFamily:"Inter_700Bold",fontSize:20,color:"#111827",marginBottom:8,textAlign:"center" }}>Maintenance Mode</Text>
+            <View style={{ width:48,height:3,backgroundColor:"#2563EB",borderRadius:4,marginBottom:16 }} />
+            <Text style={{ fontFamily:"Inter_400Regular",fontSize:14,color:"#6B7280",textAlign:"center",lineHeight:22,marginBottom:20 }}>
+              {maintenanceMsg || "We're performing scheduled maintenance. Back soon!"}
+            </Text>
+            <View style={{ backgroundColor:"#EFF6FF",borderRadius:16,padding:12,width:"100%" }}>
+              <Text style={{ fontFamily:"Inter_500Medium",fontSize:12,color:"#1D4ED8",textAlign:"center" }}>⏱ Hum jald hi wapas aayenge!</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* ──── ANNOUNCEMENT BAR ──── */}
+      {announcement && !announceDismissed && (
+        <View style={{ backgroundColor:"#1D4ED8",flexDirection:"row",alignItems:"center",paddingHorizontal:12,paddingVertical:8,gap:8 }}>
+          <Text style={{ fontSize:14 }}>📢</Text>
+          <Text style={{ flex:1,fontFamily:"Inter_500Medium",fontSize:12,color:"#fff" }} numberOfLines={1}>{announcement}</Text>
+          <Pressable onPress={() => setAnnounceDismissed(true)} style={{ padding:2 }}>
+            <Text style={{ fontFamily:"Inter_700Bold",fontSize:16,color:"rgba(255,255,255,0.8)",lineHeight:18 }}>×</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* ──── HEADER ──── */}
       <Animated.View style={{ opacity: hdOp }}>

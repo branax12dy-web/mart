@@ -1,8 +1,11 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { usePlatformConfig } from "./lib/useConfig";
 import { BottomNav } from "./components/BottomNav";
 import { SideNav } from "./components/SideNav";
+import { AnnouncementBar } from "./components/AnnouncementBar";
+import { MaintenanceScreen } from "./components/MaintenanceScreen";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
@@ -19,6 +22,7 @@ const queryClient = new QueryClient({
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  const { config } = usePlatformConfig();
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
@@ -36,37 +40,45 @@ function AppRoutes() {
   if (!user) return <Login />;
 
   return (
-    <div className="h-screen bg-gray-100 flex overflow-hidden">
-      {/* ── Desktop Sidebar (hidden on mobile) ── */}
-      <div className="hidden md:flex md:w-64 md:flex-shrink-0">
-        <SideNav />
-      </div>
+    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
+      {/* ── Maintenance overlay (fullscreen) ── */}
+      {config.platform.appStatus === "maintenance" && (
+        <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />
+      )}
 
-      {/* ── Main Content ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile: scrollable content with bottom nav padding */}
-        <div
-          className="flex-1 overflow-y-auto scroll-momentum"
-          style={{ paddingBottom: "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))" }}
-          id="main-scroll"
-        >
-          {/* Desktop: max-width content */}
-          <div className="md:max-w-5xl md:mx-auto md:px-6 md:pb-8">
-            <Switch>
-              <Route path="/" component={Dashboard} />
-              <Route path="/orders" component={Orders} />
-              <Route path="/products" component={Products} />
-              <Route path="/wallet" component={Wallet} />
-              <Route path="/analytics" component={Analytics} />
-              <Route path="/store" component={Store} />
-              <Route path="/notifications" component={Notifications} />
-              <Route path="/profile" component={Profile} />
-            </Switch>
-          </div>
+      {/* ── Announcement bar (top, dismissable) ── */}
+      <AnnouncementBar message={config.content.announcement} />
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* ── Desktop Sidebar (hidden on mobile) ── */}
+        <div className="hidden md:flex md:w-64 md:flex-shrink-0">
+          <SideNav />
         </div>
 
-        {/* Mobile Bottom Nav */}
-        <BottomNav />
+        {/* ── Main Content ── */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <div
+            className="flex-1 overflow-y-auto scroll-momentum"
+            style={{ paddingBottom: "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))" }}
+            id="main-scroll"
+          >
+            <div className="md:max-w-5xl md:mx-auto md:px-6 md:pb-8">
+              <Switch>
+                <Route path="/" component={Dashboard} />
+                <Route path="/orders" component={Orders} />
+                <Route path="/products" component={Products} />
+                <Route path="/wallet" component={Wallet} />
+                <Route path="/analytics" component={Analytics} />
+                <Route path="/store" component={Store} />
+                <Route path="/notifications" component={Notifications} />
+                <Route path="/profile" component={Profile} />
+              </Switch>
+            </div>
+          </div>
+
+          {/* Mobile Bottom Nav */}
+          <BottomNav />
+        </div>
       </div>
     </div>
   );

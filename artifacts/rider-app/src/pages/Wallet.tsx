@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 
 const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Other"];
 const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
@@ -127,6 +128,7 @@ function WithdrawModal({ balance, onClose, onSuccess }: { balance: number; onClo
 
 export default function Wallet() {
   const { user, refreshUser } = useAuth();
+  const { config } = usePlatformConfig();
   const qc = useQueryClient();
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [toast, setToast] = useState("");
@@ -136,6 +138,7 @@ export default function Wallet() {
     queryKey: ["rider-wallet"],
     queryFn: () => api.getWallet(),
     refetchInterval: 30000,
+    enabled: config.features.wallet,
   });
 
   const transactions: any[] = data?.transactions || [];
@@ -146,6 +149,24 @@ export default function Wallet() {
   const todayEarned = transactions.filter(t => t.type === "credit" && new Date(t.createdAt) >= today).reduce((s, t) => s + Number(t.amount), 0);
   const weekEarned  = transactions.filter(t => t.type === "credit" && new Date(t.createdAt) >= weekAgo).reduce((s, t) => s + Number(t.amount), 0);
   const totalCredits = transactions.filter(t => t.type === "credit" || t.type === "bonus").reduce((s, t) => s + Number(t.amount), 0);
+
+  if (!config.features.wallet) {
+    return (
+      <div className="bg-gray-50 pb-24">
+        <div className="bg-gradient-to-br from-green-600 to-emerald-700 px-5 pt-12 pb-6">
+          <h1 className="text-2xl font-bold text-white mb-1">Wallet</h1>
+          <p className="text-green-200 text-sm">Earnings & withdrawals</p>
+        </div>
+        <div className="px-4 py-8 text-center">
+          <div className="bg-white rounded-3xl p-10 shadow-sm max-w-sm mx-auto">
+            <div className="text-5xl mb-4">🔒</div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Wallet Disabled</h3>
+            <p className="text-sm text-gray-500">Admin ne wallet feature abhi band ki hui hai. Jald hi wapas aayega!</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-50 pb-24">

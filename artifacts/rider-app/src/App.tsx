@@ -1,7 +1,10 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { usePlatformConfig } from "./lib/useConfig";
 import { BottomNav } from "./components/BottomNav";
+import { AnnouncementBar } from "./components/AnnouncementBar";
+import { MaintenanceScreen } from "./components/MaintenanceScreen";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Active from "./pages/Active";
@@ -15,6 +18,7 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1 } } 
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  const { config } = usePlatformConfig();
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center">
@@ -29,8 +33,16 @@ function AppRoutes() {
   if (!user) return <Login />;
 
   return (
-    <div className="max-w-md mx-auto relative">
-      <div className="pb-20">
+    <div className="max-w-md mx-auto relative flex flex-col min-h-screen">
+      {/* ── Maintenance overlay (fullscreen) ── */}
+      {config.platform.appStatus === "maintenance" && (
+        <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />
+      )}
+
+      {/* ── Announcement bar (top, dismissable) ── */}
+      <AnnouncementBar message={config.content.announcement} />
+
+      <div className="flex-1 pb-20">
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/active" component={Active} />

@@ -1,12 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 import { useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { fc, CARD, STAT_VAL, STAT_LBL } from "../lib/ui";
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
+  const { config } = usePlatformConfig();
   const qc = useQueryClient();
   const [toast, setToast] = useState("");
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
@@ -208,6 +210,26 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Live Tracking disabled notice */}
+      {!config.features.liveTracking && (
+        <div className="fixed bottom-24 left-4 right-4 z-40 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg md:max-w-sm md:left-auto md:right-6">
+          <span className="text-lg">📍</span>
+          <div>
+            <p className="text-xs font-bold text-amber-800">Live Tracking Disabled</p>
+            <p className="text-xs text-amber-600">Admin ne live tracking band ki hai</p>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Support FAB (only when feature_chat is on) */}
+      {config.features.chat && (
+        <a href={`https://wa.me/${config.platform.supportPhone.replace(/^0/, "92")}`} target="_blank" rel="noopener noreferrer"
+          className="fixed bottom-24 right-4 z-50 w-14 h-14 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all active:scale-95 md:bottom-6"
+          title={config.content.supportMsg || "Live Support"}>
+          💬
+        </a>
+      )}
 
       {toast && (
         <div className="fixed top-0 left-0 right-0 z-50 flex justify-center toast-in"

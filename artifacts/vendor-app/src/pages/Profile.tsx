@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 import { PageHeader } from "../components/PageHeader";
 import { fc, CARD, INPUT, BTN_PRIMARY, LABEL } from "../lib/ui";
 
@@ -18,6 +19,7 @@ type EditSection = "personal" | "bank" | null;
 
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
+  const { config } = usePlatformConfig();
 
   const { data: notifData } = useQuery({
     queryKey: ["vendor-notifs-count"],
@@ -401,11 +403,34 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* AJKMart Vendor Agreement */}
-            <div className="bg-gray-100 rounded-2xl p-4">
+            {/* AJKMart Vendor Agreement + Links */}
+            <div className="bg-gray-100 rounded-2xl p-4 space-y-3">
               <p className="text-xs text-gray-500 text-center leading-relaxed">
-                By using AJKMart Vendor Portal, you agree to our vendor terms. For support: <span className="font-bold text-orange-500">admin@ajkmart.pk</span>
+                By using {config.platform.appName} Vendor Portal, you agree to our vendor terms.
+                {" "}For support: <a href={`tel:${config.platform.supportPhone}`} className="font-bold text-orange-500">{config.platform.supportPhone}</a>
               </p>
+              {(config.content.tncUrl || config.content.privacyUrl || config.features.chat) && (
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {config.content.tncUrl && (
+                    <a href={config.content.tncUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-orange-600 underline underline-offset-2 hover:text-orange-800 transition-colors">
+                      📋 Terms of Service
+                    </a>
+                  )}
+                  {config.content.privacyUrl && (
+                    <a href={config.content.privacyUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-orange-600 underline underline-offset-2 hover:text-orange-800 transition-colors">
+                      🔒 Privacy Policy
+                    </a>
+                  )}
+                  {config.features.chat && (
+                    <a href={`https://wa.me/${config.platform.supportPhone.replace(/^0/, "92")}`} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
+                      💬 {config.content.supportMsg || "Live Support"}
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

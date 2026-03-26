@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
 export default function Home() {
   const { user, refreshUser } = useAuth();
+  const { config } = usePlatformConfig();
   const qc = useQueryClient();
   const [toggling, setToggling] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
@@ -165,6 +167,26 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Live Tracking disabled notice */}
+      {!config.features.liveTracking && (
+        <div className="mx-4 mb-4 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-center gap-3">
+          <span className="text-lg">📍</span>
+          <div>
+            <p className="text-xs font-bold text-amber-800">Live Tracking Disabled</p>
+            <p className="text-xs text-amber-600">Admin ne live GPS tracking band ki hai. Orders manual accept karein.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Support FAB (only when feature_chat is on) */}
+      {config.features.chat && (
+        <a href={`https://wa.me/${config.platform.supportPhone.replace(/^0/, "92")}`} target="_blank" rel="noopener noreferrer"
+          className="fixed bottom-24 right-4 z-50 w-14 h-14 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all active:scale-95"
+          title={config.content.supportMsg || "Live Support"}>
+          💬
+        </a>
+      )}
 
       {/* Toast */}
       {toastMsg && (

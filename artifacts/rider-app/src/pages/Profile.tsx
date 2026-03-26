@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 
 const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
 const fd = (d: string | Date) => new Date(d).toLocaleDateString("en-PK", { day:"numeric", month:"long", year:"numeric" });
@@ -28,6 +29,7 @@ function InfoRow({ label, value, empty = "Not set" }: { label: string; value?: s
 
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
+  const { config } = usePlatformConfig();
 
   const { data: notifData } = useQuery({
     queryKey: ["rider-notifs-count"],
@@ -414,9 +416,34 @@ export default function Profile() {
           🚪 Logout from This Device
         </button>
 
-        <p className="text-center text-xs text-gray-400 pb-2">
-          AJKMart Rider Portal · Contact: <span className="text-green-600 font-semibold">support@ajkmart.pk</span>
-        </p>
+        <div className="bg-gray-100 rounded-2xl p-4 space-y-3">
+          <p className="text-center text-xs text-gray-500 leading-relaxed">
+            {config.platform.appName} Rider Portal · Contact:{" "}
+            <a href={`tel:${config.platform.supportPhone}`} className="text-green-600 font-semibold">{config.platform.supportPhone}</a>
+          </p>
+          {(config.content.tncUrl || config.content.privacyUrl || config.features.chat) && (
+            <div className="flex flex-wrap gap-2 justify-center">
+              {config.content.tncUrl && (
+                <a href={config.content.tncUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
+                  📋 Terms of Service
+                </a>
+              )}
+              {config.content.privacyUrl && (
+                <a href={config.content.privacyUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
+                  🔒 Privacy Policy
+                </a>
+              )}
+              {config.features.chat && (
+                <a href={`https://wa.me/${config.platform.supportPhone.replace(/^0/, "92")}`} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
+                  💬 {config.content.supportMsg || "Live Support"}
+                </a>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {toast && (

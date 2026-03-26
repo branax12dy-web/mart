@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 import { PageHeader } from "../components/PageHeader";
 import { fc, fd, CARD, CARD_HEADER, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, BADGE_GREEN, BADGE_RED, BADGE_BLUE, BADGE_GRAY } from "../lib/ui";
 
@@ -125,6 +126,7 @@ function txBadge(type: string) {
 
 export default function Wallet() {
   const { user, refreshUser } = useAuth();
+  const { config } = usePlatformConfig();
   const qc = useQueryClient();
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [toast, setToast] = useState("");
@@ -134,6 +136,7 @@ export default function Wallet() {
     queryKey: ["vendor-wallet"],
     queryFn: () => api.getWallet(),
     refetchInterval: 30000,
+    enabled: config.features.wallet,
   });
 
   const transactions: any[] = data?.transactions || [];
@@ -146,6 +149,21 @@ export default function Wallet() {
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
   const todayEarned = transactions.filter(t => t.type === "credit" && new Date(t.createdAt) >= today).reduce((s, t) => s + Number(t.amount), 0);
   const weekEarned  = transactions.filter(t => t.type === "credit" && new Date(t.createdAt) >= weekAgo).reduce((s, t) => s + Number(t.amount), 0);
+
+  if (!config.features.wallet) {
+    return (
+      <div className="bg-gray-50 md:bg-transparent">
+        <PageHeader title="My Wallet" subtitle="Earnings & withdrawals" />
+        <div className="px-4 py-8 text-center">
+          <div className="bg-white rounded-3xl p-10 shadow-sm max-w-sm mx-auto">
+            <div className="text-5xl mb-4">🔒</div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Wallet Disabled</h3>
+            <p className="text-sm text-gray-500">Admin ne wallet feature abhi band ki hui hai. Jald hi wapas aayega!</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-50 md:bg-transparent">
