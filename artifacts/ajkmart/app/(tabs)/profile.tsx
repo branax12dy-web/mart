@@ -551,6 +551,7 @@ export default function ProfileScreen() {
     privacyUrl:   platformConfig.content.privacyUrl,
     supportMsg:   platformConfig.content.supportMsg,
     supportPhone: platformConfig.platform.supportPhone,
+    appName:      platformConfig.platform.appName,
     chat:         platformConfig.features.chat,
   };
 
@@ -686,7 +687,7 @@ export default function ProfileScreen() {
             <Ionicons name="wallet" size={18} color="#fff" />
           </LinearGradient>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={wb.lbl}>AJKMart Wallet</Text>
+            <Text style={wb.lbl}>{platformCfg.appName} Wallet</Text>
             <Text style={wb.amt}>Rs. {(user?.walletBalance || 0).toLocaleString()}</Text>
           </View>
           <View style={wb.btn}>
@@ -753,7 +754,7 @@ export default function ProfileScreen() {
             <Row icon="document-text-outline"
                  label="Terms of Service"
                  sub="Terms aur conditions"
-                 onPress={() => showToast("AJKMart use karte hue aap hamare terms se agree karte hain.", "info")}
+                 onPress={() => showToast(`${platformCfg.appName} use karte hue aap hamare terms se agree karte hain.`, "info")}
                  iconColor="#64748B" iconBg="#F1F5F9" />
           )}
           {platformCfg.privacyUrl && (
@@ -768,7 +769,7 @@ export default function ProfileScreen() {
         {/* ── App Info ── */}
         <View style={ai.wrap}>
           <View style={ai.logo}><Ionicons name="storefront" size={26} color={C.primary} /></View>
-          <Text style={ai.name}>AJKMart</Text>
+          <Text style={ai.name}>{platformCfg.appName}</Text>
           <Text style={ai.version}>Version 1.0.0 • AJK, Pakistan 🇵🇰</Text>
         </View>
 

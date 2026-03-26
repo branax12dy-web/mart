@@ -44,7 +44,7 @@ export default function Dashboard() {
       {/* ── Header ── */}
       <PageHeader
         title={user?.storeName || "Dashboard"}
-        subtitle={user?.storeCategory ? `${user.storeCategory} · AJKMart Partner` : "AJKMart Vendor Portal"}
+        subtitle={user?.storeCategory ? `${user.storeCategory} · ${config.platform.appName} Partner` : `${config.platform.appName} Vendor Portal`}
         actions={
           <div className="flex items-center gap-2">
             <span className="hidden md:block text-sm text-gray-500 font-medium">Store:</span>

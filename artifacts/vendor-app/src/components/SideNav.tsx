@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 
 const items = [
   { href: "/",           label: "Dashboard",   icon: "📊", desc: "Overview & stats"     },
@@ -16,6 +17,7 @@ const items = [
 export function SideNav() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const { config } = usePlatformConfig();
 
   const { data: notifData } = useQuery({
     queryKey: ["vendor-notifs-count"],
@@ -35,7 +37,7 @@ export function SideNav() {
           </div>
           <div className="min-w-0">
             <p className="font-extrabold text-white text-sm leading-tight truncate">{user?.storeName || "My Store"}</p>
-            <p className="text-orange-100 text-xs font-medium">AJKMart Vendor</p>
+            <p className="text-orange-100 text-xs font-medium">{config.platform.appName} Vendor</p>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between">

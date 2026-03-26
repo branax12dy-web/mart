@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { sendOtp, verifyOtp } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -33,6 +34,8 @@ export default function AuthScreen() {
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { config: platformCfg } = usePlatformConfig();
+  const appName = platformCfg.platform.appName;
 
   const handleSendOtp = async () => {
     setError("");
@@ -78,7 +81,7 @@ export default function AuthScreen() {
               <Ionicons name="cart" size={40} color={C.primary} />
             </View>
           </View>
-          <Text style={styles.appName}>AJKMart</Text>
+          <Text style={styles.appName}>{appName}</Text>
           <Text style={styles.tagline}>Your super app for everything</Text>
         </View>
 

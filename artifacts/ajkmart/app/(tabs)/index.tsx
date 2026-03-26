@@ -53,7 +53,7 @@ function Tap({ children, onPress, style, delay = 0 }: {
 }
 
 /* ─────────────────────────── HERO card ─────────────────────────── */
-function HeroCard({ onPress }: { onPress: () => void }) {
+function HeroCard({ onPress, appName = "AJKMart" }: { onPress: () => void; appName?: string }) {
   return (
     <Tap onPress={onPress} style={styles.heroWrap} delay={80}>
       <LinearGradient colors={["#0D47C0","#1A56DB","#2563EB"]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={styles.heroCard}>
@@ -65,7 +65,7 @@ function HeroCard({ onPress }: { onPress: () => void }) {
             <Ionicons name="storefront" size={11} color="#fff" />
             <Text style={styles.heroBadgeTxt}>Grocery Mart</Text>
           </View>
-          <Text style={styles.heroTitle}>AJKMart</Text>
+          <Text style={styles.heroTitle}>{appName}</Text>
           <Text style={styles.heroSub}>Fresh groceries & essentials{"\n"}delivered to your door</Text>
           <View style={styles.heroStats}>
             <View style={styles.heroStat}>
@@ -128,7 +128,7 @@ function SvcCard({ onPress, delay, g1, g2, ig1, ig2, icon, title, sub, tag, tagI
 }
 
 /* ─────────────────────────── WALLET strip ─────────────────────────── */
-function WalletStrip({ balance, onPress }: { balance: number; onPress: () => void }) {
+function WalletStrip({ balance, onPress, appName = "AJKMart" }: { balance: number; onPress: () => void; appName?: string }) {
   return (
     <Tap onPress={onPress} style={styles.walletWrap} delay={310}>
       <LinearGradient colors={["#0F3BA8","#1A56DB"]} start={{ x:0,y:0 }} end={{ x:1,y:0 }} style={styles.walletCard}>
@@ -138,7 +138,7 @@ function WalletStrip({ balance, onPress }: { balance: number; onPress: () => voi
             <Ionicons name="wallet" size={22} color="#fff" />
           </View>
           <View>
-            <Text style={styles.walletLbl}>AJKMart Wallet</Text>
+            <Text style={styles.walletLbl}>{appName} Wallet</Text>
             <Text style={styles.walletBal}>Rs. {balance.toLocaleString()}</Text>
           </View>
         </View>
@@ -331,7 +331,8 @@ export default function HomeScreen() {
   const hdOp   = useRef(new Animated.Value(0)).current;
 
   const { config: platformConfig } = usePlatformConfig();
-  const features     = platformConfig.features;
+  const features      = platformConfig.features;
+  const appName       = platformConfig.platform.appName;
   const contentBanner = platformConfig.content.banner;
   const announcement  = platformConfig.content.announcement;
   const [announceDismissed, setAnnounceDismissed] = useState(false);
@@ -421,7 +422,7 @@ export default function HomeScreen() {
         ) : null}
 
         <View style={styles.grid}>
-          <HeroCard onPress={() => features.mart ? router.push("/mart") : undefined} />
+          <HeroCard onPress={() => features.mart ? router.push("/mart") : undefined} appName={appName} />
 
           <View style={styles.halfRow}>
             <SvcCard
@@ -482,7 +483,7 @@ export default function HomeScreen() {
             />
           </View>
 
-          {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} />}
+          {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
         </View>
 
         {/* ──── QUICK PILLS ──── */}

@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -114,6 +115,9 @@ export default function MartScreen() {
   const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  const { config: platformConfig } = usePlatformConfig();
+  const appName = platformConfig.platform.appName;
+
   const { data: catData } = useGetCategories({ type: "mart" });
   const { data, isLoading } = useGetProducts({ type: "mart", search: search || undefined, category: selectedCat });
 
@@ -135,7 +139,7 @@ export default function MartScreen() {
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={styles.hdrTitle}>AJKMart</Text>
+            <Text style={styles.hdrTitle}>{appName}</Text>
             <Text style={styles.hdrSub}>Fresh groceries delivered fast</Text>
           </View>
           <Pressable onPress={() => router.push("/cart")} style={styles.cartBtn}>

@@ -272,7 +272,7 @@ export default function Wallet() {
         {/* ── Security Notice ── */}
         <div className="bg-gray-100 rounded-2xl p-4">
           <p className="text-xs text-gray-500 font-medium text-center leading-relaxed">
-            🔐 All wallet transactions are encrypted and audited. If you see any unauthorized activity, contact <span className="font-bold text-orange-500">AJKMart Admin</span> immediately.
+            🔐 All wallet transactions are encrypted and audited. If you see any unauthorized activity, contact <span className="font-bold text-orange-500">{config.platform.appName} Admin</span> immediately.
           </p>
         </div>
       </div>

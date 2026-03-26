@@ -22,7 +22,7 @@ export interface PlatformConfig {
   };
   platform: {
     supportPhone: string;
-    name: string;
+    appName: string;
   };
 }
 
@@ -37,7 +37,7 @@ const DEFAULT: PlatformConfig = {
     tncUrl: "",
     privacyUrl: "",
   },
-  platform: { supportPhone: "03001234567", name: "AJKMart" },
+  platform: { supportPhone: "03001234567", appName: "AJKMart" },
 };
 
 interface Ctx {
@@ -74,12 +74,12 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
       if (!res.ok) throw new Error("config fetch failed");
       const raw = await res.json();
       const parsed: PlatformConfig = {
-        appStatus: raw.app?.status ?? "active",
+        appStatus: raw.platform?.appStatus === "maintenance" ? "maintenance" : "active",
         features: {
-          chat:         (raw.features?.chat         ?? "off") === "on",
-          wallet:       (raw.features?.wallet        ?? "on")  === "on",
-          liveTracking: (raw.features?.liveTracking  ?? "on")  === "on",
-          reviews:      (raw.features?.reviews       ?? "on")  === "on",
+          chat:         raw.features?.chat         ?? false,
+          wallet:       raw.features?.wallet        ?? true,
+          liveTracking: raw.features?.liveTracking  ?? true,
+          reviews:      raw.features?.reviews       ?? true,
         },
         content: {
           banner:          raw.content?.banner          ?? "",
@@ -91,7 +91,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
         },
         platform: {
           supportPhone: raw.platform?.supportPhone ?? DEFAULT.platform.supportPhone,
-          name:         raw.platform?.name         ?? DEFAULT.platform.name,
+          appName:      raw.platform?.appName      ?? DEFAULT.platform.appName,
         },
       };
       _cached = parsed;

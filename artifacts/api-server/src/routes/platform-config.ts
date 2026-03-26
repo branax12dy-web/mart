@@ -30,7 +30,7 @@ router.get("/", async (_req, res) => {
     },
     {
       id:          "wallet",
-      label:       "AJKMart Wallet",
+      label:       `${s["app_name"] ?? "AJKMart"} Wallet`,
       logo:        "💰",
       available:   walletEnabled,
       mode:        "live",

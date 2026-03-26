@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 
 const C = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
@@ -73,6 +74,8 @@ export default function ParcelScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user, updateUser } = useAuth();
   const { showToast } = useToast();
+  const { config: platformConfig } = usePlatformConfig();
+  const appName = platformConfig.platform.appName;
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -337,7 +340,7 @@ export default function ParcelScreen() {
                   <Ionicons name="wallet-outline" size={22} color={C.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[ss.payLabel, payMethod === "wallet" && { color: "#D97706" }]}>AJKMart Wallet</Text>
+                  <Text style={[ss.payLabel, payMethod === "wallet" && { color: "#D97706" }]}>{appName} Wallet</Text>
                   <Text style={ss.paySub}>Balance: Rs. {(user?.walletBalance ?? 0).toLocaleString()}</Text>
                 </View>
                 {payMethod === "wallet" && <Ionicons name="checkmark-circle" size={20} color="#D97706" />}

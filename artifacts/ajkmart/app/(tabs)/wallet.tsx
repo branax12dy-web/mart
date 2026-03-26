@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useGetWallet, topUpWallet } from "@workspace/api-client-react";
 
 const C   = Colors.light;
@@ -75,6 +76,9 @@ export default function WalletScreen() {
   const [sendAmount,  setSendAmount]  = useState("");
   const [sendNote,    setSendNote]    = useState("");
   const [sendLoading, setSendLoading] = useState(false);
+
+  const { config: platformConfig } = usePlatformConfig();
+  const appName = platformConfig.platform.appName;
 
   const { data, isLoading, refetch } = useGetWallet(
     { userId: user?.id || "" },
@@ -145,7 +149,7 @@ export default function WalletScreen() {
           <View style={[ws.blob, { width:220, height:220, top:-70, right:-60 }]} />
           <View style={[ws.blob, { width:100, height:100, bottom:-20, left:30 }]} />
 
-          <Text style={ws.balLbl}>AJKMart Wallet</Text>
+          <Text style={ws.balLbl}>{appName} Wallet</Text>
           <Text style={ws.balAmt}>
             {isLoading ? "Rs. ···" : `Rs. ${balance.toLocaleString()}`}
           </Text>
@@ -349,7 +353,7 @@ export default function WalletScreen() {
 
             <View style={ws.sheetNote}>
               <Ionicons name="shield-checkmark-outline" size={14} color={C.success} />
-              <Text style={ws.sheetNoteTxt}>AJKMart users direct wallet mein bhej sakte hain</Text>
+              <Text style={ws.sheetNoteTxt}>{appName} users direct wallet mein bhej sakte hain</Text>
             </View>
 
             <Pressable onPress={() => setShowQR(false)} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 8 }]}>

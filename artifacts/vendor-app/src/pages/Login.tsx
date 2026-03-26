@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 
 const FEATURES = [
   { icon: "📦", title: "Order Management",   desc: "Accept & track orders in real-time" },
@@ -11,6 +12,8 @@ const FEATURES = [
 
 export default function Login() {
   const { login } = useAuth();
+  const { config } = usePlatformConfig();
+  const appName = config.platform.appName;
   const [phone, setPhone]     = useState("");
   const [otp, setOtp]         = useState("");
   const [step, setStep]       = useState<"phone" | "otp">("phone");
@@ -63,7 +66,7 @@ export default function Login() {
               <span className="text-2xl">🏪</span>
             </div>
             <div>
-              <p className="text-white font-extrabold text-xl leading-tight">AJKMart</p>
+              <p className="text-white font-extrabold text-xl leading-tight">{appName}</p>
               <p className="text-orange-100 text-sm font-medium">Vendor Portal</p>
             </div>
           </div>
@@ -73,7 +76,7 @@ export default function Login() {
         <div className="relative z-10">
           <h1 className="text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4">
             Grow your<br/>business with<br/>
-            <span className="text-amber-200">AJKMart</span>
+            <span className="text-amber-200">{appName}</span>
           </h1>
           <p className="text-orange-100 text-lg font-medium mb-10 leading-relaxed">
             Manage orders, products, and earnings — all from one powerful vendor dashboard.
@@ -92,7 +95,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="relative z-10">
-          <p className="text-orange-200 text-sm">© 2025 AJKMart · AJK, Pakistan · 85% commission guaranteed</p>
+          <p className="text-orange-200 text-sm">© 2025 {appName} · AJK, Pakistan · 85% commission guaranteed</p>
         </div>
       </div>
 
@@ -109,13 +112,13 @@ export default function Login() {
               <span className="text-4xl">🏪</span>
             </div>
             <h1 className="text-3xl font-extrabold text-white">Vendor Portal</h1>
-            <p className="text-orange-100 mt-1 font-medium">AJKMart Business Partner</p>
+            <p className="text-orange-100 mt-1 font-medium">{appName} Business Partner</p>
           </div>
 
           {/* Desktop heading */}
           <div className="hidden md:block mb-8">
             <h2 className="text-3xl font-extrabold text-gray-900">Welcome back 👋</h2>
-            <p className="text-gray-500 mt-1">Login to your AJKMart vendor account</p>
+            <p className="text-gray-500 mt-1">Login to your {appName} vendor account</p>
           </div>
 
           {/* Form Card */}

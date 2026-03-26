@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 
 export default function Login() {
   const { login } = useAuth();
+  const { config } = usePlatformConfig();
+  const appName = config.platform.appName;
   const [phone, setPhone]   = useState("");
   const [otp, setOtp]       = useState("");
   const [step, setStep]     = useState<"phone" | "otp">("phone");
@@ -48,7 +51,7 @@ export default function Login() {
             <span className="text-4xl">🏍️</span>
           </div>
           <h1 className="text-3xl font-bold text-white">Rider Portal</h1>
-          <p className="text-green-200 mt-1">AJKMart Delivery Partner</p>
+          <p className="text-green-200 mt-1">{appName} Delivery Partner</p>
         </div>
 
         <div className="bg-white rounded-3xl p-6 shadow-2xl">

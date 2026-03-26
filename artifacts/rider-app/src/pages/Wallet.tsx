@@ -265,7 +265,7 @@ export default function Wallet() {
 
         <div className="bg-gray-100 rounded-2xl p-4">
           <p className="text-xs text-gray-500 font-medium text-center leading-relaxed">
-            🔐 All wallet transactions are encrypted and audited. For any issues contact <span className="font-bold text-green-600">AJKMart Admin</span>.
+            🔐 All wallet transactions are encrypted and audited. For any issues contact <span className="font-bold text-green-600">{config.platform.appName} Admin</span>.
           </p>
         </div>
       </div>

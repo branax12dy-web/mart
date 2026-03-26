@@ -18,6 +18,7 @@ import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { createOrder } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -103,6 +104,8 @@ export default function CartScreen() {
   const { user, updateUser } = useAuth();
   const { items, total, cartType, updateQuantity, clearCart } = useCart();
   const { showToast } = useToast();
+  const { config: platformConfig } = usePlatformConfig();
+  const appName = platformConfig.platform.appName;
 
   const [payMethod, setPayMethod] = useState<PayMethod>("cash");
   const [loading, setLoading] = useState(false);
@@ -115,8 +118,8 @@ export default function CartScreen() {
   const [addrLoading, setAddrLoading] = useState(false);
 
   const [availablePayMethods, setAvailablePayMethods] = useState<PaymentMethod[]>([
-    { id: "cash",   label: "Cash on Delivery", logo: "💵", available: true,  description: "Delivery par payment karein" },
-    { id: "wallet", label: "AJKMart Wallet",   logo: "💰", available: true,  description: "Wallet se instant pay" },
+    { id: "cash",   label: "Cash on Delivery",    logo: "💵", available: true,  description: "Delivery par payment karein" },
+    { id: "wallet", label: `${appName} Wallet`,   logo: "💰", available: true,  description: "Wallet se instant pay" },
   ]);
 
   // Gateway payment modal state
@@ -412,7 +415,7 @@ export default function CartScreen() {
 
   if (orderSuccess) {
     const methodLabel: Record<string, string> = {
-      cash: "Cash on Delivery", wallet: "AJKMart Wallet",
+      cash: "Cash on Delivery", wallet: `${appName} Wallet`,
       jazzcash: "JazzCash ✅", easypaisa: "EasyPaisa ✅",
     };
     return (
