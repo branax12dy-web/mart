@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+import { getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -16,78 +17,141 @@ function mapTx(t: typeof walletTransactionsTable.$inferSelect) {
   };
 }
 
+/* ── GET /wallet?userId=xxx ──────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   const userId = req.query["userId"] as string;
   if (!userId) { res.status(400).json({ error: "userId required" }); return; }
+
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
   const transactions = await db
-    .select().from(walletTransactionsTable)
+    .select()
+    .from(walletTransactionsTable)
     .where(eq(walletTransactionsTable.userId, userId))
     .orderBy(walletTransactionsTable.createdAt);
+
   res.json({
     balance: parseFloat(user.walletBalance ?? "0"),
     transactions: transactions.map(mapTx),
   });
 });
 
+/* ── POST /wallet/topup ──────────────────────────────────────────────────── */
 router.post("/topup", async (req, res) => {
-  const { userId, amount } = req.body;
+  const { userId, amount, method } = req.body;
   if (!userId || !amount) { res.status(400).json({ error: "userId and amount required" }); return; }
+
+  const topupAmt = parseFloat(amount);
+  if (isNaN(topupAmt) || topupAmt <= 0) {
+    res.status(400).json({ error: "Invalid amount" }); return;
+  }
+
+  // Fetch platform settings for validation
+  const s = await getPlatformSettings();
+  const walletEnabled   = (s["feature_wallet"] ?? "on") === "on";
+  const minTopup        = parseFloat(s["wallet_min_topup"]  ?? "100");
+  const maxTopup        = parseFloat(s["wallet_max_topup"]  ?? "25000");
+  const maxBalance      = parseFloat(s["wallet_max_balance"] ?? "50000");
+
+  if (!walletEnabled) {
+    res.status(503).json({ error: "Wallet service is currently disabled" }); return;
+  }
+  if (topupAmt < minTopup) {
+    res.status(400).json({ error: `Minimum top-up is Rs. ${minTopup}` }); return;
+  }
+  if (topupAmt > maxTopup) {
+    res.status(400).json({ error: `Maximum single top-up is Rs. ${maxTopup}` }); return;
+  }
+
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  const newBalance = (parseFloat(user.walletBalance ?? "0") + parseFloat(amount)).toString();
+
+  const currentBalance = parseFloat(user.walletBalance ?? "0");
+  if (currentBalance + topupAmt > maxBalance) {
+    res.status(400).json({ error: `Wallet balance limit is Rs. ${maxBalance}. Current: Rs. ${currentBalance}` }); return;
+  }
+
+  const newBalance = (currentBalance + topupAmt).toFixed(2);
   await db.update(usersTable).set({ walletBalance: newBalance }).where(eq(usersTable.id, userId));
   await db.insert(walletTransactionsTable).values({
     id: generateId(), userId, type: "credit",
-    amount: amount.toString(), description: "Wallet top-up",
+    amount: topupAmt.toFixed(2),
+    description: method ? `Wallet top-up via ${method}` : "Wallet top-up",
   });
+
   const transactions = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.userId, userId));
   res.json({ balance: parseFloat(newBalance), transactions: transactions.map(mapTx) });
 });
 
+/* ── POST /wallet/send ───────────────────────────────────────────────────── */
 router.post("/send", async (req, res) => {
   const { senderUserId, receiverPhone, amount, note } = req.body;
   if (!senderUserId || !receiverPhone || !amount) {
     res.status(400).json({ error: "senderUserId, receiverPhone, and amount are required" }); return;
   }
-  const sendAmt = parseFloat(amount);
-  if (sendAmt < 50) { res.status(400).json({ error: "Minimum transfer is Rs. 50" }); return; }
 
-  const [sender] = await db.select().from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1);
-  if (!sender) { res.status(404).json({ error: "Sender not found" }); return; }
-  if (parseFloat(sender.walletBalance ?? "0") < sendAmt) {
-    res.status(400).json({ error: "Insufficient wallet balance" }); return;
+  const sendAmt = parseFloat(amount);
+  if (isNaN(sendAmt) || sendAmt <= 0) {
+    res.status(400).json({ error: "Invalid amount" }); return;
   }
 
-  const [receiver] = await db.select().from(usersTable).where(eq(usersTable.phone, receiverPhone)).limit(1);
-  if (!receiver) { res.status(404).json({ error: "Receiver not found. Check phone number." }); return; }
-  if (receiver.id === senderUserId) { res.status(400).json({ error: "Cannot send money to yourself" }); return; }
+  // Platform settings validation
+  const s = await getPlatformSettings();
+  const walletEnabled  = (s["feature_wallet"] ?? "on") === "on";
+  const minWithdrawal  = parseFloat(s["wallet_min_withdrawal"] ?? "200");
+  const maxWithdrawal  = parseFloat(s["wallet_max_withdrawal"] ?? "10000");
+  const dailyLimit     = parseFloat(s["wallet_daily_limit"]   ?? "20000");
 
-  const senderNewBal = (parseFloat(sender.walletBalance ?? "0") - sendAmt).toString();
-  const receiverNewBal = (parseFloat(receiver.walletBalance ?? "0") + sendAmt).toString();
+  if (!walletEnabled) {
+    res.status(503).json({ error: "Wallet service is currently disabled" }); return;
+  }
+  if (sendAmt < minWithdrawal) {
+    res.status(400).json({ error: `Minimum transfer is Rs. ${minWithdrawal}` }); return;
+  }
+  if (sendAmt > maxWithdrawal) {
+    res.status(400).json({ error: `Maximum single transfer is Rs. ${maxWithdrawal}` }); return;
+  }
 
-  await db.update(usersTable).set({ walletBalance: senderNewBal }).where(eq(usersTable.id, senderUserId));
-  await db.update(usersTable).set({ walletBalance: receiverNewBal }).where(eq(usersTable.id, receiver.id));
+  // Use DB transaction to prevent race condition / double-spend
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [sender] = await tx.select().from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1);
+      if (!sender) throw new Error("Sender not found");
 
-  const desc = note ? `Transfer to ${receiverPhone} — ${note}` : `Transfer to ${receiverPhone}`;
-  const recvDesc = note ? `Received from ${sender.phone} — ${note}` : `Received from ${sender.phone}`;
+      const senderBalance = parseFloat(sender.walletBalance ?? "0");
+      if (senderBalance < sendAmt) throw new Error("Insufficient wallet balance");
+      if (sendAmt > dailyLimit) throw new Error(`Daily transfer limit is Rs. ${dailyLimit}`);
 
-  await db.insert(walletTransactionsTable).values({
-    id: generateId(), userId: senderUserId, type: "debit",
-    amount: sendAmt.toString(), description: desc,
-  });
-  await db.insert(walletTransactionsTable).values({
-    id: generateId(), userId: receiver.id, type: "credit",
-    amount: sendAmt.toString(), description: recvDesc,
-  });
+      const [receiver] = await tx.select().from(usersTable).where(eq(usersTable.phone, receiverPhone)).limit(1);
+      if (!receiver) throw new Error("Receiver not found. Phone number check karein.");
+      if (receiver.id === senderUserId) throw new Error("Apne aap ko transfer nahi kar sakte");
 
-  res.json({
-    success: true,
-    newBalance: parseFloat(senderNewBal),
-    receiverName: receiver.name || receiverPhone,
-    amount: sendAmt,
-  });
+      const senderNewBal   = (senderBalance - sendAmt).toFixed(2);
+      const receiverNewBal = (parseFloat(receiver.walletBalance ?? "0") + sendAmt).toFixed(2);
+
+      await tx.update(usersTable).set({ walletBalance: senderNewBal }).where(eq(usersTable.id, senderUserId));
+      await tx.update(usersTable).set({ walletBalance: receiverNewBal }).where(eq(usersTable.id, receiver.id));
+
+      const desc    = note ? `Transfer to ${receiverPhone} — ${note}` : `Transfer to ${receiverPhone}`;
+      const recvDesc = note ? `Received from ${sender.phone} — ${note}` : `Received from ${sender.phone}`;
+
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: senderUserId, type: "debit",
+        amount: sendAmt.toFixed(2), description: desc,
+      });
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: receiver.id, type: "credit",
+        amount: sendAmt.toFixed(2), description: recvDesc,
+      });
+
+      return { newBalance: parseFloat(senderNewBal), receiverName: receiver.name || receiverPhone, amount: sendAmt };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 export default router;

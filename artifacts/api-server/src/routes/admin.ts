@@ -406,16 +406,24 @@ router.patch("/orders/:id/status", async (req, res) => {
     await sendUserNotification(order.userId, notif.title, notif.body, "mart", notif.icon);
   }
 
+  // NOTE: Wallet is already debited when order is PLACED (orders.ts).
+  // Do NOT deduct again here. Only credit the rider's share on delivery.
   if (status === "delivered") {
     const total = parseFloat(String(order.total));
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, order.userId));
-    if (user && order.paymentMethod === "wallet") {
-      const newBal = Math.max(0, parseFloat(user.walletBalance ?? "0") - total);
-      await db.update(usersTable).set({ walletBalance: String(newBal), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-      await db.insert(walletTransactionsTable).values({
-        id: generateId(), userId: user.id, type: "debit",
-        amount: String(total), description: `Order payment #${order.id.slice(-6).toUpperCase()}`, reference: order.id,
-      });
+    const riderKeepPct = parseFloat((await getPlatformSettings())["rider_keep_pct"] ?? "80") / 100;
+    const riderEarning = parseFloat((total * riderKeepPct).toFixed(2));
+    // Credit assigned rider's wallet earnings
+    if (order.riderId) {
+      const [rider] = await db.select().from(usersTable).where(eq(usersTable.id, order.riderId));
+      if (rider) {
+        const riderNewBal = (parseFloat(rider.walletBalance ?? "0") + riderEarning).toFixed(2);
+        await db.update(usersTable).set({ walletBalance: riderNewBal, updatedAt: new Date() }).where(eq(usersTable.id, rider.id));
+        await db.insert(walletTransactionsTable).values({
+          id: generateId(), userId: rider.id, type: "credit",
+          amount: String(riderEarning),
+          description: `Delivery earnings — Order #${order.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
+        });
+      }
     }
   }
 
@@ -455,16 +463,25 @@ router.patch("/rides/:id/status", async (req, res) => {
     await sendUserNotification(ride.userId, notif.title, notif.body, "ride", notif.icon);
   }
 
+  // NOTE: Wallet already debited at ride booking (rides.ts).
+  // On completion, credit rider's earnings share.
   if (status === "completed") {
     const fare = parseFloat(ride.fare);
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, ride.userId));
-    if (user && ride.paymentMethod === "wallet") {
-      const newBal = Math.max(0, parseFloat(user.walletBalance ?? "0") - fare);
-      await db.update(usersTable).set({ walletBalance: String(newBal), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-      await db.insert(walletTransactionsTable).values({
-        id: generateId(), userId: user.id, type: "debit",
-        amount: String(fare), description: `Ride payment #${ride.id.slice(-6).toUpperCase()}`, reference: ride.id,
-      });
+    const s = await getPlatformSettings();
+    const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const riderEarning = parseFloat((fare * riderKeepPct).toFixed(2));
+    if (ride.riderId) {
+      const [rider] = await db.select().from(usersTable).where(eq(usersTable.id, ride.riderId));
+      if (rider) {
+        const riderNewBal = (parseFloat(rider.walletBalance ?? "0") + riderEarning).toFixed(2);
+        await db.update(usersTable).set({ walletBalance: riderNewBal, updatedAt: new Date() }).where(eq(usersTable.id, rider.id));
+        await db.insert(walletTransactionsTable).values({
+          id: generateId(), userId: rider.id, type: "credit",
+          amount: String(riderEarning),
+          description: `Ride earnings — #${ride.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
+        });
+        await sendUserNotification(rider.id, "Ride Payment Received 💰", `Rs. ${riderEarning} wallet mein add ho gaya!`, "ride", "wallet-outline");
+      }
     }
   }
 
