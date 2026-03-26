@@ -6,7 +6,7 @@ import {
   Wifi, AlertTriangle, CreditCard, CheckCircle2, XCircle,
   Loader2, Eye, EyeOff, ExternalLink, ChevronRight,
   Building2, Banknote, Wallet, Phone, FileText, Lock,
-  ToggleRight, Settings, RotateCcw,
+  ToggleRight, Settings, RotateCcw, Package,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
@@ -65,6 +65,8 @@ const TOGGLE_KEYS = new Set([
   "finance_gst_enabled",
   "finance_cashback_enabled",
   "finance_invoice_enabled",
+  "delivery_free_enabled",
+  "ride_surge_enabled",
 ]);
 
 const TEXT_KEYS = new Set([
@@ -2887,6 +2889,172 @@ function renderSection(
   }
 
   /* ─────────────────────────── RIDE PRICING RENDERER ─────────────────────────── */
+  if (cat === "delivery") {
+    const FEE_KEYS  = new Set(["delivery_fee_mart","delivery_fee_food","delivery_fee_pharmacy","delivery_fee_parcel","delivery_parcel_per_kg"]);
+    const FREE_KEYS = new Set(["delivery_free_enabled","free_delivery_above"]);
+
+    const feeFields  = catSettings.filter(s => FEE_KEYS.has(s.key));
+    const freeFields = catSettings.filter(s => FREE_KEYS.has(s.key));
+
+    const HINT: Record<string,string> = {
+      delivery_fee_mart:      "Flat delivery fee charged to customers for Mart / Grocery orders",
+      delivery_fee_food:      "Flat delivery fee charged to customers for Food & Restaurant orders",
+      delivery_fee_pharmacy:  "Flat delivery fee charged to customers for Pharmacy / Medicine orders",
+      delivery_fee_parcel:    "Base delivery fee for Parcel bookings — additional per-kg surcharge is added above 2 kg",
+      delivery_parcel_per_kg: "Extra charge per kg above the first 2 kg for parcel bookings (e.g. 3 kg parcel adds 1 × this rate)",
+      delivery_free_enabled:  "When ON, cart subtotals above the threshold qualify for free delivery. When OFF, delivery fee is always charged",
+      free_delivery_above:    "Minimum cart subtotal for free delivery. Applies to Mart, Food, and Pharmacy only — parcel is never free",
+    };
+    const EMOJI: Record<string,string> = {
+      delivery_fee_mart:      "🛒",
+      delivery_fee_food:      "🍔",
+      delivery_fee_pharmacy:  "💊",
+      delivery_fee_parcel:    "📦",
+      delivery_parcel_per_kg: "⚖️",
+    };
+
+    const freeEnabled = (localValues["delivery_free_enabled"] ?? catSettings.find(s=>s.key==="delivery_free_enabled")?.value ?? "on") === "on";
+    const freeAbove   = parseFloat(localValues["free_delivery_above"] ?? catSettings.find(s=>s.key==="free_delivery_above")?.value ?? "1000");
+    const martFee     = parseFloat(localValues["delivery_fee_mart"]     ?? catSettings.find(s=>s.key==="delivery_fee_mart")?.value     ?? "80");
+    const foodFee     = parseFloat(localValues["delivery_fee_food"]     ?? catSettings.find(s=>s.key==="delivery_fee_food")?.value     ?? "60");
+    const pharmFee    = parseFloat(localValues["delivery_fee_pharmacy"] ?? catSettings.find(s=>s.key==="delivery_fee_pharmacy")?.value ?? "50");
+    const parcelBase  = parseFloat(localValues["delivery_fee_parcel"]   ?? catSettings.find(s=>s.key==="delivery_fee_parcel")?.value   ?? "100");
+    const perKg       = parseFloat(localValues["delivery_parcel_per_kg"]?? catSettings.find(s=>s.key==="delivery_parcel_per_kg")?.value ?? "40");
+    const riderKeep   = parseFloat(settings.find(s=>s.key==="rider_keep_pct")?.value ?? "80");
+
+    const showFee = (amt: number, fee: number) =>
+      freeEnabled && amt >= freeAbove ? "FREE 🎉" : `Rs. ${fee}`;
+
+    const DeliveryNumField = ({ s }: { s: Setting }) => {
+      const isDirty = dirtyKeys.has(s.key);
+      return (
+        <div className={`rounded-xl border p-4 space-y-2.5 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-start justify-between gap-2">
+            <label className="text-sm font-semibold text-foreground leading-snug flex-1">
+              {EMOJI[s.key] && <span className="mr-1">{EMOJI[s.key]}</span>}{s.label}
+            </label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold flex-shrink-0">CHANGED</Badge>}
+          </div>
+          {HINT[s.key] && <p className="text-[11px] text-muted-foreground">{HINT[s.key]}</p>}
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">Rs.</span>
+            <Input type="number" min={0} step={1}
+              value={localValues[s.key] ?? s.value}
+              onChange={e => handleChange(s.key, e.target.value)}
+              className={`h-10 rounded-xl pl-10 ${isDirty ? "border-amber-300 bg-amber-50/50 ring-1 ring-amber-200" : ""}`}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground/50 font-mono">{s.key}</p>
+        </div>
+      );
+    };
+
+    const DeliveryToggle = ({ s }: { s: Setting }) => (
+      <Toggle checked={(localValues[s.key] ?? s.value) === "on"}
+        onChange={v => handleToggle(s.key, v)} label={s.label} isDirty={dirtyKeys.has(s.key)} />
+    );
+
+    return (
+      <div className="space-y-7">
+
+        {/* ── Group 1: Per-Service Delivery Fees ── */}
+        <div className="space-y-3">
+          <SLabel icon={Truck}>Per-Service Delivery Fees</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Flat delivery fee charged to customers per service type. Fees are collected at checkout and the rider earns their configured percentage from each delivery fee.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {feeFields.map(s => <DeliveryNumField key={s.key} s={s} />)}
+          </div>
+          <div className="bg-teal-50 border border-teal-100 rounded-xl p-3.5 flex gap-2.5">
+            <Info className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-teal-700 leading-relaxed">
+              <strong>Rider delivery earnings at {riderKeep}%:</strong>{" "}
+              🛒 Mart → Rs.{Math.round(martFee * riderKeep / 100)} &nbsp;|&nbsp;
+              🍔 Food → Rs.{Math.round(foodFee * riderKeep / 100)} &nbsp;|&nbsp;
+              💊 Pharmacy → Rs.{Math.round(pharmFee * riderKeep / 100)}{" "}
+              <span className="text-teal-500">(platform keeps remaining {100-riderKeep}%)</span>
+            </p>
+          </div>
+        </div>
+
+        {/* ── Group 2: Free Delivery Rules ── */}
+        <div className="space-y-3 border-t border-border/40 pt-6">
+          <SLabel icon={Zap}>Free Delivery Rules</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Automatically waive the delivery fee when a customer's cart subtotal exceeds the threshold. Applies to Mart, Food, and Pharmacy orders. Parcel orders always charge the base fare regardless.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {freeFields.map(s =>
+              s.key === "delivery_free_enabled"
+                ? <DeliveryToggle key={s.key} s={s} />
+                : freeEnabled ? <DeliveryNumField key={s.key} s={s} /> : null
+            )}
+          </div>
+          {!freeEnabled && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3.5 flex gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-orange-700 leading-relaxed">
+                <strong>Free delivery is currently OFF.</strong> Customers will always be charged the full delivery fee regardless of cart total. Enable the toggle above to activate the free delivery threshold.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Group 3: Live Fare Preview ── */}
+        <div className="space-y-3 border-t border-border/40 pt-6">
+          <SLabel icon={BarChart3}>Live Checkout Preview</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">What delivery fee customers see at checkout for different cart subtotals — updates instantly as you change values above.</p>
+          <div className="rounded-xl border border-border bg-white overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-sky-50 border-b border-sky-100">
+                  <th className="px-4 py-2.5 text-left text-xs font-bold text-sky-700">Cart Subtotal</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-bold text-sky-700">🛒 Mart</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-bold text-sky-700">🍔 Food</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-bold text-sky-700">💊 Pharmacy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[300, 500, 1000, 2000].map((amt, i) => {
+                  const isFree = freeEnabled && amt >= freeAbove;
+                  return (
+                    <tr key={i} className={`border-b border-gray-50 ${isFree ? "bg-green-50/40" : ""}`}>
+                      <td className="px-4 py-2.5 font-semibold text-gray-700 text-xs">
+                        Rs. {amt.toLocaleString()}
+                        {freeAbove === amt && <span className="ml-1 text-green-600 font-bold">← free delivery starts</span>}
+                      </td>
+                      <td className={`px-3 py-2.5 text-center font-bold text-xs ${isFree ? "text-green-600" : "text-gray-800"}`}>{showFee(amt, martFee)}</td>
+                      <td className={`px-3 py-2.5 text-center font-bold text-xs ${isFree ? "text-green-600" : "text-gray-800"}`}>{showFee(amt, foodFee)}</td>
+                      <td className={`px-3 py-2.5 text-center font-bold text-xs ${isFree ? "text-green-600" : "text-gray-800"}`}>{showFee(amt, pharmFee)}</td>
+                    </tr>
+                  );
+                })}
+                {freeAbove > 0 && ![300, 500, 1000, 2000].includes(Math.round(freeAbove)) && (
+                  <tr className="bg-green-50/40">
+                    <td className="px-4 py-2.5 font-semibold text-gray-700 text-xs">
+                      Rs. {Math.round(freeAbove).toLocaleString()} <span className="text-green-600 font-bold">← free delivery starts</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-bold text-xs text-green-600">{showFee(freeAbove, martFee)}</td>
+                    <td className="px-3 py-2.5 text-center font-bold text-xs text-green-600">{showFee(freeAbove, foodFee)}</td>
+                    <td className="px-3 py-2.5 text-center font-bold text-xs text-green-600">{showFee(freeAbove, pharmFee)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="bg-sky-50 border border-sky-100 rounded-xl p-3.5 flex gap-2.5">
+            <Package className="w-4 h-4 text-sky-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-sky-700 leading-relaxed">
+              <strong>📦 Parcel pricing examples:</strong>{" "}
+              1 kg → Rs.{parcelBase} &nbsp;|&nbsp;
+              3 kg → Rs.{parcelBase} + Rs.{perKg}×1 = Rs.{parcelBase + perKg} &nbsp;|&nbsp;
+              5 kg → Rs.{parcelBase} + Rs.{perKg}×3 = Rs.{parcelBase + perKg * 3}
+              &nbsp;·&nbsp; Free delivery threshold never applies to parcel orders.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
   if (cat === "rides") {
     const BIKE_KEYS   = new Set(["ride_bike_base_fare","ride_bike_per_km","ride_bike_min_fare"]);
     const CAR_KEYS    = new Set(["ride_car_base_fare","ride_car_per_km","ride_car_min_fare"]);

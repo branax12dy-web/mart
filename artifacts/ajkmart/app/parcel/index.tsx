@@ -98,9 +98,10 @@ export default function ParcelScreen() {
 
   const [payMethod, setPayMethod] = useState<"wallet" | "cash">("cash");
 
+  const parcelPerKg = platformConfig.deliveryFee?.parcelPerKg ?? 40;
   const selectedType = PARCEL_TYPES.find(t => t.id === parcelType);
   const estimatedFare = selectedType
-    ? selectedType.baseFare + (parseFloat(weight) > 2 ? Math.round((parseFloat(weight) - 2) * 40) : 0)
+    ? selectedType.baseFare + (parseFloat(weight) > 2 ? Math.round((parseFloat(weight) - 2) * parcelPerKg) : 0)
     : 0;
 
   const validateStep = (s: number): boolean => {
@@ -295,7 +296,7 @@ export default function ParcelScreen() {
               />
               {weight && parseFloat(weight) > 2 && (
                 <Text style={ss.weightNote}>
-                  Extra {(parseFloat(weight) - 2).toFixed(1)} kg → +Rs. {Math.round((parseFloat(weight) - 2) * 40)} extra charge
+                  Extra {(parseFloat(weight) - 2).toFixed(1)} kg → +Rs. {Math.round((parseFloat(weight) - 2) * parcelPerKg)} extra charge (Rs.{parcelPerKg}/kg)
                 </Text>
               )}
               <Text style={ss.label}>Description — Optional</Text>

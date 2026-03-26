@@ -56,10 +56,13 @@ router.get("/", async (_req, res) => {
 
   res.json({
     deliveryFee: {
-      mart:     parseFloat(s["delivery_fee_mart"]     ?? "80"),
-      food:     parseFloat(s["delivery_fee_food"]     ?? "60"),
-      pharmacy: parseFloat(s["delivery_fee_pharmacy"] ?? "50"),
-      parcel:   parseFloat(s["delivery_fee_parcel"]   ?? "100"),
+      mart:             parseFloat(s["delivery_fee_mart"]      ?? "80"),
+      food:             parseFloat(s["delivery_fee_food"]      ?? "60"),
+      pharmacy:         parseFloat(s["delivery_fee_pharmacy"]  ?? "50"),
+      parcel:           parseFloat(s["delivery_fee_parcel"]    ?? "100"),
+      parcelPerKg:      parseFloat(s["delivery_parcel_per_kg"] ?? "40"),
+      freeEnabled:      (s["delivery_free_enabled"]            ?? "on") === "on",
+      freeDeliveryAbove: parseFloat(s["free_delivery_above"]   ?? "1000"),
     },
     rides: {
       bikeBaseFare:      parseFloat(s["ride_bike_base_fare"]   ?? "15"),

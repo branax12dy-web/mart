@@ -55,6 +55,15 @@ export interface PlatformConfig {
     ratingWindowHours: number;
     scheduleEnabled: boolean;
   };
+  deliveryFee: {
+    mart: number;
+    food: number;
+    pharmacy: number;
+    parcel: number;
+    parcelPerKg: number;
+    freeEnabled: boolean;
+    freeDeliveryAbove: number;
+  };
   finance: {
     gstEnabled: boolean;
     gstPct: number;
@@ -91,6 +100,7 @@ const DEFAULT_CONFIG: PlatformConfig = {
   features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
   content: { showBanner: true, banner: "Free delivery on your first order! 🎉", announcement: "", maintenanceMsg: "We're performing scheduled maintenance. Back soon!", supportMsg: "Need help? Chat with us!", vendorNotice: "", riderNotice: "", tncUrl: "", privacyUrl: "", refundPolicyUrl: "", faqUrl: "", aboutUrl: "" },
   orderRules: { minOrderAmount: 100, maxCodAmount: 5000, maxCartValue: 50000, cancelWindowMin: 5, autoCancelMin: 15, refundDays: 3, preptimeMin: 15, ratingWindowHours: 48, scheduleEnabled: false },
+  deliveryFee: { mart: 80, food: 60, pharmacy: 50, parcel: 100, parcelPerKg: 40, freeEnabled: true, freeDeliveryAbove: 1000 },
   finance: { gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100, invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80, minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100 },
 };
 

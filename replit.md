@@ -1,5 +1,15 @@
 # AJKMart Super App — Workspace
-<!-- Last updated: 2026-03-26 — CONTENT WIRING COMPLETE: All admin Content settings fully propagate to all 3 client apps with no loopholes or hardcoded values.
+<!-- Last updated: 2026-03-26 — DELIVERY CHARGES COMPLETE: Full-stack delivery fee wiring across admin, API, customer app, vendor app, rider app. No hardcoded values, no loopholes.
+  - New seeds: delivery_parcel_per_kg (Rs.40), delivery_free_enabled (on/off toggle)
+  - platform-config API: deliveryFee block now has 7 fields: mart, food, pharmacy, parcel, parcelPerKg, freeEnabled, freeDeliveryAbove
+  - Admin Delivery Settings: Professional 3-group renderer — Per-Service Fees (5 fields with emojis+hints), Free Delivery Rules (toggle + conditional threshold), Live Checkout Preview (dynamic table showing fee by cart amount for all 3 types + parcel pricing examples)
+  - Customer cart: Now uses all 4 fee types (mart/food/pharmacy/parcel) by cartType; respects freeEnabled toggle; no hardcoded fees
+  - Customer parcel: Hardcoded Rs.40/kg → config.deliveryFee.parcelPerKg; UI also updates
+  - Vendor orders: Expanded order detail now shows Delivery Fee chip (by order type) + rider earnings breakdown
+  - Rider home: Delivery earnings now = (deliveryFee[o.type] × riderEarningPct%) instead of wrong (o.total × riderEarningPct%) — much more accurate
+  - All 3 useConfig.ts / PlatformConfigContext.tsx: deliveryFee block added to interface, DEFAULT, and API parse
+  -->
+<!-- Previous: CONTENT WIRING COMPLETE: All admin Content settings fully propagate to all 3 client apps with no loopholes or hardcoded values.
   - Admin Content section: 4 professional groups — Feature Switches (showBanner, chat, liveTracking, reviews), App Messaging (banner, announcement, maintenanceMsg, supportMsg), Role-Specific Notices (vendorNotice, riderNotice), Legal & Policy Links (tnc, privacy, refund, faq, about).
   - Customer home: showBanner toggle gates BannerCarousel; contentBanner shows as promo ribbon below service pills.
   - Vendor dashboard: vendorNotice shows as dismissable banner; commission % is now dynamic from config (not hardcoded 85%).

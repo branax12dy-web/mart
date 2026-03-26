@@ -43,6 +43,12 @@ export default function Orders() {
   const { config } = usePlatformConfig();
   const orderRules = config.orderRules;
   const vendorKeepp = 1 - (config.platform.vendorCommissionPct / 100);
+  const dlvFeeMap: Record<string,number> = {
+    mart: config.deliveryFee.mart,
+    food: config.deliveryFee.food,
+    pharmacy: config.deliveryFee.pharmacy,
+    parcel: config.deliveryFee.parcel,
+  };
   const now = useNow(10000);
 
   const [tab, setTab]           = useState("new");
@@ -190,8 +196,16 @@ export default function Orders() {
                             </div>
                           ))}
                           <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-sm">
-                            <span className="text-gray-600">Total</span>
+                            <span className="text-gray-600">Subtotal</span>
                             <span className="text-orange-600">{fc(o.total)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">🚚 Delivery Fee</span>
+                            <span className="font-semibold text-sky-600">{fc(dlvFeeMap[o.type] ?? dlvFeeMap.mart)}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-gray-400 -mt-1">
+                            <span>Charged to customer · Rider keeps {config.finance.riderEarningPct}%</span>
+                            <span>+{fc((dlvFeeMap[o.type] ?? dlvFeeMap.mart) * config.finance.riderEarningPct / 100)} rider</span>
                           </div>
                         </div>
                       )}

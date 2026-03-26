@@ -33,11 +33,13 @@ import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri 
 /* ── Default Platform Settings ── */
 export const DEFAULT_PLATFORM_SETTINGS = [
   /* Delivery */
-  { key: "delivery_fee_mart",      value: "80",   label: "Mart Delivery Fee (Rs.)",       category: "delivery" },
-  { key: "delivery_fee_food",      value: "60",   label: "Food Delivery Fee (Rs.)",        category: "delivery" },
-  { key: "delivery_fee_pharmacy",  value: "50",   label: "Pharmacy Delivery Fee (Rs.)",    category: "delivery" },
-  { key: "delivery_fee_parcel",    value: "100",  label: "Parcel Base Delivery Fee (Rs.)", category: "delivery" },
-  { key: "free_delivery_above",    value: "1000", label: "Free Delivery Above (Rs.)",      category: "delivery" },
+  { key: "delivery_fee_mart",       value: "80",   label: "Mart Delivery Fee (Rs.)",             category: "delivery" },
+  { key: "delivery_fee_food",       value: "60",   label: "Food Delivery Fee (Rs.)",             category: "delivery" },
+  { key: "delivery_fee_pharmacy",   value: "50",   label: "Pharmacy Delivery Fee (Rs.)",         category: "delivery" },
+  { key: "delivery_fee_parcel",     value: "100",  label: "Parcel Base Delivery Fee (Rs.)",      category: "delivery" },
+  { key: "delivery_parcel_per_kg",  value: "40",   label: "Parcel Extra Charge Per KG (Rs.)",    category: "delivery" },
+  { key: "delivery_free_enabled",   value: "on",   label: "Enable Free Delivery Threshold",      category: "delivery" },
+  { key: "free_delivery_above",     value: "1000", label: "Free Delivery Above (Rs.)",           category: "delivery" },
   /* Rides */
   { key: "ride_bike_base_fare",      value: "15",  label: "Bike Base Fare (Rs.)",                   category: "rides" },
   { key: "ride_bike_per_km",         value: "8",   label: "Bike Per KM Rate (Rs.)",                 category: "rides" },

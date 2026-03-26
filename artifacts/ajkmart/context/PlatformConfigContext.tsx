@@ -48,6 +48,15 @@ export interface PlatformConfig {
     ratingWindowHours: number;
     scheduleEnabled: boolean;
   };
+  deliveryFee: {
+    mart: number;
+    food: number;
+    pharmacy: number;
+    parcel: number;
+    parcelPerKg: number;
+    freeEnabled: boolean;
+    freeDeliveryAbove: number;
+  };
   rides: {
     bikeBaseFare: number;
     bikePerKm: number;
@@ -114,6 +123,10 @@ const DEFAULT: PlatformConfig = {
     preptimeMin:       15,
     ratingWindowHours: 48,
     scheduleEnabled:   false,
+  },
+  deliveryFee: {
+    mart: 80, food: 60, pharmacy: 50, parcel: 100,
+    parcelPerKg: 40, freeEnabled: true, freeDeliveryAbove: 1000,
   },
   rides: {
     bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50,
@@ -203,6 +216,15 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           preptimeMin:       raw.orderRules?.preptimeMin       ?? DEFAULT.orderRules.preptimeMin,
           ratingWindowHours: raw.orderRules?.ratingWindowHours ?? DEFAULT.orderRules.ratingWindowHours,
           scheduleEnabled:   raw.orderRules?.scheduleEnabled   ?? DEFAULT.orderRules.scheduleEnabled,
+        },
+        deliveryFee: {
+          mart:             raw.deliveryFee?.mart              ?? DEFAULT.deliveryFee.mart,
+          food:             raw.deliveryFee?.food              ?? DEFAULT.deliveryFee.food,
+          pharmacy:         raw.deliveryFee?.pharmacy          ?? DEFAULT.deliveryFee.pharmacy,
+          parcel:           raw.deliveryFee?.parcel            ?? DEFAULT.deliveryFee.parcel,
+          parcelPerKg:      raw.deliveryFee?.parcelPerKg       ?? DEFAULT.deliveryFee.parcelPerKg,
+          freeEnabled:      raw.deliveryFee?.freeEnabled       ?? DEFAULT.deliveryFee.freeEnabled,
+          freeDeliveryAbove: raw.deliveryFee?.freeDeliveryAbove ?? raw.platform?.freeDeliveryAbove ?? DEFAULT.deliveryFee.freeDeliveryAbove,
         },
         rides: {
           bikeBaseFare:    raw.rides?.bikeBaseFare    ?? DEFAULT.rides.bikeBaseFare,

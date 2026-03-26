@@ -131,8 +131,9 @@ export default function CartScreen() {
   const [gwStep, setGwStep] = useState<"input" | "waiting" | "done">("input");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const [deliveryFeeConfig, setDeliveryFeeConfig] = useState<{ mart: number; food: number }>({ mart: 80, food: 60 });
+  const [deliveryFeeConfig, setDeliveryFeeConfig] = useState<{ mart: number; food: number; pharmacy: number; parcel: number }>({ mart: 80, food: 60, pharmacy: 50, parcel: 100 });
   const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(1000);
+  const [freeDeliveryEnabled, setFreeDeliveryEnabled] = useState(true);
 
   useEffect(() => {
     const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
@@ -140,9 +141,17 @@ export default function CartScreen() {
       .then(r => r.json())
       .then(d => {
         if (d.deliveryFee) {
-          setDeliveryFeeConfig({ mart: d.deliveryFee.mart, food: d.deliveryFee.food });
+          setDeliveryFeeConfig({
+            mart:     d.deliveryFee.mart     ?? 80,
+            food:     d.deliveryFee.food     ?? 60,
+            pharmacy: d.deliveryFee.pharmacy ?? 50,
+            parcel:   d.deliveryFee.parcel   ?? 100,
+          });
+          if (typeof d.deliveryFee.freeEnabled === "boolean") setFreeDeliveryEnabled(d.deliveryFee.freeEnabled);
+          if (d.deliveryFee.freeDeliveryAbove) setFreeDeliveryAbove(d.deliveryFee.freeDeliveryAbove);
+        } else if (d.platform?.freeDeliveryAbove) {
+          setFreeDeliveryAbove(d.platform.freeDeliveryAbove);
         }
-        if (d.platform?.freeDeliveryAbove) setFreeDeliveryAbove(d.platform.freeDeliveryAbove);
         if (d.payment?.methods) {
           const methods: PaymentMethod[] = d.payment.methods.map((m: any) => ({
             id:          m.id,
@@ -158,7 +167,8 @@ export default function CartScreen() {
       .catch(() => {});
   }, []);
 
-  const deliveryFee = total >= freeDeliveryAbove ? 0 : (cartType === "food" ? deliveryFeeConfig.food : deliveryFeeConfig.mart);
+  const rawDeliveryFee = (deliveryFeeConfig as Record<string,number>)[cartType] ?? deliveryFeeConfig.mart;
+  const deliveryFee = (freeDeliveryEnabled && total >= freeDeliveryAbove) ? 0 : rawDeliveryFee;
   const gstAmount   = finance.gstEnabled ? Math.round(total * finance.gstPct / 100) : 0;
   const cashbackAmt = finance.cashbackEnabled ? Math.min(Math.round(total * finance.cashbackPct / 100), finance.cashbackMaxRs) : 0;
   const grandTotal  = total + deliveryFee + gstAmount;

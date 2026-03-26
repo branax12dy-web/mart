@@ -149,7 +149,10 @@ export default function Home() {
                       <p className="text-xs text-gray-500 truncate">{o.deliveryAddress || "Delivery address"}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-bold text-green-600 text-sm">+{formatCurrency(o.total * (config.finance.riderEarningPct / 100))}</p>
+                      <p className="font-bold text-green-600 text-sm">+{formatCurrency(
+                        ((config.deliveryFee as Record<string,number>)[o.type] ?? config.deliveryFee.mart) * (config.finance.riderEarningPct / 100)
+                      )}</p>
+                      <p className="text-[10px] text-gray-400">delivery earn</p>
                       <button onClick={() => acceptOrderMut.mutate(o.id)} disabled={acceptOrderMut.isPending} className="mt-1 bg-green-600 text-white text-xs px-3 py-1 rounded-lg font-bold">Accept</button>
                     </div>
                   </div>
