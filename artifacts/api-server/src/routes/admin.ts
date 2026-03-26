@@ -87,12 +87,32 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "api_sms_gateway",        value: "console", label: "SMS Gateway (console / msg91 / twilio)", category: "security" },
   { key: "api_firebase_key",       value: "",      label: "Firebase Server Key (Push Notifications)", category: "security" },
   /* Platform Integrations */
-  { key: "integration_payment",    value: "off",   label: "Online Payment Gateway (JazzCash / Easypaisa)", category: "integrations" },
   { key: "integration_push_notif", value: "off",   label: "Push Notifications (Firebase FCM)",   category: "integrations" },
-  { key: "integration_analytics",  value: "off",   label: "Analytics & Event Tracking",           category: "integrations" },
-  { key: "integration_email",      value: "off",   label: "Email Admin Alerts",                   category: "integrations" },
-  { key: "integration_sentry",     value: "off",   label: "Error Monitoring (Sentry)",            category: "integrations" },
-  { key: "integration_whatsapp",   value: "off",   label: "WhatsApp Business Notifications",      category: "integrations" },
+  { key: "integration_analytics",  value: "off",   label: "Analytics & Event Tracking",          category: "integrations" },
+  { key: "integration_email",      value: "off",   label: "Email Admin Alerts (SMTP)",           category: "integrations" },
+  { key: "integration_sentry",     value: "off",   label: "Error Monitoring (Sentry)",           category: "integrations" },
+  { key: "integration_whatsapp",   value: "off",   label: "WhatsApp Business Notifications",     category: "integrations" },
+  /* ═══════════════════  JazzCash Payment Gateway  ═══════════════════ */
+  { key: "jazzcash_enabled",       value: "off",   label: "JazzCash Gateway Status",             category: "payment" },
+  { key: "jazzcash_mode",          value: "sandbox", label: "Mode",                             category: "payment" },
+  { key: "jazzcash_merchant_id",   value: "",      label: "Merchant ID",                         category: "payment" },
+  { key: "jazzcash_password",      value: "",      label: "Password",                            category: "payment" },
+  { key: "jazzcash_salt",          value: "",      label: "Integrity Salt (Hash Key)",           category: "payment" },
+  { key: "jazzcash_currency",      value: "PKR",   label: "Currency",                            category: "payment" },
+  { key: "jazzcash_return_url",    value: "",      label: "Return URL (after payment)",          category: "payment" },
+  /* ═══════════════════  EasyPaisa Payment Gateway  ═══════════════════ */
+  { key: "easypaisa_enabled",      value: "off",   label: "EasyPaisa Gateway Status",           category: "payment" },
+  { key: "easypaisa_mode",         value: "sandbox", label: "Mode",                             category: "payment" },
+  { key: "easypaisa_store_id",     value: "",      label: "Store ID",                            category: "payment" },
+  { key: "easypaisa_merchant_id",  value: "",      label: "Merchant Account Number",            category: "payment" },
+  { key: "easypaisa_hash_key",     value: "",      label: "Hash Key (Secret)",                  category: "payment" },
+  { key: "easypaisa_username",     value: "",      label: "API Username",                        category: "payment" },
+  { key: "easypaisa_password",     value: "",      label: "API Password",                        category: "payment" },
+  /* ═══════════════════  Payment General  ═══════════════════ */
+  { key: "payment_timeout_mins",   value: "15",    label: "Payment Timeout (minutes)",           category: "payment" },
+  { key: "payment_auto_cancel",    value: "on",    label: "Auto-Cancel Unpaid Orders",           category: "payment" },
+  { key: "payment_min_online",     value: "50",    label: "Minimum Online Payment (Rs.)",        category: "payment" },
+  { key: "payment_max_online",     value: "100000", label: "Maximum Online Payment (Rs.)",       category: "payment" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {

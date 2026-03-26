@@ -18,6 +18,7 @@ import adminRouter from "./admin.js";
 import platformConfigRouter from "./platform-config.js";
 import riderRouter from "./rider.js";
 import vendorRouter from "./vendor.js";
+import paymentsRouter from "./payments.js";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use("/admin", adminRouter);
 router.use("/platform-config", platformConfigRouter);
 router.use("/rider", riderRouter);
 router.use("/vendor", vendorRouter);
+router.use("/payments", paymentsRouter);
 
 export default router;

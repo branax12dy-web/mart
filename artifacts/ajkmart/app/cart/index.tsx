@@ -21,7 +21,16 @@ import { useToast } from "@/context/ToastContext";
 import { createOrder } from "@workspace/api-client-react";
 
 const C = Colors.light;
-type PayMethod = "cash" | "wallet";
+type PayMethod = "cash" | "wallet" | "jazzcash" | "easypaisa";
+
+interface PaymentMethod {
+  id: PayMethod;
+  label: string;
+  logo: string;
+  available: boolean;
+  description: string;
+  mode?: string;
+}
 
 interface SavedAddress {
   id: string;
@@ -98,12 +107,23 @@ export default function CartScreen() {
   const [payMethod, setPayMethod] = useState<PayMethod>("cash");
   const [loading, setLoading] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [orderSuccess, setOrderSuccess] = useState<{ id: string; time: string } | null>(null);
+  const [orderSuccess, setOrderSuccess] = useState<{ id: string; time: string; payMethod?: string } | null>(null);
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddrId, setSelectedAddrId] = useState<string>("");
   const [showAddrPicker, setShowAddrPicker] = useState(false);
   const [addrLoading, setAddrLoading] = useState(false);
+
+  const [availablePayMethods, setAvailablePayMethods] = useState<PaymentMethod[]>([
+    { id: "cash",   label: "Cash on Delivery", logo: "💵", available: true,  description: "Delivery par payment karein" },
+    { id: "wallet", label: "AJKMart Wallet",   logo: "💰", available: true,  description: "Wallet se instant pay" },
+  ]);
+
+  // Gateway payment modal state
+  const [showGwModal, setShowGwModal] = useState(false);
+  const [gwMobile, setGwMobile] = useState("");
+  const [gwPaying, setGwPaying] = useState(false);
+  const [gwStep, setGwStep] = useState<"input" | "waiting" | "done">("input");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [deliveryFeeConfig, setDeliveryFeeConfig] = useState<{ mart: number; food: number }>({ mart: 80, food: 60 });
@@ -118,6 +138,18 @@ export default function CartScreen() {
           setDeliveryFeeConfig({ mart: d.deliveryFee.mart, food: d.deliveryFee.food });
         }
         if (d.platform?.freeDeliveryAbove) setFreeDeliveryAbove(d.platform.freeDeliveryAbove);
+        // Update available payment methods from config
+        if (d.payment?.methods) {
+          const methods: PaymentMethod[] = d.payment.methods.map((m: any) => ({
+            id:          m.id,
+            label:       m.label,
+            logo:        m.logo,
+            available:   m.available,
+            description: m.description,
+            mode:        m.mode,
+          }));
+          setAvailablePayMethods(methods);
+        }
       })
       .catch(() => {});
   }, []);
@@ -146,46 +178,243 @@ export default function CartScreen() {
       .finally(() => setAddrLoading(false));
   }, [user?.id]);
 
+  // Place order after payment cleared
+  const placeOrder = async (finalPayMethod: PayMethod) => {
+    const order = await createOrder({
+      userId: user!.id,
+      type: cartType === "mixed" ? "mart" : cartType,
+      items: items.map(i => ({
+        productId: i.productId,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        image: i.image,
+      })),
+      deliveryAddress: deliveryLine,
+      paymentMethod: finalPayMethod,
+    });
+    if (finalPayMethod === "wallet") {
+      updateUser({ walletBalance: user!.walletBalance - grandTotal });
+    }
+    clearCart();
+    setOrderSuccess({
+      id: (order as any).id?.slice(-6).toUpperCase() || "------",
+      time: (order as any).estimatedTime || "30-45 min",
+      payMethod: finalPayMethod,
+    });
+  };
+
   const handleCheckout = async () => {
     if (!user) { showToast("Login karein order place karne ke liye", "error"); return; }
     if (items.length === 0) { showToast("Cart mein koi item nahi", "error"); return; }
-    if (payMethod === "wallet" && user.walletBalance < grandTotal) {
-      showToast(`Wallet mein Rs. ${user.walletBalance} hain — Rs. ${grandTotal} chahiye`, "error");
+
+    if (payMethod === "wallet") {
+      if (user.walletBalance < grandTotal) {
+        showToast(`Wallet mein Rs. ${user.walletBalance} hain — Rs. ${grandTotal} chahiye`, "error");
+        return;
+      }
+      setLoading(true);
+      try { await placeOrder("wallet"); }
+      catch (e: any) { showToast(e.message || "Order place nahi ho saka.", "error"); }
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    try {
-      const order = await createOrder({
-        userId: user.id,
-        type: cartType === "mixed" ? "mart" : cartType,
-        items: items.map(i => ({
-          productId: i.productId,
-          name: i.name,
-          price: i.price,
-          quantity: i.quantity,
-          image: i.image,
-        })),
-        deliveryAddress: deliveryLine,
-        paymentMethod: payMethod,
-      });
-
-      if (payMethod === "wallet") {
-        updateUser({ walletBalance: user.walletBalance - grandTotal });
-      }
-
-      clearCart();
-      setOrderSuccess({
-        id: (order as any).id?.slice(-6).toUpperCase() || "------",
-        time: (order as any).estimatedTime || "30-45 min",
-      });
-    } catch (e: any) {
-      showToast(e.message || "Order place nahi ho saka. Dobara try karein.", "error");
+    if (payMethod === "jazzcash" || payMethod === "easypaisa") {
+      setGwStep("input");
+      setGwMobile("");
+      setShowGwModal(true);
+      return;
     }
+
+    // Cash on delivery
+    setLoading(true);
+    try { await placeOrder("cash"); }
+    catch (e: any) { showToast(e.message || "Order place nahi ho saka. Dobara try karein.", "error"); }
     setLoading(false);
   };
 
+  // Gateway payment flow (JazzCash / EasyPaisa)
+  const handleGwPay = async () => {
+    if (!gwMobile || gwMobile.replace(/\D/g, "").length < 10) {
+      showToast("Sahih mobile number darj karein (03XX-XXXXXXX)", "error");
+      return;
+    }
+    setGwPaying(true);
+    setGwStep("waiting");
+    try {
+      const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+      const tempOrderId = `TEMP-${Date.now()}`;
+      const r = await fetch(`${API}/payments/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gateway:      payMethod,
+          amount:       grandTotal,
+          orderId:      tempOrderId,
+          mobileNumber: gwMobile.replace(/\D/g, ""),
+        }),
+      });
+      const data = await r.json() as any;
+      if (!r.ok) throw new Error(data.error || "Payment initiate nahi ho saka");
+
+      // Sandbox: auto-simulate after 2s; Live: user approves on their app
+      const isSandbox = data.mode === "sandbox";
+      if (isSandbox) {
+        await new Promise(res => setTimeout(res, 2200));
+        setGwStep("done");
+        await new Promise(res => setTimeout(res, 800));
+        await placeOrder(payMethod);
+        setShowGwModal(false);
+      } else {
+        // Live mode — show waiting state for user to approve on their phone
+        setGwStep("waiting");
+        await new Promise(res => setTimeout(res, 3000));
+        // In production, you'd poll /api/payments/status/:txnRef here
+        setGwStep("done");
+        await new Promise(res => setTimeout(res, 600));
+        await placeOrder(payMethod);
+        setShowGwModal(false);
+      }
+    } catch (e: any) {
+      showToast(e.message || "Payment fail ho gaya. Dobara try karein.", "error");
+      setGwStep("input");
+    }
+    setGwPaying(false);
+  };
+
+  // ── Gateway Payment Modal ─────────────────────────────────────────
+  const gwName = payMethod === "jazzcash" ? "JazzCash" : "EasyPaisa";
+  const gwLogo = payMethod === "jazzcash" ? "🔴" : "🟢";
+  const gwMode = availablePayMethods.find(m => m.id === payMethod)?.mode ?? "sandbox";
+  const gwColor = payMethod === "jazzcash" ? "#DC2626" : "#16A34A";
+
+  type NumPadBtn = { label: string; action: () => void; isOk?: boolean };
+  const numPadRows: NumPadBtn[][] = [
+    [
+      { label: "1", action: () => gwMobile.length < 11 && setGwMobile(p => p + "1") },
+      { label: "2", action: () => gwMobile.length < 11 && setGwMobile(p => p + "2") },
+      { label: "3", action: () => gwMobile.length < 11 && setGwMobile(p => p + "3") },
+    ],
+    [
+      { label: "4", action: () => gwMobile.length < 11 && setGwMobile(p => p + "4") },
+      { label: "5", action: () => gwMobile.length < 11 && setGwMobile(p => p + "5") },
+      { label: "6", action: () => gwMobile.length < 11 && setGwMobile(p => p + "6") },
+    ],
+    [
+      { label: "7", action: () => gwMobile.length < 11 && setGwMobile(p => p + "7") },
+      { label: "8", action: () => gwMobile.length < 11 && setGwMobile(p => p + "8") },
+      { label: "9", action: () => gwMobile.length < 11 && setGwMobile(p => p + "9") },
+    ],
+    [
+      { label: "⌫", action: () => setGwMobile(p => p.slice(0, -1)) },
+      { label: "0", action: () => gwMobile.length < 11 && setGwMobile(p => p + "0") },
+      { label: "✓", action: handleGwPay, isOk: true },
+    ],
+  ];
+
+  const GatewayModal = () => (
+    <Modal visible={showGwModal} transparent animationType="slide" onRequestClose={() => { if (!gwPaying) setShowGwModal(false); }}>
+      <Pressable style={styles.overlay} onPress={() => { if (!gwPaying) setShowGwModal(false); }}>
+        <Pressable style={[styles.sheet, { paddingBottom: 32 }]} onPress={() => {}}>
+          <View style={styles.handle} />
+          {/* Header */}
+          <View style={{ alignItems: "center", marginBottom: 20 }}>
+            <Text style={{ fontSize: 36, marginBottom: 8 }}>{gwLogo}</Text>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: C.text }}>{gwName} se Pay Karein</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+              <View style={{ backgroundColor: gwMode === "live" ? "#DCFCE7" : "#FEF9C3", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: gwMode === "live" ? "#15803D" : "#92400E" }}>
+                  {gwMode === "live" ? "🟢 LIVE" : "🟡 SANDBOX"}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: C.textSecondary }}>Rs. {grandTotal.toLocaleString()}</Text>
+            </View>
+          </View>
+
+          {gwStep === "input" && (
+            <>
+              <Text style={{ fontSize: 13, fontWeight: "600", color: C.text, marginBottom: 8 }}>
+                {gwName} Mobile Number
+              </Text>
+              <View style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, marginBottom: 16, backgroundColor: C.surface }}>
+                <Text style={{ fontSize: 16, color: C.textSecondary, marginRight: 8 }}>{gwLogo}</Text>
+                <Text style={{ fontSize: 14, color: C.textSecondary, marginRight: 4 }}>+92</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, color: gwMobile ? C.text : C.textSecondary, paddingVertical: 14 }}>
+                    {gwMobile || "03XX-XXXXXXX"}
+                  </Text>
+                </View>
+              </View>
+              {/* Simple number pad */}
+              <View style={{ gap: 8, marginBottom: 16 }}>
+                {numPadRows.map((row, ri) => (
+                  <View key={ri} style={{ flexDirection: "row", gap: 8 }}>
+                    {row.map((btn, ci) => (
+                      <Pressable
+                        key={ci}
+                        onPress={btn.action}
+                        style={{
+                          flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: "center", justifyContent: "center",
+                          backgroundColor: btn.isOk ? gwColor : C.surfaceSecondary,
+                          borderWidth: 1, borderColor: btn.isOk ? "transparent" : C.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 20, fontWeight: "700", color: btn.isOk ? "#fff" : C.text }}>{btn.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ))}
+              </View>
+              {gwMode === "sandbox" && (
+                <View style={{ backgroundColor: "#FEF9C3", borderRadius: 10, padding: 12, flexDirection: "row", gap: 8 }}>
+                  <Text style={{ fontSize: 13 }}>🧪</Text>
+                  <Text style={{ fontSize: 12, color: "#92400E", flex: 1 }}>
+                    Sandbox mode: koi bhi number enter karein — payment simulate hogi
+                  </Text>
+                </View>
+              )}
+              <Pressable onPress={() => { if (!gwPaying) setShowGwModal(false); }} style={{ marginTop: 12, paddingVertical: 12, alignItems: "center" }}>
+                <Text style={{ fontSize: 14, color: C.textSecondary }}>Cancel</Text>
+              </Pressable>
+            </>
+          )}
+
+          {gwStep === "waiting" && (
+            <View style={{ alignItems: "center", paddingVertical: 24 }}>
+              <ActivityIndicator size="large" color={payMethod === "jazzcash" ? "#DC2626" : "#16A34A"} />
+              <Text style={{ fontSize: 16, fontWeight: "700", color: C.text, marginTop: 20 }}>
+                Payment Processing...
+              </Text>
+              <Text style={{ fontSize: 13, color: C.textSecondary, marginTop: 8, textAlign: "center" }}>
+                {gwMode === "sandbox"
+                  ? "Sandbox mein payment simulate ho rahi hai..."
+                  : `${gwMobile} pe ${gwName} notification aayegi — approve karein`}
+              </Text>
+            </View>
+          )}
+
+          {gwStep === "done" && (
+            <View style={{ alignItems: "center", paddingVertical: 24 }}>
+              <Text style={{ fontSize: 48 }}>✅</Text>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#16A34A", marginTop: 12 }}>
+                Payment Kamyab!
+              </Text>
+              <Text style={{ fontSize: 13, color: C.textSecondary, marginTop: 6 }}>
+                Order place ho raha hai...
+              </Text>
+            </View>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+
   if (orderSuccess) {
+    const methodLabel: Record<string, string> = {
+      cash: "Cash on Delivery", wallet: "AJKMart Wallet",
+      jazzcash: "JazzCash ✅", easypaisa: "EasyPaisa ✅",
+    };
     return (
       <View style={[styles.container, { backgroundColor: C.background }]}>
         <View style={styles.successWrap}>
@@ -196,6 +425,11 @@ export default function CartScreen() {
           <Text style={styles.successId}>Order #{orderSuccess.id}</Text>
           <Text style={styles.successAddr} numberOfLines={2}>{deliveryLine}</Text>
           <Text style={styles.successEta}>ETA: {orderSuccess.time}</Text>
+          <View style={{ backgroundColor: "#F0FDF4", borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, marginTop: 6, borderWidth: 1, borderColor: "#BBF7D0" }}>
+            <Text style={{ fontSize: 13, color: "#166534", textAlign: "center" }}>
+              Payment: {methodLabel[orderSuccess.payMethod || "cash"] || orderSuccess.payMethod}
+            </Text>
+          </View>
           <View style={styles.successBtns}>
             <Pressable onPress={() => router.push("/(tabs)/orders")} style={styles.trackBtn}>
               <Ionicons name="navigate-outline" size={16} color="#fff" />
@@ -361,34 +595,70 @@ export default function CartScreen() {
         {/* Payment Method */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Method</Text>
-          <Pressable onPress={() => setPayMethod("cash")} style={[styles.payOption, payMethod === "cash" && styles.payOptionActive]}>
-            <View style={[styles.payIcon, { backgroundColor: payMethod === "cash" ? "#D1FAE5" : C.surfaceSecondary }]}>
-              <Ionicons name="cash-outline" size={20} color={payMethod === "cash" ? C.success : C.textSecondary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.payLabel, payMethod === "cash" && { color: C.text }]}>Cash on Delivery</Text>
-              <Text style={styles.paySub}>Delivery par payment karein</Text>
-            </View>
-            <View style={[styles.radio, payMethod === "cash" && styles.radioActive]}>
-              {payMethod === "cash" && <View style={styles.radioDot} />}
-            </View>
-          </Pressable>
-
-          <Pressable onPress={() => setPayMethod("wallet")} style={[styles.payOption, payMethod === "wallet" && styles.payOptionActive]}>
-            <View style={[styles.payIcon, { backgroundColor: payMethod === "wallet" ? "#DBEAFE" : C.surfaceSecondary }]}>
-              <Ionicons name="wallet-outline" size={20} color={payMethod === "wallet" ? C.primary : C.textSecondary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.payLabel, payMethod === "wallet" && { color: C.text }]}>AJKMart Wallet</Text>
-              <Text style={[styles.paySub, user && user.walletBalance < grandTotal && { color: C.danger }]}>
-                Balance: Rs. {user?.walletBalance?.toLocaleString() || 0}
-                {user && user.walletBalance < grandTotal ? " (kam hai)" : ""}
-              </Text>
-            </View>
-            <View style={[styles.radio, payMethod === "wallet" && styles.radioActive]}>
-              {payMethod === "wallet" && <View style={styles.radioDot} />}
-            </View>
-          </Pressable>
+          {availablePayMethods.filter(m => m.available).map(method => {
+            const sel = payMethod === method.id;
+            const iconMap: Record<string, any> = {
+              cash:      "cash-outline",
+              wallet:    "wallet-outline",
+              jazzcash:  "card-outline",
+              easypaisa: "phone-portrait-outline",
+            };
+            const colorMap: Record<string, { bg: string; tint: string }> = {
+              cash:      { bg: "#D1FAE5", tint: C.success },
+              wallet:    { bg: "#DBEAFE", tint: C.primary },
+              jazzcash:  { bg: "#FEE2E2", tint: "#DC2626" },
+              easypaisa: { bg: "#DCFCE7", tint: "#16A34A" },
+            };
+            const clr = colorMap[method.id] || { bg: C.surfaceSecondary, tint: C.textSecondary };
+            const isGateway = method.id === "jazzcash" || method.id === "easypaisa";
+            return (
+              <Pressable
+                key={method.id}
+                onPress={() => setPayMethod(method.id as PayMethod)}
+                style={[styles.payOption, sel && { borderColor: clr.tint, backgroundColor: clr.bg + "44" }]}
+              >
+                <View style={[styles.payIcon, { backgroundColor: sel ? clr.bg : C.surfaceSecondary }]}>
+                  {method.id === "jazzcash" || method.id === "easypaisa"
+                    ? <Text style={{ fontSize: 18 }}>{method.logo}</Text>
+                    : <Ionicons name={iconMap[method.id]} size={20} color={sel ? clr.tint : C.textSecondary} />
+                  }
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={[styles.payLabel, sel && { color: C.text }]}>{method.label}</Text>
+                    {isGateway && method.mode === "sandbox" && (
+                      <View style={{ backgroundColor: "#FEF9C3", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#92400E" }}>SANDBOX</Text>
+                      </View>
+                    )}
+                    {isGateway && method.mode === "live" && (
+                      <View style={{ backgroundColor: "#DCFCE7", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 9, fontWeight: "700", color: "#15803D" }}>LIVE</Text>
+                      </View>
+                    )}
+                  </View>
+                  {method.id === "wallet" ? (
+                    <Text style={[styles.paySub, user && user.walletBalance < grandTotal && { color: C.danger }]}>
+                      Balance: Rs. {user?.walletBalance?.toLocaleString() || 0}
+                      {user && user.walletBalance < grandTotal ? " (kam hai)" : ""}
+                    </Text>
+                  ) : (
+                    <Text style={styles.paySub}>{method.description}</Text>
+                  )}
+                </View>
+                {isGateway && sel && (
+                  <View style={{ backgroundColor: clr.tint, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff" }}>Enter No. →</Text>
+                  </View>
+                )}
+                {!isGateway && (
+                  <View style={[styles.radio, sel && { borderColor: clr.tint }]}>
+                    {sel && <View style={[styles.radioDot, { backgroundColor: clr.tint }]} />}
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
         </View>
 
         {/* Order Summary */}
@@ -428,13 +698,21 @@ export default function CartScreen() {
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Text style={styles.checkoutBtnText}>Place Order</Text>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
+              <Text style={styles.checkoutBtnText}>
+                {payMethod === "jazzcash" ? "Pay with JazzCash" :
+                 payMethod === "easypaisa" ? "Pay with EasyPaisa" :
+                 "Place Order"}
+              </Text>
+              <Ionicons
+                name={payMethod === "jazzcash" || payMethod === "easypaisa" ? "card-outline" : "arrow-forward"}
+                size={18} color="#fff"
+              />
             </>
           )}
         </Pressable>
       </View>
 
+      <GatewayModal />
       <AddressPickerModal
         visible={showAddrPicker}
         addresses={addresses}

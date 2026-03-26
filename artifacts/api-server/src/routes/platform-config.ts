@@ -7,6 +7,53 @@ const router: IRouter = Router();
 router.get("/", async (_req, res) => {
   const s = await getPlatformSettings();
 
+  const jazzcashEnabled  = (s["jazzcash_enabled"]  ?? "off") === "on";
+  const easypaisaEnabled = (s["easypaisa_enabled"] ?? "off") === "on";
+  const walletEnabled    = (s["feature_wallet"]    ?? "on")  === "on";
+
+  // Build available payment methods list for client apps
+  const paymentMethods: Array<{
+    id: string;
+    label: string;
+    logo: string;
+    available: boolean;
+    mode: string;
+    description: string;
+  }> = [
+    {
+      id:          "cash",
+      label:       "Cash on Delivery",
+      logo:        "💵",
+      available:   true,
+      mode:        "live",
+      description: "Delivery par payment karein",
+    },
+    {
+      id:          "wallet",
+      label:       "AJKMart Wallet",
+      logo:        "💰",
+      available:   walletEnabled,
+      mode:        "live",
+      description: "Apni wallet se instant pay karein",
+    },
+    {
+      id:          "jazzcash",
+      label:       "JazzCash",
+      logo:        "🔴",
+      available:   jazzcashEnabled,
+      mode:        s["jazzcash_mode"] ?? "sandbox",
+      description: "JazzCash mobile wallet",
+    },
+    {
+      id:          "easypaisa",
+      label:       "EasyPaisa",
+      logo:        "🟢",
+      available:   easypaisaEnabled,
+      mode:        s["easypaisa_mode"] ?? "sandbox",
+      description: "EasyPaisa mobile wallet",
+    },
+  ];
+
   res.json({
     deliveryFee: {
       mart:     parseFloat(s["delivery_fee_mart"]     ?? "80"),
@@ -30,42 +77,51 @@ router.get("/", async (_req, res) => {
       appStatus:         s["app_status"]   ?? "active",
     },
     features: {
-      mart:         (s["feature_mart"]          ?? "on") === "on",
-      food:         (s["feature_food"]          ?? "on") === "on",
-      rides:        (s["feature_rides"]         ?? "on") === "on",
-      pharmacy:     (s["feature_pharmacy"]      ?? "on") === "on",
-      parcel:       (s["feature_parcel"]        ?? "on") === "on",
-      wallet:       (s["feature_wallet"]        ?? "on") === "on",
-      referral:     (s["feature_referral"]      ?? "on") === "on",
-      newUsers:     (s["feature_new_users"]     ?? "on") === "on",
+      mart:         (s["feature_mart"]          ?? "on")  === "on",
+      food:         (s["feature_food"]          ?? "on")  === "on",
+      rides:        (s["feature_rides"]         ?? "on")  === "on",
+      pharmacy:     (s["feature_pharmacy"]      ?? "on")  === "on",
+      parcel:       (s["feature_parcel"]        ?? "on")  === "on",
+      wallet:       walletEnabled,
+      referral:     (s["feature_referral"]      ?? "on")  === "on",
+      newUsers:     (s["feature_new_users"]     ?? "on")  === "on",
       chat:         (s["feature_chat"]          ?? "off") === "on",
-      liveTracking: (s["feature_live_tracking"] ?? "on") === "on",
-      reviews:      (s["feature_reviews"]       ?? "on") === "on",
+      liveTracking: (s["feature_live_tracking"] ?? "on")  === "on",
+      reviews:      (s["feature_reviews"]       ?? "on")  === "on",
     },
     content: {
-      banner:          s["content_banner"]          ?? "Free delivery on your first order! 🎉",
-      announcement:    s["content_announcement"]    ?? "",
-      maintenanceMsg:  s["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!",
-      supportMsg:      s["content_support_msg"]     ?? "Need help? Chat with us!",
-      tncUrl:          s["content_tnc_url"]         ?? "",
-      privacyUrl:      s["content_privacy_url"]     ?? "",
+      banner:         s["content_banner"]          ?? "Free delivery on your first order! 🎉",
+      announcement:   s["content_announcement"]    ?? "",
+      maintenanceMsg: s["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!",
+      supportMsg:     s["content_support_msg"]     ?? "Need help? Chat with us!",
+      tncUrl:         s["content_tnc_url"]         ?? "",
+      privacyUrl:     s["content_privacy_url"]     ?? "",
     },
     security: {
-      gpsTracking:  (s["security_gps_tracking"]  ?? "on") === "on",
-      otpBypass:    (s["security_otp_bypass"]    ?? "off") === "on",
-      sessionDays:  parseInt(s["security_session_days"] ?? "30"),
-      rateLimit:    parseInt(s["security_rate_limit"]   ?? "100"),
-      smsGateway:   s["api_sms_gateway"] ?? "console",
-      mapKeySet:    (s["api_map_key"] ?? "") !== "",
-      firebaseSet:  (s["api_firebase_key"] ?? "") !== "",
+      gpsTracking: (s["security_gps_tracking"] ?? "on")  === "on",
+      otpBypass:   (s["security_otp_bypass"]   ?? "off") === "on",
+      sessionDays: parseInt(s["security_session_days"] ?? "30"),
+      rateLimit:   parseInt(s["security_rate_limit"]   ?? "100"),
+      smsGateway:  s["api_sms_gateway"] ?? "console",
+      mapKeySet:   (s["api_map_key"]     ?? "") !== "",
+      firebaseSet: (s["api_firebase_key"] ?? "") !== "",
     },
     integrations: {
-      payment:       (s["integration_payment"]    ?? "off") === "on",
-      pushNotif:     (s["integration_push_notif"] ?? "off") === "on",
-      analytics:     (s["integration_analytics"]  ?? "off") === "on",
-      email:         (s["integration_email"]      ?? "off") === "on",
-      sentry:        (s["integration_sentry"]     ?? "off") === "on",
-      whatsapp:      (s["integration_whatsapp"]   ?? "off") === "on",
+      jazzcash:  jazzcashEnabled,
+      easypaisa: easypaisaEnabled,
+      pushNotif: (s["integration_push_notif"] ?? "off") === "on",
+      analytics: (s["integration_analytics"]  ?? "off") === "on",
+      email:     (s["integration_email"]      ?? "off") === "on",
+      sentry:    (s["integration_sentry"]     ?? "off") === "on",
+      whatsapp:  (s["integration_whatsapp"]   ?? "off") === "on",
+    },
+    payment: {
+      methods:      paymentMethods,
+      currency:     "PKR",
+      timeoutMins:  parseInt(s["payment_timeout_mins"] ?? "15"),
+      minOnline:    parseFloat(s["payment_min_online"] ?? "50"),
+      maxOnline:    parseFloat(s["payment_max_online"] ?? "100000"),
+      autoCancelOn: (s["payment_auto_cancel"] ?? "on") === "on",
     },
   });
 });
