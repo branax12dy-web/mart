@@ -3131,7 +3131,7 @@ function renderSection(
     const pharmFee    = parseFloat(localValues["delivery_fee_pharmacy"] ?? catSettings.find(s=>s.key==="delivery_fee_pharmacy")?.value ?? "50");
     const parcelBase  = parseFloat(localValues["delivery_fee_parcel"]   ?? catSettings.find(s=>s.key==="delivery_fee_parcel")?.value   ?? "100");
     const perKg       = parseFloat(localValues["delivery_parcel_per_kg"]?? catSettings.find(s=>s.key==="delivery_parcel_per_kg")?.value ?? "40");
-    const riderKeep   = parseFloat(settings.find(s=>s.key==="rider_keep_pct")?.value ?? "80");
+    const riderKeep   = parseFloat(localValues["rider_keep_pct"] ?? settings.find(s=>s.key==="rider_keep_pct")?.value ?? "80");
 
     const showFee = (amt: number, fee: number) =>
       freeEnabled && amt >= freeAbove ? "FREE 🎉" : `Rs. ${fee}`;
@@ -3300,7 +3300,7 @@ function renderSection(
     const carKm     = parseFloat(localValues["ride_car_per_km"]     ?? catSettings.find(s=>s.key==="ride_car_per_km")?.value     ?? "12");
     const carMin    = parseFloat(localValues["ride_car_min_fare"]   ?? catSettings.find(s=>s.key==="ride_car_min_fare")?.value   ?? "80");
     const surge     = parseFloat(localValues["ride_surge_multiplier"] ?? catSettings.find(s=>s.key==="ride_surge_multiplier")?.value ?? "1.5");
-    const riderKeep = parseFloat(settings.find(s=>s.key==="rider_keep_pct")?.value ?? "80");
+    const riderKeep = parseFloat(localValues["rider_keep_pct"] ?? settings.find(s=>s.key==="rider_keep_pct")?.value ?? "80");
 
     const exampleFare = (base: number, perKm: number, minF: number, km: number) => {
       const raw = Math.round(base + km * perKm);
@@ -3404,7 +3404,7 @@ function renderSection(
   }
 
   if (cat === "orders") {
-    const AMOUNT_KEYS  = new Set(["min_order_amount","max_cod_amount","order_max_cart_value"]);
+    const AMOUNT_KEYS  = new Set(["min_order_amount","order_max_cart_value"]);
     const TIMING_KEYS  = new Set(["order_cancel_window_min","order_auto_cancel_min","order_refund_days","order_preptime_min","order_rating_window_hours"]);
     const SCHED_KEYS   = new Set(["order_schedule_enabled"]);
 
@@ -4682,10 +4682,17 @@ export default function SettingsPage() {
   const ActiveIcon = activeCfg.icon;
   const activeSettings = grouped[activeTab] || [];
 
+  /* keys that appear in a different tab than their DB category */
+  const DISPLAY_CAT_OVERRIDE: Record<string,string> = {
+    vendor_min_payout: "finance",
+  };
   const dirtyCounts: Record<string,number> = {};
   for (const k of dirtyKeys) {
     const s = settings.find(x => x.key === k);
-    if (s) dirtyCounts[s.category] = (dirtyCounts[s.category] || 0) + 1;
+    if (s) {
+      const displayCat = DISPLAY_CAT_OVERRIDE[k] ?? s.category;
+      dirtyCounts[displayCat] = (dirtyCounts[displayCat] || 0) + 1;
+    }
   }
 
   if (loading) {

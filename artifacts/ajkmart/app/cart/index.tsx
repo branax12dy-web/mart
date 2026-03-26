@@ -108,6 +108,7 @@ export default function CartScreen() {
   const appName    = platformConfig.platform.appName;
   const orderRules = platformConfig.orderRules;
   const finance    = platformConfig.finance;
+  const customer   = platformConfig.customer;
 
   const [payMethod, setPayMethod] = useState<PayMethod>("cash");
   const [loading, setLoading] = useState(false);
@@ -172,6 +173,8 @@ export default function CartScreen() {
   const gstAmount   = finance.gstEnabled ? Math.round(total * finance.gstPct / 100) : 0;
   const cashbackAmt = finance.cashbackEnabled ? Math.min(Math.round(total * finance.cashbackPct / 100), finance.cashbackMaxRs) : 0;
   const grandTotal  = total + deliveryFee + gstAmount;
+  const walletCashbackApplies = payMethod === "wallet" && customer.walletCashbackPct > 0 && customer.walletCashbackOrders;
+  const walletCashbackAmt = walletCashbackApplies ? Math.round(grandTotal * customer.walletCashbackPct / 100) : 0;
 
   // Dynamic payment methods: hide COD if order exceeds max COD limit
   const availablePayMethods = allPayMethods.map(m => {
@@ -730,6 +733,14 @@ export default function CartScreen() {
                 <Text style={{ fontSize: 16 }}>🎁</Text>
                 <Text style={{ fontSize: 12, color: "#065F46", fontWeight: "600", flex: 1 }}>
                   Earn <Text style={{ fontWeight: "800" }}>Rs. {cashbackAmt}</Text> wallet cashback on this order!
+                </Text>
+              </View>
+            )}
+            {walletCashbackAmt > 0 && (
+              <View style={{ marginTop: 6, backgroundColor: "#EFF6FF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: 16 }}>💰</Text>
+                <Text style={{ fontSize: 12, color: "#1E40AF", fontWeight: "600", flex: 1 }}>
+                  Wallet bonus: Earn <Text style={{ fontWeight: "800" }}>Rs. {walletCashbackAmt}</Text> ({customer.walletCashbackPct}%) back for paying with Wallet!
                 </Text>
               </View>
             )}

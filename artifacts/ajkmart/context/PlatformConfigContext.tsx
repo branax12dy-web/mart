@@ -101,6 +101,10 @@ export interface PlatformConfig {
     maxOrdersDay: number;
     signupBonus: number;
     p2pEnabled: boolean;
+    walletCashbackPct: number;
+    walletCashbackOrders: boolean;
+    walletCashbackRides: boolean;
+    walletCashbackPharm: boolean;
   };
 }
 
@@ -162,6 +166,7 @@ const DEFAULT: PlatformConfig = {
     referralEnabled: true, referralBonus: 100,
     loyaltyEnabled: true, loyaltyPtsPerRs100: 5,
     maxOrdersDay: 10, signupBonus: 0, p2pEnabled: true,
+    walletCashbackPct: 0, walletCashbackOrders: true, walletCashbackRides: false, walletCashbackPharm: false,
   },
 };
 
@@ -292,9 +297,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           referralBonus:      raw.customer?.referralBonus      ?? DEFAULT.customer.referralBonus,
           loyaltyEnabled:     raw.customer?.loyaltyEnabled     ?? DEFAULT.customer.loyaltyEnabled,
           loyaltyPtsPerRs100: raw.customer?.loyaltyPtsPerRs100 ?? DEFAULT.customer.loyaltyPtsPerRs100,
-          maxOrdersDay:       raw.customer?.maxOrdersDay       ?? DEFAULT.customer.maxOrdersDay,
-          signupBonus:        raw.customer?.signupBonus        ?? DEFAULT.customer.signupBonus,
-          p2pEnabled:         raw.customer?.p2pEnabled         ?? DEFAULT.customer.p2pEnabled,
+          maxOrdersDay:         raw.customer?.maxOrdersDay           ?? DEFAULT.customer.maxOrdersDay,
+          signupBonus:          raw.customer?.signupBonus            ?? DEFAULT.customer.signupBonus,
+          p2pEnabled:           raw.customer?.p2pEnabled             ?? DEFAULT.customer.p2pEnabled,
+          walletCashbackPct:    raw.payment?.walletCashbackPct       ?? DEFAULT.customer.walletCashbackPct,
+          walletCashbackOrders: raw.payment?.walletCashbackOrders    ?? DEFAULT.customer.walletCashbackOrders,
+          walletCashbackRides:  raw.payment?.walletCashbackRides     ?? DEFAULT.customer.walletCashbackRides,
+          walletCashbackPharm:  raw.payment?.walletCashbackPharm     ?? DEFAULT.customer.walletCashbackPharm,
         },
       };
       _cached = parsed;

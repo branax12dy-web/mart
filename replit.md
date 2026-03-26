@@ -1,4 +1,13 @@
 # AJKMart Super App — Workspace
+<!-- Last updated: 2026-03-26 — ADMIN AUDIT ROUND 3 COMPLETE: 4 bugs found and fixed.
+  1. Dead `max_cod_amount` key removed from orders renderer AMOUNT_KEYS — key never existed in DB (real key is `cod_max_amount` in payment category); filter silently skipped it, causing no UI render — cleaned up.
+  2. `riderKeep` stale reads fixed in both Delivery and Rides fare-preview renderers — both read from `settings` (server-saved) not `localValues`; fixed to use `localValues ?? settings` so live preview reflects pending changes.
+  3. `wallet_cashback_pct` / `wallet_cashback_on_*` ghost settings wired — admin had 4 wallet-cashback settings (pct + orders/rides/pharmacy flags) but platform-config never exposed them so client apps couldn't use them. Fixed:
+     - platform-config.ts: 4 new fields in `payment` block (walletCashbackPct, walletCashbackOrders, walletCashbackRides, walletCashbackPharm)
+     - PlatformConfigContext.tsx: 4 new fields added to `customer` block (interface + DEFAULT + parser reads from `raw.payment.*`)
+     - cart/index.tsx: `walletCashbackApplies` + `walletCashbackAmt` computed; blue 💰 banner shown in order summary when wallet is selected and cashback > 0
+  4. Dirty-count tab badge attribution fixed for cross-category keys — `vendor_min_payout` (DB category: vendor) is displayed in Finance tab; dirty badge incorrectly showed on Vendor tab. Added `DISPLAY_CAT_OVERRIDE` map so dirty count for `vendor_min_payout` is attributed to `finance` tab.
+  -->
 <!-- Last updated: 2026-03-26 — FEATURE TOGGLES: Full-stack enforcement for all 8 Feature Toggle seeds + professional admin UI.
   BUG FIXED: Customer app PlatformConfigContext.tsx was only parsing 4 of 11 feature flags (chat/wallet/liveTracking/reviews). Added mart/food/rides/pharmacy/parcel/referral/newUsers — home screen service buttons now correctly enable/disable from admin toggle.
   API GAPS CLOSED:

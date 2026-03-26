@@ -200,12 +200,16 @@ router.get("/", async (_req, res) => {
       maps:      (s["integration_maps"]       ?? "off") === "on",
     },
     payment: {
-      methods:      paymentMethods,
-      currency:     "PKR",
-      timeoutMins:  parseInt(s["payment_timeout_mins"] ?? "15"),
-      minOnline:    parseFloat(s["payment_min_online"] ?? "50"),
-      maxOnline:    parseFloat(s["payment_max_online"] ?? "100000"),
-      autoCancelOn: (s["payment_auto_cancel"] ?? "on") === "on",
+      methods:              paymentMethods,
+      currency:             "PKR",
+      timeoutMins:          parseInt(s["payment_timeout_mins"] ?? "15"),
+      minOnline:            parseFloat(s["payment_min_online"] ?? "50"),
+      maxOnline:            parseFloat(s["payment_max_online"] ?? "100000"),
+      autoCancelOn:         (s["payment_auto_cancel"]          ?? "on") === "on",
+      walletCashbackPct:    parseFloat(s["wallet_cashback_pct"]            ?? "0"),
+      walletCashbackOrders: (s["wallet_cashback_on_orders"]    ?? "on")  === "on",
+      walletCashbackRides:  (s["wallet_cashback_on_rides"]     ?? "off") === "on",
+      walletCashbackPharm:  (s["wallet_cashback_on_pharmacy"]  ?? "off") === "on",
     },
   });
 });
