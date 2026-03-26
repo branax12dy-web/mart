@@ -58,7 +58,6 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "finance_cashback_pct",    value: "2",   label: "Cashback % on Every Order",               category: "finance" },
   { key: "finance_cashback_max_rs", value: "100", label: "Max Cashback Per Order (Rs.)",             category: "finance" },
   { key: "finance_invoice_enabled", value: "off", label: "Auto-Generate PDF Invoices on Orders",    category: "finance" },
-  { key: "finance_min_vendor_payout",value:"500", label: "Minimum Vendor Payout Request (Rs.)",     category: "finance" },
   /* Orders */
   { key: "min_order_amount",          value: "100",   label: "Minimum Order Amount (Rs.)",              category: "orders" },
   { key: "order_max_cart_value",      value: "50000", label: "Max Cart Value / Hard Cap (Rs.)",         category: "orders" },
@@ -298,7 +297,6 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "wallet_max_withdrawal",        value: "10000",    label: "Maximum Single Withdrawal (Rs.)",      category: "payment" },
   { key: "wallet_daily_limit",           value: "20000",    label: "Daily Transaction Limit (Rs.)",        category: "payment" },
   { key: "wallet_cashback_pct",          value: "0",        label: "Wallet Cashback (%)",                  category: "payment" },
-  { key: "wallet_referral_bonus",        value: "100",      label: "Referral Bonus to Wallet (Rs.)",       category: "payment" },
   { key: "wallet_topup_methods",         value: "jazzcash,easypaisa,bank,rider", label: "Accepted Top-Up Methods", category: "payment" },
   { key: "wallet_p2p_enabled",           value: "on",       label: "Allow P2P Money Transfer",             category: "payment" },
   { key: "wallet_p2p_daily_limit",       value: "10000",    label: "P2P Daily Send Limit (Rs.)",           category: "payment" },
@@ -308,7 +306,6 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "wallet_cashback_on_pharmacy",  value: "off",      label: "Cashback on Pharmacy",                 category: "payment" },
   { key: "wallet_expiry_days",           value: "0",        label: "Wallet Balance Expiry (days, 0=never)",category: "payment" },
   { key: "wallet_withdrawal_processing", value: "24",       label: "Withdrawal Processing Time (hours)",   category: "payment" },
-  { key: "wallet_signup_bonus",          value: "0",        label: "New User Signup Bonus (Rs.)",          category: "payment" },
   /* ═══════════════════  Payment General Rules  ═══════════════════ */
   { key: "payment_timeout_mins",         value: "15",       label: "Payment Timeout (minutes)",            category: "payment" },
   { key: "payment_auto_cancel",          value: "on",       label: "Auto-Cancel Unpaid Orders",            category: "payment" },

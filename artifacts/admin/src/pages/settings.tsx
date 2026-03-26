@@ -81,7 +81,6 @@ const TEXT_KEYS = new Set([
   "content_banner","content_announcement","content_maintenance_msg","content_support_msg",
   "content_vendor_notice","content_rider_notice",
   "content_tnc_url","content_privacy_url","content_refund_policy_url","content_faq_url","content_about_url",
-  "api_map_key","api_sms_gateway","api_firebase_key",
   "security_session_days","security_admin_token_hrs","security_rider_token_days",
   "security_login_max_attempts","security_lockout_minutes",
   "security_rate_limit","security_rate_admin","security_rate_rider","security_rate_vendor","security_rate_burst",
@@ -894,7 +893,7 @@ function WalletSection({ localValues, dirtyKeys, handleChange, handleToggle }: {
             { label: "Max Balance", value: `Rs. ${v("wallet_max_balance") || "50000"}`, icon: "💎" },
             { label: "Daily Limit", value: `Rs. ${v("wallet_daily_limit") || "20000"}`, icon: "📅" },
             { label: "Cashback",    value: `${v("wallet_cashback_pct") || "0"}%`, icon: "🎁" },
-            { label: "Signup Bonus",value: v("wallet_signup_bonus") && v("wallet_signup_bonus") !== "0" ? `Rs. ${v("wallet_signup_bonus")}` : "None", icon: "🎊" },
+            { label: "Signup Bonus",value: v("customer_signup_bonus") && v("customer_signup_bonus") !== "0" ? `Rs. ${v("customer_signup_bonus")}` : "None", icon: "🎊" },
           ].map(s => (
             <div key={s.label} className="bg-purple-50/60 rounded-xl p-3 text-center border border-purple-100">
               <div className="text-xl mb-1">{s.icon}</div>
@@ -970,8 +969,8 @@ function WalletSection({ localValues, dirtyKeys, handleChange, handleToggle }: {
           <SLabel>Rewards & Bonuses</SLabel>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Wallet Cashback (%)" value={v("wallet_cashback_pct")} onChange={v2 => handleChange("wallet_cashback_pct", v2)} placeholder="0" isDirty={d("wallet_cashback_pct")} type="number" hint="Wallet se payment par % cashback" suffix="%" />
-            <Field label="Referral Bonus (Rs.)" value={v("wallet_referral_bonus")} onChange={v2 => handleChange("wallet_referral_bonus", v2)} placeholder="100" isDirty={d("wallet_referral_bonus")} type="number" hint="Naye referral join karne par milta hai" />
-            <Field label="New User Signup Bonus (Rs.)" value={v("wallet_signup_bonus")} onChange={v2 => handleChange("wallet_signup_bonus", v2)} placeholder="0" isDirty={d("wallet_signup_bonus")} type="number" hint="Account banane par wallet mein milega" />
+            <Field label="Referral Bonus (Rs.)" value={v("customer_referral_bonus")} onChange={v2 => handleChange("customer_referral_bonus", v2)} placeholder="100" isDirty={d("customer_referral_bonus")} type="number" hint="Naye referral join karne par milta hai (Customer settings ke saath sync)" />
+            <Field label="New User Signup Bonus (Rs.)" value={v("customer_signup_bonus")} onChange={v2 => handleChange("customer_signup_bonus", v2)} placeholder="0" isDirty={d("customer_signup_bonus")} type="number" hint="Account banane par wallet mein milega (Customer settings ke saath sync)" />
             <Field label="Balance Expiry (days, 0=never)" value={v("wallet_expiry_days")} onChange={v2 => handleChange("wallet_expiry_days", v2)} placeholder="0" isDirty={d("wallet_expiry_days")} type="number" hint="0 = kabhi expire nahi hoga" suffix="days" />
           </div>
         </div>
@@ -2401,20 +2400,30 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
             <S k="security_maintenance_key" label="Maintenance Mode Bypass Key" placeholder="maint-bypass-secret-2025" />
           </SecPanel>
 
-          <SecPanel title="Legacy API Keys" icon={KeyRound} color="text-purple-700">
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 flex gap-2 mb-3">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span><strong>These keys are now managed in the Integrations tab.</strong> Values shown here are for reference only. Please update them in Settings → Integrations for full configuration.</span>
+          <SecPanel title="Integration Status" icon={KeyRound} color="text-purple-700">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2 mb-3">
+              <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>Configure API keys and toggles in the <strong>Integrations tab</strong>. Status shown here reflects live values.</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 opacity-70">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Google Maps API Key <span className="text-[10px] text-amber-600 font-normal">(→ Integrations › Maps)</span></label>
-                <Input value={val("api_map_key")} disabled className="h-9 text-xs font-mono bg-gray-50" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Firebase Key <span className="text-[10px] text-amber-600 font-normal">(→ Integrations › Firebase)</span></label>
-                <Input value={val("api_firebase_key")} disabled className="h-9 text-xs font-mono bg-gray-50" />
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { label: "Google Maps API Key",    key: "maps_api_key",   tab: "Maps" },
+                { label: "Firebase FCM Server Key", key: "fcm_server_key",  tab: "Firebase" },
+                { label: "SMS Provider",            key: "sms_provider",    tab: "SMS", isText: true },
+                { label: "Sentry DSN",              key: "sentry_dsn",      tab: "Sentry" },
+              ].map(({ label, key, tab, isText }) => {
+                const v = localValues[key] ?? "";
+                const configured = isText ? (v && v !== "console" && v !== "none") : !!v;
+                return (
+                  <div key={key} className={`rounded-xl border p-3 flex items-center gap-3 ${configured ? "border-green-200 bg-green-50" : "border-border bg-muted/20"}`}>
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${configured ? "bg-green-500" : "bg-gray-300"}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-foreground">{label}</p>
+                      <p className="text-[10px] text-muted-foreground">{configured ? (isText ? v : "Configured ✓") : `Not set — go to Integrations › ${tab}`}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </SecPanel>
 
@@ -2949,7 +2958,7 @@ function renderSection(
   if (cat === "finance") {
     const COMMISSION_KEYS = new Set(["platform_commission_pct"]);
     const TAX_KEYS        = new Set(["finance_gst_enabled","finance_gst_pct"]);
-    const PAYOUT_KEYS     = new Set(["finance_min_vendor_payout"]);
+    const PAYOUT_KEYS     = new Set(["vendor_min_payout"]);
     const CASHBACK_KEYS   = new Set(["finance_cashback_enabled","finance_cashback_pct","finance_cashback_max_rs"]);
     const INVOICE_KEYS    = new Set(["finance_invoice_enabled"]);
 
@@ -2964,7 +2973,7 @@ function renderSection(
       finance_gst_pct: "%",
       finance_cashback_pct: "%",
       finance_cashback_max_rs: "Rs.",
-      finance_min_vendor_payout: "Rs.",
+      vendor_min_payout: "Rs.",
     };
     const HINT: Record<string,string> = {
       platform_commission_pct:  "Global platform cut applied on every order. Overrides vendor-specific commission if set higher",
@@ -2974,7 +2983,7 @@ function renderSection(
       finance_cashback_pct:     "Percentage of order subtotal credited as wallet bonus after successful delivery",
       finance_cashback_max_rs:  "Maximum cashback credited per order — prevents excessive payouts on very large orders",
       finance_invoice_enabled:  "Automatically generate a PDF invoice for every completed order (vendor + customer copy)",
-      finance_min_vendor_payout:"Vendor cannot submit a withdrawal request below this amount",
+      vendor_min_payout:        "Vendor cannot submit a withdrawal request below this amount (shared with Vendor settings)",
     };
 
     const FinNumField = ({ s }: { s: Setting }) => {
@@ -3057,7 +3066,22 @@ function renderSection(
           <SLabel icon={Wallet}>Payout Rules</SLabel>
           <p className="text-xs text-muted-foreground -mt-1">Minimum payout thresholds prevent micro-withdrawals. Settlement cycle is configured in Vendor settings.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {payoutField.map(s => <FinNumField key={s.key} s={s} />)}
+            {/* vendor_min_payout is stored in vendor category — read directly from localValues */}
+            <div className={`rounded-xl border p-4 space-y-2.5 transition-all ${dirtyKeys.has("vendor_min_payout") ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+              <div className="flex items-start justify-between gap-2">
+                <label className="text-sm font-semibold text-foreground leading-snug flex-1">Vendor Min Payout (Rs.)</label>
+                {dirtyKeys.has("vendor_min_payout") && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold flex-shrink-0">CHANGED</Badge>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Vendor cannot submit a withdrawal request below this amount (also editable in Vendor settings)</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">Rs.</span>
+                <Input type="number" min={0} value={localValues["vendor_min_payout"] ?? "500"}
+                  onChange={e => handleChange("vendor_min_payout", e.target.value)}
+                  className={`h-10 rounded-xl pl-10 ${dirtyKeys.has("vendor_min_payout") ? "border-amber-300 bg-amber-50/50 ring-1 ring-amber-200" : ""}`}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground/50 font-mono">vendor_min_payout</p>
+            </div>
             <RefInfoCard label="Rider Min Payout" value={`Rs. ${minRiderVal}`} detail="Minimum rider withdrawal request threshold" linkCat="Rider" />
             <RefInfoCard label="Vendor Settlement Cycle" value={`${settleDaysVal} days`} detail="Days after order completion before vendor can settle" linkCat="Vendor" />
           </div>
@@ -4641,9 +4665,6 @@ export default function SettingsPage() {
     return "Rs.";
   };
   const getPlaceholder = (key: string) => {
-    if (key === "api_map_key") return "AIza...";
-    if (key === "api_firebase_key") return "AAAA...";
-    if (key === "api_sms_gateway") return "console";
     if (key.includes("_url")) return "https://...";
     if (key === "content_announcement") return "Leave empty to hide the bar in all apps";
     if (key === "content_banner") return "Free delivery on your first order! 🎉";
