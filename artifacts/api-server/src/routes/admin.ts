@@ -79,13 +79,59 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "feature_live_tracking",  value: "on",    label: "Live Order GPS Tracking",              category: "content" },
   { key: "feature_reviews",        value: "on",    label: "Customer Reviews & Ratings",           category: "content" },
   /* Security & API Keys */
-  { key: "security_otp_bypass",    value: "off",   label: "OTP Bypass Mode (Dev Only — DANGER)",  category: "security" },
-  { key: "security_gps_tracking",  value: "on",    label: "GPS Tracking for Riders",              category: "security" },
-  { key: "security_rate_limit",    value: "100",   label: "API Rate Limit (req/min per IP)",      category: "security" },
-  { key: "security_session_days",  value: "30",    label: "Session Expiry (days)",                category: "security" },
-  { key: "api_map_key",               value: "",         label: "Google Maps API Key (legacy)",           category: "security" },
-  { key: "api_sms_gateway",           value: "console",  label: "SMS Provider (legacy)",                  category: "security" },
-  { key: "api_firebase_key",          value: "",         label: "Firebase Server Key (legacy)",            category: "security" },
+  /* ═══════════════════  Security & API  ═══════════════════ */
+  /* Auth & Sessions */
+  { key: "security_otp_bypass",        value: "off",    label: "OTP Bypass Mode (Dev Only — DANGER)",        category: "security" },
+  { key: "security_mfa_required",      value: "off",    label: "Two-Factor Auth for Admin Login",             category: "security" },
+  { key: "security_multi_device",      value: "on",     label: "Allow Multiple Device Logins",                category: "security" },
+  { key: "security_session_days",      value: "30",     label: "Session Expiry (days)",                       category: "security" },
+  { key: "security_admin_token_hrs",   value: "24",     label: "Admin Token Expiry (hours)",                  category: "security" },
+  { key: "security_rider_token_days",  value: "30",     label: "Rider Token Expiry (days)",                   category: "security" },
+  { key: "security_login_max_attempts",value: "5",      label: "Max Failed Login Attempts Before Lockout",    category: "security" },
+  { key: "security_lockout_minutes",   value: "30",     label: "Account Lockout Duration (minutes)",          category: "security" },
+  /* Rate Limiting & DDoS */
+  { key: "security_rate_limit",        value: "100",    label: "General API Rate Limit (req/min per IP)",     category: "security" },
+  { key: "security_rate_admin",        value: "60",     label: "Admin Panel Rate Limit (req/min)",            category: "security" },
+  { key: "security_rate_rider",        value: "200",    label: "Rider API Rate Limit (req/min)",              category: "security" },
+  { key: "security_rate_vendor",       value: "150",    label: "Vendor API Rate Limit (req/min)",             category: "security" },
+  { key: "security_block_tor",         value: "off",    label: "Block TOR Exit Node IPs",                     category: "security" },
+  { key: "security_block_vpn",         value: "off",    label: "Block VPN/Proxy Users",                       category: "security" },
+  { key: "security_rate_burst",        value: "20",     label: "Burst Allowance (extra req before block)",    category: "security" },
+  /* GPS & Location */
+  { key: "security_gps_tracking",      value: "on",     label: "GPS Tracking for Riders",                    category: "security" },
+  { key: "security_gps_accuracy",      value: "50",     label: "Min GPS Accuracy Required (meters)",         category: "security" },
+  { key: "security_gps_interval",      value: "10",     label: "GPS Update Interval (seconds)",              category: "security" },
+  { key: "security_geo_fence",         value: "off",    label: "Strict Geofence Mode",                       category: "security" },
+  { key: "security_spoof_detection",   value: "on",     label: "GPS Spoofing / Mock Location Detection",     category: "security" },
+  { key: "security_max_speed_kmh",     value: "150",    label: "Max Speed Allowed (km/h — flag if exceeded)",category: "security" },
+  /* Password & Token Policy */
+  { key: "security_pwd_min_length",    value: "8",      label: "Minimum Password Length (characters)",        category: "security" },
+  { key: "security_pwd_strong",        value: "on",     label: "Require Strong Password (uppercase+number)",  category: "security" },
+  { key: "security_pwd_expiry_days",   value: "0",      label: "Password Expiry (days, 0 = never)",           category: "security" },
+  { key: "security_jwt_rotation_days", value: "90",     label: "JWT Secret Rotation Interval (days)",         category: "security" },
+  /* File Uploads */
+  { key: "security_allow_uploads",     value: "on",     label: "Allow File Uploads (photos/receipts)",        category: "security" },
+  { key: "security_max_file_mb",       value: "5",      label: "Max Upload File Size (MB)",                   category: "security" },
+  { key: "security_allowed_types",     value: "jpg,jpeg,png,pdf", label: "Allowed File Types (comma-sep)",   category: "security" },
+  { key: "security_compress_images",   value: "on",     label: "Auto-compress Uploaded Images",               category: "security" },
+  { key: "security_img_quality",       value: "80",     label: "Image Compression Quality (%)",               category: "security" },
+  { key: "security_scan_uploads",      value: "off",    label: "Virus/Malware Scan on Uploads",               category: "security" },
+  /* Fraud Detection */
+  { key: "security_fake_order_detect", value: "on",     label: "Fake Order Auto-Detection",                   category: "security" },
+  { key: "security_max_daily_orders",  value: "20",     label: "Max Orders per Customer per Day",             category: "security" },
+  { key: "security_auto_block_ip",     value: "on",     label: "Auto-block Suspicious IPs",                   category: "security" },
+  { key: "security_new_acct_limit",    value: "3",      label: "New Account Order Limit (first 7 days)",      category: "security" },
+  { key: "security_same_addr_limit",   value: "5",      label: "Same Address Orders per Hour Limit",          category: "security" },
+  { key: "security_phone_verify",      value: "on",     label: "Phone Number Verification Required",          category: "security" },
+  { key: "security_single_phone",      value: "on",     label: "One Account per Phone Number",                category: "security" },
+  /* Admin Access Control */
+  { key: "security_audit_log",         value: "on",     label: "Admin Action Audit Log",                      category: "security" },
+  { key: "security_admin_ip_whitelist",value: "",        label: "Admin IP Whitelist (comma-separated, blank=any)", category: "security" },
+  { key: "security_maintenance_key",   value: "",        label: "Maintenance Mode Access Key",                category: "security" },
+  /* Legacy — moved to Integrations (kept for backward compat) */
+  { key: "api_map_key",                value: "",        label: "Google Maps API Key (→ use Integrations tab)", category: "security" },
+  { key: "api_sms_gateway",            value: "console", label: "SMS Provider (→ use Integrations tab)",       category: "security" },
+  { key: "api_firebase_key",           value: "",        label: "Firebase Key (→ use Integrations tab)",        category: "security" },
   /* ═══════════════════  Platform Integrations  ═══════════════════ */
   /* Firebase FCM — Push Notifications */
   { key: "integration_push_notif",    value: "off",      label: "Firebase Push Notifications",            category: "integrations" },
