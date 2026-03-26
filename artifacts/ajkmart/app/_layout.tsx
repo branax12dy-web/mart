@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { PlatformConfigProvider } from "@/context/PlatformConfigContext";
 import { ToastProvider } from "@/context/ToastContext";
 
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
@@ -113,13 +114,15 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
-              <AuthProvider>
-                <CartProvider>
-                  <ToastProvider>
-                    <RootLayoutNav />
-                  </ToastProvider>
-                </CartProvider>
-              </AuthProvider>
+              <PlatformConfigProvider>
+                <AuthProvider>
+                  <CartProvider>
+                    <ToastProvider>
+                      <RootLayoutNav />
+                    </ToastProvider>
+                  </CartProvider>
+                </AuthProvider>
+              </PlatformConfigProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>

@@ -19,6 +19,7 @@ import platformConfigRouter from "./platform-config.js";
 import riderRouter from "./rider.js";
 import vendorRouter from "./vendor.js";
 import paymentsRouter from "./payments.js";
+import reviewsRouter from "./reviews.js";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use("/platform-config", platformConfigRouter);
 router.use("/rider", riderRouter);
 router.use("/vendor", vendorRouter);
 router.use("/payments", paymentsRouter);
+router.use("/reviews", reviewsRouter);
 
 export default router;

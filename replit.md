@@ -1,5 +1,6 @@
 # AJKMart Super App — Workspace
-<!-- Last updated: 2026-03-26 — Deep Audit: 14 critical bugs fixed (race conditions, refund logic, hardcoded commission %, rider/vendor earnings, missing transactions, accept race, feature flags) -->
+<!-- Last updated: 2026-03-26 — Content Settings fully wired: PlatformConfigContext, global maintenance overlay (all tabs), feature_reviews (rating modal + reviews DB + vendor analytics), feature_live_tracking (customer orders gate), reviews table + API -->
+<!-- Previous: Deep Audit: 14 critical bugs fixed (race conditions, refund logic, hardcoded commission %, rider/vendor earnings, missing transactions, accept race, feature flags) -->
 
 ## Project Overview
 

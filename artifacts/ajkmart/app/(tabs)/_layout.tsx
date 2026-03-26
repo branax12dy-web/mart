@@ -5,10 +5,11 @@ import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, Text, View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 
 function NativeTabLayout() {
   return (
@@ -120,9 +121,58 @@ function ClassicTabLayout() {
   );
 }
 
+const ms = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.96)",
+    zIndex: 9999,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 32,
+    alignItems: "center",
+    maxWidth: 380,
+    width: "100%",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  icon: { fontSize: 52, marginBottom: 16 },
+  title: { fontSize: 22, fontWeight: "700", color: "#0F172A", marginBottom: 10, textAlign: "center" },
+  msg:   { fontSize: 15, color: "#475569", textAlign: "center", lineHeight: 22, marginBottom: 8 },
+  sub:   { fontSize: 13, color: "#94A3B8", textAlign: "center", lineHeight: 18 },
+});
+
+function MaintenanceOverlay({ message }: { message: string }) {
+  return (
+    <View style={ms.overlay}>
+      <View style={ms.card}>
+        <Text style={ms.icon}>🔧</Text>
+        <Text style={ms.title}>Under Maintenance</Text>
+        <Text style={ms.msg}>{message}</Text>
+        <Text style={ms.sub}>Please check back later. We apologize for the inconvenience.</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
+  const { config } = usePlatformConfig();
+  const inMaintenance = config.appStatus === "maintenance";
+
+  const inner = isLiquidGlassAvailable() ? <NativeTabLayout /> : <ClassicTabLayout />;
+
+  return (
+    <View style={{ flex: 1 }}>
+      {inner}
+      {inMaintenance && (
+        <MaintenanceOverlay message={config.content.maintenanceMsg} />
+      )}
+    </View>
+  );
 }

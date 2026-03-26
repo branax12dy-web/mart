@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
 
 const C   = Colors.light;
@@ -544,23 +545,14 @@ export default function ProfileScreen() {
   const [signingOut,        setSigningOut]        = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
-  const [platformCfg, setPlatformCfg] = useState({
-    tncUrl: "", privacyUrl: "", supportMsg: "Need help? Chat with us!",
-    supportPhone: "03001234567", chat: false,
-  });
-
-  useEffect(() => {
-    fetch(`${API}/platform-config`)
-      .then(r => r.json())
-      .then(d => setPlatformCfg({
-        tncUrl:       d.content?.tncUrl      ?? "",
-        privacyUrl:   d.content?.privacyUrl  ?? "",
-        supportMsg:   d.content?.supportMsg  ?? "Need help? Chat with us!",
-        supportPhone: d.platform?.supportPhone ?? "03001234567",
-        chat:         d.features?.chat        ?? false,
-      }))
-      .catch(() => {});
-  }, []);
+  const { config: platformConfig } = usePlatformConfig();
+  const platformCfg = {
+    tncUrl:       platformConfig.content.tncUrl,
+    privacyUrl:   platformConfig.content.privacyUrl,
+    supportMsg:   platformConfig.content.supportMsg,
+    supportPhone: platformConfig.platform.supportPhone,
+    chat:         platformConfig.features.chat,
+  };
 
   const fetchAll = useCallback(async () => {
     if (!user?.id) return;

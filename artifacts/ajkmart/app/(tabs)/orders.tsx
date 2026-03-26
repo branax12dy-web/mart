@@ -3,12 +3,14 @@ import { router } from "expo-router";
 import React, { useState, useCallback } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useGetOrders } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -52,9 +55,16 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 /* ─────────────────────────── Grocery/Food Card ─────────────────────────── */
-function OrderCard({ order }: { order: any }) {
+function OrderCard({ order, liveTracking, reviews, onRate }: {
+  order: any;
+  liveTracking: boolean;
+  reviews: boolean;
+  onRate: (o: any) => void;
+}) {
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isFood = order.type === "food";
+  const isDelivered = order.status === "delivered";
+  const isActive = !["delivered", "cancelled"].includes(order.status);
 
   return (
     <View style={styles.card}>
@@ -96,7 +106,7 @@ function OrderCard({ order }: { order: any }) {
         </View>
       </View>
 
-      {order.estimatedTime && !["delivered", "cancelled"].includes(order.status) && (
+      {liveTracking && order.estimatedTime && isActive && (
         <View style={styles.etaBar}>
           <Ionicons name="time-outline" size={12} color={C.primary} />
           <Text style={styles.etaText}>ETA: {order.estimatedTime}</Text>
@@ -109,14 +119,41 @@ function OrderCard({ order }: { order: any }) {
           </View>
         </View>
       )}
+
+      {!liveTracking && isActive && (
+        <View style={[styles.etaBar, { backgroundColor: "#FFF8E1", borderRadius: 8, paddingHorizontal: 10 }]}>
+          <Ionicons name="navigate-circle-outline" size={13} color="#D97706" />
+          <Text style={[styles.etaText, { color: "#92400E" }]}>Live tracking temporarily unavailable</Text>
+        </View>
+      )}
+
+      {reviews && isDelivered && !order._reviewed && (
+        <Pressable style={styles.rateBtn} onPress={() => onRate(order)}>
+          <Ionicons name="star-outline" size={14} color="#F59E0B" />
+          <Text style={styles.rateBtnText}>Rate this order</Text>
+        </Pressable>
+      )}
+
+      {order._reviewed && (
+        <View style={styles.reviewedBadge}>
+          <Ionicons name="star" size={13} color="#F59E0B" />
+          <Text style={styles.reviewedText}>Reviewed — Thank you!</Text>
+        </View>
+      )}
     </View>
   );
 }
 
 /* ─────────────────────────── Ride Card ─────────────────────────── */
-function RideCard({ ride }: { ride: any }) {
+function RideCard({ ride, liveTracking, reviews, onRate }: {
+  ride: any;
+  liveTracking: boolean;
+  reviews: boolean;
+  onRate: (o: any) => void;
+}) {
   const cfg = RIDE_STATUS[ride.status] || RIDE_STATUS["searching"]!;
   const isActive = !["completed", "cancelled"].includes(ride.status);
+  const isCompleted = ride.status === "completed";
 
   return (
     <View style={styles.card}>
@@ -156,7 +193,7 @@ function RideCard({ ride }: { ride: any }) {
         </View>
       </View>
 
-      {isActive && (
+      {isActive && liveTracking && (
         <View style={styles.etaBar}>
           <Ionicons name="navigate-outline" size={12} color={C.primary} />
           <Text style={styles.etaText}>
@@ -164,13 +201,39 @@ function RideCard({ ride }: { ride: any }) {
           </Text>
         </View>
       )}
+
+      {isActive && !liveTracking && (
+        <View style={[styles.etaBar, { backgroundColor: "#FFF8E1", borderRadius: 8, paddingHorizontal: 10 }]}>
+          <Ionicons name="navigate-circle-outline" size={13} color="#D97706" />
+          <Text style={[styles.etaText, { color: "#92400E" }]}>Live tracking temporarily unavailable</Text>
+        </View>
+      )}
+
+      {reviews && isCompleted && !ride._reviewed && (
+        <Pressable style={styles.rateBtn} onPress={() => onRate({ ...ride, _type: "ride" })}>
+          <Ionicons name="star-outline" size={14} color="#F59E0B" />
+          <Text style={styles.rateBtnText}>Rate this ride</Text>
+        </Pressable>
+      )}
+
+      {ride._reviewed && (
+        <View style={styles.reviewedBadge}>
+          <Ionicons name="star" size={13} color="#F59E0B" />
+          <Text style={styles.reviewedText}>Reviewed — Thank you!</Text>
+        </View>
+      )}
     </View>
   );
 }
 
 /* ─────────────────────────── Pharmacy Card ─────────────────────────── */
-function PharmacyCard({ order }: { order: any }) {
+function PharmacyCard({ order, reviews, onRate }: {
+  order: any;
+  reviews: boolean;
+  onRate: (o: any) => void;
+}) {
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
+  const isDelivered = order.status === "delivered";
 
   return (
     <View style={styles.card}>
@@ -212,6 +275,20 @@ function PharmacyCard({ order }: { order: any }) {
           <Text style={styles.totalAmount}>Rs. {order.total?.toLocaleString()}</Text>
         </View>
       </View>
+
+      {reviews && isDelivered && !order._reviewed && (
+        <Pressable style={styles.rateBtn} onPress={() => onRate({ ...order, _type: "pharmacy" })}>
+          <Ionicons name="star-outline" size={14} color="#F59E0B" />
+          <Text style={styles.rateBtnText}>Rate this order</Text>
+        </Pressable>
+      )}
+
+      {order._reviewed && (
+        <View style={styles.reviewedBadge}>
+          <Ionicons name="star" size={13} color="#F59E0B" />
+          <Text style={styles.reviewedText}>Reviewed — Thank you!</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -265,6 +342,123 @@ function ParcelCard({ booking }: { booking: any }) {
   );
 }
 
+/* ─────────────────────────── Review Modal ─────────────────────────── */
+function ReviewModal({ target, userId, apiBase, onClose, onDone }: {
+  target: any;
+  userId: string;
+  apiBase: string;
+  onClose: () => void;
+  onDone: (orderId: string) => void;
+}) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (rating === 0) { setError("Please select a star rating."); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: target.id,
+          userId,
+          vendorId: target.vendorId ?? null,
+          riderId: target.riderId ?? null,
+          orderType: target._type ?? target.type ?? "order",
+          rating,
+          comment: comment.trim() || null,
+        }),
+      });
+      if (res.status === 409) { onDone(target.id); onClose(); return; }
+      if (!res.ok) throw new Error("Failed");
+      onDone(target.id);
+      onClose();
+    } catch {
+      setError("Could not submit review. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={rm.backdrop} onPress={onClose}>
+        <Pressable style={rm.sheet} onPress={() => {}}>
+          <View style={rm.handle} />
+          <Text style={rm.title}>Rate your experience</Text>
+          <Text style={rm.sub}>
+            {target._type === "ride"
+              ? `Ride #${target.id?.slice(-8).toUpperCase()}`
+              : target._type === "pharmacy"
+              ? `Pharmacy order #${target.id?.slice(-8).toUpperCase()}`
+              : `Order #${target.id?.slice(-8).toUpperCase()}`}
+          </Text>
+
+          <View style={rm.stars}>
+            {[1, 2, 3, 4, 5].map(s => (
+              <Pressable key={s} onPress={() => setRating(s)} hitSlop={10}>
+                <Ionicons
+                  name={s <= rating ? "star" : "star-outline"}
+                  size={36}
+                  color={s <= rating ? "#F59E0B" : "#CBD5E1"}
+                />
+              </Pressable>
+            ))}
+          </View>
+
+          <TextInput
+            style={rm.input}
+            placeholder="Optional comment..."
+            placeholderTextColor="#94A3B8"
+            value={comment}
+            onChangeText={setComment}
+            multiline
+            numberOfLines={3}
+            maxLength={300}
+          />
+
+          {error ? <Text style={rm.error}>{error}</Text> : null}
+
+          <View style={rm.btns}>
+            <Pressable style={rm.cancelBtn} onPress={onClose}>
+              <Text style={rm.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={[rm.submitBtn, rating === 0 && { opacity: 0.5 }]} onPress={submit} disabled={loading}>
+              {loading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={rm.submitText}>Submit Review</Text>}
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const rm = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet:    { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  handle:   { width: 40, height: 4, backgroundColor: "#CBD5E1", borderRadius: 2, alignSelf: "center", marginBottom: 20 },
+  title:    { fontFamily: "Inter_700Bold", fontSize: 20, color: "#0F172A", textAlign: "center", marginBottom: 4 },
+  sub:      { fontFamily: "Inter_400Regular", fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 20 },
+  stars:    { flexDirection: "row", justifyContent: "center", gap: 12, marginBottom: 20 },
+  input: {
+    borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12,
+    padding: 14, fontFamily: "Inter_400Regular", fontSize: 14, color: "#0F172A",
+    minHeight: 80, textAlignVertical: "top", marginBottom: 8,
+  },
+  error:    { fontFamily: "Inter_400Regular", fontSize: 13, color: "#EF4444", textAlign: "center", marginBottom: 8 },
+  btns:     { flexDirection: "row", gap: 12, marginTop: 8 },
+  cancelBtn: { flex: 1, borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, paddingVertical: 14, alignItems: "center" },
+  cancelText:{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#64748B" },
+  submitBtn: { flex: 2, backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
+  submitText:{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" },
+});
+
 /* ─────────────────────────── Section header ─────────────────────────── */
 function SectionHeader({ title, count, active }: { title: string; count: number; active?: boolean }) {
   return (
@@ -282,10 +476,21 @@ function SectionHeader({ title, count, active }: { title: string; count: number;
 export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { config } = usePlatformConfig();
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<any>(null);
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
+
+  const handleRate = useCallback((order: any) => {
+    if (!reviewedIds.has(order.id)) setReviewTarget(order);
+  }, [reviewedIds]);
+
+  const handleReviewDone = useCallback((orderId: string) => {
+    setReviewedIds(prev => new Set([...prev, orderId]));
+  }, []);
 
   /* ── Grocery/Food orders ── */
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
@@ -493,9 +698,9 @@ export default function OrdersScreen() {
         {anyActive > 0 && (
           <>
             <SectionHeader title="Active" count={anyActive} active />
-            {activeOrders.map(o => <OrderCard key={o.id} order={o} />)}
-            {activeRides.map(r => <RideCard key={r.id} ride={r} />)}
-            {activePharm.map(o => <PharmacyCard key={o.id} order={o} />)}
+            {activeOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} />)}
+            {activeRides.map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} />)}
+            {activePharm.map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} onRate={handleRate} />)}
             {activeParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
           </>
         )}
@@ -503,9 +708,9 @@ export default function OrdersScreen() {
         {anyPast > 0 && (
           <>
             <SectionHeader title="History" count={anyPast} />
-            {pastOrders.map(o => <OrderCard key={o.id} order={o} />)}
-            {pastRides.map(r => <RideCard key={r.id} ride={r} />)}
-            {pastPharm.map(o => <PharmacyCard key={o.id} order={o} />)}
+            {pastOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} />)}
+            {pastRides.map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} />)}
+            {pastPharm.map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} onRate={handleRate} />)}
             {pastParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
           </>
         )}
@@ -566,6 +771,16 @@ export default function OrdersScreen() {
       </View>
 
       {renderContent()}
+
+      {reviewTarget && user && (
+        <ReviewModal
+          target={reviewTarget}
+          userId={user.id}
+          apiBase={`https://${process.env.EXPO_PUBLIC_DOMAIN}/api`}
+          onClose={() => setReviewTarget(null)}
+          onDone={handleReviewDone}
+        />
+      )}
     </View>
   );
 }
@@ -646,4 +861,16 @@ const styles = StyleSheet.create({
   etaText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   payBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   payText: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
+
+  rateBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight,
+    paddingVertical: 8, borderRadius: 10, backgroundColor: "#FFFBEB",
+  },
+  rateBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#B45309" },
+  reviewedBadge: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight,
+  },
+  reviewedText: { fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E" },
 });

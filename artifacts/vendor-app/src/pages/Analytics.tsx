@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { usePlatformConfig } from "../lib/useConfig";
 import { PageHeader } from "../components/PageHeader";
 import { fc, CARD, CARD_HEADER, BADGE_GREEN, BADGE_ORANGE, BADGE_RED, BADGE_GRAY } from "../lib/ui";
 
@@ -20,10 +22,23 @@ function MiniBar({ pct, color }: { pct: number; color: string }) {
 
 export default function Analytics() {
   const [days, setDays] = useState(30);
+  const { user } = useAuth();
+  const { config } = usePlatformConfig();
 
   const { data, isLoading } = useQuery({
     queryKey: ["vendor-analytics", days],
     queryFn: () => api.getAnalytics(days),
+    staleTime: 60000,
+  });
+
+  const { data: reviewsData, isLoading: reviewsLoading } = useQuery({
+    queryKey: ["vendor-reviews", user?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/reviews/vendor/${user!.id}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<{ reviews: any[]; avgRating: number | null; total: number }>;
+    },
+    enabled: !!user?.id && config.features.reviews,
     staleTime: 60000,
   });
 
@@ -226,6 +241,59 @@ export default function Analytics() {
             </div>
           </div>
         </div>
+
+        {/* ── Customer Reviews (gated by feature_reviews) ── */}
+        {config.features.reviews ? (
+          <div className={CARD}>
+            <div className={`${CARD_HEADER} bg-yellow-50`}>
+              <div className="flex items-center gap-2">
+                <p className="font-bold text-yellow-800 text-sm">⭐ Customer Reviews</p>
+                {reviewsData?.avgRating != null && (
+                  <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                    {reviewsData.avgRating.toFixed(1)} / 5.0
+                  </span>
+                )}
+              </div>
+              <span className="text-xs text-gray-400">{reviewsData?.total ?? 0} total</span>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {reviewsLoading ? (
+                [1,2,3].map(i => <div key={i} className="h-16 skeleton rounded-lg m-3"/>)
+              ) : !reviewsData?.reviews?.length ? (
+                <div className="px-4 py-10 text-center">
+                  <p className="text-2xl mb-2">💬</p>
+                  <p className="text-sm text-gray-500 font-medium">No customer reviews yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Reviews appear here after customers rate their orders</p>
+                </div>
+              ) : (
+                reviewsData.reviews.slice(0, 10).map((r: any, i: number) => (
+                  <div key={r.id || i} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex gap-0.5">
+                        {[1,2,3,4,5].map(s => (
+                          <span key={s} className={`text-sm ${s <= r.rating ? "text-yellow-400" : "text-gray-200"}`}>★</span>
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {r.orderType === "ride" ? "Ride" : r.orderType === "pharmacy" ? "Pharmacy" : "Order"}
+                      </span>
+                    </div>
+                    {r.comment && <p className="text-xs text-gray-600 mt-1 leading-relaxed">"{r.comment}"</p>}
+                    <p className="text-xs text-gray-400 mt-1">{new Date(r.createdAt).toLocaleDateString()}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className={`${CARD} border-dashed border-gray-200`}>
+            <div className="px-4 py-6 text-center">
+              <p className="text-xl mb-1">⭐</p>
+              <p className="text-sm font-semibold text-gray-500">Reviews Disabled</p>
+              <p className="text-xs text-gray-400 mt-1">Customer reviews are currently turned off by the platform admin</p>
+            </div>
+          </div>
+        )}
 
         {/* ── Performance Tips ── */}
         <div className={CARD}>
