@@ -55,6 +55,18 @@ export interface PlatformConfig {
     ratingWindowHours: number;
     scheduleEnabled: boolean;
   };
+  rides: {
+    bikeBaseFare: number;
+    bikePerKm: number;
+    bikeMinFare: number;
+    carBaseFare: number;
+    carPerKm: number;
+    carMinFare: number;
+    surgeEnabled: boolean;
+    surgeMultiplier: number;
+    cancellationFee: number;
+    riderEarningPct: number;
+  };
   finance: {
     gstEnabled: boolean;
     gstPct: number;
@@ -91,6 +103,7 @@ const DEFAULT_CONFIG: PlatformConfig = {
   features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
   content: { showBanner: true, banner: "Free delivery on your first order! 🎉", announcement: "", maintenanceMsg: "We're performing scheduled maintenance. Back soon!", supportMsg: "Need help? Chat with us!", vendorNotice: "", riderNotice: "", tncUrl: "", privacyUrl: "", refundPolicyUrl: "", faqUrl: "", aboutUrl: "" },
   orderRules: { minOrderAmount: 100, maxCodAmount: 5000, maxCartValue: 50000, cancelWindowMin: 5, autoCancelMin: 15, refundDays: 3, preptimeMin: 15, ratingWindowHours: 48, scheduleEnabled: false },
+  rides: { bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50, carBaseFare: 25, carPerKm: 12, carMinFare: 80, surgeEnabled: false, surgeMultiplier: 1.5, cancellationFee: 30, riderEarningPct: 80 },
   finance: { gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100, invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80, minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100 },
 };
 

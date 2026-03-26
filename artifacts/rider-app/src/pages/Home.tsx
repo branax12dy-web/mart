@@ -149,7 +149,7 @@ export default function Home() {
                       <p className="text-xs text-gray-500 truncate">{o.deliveryAddress || "Delivery address"}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-bold text-green-600 text-sm">+{formatCurrency(o.total * 0.8)}</p>
+                      <p className="font-bold text-green-600 text-sm">+{formatCurrency(o.total * (config.finance.riderEarningPct / 100))}</p>
                       <button onClick={() => acceptOrderMut.mutate(o.id)} disabled={acceptOrderMut.isPending} className="mt-1 bg-green-600 text-white text-xs px-3 py-1 rounded-lg font-bold">Accept</button>
                     </div>
                   </div>
@@ -164,7 +164,7 @@ export default function Home() {
                       <p className="text-xs text-gray-500 truncate">{r.pickupAddress} → {r.dropAddress}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-bold text-green-600 text-sm">+{formatCurrency(r.fare * 0.8)}</p>
+                      <p className="font-bold text-green-600 text-sm">+{formatCurrency(r.fare * (config.finance.riderEarningPct / 100))}</p>
                       <button onClick={() => acceptRideMut.mutate(r.id)} disabled={acceptRideMut.isPending} className="mt-1 bg-green-600 text-white text-xs px-3 py-1 rounded-lg font-bold">Accept</button>
                     </div>
                   </div>

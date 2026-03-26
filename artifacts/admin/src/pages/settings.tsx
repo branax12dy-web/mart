@@ -2448,7 +2448,7 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
 
 /* ─── Other section renderers ────────────────────────────────────────────── */
 function renderSection(
-  cat: CatKey, catSettings: Setting[],
+  cat: CatKey, catSettings: Setting[], settings: Setting[],
   localValues: Record<string,string>, dirtyKeys: Set<string>,
   handleChange: (k: string, v: string) => void,
   handleToggle: (k: string, v: boolean) => void,
@@ -2886,6 +2886,144 @@ function renderSection(
     );
   }
 
+  /* ─────────────────────────── RIDE PRICING RENDERER ─────────────────────────── */
+  if (cat === "rides") {
+    const BIKE_KEYS   = new Set(["ride_bike_base_fare","ride_bike_per_km","ride_bike_min_fare"]);
+    const CAR_KEYS    = new Set(["ride_car_base_fare","ride_car_per_km","ride_car_min_fare"]);
+    const RULES_KEYS  = new Set(["ride_surge_enabled","ride_surge_multiplier","ride_cancellation_fee"]);
+
+    const bikeFields  = catSettings.filter(s => BIKE_KEYS.has(s.key));
+    const carFields   = catSettings.filter(s => CAR_KEYS.has(s.key));
+    const rulesFields = catSettings.filter(s => RULES_KEYS.has(s.key));
+
+    const SUFFIX: Record<string,string> = {
+      ride_bike_base_fare: "Rs.", ride_bike_per_km: "Rs./km", ride_bike_min_fare: "Rs.",
+      ride_car_base_fare: "Rs.", ride_car_per_km: "Rs./km", ride_car_min_fare: "Rs.",
+      ride_surge_multiplier: "×", ride_cancellation_fee: "Rs.",
+    };
+    const HINT: Record<string,string> = {
+      ride_bike_base_fare:    "Fixed starting fare charged on every bike ride, regardless of distance",
+      ride_bike_per_km:       "Additional charge per kilometre for bike rides, added on top of base fare",
+      ride_bike_min_fare:     "Floor fare for bike rides — short trips will never cost less than this",
+      ride_car_base_fare:     "Fixed starting fare charged on every car ride, regardless of distance",
+      ride_car_per_km:        "Additional charge per kilometre for car rides, added on top of base fare",
+      ride_car_min_fare:      "Floor fare for car rides — short trips will never cost less than this",
+      ride_surge_enabled:     "When ON, all ride fares are multiplied by the surge multiplier below. Use during peak hours or high demand",
+      ride_surge_multiplier:  "Multiplier applied to the calculated fare when surge is active. 1.5 = 50% premium",
+      ride_cancellation_fee:  "Fee charged to the customer if they cancel a ride after a driver has already accepted it",
+    };
+
+    const surgeOn = (localValues["ride_surge_enabled"] ?? catSettings.find(s=>s.key==="ride_surge_enabled")?.value ?? "off") === "on";
+    const bikeBase  = parseFloat(localValues["ride_bike_base_fare"] ?? catSettings.find(s=>s.key==="ride_bike_base_fare")?.value ?? "15");
+    const bikeKm    = parseFloat(localValues["ride_bike_per_km"]    ?? catSettings.find(s=>s.key==="ride_bike_per_km")?.value    ?? "8");
+    const bikeMin   = parseFloat(localValues["ride_bike_min_fare"]  ?? catSettings.find(s=>s.key==="ride_bike_min_fare")?.value  ?? "50");
+    const carBase   = parseFloat(localValues["ride_car_base_fare"]  ?? catSettings.find(s=>s.key==="ride_car_base_fare")?.value  ?? "25");
+    const carKm     = parseFloat(localValues["ride_car_per_km"]     ?? catSettings.find(s=>s.key==="ride_car_per_km")?.value     ?? "12");
+    const carMin    = parseFloat(localValues["ride_car_min_fare"]   ?? catSettings.find(s=>s.key==="ride_car_min_fare")?.value   ?? "80");
+    const surge     = parseFloat(localValues["ride_surge_multiplier"] ?? catSettings.find(s=>s.key==="ride_surge_multiplier")?.value ?? "1.5");
+    const riderKeep = parseFloat(settings.find(s=>s.key==="rider_keep_pct")?.value ?? "80");
+
+    const exampleFare = (base: number, perKm: number, minF: number, km: number) => {
+      const raw = Math.round(base + km * perKm);
+      const withMin = Math.max(minF, raw);
+      return Math.round(withMin * (surgeOn ? surge : 1));
+    };
+
+    const RideNumField = ({ s }: { s: Setting }) => {
+      const isDirty = dirtyKeys.has(s.key);
+      const sfx = SUFFIX[s.key] ?? "";
+      const isPrefix = sfx === "Rs.";
+      return (
+        <div className={`rounded-xl border p-4 space-y-2.5 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-start justify-between gap-2">
+            <label className="text-sm font-semibold text-foreground leading-snug flex-1">{s.label}</label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold flex-shrink-0">CHANGED</Badge>}
+          </div>
+          {HINT[s.key] && <p className="text-[11px] text-muted-foreground">{HINT[s.key]}</p>}
+          <div className="relative">
+            {isPrefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">Rs.</span>}
+            <Input type="number" min={0} step={s.key === "ride_surge_multiplier" ? "0.1" : "1"}
+              value={localValues[s.key] ?? s.value}
+              onChange={e => handleChange(s.key, e.target.value)}
+              className={`h-10 rounded-xl ${isPrefix ? "pl-10" : sfx ? "pr-16" : ""} ${isDirty ? "border-amber-300 bg-amber-50/50 ring-1 ring-amber-200" : ""}`}
+            />
+            {!isPrefix && sfx && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">{sfx}</span>}
+          </div>
+          <p className="text-[10px] text-muted-foreground/50 font-mono">{s.key}</p>
+        </div>
+      );
+    };
+
+    const RideToggle = ({ s }: { s: Setting }) => (
+      <Toggle checked={(localValues[s.key] ?? s.value) === "on"}
+        onChange={v => handleToggle(s.key, v)} label={s.label} isDirty={dirtyKeys.has(s.key)} />
+    );
+
+    return (
+      <div className="space-y-7">
+
+        {/* ── Group 1: Bike / Motorcycle Pricing ── */}
+        <div className="space-y-3">
+          <SLabel icon={Bike}>Bike / Motorcycle Pricing</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Rates applied to all two-wheeler bookings. Minimum fare acts as a floor — short trips will be charged at least this amount.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {bikeFields.map(s => <RideNumField key={s.key} s={s} />)}
+          </div>
+          <div className="bg-teal-50 border border-teal-100 rounded-xl p-3.5 flex gap-2.5">
+            <Info className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-teal-700 leading-relaxed">
+              <strong>Bike fare example:</strong>{" "}
+              5 km trip → Rs.{exampleFare(bikeBase, bikeKm, bikeMin, 5)} &nbsp;|&nbsp;
+              10 km → Rs.{exampleFare(bikeBase, bikeKm, bikeMin, 10)} &nbsp;|&nbsp;
+              20 km → Rs.{exampleFare(bikeBase, bikeKm, bikeMin, 20)}
+              {surgeOn && <strong className="text-orange-600"> (surge ×{surge} active)</strong>}
+              &nbsp;· Rider earns {riderKeep}% of each fare
+            </p>
+          </div>
+        </div>
+
+        {/* ── Group 2: Car / Taxi Pricing ── */}
+        <div className="space-y-3 border-t border-border/40 pt-6">
+          <SLabel icon={Car}>Car / Taxi Pricing</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Rates applied to all four-wheeler bookings. Car minimum fare is typically higher to cover fuel and vehicle costs.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {carFields.map(s => <RideNumField key={s.key} s={s} />)}
+          </div>
+          <div className="bg-teal-50 border border-teal-100 rounded-xl p-3.5 flex gap-2.5">
+            <Info className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-teal-700 leading-relaxed">
+              <strong>Car fare example:</strong>{" "}
+              5 km trip → Rs.{exampleFare(carBase, carKm, carMin, 5)} &nbsp;|&nbsp;
+              10 km → Rs.{exampleFare(carBase, carKm, carMin, 10)} &nbsp;|&nbsp;
+              20 km → Rs.{exampleFare(carBase, carKm, carMin, 20)}
+              {surgeOn && <strong className="text-orange-600"> (surge ×{surge} active)</strong>}
+              &nbsp;· Rider earns {riderKeep}% of each fare
+            </p>
+          </div>
+        </div>
+
+        {/* ── Group 3: Surge & Ride Rules ── */}
+        <div className="space-y-3 border-t border-border/40 pt-6">
+          <SLabel icon={Zap}>Surge &amp; Ride Rules</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Surge pricing multiplies all fares during peak demand. Cancellation fee is charged when a customer cancels after a driver has accepted.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {rulesFields.filter(s => TOGGLE_KEYS.has(s.key)).map(s => <RideToggle key={s.key} s={s} />)}
+            {rulesFields.filter(s => !TOGGLE_KEYS.has(s.key) && (s.key !== "ride_surge_multiplier" || surgeOn)).map(s => <RideNumField key={s.key} s={s} />)}
+          </div>
+          {surgeOn && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3.5 flex gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-orange-700 leading-relaxed">
+                <strong>Surge pricing is currently ACTIVE.</strong> All ride fares are being multiplied by <strong>×{surge}</strong>. Customers see a surge badge on the booking screen. Remember to turn this off after peak hours.
+              </p>
+            </div>
+          )}
+        </div>
+
+      </div>
+    );
+  }
+
   if (cat === "orders") {
     const AMOUNT_KEYS  = new Set(["min_order_amount","max_cod_amount","order_max_cart_value"]);
     const TIMING_KEYS  = new Set(["order_cancel_window_min","order_auto_cancel_min","order_refund_days","order_preptime_min","order_rating_window_hours"]);
@@ -3206,7 +3344,7 @@ export default function SettingsPage() {
                   <p className="text-sm">No settings in this section</p>
                 </div>
               ) : renderSection(
-                activeTab, activeSettings, localValues, dirtyKeys,
+                activeTab, activeSettings, settings, localValues, dirtyKeys,
                 handleChange, handleToggle, getInputType, getInputSuffix, getPlaceholder
               )}
             </div>

@@ -23,7 +23,15 @@ async function calcFare(distance: number, type: string): Promise<number> {
   const perKm = type === "bike"
     ? parseFloat(settings["ride_bike_per_km"] ?? "8")
     : parseFloat(settings["ride_car_per_km"] ?? "12");
-  return Math.round(baseRate + distance * perKm);
+  const minFare = type === "bike"
+    ? parseFloat(settings["ride_bike_min_fare"] ?? "50")
+    : parseFloat(settings["ride_car_min_fare"] ?? "80");
+  const surgeEnabled  = (settings["ride_surge_enabled"] ?? "off") === "on";
+  const surgeMultiplier = surgeEnabled
+    ? parseFloat(settings["ride_surge_multiplier"] ?? "1.5")
+    : 1;
+  const raw = Math.round(baseRate + distance * perKm);
+  return Math.round(Math.max(minFare, raw) * surgeMultiplier);
 }
 
 router.post("/estimate", async (req, res) => {

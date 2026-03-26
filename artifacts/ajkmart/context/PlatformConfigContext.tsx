@@ -48,6 +48,17 @@ export interface PlatformConfig {
     ratingWindowHours: number;
     scheduleEnabled: boolean;
   };
+  rides: {
+    bikeBaseFare: number;
+    bikePerKm: number;
+    bikeMinFare: number;
+    carBaseFare: number;
+    carPerKm: number;
+    carMinFare: number;
+    surgeEnabled: boolean;
+    surgeMultiplier: number;
+    cancellationFee: number;
+  };
   finance: {
     gstEnabled: boolean;
     gstPct: number;
@@ -103,6 +114,11 @@ const DEFAULT: PlatformConfig = {
     preptimeMin:       15,
     ratingWindowHours: 48,
     scheduleEnabled:   false,
+  },
+  rides: {
+    bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50,
+    carBaseFare: 25, carPerKm: 12, carMinFare: 80,
+    surgeEnabled: false, surgeMultiplier: 1.5, cancellationFee: 30,
   },
   finance: {
     gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100,
@@ -187,6 +203,17 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           preptimeMin:       raw.orderRules?.preptimeMin       ?? DEFAULT.orderRules.preptimeMin,
           ratingWindowHours: raw.orderRules?.ratingWindowHours ?? DEFAULT.orderRules.ratingWindowHours,
           scheduleEnabled:   raw.orderRules?.scheduleEnabled   ?? DEFAULT.orderRules.scheduleEnabled,
+        },
+        rides: {
+          bikeBaseFare:    raw.rides?.bikeBaseFare    ?? DEFAULT.rides.bikeBaseFare,
+          bikePerKm:       raw.rides?.bikePerKm       ?? DEFAULT.rides.bikePerKm,
+          bikeMinFare:     raw.rides?.bikeMinFare     ?? DEFAULT.rides.bikeMinFare,
+          carBaseFare:     raw.rides?.carBaseFare     ?? DEFAULT.rides.carBaseFare,
+          carPerKm:        raw.rides?.carPerKm        ?? DEFAULT.rides.carPerKm,
+          carMinFare:      raw.rides?.carMinFare      ?? DEFAULT.rides.carMinFare,
+          surgeEnabled:    raw.rides?.surgeEnabled    ?? DEFAULT.rides.surgeEnabled,
+          surgeMultiplier: raw.rides?.surgeMultiplier ?? DEFAULT.rides.surgeMultiplier,
+          cancellationFee: raw.rides?.cancellationFee ?? DEFAULT.rides.cancellationFee,
         },
         finance: {
           gstEnabled:           raw.finance?.gstEnabled           ?? DEFAULT.finance.gstEnabled,

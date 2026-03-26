@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useState } from "react";
+import { usePlatformConfig } from "../lib/useConfig";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
 export default function Active() {
   const qc = useQueryClient();
+  const { config } = usePlatformConfig();
   const [toastMsg, setToastMsg] = useState("");
 
   const showToast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
@@ -121,7 +123,7 @@ export default function Active() {
               </div>
               <div className="ml-auto text-right">
                 <p className="font-bold text-green-600">{formatCurrency(ride.fare)}</p>
-                <p className="text-xs text-gray-500">Your cut: {formatCurrency(ride.fare * 0.8)}</p>
+                <p className="text-xs text-gray-500">Your cut: {formatCurrency(ride.fare * (config.finance.riderEarningPct / 100))}</p>
               </div>
             </div>
             <div className="p-4 space-y-3">

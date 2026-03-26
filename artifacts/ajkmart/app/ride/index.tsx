@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 
 const C   = Colors.light;
 const W   = Dimensions.get("window").width;
@@ -61,8 +62,16 @@ function calcDist(a: { lat: number; lng: number }, b: { lat: number; lng: number
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-function calcFare(dist: number, type: "bike" | "car") {
-  return Math.round((type === "bike" ? 15 : 25) + dist * (type === "bike" ? 8 : 12));
+function calcFareFromConfig(
+  dist: number, type: "bike" | "car",
+  cfg: { bikeBaseFare: number; bikePerKm: number; bikeMinFare: number; carBaseFare: number; carPerKm: number; carMinFare: number; surgeEnabled: boolean; surgeMultiplier: number }
+) {
+  const base   = type === "bike" ? cfg.bikeBaseFare : cfg.carBaseFare;
+  const perKm  = type === "bike" ? cfg.bikePerKm    : cfg.carPerKm;
+  const minF   = type === "bike" ? cfg.bikeMinFare  : cfg.carMinFare;
+  const raw    = Math.round(base + dist * perKm);
+  const withMin = Math.max(minF, raw);
+  return Math.round(withMin * (cfg.surgeEnabled ? cfg.surgeMultiplier : 1));
 }
 
 /* ─── Searching Overlay ─── */
@@ -251,6 +260,8 @@ export default function RideScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
   const { showToast } = useToast();
+  const { config } = usePlatformConfig();
+  const rideCfg = config.rides;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [pickup,     setPickup]    = useState("");
@@ -271,17 +282,17 @@ export default function RideScreen() {
   const [pickupFocus, setPickupFocus] = useState(false);
   const [dropFocus,   setDropFocus]   = useState(false);
 
-  /* auto-estimate when both selected */
+  /* auto-estimate when both selected — uses live admin config */
   useEffect(() => {
     if (pickupObj && dropObj) {
       const dist = Math.round(calcDist(pickupObj, dropObj) * 10) / 10;
-      const fare = calcFare(dist, rideType);
+      const fare = calcFareFromConfig(dist, rideType, rideCfg);
       const dur  = `${Math.round(dist * 3 + 5)} min`;
       setEstimate({ fare, dist, dur });
     } else {
       setEstimate(null);
     }
-  }, [pickupObj, dropObj, rideType]);
+  }, [pickupObj, dropObj, rideType, rideCfg]);
 
   const pickupSugg = AJK_LOCS.filter(l => !pickup || l.name.toLowerCase().includes(pickup.toLowerCase()));
   const dropSugg   = AJK_LOCS.filter(l => !drop   || l.name.toLowerCase().includes(drop.toLowerCase()));
@@ -338,8 +349,14 @@ export default function RideScreen() {
     return <ConfirmedScreen booked={booked} driver={driver} onReset={() => { setBooked(null); setDriver(null); setPickup(""); setDrop(""); setPickupObj(null); setDropObj(null); setEstimate(null); }} />;
   }
 
-  const bikeFeatures = ["Rs. 15 base + Rs. 8/km", "Helmet included", "Fastest route", "GPS tracked"];
-  const carFeatures  = ["Rs. 25 base + Rs. 12/km", "AC available", "4 passengers", "GPS tracked"];
+  const bikeFeatures = [
+    `Rs. ${rideCfg.bikeBaseFare} base + Rs. ${rideCfg.bikePerKm}/km`,
+    "Helmet included", "Fastest route", "GPS tracked",
+  ];
+  const carFeatures = [
+    `Rs. ${rideCfg.carBaseFare} base + Rs. ${rideCfg.carPerKm}/km`,
+    "AC available", "4 passengers", "GPS tracked",
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
@@ -447,13 +464,24 @@ export default function RideScreen() {
           ))}
         </ScrollView>
 
+        {/* Surge Banner */}
+        {rideCfg.surgeEnabled && (
+          <View style={{ marginHorizontal: 16, marginBottom: 8, backgroundColor: "#FFF7ED", borderWidth: 1, borderColor: "#FED7AA", borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="flash" size={16} color="#EA580C" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#C2410C" }}>Surge Pricing Active ×{rideCfg.surgeMultiplier}</Text>
+              <Text style={{ fontSize: 11, color: "#9A3412" }}>High demand — fares are {Math.round((rideCfg.surgeMultiplier - 1) * 100)}% higher right now</Text>
+            </View>
+          </View>
+        )}
+
         {/* Vehicle Cards */}
         <View style={rs.secRow}><Text style={rs.secTitle}>Vehicle Type</Text></View>
         <View style={rs.vehicleRow}>
           {(["bike", "car"] as const).map(type => {
             const active = rideType === type;
             const feats = type === "bike" ? bikeFeatures : carFeatures;
-            const fromPrice = type === "bike" ? "Rs. 50" : "Rs. 100";
+            const fromPrice = `Rs. ${type === "bike" ? rideCfg.bikeMinFare : rideCfg.carMinFare}`;
             return (
               <Pressable key={type} onPress={() => setRideType(type)} style={[rs.vCard, active && rs.vCardActive]}>
                 {active && <LinearGradient colors={["#059669","#10B981"]} style={rs.vGrad} />}
@@ -519,6 +547,14 @@ export default function RideScreen() {
               </Pressable>
             );
           })}
+        </View>
+
+        {/* Cancellation Fee Info */}
+        <View style={{ marginHorizontal: 16, marginBottom: 8, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Ionicons name="information-circle-outline" size={15} color="#64748B" />
+          <Text style={{ fontSize: 11, color: "#475569", flex: 1 }}>
+            Cancellation fee of Rs. {rideCfg.cancellationFee} applies if you cancel after a driver accepts your ride.
+          </Text>
         </View>
 
         {/* Safety */}
