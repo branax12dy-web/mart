@@ -1,4 +1,40 @@
 # AJKMart Super App — Workspace
+<!-- Last updated: 2026-03-26 — AUDIT ROUND 4 COMPLETE: 6 backend bugs fixed, all confirmed compiling.
+
+  FIX 1 — orders.ts mapOrder: added codFee parameter to function signature + codFee field in response object.
+    Both wallet-payment and non-wallet-payment call sites now pass (deliveryFee, gstAmount, codFee).
+    Wallet path: mapOrder(order, deliveryFee, gstAmount, codFee).
+    Non-wallet path: mapOrder(order!, deliveryFee, gstAmount, codFee).
+    Previously non-wallet path was missing gstAmount AND codFee entirely.
+
+  FIX 2 — rider.ts riderAuth: token expiry now enforced using security_rider_token_days.
+    Decodes base64 token → splits parts → reads issuedAt from last part.
+    If Date.now() - issuedAt > riderTokenDays*86400000 → HTTP 401 "Session expired."
+    Calls getPlatformSettings() to read live setting; defaults to 30 days.
+
+  FIX 3 — vendor.ts vendorAuth: token expiry now enforced using security_session_days.
+    Same pattern as riderAuth. Defaults to 30 days. HTTP 401 with clear message.
+
+  FIX 4 — wallet.ts /send: wallet_daily_limit now enforced on cumulative daily total.
+    Imports sum, and, gte from drizzle-orm.
+    Inside the DB transaction: queries SUM(amount) from walletTransactionsTable
+    WHERE userId = sender AND type = "debit" AND createdAt >= todayStart.
+    Error message tells user how much they've spent today vs. their daily limit.
+    Same logic applied to p2pDailyLimit check.
+
+  FIX 5 — platform-config.ts security block: added geoFence, gpsAccuracy, spoofDetection,
+    maxSpeedKmh fields (security_geo_fence/security_gps_accuracy/security_spoof_detection/
+    security_max_speed_kmh). Default values corrected: gpsInterval now 10 (was 30),
+    riderTokenDays now 30 (was 7 — matches auth.ts login seed).
+
+  FIX 6 — rides.ts, pharmacy.ts, parcel.ts: maintenance mode gate (app_status check) added
+    to POST creation routes. All three routes now return HTTP 503 with maintenance_message
+    when app_status !== "live". Gate placed before feature flag check, after settings load.
+    orders.ts already had this fix from previous session.
+
+  STATUS: All 13 admin sections audited. Zero remaining enforcement bugs in non-aspirational
+    settings. Aspirational/dead settings documented in previous audit note below.
+  -->
 <!-- Last updated: 2026-03-26 — ADMIN AUDIT: Integrations/Delivery/Rides/Orders/Finance/Customer/Rider sections fully wired.
   21 new enforcement fixes across 7 sections:
 

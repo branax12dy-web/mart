@@ -90,6 +90,11 @@ router.post("/", async (req, res) => {
 
   const s = await getPlatformSettings();
 
+  // Maintenance mode gate
+  if ((s["app_status"] ?? "live") !== "live") {
+    res.status(503).json({ error: s["maintenance_message"] ?? "App is under maintenance. Please try again later." }); return;
+  }
+
   // Feature flag check
   const parcelEnabled = (s["feature_parcel"] ?? "on") === "on";
   if (!parcelEnabled) {

@@ -8,7 +8,7 @@ import { addSecurityEvent, getClientIp, getCachedSettings } from "../middleware/
 
 const router: IRouter = Router();
 
-function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstAmount?: number) {
+function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstAmount?: number, codFee?: number) {
   return {
     id: o.id,
     userId: o.userId,
@@ -18,6 +18,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     total: parseFloat(o.total),
     deliveryFee: deliveryFee ?? 0,
     gstAmount: gstAmount ?? 0,
+    codFee: codFee ?? 0,
     deliveryAddress: o.deliveryAddress,
     paymentMethod: o.paymentMethod,
     riderId: o.riderId,
@@ -63,15 +64,31 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: "Order total must be greater than 0" }); return;
   }
 
-  /* ── Platform settings & fraud detection ── */
+  /* ── Load platform settings once ── */
   const s = await getCachedSettings();
-  const minOrder = parseFloat(s["min_order_amount"] ?? "100");
 
+  /* ── 1st gate: service feature flags (fail-fast before any calculation) ── */
+  if (type === "mart" && (s["feature_mart"] ?? "on") === "off") {
+    res.status(503).json({ error: "Mart grocery service is currently unavailable. Please try again later." }); return;
+  }
+  if (type === "food" && (s["feature_food"] ?? "on") === "off") {
+    res.status(503).json({ error: "Food delivery service is currently unavailable. Please try again later." }); return;
+  }
+  /* app_status maintenance gate */
+  if ((s["app_status"] ?? "active") === "maintenance") {
+    const mainKey = (s["security_maintenance_key"] ?? "").trim();
+    const bypass  = ((req.headers["x-maintenance-key"] as string) ?? "").trim();
+    if (!mainKey || bypass !== mainKey) {
+      res.status(503).json({ error: s["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!" }); return;
+    }
+  }
+
+  /* ── Order rule checks ── */
+  const minOrder = parseFloat(s["min_order_amount"] ?? "100");
   if (itemsTotal < minOrder) {
     res.status(400).json({ error: `Minimum order amount is Rs. ${minOrder}` }); return;
   }
 
-  /* ── Max cart value check ── */
   const maxCart = parseFloat(s["order_max_cart_value"] ?? "50000");
   if (itemsTotal > maxCart) {
     res.status(400).json({ error: `Cart value cannot exceed Rs. ${maxCart}. Please split into multiple orders.` }); return;
@@ -108,19 +125,19 @@ router.post("/", async (req, res) => {
   const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
   const gstAmount  = gstEnabled ? parseFloat(((itemsTotal * gstPct) / 100).toFixed(2)) : 0;
 
-  const total = itemsTotal + deliveryFee + gstAmount;
+  /* ── COD service fee (cod_fee charged when total < cod_free_above threshold) ── */
+  const codFee = (() => {
+    if (paymentMethod !== "cash") return 0;
+    const fee       = parseFloat(s["cod_fee"]        ?? "0");
+    const freeAb    = parseFloat(s["cod_free_above"] ?? "2000");
+    return (fee > 0 && itemsTotal < freeAb) ? fee : 0;
+  })();
+
+  const total = itemsTotal + deliveryFee + gstAmount + codFee;
 
   /* ── Prep time from admin Order settings ── */
   const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
   const estimatedTime = `${preptimeMin}–${preptimeMin + 20} min`;
-
-  /* ── Service feature gate (admin can disable individual services) ── */
-  if (type === "mart" && (s["feature_mart"] ?? "on") === "off") {
-    res.status(503).json({ error: "Mart grocery service is currently unavailable. Please try again later." }); return;
-  }
-  if (type === "food" && (s["feature_food"] ?? "on") === "off") {
-    res.status(503).json({ error: "Food delivery service is currently unavailable. Please try again later." }); return;
-  }
 
   /* ── Fetch user for fraud checks ── */
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -245,7 +262,7 @@ router.post("/", async (req, res) => {
         }).returning();
         return newOrder!;
       });
-      res.status(201).json(mapOrder(order, deliveryFee, gstAmount));
+      res.status(201).json(mapOrder(order, deliveryFee, gstAmount, codFee));
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -259,7 +276,7 @@ router.post("/", async (req, res) => {
     deliveryAddress, paymentMethod,
     estimatedTime,
   }).returning();
-  res.status(201).json(mapOrder(order!, deliveryFee));
+  res.status(201).json(mapOrder(order!, deliveryFee, gstAmount, codFee));
 });
 
 /* ── PATCH /orders/:id ────────────────────────────────────────────────────── */

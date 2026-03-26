@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, gte, sum } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 
@@ -135,8 +135,24 @@ router.post("/send", async (req, res) => {
 
       const senderBalance = parseFloat(sender.walletBalance ?? "0");
       if (senderBalance < sendAmt) throw new Error("Insufficient wallet balance");
-      if (sendAmt > dailyLimit) throw new Error(`Daily wallet limit is Rs. ${dailyLimit}`);
-      if (sendAmt > p2pDailyLimit) throw new Error(`Daily P2P transfer limit is Rs. ${p2pDailyLimit}`);
+
+      /* ── Cumulative daily limit check (sum all today's debits, not just this transaction) ── */
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const [todayDebits] = await tx
+        .select({ total: sum(walletTransactionsTable.amount) })
+        .from(walletTransactionsTable)
+        .where(and(
+          eq(walletTransactionsTable.userId, senderUserId),
+          eq(walletTransactionsTable.type, "debit"),
+          gte(walletTransactionsTable.createdAt, todayStart),
+        ));
+      const todayTotal = parseFloat(String(todayDebits?.total ?? "0")) || 0;
+      if (todayTotal + sendAmt > dailyLimit) {
+        throw new Error(`Daily wallet limit is Rs. ${dailyLimit}. Aaj aap ne Rs. ${todayTotal.toFixed(0)} kharch kiye hain.`);
+      }
+      if (todayTotal + sendAmt > p2pDailyLimit) {
+        throw new Error(`Daily P2P transfer limit is Rs. ${p2pDailyLimit}. Aaj Rs. ${todayTotal.toFixed(0)} transfer ho chuke hain.`);
+      }
 
       const [receiver] = await tx.select().from(usersTable).where(eq(usersTable.phone, receiverPhone)).limit(1);
       if (!receiver) throw new Error("Receiver not found. Phone number check karein.");
