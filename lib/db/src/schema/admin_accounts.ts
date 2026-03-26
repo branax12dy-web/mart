@@ -9,6 +9,8 @@ export const adminAccountsTable = pgTable("admin_accounts", {
   role:        text("role").notNull().default("manager"),
   permissions: text("permissions").notNull().default(""),
   isActive:    boolean("is_active").notNull().default(true),
+  totpSecret:  text("totp_secret"),
+  totpEnabled: boolean("totp_enabled").notNull().default(false),
   lastLoginAt: timestamp("last_login_at"),
   createdAt:   timestamp("created_at").notNull().defaultNow(),
 });

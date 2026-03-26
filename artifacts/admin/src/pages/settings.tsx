@@ -1712,6 +1712,13 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
   const [newBlockIP,   setNewBlockIP]     = useState("");
   const [liveLoading,  setLiveLoading]    = useState(false);
 
+  /* ── MFA / TOTP State ── */
+  const [mfaStatus,    setMfaStatus]    = useState<any>(null);
+  const [mfaSetupData, setMfaSetupData] = useState<any>(null);
+  const [mfaToken,     setMfaToken]     = useState("");
+  const [disableToken, setDisableToken] = useState("");
+  const [mfaLoading,   setMfaLoading]   = useState(false);
+
   const adminSecret = localStorage.getItem("ajkmart_admin_token") || "";
   const apiHeaders  = { "Content-Type": "application/json", "x-admin-secret": adminSecret };
 
@@ -1766,6 +1773,61 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
     });
     toast({ title: "IP Unblocked", description: `${ip} has been unblocked.` });
     fetchLiveData();
+  };
+
+  const fetchMfaStatus = useCallback(async () => {
+    if (!adminSecret) return;
+    try {
+      const data = await fetch(`${window.location.origin}/api/admin/mfa/status`, { headers: apiHeaders }).then(r => r.json());
+      setMfaStatus(data);
+    } catch {}
+  }, [adminSecret]);
+
+  useEffect(() => {
+    if (secTab === "admin") fetchMfaStatus();
+  }, [secTab, fetchMfaStatus]);
+
+  const startMfaSetup = async () => {
+    setMfaLoading(true);
+    try {
+      const data = await fetch(`${window.location.origin}/api/admin/mfa/setup`, { method: "POST", headers: apiHeaders }).then(r => r.json());
+      if (data.secret) { setMfaSetupData(data); setMfaToken(""); }
+      else toast({ title: "Error", description: data.error ?? "Failed to start MFA setup", variant: "destructive" });
+    } catch { toast({ title: "Error", description: "Network error", variant: "destructive" }); }
+    setMfaLoading(false);
+  };
+
+  const verifyMfaToken = async () => {
+    if (!mfaToken || mfaToken.length !== 6) return;
+    setMfaLoading(true);
+    try {
+      const data = await fetch(`${window.location.origin}/api/admin/mfa/verify`, {
+        method: "POST", headers: apiHeaders, body: JSON.stringify({ token: mfaToken }),
+      }).then(r => r.json());
+      if (data.success) {
+        toast({ title: "MFA Activated!", description: "Two-factor authentication is now enabled for your account." });
+        setMfaSetupData(null); setMfaToken(""); fetchMfaStatus();
+      } else {
+        toast({ title: "Invalid Code", description: data.error ?? "Wrong TOTP code. Please try again.", variant: "destructive" });
+      }
+    } catch {}
+    setMfaLoading(false);
+  };
+
+  const disableMfa = async () => {
+    setMfaLoading(true);
+    try {
+      const data = await fetch(`${window.location.origin}/api/admin/mfa/disable`, {
+        method: "DELETE", headers: apiHeaders, body: JSON.stringify({ token: disableToken }),
+      }).then(r => r.json());
+      if (data.success) {
+        toast({ title: "MFA Disabled", description: "Two-factor authentication has been disabled." });
+        setDisableToken(""); fetchMfaStatus();
+      } else {
+        toast({ title: "Error", description: data.error ?? "Failed to disable MFA", variant: "destructive" });
+      }
+    } catch {}
+    setMfaLoading(false);
   };
 
   const val  = (k: string, def = "")   => localValues[k] ?? def;
@@ -2207,6 +2269,60 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
               </div>
             </div>
           )}
+
+          {/* ── Live: MFA / TOTP Setup for Sub-Admins ── */}
+          <SecPanel title="Two-Factor Authentication (MFA)" icon={Shield} color="text-purple-700">
+            {mfaStatus?.note ? (
+              <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
+                <Info className="w-4 h-4 flex-shrink-0" />
+                <span>{mfaStatus.note}</span>
+              </div>
+            ) : mfaStatus?.mfaEnabled ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-700">
+                  <CheckCircle2 className="w-4 h-4" /> MFA is <strong>active</strong> on your account. Your TOTP app is required for every login.
+                </div>
+                <div className="flex gap-2">
+                  <Input value={disableToken} onChange={e => setDisableToken(e.target.value)} placeholder="Enter 6-digit TOTP code to disable MFA" className="h-8 text-xs flex-1 font-mono" maxLength={6} />
+                  <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={disableMfa} disabled={mfaLoading || disableToken.length !== 6}>
+                    {mfaLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Disable MFA"}
+                  </Button>
+                </div>
+              </div>
+            ) : mfaSetupData ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2">
+                  <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>Scan this QR code with <strong>Google Authenticator</strong> or <strong>Authy</strong>, then enter the 6-digit code below to activate MFA.</span>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 items-start">
+                  <img src={mfaSetupData.qrCodeDataUrl} alt="TOTP QR Code" className="w-40 h-40 rounded-xl border border-border shadow" />
+                  <div className="flex-1 space-y-2">
+                    <p className="text-xs font-semibold text-foreground">Manual Entry Key:</p>
+                    <div className="bg-muted rounded-lg p-2 font-mono text-xs break-all text-foreground select-all">{mfaSetupData.secret}</div>
+                    <p className="text-[10px] text-muted-foreground">Can't scan? Enter this key manually in your authenticator app.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Input value={mfaToken} onChange={e => setMfaToken(e.target.value.replace(/\D/g, ""))} placeholder="Enter 6-digit code from app" className="h-9 text-sm flex-1 font-mono tracking-widest text-center" maxLength={6} onKeyDown={e => e.key === "Enter" && verifyMfaToken()} />
+                  <Button className="h-9 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={verifyMfaToken} disabled={mfaLoading || mfaToken.length !== 6}>
+                    {mfaLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Activate MFA"}
+                  </Button>
+                  <Button variant="outline" className="h-9 text-xs" onClick={() => setMfaSetupData(null)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                  <AlertTriangle className="w-4 h-4" /> MFA is <strong>not enabled</strong> for your account. We strongly recommend enabling it.
+                </div>
+                <Button size="sm" className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white gap-2" onClick={startMfaSetup} disabled={mfaLoading}>
+                  {mfaLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />}
+                  Set Up Authenticator App
+                </Button>
+              </div>
+            )}
+          </SecPanel>
 
           <SecPanel title="Admin Access Control" icon={Users} color="text-purple-700">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">

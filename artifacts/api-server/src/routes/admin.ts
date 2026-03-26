@@ -28,6 +28,7 @@ import {
   unlockPhone,
   invalidateSettingsCache,
 } from "../middleware/security.js";
+import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri } from "../services/totp.js";
 
 /* ── Default Platform Settings ── */
 export const DEFAULT_PLATFORM_SETTINGS = [
@@ -337,6 +338,31 @@ async function adminAuth(req: Request, res: Response, next: NextFunction) {
         addAuditEntry({ action: "admin_token_expired", ip, adminId: sub.id, details: `Admin token expired for ${sub.name} (${tokenHrs}h limit)`, result: "fail" });
         res.status(401).json({ error: `Admin session expired after ${tokenHrs} hours. Please re-authenticate.` });
         return;
+      }
+    }
+
+    /* ── TOTP / MFA check ── */
+    const mfaEnabled   = settings["security_mfa_required"] === "on";
+    const totpEnabled  = sub.totpEnabled && sub.totpSecret;
+    if (mfaEnabled && totpEnabled) {
+      const totpHeader = String(req.headers["x-admin-totp"] || "");
+      /* Allow MFA setup endpoints without TOTP check */
+      const isMfaRoute = req.url.includes("/mfa/");
+      if (!isMfaRoute) {
+        if (!totpHeader) {
+          res.status(401).json({
+            error: "MFA required. Please provide your TOTP code in the x-admin-totp header.",
+            mfaRequired: true,
+          });
+          return;
+        }
+        const valid = verifyTotpToken(totpHeader, sub.totpSecret!);
+        if (!valid) {
+          addAuditEntry({ action: "admin_totp_failed", ip, adminId: sub.id, details: `Invalid TOTP for ${sub.name}`, result: "fail" });
+          addSecurityEvent({ type: "invalid_admin_totp", ip, userId: sub.id, details: `Wrong TOTP code used by ${sub.name}`, severity: "high" });
+          res.status(401).json({ error: "Invalid TOTP code. Please try again with your authenticator app." });
+          return;
+        }
       }
     }
 
@@ -1664,6 +1690,126 @@ router.get("/security-dashboard", adminAuth, async (_req, res) => {
 router.post("/invalidate-cache", adminAuth, (_req, res) => {
   invalidateSettingsCache();
   res.json({ success: true, message: "Settings cache invalidated. New security settings will be applied immediately." });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   TOTP / MFA ENDPOINTS
+   Sub-admins can set up Google Authenticator / Authy for their account.
+   Super admin is not required to use TOTP (secret key is the master).
+═══════════════════════════════════════════════════════════════ */
+
+/* GET /admin/mfa/status — check if MFA is set up for the current sub-admin */
+router.get("/mfa/status", adminAuth, async (req, res) => {
+  const adminId = (req as any).adminId;
+  if (!adminId) {
+    res.json({ mfaEnabled: false, note: "Super admin does not use TOTP." });
+    return;
+  }
+  const [admin] = await db.select().from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
+  if (!admin) { res.status(404).json({ error: "Admin account not found" }); return; }
+  res.json({
+    mfaEnabled: admin.totpEnabled,
+    totpConfigured: !!admin.totpSecret,
+  });
+});
+
+/* POST /admin/mfa/setup — generate a TOTP secret and QR code (step 1 of MFA setup) */
+router.post("/mfa/setup", adminAuth, async (req, res) => {
+  const adminId   = (req as any).adminId;
+  const adminName = (req as any).adminName ?? "Admin";
+  if (!adminId) {
+    res.status(400).json({ error: "Super admin does not need TOTP setup." });
+    return;
+  }
+
+  const secret    = generateTotpSecret();
+  const qrCodeUrl = await generateQRCodeDataURL(secret, adminName);
+  const otpUri    = getTotpUri(secret, adminName);
+
+  /* Store secret but don't enable TOTP yet — must be verified first */
+  await db.update(adminAccountsTable)
+    .set({ totpSecret: secret, totpEnabled: false })
+    .where(eq(adminAccountsTable.id, adminId));
+
+  addAuditEntry({ action: "mfa_setup_initiated", ip: (req as any).adminIp, adminId, details: `MFA setup started for ${adminName}`, result: "success" });
+
+  res.json({
+    secret,
+    otpUri,
+    qrCodeDataUrl: qrCodeUrl,
+    instructions: "Scan the QR code with Google Authenticator or Authy. Then call POST /admin/mfa/verify with a valid token to activate MFA.",
+  });
+});
+
+/* POST /admin/mfa/verify — verify a TOTP token to activate MFA */
+router.post("/mfa/verify", adminAuth, async (req, res) => {
+  const adminId   = (req as any).adminId;
+  const adminName = (req as any).adminName ?? "Admin";
+  if (!adminId) {
+    res.status(400).json({ error: "Super admin does not use TOTP." });
+    return;
+  }
+
+  const { token } = req.body as { token: string };
+  if (!token) {
+    res.status(400).json({ error: "token is required" });
+    return;
+  }
+
+  const [admin] = await db.select().from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
+  if (!admin || !admin.totpSecret) {
+    res.status(400).json({ error: "TOTP not set up yet. Call POST /admin/mfa/setup first." });
+    return;
+  }
+
+  if (admin.totpEnabled) {
+    res.json({ success: true, message: "MFA is already active." });
+    return;
+  }
+
+  const valid = verifyTotpToken(token, admin.totpSecret);
+  if (!valid) {
+    addAuditEntry({ action: "mfa_verify_failed", ip: (req as any).adminIp, adminId, details: `MFA verify failed for ${adminName}`, result: "fail" });
+    res.status(401).json({ error: "Invalid TOTP token. Please try again." });
+    return;
+  }
+
+  await db.update(adminAccountsTable)
+    .set({ totpEnabled: true })
+    .where(eq(adminAccountsTable.id, adminId));
+
+  addAuditEntry({ action: "mfa_activated", ip: (req as any).adminIp, adminId, details: `MFA activated for ${adminName}`, result: "success" });
+
+  res.json({ success: true, message: "MFA successfully activated. You must now provide x-admin-totp with every request when global MFA is enabled." });
+});
+
+/* DELETE /admin/mfa/disable — disable MFA (requires current valid TOTP or super admin) */
+router.delete("/mfa/disable", adminAuth, async (req, res) => {
+  const adminId   = (req as any).adminId;
+  const adminName = (req as any).adminName ?? "Admin";
+  if (!adminId) {
+    res.status(400).json({ error: "Super admin does not use TOTP." });
+    return;
+  }
+
+  const { token } = req.body as { token?: string };
+  const [admin]   = await db.select().from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+
+  if (admin.totpEnabled && admin.totpSecret) {
+    if (!token || !verifyTotpToken(token, admin.totpSecret)) {
+      res.status(401).json({ error: "Valid TOTP token required to disable MFA." });
+      return;
+    }
+  }
+
+  await db.update(adminAccountsTable)
+    .set({ totpSecret: null, totpEnabled: false })
+    .where(eq(adminAccountsTable.id, adminId));
+
+  addAuditEntry({ action: "mfa_disabled", ip: (req as any).adminIp, adminId, details: `MFA disabled for ${adminName}`, result: "warn" });
+
+  res.json({ success: true, message: "MFA has been disabled for your account." });
 });
 
 export default router;

@@ -2,6 +2,71 @@ import type { Request, Response, NextFunction } from "express";
 import { getPlatformSettings } from "../routes/admin.js";
 
 /* ══════════════════════════════════════════════════════════════
+   TOR EXIT NODE DETECTION
+   Fetches the public TOR exit node list every hour (free, no API key).
+   Source: https://check.torproject.org/torbulkexitlist
+══════════════════════════════════════════════════════════════ */
+let torExitNodes: Set<string> = new Set();
+let torListFetchedAt = 0;
+const TOR_LIST_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+async function refreshTorExitNodes(): Promise<void> {
+  try {
+    const resp = await fetch("https://check.torproject.org/torbulkexitlist", {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) return;
+    const text = await resp.text();
+    const ips = text.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+    torExitNodes = new Set(ips);
+    torListFetchedAt = Date.now();
+    console.log(`[TOR] Refreshed exit node list: ${torExitNodes.size} nodes`);
+  } catch (err: any) {
+    console.warn(`[TOR] Failed to fetch exit node list: ${err.message}`);
+  }
+}
+
+async function isTorExitNode(ip: string): Promise<boolean> {
+  if (Date.now() - torListFetchedAt > TOR_LIST_TTL_MS) {
+    await refreshTorExitNodes();
+  }
+  return torExitNodes.has(ip);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VPN / PROXY DETECTION
+   Uses ip-api.com free tier — returns proxy/hosting flags.
+   Rate limit: 45 requests/minute (per IP of our server). We cache
+   results for 10 minutes to stay well within limits.
+══════════════════════════════════════════════════════════════ */
+const vpnCache: Map<string, { isVpn: boolean; cachedAt: number }> = new Map();
+const VPN_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+async function isVpnOrProxy(ip: string): Promise<boolean> {
+  const cached = vpnCache.get(ip);
+  if (cached && Date.now() - cached.cachedAt < VPN_CACHE_TTL_MS) {
+    return cached.isVpn;
+  }
+
+  if (ip === "unknown" || ip.startsWith("127.") || ip.startsWith("::1") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("172.")) {
+    return false;
+  }
+
+  try {
+    const resp = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,proxy,hosting`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json() as any;
+    const isVpn = data.status === "success" && (data.proxy === true || data.hosting === true);
+    vpnCache.set(ip, { isVpn, cachedAt: Date.now() });
+    return isVpn;
+  } catch {
+    return false;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    IN-MEMORY STORES
 ══════════════════════════════════════════════════════════════ */
 
@@ -173,6 +238,29 @@ export async function rateLimitMiddleware(req: Request, res: Response, next: Nex
   }
 
   const settings = await getCachedSettings();
+
+  /* TOR exit node check */
+  if (settings["security_block_tor"] === "on") {
+    const isTor = await isTorExitNode(ip);
+    if (isTor) {
+      blockedIPs.add(ip);
+      addSecurityEvent({ type: "tor_access_blocked", ip, details: `TOR exit node blocked from ${req.url}`, severity: "high" });
+      addAuditEntry({ action: "tor_block", ip, details: `Blocked TOR exit node IP`, result: "warn" });
+      res.status(403).json({ error: "Access via TOR is not permitted." });
+      return;
+    }
+  }
+
+  /* VPN / Proxy check */
+  if (settings["security_block_vpn"] === "on") {
+    const isVpn = await isVpnOrProxy(ip);
+    if (isVpn) {
+      addSecurityEvent({ type: "vpn_access_blocked", ip, details: `VPN/proxy IP blocked from ${req.url}`, severity: "medium" });
+      res.status(403).json({ error: "Access via VPN or proxy is not permitted." });
+      return;
+    }
+  }
+
   const roleKey = getRoleKey(req);
 
   let limitPerMin: number;

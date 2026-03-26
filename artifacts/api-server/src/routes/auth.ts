@@ -13,6 +13,8 @@ import {
   getClientIp,
   getCachedSettings,
 } from "../middleware/security.js";
+import { sendOtpSMS } from "../services/sms.js";
+import { sendWhatsAppOTP } from "../services/whatsapp.js";
 
 const router: IRouter = Router();
 
@@ -99,10 +101,20 @@ router.post("/send-otp", async (req, res) => {
 
   req.log.info({ phone, otp }, "OTP sent");
 
-  /* In production you'd send SMS here — otp field hidden in prod */
+  /* ── Send OTP via SMS ── */
+  const smsResult = await sendOtpSMS(phone, otp, settings);
+
+  /* ── Also try WhatsApp as a fallback / parallel channel ── */
+  if (settings["integration_whatsapp"] === "on") {
+    sendWhatsAppOTP(phone, otp, settings).catch(err =>
+      req.log.warn({ err: err.message }, "WhatsApp OTP send failed (non-fatal)")
+    );
+  }
+
   const isDev = process.env.NODE_ENV !== "production";
   res.json({
     message: "OTP sent successfully",
+    channel: smsResult.sent ? smsResult.provider : "console",
     ...(isDev ? { otp } : {}),
   });
 });
