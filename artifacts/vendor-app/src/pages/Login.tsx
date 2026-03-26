@@ -13,7 +13,9 @@ const FEATURES = [
 export default function Login() {
   const { login } = useAuth();
   const { config } = usePlatformConfig();
-  const appName = config.platform.appName;
+  const appName           = config.platform.appName;
+  const businessAddress   = config.platform.businessAddress;
+  const vendorEarningsPct = Math.round(100 - (config.platform.vendorCommissionPct ?? 15));
   const [phone, setPhone]     = useState("");
   const [otp, setOtp]         = useState("");
   const [step, setStep]       = useState<"phone" | "otp">("phone");
@@ -95,7 +97,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="relative z-10">
-          <p className="text-orange-200 text-sm">© 2025 {appName} · AJK, Pakistan · 85% commission guaranteed</p>
+          <p className="text-orange-200 text-sm">© 2025 {appName} · {businessAddress} · {vendorEarningsPct}% vendor earnings</p>
         </div>
       </div>
 

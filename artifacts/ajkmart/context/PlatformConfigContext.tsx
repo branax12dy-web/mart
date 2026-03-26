@@ -21,8 +21,15 @@ export interface PlatformConfig {
     privacyUrl: string;
   };
   platform: {
-    supportPhone: string;
     appName: string;
+    appTagline: string;
+    appVersion: string;
+    supportPhone: string;
+    supportEmail: string;
+    supportHours: string;
+    businessAddress: string;
+    socialFacebook: string;
+    socialInstagram: string;
   };
 }
 
@@ -37,7 +44,17 @@ const DEFAULT: PlatformConfig = {
     tncUrl: "",
     privacyUrl: "",
   },
-  platform: { supportPhone: "03001234567", appName: "AJKMart" },
+  platform: {
+    appName: "AJKMart",
+    appTagline: "Your super app for everything",
+    appVersion: "1.0.0",
+    supportPhone: "03001234567",
+    supportEmail: "",
+    supportHours: "Mon–Sat, 8AM–10PM",
+    businessAddress: "Muzaffarabad, AJK, Pakistan",
+    socialFacebook: "",
+    socialInstagram: "",
+  },
 };
 
 interface Ctx {
@@ -90,8 +107,15 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           privacyUrl:      raw.content?.privacyUrl      ?? "",
         },
         platform: {
-          supportPhone: raw.platform?.supportPhone ?? DEFAULT.platform.supportPhone,
-          appName:      raw.platform?.appName      ?? DEFAULT.platform.appName,
+          appName:         raw.platform?.appName         ?? DEFAULT.platform.appName,
+          appTagline:      raw.platform?.appTagline      ?? DEFAULT.platform.appTagline,
+          appVersion:      raw.platform?.appVersion      ?? DEFAULT.platform.appVersion,
+          supportPhone:    raw.platform?.supportPhone    ?? DEFAULT.platform.supportPhone,
+          supportEmail:    raw.platform?.supportEmail    ?? "",
+          supportHours:    raw.platform?.supportHours    ?? DEFAULT.platform.supportHours,
+          businessAddress: raw.platform?.businessAddress ?? DEFAULT.platform.businessAddress,
+          socialFacebook:  raw.platform?.socialFacebook  ?? "",
+          socialInstagram: raw.platform?.socialInstagram ?? "",
         },
       };
       _cached = parsed;

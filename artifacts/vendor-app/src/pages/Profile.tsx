@@ -409,6 +409,24 @@ export default function Profile() {
                 By using {config.platform.appName} Vendor Portal, you agree to our vendor terms.
                 {" "}For support: <a href={`tel:${config.platform.supportPhone}`} className="font-bold text-orange-500">{config.platform.supportPhone}</a>
               </p>
+              {config.platform.supportHours && (
+                <p className="text-xs text-gray-400 text-center">⏰ {config.platform.supportHours}</p>
+              )}
+              {config.platform.supportEmail && (
+                <p className="text-xs text-gray-500 text-center">
+                  ✉️ <a href={`mailto:${config.platform.supportEmail}`} className="text-orange-500 hover:text-orange-700">{config.platform.supportEmail}</a>
+                </p>
+              )}
+              {(config.platform.socialFacebook || config.platform.socialInstagram) && (
+                <div className="flex gap-3 justify-center">
+                  {config.platform.socialFacebook && (
+                    <a href={config.platform.socialFacebook} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800">📘 Facebook</a>
+                  )}
+                  {config.platform.socialInstagram && (
+                    <a href={config.platform.socialInstagram} target="_blank" rel="noopener noreferrer" className="text-xs text-pink-600 hover:text-pink-800">📸 Instagram</a>
+                  )}
+                </div>
+              )}
               {(config.content.tncUrl || config.content.privacyUrl || config.features.chat) && (
                 <div className="flex flex-wrap gap-2 justify-center">
                   {config.content.tncUrl && (
@@ -431,6 +449,7 @@ export default function Profile() {
                   )}
                 </div>
               )}
+              <p className="text-xs text-gray-400 text-center">{config.platform.businessAddress}</p>
             </div>
           </div>
 

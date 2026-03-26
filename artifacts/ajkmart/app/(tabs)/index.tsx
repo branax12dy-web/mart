@@ -379,7 +379,7 @@ export default function HomeScreen() {
               <Text style={styles.hdrTitle}>Kya chahiye aaj?</Text>
               <View style={styles.locRow}>
                 <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.75)" />
-                <Text style={styles.locTxt}>AJK, Pakistan</Text>
+                <Text style={styles.locTxt}>{platformConfig.platform.businessAddress}</Text>
               </View>
             </View>
             <Pressable onPress={() => router.push("/cart")} style={styles.cartBtn}>

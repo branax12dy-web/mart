@@ -64,6 +64,7 @@ const TOGGLE_KEYS = new Set([
 
 const TEXT_KEYS = new Set([
   "app_name","app_status","support_phone",
+  "app_tagline","app_version","support_email","support_hours","business_address","social_facebook","social_instagram",
   "content_banner","content_announcement","content_maintenance_msg","content_support_msg","content_tnc_url","content_privacy_url",
   "api_map_key","api_sms_gateway","api_firebase_key",
   "security_session_days","security_admin_token_hrs","security_rider_token_days",
@@ -2583,6 +2584,119 @@ function renderSection(
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (cat === "general") {
+    const appStatus = localValues["app_status"] ?? "active";
+    const appStatusDirty = dirtyKeys.has("app_status");
+
+    const GENERAL_GROUPS: { label: string; icon: any; keys: string[] }[] = [
+      { label: "App Identity",     icon: Globe,        keys: ["app_name","app_tagline","app_version","app_status"] },
+      { label: "Support Contact",  icon: Phone,        keys: ["support_phone","support_email","support_hours"] },
+      { label: "Business Info",    icon: Building2,    keys: ["business_address"] },
+      { label: "Social Media",     icon: Link,         keys: ["social_facebook","social_instagram"] },
+    ];
+    const GENERAL_LABELS: Record<string,string> = {
+      app_name:         "App Name",
+      app_tagline:      "App Tagline",
+      app_version:      "App Version",
+      app_status:       "App Status",
+      support_phone:    "Support Phone",
+      support_email:    "Support Email",
+      support_hours:    "Support Hours",
+      business_address: "Business Address",
+      social_facebook:  "Facebook Page URL",
+      social_instagram: "Instagram Profile URL",
+    };
+    const GENERAL_PLACEHOLDERS: Record<string,string> = {
+      app_name:         "AJKMart",
+      app_tagline:      "Your super app for everything",
+      app_version:      "1.0.0",
+      support_phone:    "03001234567",
+      support_email:    "support@ajkmart.pk",
+      support_hours:    "Mon–Sat, 8AM–10PM",
+      business_address: "Muzaffarabad, AJK, Pakistan",
+      social_facebook:  "https://facebook.com/ajkmart",
+      social_instagram: "https://instagram.com/ajkmart",
+    };
+    const GENERAL_HINTS: Record<string,string> = {
+      app_name:         "Shown in all three apps — customer, vendor and rider",
+      app_tagline:      "Subtitle on the customer login screen",
+      app_version:      "Shown in customer profile app info footer",
+      support_phone:    "Tappable call button in all 3 apps",
+      support_email:    "Shown in support section (optional — leave blank to hide)",
+      support_hours:    "Shown under Call Support row in all apps",
+      business_address: "Shown on login screen footer (vendor) and profile footer",
+      social_facebook:  "Leave blank to hide the Follow Us row",
+      social_instagram: "Leave blank to hide if Facebook is also blank",
+    };
+
+    return (
+      <div className="space-y-6">
+        {GENERAL_GROUPS.map(grp => (
+          <div key={grp.label} className="space-y-3">
+            <SLabel icon={grp.icon}>{grp.label}</SLabel>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {grp.keys.map(key => {
+                if (key === "app_status") {
+                  const isActive = appStatus === "active";
+                  return (
+                    <div key={key}
+                      onClick={() => handleChange("app_status", isActive ? "maintenance" : "active")}
+                      className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all select-none sm:col-span-2
+                        ${isActive ? "bg-green-50 border-green-200" : "bg-red-50 border-red-300"}
+                        ${appStatusDirty ? "ring-2 ring-amber-300" : ""}`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {isActive
+                          ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+                          : <AlertTriangle className="w-4 h-4 text-red-500" />}
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">
+                            {isActive ? "🟢 App is LIVE" : "🔴 Maintenance Mode"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {isActive ? "All users can access the app normally" : "All apps show the maintenance screen to users"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                        {appStatusDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold hidden sm:flex">CHANGED</Badge>}
+                        <div className={`w-11 h-6 rounded-full relative transition-colors ${isActive ? "bg-green-500" : "bg-red-500"}`}>
+                          <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform ${isActive ? "translate-x-5" : "translate-x-0.5"}`} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                const isDirty = dirtyKeys.has(key);
+                const curVal = localValues[key] ?? "";
+                const isUrl = key.startsWith("social_");
+                return (
+                  <div key={key} className={`rounded-xl border p-3.5 space-y-2 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border"}`}>
+                    <div className="flex items-center gap-2">
+                      {isUrl ? <Link className="w-3.5 h-3.5 text-muted-foreground" /> : <Globe className="w-3.5 h-3.5 text-muted-foreground" />}
+                      <label className="text-sm font-semibold text-foreground flex-1">{GENERAL_LABELS[key] ?? key}</label>
+                      {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+                      {curVal && !isDirty && <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />}
+                    </div>
+                    <Input
+                      type={key === "support_email" ? "email" : "text"}
+                      value={curVal}
+                      onChange={e => handleChange(key, e.target.value)}
+                      placeholder={GENERAL_PLACEHOLDERS[key] ?? ""}
+                      className={`h-9 rounded-lg text-sm ${isDirty ? "border-amber-300 bg-amber-50/40" : ""} ${!curVal ? "border-dashed" : ""}`}
+                    />
+                    {GENERAL_HINTS[key] && <p className="text-[11px] text-muted-foreground">{GENERAL_HINTS[key]}</p>}
+                    <p className="text-[10px] text-muted-foreground/60 font-mono">{key}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

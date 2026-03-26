@@ -547,12 +547,19 @@ export default function ProfileScreen() {
 
   const { config: platformConfig } = usePlatformConfig();
   const platformCfg = {
-    tncUrl:       platformConfig.content.tncUrl,
-    privacyUrl:   platformConfig.content.privacyUrl,
-    supportMsg:   platformConfig.content.supportMsg,
-    supportPhone: platformConfig.platform.supportPhone,
-    appName:      platformConfig.platform.appName,
-    chat:         platformConfig.features.chat,
+    tncUrl:          platformConfig.content.tncUrl,
+    privacyUrl:      platformConfig.content.privacyUrl,
+    supportMsg:      platformConfig.content.supportMsg,
+    supportPhone:    platformConfig.platform.supportPhone,
+    supportEmail:    platformConfig.platform.supportEmail,
+    supportHours:    platformConfig.platform.supportHours,
+    appName:         platformConfig.platform.appName,
+    appTagline:      platformConfig.platform.appTagline,
+    appVersion:      platformConfig.platform.appVersion,
+    businessAddress: platformConfig.platform.businessAddress,
+    socialFacebook:  platformConfig.platform.socialFacebook,
+    socialInstagram: platformConfig.platform.socialInstagram,
+    chat:            platformConfig.features.chat,
   };
 
   const fetchAll = useCallback(async () => {
@@ -734,15 +741,29 @@ export default function ProfileScreen() {
         <SectionCard title="SUPPORT">
           <Row icon="call-outline"
                label="Call Support"
-               sub={platformCfg.chat ? `Call: ${platformCfg.supportPhone}` : (platformCfg.supportMsg || `Call: ${platformCfg.supportPhone}`)}
+               sub={platformCfg.supportHours || `Call: ${platformCfg.supportPhone}`}
                onPress={() => Linking.openURL(`tel:${platformCfg.supportPhone}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
                iconColor="#64748B" iconBg="#F1F5F9" />
+          {platformCfg.supportEmail ? (
+            <Row icon="mail-outline"
+                 label="Email Support"
+                 sub={platformCfg.supportEmail}
+                 onPress={() => Linking.openURL(`mailto:${platformCfg.supportEmail}`).catch(() => showToast(platformCfg.supportEmail, "info"))}
+                 iconColor="#6366F1" iconBg="#EEF2FF" />
+          ) : null}
           {platformCfg.chat && (
             <Row icon="logo-whatsapp"
                  label="Live Chat"
                  sub={platformCfg.supportMsg}
                  onPress={() => Linking.openURL(`https://wa.me/${platformCfg.supportPhone.replace(/^0/, "92")}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
                  iconColor="#25D366" iconBg="#DCFCE7" />
+          )}
+          {(platformCfg.socialFacebook || platformCfg.socialInstagram) && (
+            <Row icon="share-social-outline"
+                 label="Follow Us"
+                 sub={[platformCfg.socialFacebook && "Facebook", platformCfg.socialInstagram && "Instagram"].filter(Boolean).join(" • ")}
+                 onPress={() => Linking.openURL(platformCfg.socialFacebook || platformCfg.socialInstagram).catch(() => {})}
+                 iconColor="#1877F2" iconBg="#EFF6FF" />
           )}
           {platformCfg.tncUrl ? (
             <Row icon="document-text-outline"
@@ -770,7 +791,7 @@ export default function ProfileScreen() {
         <View style={ai.wrap}>
           <View style={ai.logo}><Ionicons name="storefront" size={26} color={C.primary} /></View>
           <Text style={ai.name}>{platformCfg.appName}</Text>
-          <Text style={ai.version}>Version 1.0.0 • AJK, Pakistan 🇵🇰</Text>
+          <Text style={ai.version}>v{platformCfg.appVersion} • {platformCfg.businessAddress}</Text>
         </View>
 
         {/* ── Sign Out ── */}

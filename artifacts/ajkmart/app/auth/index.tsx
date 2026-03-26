@@ -35,7 +35,8 @@ export default function AuthScreen() {
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { config: platformCfg } = usePlatformConfig();
-  const appName = platformCfg.platform.appName;
+  const appName   = platformCfg.platform.appName;
+  const appTagline = platformCfg.platform.appTagline;
 
   const handleSendOtp = async () => {
     setError("");
@@ -82,7 +83,7 @@ export default function AuthScreen() {
             </View>
           </View>
           <Text style={styles.appName}>{appName}</Text>
-          <Text style={styles.tagline}>Your super app for everything</Text>
+          <Text style={styles.tagline}>{appTagline}</Text>
         </View>
 
         <View style={styles.card}>

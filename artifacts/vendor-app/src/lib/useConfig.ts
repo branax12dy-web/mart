@@ -4,9 +4,17 @@ import { apiFetch } from "./api";
 export interface PlatformConfig {
   platform: {
     appName: string;
-    supportPhone: string;
+    appTagline: string;
+    appVersion: string;
     appStatus: "active" | "maintenance";
+    supportPhone: string;
+    supportEmail: string;
+    supportHours: string;
+    businessAddress: string;
+    socialFacebook: string;
+    socialInstagram: string;
     commissionPct: number;
+    vendorCommissionPct: number;
     minOrderAmount: number;
   };
   features: {
@@ -33,7 +41,21 @@ export interface PlatformConfig {
 }
 
 const DEFAULT_CONFIG: PlatformConfig = {
-  platform: { appName: "AJKMart", supportPhone: "03001234567", appStatus: "active", commissionPct: 10, minOrderAmount: 100 },
+  platform: {
+    appName: "AJKMart",
+    appTagline: "Your super app for everything",
+    appVersion: "1.0.0",
+    appStatus: "active",
+    supportPhone: "03001234567",
+    supportEmail: "",
+    supportHours: "Mon–Sat, 8AM–10PM",
+    businessAddress: "Muzaffarabad, AJK, Pakistan",
+    socialFacebook: "",
+    socialInstagram: "",
+    commissionPct: 10,
+    vendorCommissionPct: 15,
+    minOrderAmount: 100,
+  },
   features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
   content: { banner: "", announcement: "", maintenanceMsg: "We're performing scheduled maintenance. Back soon!", supportMsg: "Need help? Chat with us!", tncUrl: "", privacyUrl: "" },
 };
