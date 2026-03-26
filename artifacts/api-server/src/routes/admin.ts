@@ -68,14 +68,37 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "feature_wallet",         value: "on",    label: "Digital Wallet",                category: "features" },
   { key: "feature_referral",       value: "on",    label: "Referral Program",              category: "features" },
   { key: "feature_new_users",      value: "on",    label: "New User Registration",         category: "features" },
+  /* Content & Messaging */
+  { key: "content_banner",         value: "Free delivery on your first order! 🎉", label: "App Banner Text",                      category: "content" },
+  { key: "content_announcement",   value: "",      label: "Announcement Bar (empty = hidden)",    category: "content" },
+  { key: "content_maintenance_msg",value: "We're performing scheduled maintenance. Back soon!", label: "Maintenance Message", category: "content" },
+  { key: "content_support_msg",    value: "Need help? Chat with us!",              label: "Support Chat Greeting",                category: "content" },
+  { key: "content_tnc_url",        value: "",      label: "Terms & Conditions URL",               category: "content" },
+  { key: "content_privacy_url",    value: "",      label: "Privacy Policy URL",                   category: "content" },
+  { key: "feature_chat",           value: "off",   label: "In-App Customer Chat Support",         category: "content" },
+  { key: "feature_live_tracking",  value: "on",    label: "Live Order GPS Tracking",              category: "content" },
+  { key: "feature_reviews",        value: "on",    label: "Customer Reviews & Ratings",           category: "content" },
+  /* Security & API Keys */
+  { key: "security_otp_bypass",    value: "off",   label: "OTP Bypass Mode (Dev Only — DANGER)",  category: "security" },
+  { key: "security_gps_tracking",  value: "on",    label: "GPS Tracking for Riders",              category: "security" },
+  { key: "security_rate_limit",    value: "100",   label: "API Rate Limit (req/min per IP)",      category: "security" },
+  { key: "security_session_days",  value: "30",    label: "Session Expiry (days)",                category: "security" },
+  { key: "api_map_key",            value: "",      label: "Google Maps API Key",                  category: "security" },
+  { key: "api_sms_gateway",        value: "console", label: "SMS Gateway (console / msg91 / twilio)", category: "security" },
+  { key: "api_firebase_key",       value: "",      label: "Firebase Server Key (Push Notifications)", category: "security" },
+  /* Platform Integrations */
+  { key: "integration_payment",    value: "off",   label: "Online Payment Gateway (JazzCash / Easypaisa)", category: "integrations" },
+  { key: "integration_push_notif", value: "off",   label: "Push Notifications (Firebase FCM)",   category: "integrations" },
+  { key: "integration_analytics",  value: "off",   label: "Analytics & Event Tracking",           category: "integrations" },
+  { key: "integration_email",      value: "off",   label: "Email Admin Alerts",                   category: "integrations" },
+  { key: "integration_sentry",     value: "off",   label: "Error Monitoring (Sentry)",            category: "integrations" },
+  { key: "integration_whatsapp",   value: "off",   label: "WhatsApp Business Notifications",      category: "integrations" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {
+  // Always seed missing keys (onConflictDoNothing skips existing ones)
+  await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
   const rows = await db.select().from(platformSettingsTable);
-  if (rows.length === 0) {
-    await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
-    return Object.fromEntries(DEFAULT_PLATFORM_SETTINGS.map(s => [s.key, s.value]));
-  }
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 

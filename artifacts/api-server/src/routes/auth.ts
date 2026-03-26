@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+import { getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,14 @@ router.post("/send-otp", async (req, res) => {
   const { phone } = req.body;
   if (!phone) {
     res.status(400).json({ error: "Phone number is required" });
+    return;
+  }
+
+  /* Check if new-user registration is allowed */
+  const settings = await getPlatformSettings();
+  const existingUser = await db.select().from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
+  if (existingUser.length === 0 && settings["feature_new_users"] === "off") {
+    res.status(403).json({ error: "New user registration is currently disabled. Please contact support." });
     return;
   }
 
@@ -73,14 +82,18 @@ router.post("/verify-otp", async (req, res) => {
     return;
   }
 
+  /* Check OTP bypass mode (admin security setting — dev/testing only) */
+  const authSettings = await getPlatformSettings();
+  const otpBypass = authSettings["security_otp_bypass"] === "on";
+
   /* OTP code check */
-  if (user.otpCode !== otp) {
+  if (!otpBypass && user.otpCode !== otp) {
     res.status(401).json({ error: "Invalid OTP. Please check and try again." });
     return;
   }
 
   /* OTP expiry check */
-  if (user.otpExpiry && new Date() > user.otpExpiry) {
+  if (!otpBypass && user.otpExpiry && new Date() > user.otpExpiry) {
     res.status(401).json({ error: "OTP expired. Please request a new one." });
     return;
   }

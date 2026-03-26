@@ -93,7 +93,21 @@ function HeroCard({ onPress }: { onPress: () => void }) {
 }
 
 /* ─────────────────────────── SERVICE card (Food / Ride) ─────────────────────────── */
-function SvcCard({ onPress, delay, g1, g2, ig1, ig2, icon, title, sub, tag, tagIcon, textC, tagC, tagBg }: any) {
+function SvcCard({ onPress, delay, g1, g2, ig1, ig2, icon, title, sub, tag, tagIcon, textC, tagC, tagBg, disabled }: any) {
+  if (disabled) {
+    return (
+      <View style={[styles.svcWrap, { width: HALF_W }]}>
+        <View style={[styles.svcCard, { backgroundColor: "#F3F4F6", opacity: 0.6 }]}>
+          <Ionicons name={icon} size={26} color="#9CA3AF" style={{ marginBottom: 6 }} />
+          <Text style={[styles.svcTitle, { color: "#9CA3AF" }]}>{title}</Text>
+          <View style={[styles.svcTag, { backgroundColor: "#E5E7EB" }]}>
+            <Ionicons name="close-circle-outline" size={11} color="#6B7280" />
+            <Text style={[styles.svcTagTxt, { color: "#6B7280" }]}>Unavailable</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
   return (
     <Tap onPress={onPress} style={[styles.svcWrap,{ width: HALF_W }]} delay={delay}>
       <LinearGradient colors={[g1,g2]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={styles.svcCard}>
@@ -315,8 +329,23 @@ export default function HomeScreen() {
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
   const hdOp   = useRef(new Animated.Value(0)).current;
 
+  const [features, setFeatures] = useState({
+    mart: true, food: true, rides: true,
+    pharmacy: true, parcel: true, wallet: true,
+    chat: false, liveTracking: true, reviews: true,
+  });
+  const [contentBanner, setContentBanner] = useState("");
+
   useEffect(() => {
     Animated.timing(hdOp, { toValue:1, duration:480, useNativeDriver:true }).start();
+    const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+    fetch(`${API}/platform-config`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.features) setFeatures(f => ({ ...f, ...d.features }));
+        if (d.content?.banner) setContentBanner(d.content.banner);
+      })
+      .catch(() => {});
   }, []);
 
   const quickActions = [
@@ -380,12 +409,21 @@ export default function HomeScreen() {
           <Text style={styles.secSub}>Sab kuch ek jagah</Text>
         </View>
 
+        {/* Announcement Banner */}
+        {contentBanner ? (
+          <View style={styles.announceBanner}>
+            <Ionicons name="megaphone-outline" size={14} color="#1D4ED8" />
+            <Text style={styles.announceTxt} numberOfLines={1}>{contentBanner}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.grid}>
-          <HeroCard onPress={() => router.push("/mart")} />
+          <HeroCard onPress={() => features.mart ? router.push("/mart") : undefined} />
 
           <View style={styles.halfRow}>
             <SvcCard
               onPress={() => router.push("/food")}
+              disabled={!features.food}
               delay={160}
               g1="#FFFBEB" g2="#FEF3C7"
               ig1="#F59E0B" ig2="#FBBF24"
@@ -398,6 +436,7 @@ export default function HomeScreen() {
             />
             <SvcCard
               onPress={() => router.push("/ride")}
+              disabled={!features.rides}
               delay={240}
               g1="#F0FDF4" g2="#DCFCE7"
               ig1="#10B981" ig2="#34D399"
@@ -414,6 +453,7 @@ export default function HomeScreen() {
           <View style={styles.halfRow}>
             <SvcCard
               onPress={() => router.push("/pharmacy")}
+              disabled={!features.pharmacy}
               delay={340}
               g1="#F5F3FF" g2="#EDE9FE"
               ig1="#7C3AED" ig2="#A78BFA"
@@ -426,6 +466,7 @@ export default function HomeScreen() {
             />
             <SvcCard
               onPress={() => router.push("/parcel")}
+              disabled={!features.parcel}
               delay={420}
               g1="#FFFBEB" g2="#FEF3C7"
               ig1="#D97706" ig2="#F59E0B"
@@ -438,7 +479,7 @@ export default function HomeScreen() {
             />
           </View>
 
-          <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} />
+          {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} />}
         </View>
 
         {/* ──── QUICK PILLS ──── */}
@@ -495,6 +536,8 @@ const styles = StyleSheet.create({
   searchFilter: { width:30, height:30, borderRadius:8, backgroundColor:"#F8FAFC", alignItems:"center", justifyContent:"center" },
 
   /* section */
+  announceBanner: { flexDirection:"row", alignItems:"center", gap:8, marginHorizontal:H_PAD, marginBottom:12, backgroundColor:"#EFF6FF", borderRadius:10, paddingHorizontal:12, paddingVertical:8, borderWidth:1, borderColor:"#BFDBFE" },
+  announceTxt: { flex:1, fontFamily:"Inter_500Medium", fontSize:12, color:"#1D4ED8" },
   secRow: { flexDirection:"row", alignItems:"baseline", justifyContent:"space-between", paddingHorizontal:H_PAD, marginTop:20, marginBottom:12 },
   secTitle: { fontFamily:"Inter_700Bold", fontSize:17, color:C.text },
   secSub: { fontFamily:"Inter_400Regular", fontSize:12, color:C.textMuted },

@@ -1,5 +1,5 @@
 # AJKMart Super App — Workspace
-<!-- Last updated: 2026-03-26 — Vendor App enhanced: Wallet module, Analytics, Notifications, improved Bulk Add -->
+<!-- Last updated: 2026-03-26 — Admin Settings: 12 categories (Content, Security, Integrations added), feature flags in customer app, OTP bypass + new_users check in auth -->
 
 ## Project Overview
 
