@@ -1,4 +1,18 @@
 # AJKMart Super App — Workspace
+<!-- Last updated: 2026-03-26 — FEATURE TOGGLES: Full-stack enforcement for all 8 Feature Toggle seeds + professional admin UI.
+  BUG FIXED: Customer app PlatformConfigContext.tsx was only parsing 4 of 11 feature flags (chat/wallet/liveTracking/reviews). Added mart/food/rides/pharmacy/parcel/referral/newUsers — home screen service buttons now correctly enable/disable from admin toggle.
+  API GAPS CLOSED:
+    - orders.ts: feature_mart gate added (line 73) — HTTP 503 when mart service disabled
+    - orders.ts: feature_food gate added (line 76) — HTTP 503 when food delivery disabled
+    - reviews.ts: feature_reviews gate added — HTTP 503 when reviews disabled globally
+  ADMIN RENDERER UPGRADED: Feature Toggles changed from simple 2-col grid to professional full-detail renderer:
+    - Group 1 Core Services: mart/food/rides/pharmacy/parcel — each card shows affected apps, enforcement badge (✅ API Enforced), and red warning banner when OFF
+    - Group 2 Account & Business: wallet/referral/new_users — wallet shows "API + Client", referral shows "📱 Client-Side", new_users shows "✅ API Enforced"
+    - Global status banner: green "All services active" or red "X services disabled" at top
+    - API Enforcement Summary table: 8 rows with feature name, seed key, enforcement type, live on/off status
+  ICONS ADDED: UserPlus, Server (alongside existing icons)
+  ALL 6 SERVICES: Running clean, zero TypeScript errors
+  -->
 <!-- Last updated: 2026-03-26 — CUSTOMER SETTINGS COMPLETE: Full-stack customer management — admin → API → customer app, zero loopholes.
   - New seeds: customer_referral_enabled (on), customer_loyalty_enabled (on), customer_signup_bonus (0)
   - TOGGLE_KEYS updated: customer_referral_enabled + customer_loyalty_enabled added

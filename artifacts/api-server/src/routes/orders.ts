@@ -69,6 +69,14 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: `Minimum order amount is Rs. ${minOrder}` }); return;
   }
 
+  /* ── Service feature gate (admin can disable individual services) ── */
+  if (type === "mart" && (s["feature_mart"] ?? "on") === "off") {
+    res.status(503).json({ error: "Mart grocery service is currently unavailable. Please try again later." }); return;
+  }
+  if (type === "food" && (s["feature_food"] ?? "on") === "off") {
+    res.status(503).json({ error: "Food delivery service is currently unavailable. Please try again later." }); return;
+  }
+
   /* ── Fetch user for fraud checks ── */
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }

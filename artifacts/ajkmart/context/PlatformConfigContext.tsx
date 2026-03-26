@@ -7,8 +7,15 @@ const CACHE_MS = 30_000;
 export interface PlatformConfig {
   appStatus: "active" | "maintenance";
   features: {
-    chat: boolean;
+    mart: boolean;
+    food: boolean;
+    rides: boolean;
+    pharmacy: boolean;
+    parcel: boolean;
     wallet: boolean;
+    referral: boolean;
+    newUsers: boolean;
+    chat: boolean;
     liveTracking: boolean;
     reviews: boolean;
   };
@@ -99,7 +106,7 @@ export interface PlatformConfig {
 
 const DEFAULT: PlatformConfig = {
   appStatus: "active",
-  features: { chat: false, wallet: true, liveTracking: true, reviews: true },
+  features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
   content: {
     showBanner:      true,
     banner:          "Free delivery on your first order! 🎉",
@@ -194,10 +201,17 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
       const parsed: PlatformConfig = {
         appStatus: raw.platform?.appStatus === "maintenance" ? "maintenance" : "active",
         features: {
+          mart:         raw.features?.mart         ?? true,
+          food:         raw.features?.food         ?? true,
+          rides:        raw.features?.rides        ?? true,
+          pharmacy:     raw.features?.pharmacy     ?? true,
+          parcel:       raw.features?.parcel       ?? true,
+          wallet:       raw.features?.wallet       ?? true,
+          referral:     raw.features?.referral     ?? true,
+          newUsers:     raw.features?.newUsers     ?? true,
           chat:         raw.features?.chat         ?? false,
-          wallet:       raw.features?.wallet        ?? true,
-          liveTracking: raw.features?.liveTracking  ?? true,
-          reviews:      raw.features?.reviews       ?? true,
+          liveTracking: raw.features?.liveTracking ?? true,
+          reviews:      raw.features?.reviews      ?? true,
         },
         content: {
           showBanner:      raw.content?.showBanner      ?? true,

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { reviewsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+import { getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -16,6 +17,14 @@ router.post("/", async (req, res) => {
   }
   if (typeof rating !== "number" || rating < 1 || rating > 5) {
     res.status(400).json({ error: "rating must be 1–5" });
+    return;
+  }
+
+  /* ── Feature gate: admin can disable reviews globally ── */
+  const s = await getPlatformSettings();
+  const reviewsEnabled = (s["feature_reviews"] ?? "on") === "on";
+  if (!reviewsEnabled) {
+    res.status(503).json({ error: "Customer reviews are currently disabled." });
     return;
   }
 

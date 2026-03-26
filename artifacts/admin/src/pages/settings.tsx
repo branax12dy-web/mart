@@ -7,7 +7,7 @@ import {
   Loader2, Eye, EyeOff, ExternalLink, ChevronRight,
   Building2, Banknote, Wallet, Phone, FileText, Lock,
   ToggleRight, Settings, RotateCcw, Package,
-  Gift, Star, Percent, ShieldCheck,
+  Gift, Star, Percent, ShieldCheck, UserPlus, Server,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
@@ -2486,13 +2486,174 @@ function renderSection(
     );
   };
 
-  if (cat === "features" || cat === "integrations") {
+  if (cat === "integrations") {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {catSettings.map(s => (
           <Toggle key={s.key} checked={(localValues[s.key] ?? s.value) === "on"}
             onChange={v => handleToggle(s.key, v)} label={s.label} icon={FEATURE_ICONS[s.key]} isDirty={dirtyKeys.has(s.key)} />
         ))}
+      </div>
+    );
+  }
+
+  if (cat === "features") {
+    const fv = (key: string) => (localValues[key] ?? catSettings.find(s => s.key === key)?.value ?? "on") === "on";
+    const FTog = ({ fkey, label, icon, desc, apps, enforcement }: {
+      fkey: string; label: string; icon: string; desc: string; apps: string; enforcement: "api" | "client" | "both";
+    }) => {
+      const on = fv(fkey);
+      return (
+        <div className={`rounded-xl border p-4 transition-all ${on ? "bg-white border-slate-200" : "bg-red-50 border-red-200"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <span className="text-2xl mt-0.5 shrink-0">{icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm text-slate-800">{label}</p>
+                  {enforcement === "api" && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+                      <Server size={9} />API Enforced
+                    </span>
+                  )}
+                  {enforcement === "client" && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                      📱 Client-Side
+                    </span>
+                  )}
+                  {enforcement === "both" && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                      <Server size={9} />API + Client
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">{desc}</p>
+                <p className="text-[10px] text-slate-400 mt-1 font-mono">{apps}</p>
+              </div>
+            </div>
+            <div className="shrink-0 flex flex-col items-center gap-1" onClick={() => handleToggle(fkey, !on)}>
+              <div className={`w-11 h-6 rounded-full relative transition-colors cursor-pointer ${on ? "bg-green-500" : "bg-gray-300"} ${dirtyKeys.has(fkey) ? "ring-2 ring-amber-400" : ""}`}>
+                <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+              </div>
+              <span className={`text-[10px] font-bold ${on ? "text-green-600" : "text-gray-400"}`}>{on ? "ON" : "OFF"}</span>
+            </div>
+          </div>
+          {!on && (
+            <div className="mt-3 pt-3 border-t border-red-200 flex items-center gap-1.5 text-red-600">
+              <AlertTriangle size={11} />
+              <span className="text-[11px] font-medium">Service disabled — all requests blocked by server</span>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const coreServices = [
+      { fkey: "feature_mart",     label: "Mart / Grocery",     icon: "🛒", desc: "Online grocery orders — order placement + wallet payment gated", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+      { fkey: "feature_food",     label: "Food Delivery",      icon: "🍔", desc: "Restaurant food orders — order placement + wallet payment gated", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+      { fkey: "feature_rides",    label: "Taxi & Bike Rides",  icon: "🚗", desc: "All ride bookings blocked when off — ridesEnabled gate in API",   apps: "📱 Customer  •  🏍️ Rider",             enforcement: "api" as const },
+      { fkey: "feature_pharmacy", label: "Pharmacy",           icon: "💊", desc: "Medicine orders blocked at API level — pharmacyEnabled gate",     apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+      { fkey: "feature_parcel",   label: "Parcel Delivery",    icon: "📦", desc: "Parcel shipments blocked at API level — parcelEnabled gate",      apps: "📱 Customer  •  🏍️ Rider",             enforcement: "api" as const },
+    ];
+    const accountFeatures = [
+      { fkey: "feature_wallet",    label: "Digital Wallet",         icon: "💰", desc: "Wallet top-up, send, and all wallet payments across all services", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "both" as const },
+      { fkey: "feature_referral",  label: "Referral Program",       icon: "🎁", desc: "Refer & Earn card visibility + referral bonus tracking in app",    apps: "📱 Customer only",                        enforcement: "client" as const },
+      { fkey: "feature_new_users", label: "New User Registration",  icon: "👤", desc: "Blocks all new sign-ups at auth API — existing users unaffected",  apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+    ];
+
+    const allOn  = [...coreServices, ...accountFeatures].every(f => fv(f.fkey));
+    const anyOff = [...coreServices, ...accountFeatures].some(f => !fv(f.fkey));
+
+    const enforcementRows = [
+      { label: "Mart orders",         key: "feature_mart",     enforced: "✅ API" },
+      { label: "Food orders",         key: "feature_food",     enforced: "✅ API" },
+      { label: "Ride bookings",       key: "feature_rides",    enforced: "✅ API" },
+      { label: "Pharmacy orders",     key: "feature_pharmacy", enforced: "✅ API" },
+      { label: "Parcel shipments",    key: "feature_parcel",   enforced: "✅ API" },
+      { label: "Wallet (all ops)",    key: "feature_wallet",   enforced: "✅ API" },
+      { label: "Referral card/bonus", key: "feature_referral", enforced: "📱 Client" },
+      { label: "New user sign-up",    key: "feature_new_users",enforced: "✅ API" },
+    ];
+
+    return (
+      <div className="space-y-6">
+        {anyOff && (
+          <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+            <AlertTriangle className="text-red-500 shrink-0" size={18} />
+            <div>
+              <p className="font-semibold text-red-700 text-sm">One or more services are currently disabled</p>
+              <p className="text-[12px] text-red-500 mt-0.5">Disabled services return HTTP 503 errors to customers. Save changes to apply.</p>
+            </div>
+          </div>
+        )}
+        {allOn && (
+          <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
+            <CheckCircle2 className="text-green-500 shrink-0" size={18} />
+            <div>
+              <p className="font-semibold text-green-700 text-sm">All services are active and fully operational</p>
+              <p className="text-[12px] text-green-500 mt-0.5">Customers can access all features. Toggles take effect immediately after saving.</p>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <ShoppingCart size={15} className="text-slate-500" />
+            <p className="font-semibold text-sm text-slate-700">Core Services</p>
+            <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">orders / rides / pharmacy / parcel API</span>
+          </div>
+          <div className="space-y-3">
+            {coreServices.map(f => <FTog key={f.fkey} {...f} />)}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <UserPlus size={15} className="text-slate-500" />
+            <p className="font-semibold text-sm text-slate-700">Account & Business</p>
+            <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">wallet / auth / customer API</span>
+          </div>
+          <div className="space-y-3">
+            {accountFeatures.map(f => <FTog key={f.fkey} {...f} />)}
+          </div>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Server size={14} className="text-slate-500" />
+            <p className="font-semibold text-sm text-slate-700">API Enforcement Summary</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-200">
+                  <th className="pb-2 font-semibold">Feature</th>
+                  <th className="pb-2 font-semibold">Seed Key</th>
+                  <th className="pb-2 font-semibold">Enforcement</th>
+                  <th className="pb-2 font-semibold text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {enforcementRows.map(r => (
+                  <tr key={r.key} className="hover:bg-white transition-colors">
+                    <td className="py-2 font-medium text-slate-700">{r.label}</td>
+                    <td className="py-2 font-mono text-slate-400">{r.key}</td>
+                    <td className="py-2 text-slate-500">{r.enforced}</td>
+                    <td className="py-2 text-right">
+                      {fv(r.key)
+                        ? <span className="text-green-600 font-bold">ON</span>
+                        : <span className="text-red-600 font-bold">OFF</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-3">
+            ✅ API Enforced = server returns 503 when disabled, impossible to bypass from client apps. &nbsp;
+            📱 Client-Side = UI hidden/shown based on config, no dedicated API endpoint.
+          </p>
+        </div>
       </div>
     );
   }
