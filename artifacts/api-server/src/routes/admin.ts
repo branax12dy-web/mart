@@ -168,6 +168,13 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "security_compress_images",   value: "on",     label: "Auto-compress Uploaded Images",               category: "security" },
   { key: "security_img_quality",       value: "80",     label: "Image Compression Quality (%)",               category: "security" },
   { key: "security_scan_uploads",      value: "off",    label: "Virus/Malware Scan on Uploads",               category: "security" },
+  /* Upload Use Cases */
+  { key: "upload_payment_proof",       value: "on",     label: "Allow Payment Proof Screenshots",             category: "security" },
+  { key: "upload_kyc_docs",            value: "on",     label: "Allow KYC Identity Documents",               category: "security" },
+  { key: "upload_rider_docs",          value: "on",     label: "Allow Rider CNIC & License Uploads",         category: "security" },
+  { key: "upload_vendor_docs",         value: "on",     label: "Allow Vendor Business Document Uploads",     category: "security" },
+  { key: "upload_product_imgs",        value: "on",     label: "Allow Product / Menu Image Uploads",         category: "security" },
+  { key: "upload_cod_proof",           value: "on",     label: "Allow COD Cash Photo Proof Uploads",         category: "security" },
   /* Fraud Detection */
   { key: "security_fake_order_detect", value: "on",     label: "Fake Order Auto-Detection",                   category: "security" },
   { key: "security_max_daily_orders",  value: "20",     label: "Max Orders per Customer per Day",             category: "security" },

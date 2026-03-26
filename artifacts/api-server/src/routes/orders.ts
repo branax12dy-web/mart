@@ -85,8 +85,10 @@ router.post("/", async (req, res) => {
 
   /* ── Order rule checks ── */
   const minOrder = parseFloat(s["min_order_amount"] ?? "100");
-  if (itemsTotal < minOrder) {
-    res.status(400).json({ error: `Minimum order amount is Rs. ${minOrder}` }); return;
+  const vendorMinOrder = parseFloat(s["vendor_min_order"] ?? "100");
+  const effectiveMinOrder = Math.max(minOrder, vendorMinOrder);
+  if (itemsTotal < effectiveMinOrder) {
+    res.status(400).json({ error: `Minimum order amount is Rs. ${effectiveMinOrder}` }); return;
   }
 
   const maxCart = parseFloat(s["order_max_cart_value"] ?? "50000");

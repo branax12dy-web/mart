@@ -104,6 +104,11 @@ router.post("/update", async (req, res) => {
 
 /* ── GET /locations/:userId — fetch current location ── */
 router.get("/:userId", async (req, res) => {
+  const settings = await getCachedSettings();
+  if ((settings["feature_live_tracking"] ?? "on") === "off") {
+    res.status(503).json({ error: "Live GPS tracking is currently disabled." });
+    return;
+  }
   const [loc] = await db
     .select()
     .from(liveLocationsTable)

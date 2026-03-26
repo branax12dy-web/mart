@@ -38,8 +38,13 @@ router.post("/estimate", async (req, res) => {
   const { pickupLat, pickupLng, dropLat, dropLng, type } = req.body;
   const distance = calcDistance(pickupLat, pickupLng, dropLat, dropLng);
   const fare = await calcFare(distance, type);
+  const s = await getPlatformSettings();
+  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
+  const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
+  const gstAmount  = gstEnabled ? parseFloat(((fare * gstPct) / 100).toFixed(2)) : 0;
+  const total      = fare + gstAmount;
   const duration = `${Math.round(distance * 3 + 5)} min`;
-  res.json({ distance: Math.round(distance * 10) / 10, fare, duration, type });
+  res.json({ distance: Math.round(distance * 10) / 10, fare, gstAmount, total, duration, type });
 });
 
 router.post("/", async (req, res) => {
@@ -69,6 +74,19 @@ router.post("/", async (req, res) => {
   const distance = pickupLat && dropLat ? calcDistance(pickupLat, pickupLng, dropLat, dropLng) : 5;
   const fare = await calcFare(distance, type);
 
+  /* ── GST (Finance settings) ── */
+  const gstEnabled  = (s["finance_gst_enabled"] ?? "off") === "on";
+  const gstPct      = parseFloat(s["finance_gst_pct"] ?? "17");
+  const gstAmount   = gstEnabled ? parseFloat(((fare * gstPct) / 100).toFixed(2)) : 0;
+  const totalFare   = fare + gstAmount;
+
+  /* ── Online payment limits ── */
+  const minOnline = parseFloat(s["payment_min_online"] ?? "50");
+  const maxOnline = parseFloat(s["payment_max_online"] ?? "100000");
+  if (paymentMethod === "wallet" && (totalFare < minOnline || totalFare > maxOnline)) {
+    res.status(400).json({ error: `Wallet payment total must be between Rs. ${minOnline} and Rs. ${maxOnline}` }); return;
+  }
+
   // Wallet payment → deduct atomically inside DB transaction (prevents race condition)
   if (paymentMethod === "wallet") {
     const walletEnabled = (s["feature_wallet"] ?? "on") === "on";
@@ -82,16 +100,16 @@ router.post("/", async (req, res) => {
         if (!user) throw new Error("User not found");
 
         const balance = parseFloat(user.walletBalance ?? "0");
-        if (balance < fare) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${fare}`);
+        if (balance < totalFare) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${totalFare.toFixed(0)}`);
 
-        const newBalance = (balance - fare).toFixed(2);
+        const newBalance = (balance - totalFare).toFixed(2);
         await tx.update(usersTable).set({ walletBalance: newBalance }).where(eq(usersTable.id, userId));
         await tx.insert(walletTransactionsTable).values({
           id: generateId(),
           userId,
           type: "debit",
-          amount: fare.toFixed(2),
-          description: `${type === "bike" ? "Bike" : "Car"} ride payment`,
+          amount: totalFare.toFixed(2),
+          description: `${type === "bike" ? "Bike" : "Car"} ride payment (fare + GST)`,
         });
 
         const [ride] = await tx.insert(ridesTable).values({
@@ -105,7 +123,7 @@ router.post("/", async (req, res) => {
           pickupLng: pickupLng?.toString(),
           dropLat: dropLat?.toString(),
           dropLng: dropLng?.toString(),
-          fare: fare.toString(),
+          fare: totalFare.toString(),
           distance: (Math.round(distance * 10) / 10).toString(),
           paymentMethod,
         }).returning();
@@ -116,7 +134,7 @@ router.post("/", async (req, res) => {
         id: generateId(),
         userId,
         title: `${type === "bike" ? "Bike" : "Car"} Ride Booked`,
-        body: `Aapki ride book ho gayi. Rider dhundha ja raha hai. Fare: Rs. ${fare}`,
+        body: `Aapki ride book ho gayi. Rider dhundha ja raha hai. Fare: Rs. ${totalFare.toFixed(0)}`,
         type: "ride",
         icon: type === "bike" ? "bicycle-outline" : "car-outline",
         link: `/ride`,
@@ -125,6 +143,8 @@ router.post("/", async (req, res) => {
       res.status(201).json({
         ...rideResult,
         fare: parseFloat(rideResult.fare),
+        baseFare: fare,
+        gstAmount,
         distance: parseFloat(rideResult.distance),
         createdAt: rideResult.createdAt.toISOString(),
       });
@@ -146,7 +166,7 @@ router.post("/", async (req, res) => {
     pickupLng: pickupLng?.toString(),
     dropLat: dropLat?.toString(),
     dropLng: dropLng?.toString(),
-    fare: fare.toString(),
+    fare: totalFare.toString(),
     distance: (Math.round(distance * 10) / 10).toString(),
     paymentMethod,
   }).returning();
@@ -155,7 +175,7 @@ router.post("/", async (req, res) => {
     id: generateId(),
     userId,
     title: `${type === "bike" ? "Bike" : "Car"} Ride Booked`,
-    body: `Aapki ride book ho gayi. Rider dhundha ja raha hai. Fare: Rs. ${fare}`,
+    body: `Aapki ride book ho gayi. Rider dhundha ja raha hai. Fare: Rs. ${totalFare.toFixed(0)}`,
     type: "ride",
     icon: type === "bike" ? "bicycle-outline" : "car-outline",
     link: `/ride`,
@@ -164,6 +184,8 @@ router.post("/", async (req, res) => {
   res.status(201).json({
     ...ride!,
     fare: parseFloat(ride!.fare),
+    baseFare: fare,
+    gstAmount,
     distance: parseFloat(ride!.distance),
     createdAt: ride!.createdAt.toISOString(),
   });
