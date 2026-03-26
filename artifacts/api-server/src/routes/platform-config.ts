@@ -146,6 +146,16 @@ router.get("/", async (_req, res) => {
       vendorSettleDays:      parseInt(s["vendor_settlement_days"]    ?? "7"),
       referralBonus:         parseFloat(s["customer_referral_bonus"] ?? "100"),
     },
+    rider: {
+      keepPct:            parseFloat(s["rider_keep_pct"]            ?? "80"),
+      bonusPerTrip:       parseFloat(s["rider_bonus_per_trip"]      ?? "0"),
+      minPayout:          parseFloat(s["rider_min_payout"]          ?? "500"),
+      maxPayout:          parseFloat(s["rider_max_payout"]          ?? "50000"),
+      maxDeliveries:      parseInt(s["rider_max_deliveries"]        ?? "3"),
+      cashAllowed:        (s["rider_cash_allowed"]                  ?? "on")  === "on",
+      withdrawalEnabled:  (s["rider_withdrawal_enabled"]            ?? "on")  === "on",
+      autoApprove:        (s["rider_auto_approve"]                  ?? "off") === "on",
+    },
     vendor: {
       commissionPct:      parseFloat(s["vendor_commission_pct"]     ?? "15"),
       settleDays:         parseInt(s["vendor_settlement_days"]       ?? "7"),

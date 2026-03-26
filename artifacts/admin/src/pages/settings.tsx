@@ -44,7 +44,8 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
 const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
   "feature_parcel","feature_wallet","feature_referral","feature_new_users",
-  "rider_cash_allowed","vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
+  "rider_cash_allowed","rider_auto_approve","rider_withdrawal_enabled",
+  "vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
   "feature_chat","feature_live_tracking","feature_reviews",
   "security_otp_bypass","security_mfa_required","security_multi_device","security_gps_tracking",
   "security_geo_fence","security_spoof_detection","security_block_tor","security_block_vpn",
@@ -3276,6 +3277,214 @@ function renderSection(
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  /* ─────────────────────────── RIDER SETTINGS RENDERER ─────────────────────────── */
+  if (cat === "rider") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+
+    const keepPct      = parseFloat(v("rider_keep_pct")         || "80");
+    const bonusPerTrip = parseFloat(v("rider_bonus_per_trip")    || "0");
+    const minPayout    = parseFloat(v("rider_min_payout")        || "500");
+    const maxPayout    = parseFloat(v("rider_max_payout")        || "50000");
+    const maxDeliveries= parseInt(v("rider_max_deliveries")      || "3");
+    const autoApprove  = v("rider_auto_approve") === "on";
+    const cashAllowed  = v("rider_cash_allowed") !== "off";
+    const withdrawOn   = v("rider_withdrawal_enabled") !== "off";
+
+    const platKeep     = Math.round(100 - keepPct);
+    const sampleFee    = 100; // sample delivery fee
+    const riderEarns   = parseFloat((sampleFee * keepPct / 100).toFixed(2));
+    const platEarns    = parseFloat((sampleFee * platKeep / 100).toFixed(2));
+
+    const RField = ({ k, label, suffix, hint }: { k: string; label: string; suffix?: string; hint?: string }) => {
+      const isDirty = d(k);
+      return (
+        <div className={`rounded-xl border p-4 space-y-2.5 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-semibold text-foreground">{label}</label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+          </div>
+          {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+          <div className="relative">
+            <Input type="number" min={0} value={v(k)} onChange={e => handleChange(k, e.target.value)}
+              className={`h-10 rounded-xl ${suffix ? "pr-16" : ""} ${isDirty ? "border-amber-300 bg-amber-50/50 ring-1 ring-amber-200" : ""}`}
+            />
+            {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">{suffix}</span>}
+          </div>
+          <p className="text-[10px] text-muted-foreground font-mono">{k}</p>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+
+        {/* ── Group 1: Onboarding & Registration ── */}
+        <div className="space-y-3">
+          <SLabel icon={Bike}>Onboarding & Registration</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Control how new rider accounts are activated on the platform</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Toggle
+              checked={autoApprove} isDirty={d("rider_auto_approve")}
+              onChange={val => handleToggle("rider_auto_approve", val)}
+              label="Auto-Approve New Riders"
+              sub={autoApprove ? "New riders are immediately active — no review needed" : "New rider accounts need manual admin approval from Users panel"}
+            />
+          </div>
+          {!autoApprove && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start gap-2">
+              <Shield className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-blue-700 leading-relaxed">
+                <strong>Manual Review:</strong> New rider accounts are set to <em>inactive</em> by default. Go to the Users panel and activate each rider manually before they can log in and accept deliveries.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Group 2: Earnings & Compensation ── */}
+        <div className="space-y-3 border-t border-border/40 pt-5">
+          <SLabel icon={Zap}>Earnings & Compensation</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">What riders earn per delivery and any per-trip bonus on top</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <RField k="rider_keep_pct" label="Rider Earnings % (of fare)" suffix="%" hint="Rider keeps this % of the delivery fee or ride fare earned" />
+            <RField k="rider_bonus_per_trip" label="Bonus Per Trip (Rs.)" suffix="Rs." hint="Fixed bonus credited for every completed delivery or ride — set 0 to disable" />
+          </div>
+
+          {/* Earnings Split Visualizer */}
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100 rounded-xl p-4">
+            <p className="text-xs font-bold text-green-700 mb-3">💡 Live Earnings Preview — Rs. {sampleFee} delivery fee</p>
+            <div className="flex rounded-lg overflow-hidden h-8 mb-2.5 shadow-sm">
+              <div className="flex items-center justify-center text-xs font-extrabold text-white" style={{ width: `${keepPct}%`, background: "linear-gradient(90deg,#16a34a,#22c55e)" }}>
+                {keepPct}% Rider
+              </div>
+              <div className="flex items-center justify-center text-xs font-extrabold text-white" style={{ width: `${platKeep}%`, background: "linear-gradient(90deg,#1d4ed8,#3b82f6)" }}>
+                {platKeep}%
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-lg p-3 border border-green-100 text-center">
+                <p className="text-lg font-extrabold text-green-600">Rs. {riderEarns}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Rider earns ({keepPct}%){bonusPerTrip > 0 ? ` + Rs.${bonusPerTrip} bonus` : ""}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-blue-100 text-center">
+                <p className="text-lg font-extrabold text-blue-600">Rs. {platEarns}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Platform keeps ({platKeep}%)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Group 3: Payout Rules ── */}
+        <div className="space-y-3 border-t border-border/40 pt-5">
+          <SLabel icon={Banknote}>Payout Rules</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Minimum and maximum withdrawal limits per request</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <RField k="rider_min_payout" label="Minimum Payout Request (Rs.)" suffix="Rs." hint="Rider cannot submit a withdrawal below this amount" />
+            <RField k="rider_max_payout" label="Maximum Single Payout (Rs.)" suffix="Rs." hint="Cap per withdrawal request — prevents large one-time draws" />
+          </div>
+          {minPayout > maxPayout && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <p className="text-xs text-red-700 font-semibold">⚠️ Minimum payout (Rs. {minPayout}) is greater than maximum (Rs. {maxPayout}). Please fix this — withdrawals will be blocked.</p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Group 4: Operational Limits ── */}
+        <div className="space-y-3 border-t border-border/40 pt-5">
+          <SLabel icon={ShoppingCart}>Operational Limits</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Platform-wide limits enforced at the API level for all riders</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <RField k="rider_max_deliveries" label="Max Active Deliveries" suffix="#" hint="Maximum simultaneous deliveries/rides a rider can accept — enforced at accept time" />
+            <RField k="rider_acceptance_km" label="Acceptance Radius" suffix="KM" hint="Max distance (km) from rider's location to accept an order or ride" />
+          </div>
+          <div className="bg-gray-50 rounded-xl p-3 flex items-start gap-2">
+            <Package className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Max active deliveries is enforced server-side — a rider trying to accept order #{maxDeliveries + 1} while already carrying {maxDeliveries} will get a clear error message. Applies to both orders and rides combined.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Group 5: Feature Controls ── */}
+        <div className="space-y-3 border-t border-border/40 pt-5">
+          <SLabel icon={ToggleRight}>Feature Controls</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Enable or disable specific rider portal features</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Toggle
+              checked={cashAllowed} isDirty={d("rider_cash_allowed")}
+              onChange={val => handleToggle("rider_cash_allowed", val)}
+              label="Allow Cash-on-Delivery Orders"
+              sub={cashAllowed ? "Riders see COD orders in their request feed" : "Cash orders hidden — rider app shows a disabled notice"}
+            />
+            <Toggle
+              checked={withdrawOn} isDirty={d("rider_withdrawal_enabled")}
+              onChange={val => handleToggle("rider_withdrawal_enabled", val)}
+              label="Riders Can Submit Withdrawals"
+              sub={withdrawOn ? "Withdraw button is active in rider wallet" : "Wallet shows 'Withdrawals Paused' — API also blocks requests"}
+              danger={!withdrawOn}
+            />
+          </div>
+          {!withdrawOn && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-700 leading-relaxed">
+                <strong>Withdrawals are off.</strong> Riders see a "Paused" notice and a red banner in their wallet. The API returns 403 if they attempt a withdrawal anyway. Turn on to resume payouts.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Earnings Simulation Table ── */}
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={BarChart3}>Rider Earnings Simulation</SLabel>
+          <p className="text-xs text-muted-foreground mb-3 -mt-1">Live preview of rider take-home for different delivery fee amounts at current settings</p>
+          <div className="overflow-hidden rounded-xl border border-border bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-border">
+                <tr>
+                  <th className="text-left px-4 py-2.5 text-xs font-bold text-muted-foreground">Delivery Fee</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-bold text-muted-foreground">Rider Earns ({keepPct}%)</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-bold text-muted-foreground">+ Bonus</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-bold text-muted-foreground">Total per Trip</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {[50, 80, 100, 150, 200].map(fee => {
+                  const earn = parseFloat((fee * keepPct / 100).toFixed(2));
+                  const total = parseFloat((earn + bonusPerTrip).toFixed(2));
+                  return (
+                    <tr key={fee} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-4 py-2.5 text-muted-foreground">Rs. {fee}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-green-600">Rs. {earn}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-blue-600">{bonusPerTrip > 0 ? `+ Rs. ${bonusPerTrip}` : "—"}</td>
+                      <td className="px-4 py-2.5 text-right font-extrabold text-emerald-700">Rs. {total}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="bg-gray-50 border-t border-border px-4 py-3 grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-[10px] text-muted-foreground font-medium">Max Deliveries</p>
+                <p className="text-sm font-extrabold text-foreground">{maxDeliveries} at once</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground font-medium">Min Payout</p>
+                <p className="text-sm font-extrabold text-foreground">Rs. {minPayout.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground font-medium">Max Payout</p>
+                <p className="text-sm font-extrabold text-foreground">Rs. {maxPayout.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     );
   }

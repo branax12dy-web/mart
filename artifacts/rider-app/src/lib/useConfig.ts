@@ -2,6 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 
 export interface PlatformConfig {
+  rider?: {
+    keepPct: number;
+    bonusPerTrip: number;
+    minPayout: number;
+    maxPayout: number;
+    maxDeliveries: number;
+    cashAllowed: boolean;
+    withdrawalEnabled: boolean;
+    autoApprove: boolean;
+  };
   platform: {
     appName: string;
     appTagline: string;

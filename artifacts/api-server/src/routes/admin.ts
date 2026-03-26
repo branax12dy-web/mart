@@ -94,6 +94,9 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "rider_bonus_per_trip",   value: "0",     label: "Bonus Per Trip (Rs.)",          category: "rider" },
   { key: "rider_min_payout",       value: "500",   label: "Minimum Payout (Rs.)",          category: "rider" },
   { key: "rider_cash_allowed",     value: "on",    label: "Allow Cash Payments",           category: "rider" },
+  { key: "rider_auto_approve",     value: "off",   label: "Auto-Approve New Riders",        category: "rider" },
+  { key: "rider_withdrawal_enabled", value: "on",  label: "Riders Can Submit Withdrawals",  category: "rider" },
+  { key: "rider_max_payout",       value: "50000", label: "Maximum Single Payout (Rs.)",   category: "rider" },
   /* Vendor Role Settings */
   { key: "vendor_commission_pct",      value: "15",     label: "Vendor Platform Commission (%)",         category: "vendor" },
   { key: "vendor_min_order",           value: "100",    label: "Platform Default Min Order (Rs.)",       category: "vendor" },

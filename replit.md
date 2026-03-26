@@ -1,4 +1,19 @@
 # AJKMart Super App — Workspace
+<!-- Last updated: 2026-03-26 — RIDER SETTINGS COMPLETE: Full-stack rider management — admin → API → rider app, zero loopholes.
+  - New seeds: rider_auto_approve (off), rider_withdrawal_enabled (on), rider_max_payout (50000)
+  - TOGGLE_KEYS updated: rider_auto_approve + rider_withdrawal_enabled added
+  - platform-config API: rider block added with 8 fields: keepPct, bonusPerTrip, minPayout, maxPayout, maxDeliveries, cashAllowed, withdrawalEnabled, autoApprove
+  - Admin Rider Settings: 5-group professional renderer — Onboarding (auto_approve + manual review card), Earnings & Compensation (keepPct + bonusPerTrip + live green/blue split visualizer with bonus preview), Payout Rules (min/max with min>max validation error), Operational Limits (maxDeliveries + acceptanceKm + API enforcement note), Feature Controls (cashAllowed toggle + withdrawalEnabled with danger state + amber warning), Earnings Simulation Table (Rs.50/80/100/150/200 delivery fees showing rider earnings + bonus + total)
+  - API enforcement in rider.ts:
+    * POST /rider/orders/:id/accept: checks active order+ride count vs rider_max_deliveries (429 if limit hit)
+    * POST /rider/rides/:id/accept: same max deliveries check
+    * PATCH /rider/orders/:id/status (delivered): applies rider_bonus_per_trip as separate "bonus" wallet transaction
+    * PATCH /rider/rides/:id/status (completed): same bonus per trip
+    * POST /rider/wallet/withdraw: checks rider_withdrawal_enabled (403), uses dynamic rider_min_payout + rider_max_payout (no hardcoded 500 anymore)
+  - rider-app/useConfig.ts: rider? block added to interface and used with optional chaining throughout
+  - rider-app/Wallet.tsx: uses config.rider?.keepPct, minPayout, maxPayout, withdrawalEnabled; shows "🔒 Withdrawals Paused" when disabled; red disabled banner; maxPayout limit shown in modal; modal validates both min and max; info card shows range
+  - rider-app/Home.tsx: shows amber notice when config.rider?.cashAllowed === false
+  -->
 <!-- Last updated: 2026-03-26 — VENDOR SETTINGS COMPLETE: Full-stack vendor management system — admin → API → vendor app, no loopholes.
   - New seeds: vendor_promo_enabled (on), vendor_withdrawal_enabled (on), vendor_min_payout (500), vendor_max_payout (50000)
   - platform-config API: vendor block added with 9 fields: commissionPct, settleDays, minPayout, maxPayout, minOrder, maxItems, autoApprove, promoEnabled, withdrawalEnabled

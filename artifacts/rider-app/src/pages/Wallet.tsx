@@ -8,7 +8,7 @@ const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfa
 const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
 const fd = (d: string | Date) => new Date(d).toLocaleString("en-PK", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
 
-function WithdrawModal({ balance, minPayout, onClose, onSuccess }: { balance: number; minPayout: number; onClose: () => void; onSuccess: () => void }) {
+function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess }: { balance: number; minPayout: number; maxPayout: number; onClose: () => void; onSuccess: () => void }) {
   const [amount, setAmount]  = useState("");
   const [bank, setBank]      = useState("");
   const [acNo, setAcNo]      = useState("");
@@ -30,6 +30,7 @@ function WithdrawModal({ balance, minPayout, onClose, onSuccess }: { balance: nu
     const amt = Number(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Valid amount required"); return; }
     if (amt < minPayout)   { setErr(`Minimum withdrawal is ${fc(minPayout)}`); return; }
+    if (amt > maxPayout)   { setErr(`Maximum withdrawal is ${fc(maxPayout)}`); return; }
     if (amt > balance) { setErr(`Max available: ${fc(balance)}`); return; }
     if (!bank)         { setErr("Select your bank / wallet"); return; }
     if (!acNo.trim())  { setErr("Account / phone number required"); return; }
@@ -84,7 +85,7 @@ function WithdrawModal({ balance, minPayout, onClose, onSuccess }: { balance: nu
             <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl p-4 text-white mb-5">
               <p className="text-sm text-green-100">Available Balance</p>
               <p className="text-3xl font-extrabold mt-0.5">{fc(balance)}</p>
-              <p className="text-xs text-green-200 mt-1.5">Minimum withdrawal: {fc(minPayout)}</p>
+              <p className="text-xs text-green-200 mt-1.5">Min: {fc(minPayout)} · Max: {fc(maxPayout)}</p>
             </div>
             <div className="space-y-3">
               <div>
@@ -129,10 +130,10 @@ function WithdrawModal({ balance, minPayout, onClose, onSuccess }: { balance: nu
 export default function Wallet() {
   const { user, refreshUser } = useAuth();
   const { config } = usePlatformConfig();
-  const fin = config.finance;
-  const riderKeepPct  = fin.riderEarningPct;
-  const minPayout     = fin.minRiderPayout;
-  const settleDays    = fin.vendorSettleDays;
+  const riderKeepPct      = config.rider?.keepPct    ?? config.finance.riderEarningPct;
+  const minPayout         = config.rider?.minPayout  ?? config.finance.minRiderPayout;
+  const maxPayout         = config.rider?.maxPayout  ?? 50000;
+  const withdrawalEnabled = config.rider?.withdrawalEnabled !== false;
   const qc = useQueryClient();
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [toast, setToast] = useState("");
@@ -191,10 +192,17 @@ export default function Wallet() {
             <p className="text-sm text-gray-500 font-medium">Available Balance</p>
             <p className="text-5xl font-extrabold text-green-600 mt-1">{fc(balance)}</p>
             <p className="text-xs text-gray-400 mt-2">{riderKeepPct}% of each delivery goes to your wallet</p>
-            <button onClick={() => setShowWithdraw(true)}
-              className="mt-4 w-full h-12 bg-green-600 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2">
-              💸 Withdraw Funds
-            </button>
+            {withdrawalEnabled ? (
+              <button onClick={() => setShowWithdraw(true)}
+                className="mt-4 w-full h-12 bg-green-600 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2">
+                💸 Withdraw Funds
+              </button>
+            ) : (
+              <button disabled
+                className="mt-4 w-full h-12 bg-gray-300 text-gray-500 font-extrabold rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed">
+                🔒 Withdrawals Paused
+              </button>
+            )}
           </div>
         </div>
 
@@ -218,15 +226,25 @@ export default function Wallet() {
           <span className="text-2xl flex-shrink-0">💹</span>
           <div>
             <p className="text-sm font-bold text-emerald-800">Your Earnings Rate</p>
-            <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">You keep <strong>{riderKeepPct}%</strong> of every delivery fee. Minimum withdrawal is <strong>{fc(minPayout)}</strong> per request.</p>
+            <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">You keep <strong>{riderKeepPct}%</strong> of every delivery fee. Withdrawal range: <strong>{fc(minPayout)}</strong> – <strong>{fc(maxPayout)}</strong> per request.</p>
           </div>
         </div>
+        {/* Withdrawal disabled banner */}
+        {!withdrawalEnabled && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex gap-3">
+            <span className="text-2xl flex-shrink-0">🚫</span>
+            <div>
+              <p className="text-sm font-bold text-red-800">Withdrawals Paused</p>
+              <p className="text-xs text-red-700 mt-0.5 leading-relaxed">Admin ne withdrawals temporarily band ki hain. Aapki earnings safe hain — jald hi wapas available ho gi.</p>
+            </div>
+          </div>
+        )}
         {/* Security Info */}
         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3">
           <span className="text-2xl flex-shrink-0">🔒</span>
           <div>
             <p className="text-sm font-bold text-blue-800">Secure Withdrawals</p>
-            <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">Withdrawal requests are reviewed by admin and transferred to your bank or mobile wallet within 24–48 hours. Min. {fc(minPayout)} per request.</p>
+            <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">Withdrawal requests are reviewed by admin and transferred to your bank or mobile wallet within 24–48 hours. Range: {fc(minPayout)} – {fc(maxPayout)}.</p>
           </div>
         </div>
 
@@ -282,10 +300,11 @@ export default function Wallet() {
         </div>
       </div>
 
-      {showWithdraw && (
+      {showWithdraw && withdrawalEnabled && (
         <WithdrawModal
           balance={balance}
           minPayout={minPayout}
+          maxPayout={maxPayout}
           onClose={() => setShowWithdraw(false)}
           onSuccess={() => { qc.invalidateQueries({ queryKey: ["rider-wallet"] }); refreshUser(); showToast("✅ Withdrawal request submitted!"); }}
         />

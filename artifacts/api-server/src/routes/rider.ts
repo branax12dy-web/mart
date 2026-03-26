@@ -142,6 +142,18 @@ router.post("/orders/:id/accept", async (req, res) => {
   const riderId   = (req as any).riderId;
   const orderId   = req.params["id"]!;
 
+  // Check max simultaneous deliveries limit
+  const s = await getPlatformSettings();
+  const maxDeliveries = parseInt(s["rider_max_deliveries"] ?? "3");
+  const [activeOrders, activeRides] = await Promise.all([
+    db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), or(eq(ordersTable.status, "out_for_delivery"), eq(ordersTable.status, "picked_up")))),
+    db.select({ c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "ongoing"))),
+  ]);
+  const activeCount = (activeOrders[0]?.c ?? 0) + (activeRides[0]?.c ?? 0);
+  if (activeCount >= maxDeliveries) {
+    res.status(429).json({ error: `Maximum ${maxDeliveries} active deliveries allowed. Complete a current delivery first.` }); return;
+  }
+
   // Atomic accept: only succeeds if riderId is still NULL in DB
   const [updated] = await db
     .update(ordersTable)
@@ -181,15 +193,24 @@ router.patch("/orders/:id/status", async (req, res) => {
   if (status === "delivered") {
     const s = await getPlatformSettings();
     const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const bonusPerTrip = parseFloat(s["rider_bonus_per_trip"] ?? "0");
     const earnings = parseFloat((safeNum(order.total) * riderKeepPct).toFixed(2));
+    const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
 
-    // Credit rider earnings
-    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${earnings}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
+    // Credit rider earnings + bonus
+    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
     await db.insert(walletTransactionsTable).values({
       id: generateId(), userId: riderId, type: "credit",
       amount: earnings.toFixed(2),
       description: `Delivery earnings — Order #${order.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
     }).catch(() => {});
+    if (bonusPerTrip > 0) {
+      await db.insert(walletTransactionsTable).values({
+        id: generateId(), userId: riderId, type: "bonus",
+        amount: bonusPerTrip.toFixed(2),
+        description: `Per-trip bonus — Order #${order.id.slice(-6).toUpperCase()}`,
+      }).catch(() => {});
+    }
     await db.insert(notificationsTable).values({
       id: generateId(), userId: order.userId,
       title: "Order Delivered! 🎉", body: "Your order has been delivered. Enjoy!",
@@ -211,6 +232,18 @@ router.post("/rides/:id/accept", async (req, res) => {
   const riderId   = (req as any).riderId;
   const riderUser = (req as any).riderUser;
   const rideId    = req.params["id"]!;
+
+  // Check max simultaneous deliveries limit
+  const s = await getPlatformSettings();
+  const maxDeliveries = parseInt(s["rider_max_deliveries"] ?? "3");
+  const [activeOrders, activeRides] = await Promise.all([
+    db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), or(eq(ordersTable.status, "out_for_delivery"), eq(ordersTable.status, "picked_up")))),
+    db.select({ c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "ongoing"))),
+  ]);
+  const activeCount = (activeOrders[0]?.c ?? 0) + (activeRides[0]?.c ?? 0);
+  if (activeCount >= maxDeliveries) {
+    res.status(429).json({ error: `Maximum ${maxDeliveries} active deliveries allowed. Complete a current delivery first.` }); return;
+  }
 
   // Atomic accept: only succeeds if riderId is still NULL
   const [updated] = await db
@@ -249,14 +282,23 @@ router.patch("/rides/:id/status", async (req, res) => {
   if (status === "completed") {
     const s = await getPlatformSettings();
     const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const bonusPerTrip = parseFloat(s["rider_bonus_per_trip"] ?? "0");
     const earnings = parseFloat((safeNum(ride.fare) * riderKeepPct).toFixed(2));
+    const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
 
-    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${earnings}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
+    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
     await db.insert(walletTransactionsTable).values({
       id: generateId(), userId: riderId, type: "credit",
       amount: earnings.toFixed(2),
       description: `Ride earnings — #${ride.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
     }).catch(() => {});
+    if (bonusPerTrip > 0) {
+      await db.insert(walletTransactionsTable).values({
+        id: generateId(), userId: riderId, type: "bonus",
+        amount: bonusPerTrip.toFixed(2),
+        description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
+      }).catch(() => {});
+    }
     await db.insert(notificationsTable).values({
       id: generateId(), userId: ride.userId,
       title: "Ride Completed! ✅", body: "Thanks for riding with AJKMart. Rate your experience!",
@@ -341,8 +383,15 @@ router.post("/wallet/withdraw", async (req, res) => {
   const { amount, accountTitle, accountNumber, bankName, note } = req.body;
   const amt = safeNum(amount);
 
+  const s = await getPlatformSettings();
+  const withdrawalEnabled = (s["rider_withdrawal_enabled"] ?? "on") === "on";
+  const minPayout = parseFloat(s["rider_min_payout"] ?? "500");
+  const maxPayout = parseFloat(s["rider_max_payout"] ?? "50000");
+
+  if (!withdrawalEnabled) { res.status(403).json({ error: "Withdrawals are currently paused by admin. Please try again later." }); return; }
   if (!amt || amt <= 0)  { res.status(400).json({ error: "Valid amount required" }); return; }
-  if (amt < 500)         { res.status(400).json({ error: "Minimum withdrawal is Rs. 500" }); return; }
+  if (amt < minPayout)   { res.status(400).json({ error: `Minimum withdrawal is Rs. ${minPayout}` }); return; }
+  if (amt > maxPayout)   { res.status(400).json({ error: `Maximum single withdrawal is Rs. ${maxPayout}` }); return; }
   if (!accountTitle || !accountNumber || !bankName) {
     res.status(400).json({ error: "Account title, number and bank name are required" }); return;
   }

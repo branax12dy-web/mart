@@ -105,6 +105,13 @@ export default function Home() {
         {config.content.riderNotice && (
           <RiderNoticeBanner message={config.content.riderNotice} />
         )}
+        {/* Cash payments disabled notice */}
+        {config.rider?.cashAllowed === false && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3 mb-3">
+            <span className="text-amber-500 text-base flex-shrink-0 mt-0.5">💵</span>
+            <p className="text-sm text-amber-700 font-medium leading-snug flex-1">Cash-on-delivery orders are currently disabled by admin. Only digital payment orders are shown.</p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500">Today's Deliveries</p>
