@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable } from "@workspace/db/schema";
-import { eq, and, gte, count, SQL } from "drizzle-orm";
+import { eq, and, gte, count, SQL, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth } from "../middleware/security.js";
@@ -317,8 +317,8 @@ router.post("/", customerAuth, async (req, res) => {
         const balance = parseFloat(freshUser.walletBalance ?? "0");
         if (balance < total) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${total.toFixed(0)}`);
 
-        const newBalance = (balance - total).toFixed(2);
-        await tx.update(usersTable).set({ walletBalance: newBalance }).where(eq(usersTable.id, userId));
+        /* Atomic deduction — prevents double-spend under concurrent order placements */
+        await tx.update(usersTable).set({ walletBalance: sql`wallet_balance - ${total.toFixed(2)}` }).where(eq(usersTable.id, userId));
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId, type: "debit",
           amount: total.toFixed(2),
