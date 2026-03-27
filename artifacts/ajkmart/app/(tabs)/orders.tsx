@@ -603,10 +603,9 @@ export default function OrdersScreen() {
 
   const handleCancel = useCallback(async (order: any) => {
     try {
-      const res = await fetch(`${API_BASE}/orders/${order.id}`, {
+      const res = await fetch(`${API_BASE}/orders/${order.id}/cancel`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ status: "cancelled" }),
       });
       if (!res.ok) throw new Error();
       refetchOrders();

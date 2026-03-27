@@ -358,42 +358,37 @@ router.post("/", customerAuth, async (req, res) => {
   res.status(201).json({ ...mapOrder(order!, deliveryFee, gstAmount, codFee), promoDiscount });
 });
 
-/* ── PATCH /orders/:id (customer cancel only) ────────────────────────────── */
-router.patch("/:id", customerAuth, async (req, res) => {
+/* ── PATCH /orders/:id/cancel — customer cancel only ────────────────────── */
+router.patch("/:id/cancel", customerAuth, async (req, res) => {
   const userId = (req as any).customerId as string;
-  const { status, riderId } = req.body;
 
-  /* ── Cancel-window enforcement (only for customer-initiated cancellations) ── */
-  if (status === "cancelled") {
-    const [existingOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, req.params["id"]!)).limit(1);
-    if (existingOrder) {
-      /* Only the order owner can cancel */
-      if (existingOrder.userId !== userId) {
-        res.status(403).json({ error: "You cannot cancel another user's order." }); return;
-      }
-      /* Enforce cancel window */
-      const s = await getCachedSettings();
-      const cancelWindowMin = parseInt(s["order_cancel_window_min"] ?? "5", 10);
-      const ageMs = Date.now() - new Date(existingOrder.createdAt).getTime();
-      const ageMin = ageMs / 60_000;
-      if (ageMin > cancelWindowMin) {
-        res.status(400).json({
-          error: `Orders can only be cancelled within ${cancelWindowMin} minutes of placement. Please contact support.`,
-        }); return;
-      }
-      /* Only pending orders can be customer-cancelled */
-      if (!["pending", "confirmed"].includes(existingOrder.status)) {
-        res.status(400).json({ error: "This order can no longer be cancelled." }); return;
-      }
-    }
+  const [existingOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, req.params["id"]!)).limit(1);
+  if (!existingOrder) { res.status(404).json({ error: "Order not found" }); return; }
+
+  /* Only the order owner can cancel */
+  if (existingOrder.userId !== userId) {
+    res.status(403).json({ error: "You cannot cancel another user's order." }); return;
   }
 
-  const updateData: Partial<typeof ordersTable.$inferInsert> = { status, updatedAt: new Date() };
-  if (riderId) updateData.riderId = riderId;
+  /* Enforce cancel window */
+  const s = await getCachedSettings();
+  const cancelWindowMin = parseInt(s["order_cancel_window_min"] ?? "5", 10);
+  const ageMs = Date.now() - new Date(existingOrder.createdAt).getTime();
+  const ageMin = ageMs / 60_000;
+  if (ageMin > cancelWindowMin) {
+    res.status(400).json({
+      error: `Orders can only be cancelled within ${cancelWindowMin} minutes of placement. Please contact support.`,
+    }); return;
+  }
+
+  /* Only pending/confirmed orders can be customer-cancelled */
+  if (!["pending", "confirmed"].includes(existingOrder.status)) {
+    res.status(400).json({ error: "This order can no longer be cancelled." }); return;
+  }
 
   const [order] = await db.update(ordersTable)
-    .set(updateData)
-    .where(eq(ordersTable.id, req.params["id"]!))
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.userId, userId)))
     .returning();
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   res.json(mapOrder(order));
