@@ -460,6 +460,21 @@ router.post("/send-email-otp", async (req, res) => {
     res.status(429).json({ error: `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).` }); return;
   }
 
+  /* ── Per-email OTP resend cooldown — prevents inbox flooding ──
+     Same 60-second window as the SMS OTP cooldown. */
+  const otpCooldownMs   = parseInt(settings["security_otp_cooldown_sec"] ?? "60", 10) * 1000;
+  const existingExpiry  = user.emailOtpExpiry;
+  if (existingExpiry) {
+    const otpValidityMs = 10 * 60 * 1000;
+    const issuedAgoMs   = otpValidityMs - (existingExpiry.getTime() - Date.now());
+    if (issuedAgoMs < otpCooldownMs) {
+      const waitSec = Math.ceil((otpCooldownMs - issuedAgoMs) / 1000);
+      addAuditEntry({ action: "email_otp_throttle", ip, details: `Email OTP resend too soon for ${normalized} — ${waitSec}s remaining`, result: "fail" });
+      res.status(429).json({ error: `Please wait ${waitSec} second(s) before requesting a new email OTP.`, retryAfterSeconds: waitSec });
+      return;
+    }
+  }
+
   const otp    = generateSecureOtp();
   const expiry = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -509,6 +524,13 @@ router.post("/verify-email-otp", async (req, res) => {
   /* Verify OTP — bypass also respects phoneVerifyRequired for consistency */
   const phoneVerifyRequired = settings["security_phone_verify"] === "on";
   const otpBypass = settings["security_otp_bypass"] === "on" && !phoneVerifyRequired;
+
+  /* Check expiry FIRST — prevents timing oracle (attacker learning that an
+     expired OTP was correct by observing which error branch fires). */
+  if (!otpBypass && user.emailOtpExpiry && new Date() > user.emailOtpExpiry) {
+    res.status(401).json({ error: "OTP expired. Please request a new one." }); return;
+  }
+
   if (!otpBypass && user.emailOtpCode !== otp) {
     const updated = recordFailedAttempt(normalized, maxAttempts, lockoutMinutes);
     const remaining = maxAttempts - updated.attempts;
@@ -519,10 +541,6 @@ router.post("/verify-email-otp", async (req, res) => {
       res.status(401).json({ error: `Invalid OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
     }
     return;
-  }
-
-  if (!otpBypass && user.emailOtpExpiry && new Date() > user.emailOtpExpiry) {
-    res.status(401).json({ error: "OTP expired. Please request a new one." }); return;
   }
 
   /* Check approval BEFORE touching the DB — a rejected user must not have their OTP cleared */

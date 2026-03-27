@@ -332,8 +332,10 @@ router.post("/", customerAuth, async (req, res) => {
           estimatedTime,
         }).returning();
         if (promoId) {
-          const [cp] = await tx.select({ c: promoCodesTable.usedCount }).from(promoCodesTable).where(eq(promoCodesTable.id, promoId)).limit(1);
-          await tx.update(promoCodesTable).set({ usedCount: (cp?.c ?? 0) + 1 }).where(eq(promoCodesTable.id, promoId)).catch(() => {});
+          await tx.update(promoCodesTable)
+            .set({ usedCount: sql`${promoCodesTable.usedCount} + 1` })
+            .where(eq(promoCodesTable.id, promoId))
+            .catch(() => {});
         }
         return newOrder!;
       });
@@ -352,8 +354,10 @@ router.post("/", customerAuth, async (req, res) => {
     estimatedTime,
   }).returning();
   if (promoId) {
-    const [cp] = await db.select({ c: promoCodesTable.usedCount }).from(promoCodesTable).where(eq(promoCodesTable.id, promoId)).limit(1);
-    await db.update(promoCodesTable).set({ usedCount: (cp?.c ?? 0) + 1 }).where(eq(promoCodesTable.id, promoId)).catch(() => {});
+    await db.update(promoCodesTable)
+      .set({ usedCount: sql`${promoCodesTable.usedCount} + 1` })
+      .where(eq(promoCodesTable.id, promoId))
+      .catch(() => {});
   }
   res.status(201).json({ ...mapOrder(order!, deliveryFee, gstAmount, codFee), promoDiscount });
 });
