@@ -2556,4 +2556,97 @@ router.get("/customer-locations", async (_req, res) => {
   res.json({ customers: enriched, total: enriched.length, freshCount: enriched.filter(c => c.isFresh).length });
 });
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   GET /admin/search?q=query
+   Global search across users, rides, orders, pharmacy, parcels
+   Returns max 5 results per category, sorted by relevance (recency)
+══════════════════════════════════════════════════════════════════════════════ */
+router.get("/search", async (req, res) => {
+  const q = String(req.query["q"] ?? "").trim();
+  if (!q || q.length < 2) {
+    res.json({ users: [], rides: [], orders: [], pharmacy: [], query: q });
+    return;
+  }
+
+  const pattern = `%${q}%`;
+
+  const [users, rides, orders, pharmacy] = await Promise.all([
+    /* Users — by name or phone */
+    db.select({
+      id:    usersTable.id,
+      name:  usersTable.name,
+      phone: usersTable.phone,
+      email: usersTable.email,
+      role:  usersTable.role,
+      createdAt: usersTable.createdAt,
+    })
+    .from(usersTable)
+    .where(or(ilike(usersTable.name, pattern), ilike(usersTable.phone, pattern), ilike(usersTable.email, pattern)))
+    .orderBy(desc(usersTable.createdAt))
+    .limit(5),
+
+    /* Rides — by ID or address */
+    db.select({
+      id:            ridesTable.id,
+      type:          ridesTable.type,
+      status:        ridesTable.status,
+      pickupAddress: ridesTable.pickupAddress,
+      dropAddress:   ridesTable.dropAddress,
+      fare:          ridesTable.fare,
+      offeredFare:   ridesTable.offeredFare,
+      riderName:     ridesTable.riderName,
+      createdAt:     ridesTable.createdAt,
+    })
+    .from(ridesTable)
+    .where(or(
+      ilike(ridesTable.id, pattern),
+      ilike(ridesTable.pickupAddress, pattern),
+      ilike(ridesTable.dropAddress, pattern),
+      ilike(ridesTable.riderName, pattern),
+      ilike(ridesTable.status, pattern),
+    ))
+    .orderBy(desc(ridesTable.createdAt))
+    .limit(5),
+
+    /* Orders — by ID or delivery address */
+    db.select({
+      id:              ordersTable.id,
+      status:          ordersTable.status,
+      type:            ordersTable.type,
+      total:           ordersTable.total,
+      deliveryAddress: ordersTable.deliveryAddress,
+      riderName:       ordersTable.riderName,
+      createdAt:       ordersTable.createdAt,
+    })
+    .from(ordersTable)
+    .where(or(
+      ilike(ordersTable.id, pattern),
+      ilike(ordersTable.deliveryAddress, pattern),
+      ilike(ordersTable.status, pattern),
+      ilike(ordersTable.riderName, pattern),
+    ))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(5),
+
+    /* Pharmacy orders */
+    db.select({
+      id:              pharmacyOrdersTable.id,
+      status:          pharmacyOrdersTable.status,
+      total:           pharmacyOrdersTable.total,
+      deliveryAddress: pharmacyOrdersTable.deliveryAddress,
+      createdAt:       pharmacyOrdersTable.createdAt,
+    })
+    .from(pharmacyOrdersTable)
+    .where(or(
+      ilike(pharmacyOrdersTable.id, pattern),
+      ilike(pharmacyOrdersTable.deliveryAddress, pattern),
+      ilike(pharmacyOrdersTable.status, pattern),
+    ))
+    .orderBy(desc(pharmacyOrdersTable.createdAt))
+    .limit(5),
+  ]);
+
+  res.json({ users, rides, orders, pharmacy, query: q });
+});
+
 export default router;

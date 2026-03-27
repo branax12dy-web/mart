@@ -23,8 +23,10 @@ import {
   BellRing,
   BanknoteIcon,
   Banknote,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CommandPalette } from "@/components/CommandPalette";
 
 const navGroups = [
   {
@@ -97,11 +99,24 @@ const bottomNavItems = [
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
 
   // Close mobile menu on location change
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location]);
+
+  // Global Ctrl+K / Cmd+K keyboard shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdOpen(o => !o);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("ajkmart_admin_token");
@@ -221,7 +236,19 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* ── Search trigger button ── */}
+            <button
+              onClick={() => setCmdOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/60 bg-muted/50 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground group"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-xs font-medium">Search...</span>
+              <kbd className="hidden md:inline-flex items-center gap-0.5 rounded border border-border bg-white px-1.5 font-mono text-[10px] text-muted-foreground/70 group-hover:border-primary/30">
+                ⌘K
+              </kbd>
+            </button>
+
             <div className="hidden sm:flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-xs font-medium text-muted-foreground">Live</span>
@@ -238,6 +265,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
+
+        {/* ── Global Command Palette ── */}
+        <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 pb-20 lg:pb-8">

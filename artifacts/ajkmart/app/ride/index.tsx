@@ -255,7 +255,11 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
                     <View style={{ alignItems: "flex-end" }}>
                       <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: "#FCD34D" }}>Rs. {Math.round(bid.fare)}</Text>
                       <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: "rgba(255,255,255,0.6)" }}>
-                        {bid.fare < offeredFare ? `Rs. ${Math.round(offeredFare - bid.fare)} zyada` : bid.fare === offeredFare ? "aapke offer pe" : `Rs. ${Math.round(bid.fare - offeredFare)} kam mein`}
+                        {bid.fare === offeredFare
+                          ? "aapke offer par"
+                          : bid.fare > offeredFare
+                            ? `Rs. ${Math.round(bid.fare - offeredFare)} zyada aapke offer se`
+                            : `Rs. ${Math.round(offeredFare - bid.fare)} aapki bachat`}
                       </Text>
                     </View>
                   </View>
