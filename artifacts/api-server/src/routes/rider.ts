@@ -159,13 +159,24 @@ router.get("/active", async (req, res) => {
 
   let enrichedOrder = null;
   if (order[0]) {
-    const [customer] = await db.select({ name: usersTable.name, phone: usersTable.phone })
-      .from(usersTable).where(eq(usersTable.id, order[0].userId)).limit(1);
+    const promises: [Promise<any>, Promise<any>] = [
+      db.select({ name: usersTable.name, phone: usersTable.phone })
+        .from(usersTable).where(eq(usersTable.id, order[0].userId)).limit(1),
+      order[0].vendorId
+        ? db.select({ storeName: usersTable.storeName, phone: usersTable.phone })
+            .from(usersTable).where(eq(usersTable.id, order[0].vendorId)).limit(1)
+        : Promise.resolve([]),
+    ];
+    const [customerRows, vendorRows] = await Promise.all(promises);
+    const customer = customerRows[0];
+    const vendor   = vendorRows[0];
     enrichedOrder = {
       ...order[0],
       total: safeNum(order[0].total),
       customerName:  customer?.name  || null,
       customerPhone: customer?.phone || null,
+      vendorStoreName:  vendor?.storeName  || null,
+      vendorPhone:      vendor?.phone      || null,
     };
   }
 

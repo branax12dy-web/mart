@@ -15,13 +15,21 @@ const items: NavItem[] = [
 export function BottomNav() {
   const [location] = useLocation();
 
-  const { data } = useQuery({
+  const { data: notifData } = useQuery({
     queryKey: ["rider-notifs-count"],
     queryFn: () => api.getNotifications(),
     refetchInterval: 60000,
     staleTime: 30000,
   });
-  const unread: number = data?.unread || 0;
+  const unread: number = notifData?.unread || 0;
+
+  const { data: activeData } = useQuery({
+    queryKey: ["rider-active"],
+    queryFn: () => api.getActive(),
+    refetchInterval: 8000,
+    staleTime: 5000,
+  });
+  const hasActive = !!(activeData?.order || activeData?.ride);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-lg"
@@ -37,9 +45,19 @@ export function BottomNav() {
                 <span className={`text-xl leading-none flex items-center justify-center w-10 h-7 rounded-xl ${active ? "bg-green-50" : ""}`}>
                   {item.icon}
                 </span>
+                {/* Notification badge */}
                 {item.href === "/notifications" && unread > 0 && (
                   <span className="absolute -top-1 -right-0.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full w-4 h-4 flex items-center justify-center">
                     {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
+                {/* Active task badge — pulsing green dot */}
+                {item.href === "/active" && hasActive && (
+                  <span className="absolute -top-1 -right-0.5 flex items-center justify-center">
+                    <span className="w-3.5 h-3.5 bg-green-500 rounded-full flex items-center justify-center">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative w-2.5 h-2.5 bg-green-500 rounded-full"></span>
+                    </span>
                   </span>
                 )}
               </div>

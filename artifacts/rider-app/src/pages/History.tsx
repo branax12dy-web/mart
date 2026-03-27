@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
@@ -7,47 +8,158 @@ function formatDate(d: string | Date) {
   return date.toLocaleDateString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+type FilterPeriod = "today" | "week" | "all";
+type FilterKind   = "all" | "order" | "ride";
+
 export default function History() {
-  const { data, isLoading } = useQuery({ queryKey: ["rider-history"], queryFn: () => api.getHistory() });
-  const history = data?.history || [];
+  const [period, setPeriod]   = useState<FilterPeriod>("all");
+  const [kind,   setKind]     = useState<FilterKind>("all");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["rider-history"],
+    queryFn: () => api.getHistory(),
+  });
+
+  const raw: any[] = data?.history || [];
+
+  /* ── Date filter ── */
+  const now      = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const filtered = raw.filter(item => {
+    const d = new Date(item.createdAt);
+    if (period === "today" && d < todayStart) return false;
+    if (period === "week"  && d < weekStart)  return false;
+    if (kind === "order"   && item.kind !== "order") return false;
+    if (kind === "ride"    && item.kind !== "ride")  return false;
+    return true;
+  });
+
+  /* ── Summary stats for current filter ── */
+  const totalEarnings  = filtered.reduce((s, i) => s + (i.earnings || 0), 0);
+  const completedItems = filtered.filter(i => i.status === "delivered" || i.status === "completed");
+  const cancelledItems = filtered.filter(i => i.status === "cancelled");
+
+  const PERIOD_TABS: { key: FilterPeriod; label: string }[] = [
+    { key: "today", label: "Today" },
+    { key: "week",  label: "This Week" },
+    { key: "all",   label: "All Time" },
+  ];
+  const KIND_TABS: { key: FilterKind; label: string; icon: string }[] = [
+    { key: "all",   label: "All",     icon: "📋" },
+    { key: "order", label: "Orders",  icon: "📦" },
+    { key: "ride",  label: "Rides",   icon: "🏍️" },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header */}
       <div className="bg-gradient-to-br from-green-600 to-emerald-700 px-5 pt-12 pb-6">
-        <h1 className="text-2xl font-bold text-white">Delivery History</h1>
-        <p className="text-green-200 text-sm">{history.length} completed tasks</p>
+        <h1 className="text-2xl font-bold text-white">History</h1>
+        <p className="text-green-200 text-sm">{raw.length} total records</p>
       </div>
 
-      <div className="px-4 py-4 space-y-3">
+      {/* Summary Stats */}
+      {!isLoading && (
+        <div className="px-4 -mt-2 mb-0">
+          <div className="bg-white rounded-2xl shadow-sm p-4 grid grid-cols-3 gap-3">
+            <div className="text-center">
+              <p className="text-lg font-extrabold text-green-600">{formatCurrency(totalEarnings)}</p>
+              <p className="text-[10px] text-gray-400 font-medium mt-0.5">Earnings</p>
+            </div>
+            <div className="text-center border-x border-gray-100">
+              <p className="text-lg font-extrabold text-blue-600">{completedItems.length}</p>
+              <p className="text-[10px] text-gray-400 font-medium mt-0.5">Completed</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-extrabold text-red-500">{cancelledItems.length}</p>
+              <p className="text-[10px] text-gray-400 font-medium mt-0.5">Cancelled</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="px-4 pt-4 space-y-3 sticky top-0 bg-gray-50 pb-2 z-10">
+        {/* Period Tabs */}
+        <div className="flex bg-white rounded-xl p-1 shadow-sm gap-1">
+          {PERIOD_TABS.map(tab => (
+            <button key={tab.key} onClick={() => setPeriod(tab.key)}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${period === tab.key ? "bg-green-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {/* Kind Tabs */}
+        <div className="flex gap-2">
+          {KIND_TABS.map(tab => (
+            <button key={tab.key} onClick={() => setKind(tab.key)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${kind === tab.key ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-500 border-gray-200"}`}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="px-4 py-3 space-y-3">
         {isLoading ? (
           [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-2xl animate-pulse"/>)
-        ) : history.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-5xl mb-3">📋</p>
-            <p className="font-bold text-gray-700">No history yet</p>
-            <p className="text-gray-400 text-sm mt-1">Your deliveries will appear here</p>
+            <p className="font-bold text-gray-700">No records found</p>
+            <p className="text-gray-400 text-sm mt-1">
+              {period !== "all" ? "Try selecting a wider time period" : "Your deliveries will appear here"}
+            </p>
           </div>
         ) : (
-          history.map((item: any) => (
-            <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="p-4 flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
-                  {item.kind === "ride" ? (item.type === "bike" ? "🏍️" : "🚗") : (item.type === "food" ? "🍔" : item.type === "mart" ? "🛒" : "📦")}
+          filtered.map((item: any) => {
+            const completed = item.status === "delivered" || item.status === "completed";
+            const cancelled = item.status === "cancelled";
+            return (
+              <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-4 flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
+                    {item.kind === "ride"
+                      ? (item.type === "bike" ? "🏍️" : "🚗")
+                      : (item.type === "food" ? "🍔" : item.type === "mart" ? "🛒" : "📦")}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800 capitalize">
+                      {item.kind === "ride" ? `${item.type} Ride` : `${item.type} Delivery`}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate mt-0.5">{item.address || "—"}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatDate(item.createdAt)}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    {completed ? (
+                      <p className="font-bold text-green-600">+{formatCurrency(item.earnings || 0)}</p>
+                    ) : (
+                      <p className="font-bold text-gray-400">{formatCurrency(item.amount || 0)}</p>
+                    )}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${
+                      completed  ? "bg-green-100 text-green-700" :
+                      cancelled  ? "bg-red-100 text-red-600"     :
+                                   "bg-gray-100 text-gray-600"
+                    }`}>
+                      {item.status.replace(/_/g, " ").toUpperCase()}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-gray-800 capitalize">{item.kind === "ride" ? `${item.type} Ride` : `${item.type} Delivery`}</p>
-                  <p className="text-xs text-gray-500 truncate">{item.address || "—"}</p>
-                  <p className="text-xs text-gray-400">{formatDate(item.createdAt)}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="font-bold text-green-600">+{formatCurrency(item.earnings)}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.status === "delivered" || item.status === "completed" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
-                    {item.status.toUpperCase()}
-                  </span>
-                </div>
+                {/* Earnings bar only for completed */}
+                {completed && item.earnings > 0 && (
+                  <div className="px-4 pb-3">
+                    <div className="bg-green-50 rounded-lg px-3 py-1.5 flex items-center justify-between">
+                      <span className="text-xs text-green-600 font-medium">💰 Earnings credited</span>
+                      <span className="text-xs font-extrabold text-green-700">{formatCurrency(item.earnings)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
