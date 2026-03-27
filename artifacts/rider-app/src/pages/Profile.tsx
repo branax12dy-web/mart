@@ -30,6 +30,7 @@ function InfoRow({ label, value, empty = "Not set" }: { label: string; value?: s
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
   const { config } = usePlatformConfig();
+  const riderKeepPct = config.rider?.keepPct ?? config.finance.riderEarningPct ?? 80;
 
   const { data: notifData } = useQuery({
     queryKey: ["rider-notifs-count"],
@@ -399,8 +400,8 @@ export default function Profile() {
           <p className="font-bold text-green-700 text-sm mb-2">💡 Payout Policy</p>
           <div className="space-y-2">
             {[
-              { icon: "✅", text: "80% earnings — 20% platform fee" },
-              { icon: "💸", text: "Minimum withdrawal: Rs. 500" },
+              { icon: "✅", text: `${riderKeepPct}% earnings — ${100 - riderKeepPct}% platform fee` },
+              { icon: "💸", text: `Minimum withdrawal: Rs. ${config.rider?.minPayout ?? 500}` },
               { icon: "⏱️", text: "Processed in 24–48 hours by admin" },
               { icon: "🔒", text: "CNIC + vehicle details required for verification" },
             ].map((p, i) => (

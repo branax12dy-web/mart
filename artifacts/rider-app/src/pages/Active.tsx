@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useState } from "react";
 import { usePlatformConfig } from "../lib/useConfig";
+import { AlertTriangle, PhoneCall } from "lucide-react";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
@@ -34,6 +35,7 @@ export default function Active() {
   const qc = useQueryClient();
   const { config } = usePlatformConfig();
   const [toastMsg, setToastMsg] = useState("");
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const showToast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
@@ -254,10 +256,10 @@ export default function Active() {
                       className="flex-1 bg-green-600 text-white font-bold rounded-xl py-3.5 disabled:opacity-60"
                     >✓ Complete Ride</button>
                     <button
-                      onClick={() => updateRideMut.mutate({ id: ride.id, status: "cancelled" })}
+                      onClick={() => setShowCancelConfirm(true)}
                       disabled={updateRideMut.isPending}
-                      className="px-4 bg-red-50 text-red-600 font-bold rounded-xl py-3.5 text-sm"
-                    >Cancel</button>
+                      className="px-4 bg-red-50 text-red-600 font-bold rounded-xl py-3.5 text-sm border border-red-200"
+                    >✕</button>
                   </>
                 )}
               </div>
@@ -265,6 +267,40 @@ export default function Active() {
           </div>
         )}
       </div>
+
+      {/* Cancel Confirmation Dialog */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="bg-red-50 px-6 py-5 flex flex-col items-center gap-3 border-b border-red-100">
+              <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-7 h-7 text-red-600" />
+              </div>
+              <div className="text-center">
+                <p className="font-bold text-gray-900 text-lg">Cancel Ride?</p>
+                <p className="text-sm text-gray-500 mt-1">Yeh action customer ki wallet se refund trigger kar sakta hai.</p>
+              </div>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <p className="text-xs text-amber-800 font-medium">⚠️ Sirf emergency mein cancel karein. Bina wajah cancel karne par account suspend ho sakta hai.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowCancelConfirm(false)}
+                  className="flex-1 h-12 bg-gray-100 text-gray-700 font-bold rounded-xl">
+                  Back
+                </button>
+                <button
+                  onClick={() => { setShowCancelConfirm(false); updateRideMut.mutate({ id: ride!.id, status: "cancelled" }); }}
+                  disabled={updateRideMut.isPending}
+                  className="flex-1 h-12 bg-red-600 text-white font-bold rounded-xl disabled:opacity-60">
+                  {updateRideMut.isPending ? "Cancelling..." : "Yes, Cancel"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMsg && (
         <div className="fixed top-6 left-4 right-4 z-50 bg-gray-900 text-white text-sm font-medium px-4 py-3 rounded-2xl shadow-2xl text-center">
