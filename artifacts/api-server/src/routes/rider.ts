@@ -142,10 +142,34 @@ router.get("/active", async (req, res) => {
     db.select().from(ordersTable).where(and(eq(ordersTable.riderId, riderId), or(eq(ordersTable.status, "out_for_delivery"), eq(ordersTable.status, "picked_up")))).orderBy(desc(ordersTable.updatedAt)).limit(1),
     db.select().from(ridesTable).where(and(eq(ridesTable.riderId, riderId), or(eq(ridesTable.status, "accepted"), eq(ridesTable.status, "arrived"), eq(ridesTable.status, "in_transit")))).orderBy(desc(ridesTable.updatedAt)).limit(1),
   ]);
-  res.json({
-    order: order[0] ? { ...order[0], total: safeNum(order[0].total) } : null,
-    ride:  ride[0]  ? { ...ride[0], fare: safeNum(ride[0].fare), distance: safeNum(ride[0].distance) } : null,
-  });
+
+  // Enrich with customer name/phone so rider can call the customer
+  let enrichedRide = null;
+  if (ride[0]) {
+    const [customer] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+      .from(usersTable).where(eq(usersTable.id, ride[0].userId)).limit(1);
+    enrichedRide = {
+      ...ride[0],
+      fare: safeNum(ride[0].fare),
+      distance: safeNum(ride[0].distance),
+      customerName:  customer?.name  || null,
+      customerPhone: customer?.phone || null,
+    };
+  }
+
+  let enrichedOrder = null;
+  if (order[0]) {
+    const [customer] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+      .from(usersTable).where(eq(usersTable.id, order[0].userId)).limit(1);
+    enrichedOrder = {
+      ...order[0],
+      total: safeNum(order[0].total),
+      customerName:  customer?.name  || null,
+      customerPhone: customer?.phone || null,
+    };
+  }
+
+  res.json({ order: enrichedOrder, ride: enrichedRide });
 });
 
 /* ── POST /rider/orders/:id/accept — Accept an order ──
