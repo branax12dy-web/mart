@@ -22,27 +22,39 @@ import { Badge } from "@/components/ui/badge";
 interface Setting { key: string; value: string; label: string; category: string; }
 
 const CAT_ORDER = [
-  "features","customer","rider","vendor",
-  "delivery","rides","finance","orders","general",
-  "content","security","integrations","payment","system",
+  "general","features",
+  "rides","orders","delivery",
+  "customer","rider","vendor",
+  "finance","payment",
+  "content","integrations",
+  "security","system",
 ] as const;
 type CatKey = typeof CAT_ORDER[number];
 
+const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
+  { label: "App & Platform", emoji: "🏢", items: ["general", "features"] },
+  { label: "Services",        emoji: "⚡", items: ["rides", "orders", "delivery"] },
+  { label: "Users",           emoji: "👥", items: ["customer", "rider", "vendor"] },
+  { label: "Finance",         emoji: "💰", items: ["finance", "payment"] },
+  { label: "Communication",   emoji: "📢", items: ["content", "integrations"] },
+  { label: "System",          emoji: "🔧", items: ["security", "system"] },
+];
+
 const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string; bg: string; activeBg: string; description: string }> = {
-  features:     { label: "Feature Toggles",   icon: Zap,          color: "text-violet-600",  bg: "bg-violet-50",  activeBg: "bg-violet-600",  description: "Turn each service on or off instantly across the app" },
-  customer:     { label: "Customer",           icon: Users,        color: "text-blue-600",    bg: "bg-blue-50",    activeBg: "bg-blue-600",    description: "Wallet limits, loyalty, referral bonuses and order caps" },
-  rider:        { label: "Rider",              icon: Bike,         color: "text-green-600",   bg: "bg-green-50",   activeBg: "bg-green-600",   description: "Earnings %, acceptance radius, delivery limits and payouts" },
-  vendor:       { label: "Vendor",             icon: Store,        color: "text-orange-600",  bg: "bg-orange-50",  activeBg: "bg-orange-600",  description: "Commission, menu limits, settlement and approval rules" },
-  delivery:     { label: "Delivery Charges",   icon: Truck,        color: "text-sky-600",     bg: "bg-sky-50",     activeBg: "bg-sky-600",     description: "Delivery fees per service and free delivery threshold" },
-  rides:        { label: "Ride Pricing",        icon: Car,          color: "text-teal-600",    bg: "bg-teal-50",    activeBg: "bg-teal-600",    description: "Base fare and per-km rates for bike and car rides" },
-  finance:      { label: "Finance",            icon: BarChart3,    color: "text-purple-600",  bg: "bg-purple-50",  activeBg: "bg-purple-600",  description: "Commission rates, tax, cashback, payouts and invoice generation" },
-  orders:       { label: "Order Rules",        icon: ShoppingCart, color: "text-amber-600",   bg: "bg-amber-50",   activeBg: "bg-amber-600",   description: "Minimum order amounts and COD limits" },
-  general:      { label: "General",            icon: Globe,        color: "text-gray-600",    bg: "bg-gray-50",    activeBg: "bg-gray-700",    description: "App name, support contact and maintenance mode" },
-  content:      { label: "Content",            icon: MessageSquare,color: "text-pink-600",    bg: "bg-pink-50",    activeBg: "bg-pink-600",    description: "Banners, announcements, chat support and content links" },
-  security:     { label: "Security & API",     icon: Shield,       color: "text-red-600",     bg: "bg-red-50",     activeBg: "bg-red-600",     description: "OTP modes, GPS tracking, rate limits and API credentials" },
-  integrations: { label: "Integrations",       icon: Puzzle,       color: "text-indigo-600",  bg: "bg-indigo-50",  activeBg: "bg-indigo-600",  description: "Push notifications, analytics, email alerts and monitoring" },
-  payment:      { label: "Payment Methods",    icon: CreditCard,   color: "text-emerald-600", bg: "bg-emerald-50", activeBg: "bg-emerald-600", description: "JazzCash, EasyPaisa, Bank Transfer, COD and AJK Wallet" },
-  system:       { label: "Database & System",  icon: Database,     color: "text-rose-600",    bg: "bg-rose-50",    activeBg: "bg-rose-600",    description: "Demo reset, backup, restore and database management" },
+  general:      { label: "General",            icon: Globe,        color: "text-gray-600",    bg: "bg-gray-50",    activeBg: "bg-gray-700",    description: "App name, support contact, version and maintenance mode" },
+  features:     { label: "Feature Toggles",    icon: Zap,          color: "text-violet-600",  bg: "bg-violet-50",  activeBg: "bg-violet-600",  description: "Enable or disable each service across the entire platform instantly" },
+  rides:        { label: "Rides",              icon: Car,          color: "text-teal-600",    bg: "bg-teal-50",    activeBg: "bg-teal-600",    description: "Bike & car pricing, surge, bargaining (Mol-Tol) and cancellation rules" },
+  orders:       { label: "Orders",             icon: ShoppingCart, color: "text-amber-600",   bg: "bg-amber-50",   activeBg: "bg-amber-600",   description: "Min/max cart amounts, scheduling, timing and auto-cancel rules" },
+  delivery:     { label: "Delivery",           icon: Truck,        color: "text-sky-600",     bg: "bg-sky-50",     activeBg: "bg-sky-600",     description: "Delivery charges per service and free delivery thresholds" },
+  customer:     { label: "Customers",          icon: Users,        color: "text-blue-600",    bg: "bg-blue-50",    activeBg: "bg-blue-600",    description: "Wallet limits, loyalty points, referral bonuses and order caps" },
+  rider:        { label: "Riders",             icon: Bike,         color: "text-green-600",   bg: "bg-green-50",   activeBg: "bg-green-600",   description: "Earnings %, acceptance radius, payout limits and withdrawal rules" },
+  vendor:       { label: "Vendors",            icon: Store,        color: "text-orange-600",  bg: "bg-orange-50",  activeBg: "bg-orange-600",  description: "Commission rate, menu limits, settlement cycle and approval rules" },
+  finance:      { label: "Finance",            icon: BarChart3,    color: "text-purple-600",  bg: "bg-purple-50",  activeBg: "bg-purple-600",  description: "GST/tax, cashback, platform commissions, invoicing and payouts" },
+  payment:      { label: "Payments",           icon: CreditCard,   color: "text-emerald-600", bg: "bg-emerald-50", activeBg: "bg-emerald-600", description: "JazzCash, EasyPaisa, Bank Transfer, COD and AJK Wallet settings" },
+  content:      { label: "Content",            icon: MessageSquare,color: "text-pink-600",    bg: "bg-pink-50",    activeBg: "bg-pink-600",    description: "Banners, announcements, notices for riders & vendors, policy links" },
+  integrations: { label: "Integrations",       icon: Puzzle,       color: "text-indigo-600",  bg: "bg-indigo-50",  activeBg: "bg-indigo-600",  description: "Push notifications, SMS, WhatsApp, analytics, maps and monitoring" },
+  security:     { label: "Security",           icon: Shield,       color: "text-red-600",     bg: "bg-red-50",     activeBg: "bg-red-600",     description: "OTP modes, GPS tracking, rate limits, sessions and API credentials" },
+  system:       { label: "System",             icon: Database,     color: "text-rose-600",    bg: "bg-rose-50",    activeBg: "bg-rose-600",    description: "Database stats, backup, restore and data management tools" },
 };
 
 const TOGGLE_KEYS = new Set([
@@ -4793,38 +4805,73 @@ export default function SettingsPage() {
       {/* Two-panel layout */}
       <div className="flex gap-4 items-start">
         {/* LEFT sidebar */}
-        <div className="w-52 flex-shrink-0 bg-white rounded-2xl border border-border/60 shadow-sm overflow-hidden sticky top-4">
-          <div className="px-3 pt-3 pb-1">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 mb-1">Sections</p>
+        <div className="w-56 flex-shrink-0 bg-white rounded-2xl border border-border/60 shadow-sm overflow-hidden sticky top-4">
+          {/* Sidebar header */}
+          <div className="px-4 pt-4 pb-2 border-b border-border/30">
+            <div className="flex items-center gap-2">
+              <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Settings</p>
+            </div>
           </div>
-          <nav className="p-2 space-y-0.5">
-            {CAT_ORDER.map(cat => {
-              const cfg = CATEGORY_CONFIG[cat];
-              const Icon = cfg.icon;
-              const isActive = activeTab === cat;
-              const count = grouped[cat]?.length ?? 0;
-              const dirty = dirtyCounts[cat] || 0;
-              if (count === 0 && cat !== "payment" && cat !== "system") return null;
+
+          <nav className="p-2 pb-3 space-y-1 max-h-[calc(100vh-200px)] overflow-y-auto">
+            {NAV_GROUPS.map((group, gi) => {
+              const visibleItems = group.items.filter(cat => {
+                const count = grouped[cat]?.length ?? 0;
+                return count > 0 || cat === "payment" || cat === "system";
+              });
+              if (visibleItems.length === 0) return null;
+
+              const groupDirty = visibleItems.reduce((sum, cat) => sum + (dirtyCounts[cat] || 0), 0);
+
               return (
-                <button key={cat} onClick={() => setActiveTab(cat)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all group ${
-                    isActive ? `${cfg.activeBg} text-white shadow-sm` : "hover:bg-muted/50 text-foreground"
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-white/20" : cfg.bg}`}>
-                    <Icon className={`w-3.5 h-3.5 ${isActive ? "text-white" : cfg.color}`} />
+                <div key={group.label} className={gi > 0 ? "pt-1" : ""}>
+                  {/* Group header */}
+                  <div className="flex items-center gap-1.5 px-2 py-1.5 mb-0.5">
+                    <span className="text-[11px]">{group.emoji}</span>
+                    <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider flex-1">{group.label}</p>
+                    {groupDirty > 0 && (
+                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1 py-0.5 rounded-full">{groupDirty}</span>
+                    )}
                   </div>
-                  <span className={`text-xs font-semibold flex-1 truncate ${isActive ? "text-white" : "text-foreground"}`}>{cfg.label}</span>
-                  {dirty > 0
-                    ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>{dirty}</span>
-                    : <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? "text-white/60" : "text-muted-foreground/30 group-hover:text-muted-foreground/60"}`} />
-                  }
-                </button>
+
+                  {/* Group items */}
+                  <div className="space-y-0.5">
+                    {visibleItems.map(cat => {
+                      const cfg = CATEGORY_CONFIG[cat];
+                      const Icon = cfg.icon;
+                      const isActive = activeTab === cat;
+                      const dirty = dirtyCounts[cat] || 0;
+                      return (
+                        <button key={cat} onClick={() => setActiveTab(cat)}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all group ${
+                            isActive ? `${cfg.activeBg} text-white shadow-sm` : "hover:bg-muted/50 text-foreground"
+                          }`}
+                        >
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-white/20" : cfg.bg}`}>
+                            <Icon className={`w-3 h-3 ${isActive ? "text-white" : cfg.color}`} />
+                          </div>
+                          <span className={`text-xs font-semibold flex-1 truncate ${isActive ? "text-white" : "text-foreground"}`}>{cfg.label}</span>
+                          {dirty > 0
+                            ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${isActive ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>{dirty}</span>
+                            : <ChevronRight className={`w-3 h-3 flex-shrink-0 ${isActive ? "text-white/60" : "text-muted-foreground/30 group-hover:text-muted-foreground/60"}`} />
+                          }
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Divider between groups */}
+                  {gi < NAV_GROUPS.length - 1 && (
+                    <div className="mx-2 mt-2 border-t border-border/30" />
+                  )}
+                </div>
               );
             })}
           </nav>
-          <div className="p-3 border-t border-border/40">
-            <p className="text-[10px] text-muted-foreground text-center">{settings.length} settings · {Object.keys(grouped).length} sections</p>
+
+          <div className="px-4 py-2.5 border-t border-border/40 bg-muted/20">
+            <p className="text-[10px] text-muted-foreground">{settings.length} settings</p>
           </div>
         </div>
 
