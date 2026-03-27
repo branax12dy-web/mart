@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "crypto";
 
 const SALT_LENGTH = 16;
 const KEY_LENGTH  = 64;
@@ -30,11 +30,13 @@ export function validatePasswordStrength(password: string): { ok: boolean; messa
   return { ok: true, message: "ok" };
 }
 
+/** Cryptographically secure 6-digit OTP — never use Math.random() for auth codes */
 export function generateSecureOtp(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100_000, 1_000_000).toString();
 }
 
 /* Simple hash for token generation (non-crypto-sensitive) */
 export function makeTokenHash(value: string): string {
-  return createHash("sha256").update(value + process.env.JWT_SECRET || "ajkmart-secret-2024").digest("hex").slice(0, 32);
+  const secret = process.env["JWT_SECRET"] || "ajkmart-secret-2024";
+  return createHash("sha256").update(value + secret).digest("hex").slice(0, 32);
 }

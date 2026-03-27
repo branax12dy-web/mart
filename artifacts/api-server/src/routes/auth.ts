@@ -75,7 +75,7 @@ router.post("/send-otp", async (req, res) => {
   const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
   const newUserApprovalStatus = isNewUser && requireApproval ? "pending" : "approved";
 
-  const otp       = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp       = generateSecureOtp();
   const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   /* Atomic upsert — prevents duplicate accounts even under concurrent
@@ -509,6 +509,11 @@ router.post("/verify-email-otp", async (req, res) => {
     res.status(401).json({ error: "OTP expired. Please request a new one." }); return;
   }
 
+  /* Check approval BEFORE touching the DB — a rejected user must not have their OTP cleared */
+  if (user.approvalStatus === "rejected") {
+    res.status(403).json({ error: "Account rejected. Contact admin.", approvalNote: user.approvalNote }); return;
+  }
+
   /* Clear email OTP + mark email verified + update last login */
   await db.update(usersTable)
     .set({ emailOtpCode: null, emailOtpExpiry: null, emailVerified: true, lastLoginAt: new Date(), updatedAt: new Date() })
@@ -516,21 +521,29 @@ router.post("/verify-email-otp", async (req, res) => {
 
   resetAttempts(normalized);
 
-  /* Check approval */
-  if (user.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Account rejected. Contact admin.", approvalNote: user.approvalNote }); return;
-  }
-
   addAuditEntry({ action: "email_login", ip, details: `Email OTP login for: ${normalized}`, result: "success" });
 
-  const sessionDays = parseInt(settings["security_session_days"] ?? "30", 10);
+  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
+  const isPendingApproval = requireApproval && user.approvalStatus === "pending";
+
+  /* Pending-approval users get a short-lived 1-day token — same as phone OTP flow */
+  const sessionDays = isPendingApproval ? 1 : parseInt(settings["security_session_days"] ?? "30", 10);
   const token = signUserJwt(user.id, user.phone ?? normalized, user.role ?? "customer", user.roles ?? "customer", sessionDays);
   const expiresAt = new Date(Date.now() + sessionDays * 86400000).toISOString();
+
+  if (isPendingApproval) {
+    res.json({
+      token, expiresAt, pendingApproval: true,
+      message: "Aapka account admin approval ke liye bheja gaya hai.",
+      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, approvalStatus: "pending" },
+    });
+    return;
+  }
 
   res.json({
     token,
     expiresAt,
-    pendingApproval: user.approvalStatus === "pending",
+    pendingApproval: false,
     user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
   });
 });
@@ -588,14 +601,25 @@ router.post("/login/username", async (req, res) => {
   await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
   addAuditEntry({ action: "username_login", ip, details: `Username login: ${clean}`, result: "success" });
 
-  const sessionDays = parseInt(settings["security_session_days"] ?? "30", 10);
+  const isPendingApproval = (settings["user_require_approval"] ?? "off") === "on" && user.approvalStatus === "pending";
+
+  /* Pending-approval users get a short-lived 1-day token — consistent with OTP flows */
+  const sessionDays = isPendingApproval ? 1 : parseInt(settings["security_session_days"] ?? "30", 10);
   const token = signUserJwt(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", sessionDays);
-  const pendingApproval = (settings["user_require_approval"] ?? "off") === "on" && user.approvalStatus === "pending";
+
+  if (isPendingApproval) {
+    res.json({
+      token, expiresAt: new Date(Date.now() + 86400000).toISOString(), pendingApproval: true,
+      message: "Aapka account admin approval ke liye bheja gaya hai.",
+      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, approvalStatus: "pending" },
+    });
+    return;
+  }
 
   res.json({
     token,
     expiresAt: new Date(Date.now() + sessionDays * 86400000).toISOString(),
-    pendingApproval,
+    pendingApproval: false,
     user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false },
   });
 });
@@ -609,7 +633,7 @@ router.post("/complete-profile", async (req, res) => {
   /* Accept token from body OR Authorization: Bearer header */
   const authHeader = req.headers["authorization"] as string | undefined;
   const rawToken = req.body?.token || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
-  const { name, email, username, password } = req.body;
+  const { name, email, username, password, currentPassword } = req.body;
   if (!rawToken) { res.status(401).json({ error: "Token required" }); return; }
 
   /* Verify JWT to get userId */
@@ -655,6 +679,15 @@ router.post("/complete-profile", async (req, res) => {
   }
 
   if (password && password.length >= 8) {
+    /* If a password already exists, require the current one — same rule as set-password */
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        res.status(400).json({ error: "Current password required to change password" }); return;
+      }
+      if (!verifyPassword(currentPassword, user.passwordHash)) {
+        res.status(401).json({ error: "Current password galat hai" }); return;
+      }
+    }
     const check = validatePasswordStrength(password);
     if (!check.ok) { res.status(400).json({ error: check.message }); return; }
     updates.passwordHash = hashPassword(password);

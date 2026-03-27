@@ -179,6 +179,8 @@ export function verifyUserJwt(token: string): JwtUserPayload | null {
       phone:  payload["phone"] as string ?? "",
       role:   payload["role"]  as string ?? "customer",
       roles:  payload["roles"] as string ?? "customer",
+      exp:    typeof payload.exp === "number" ? payload.exp : undefined,
+      iat:    typeof payload.iat === "number" ? payload.iat : undefined,
     };
   } catch {
     return null;
