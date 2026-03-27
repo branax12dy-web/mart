@@ -201,6 +201,15 @@ router.post("/verify-otp", async (req, res) => {
   const phoneVerifyRequired = settings["security_phone_verify"] === "on";
   const otpBypass = settings["security_otp_bypass"] === "on" && !phoneVerifyRequired;
 
+  /* ── OTP expiry check FIRST — prevents timing oracle.
+     If expiry is checked after the code comparison, a correct-but-expired OTP
+     yields a different error than a wrong OTP, leaking that the attacker has
+     the right code (same fix already applied to the email OTP flow). ── */
+  if (!otpBypass && user.otpExpiry && new Date() > user.otpExpiry) {
+    res.status(401).json({ error: "OTP expired. Please request a new one." });
+    return;
+  }
+
   /* ── OTP code check ── */
   if (!otpBypass && user.otpCode !== otp) {
     const updated = recordFailedAttempt(phone, maxAttempts, lockoutMinutes);
@@ -220,12 +229,6 @@ router.post("/verify-otp", async (req, res) => {
         attemptsRemaining: Math.max(0, remaining),
       });
     }
-    return;
-  }
-
-  /* ── OTP expiry check ── */
-  if (!otpBypass && user.otpExpiry && new Date() > user.otpExpiry) {
-    res.status(401).json({ error: "OTP expired. Please request a new one." });
     return;
   }
 

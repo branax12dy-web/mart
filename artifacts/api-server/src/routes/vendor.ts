@@ -212,6 +212,9 @@ router.post("/products", async (req, res) => {
   const user = (req as any).vendorUser;
   const body = req.body;
   if (!body.name || !body.price) { res.status(400).json({ error: "name and price required" }); return; }
+  if (!isFinite(Number(body.price)) || Number(body.price) <= 0) {
+    res.status(400).json({ error: "Price must be a positive number" }); return;
+  }
 
   // Enforce max items limit
   const s = await getPlatformSettings();
@@ -249,8 +252,8 @@ router.post("/products/bulk", async (req, res) => {
   if (currentCount + products.length > maxItems2) {
     res.status(400).json({ error: `Product limit exceeded. You have ${currentCount}/${maxItems2} items. Can only add ${Math.max(0, maxItems2 - currentCount)} more.` }); return;
   }
-  const invalid = products.filter(p => !p.name || !p.price);
-  if (invalid.length > 0) { res.status(400).json({ error: `${invalid.length} products missing name or price` }); return; }
+  const invalid = products.filter(p => !p.name || !p.price || !isFinite(Number(p.price)) || Number(p.price) <= 0);
+  if (invalid.length > 0) { res.status(400).json({ error: `${invalid.length} product(s) missing name, or have an invalid/non-positive price` }); return; }
   const inserted = await db.insert(productsTable).values(
     products.map(p => ({
       id: generateId(), vendorId, vendorName: user.storeName || user.name,
@@ -271,7 +274,12 @@ router.patch("/products/:id", async (req, res) => {
   const updates: any = { updatedAt: new Date() };
   const fields = ["name","description","category","type","unit","deliveryTime"];
   for (const f of fields) if (body[f] !== undefined) updates[f] = body[f];
-  if (body.price       !== undefined) updates.price        = String(body.price);
+  if (body.price !== undefined) {
+    if (!isFinite(Number(body.price)) || Number(body.price) <= 0) {
+      res.status(400).json({ error: "Price must be a positive number" }); return;
+    }
+    updates.price = String(body.price);
+  }
   if (body.originalPrice !== undefined) updates.originalPrice = body.originalPrice ? String(body.originalPrice) : null;
   if (body.inStock     !== undefined) updates.inStock      = body.inStock;
   if (body.stock       !== undefined) updates.stock        = body.stock !== null ? Number(body.stock) : null;
@@ -390,7 +398,15 @@ router.post("/wallet/withdraw", async (req, res) => {
       const balance = safeNum(user.walletBalance);
       if (amt > balance) throw new Error(`Insufficient balance. Available: Rs. ${balance}`);
 
-      await tx.update(usersTable).set({ walletBalance: sql`wallet_balance - ${amt}`, updatedAt: new Date() }).where(eq(usersTable.id, vendorId));
+      /* DB-level floor guard in WHERE — prevents negative balance even when two
+         concurrent withdrawal requests both pass the pre-flight check above.
+         Same pattern applied to all other deduction sites in Pass 17. */
+      const [debited] = await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance - ${amt}`, updatedAt: new Date() })
+        .where(and(eq(usersTable.id, vendorId), gte(usersTable.walletBalance, String(amt))))
+        .returning({ id: usersTable.id });
+      if (!debited) throw new Error("Insufficient balance — please refresh and try again.");
+
       await tx.insert(walletTransactionsTable).values({
         id: generateId(), userId: vendorId, type: "debit",
         amount: amt.toFixed(2),

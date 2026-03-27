@@ -172,7 +172,8 @@ export function signUserJwt(
 
 export function verifyUserJwt(token: string): JwtUserPayload | null {
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+    /* Pin to HS256 — prevents algorithm-confusion attacks (e.g. alg:none, RS256 key-confusion) */
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as jwt.JwtPayload;
     if (!payload.sub) return null;
     return {
       userId: payload["sub"] as string,
