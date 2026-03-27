@@ -57,6 +57,7 @@ const TOGGLE_KEYS = new Set([
   "security_pwd_strong","security_allow_uploads","security_compress_images","security_scan_uploads",
   "security_fake_order_detect","security_auto_block_ip","security_phone_verify","security_single_phone",
   "security_audit_log",
+  "upload_payment_proof","upload_kyc_docs","upload_rider_docs","upload_vendor_docs","upload_product_imgs","upload_cod_proof",
   "integration_push_notif","integration_sms","integration_analytics","integration_email","integration_sentry","integration_whatsapp",
   "integration_maps","analytics_debug_mode","maps_distance_matrix","maps_places_autocomplete","maps_geocoding",
   "jazzcash_enabled","jazzcash_proof_required",
@@ -4807,6 +4808,11 @@ export default function SettingsPage() {
                 />
               ) : activeTab === "integrations" ? (
                 <IntegrationsSection
+                  localValues={localValues} dirtyKeys={dirtyKeys}
+                  handleChange={handleChange} handleToggle={handleToggle}
+                />
+              ) : activeTab === "security" ? (
+                <SecuritySection
                   localValues={localValues} dirtyKeys={dirtyKeys}
                   handleChange={handleChange} handleToggle={handleToggle}
                 />
