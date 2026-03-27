@@ -1052,11 +1052,9 @@ router.get("/transactions", async (_req, res) => {
 
 /* ── Platform Settings ── */
 router.get("/platform-settings", async (_req, res) => {
-  let rows = await db.select().from(platformSettingsTable);
-  if (rows.length === 0) {
-    await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
-    rows = await db.select().from(platformSettingsTable);
-  }
+  /* Always seed new defaults (onConflictDoNothing keeps existing values intact) */
+  await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+  const rows = await db.select().from(platformSettingsTable);
   const grouped: Record<string, any[]> = {};
   for (const row of rows) {
     if (!grouped[row.category]) grouped[row.category] = [];

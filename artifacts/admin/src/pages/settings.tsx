@@ -3413,13 +3413,12 @@ function renderSection(
     const schedFields   = catSettings.filter(s => SCHED_KEYS.has(s.key));
 
     const SUFFIX: Record<string,string> = {
-      min_order_amount: "Rs.", max_cod_amount: "Rs.", order_max_cart_value: "Rs.",
+      min_order_amount: "Rs.", order_max_cart_value: "Rs.",
       order_cancel_window_min: "min", order_auto_cancel_min: "min",
       order_refund_days: "days", order_preptime_min: "min", order_rating_window_hours: "hrs",
     };
     const HINT: Record<string,string> = {
       min_order_amount:        "Customer cannot checkout below this amount",
-      max_cod_amount:          "COD option hides automatically above this cart value",
       order_max_cart_value:    "Hard cap — checkout blocked if cart exceeds this",
       order_cancel_window_min: "Customer can cancel a pending order within this window",
       order_auto_cancel_min:   "Pending order auto-cancels if vendor does not accept in time",
