@@ -442,6 +442,36 @@ export const useCreditRiderWallet = () => {
   });
 };
 
+// ── Ride Service Types ──
+export const useRideServices = () =>
+  useQuery({ queryKey: ["admin-ride-services"], queryFn: () => fetcher("/ride-services"), staleTime: 0 });
+
+export const useCreateRideService = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      fetcher("/ride-services", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ride-services"] }),
+  });
+};
+
+export const useUpdateRideService = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; [k: string]: unknown }) =>
+      fetcher(`/ride-services/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ride-services"] }),
+  });
+};
+
+export const useDeleteRideService = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/ride-services/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ride-services"] }),
+  });
+};
+
 // All Notifications
 export const useAllNotifications = (role?: string) => {
   return useQuery({

@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { notificationsTable, rideBidsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-import { getPlatformSettings } from "./admin.js";
+import { ensureDefaultRideServices, getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -18,12 +18,24 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
 
 async function calcFare(distance: number, type: string): Promise<{ baseFare: number; gstAmount: number; total: number }> {
   const s = await getPlatformSettings();
-  const baseRate = type === "bike" ? parseFloat(s["ride_bike_base_fare"] ?? "15") : parseFloat(s["ride_car_base_fare"] ?? "25");
-  const perKm    = type === "bike" ? parseFloat(s["ride_bike_per_km"]    ?? "8")  : parseFloat(s["ride_car_per_km"]   ?? "12");
-  const minFare  = type === "bike" ? parseFloat(s["ride_bike_min_fare"]  ?? "50") : parseFloat(s["ride_car_min_fare"] ?? "80");
+
+  /* ── Try DB-driven service type pricing first ── */
+  let baseRate: number, perKm: number, minFare: number;
+  const [svc] = await db.select().from(rideServiceTypesTable).where(eq(rideServiceTypesTable.key, type)).limit(1);
+  if (svc) {
+    baseRate = parseFloat(svc.baseFare  ?? "15");
+    perKm    = parseFloat(svc.perKm     ?? "8");
+    minFare  = parseFloat(svc.minFare   ?? "50");
+  } else {
+    /* Fallback: legacy platform_settings for bike/car */
+    baseRate = type === "bike" ? parseFloat(s["ride_bike_base_fare"] ?? "15") : parseFloat(s["ride_car_base_fare"] ?? "25");
+    perKm    = type === "bike" ? parseFloat(s["ride_bike_per_km"]    ?? "8")  : parseFloat(s["ride_car_per_km"]   ?? "12");
+    minFare  = type === "bike" ? parseFloat(s["ride_bike_min_fare"]  ?? "50") : parseFloat(s["ride_car_min_fare"] ?? "80");
+  }
+
   const surgeEnabled    = (s["ride_surge_enabled"] ?? "off") === "on";
   const surgeMultiplier = surgeEnabled ? parseFloat(s["ride_surge_multiplier"] ?? "1.5") : 1;
-  const raw = Math.round(baseRate + distance * perKm);
+  const raw      = Math.round(baseRate + distance * perKm);
   const baseFare = Math.round(Math.max(minFare, raw) * surgeMultiplier);
   const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
   const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
@@ -44,6 +56,33 @@ function formatRide(r: any) {
     acceptedAt:  r.acceptedAt   ? (r.acceptedAt instanceof Date ? r.acceptedAt.toISOString() : r.acceptedAt) : null,
   };
 }
+
+/* ══════════════════════════════════════════════════════
+   GET /rides/services — Publicly visible enabled service types
+══════════════════════════════════════════════════════ */
+router.get("/services", async (_req, res) => {
+  await ensureDefaultRideServices();
+  const services = await db.select().from(rideServiceTypesTable)
+    .where(eq(rideServiceTypesTable.isEnabled, true))
+    .orderBy(asc(rideServiceTypesTable.sortOrder));
+  res.json({
+    services: services.map(s => ({
+      id:              s.id,
+      key:             s.key,
+      name:            s.name,
+      nameUrdu:        s.nameUrdu,
+      icon:            s.icon,
+      description:     s.description,
+      color:           s.color,
+      baseFare:        parseFloat(s.baseFare   ?? "0"),
+      perKm:           parseFloat(s.perKm      ?? "0"),
+      minFare:         parseFloat(s.minFare    ?? "0"),
+      maxPassengers:   s.maxPassengers,
+      allowBargaining: s.allowBargaining,
+      sortOrder:       s.sortOrder,
+    })),
+  });
+});
 
 /* ══════════════════════════════════════════════════════
    POST /rides/estimate — Fare estimate (server-side, incl. GST)
@@ -170,7 +209,7 @@ router.post("/", async (req, res) => {
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId, type: "debit",
           amount: fareToCharge.toFixed(2),
-          description: `${type === "bike" ? "Bike" : "Car"} ride payment`,
+          description: `${type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, " ")} ride payment`,
         });
         const [ride] = await tx.insert(ridesTable).values({
           id: generateId(), userId, type, status: rideStatus,
@@ -202,11 +241,11 @@ router.post("/", async (req, res) => {
     /* Notification */
     await db.insert(notificationsTable).values({
       id: generateId(), userId,
-      title: isBargaining ? `Ride Offer Sent 💬` : `${type === "bike" ? "Bike" : "Car"} Ride Booked`,
+      title: isBargaining ? `Ride Offer Sent 💬` : `${type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, " ")} Ride Booked`,
       body: isBargaining
         ? `Aapka Rs. ${validatedOffer} ka offer send ho gaya. Rider respond karega.`
         : `Aapki ride book ho gayi. Rider dhundha ja raha hai. Fare: Rs. ${fareToCharge.toFixed(0)}`,
-      type: "ride", icon: type === "bike" ? "bicycle-outline" : "car-outline", link: `/ride`,
+      type: "ride", icon: ({ bike: "bicycle-outline", car: "car-outline", rickshaw: "car-outline", daba: "bus-outline", school_shift: "bus-outline" } as Record<string, string>)[type] ?? "car-outline", link: `/ride`,
     }).catch(() => {});
 
     res.status(201).json({

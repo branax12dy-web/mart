@@ -14,8 +14,9 @@ import {
   flashDealsTable,
   promoCodesTable,
   adminAccountsTable,
+  rideServiceTypesTable,
 } from "@workspace/db/schema";
-import { eq, desc, count, sum, and, gte, lte, sql, or, ilike } from "drizzle-orm";
+import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import {
   checkAdminIPWhitelist,
@@ -2138,6 +2139,103 @@ router.post("/riders/:id/credit", async (req, res) => {
     "wallet", "wallet-outline"
   );
   res.json({ success: true, amount: amt, newBalance: parseFloat(updated?.walletBalance ?? "0") });
+});
+
+/* ══════════════════════════════════════════════════════
+   RIDE SERVICE TYPES — Admin CRUD
+   Controls which vehicle services are visible & priced
+══════════════════════════════════════════════════════ */
+
+export const DEFAULT_RIDE_SERVICES = [
+  { id: "svc_bike",         key: "bike",         name: "Bike",         nameUrdu: "موٹرسائیکل",  icon: "🏍️", description: "Fast & affordable solo rides",        color: "#059669", isEnabled: true, isCustom: false, baseFare: "15", perKm: "8",  minFare: "50",  maxPassengers: 1,  allowBargaining: true,  sortOrder: 1 },
+  { id: "svc_car",          key: "car",          name: "Car",          nameUrdu: "گاڑی",        icon: "🚗", description: "Comfortable AC rides up to 4 people",  color: "#3B82F6", isEnabled: true, isCustom: false, baseFare: "25", perKm: "12", minFare: "80",  maxPassengers: 4,  allowBargaining: true,  sortOrder: 2 },
+  { id: "svc_rickshaw",     key: "rickshaw",     name: "Rickshaw",     nameUrdu: "رکشہ",        icon: "🛺", description: "Cheap 3-wheeler, ideal for short trips", color: "#F59E0B", isEnabled: true, isCustom: false, baseFare: "20", perKm: "10", minFare: "60",  maxPassengers: 3,  allowBargaining: true,  sortOrder: 3 },
+  { id: "svc_daba",         key: "daba",         name: "Daba / Van",   nameUrdu: "ڈبہ / وین",  icon: "🚐", description: "School van, group & cargo trips",        color: "#8B5CF6", isEnabled: true, isCustom: false, baseFare: "30", perKm: "14", minFare: "100", maxPassengers: 8,  allowBargaining: true,  sortOrder: 4 },
+  { id: "svc_school_shift", key: "school_shift", name: "School Shift", nameUrdu: "اسکول شفٹ",  icon: "🚌", description: "Monthly school bus service for students", color: "#EC4899", isEnabled: true, isCustom: false, baseFare: "0",  perKm: "0",  minFare: "0",   maxPassengers: 30, allowBargaining: false, sortOrder: 5 },
+];
+
+export async function ensureDefaultRideServices() {
+  const [row] = await db.select({ c: sql<number>`count(*)::int` }).from(rideServiceTypesTable);
+  if ((row?.c ?? 0) === 0) {
+    await db.insert(rideServiceTypesTable).values(DEFAULT_RIDE_SERVICES);
+  }
+}
+
+function formatSvc(s: any) {
+  return {
+    ...s,
+    baseFare:      parseFloat(s.baseFare ?? "0"),
+    perKm:         parseFloat(s.perKm    ?? "0"),
+    minFare:       parseFloat(s.minFare  ?? "0"),
+    createdAt:     s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
+    updatedAt:     s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt,
+  };
+}
+
+/* GET /admin/ride-services */
+router.get("/ride-services", async (_req, res) => {
+  await ensureDefaultRideServices();
+  const services = await db.select().from(rideServiceTypesTable).orderBy(asc(rideServiceTypesTable.sortOrder));
+  res.json({ services: services.map(formatSvc) });
+});
+
+/* POST /admin/ride-services — create custom service */
+router.post("/ride-services", async (req, res) => {
+  const { key, name, nameUrdu, icon, description, color, baseFare, perKm, minFare, maxPassengers, allowBargaining, sortOrder } = req.body;
+  if (!key || !name || !icon) { res.status(400).json({ error: "key, name, icon are required" }); return; }
+  const existing = await db.select({ id: rideServiceTypesTable.id }).from(rideServiceTypesTable).where(eq(rideServiceTypesTable.key, String(key))).limit(1);
+  if (existing.length > 0) { res.status(409).json({ error: `Service key "${key}" already exists` }); return; }
+  const [created] = await db.insert(rideServiceTypesTable).values({
+    id: `svc_${generateId()}`,
+    key: String(key).toLowerCase().replace(/\s+/g, "_"),
+    name: String(name),
+    nameUrdu:      nameUrdu      || null,
+    icon:          String(icon),
+    description:   description   || null,
+    color:         color         || "#6B7280",
+    isEnabled:     true,
+    isCustom:      true,
+    baseFare:      String(baseFare  ?? 15),
+    perKm:         String(perKm     ?? 8),
+    minFare:       String(minFare   ?? 50),
+    maxPassengers: Number(maxPassengers ?? 1),
+    allowBargaining: allowBargaining !== false,
+    sortOrder:     Number(sortOrder ?? 99),
+  }).returning();
+  res.status(201).json({ success: true, service: formatSvc(created) });
+});
+
+/* PATCH /admin/ride-services/:id — update any field */
+router.patch("/ride-services/:id", async (req, res) => {
+  const svcId = req.params["id"]!;
+  const [existing] = await db.select().from(rideServiceTypesTable).where(eq(rideServiceTypesTable.id, svcId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Service not found" }); return; }
+  const { name, nameUrdu, icon, description, color, isEnabled, baseFare, perKm, minFare, maxPassengers, allowBargaining, sortOrder } = req.body;
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (name          !== undefined) patch["name"]           = String(name);
+  if (nameUrdu      !== undefined) patch["nameUrdu"]       = nameUrdu;
+  if (icon          !== undefined) patch["icon"]           = String(icon);
+  if (description   !== undefined) patch["description"]    = description;
+  if (color         !== undefined) patch["color"]          = String(color);
+  if (isEnabled     !== undefined) patch["isEnabled"]      = Boolean(isEnabled);
+  if (baseFare      !== undefined) patch["baseFare"]       = String(baseFare);
+  if (perKm         !== undefined) patch["perKm"]          = String(perKm);
+  if (minFare       !== undefined) patch["minFare"]        = String(minFare);
+  if (maxPassengers !== undefined) patch["maxPassengers"]  = Number(maxPassengers);
+  if (allowBargaining !== undefined) patch["allowBargaining"] = Boolean(allowBargaining);
+  if (sortOrder     !== undefined) patch["sortOrder"]      = Number(sortOrder);
+  const [updated] = await db.update(rideServiceTypesTable).set(patch as any).where(eq(rideServiceTypesTable.id, svcId)).returning();
+  res.json({ success: true, service: formatSvc(updated) });
+});
+
+/* DELETE /admin/ride-services/:id — only custom services */
+router.delete("/ride-services/:id", async (req, res) => {
+  const svcId = req.params["id"]!;
+  const [existing] = await db.select().from(rideServiceTypesTable).where(eq(rideServiceTypesTable.id, svcId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Service not found" }); return; }
+  if (!existing.isCustom) { res.status(400).json({ error: "Built-in services cannot be deleted. Disable them instead." }); return; }
+  await db.delete(rideServiceTypesTable).where(eq(rideServiceTypesTable.id, svcId));
+  res.json({ success: true });
 });
 
 export default router;

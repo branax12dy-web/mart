@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useRidesEnriched, useUpdateRide } from "@/hooks/use-admin";
+import { useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   Car, Search, User, MapPin, Navigation, Phone,
   TrendingUp, UserCheck, AlertTriangle, CheckCircle2,
   MessageCircle, Clock, Zap, History, Activity, Settings2,
+  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, ChevronUp, ChevronDown, Layers,
 } from "lucide-react";
 
 /* ─── constants ─── */
@@ -367,7 +368,292 @@ function RideDetailModal({
 /* ────────────────────────────────────────────────────
    MAIN PAGE
    ──────────────────────────────────────────────────── */
-type Tab = "live" | "active" | "history";
+type Tab = "live" | "active" | "history" | "services";
+
+/* ─────────────────────────────────────────────────────────
+   SERVICE MANAGEMENT UI — shown in the "services" tab
+   ───────────────────────────────────────────────────────── */
+const EMPTY_FORM = { key: "", name: "", nameUrdu: "", icon: "🚗", description: "", color: "#6B7280", baseFare: "15", perKm: "8", minFare: "50", maxPassengers: "1", allowBargaining: true };
+
+function ServiceManager() {
+  const { data: svcData, isLoading: svcLoading } = useRideServices();
+  const createMut = useCreateRideService();
+  const updateMut = useUpdateRideService();
+  const deleteMut = useDeleteRideService();
+  const { toast } = useToast();
+  const services: any[] = svcData?.services ?? [];
+
+  const [showAdd,   setShowAdd]   = useState(false);
+  const [editId,    setEditId]    = useState<string | null>(null);
+  const [form,      setForm]      = useState({ ...EMPTY_FORM });
+  const [delConfirm, setDelConfirm] = useState<string | null>(null);
+
+  const resetForm = () => { setForm({ ...EMPTY_FORM }); setEditId(null); setShowAdd(false); };
+
+  const startEdit = (svc: any) => {
+    setForm({
+      key: svc.key, name: svc.name, nameUrdu: svc.nameUrdu ?? "",
+      icon: svc.icon, description: svc.description ?? "",
+      color: svc.color ?? "#6B7280",
+      baseFare: String(svc.baseFare), perKm: String(svc.perKm), minFare: String(svc.minFare),
+      maxPassengers: String(svc.maxPassengers), allowBargaining: svc.allowBargaining,
+    });
+    setEditId(svc.id);
+    setShowAdd(false);
+  };
+
+  const handleSubmit = async () => {
+    const payload = {
+      ...form,
+      baseFare:      parseFloat(form.baseFare)      || 0,
+      perKm:         parseFloat(form.perKm)         || 0,
+      minFare:       parseFloat(form.minFare)        || 0,
+      maxPassengers: parseInt(form.maxPassengers)    || 1,
+    };
+    try {
+      if (editId) {
+        await updateMut.mutateAsync({ id: editId, ...payload });
+        toast({ title: "Service updated ✅" });
+      } else {
+        await createMut.mutateAsync(payload);
+        toast({ title: "Service created ✅" });
+      }
+      resetForm();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const toggleEnabled = async (svc: any) => {
+    try {
+      await updateMut.mutateAsync({ id: svc.id, isEnabled: !svc.isEnabled });
+      toast({ title: svc.isEnabled ? `${svc.name} disabled` : `${svc.name} enabled ✅` });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const reorder = async (svc: any, dir: "up" | "down") => {
+    const sorted = [...services].sort((a, b) => a.sortOrder - b.sortOrder);
+    const idx = sorted.findIndex(s => s.id === svc.id);
+    const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const other = sorted[swapIdx]!;
+    await Promise.all([
+      updateMut.mutateAsync({ id: svc.id,   sortOrder: other.sortOrder }),
+      updateMut.mutateAsync({ id: other.id, sortOrder: svc.sortOrder   }),
+    ]);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteMut.mutateAsync(id);
+      toast({ title: "Service deleted" });
+      setDelConfirm(null);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const FormPanel = ({ isNew }: { isNew: boolean }) => (
+    <Card className="p-5 rounded-2xl border-2 border-primary/20 bg-primary/5 space-y-4">
+      <h3 className="font-bold text-base text-foreground">{isNew ? "Add Custom Service" : `Edit: ${form.name}`}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground mb-1 block">Icon (Emoji)</label>
+          <Input value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} placeholder="🚗" className="text-2xl" />
+        </div>
+        {isNew && (
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground mb-1 block">Key (unique slug)</label>
+            <Input value={form.key} onChange={e => setForm(f => ({ ...f, key: e.target.value.toLowerCase().replace(/\s+/g, "_") }))} placeholder="e.g. school_van" />
+          </div>
+        )}
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground mb-1 block">Name (English)</label>
+          <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="School Van" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground mb-1 block">نام (اردو)</label>
+          <Input value={form.nameUrdu} onChange={e => setForm(f => ({ ...f, nameUrdu: e.target.value }))} placeholder="اسکول وین" className="text-right" dir="rtl" />
+        </div>
+        <div className={isNew ? "sm:col-span-2" : ""}>
+          <label className="text-xs font-semibold text-muted-foreground mb-1 block">Description</label>
+          <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief description..." />
+        </div>
+      </div>
+      <div className="border-t pt-4">
+        <p className="text-xs font-bold text-muted-foreground mb-3 uppercase tracking-wide">💰 Fare Settings (Rs.)</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Base Fare", key: "baseFare", placeholder: "15" },
+            { label: "Per Km",    key: "perKm",    placeholder: "8"  },
+            { label: "Min Fare",  key: "minFare",  placeholder: "50" },
+            { label: "Max Pax",   key: "maxPassengers", placeholder: "1" },
+          ].map(f => (
+            <div key={f.key}>
+              <label className="text-xs font-semibold text-muted-foreground mb-1 block">{f.label}</label>
+              <Input type="number" value={(form as any)[f.key]} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))} placeholder={f.placeholder} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={form.allowBargaining} onChange={e => setForm(f => ({ ...f, allowBargaining: e.target.checked }))} className="w-4 h-4 rounded" />
+          <span className="text-sm font-medium text-foreground">Allow Bargaining (Mol-Tol)</span>
+        </label>
+      </div>
+      <div className="flex gap-3">
+        <button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending}
+          className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:opacity-90 disabled:opacity-60 transition-opacity">
+          {(createMut.isPending || updateMut.isPending) ? "Saving..." : (isNew ? "Create Service" : "Save Changes")}
+        </button>
+        <button onClick={resetForm} className="px-4 py-2.5 rounded-xl border border-border/60 text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </Card>
+  );
+
+  const sorted = [...services].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Ride Services Management</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Control which vehicle services customers can book. Changes take effect immediately.
+          </p>
+        </div>
+        <button onClick={() => { setShowAdd(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:opacity-90 transition-opacity shrink-0">
+          <Plus className="w-4 h-4" /> Add Custom Service
+        </button>
+      </div>
+
+      {/* Add form */}
+      {showAdd && !editId && <FormPanel isNew />}
+
+      {svcLoading ? (
+        <Card className="p-12 rounded-2xl text-center">
+          <p className="text-muted-foreground">Loading services...</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {sorted.map((svc, idx) => (
+            <Card key={svc.id} className={`rounded-2xl overflow-hidden transition-all border-2 ${svc.isEnabled ? "border-border/50" : "border-dashed border-border/30 opacity-60"}`}>
+              {/* Color stripe */}
+              <div className="h-1.5" style={{ backgroundColor: svc.color ?? "#6B7280" }} />
+
+              <div className="p-4">
+                {/* Top row */}
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-border/30" style={{ backgroundColor: `${svc.color}18` ?? "#6B728018" }}>
+                      {svc.icon}
+                    </div>
+                    <div>
+                      <p className="font-bold text-base text-foreground leading-tight">{svc.name}</p>
+                      {svc.nameUrdu && <p className="text-xs text-muted-foreground font-medium" dir="rtl">{svc.nameUrdu}</p>}
+                      <code className="text-[10px] text-muted-foreground/60 bg-muted/40 px-1 rounded">{svc.key}</code>
+                    </div>
+                  </div>
+                  {/* Enabled toggle */}
+                  <button onClick={() => toggleEnabled(svc)} disabled={updateMut.isPending}
+                    className={`flex-shrink-0 p-1.5 rounded-xl transition-colors ${svc.isEnabled ? "text-green-600 bg-green-50 hover:bg-green-100" : "text-gray-400 bg-gray-100 hover:bg-gray-200"}`}>
+                    {svc.isEnabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+                  </button>
+                </div>
+
+                {svc.description && <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{svc.description}</p>}
+
+                {/* Pricing grid */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[
+                    { label: "Base", value: `Rs. ${svc.baseFare}` },
+                    { label: "Per km", value: `Rs. ${svc.perKm}` },
+                    { label: "Min fare", value: `Rs. ${svc.minFare}` },
+                  ].map(f => (
+                    <div key={f.label} className="bg-muted/30 rounded-xl p-2 text-center">
+                      <p className="text-xs font-bold text-foreground">{f.value}</p>
+                      <p className="text-[10px] text-muted-foreground">{f.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Badges */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                    👥 Max {svc.maxPassengers} pax
+                  </span>
+                  {svc.allowBargaining && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                      💬 Bargaining
+                    </span>
+                  )}
+                  {!svc.isCustom && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                      🔒 Built-in
+                    </span>
+                  )}
+                  {svc.isCustom && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                      ✨ Custom
+                    </span>
+                  )}
+                </div>
+
+                {/* Edit form (inline) */}
+                {editId === svc.id && <FormPanel isNew={false} />}
+
+                {/* Actions */}
+                {editId !== svc.id && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <button onClick={() => reorder(svc, "up")} disabled={idx === 0 || updateMut.isPending}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-30 transition-colors">
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => reorder(svc, "down")} disabled={idx === sorted.length - 1 || updateMut.isPending}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-30 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <button onClick={() => startEdit(svc)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-border/60 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors">
+                      <Pencil className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    {svc.isCustom && (
+                      delConfirm === svc.id ? (
+                        <div className="flex gap-1.5">
+                          <button onClick={() => handleDelete(svc.id)} disabled={deleteMut.isPending}
+                            className="px-3 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 disabled:opacity-60 transition-colors">
+                            Delete
+                          </button>
+                          <button onClick={() => setDelConfirm(null)} className="px-3 py-2 rounded-xl border text-xs font-semibold hover:bg-muted/50 transition-colors">
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setDelConfirm(svc.id)}
+                          className="p-2 rounded-xl text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Rides() {
   const { data, isLoading } = useRidesEnriched();
@@ -635,6 +921,7 @@ export default function Rides() {
         <TabBtn id="live"    icon={Zap}      label="Live"        count={liveRides.length}   urgent />
         <TabBtn id="active"  icon={Activity} label="In Progress" count={inProgress.length}         />
         <TabBtn id="history" icon={History}  label="History"     count={completed.length + cancelled.length} />
+        <TabBtn id="services" icon={Layers}  label="Services"    count={0} />
       </div>
 
       {/* ══════════ TAB: LIVE ══════════ */}
@@ -921,6 +1208,9 @@ export default function Rides() {
           </Card>
         </div>
       )}
+
+      {/* ══════════ TAB: SERVICES ══════════ */}
+      {tab === "services" && <ServiceManager />}
 
       {/* ── Ride Detail Modal ── */}
       {selectedRide && (

@@ -42,22 +42,11 @@ const POPULAR_SPOTS = [
 ];
 
 
-function calcFareFromConfig(
-  dist: number, type: "bike" | "car",
-  cfg: { bikeBaseFare: number; bikePerKm: number; bikeMinFare: number; carBaseFare: number; carPerKm: number; carMinFare: number; surgeEnabled: boolean; surgeMultiplier: number }
-) {
-  const base   = type === "bike" ? cfg.bikeBaseFare : cfg.carBaseFare;
-  const perKm  = type === "bike" ? cfg.bikePerKm    : cfg.carPerKm;
-  const minF   = type === "bike" ? cfg.bikeMinFare  : cfg.carMinFare;
-  const raw    = Math.round(base + dist * perKm);
-  const withMin = Math.max(minF, raw);
-  return Math.round(withMin * (cfg.surgeEnabled ? cfg.surgeMultiplier : 1));
-}
 
 /* ─── Professional Ride Tracker — Careem/Uber style ─── */
 function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: {
   rideId: string;
-  initialType: "bike" | "car";
+  initialType: string;
   userId: string;
   cancellationFee: number;
   onReset: () => void;
@@ -392,7 +381,9 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
             <Animated.View style={{ position: "absolute", width: 176, height: 176, borderRadius: 88,  backgroundColor: "rgba(255,255,255,0.11)", transform: [{ scale: ring2 }], opacity: ring2Op }} />
             <Animated.View style={{ position: "absolute", width: 122, height: 122, borderRadius: 61,  backgroundColor: "rgba(255,255,255,0.17)", transform: [{ scale: ring1 }], opacity: ring1Op }} />
             <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: "rgba(255,255,255,0.24)", alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)" }}>
-              <Ionicons name={rideType === "bike" ? "bicycle" : "car"} size={42} color="#fff" />
+              <Text style={{ fontSize: 42 }}>
+                {{ bike: "🏍️", car: "🚗", rickshaw: "🛺", daba: "🚐", school_shift: "🚌" }[rideType] ?? "🚗"}
+              </Text>
             </View>
           </View>
 
@@ -703,9 +694,11 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
                   </View>
                 </View>
                 <View style={{ backgroundColor: "#F1F5F9", paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, alignItems: "center" }}>
-                  <Ionicons name={rideType === "bike" ? "bicycle" : "car"} size={20} color="#475569" />
+                  <Text style={{ fontSize: 20 }}>
+                    {{ bike: "🏍️", car: "🚗", rickshaw: "🛺", daba: "🚐", school_shift: "🚌" }[rideType] ?? "🚗"}
+                  </Text>
                   <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#475569", marginTop: 3 }}>
-                    {rideType === "bike" ? "Bike" : "Car"}
+                    {{ bike: "Bike", car: "Car", rickshaw: "Rickshaw", daba: "Daba", school_shift: "School" }[rideType] ?? rideType}
                   </Text>
                 </View>
               </View>
@@ -851,7 +844,11 @@ export default function RideScreen() {
   const [drop,       setDrop]      = useState("");
   const [pickupObj,  setPickupObj] = useState<LocObj | null>(null);
   const [dropObj,    setDropObj]   = useState<LocObj | null>(null);
-  const [rideType,   setRideType]  = useState<"bike" | "car">("bike");
+  const [rideType,   setRideType]  = useState<string>("bike");
+  const [services,   setServices]  = useState<Array<{ key: string; name: string; nameUrdu?: string; icon: string; description?: string; color: string; baseFare: number; perKm: number; minFare: number; maxPassengers: number; allowBargaining: boolean }>>([
+    { key: "bike",     name: "Bike",     icon: "🏍️", color: "#059669", baseFare: 15, perKm: 8,  minFare: 50, maxPassengers: 1, allowBargaining: true },
+    { key: "car",      name: "Car",      icon: "🚗", color: "#3B82F6", baseFare: 25, perKm: 12, minFare: 80, maxPassengers: 4, allowBargaining: true },
+  ]);
   const [payMethod,  setPayMethod] = useState<"cash" | "wallet">("cash");
   const [payMethods, setPayMethods] = useState<Array<{ id: string; label: string }>>([
     { id: "cash", label: "Cash" },
@@ -890,6 +887,18 @@ export default function RideScreen() {
           setPayMethods(rideCompatible);
           setPayMethod(rideCompatible[0]!.id as "cash" | "wallet");
         }
+      })
+      .catch(() => {});
+  }, []);
+
+  /* ── Fetch enabled ride service types from admin ── */
+  useEffect(() => {
+    fetch(`${API}/rides/services`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.services || data.services.length === 0) return;
+        setServices(data.services);
+        setRideType(prev => data.services.find((s: any) => s.key === prev) ? prev : data.services[0].key);
       })
       .catch(() => {});
   }, []);
@@ -1050,14 +1059,8 @@ export default function RideScreen() {
     );
   }
 
-  const bikeFeatures = [
-    `Rs. ${rideCfg.bikeBaseFare} base + Rs. ${rideCfg.bikePerKm}/km`,
-    "Helmet included", "Fastest route", "GPS tracked",
-  ];
-  const carFeatures = [
-    `Rs. ${rideCfg.carBaseFare} base + Rs. ${rideCfg.carPerKm}/km`,
-    "AC available", "4 passengers", "GPS tracked",
-  ];
+  /* selected service lookup */
+  const selectedSvc = services.find(s => s.key === rideType) ?? services[0];
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
@@ -1197,33 +1200,38 @@ export default function RideScreen() {
           </View>
         )}
 
-        {/* Vehicle Cards */}
-        <View style={rs.secRow}><Text style={rs.secTitle}>Vehicle Type</Text></View>
-        <View style={rs.vehicleRow}>
-          {(["bike", "car"] as const).map(type => {
-            const active = rideType === type;
-            const feats = type === "bike" ? bikeFeatures : carFeatures;
-            const fromPrice = `Rs. ${type === "bike" ? rideCfg.bikeMinFare : rideCfg.carMinFare}`;
+        {/* Vehicle Cards — dynamic from admin */}
+        <View style={rs.secRow}><Text style={rs.secTitle}>Service Type</Text></View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 10, flexDirection: "row" }}>
+          {services.map((svc) => {
+            const active = rideType === svc.key;
+            const feats: string[] = [];
+            if (svc.perKm > 0) feats.push(`Rs. ${svc.perKm}/km`);
+            if (svc.maxPassengers > 1) feats.push(`${svc.maxPassengers} passengers`);
+            if (svc.allowBargaining) feats.push("Bargaining OK");
+            if (svc.description) feats.push(svc.description);
             return (
-              <Pressable key={type} onPress={() => setRideType(type)} style={[rs.vCard, active && rs.vCardActive]}>
-                {active && <LinearGradient colors={["#059669","#10B981"]} style={rs.vGrad} />}
-                <View style={[rs.vIconBox, { backgroundColor: active ? "rgba(255,255,255,0.2)" : "#D1FAE5" }]}>
-                  <Ionicons name={type === "bike" ? "bicycle" : "car"} size={32} color={active ? "#fff" : "#059669"} />
+              <Pressable key={svc.key} onPress={() => setRideType(svc.key)}
+                style={[rs.vCard, active && rs.vCardActive, { width: 148 }]}>
+                {active && <LinearGradient colors={[svc.color ?? "#059669", (svc.color ?? "#059669") + "CC"]} style={rs.vGrad} />}
+                <View style={[rs.vIconBox, { backgroundColor: active ? "rgba(255,255,255,0.2)" : `${svc.color ?? "#059669"}22` }]}>
+                  <Text style={{ fontSize: 30 }}>{svc.icon}</Text>
                 </View>
-                <Text style={[rs.vTitle, active && { color: "#fff" }]}>{type === "bike" ? "Bike" : "Car"}</Text>
-                <Text style={[rs.vFrom, active && { color: "rgba(255,255,255,0.85)" }]}>From {fromPrice}</Text>
-                <View style={{ gap: 5, marginTop: 8 }}>
-                  {feats.map(f => (
+                <Text style={[rs.vTitle, active && { color: "#fff" }]}>{svc.name}</Text>
+                {svc.nameUrdu ? <Text style={[{ fontSize: 11, color: "#6B7280", fontFamily: "Inter_400Regular" }, active && { color: "rgba(255,255,255,0.85)" }]}>{svc.nameUrdu}</Text> : null}
+                <Text style={[rs.vFrom, active && { color: "rgba(255,255,255,0.85)" }]}>From Rs. {svc.minFare}</Text>
+                <View style={{ gap: 4, marginTop: 8 }}>
+                  {feats.slice(0, 3).map(f => (
                     <View key={f} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                      <Ionicons name="checkmark-circle" size={11} color={active ? "rgba(255,255,255,0.8)" : "#059669"} />
-                      <Text style={[rs.vFeat, active && { color: "rgba(255,255,255,0.85)" }]}>{f}</Text>
+                      <Ionicons name="checkmark-circle" size={11} color={active ? "rgba(255,255,255,0.8)" : (svc.color ?? "#059669")} />
+                      <Text style={[rs.vFeat, active && { color: "rgba(255,255,255,0.85)" }]} numberOfLines={1}>{f}</Text>
                     </View>
                   ))}
                 </View>
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
 
         {/* Fare Estimate */}
         {estimating && (
@@ -1239,7 +1247,7 @@ export default function RideScreen() {
                 <Text style={rs.fareTitle}>📍 Fare Estimate</Text>
                 <Pressable onPress={() => {
                   if (pickupObj && dropObj) {
-                    const url = `https://www.google.com/maps/dir/?api=1&origin=${pickupObj.lat},${pickupObj.lng}&destination=${dropObj.lat},${dropObj.lng}&travelmode=${rideType === "bike" ? "bicycling" : "driving"}`;
+                    const url = `https://www.google.com/maps/dir/?api=1&origin=${pickupObj.lat},${pickupObj.lng}&destination=${dropObj.lat},${dropObj.lng}&travelmode=${rideType === "bike" || rideType === "rickshaw" ? "bicycling" : "driving"}`;
                     Linking.openURL(url);
                   }
                 }} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fff", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#BBDEFB" }}>
@@ -1376,11 +1384,14 @@ export default function RideScreen() {
         <Pressable onPress={handleBook} disabled={booking || !estimate} style={[rs.bookBtn, (booking || !estimate) && { opacity: 0.7 }, showBargain && offeredFare ? { backgroundColor: "#EA580C" } : {}]}>
           {booking ? <ActivityIndicator color="#fff" /> : (
             <>
-              <Ionicons name={showBargain && offeredFare ? "chatbubble-ellipses" : (rideType === "bike" ? "bicycle" : "car")} size={20} color="#fff" />
+              {showBargain && offeredFare
+                ? <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+                : <Text style={{ fontSize: 20 }}>{selectedSvc?.icon ?? "🚗"}</Text>
+              }
               <Text style={rs.bookBtnTxt}>
                 {showBargain && offeredFare
                   ? `Send Offer • Rs. ${offeredFare}`
-                  : `Book ${rideType === "bike" ? "Bike" : "Car"} Now${estimate ? ` • Rs. ${estimate.fare}` : ""}`}
+                  : `Book ${selectedSvc?.name ?? rideType} Now${estimate ? ` • Rs. ${estimate.fare}` : ""}`}
               </Text>
             </>
           )}
@@ -1409,8 +1420,10 @@ export default function RideScreen() {
             <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
               {history.map((ride, i) => (
                 <View key={ride.id || i} style={rs.histItem}>
-                  <View style={[rs.histIcon, { backgroundColor: ride.type === "bike" ? "#D1FAE5" : "#DBEAFE" }]}>
-                    <Ionicons name={ride.type === "bike" ? "bicycle" : "car"} size={20} color={ride.type === "bike" ? "#059669" : C.primary} />
+                  <View style={[rs.histIcon, { backgroundColor: "#F0FDF4" }]}>
+                    <Text style={{ fontSize: 20 }}>
+                      {services.find(s => s.key === ride.type)?.icon ?? (ride.type === "bike" ? "🏍️" : ride.type === "car" ? "🚗" : ride.type === "rickshaw" ? "🛺" : ride.type === "daba" ? "🚐" : "🚗")}
+                    </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={rs.histRoute}>{ride.pickupAddress} → {ride.dropAddress}</Text>

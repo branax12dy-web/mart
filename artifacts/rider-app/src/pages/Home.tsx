@@ -361,16 +361,20 @@ export default function Home() {
                     const mapsUrl = (r.pickupLat && r.pickupLng)
                       ? `https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`
                       : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`;
+                    const SVC_ICONS: Record<string, string> = { bike: "🏍️", car: "🚗", rickshaw: "🛺", daba: "🚐", school_shift: "🚌" };
+                    const SVC_NAMES: Record<string, string> = { bike: "Bike", car: "Car", rickshaw: "Rickshaw", daba: "Daba / Van", school_shift: "School Shift" };
+                    const svcIcon = SVC_ICONS[r.type] ?? "🚗";
+                    const svcName = SVC_NAMES[r.type] ?? r.type?.replace(/_/g, " ") ?? "Ride";
 
                     return (
                       <div key={r.id} className={`p-4 ${isBargain ? "border-l-4 border-orange-400 bg-orange-50/30" : ""}`}>
                         <div className="flex items-start gap-3">
                           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 ${isBargain ? "bg-orange-100" : "bg-green-50"}`}>
-                            {isBargain ? "💬" : (r.type === "bike" ? "🏍️" : "🚗")}
+                            {isBargain ? "💬" : svcIcon}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                              <p className="font-extrabold text-gray-900 capitalize">{r.type} Ride</p>
+                              <p className="font-extrabold text-gray-900">{svcName} Ride</p>
                               {isBargain && (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 animate-pulse">
                                   💬 BARGAIN OFFER
