@@ -26,6 +26,17 @@ const STATUS_LABELS: Record<string, string> = {
   bargaining: "Bargaining", searching: "Searching", accepted: "Accepted",
   arrived: "Arrived", in_transit: "In Transit", completed: "Completed", cancelled: "Cancelled",
 };
+const SVC_ICONS: Record<string, string> = { bike: "🏍️", car: "🚗", rickshaw: "🛺", daba: "🚐", school_shift: "🚌" };
+const SVC_CLR: Record<string, string> = {
+  bike: "bg-orange-50 text-orange-600 border-orange-200",
+  car: "bg-sky-50 text-sky-600 border-sky-200",
+  rickshaw: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  daba: "bg-purple-50 text-purple-600 border-purple-200",
+  school_shift: "bg-blue-50 text-blue-600 border-blue-200",
+};
+const svcIcon = (type: string) => SVC_ICONS[type] ?? "🚗";
+const svcClr  = (type: string) => SVC_CLR[type]  ?? "bg-gray-50 text-gray-600 border-gray-200";
+const svcName = (type: string) => type?.replace(/_/g, " ") ?? "ride";
 const BARGAIN_STATUS_LABELS: Record<string, string> = {
   customer_offered: "Bids Open", rider_countered: "Rider Countered",
   customer_countered: "Customer Countered", agreed: "Deal Agreed", expired: "Expired",
@@ -199,8 +210,8 @@ function RideDetailModal({
           <div className="bg-muted/40 rounded-xl p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Type</span>
-              <Badge variant="outline" className={`text-[10px] font-bold uppercase ${ride.type === 'bike' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-sky-50 text-sky-600 border-sky-200'}`}>
-                {ride.type === 'bike' ? '🏍️' : '🚗'} {ride.type}
+              <Badge variant="outline" className={`text-[10px] font-bold uppercase ${svcClr(ride.type)}`}>
+                {svcIcon(ride.type)} {svcName(ride.type)}
               </Badge>
             </div>
             <div className="flex justify-between">
@@ -1201,7 +1212,7 @@ export default function Rides() {
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${isBargain ? "bg-orange-200" : "bg-amber-200"}`}>
-              {isBargain ? "💬" : (r.type === "bike" ? "🏍️" : "🚗")}
+              {isBargain ? "💬" : svcIcon(r.type)}
             </div>
             <div>
               <p className="font-mono font-bold text-sm text-gray-800">#{r.id.slice(-8).toUpperCase()}</p>
@@ -1336,7 +1347,7 @@ export default function Rides() {
               {searching.length > 0 && `${searching.length} ride${searching.length > 1 ? "s" : ""} searching for driver`}
             </p>
             <p className="text-xs text-orange-600 mt-0.5">
-              {liveRides.slice(0, 4).map((r: any) => `${r.type === "bike" ? "🏍️" : "🚗"} #${r.id.slice(-6).toUpperCase()}`).join(" · ")}
+              {liveRides.slice(0, 4).map((r: any) => `${svcIcon(r.type)} #${r.id.slice(-6).toUpperCase()}`).join(" · ")}
               {liveRides.length > 4 && ` +${liveRides.length - 4} more`}
             </p>
           </div>
@@ -1487,8 +1498,8 @@ export default function Rides() {
                             <span className="text-base">{STATUS_ICONS[r.status] ?? "🚗"}</span>
                             <div>
                               <p className="font-mono font-medium text-sm">{r.id.slice(-8).toUpperCase()}</p>
-                              <Badge variant="outline" className={`mt-0.5 text-[10px] font-bold uppercase ${r.type === 'bike' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-sky-50 text-sky-600 border-sky-200'}`}>
-                                {r.type === 'bike' ? '🏍️' : '🚗'} {r.type}
+                              <Badge variant="outline" className={`mt-0.5 text-[10px] font-bold uppercase ${svcClr(r.type)}`}>
+                                {svcIcon(r.type)} {svcName(r.type)}
                               </Badge>
                             </div>
                           </div>
@@ -1616,8 +1627,8 @@ export default function Rides() {
                       <TableRow key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openRide(r)}>
                         <TableCell>
                           <p className="font-mono font-medium text-sm">{r.id.slice(-8).toUpperCase()}</p>
-                          <Badge variant="outline" className={`mt-1 text-[10px] font-bold uppercase ${r.type === 'bike' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-sky-50 text-sky-600 border-sky-200'}`}>
-                            {r.type === 'bike' ? '🏍️' : '🚗'} {r.type}
+                          <Badge variant="outline" className={`mt-1 text-[10px] font-bold uppercase ${svcClr(r.type)}`}>
+                            {svcIcon(r.type)} {svcName(r.type)}
                           </Badge>
                         </TableCell>
                         <TableCell>

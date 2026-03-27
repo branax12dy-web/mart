@@ -84,6 +84,10 @@ export default function Active() {
   const [cancelTarget, setCancelTarget]           = useState<"order" | "ride">("ride");
   const [orderPickedUp, _setOrderPickedUp]         = useState(() => sessionStorage.getItem("orderPickedUp") === "true");
   const setOrderPickedUp = (v: boolean) => { _setOrderPickedUp(v); sessionStorage.setItem("orderPickedUp", String(v)); };
+  /* Sync orderPickedUp from API order status — survives page refresh & device switch */
+  useEffect(() => {
+    if (data?.order?.status === "picked_up") _setOrderPickedUp(true);
+  }, [data?.order?.status]);
   const [proofPhoto, setProofPhoto]               = useState<string | null>(null);
   const [proofFileName, setProofFileName]         = useState<string>("");
   const photoInputRef                             = useRef<HTMLInputElement>(null);

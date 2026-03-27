@@ -90,14 +90,16 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
   /* ── Slide-in on status change ── */
   useEffect(() => {
     const st = ride?.status;
-    if (st && st !== "searching" && prevStatus.current === "searching") {
+    const prev = prevStatus.current;
+    const pendingStatuses = ["searching", "bargaining"];
+    if (st && !pendingStatuses.includes(st) && pendingStatuses.includes(prev)) {
       slideUp.setValue(50); fadeIn.setValue(0);
       Animated.parallel([
         Animated.spring(slideUp, { toValue: 0, useNativeDriver: true, bounciness: 6 }),
         Animated.timing(fadeIn,  { toValue: 1, duration: 500, useNativeDriver: true }),
       ]).start();
     }
-    if (!prevStatus.current && st && st !== "searching") {
+    if (!prevStatus.current && st && !pendingStatuses.includes(st)) {
       slideUp.setValue(0); fadeIn.setValue(1);
     }
     prevStatus.current = st || "";
@@ -1499,7 +1501,7 @@ export default function RideScreen() {
                     <Text style={rs.histFare}>Rs. {ride.fare}</Text>
                     <View style={[rs.histStatus, { backgroundColor: ride.status === "completed" ? "#D1FAE5" : ride.status === "cancelled" ? "#FEE2E2" : "#FEF3C7" }]}>
                       <Text style={[rs.histStatusTxt, { color: ride.status === "completed" ? "#059669" : ride.status === "cancelled" ? "#DC2626" : "#D97706" }]}>
-                        {{ searching: "Finding Rider", accepted: "Accepted", arrived: "Arrived", in_transit: "In Transit", completed: "Completed", cancelled: "Cancelled", ongoing: "In Transit" }[ride.status as string] ?? ride.status}
+                        {{ searching: "Finding Rider", bargaining: "Mol-Tol Jari", accepted: "Accepted", arrived: "Arrived", in_transit: "In Transit", completed: "Completed", cancelled: "Cancelled", ongoing: "In Transit" }[ride.status as string] ?? ride.status}
                       </Text>
                     </View>
                   </View>
