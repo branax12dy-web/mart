@@ -60,6 +60,7 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
 const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
   "feature_parcel","feature_wallet","feature_referral","feature_new_users",
+  "user_require_approval",
   "customer_referral_enabled","customer_loyalty_enabled",
   "rider_cash_allowed","rider_auto_approve","rider_withdrawal_enabled",
   "vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
@@ -88,6 +89,20 @@ const TOGGLE_KEYS = new Set([
   "delivery_free_enabled",
   "ride_surge_enabled",
   "ride_bargaining_enabled",
+  /* email alert toggles */
+  "email_alert_new_vendor","email_alert_high_value_order","email_alert_fraud",
+  "email_alert_low_balance","email_alert_daily_summary","email_alert_weekly_report",
+  /* whatsapp send flags */
+  "wa_send_otp","wa_send_order_update","wa_send_ride_update","wa_send_promo",
+  "wa_send_rider_notif","wa_send_vendor_notif",
+  /* analytics tracking */
+  "track_order_placed","track_ride_booked","track_user_signup","track_wallet_topup",
+  "track_screen_views","track_search_queries",
+  /* sentry capture */
+  "sentry_capture_api","sentry_capture_admin","sentry_capture_vendor","sentry_capture_rider",
+  "sentry_capture_unhandled","sentry_capture_perf",
+  /* maps usage */
+  "maps_use_customer_app","maps_use_rider_app","maps_use_vendor_app","maps_live_tracking",
 ]);
 
 const TEXT_KEYS = new Set([
@@ -848,9 +863,10 @@ function CODSection({ localValues, dirtyKeys, handleChange, handleToggle }: {
 }
 
 /* ─── AJK Wallet Section ─────────────────────────────────────────────────── */
-function WalletSection({ localValues, dirtyKeys, handleChange, handleToggle }: {
+function WalletSection({ localValues, dirtyKeys, handleChange, handleToggle, onNavigateFeatures }: {
   localValues: Record<string,string>; dirtyKeys: Set<string>;
   handleChange: (k: string, v: string) => void; handleToggle: (k: string, v: boolean) => void;
+  onNavigateFeatures?: () => void;
 }) {
   const enabled       = (localValues["feature_wallet"]           ?? "on") === "on";
   const p2pEnabled    = (localValues["wallet_p2p_enabled"]       ?? "on") === "on";
@@ -891,13 +907,17 @@ function WalletSection({ localValues, dirtyKeys, handleChange, handleToggle }: {
             <p className="text-xs text-muted-foreground mt-0.5">In-app digital wallet · instant payments · P2P transfer</p>
           </div>
         </div>
-        <div onClick={() => handleToggle("feature_wallet", !enabled)}
-          className={`flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-xl border transition-all flex-shrink-0 ${enabled ? "bg-purple-50 border-purple-300" : "bg-white/70 border-border"}`}
-        >
-          <div className={`w-10 h-5 rounded-full relative transition-colors ${enabled ? "bg-purple-500" : "bg-gray-300"}`}>
-            <div className={`w-4 h-4 bg-white rounded-full shadow absolute top-0.5 transition-transform ${enabled ? "translate-x-5" : "translate-x-0.5"}`} />
-          </div>
-          <span className={`text-xs font-bold ${enabled ? "text-purple-700" : "text-muted-foreground"}`}>{enabled ? "Active" : "Inactive"}</span>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <Badge variant="outline" className={`text-[11px] font-bold border px-2.5 py-1 ${enabled ? "bg-green-50 text-green-700 border-green-300" : "bg-red-50 text-red-600 border-red-300"}`}>
+            {enabled ? "● Enabled" : "○ Disabled"}
+          </Badge>
+          {onNavigateFeatures ? (
+            <button onClick={onNavigateFeatures} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
+              Change in Feature Toggles ↗
+            </button>
+          ) : (
+            <p className="text-[10px] text-muted-foreground/70">Toggle in Features tab</p>
+          )}
         </div>
       </div>
 
@@ -1084,9 +1104,10 @@ function PaymentRules({ localValues, dirtyKeys, handleChange, handleToggle }: {
 }
 
 /* ─── Full Payment Section (with sub-tabs) ───────────────────────────────── */
-function PaymentSection({ localValues, dirtyKeys, handleChange, handleToggle }: {
+function PaymentSection({ localValues, dirtyKeys, handleChange, handleToggle, onNavigateFeatures }: {
   localValues: Record<string,string>; dirtyKeys: Set<string>;
   handleChange: (k: string, v: string) => void; handleToggle: (k: string, v: boolean) => void;
+  onNavigateFeatures?: () => void;
 }) {
   const [payTab, setPayTab] = useState<PayTab>("jazzcash");
 
@@ -1155,7 +1176,7 @@ function PaymentSection({ localValues, dirtyKeys, handleChange, handleToggle }: 
           <CODSection localValues={localValues} dirtyKeys={dirtyKeys} handleChange={handleChange} handleToggle={handleToggle} />
         )}
         {payTab === "wallet" && (
-          <WalletSection localValues={localValues} dirtyKeys={dirtyKeys} handleChange={handleChange} handleToggle={handleToggle} />
+          <WalletSection localValues={localValues} dirtyKeys={dirtyKeys} handleChange={handleChange} handleToggle={handleToggle} onNavigateFeatures={onNavigateFeatures} />
         )}
         {payTab === "rules" && (
           <PaymentRules localValues={localValues} dirtyKeys={dirtyKeys} handleChange={handleChange} handleToggle={handleToggle} />
@@ -2513,31 +2534,26 @@ function renderSection(
     );
   };
 
-  if (cat === "integrations") {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {catSettings.map(s => (
-          <Toggle key={s.key} checked={(localValues[s.key] ?? s.value) === "on"}
-            onChange={v => handleToggle(s.key, v)} label={s.label} icon={FEATURE_ICONS[s.key]} isDirty={dirtyKeys.has(s.key)} />
-        ))}
-      </div>
-    );
-  }
-
   if (cat === "features") {
     const fv = (key: string) => (localValues[key] ?? catSettings.find(s => s.key === key)?.value ?? "on") === "on";
-    const FTog = ({ fkey, label, icon, desc, apps, enforcement }: {
-      fkey: string; label: string; icon: string; desc: string; apps: string; enforcement: "api" | "client" | "both";
+    const FTog = ({ fkey, label, icon, desc, apps, enforcement, danger }: {
+      fkey: string; label: string; icon: string; desc: string; apps: string; enforcement: "api" | "client" | "both"; danger?: boolean;
     }) => {
       const on = fv(fkey);
+      const dangerOn = danger && on;
       return (
-        <div className={`rounded-xl border p-4 transition-all ${on ? "bg-white border-slate-200" : "bg-red-50 border-red-200"}`}>
+        <div className={`rounded-xl border p-4 transition-all ${dangerOn ? "bg-orange-50 border-orange-300" : on ? "bg-white border-slate-200" : "bg-red-50 border-red-200"}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 flex-1 min-w-0">
               <span className="text-2xl mt-0.5 shrink-0">{icon}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-semibold text-sm text-slate-800">{label}</p>
+                  {danger && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200">
+                      ⚠️ Danger
+                    </span>
+                  )}
                   {enforcement === "api" && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
                       <Server size={9} />API Enforced
@@ -2559,13 +2575,19 @@ function renderSection(
               </div>
             </div>
             <div className="shrink-0 flex flex-col items-center gap-1" onClick={() => handleToggle(fkey, !on)}>
-              <div className={`w-11 h-6 rounded-full relative transition-colors cursor-pointer ${on ? "bg-green-500" : "bg-gray-300"} ${dirtyKeys.has(fkey) ? "ring-2 ring-amber-400" : ""}`}>
+              <div className={`w-11 h-6 rounded-full relative transition-colors cursor-pointer ${dangerOn ? "bg-orange-500" : on ? "bg-green-500" : "bg-gray-300"} ${dirtyKeys.has(fkey) ? "ring-2 ring-amber-400" : ""}`}>
                 <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform ${on ? "translate-x-5" : "translate-x-0.5"}`} />
               </div>
-              <span className={`text-[10px] font-bold ${on ? "text-green-600" : "text-gray-400"}`}>{on ? "ON" : "OFF"}</span>
+              <span className={`text-[10px] font-bold ${dangerOn ? "text-orange-600" : on ? "text-green-600" : "text-gray-400"}`}>{on ? "ON" : "OFF"}</span>
             </div>
           </div>
-          {!on && (
+          {dangerOn && (
+            <div className="mt-3 pt-3 border-t border-orange-200 flex items-center gap-1.5 text-orange-700">
+              <AlertTriangle size={11} />
+              <span className="text-[11px] font-medium">Caution: all newly registered accounts require manual admin approval before they can log in</span>
+            </div>
+          )}
+          {!on && !danger && (
             <div className="mt-3 pt-3 border-t border-red-200 flex items-center gap-1.5 text-red-600">
               <AlertTriangle size={11} />
               <span className="text-[11px] font-medium">Service disabled — all requests blocked by server</span>
@@ -2583,9 +2605,10 @@ function renderSection(
       { fkey: "feature_parcel",   label: "Parcel Delivery",    icon: "📦", desc: "Parcel shipments blocked at API level — parcelEnabled gate",      apps: "📱 Customer  •  🏍️ Rider",             enforcement: "api" as const },
     ];
     const accountFeatures = [
-      { fkey: "feature_wallet",    label: "Digital Wallet",         icon: "💰", desc: "Wallet top-up, send, and all wallet payments across all services", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "both" as const },
-      { fkey: "feature_referral",  label: "Referral Program",       icon: "🎁", desc: "Refer & Earn card visibility + referral bonus tracking in app",    apps: "📱 Customer only",                        enforcement: "client" as const },
-      { fkey: "feature_new_users", label: "New User Registration",  icon: "👤", desc: "Blocks all new sign-ups at auth API — existing users unaffected",  apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+      { fkey: "feature_wallet",       label: "Digital Wallet",         icon: "💰", desc: "Wallet top-up, send, and all wallet payments across all services", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "both" as const },
+      { fkey: "feature_referral",     label: "Referral Program",       icon: "🎁", desc: "Refer & Earn card visibility + referral bonus tracking in app",    apps: "📱 Customer only",                        enforcement: "client" as const },
+      { fkey: "feature_new_users",    label: "New User Registration",  icon: "👤", desc: "Blocks all new sign-ups at auth API — existing users unaffected",  apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+      { fkey: "user_require_approval",label: "Require Account Approval", icon: "🔒", desc: "New accounts are inactive until manually approved by an admin — use with caution", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const, danger: true },
     ];
     const experienceFeatures = [
       { fkey: "feature_chat",          label: "In-App Chat / WhatsApp",  icon: "💬", desc: "Chat icon in customer app — routes to WhatsApp support",          apps: "📱 Customer only",                        enforcement: "client" as const },
@@ -2604,11 +2627,11 @@ function renderSection(
       { label: "Parcel shipments",    key: "feature_parcel",        enforced: "✅ API" },
       { label: "Wallet (all ops)",    key: "feature_wallet",        enforced: "✅ API" },
       { label: "Referral card/bonus", key: "feature_referral",      enforced: "📱 Client" },
-      { label: "New user sign-up",    key: "feature_new_users",     enforced: "✅ API" },
-      { label: "Chat/WhatsApp",       key: "feature_chat",          enforced: "📱 Client" },
-      { label: "Live GPS tracking",   key: "feature_live_tracking", enforced: "✅ API + Client", inverted: false },
-      { label: "Reviews & ratings",   key: "feature_reviews",       enforced: "✅ API",          inverted: false },
-      { label: "Admin approval gate", key: "user_require_approval",  enforced: "✅ API",         inverted: true  },
+      { label: "New user sign-up",    key: "feature_new_users",      enforced: "✅ API" },
+      { label: "Account approval",    key: "user_require_approval",  enforced: "✅ API",          inverted: true  },
+      { label: "Chat/WhatsApp",       key: "feature_chat",           enforced: "📱 Client" },
+      { label: "Live GPS tracking",   key: "feature_live_tracking",  enforced: "✅ API + Client", inverted: false },
+      { label: "Reviews & ratings",   key: "feature_reviews",        enforced: "✅ API",          inverted: false },
     ] as { label: string; key: string; enforced: string; inverted?: boolean }[];
 
     return (
@@ -2750,46 +2773,6 @@ function renderSection(
     );
   }
 
-  if (cat === "security") {
-    return (
-      <div className="space-y-5">
-        {toggles.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {toggles.map(s => (
-              <Toggle key={s.key} checked={(localValues[s.key] ?? s.value) === "on"}
-                onChange={v => handleToggle(s.key, v)} label={s.label} isDirty={dirtyKeys.has(s.key)} danger={s.key === "security_otp_bypass"} />
-            ))}
-          </div>
-        )}
-        {inputs.length > 0 && (
-          <div className="border-t border-border/40 pt-4">
-            <SLabel icon={KeyRound}>API Credentials & Keys</SLabel>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {inputs.map(s => {
-                const isDirty = dirtyKeys.has(s.key);
-                return (
-                  <div key={s.key} className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-semibold text-foreground">{s.label}</label>
-                      {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
-                    </div>
-                    <Input type="text" value={localValues[s.key] ?? s.value} onChange={e => handleChange(s.key, e.target.value)}
-                      placeholder={getPlaceholder(s.key)}
-                      className={`h-10 rounded-xl font-mono text-sm ${isDirty ? "border-amber-300 bg-amber-50/50" : ""}`}
-                    />
-                    {s.key.startsWith("api_") && !(localValues[s.key] ?? s.value) && (
-                      <p className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Not configured</p>
-                    )}
-                    <p className="text-[11px] text-muted-foreground font-mono">{s.key}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   if (cat === "content") {
     const T = (key: string, label: string, sub?: string, danger = false) => (
@@ -2955,45 +2938,44 @@ function renderSection(
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {grp.keys.map(key => {
                 if (key === "app_status") {
-                  const isActive = appStatus === "active";
+                  const STATUS_OPTIONS = [
+                    { id: "active",      label: "🟢 Live",        sub: "All users can access normally",          bg: "bg-green-500 text-white border-green-600",   inactiveBg: "hover:bg-green-50 text-green-700" },
+                    { id: "limited",     label: "🟡 Limited",     sub: "Only existing users can log in",         bg: "bg-yellow-400 text-white border-yellow-500", inactiveBg: "hover:bg-yellow-50 text-yellow-700" },
+                    { id: "maintenance", label: "🔴 Maintenance", sub: "All apps show maintenance screen",       bg: "bg-red-500 text-white border-red-600",       inactiveBg: "hover:bg-red-50 text-red-700" },
+                  ];
                   return (
-                    <div key={key}
-                      onClick={() => handleChange("app_status", isActive ? "maintenance" : "active")}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all select-none sm:col-span-2
-                        ${isActive ? "bg-green-50 border-green-200" : "bg-red-50 border-red-300"}
-                        ${appStatusDirty ? "ring-2 ring-amber-300" : ""}`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        {isActive
-                          ? <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          : <AlertTriangle className="w-4 h-4 text-red-500" />}
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">
-                            {isActive ? "🟢 App is LIVE" : "🔴 Maintenance Mode"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {isActive ? "All users can access the app normally" : "All apps show the maintenance screen to users"}
-                          </p>
-                        </div>
+                    <div key={key} className={`sm:col-span-2 rounded-xl border p-3.5 space-y-3 transition-all ${appStatusDirty ? "border-amber-300 bg-amber-50/30" : "border-border"}`}>
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                        <label className="text-sm font-semibold text-foreground flex-1">App Status</label>
+                        {appStatusDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        {appStatusDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold hidden sm:flex">CHANGED</Badge>}
-                        <div className={`w-11 h-6 rounded-full relative transition-colors ${isActive ? "bg-green-500" : "bg-red-500"}`}>
-                          <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform ${isActive ? "translate-x-5" : "translate-x-0.5"}`} />
-                        </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {STATUS_OPTIONS.map(opt => (
+                          <button key={opt.id} onClick={() => handleChange("app_status", opt.id)}
+                            className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 transition-all text-left
+                              ${appStatus === opt.id ? opt.bg + " shadow-sm" : "bg-muted/30 border-border text-muted-foreground " + opt.inactiveBg}`}
+                          >
+                            <p className="font-bold">{opt.label}</p>
+                            <p className={`text-[10px] mt-0.5 font-normal ${appStatus === opt.id ? "opacity-80" : "text-muted-foreground"}`}>{opt.sub}</p>
+                          </button>
+                        ))}
                       </div>
+                      <p className="text-[10px] text-muted-foreground/60 font-mono">app_status</p>
                     </div>
                   );
                 }
                 const isDirty = dirtyKeys.has(key);
                 const curVal = localValues[key] ?? "";
                 const isUrl = key.startsWith("social_");
+                const isNameBlank = key === "app_name" && curVal.trim() === "";
                 return (
-                  <div key={key} className={`rounded-xl border p-3.5 space-y-2 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border"}`}>
+                  <div key={key} className={`rounded-xl border p-3.5 space-y-2 transition-all ${isNameBlank ? "border-red-400 bg-red-50/30" : isDirty ? "border-amber-300 bg-amber-50/30" : "border-border"}`}>
                     <div className="flex items-center gap-2">
                       {isUrl ? <Link className="w-3.5 h-3.5 text-muted-foreground" /> : <Globe className="w-3.5 h-3.5 text-muted-foreground" />}
                       <label className="text-sm font-semibold text-foreground flex-1">{GENERAL_LABELS[key] ?? key}</label>
-                      {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+                      {isNameBlank && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-300 font-bold">REQUIRED</Badge>}
+                      {!isNameBlank && isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
                       {curVal && !isDirty && <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />}
                     </div>
                     <Input
@@ -3001,9 +2983,14 @@ function renderSection(
                       value={curVal}
                       onChange={e => handleChange(key, e.target.value)}
                       placeholder={GENERAL_PLACEHOLDERS[key] ?? ""}
-                      className={`h-9 rounded-lg text-sm ${isDirty ? "border-amber-300 bg-amber-50/40" : ""} ${!curVal ? "border-dashed" : ""}`}
+                      className={`h-9 rounded-lg text-sm ${isNameBlank ? "border-red-400 bg-red-50/40" : isDirty ? "border-amber-300 bg-amber-50/40" : ""} ${!curVal ? "border-dashed" : ""}`}
                     />
-                    {GENERAL_HINTS[key] && <p className="text-[11px] text-muted-foreground">{GENERAL_HINTS[key]}</p>}
+                    {isNameBlank && (
+                      <p className="text-[11px] text-red-600 font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> App Name is required — cannot save with a blank name
+                      </p>
+                    )}
+                    {!isNameBlank && GENERAL_HINTS[key] && <p className="text-[11px] text-muted-foreground">{GENERAL_HINTS[key]}</p>}
                     <p className="text-[10px] text-muted-foreground/60 font-mono">{key}</p>
                   </div>
                 );
@@ -4891,7 +4878,9 @@ export default function SettingsPage() {
 
   /* keys that appear in a different tab than their DB category */
   const DISPLAY_CAT_OVERRIDE: Record<string,string> = {
-    vendor_min_payout: "finance",
+    vendor_min_payout:        "finance",
+    customer_referral_bonus:  "payment",
+    customer_signup_bonus:    "payment",
   };
   const dirtyCounts: Record<string,number> = {};
   for (const k of dirtyKeys) {
@@ -4915,6 +4904,9 @@ export default function SettingsPage() {
     );
   }
 
+  const appNameValue = (localValues["app_name"] ?? settings.find(s => s.key === "app_name")?.value ?? "").trim();
+  const appNameBlank = appNameValue === "";
+
   return (
     <div className="space-y-5 max-w-5xl">
       {/* Header */}
@@ -4936,7 +4928,7 @@ export default function SettingsPage() {
           <Button variant="outline" onClick={() => { loadSettings(); toast({ title: "Reloaded" }); }} disabled={loading} className="h-9 rounded-xl gap-2">
             <RefreshCw className="w-4 h-4" /> Reset
           </Button>
-          <Button onClick={handleSave} disabled={saving || dirtyKeys.size === 0} className="h-9 rounded-xl gap-2 shadow-sm">
+          <Button onClick={handleSave} disabled={saving || dirtyKeys.size === 0 || appNameBlank} title={appNameBlank ? "App Name cannot be blank" : undefined} className="h-9 rounded-xl gap-2 shadow-sm">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? "Saving..." : `Save${dirtyKeys.size > 0 ? ` (${dirtyKeys.size})` : ""}`}
           </Button>
@@ -5047,6 +5039,7 @@ export default function SettingsPage() {
                 <PaymentSection
                   localValues={localValues} dirtyKeys={dirtyKeys}
                   handleChange={handleChange} handleToggle={handleToggle}
+                  onNavigateFeatures={() => setActiveTab("features")}
                 />
               ) : activeTab === "integrations" ? (
                 <IntegrationsSection
