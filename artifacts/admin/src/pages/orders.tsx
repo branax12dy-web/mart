@@ -7,94 +7,190 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ShoppingBag, Search, User, Package } from "lucide-react";
+import { ShoppingBag, Search, User, Package, Phone, TrendingUp, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-const STATUSES = ["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"];
+const STATUS_LABELS: Record<string, string> = {
+  pending:          "Pending",
+  confirmed:        "Confirmed",
+  preparing:        "Preparing",
+  out_for_delivery: "Out for Delivery",
+  delivered:        "Delivered",
+  cancelled:        "Cancelled",
+};
+
+/* Only logical forward moves allowed */
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  pending:          ["confirmed", "cancelled"],
+  confirmed:        ["preparing", "cancelled"],
+  preparing:        ["out_for_delivery", "cancelled"],
+  out_for_delivery: ["delivered", "cancelled"],
+  delivered:        ["delivered"],
+  cancelled:        ["cancelled"],
+};
+
+const ALL_STATUSES = Object.keys(ALLOWED_TRANSITIONS);
 
 export default function Orders() {
   const { data, isLoading } = useOrdersEnriched();
   const updateMutation = useUpdateOrder();
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
 
-  const handleUpdateStatus = (id: string, status: string) => {
+  const [search, setSearch]               = useState("");
+  const [statusFilter, setStatusFilter]   = useState("all");
+  const [typeFilter, setTypeFilter]       = useState("all");
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelling, setCancelling]       = useState(false);
+
+  const handleUpdateStatus = (id: string, status: string, extra?: { localUpdate?: any }) => {
     updateMutation.mutate({ id, status }, {
-      onSuccess: () => toast({ title: "Order status updated ✅" }),
+      onSuccess: () => {
+        toast({ title: `Order status → ${STATUS_LABELS[status] ?? status} ✅` });
+        if (extra?.localUpdate) setSelectedOrder((prev: any) => ({ ...prev, status }));
+      },
       onError: (err) => toast({ title: "Update failed", description: err.message, variant: "destructive" })
     });
   };
 
+  const handleCancelOrder = () => {
+    setCancelling(true);
+    updateMutation.mutate({ id: selectedOrder.id, status: "cancelled" }, {
+      onSuccess: () => {
+        setSelectedOrder((p: any) => ({ ...p, status: "cancelled" }));
+        setShowCancelConfirm(false);
+        setCancelling(false);
+        toast({ title: "Order cancelled ✅" + (selectedOrder.paymentMethod === "wallet" ? " — Wallet refund issued" : "") });
+      },
+      onError: (err) => {
+        setCancelling(false);
+        toast({ title: "Cancel failed", description: err.message, variant: "destructive" });
+      },
+    });
+  };
+
   const orders = data?.orders || [];
+  const q = search.toLowerCase();
   const filtered = orders.filter((o: any) => {
-    const q = search.toLowerCase();
     const matchesSearch = o.id.toLowerCase().includes(q)
-      || (o.userName || "").toLowerCase().includes(q)
+      || (o.userName  || "").toLowerCase().includes(q)
       || (o.userPhone || "").includes(q);
-    const matchesStatus = statusFilter === "all" || o.status === statusFilter;
+    const matchesStatus = statusFilter === "all"
+      || (statusFilter === "active" && ["pending","confirmed","preparing","out_for_delivery"].includes(o.status))
+      || o.status === statusFilter;
     const matchesType = typeFilter === "all" || o.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const ordersCount = orders.length;
-  const pendingCount = orders.filter((o: any) => o.status === "pending").length;
+  const totalCount     = orders.length;
+  const pendingCount   = orders.filter((o: any) => o.status === "pending").length;
+  const activeCount    = orders.filter((o: any) => ["confirmed","preparing","out_for_delivery"].includes(o.status)).length;
   const deliveredCount = orders.filter((o: any) => o.status === "delivered").length;
+  const cancelledCount = orders.filter((o: any) => o.status === "cancelled").length;
+  const totalRevenue   = orders.filter((o: any) => o.status === "delivered").reduce((s: number, o: any) => s + (o.total || 0), 0);
+
+  const isTerminal  = (s: string) => s === "delivered" || s === "cancelled";
+  const canCancel   = (o: any) => !isTerminal(o.status);
+  const allowedNext = (o: any) => ALLOWED_TRANSITIONS[o.status] ?? [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5 sm:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center">
-            <ShoppingBag className="w-6 h-6" />
+          <div className="w-11 h-11 sm:w-12 sm:h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+            <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
-            <h1 className="text-3xl font-display font-bold text-foreground">Mart & Food Orders</h1>
-            <p className="text-muted-foreground text-sm">{ordersCount} total · {pendingCount} pending · {deliveredCount} delivered</p>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Mart & Food Orders</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm">{totalCount} total · {pendingCount} pending · {deliveredCount} delivered</p>
           </div>
         </div>
       </div>
 
-      <Card className="p-4 rounded-2xl border-border/50 shadow-sm flex flex-col sm:flex-row gap-4 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by Order ID, name or phone..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 h-11 rounded-xl bg-muted/30 border-border/50"
-          />
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Card className="p-4 rounded-2xl border-border/50 shadow-sm text-center">
+          <p className="text-3xl font-bold text-foreground">{totalCount}</p>
+          <p className="text-xs text-muted-foreground mt-1">Total Orders</p>
+        </Card>
+        <Card className="p-4 rounded-2xl border-border/50 shadow-sm text-center bg-amber-50/60 border-amber-200/60">
+          <p className="text-3xl font-bold text-amber-700">{pendingCount}</p>
+          <p className="text-xs text-amber-600 mt-1">Pending</p>
+        </Card>
+        <Card className="p-4 rounded-2xl border-border/50 shadow-sm text-center bg-blue-50/60 border-blue-200/60">
+          <p className="text-3xl font-bold text-blue-700">{activeCount}</p>
+          <p className="text-xs text-blue-500 mt-1">Active Now</p>
+        </Card>
+        <Card className="p-4 rounded-2xl border-border/50 shadow-sm text-center bg-green-50/60 border-green-200/60">
+          <p className="text-3xl font-bold text-green-700">{deliveredCount}</p>
+          <p className="text-xs text-green-500 mt-1">Delivered</p>
+        </Card>
+        <Card className="p-4 rounded-2xl border-border/50 shadow-sm text-center bg-purple-50/60 border-purple-200/60 sm:col-span-1 col-span-2">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
+          </div>
+          <p className="text-2xl font-bold text-purple-700">{formatCurrency(totalRevenue)}</p>
+          <p className="text-xs text-purple-500 mt-1">Total Revenue</p>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card className="p-3 sm:p-4 rounded-2xl border-border/50 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by Order ID, name or phone..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 h-10 sm:h-11 rounded-xl bg-muted/30 border-border/50 text-sm"
+            />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {[
+              { key: "all",      label: "All" },
+              { key: "mart",     label: "🛒 Mart" },
+              { key: "food",     label: "🍔 Food" },
+              { key: "pharmacy", label: "💊 Pharmacy" },
+            ].map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTypeFilter(t.key)}
+                className={`flex-1 sm:flex-none px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold capitalize transition-colors border ${
+                  typeFilter === t.key ? "bg-primary text-white border-primary" : "bg-muted/30 border-border/50 text-muted-foreground hover:border-primary"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="w-full sm:w-44">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-11 rounded-xl bg-muted/30 border-border/50">
-              <SelectValue placeholder="All Statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {STATUSES.map(s => (
-                <SelectItem key={s} value={s} className="capitalize">{s.replace('_', ' ')}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex gap-2">
-          {["all", "mart", "food"].map(t => (
+
+        {/* Status filter chips */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: "all",              label: "All",           cls: "border-border/50 text-muted-foreground hover:border-primary" },
+            { key: "active",           label: "🔵 Active",      cls: "border-blue-300 text-blue-700 bg-blue-50" },
+            { key: "pending",          label: "🟡 Pending",     cls: "border-amber-300 text-amber-700 bg-amber-50" },
+            { key: "out_for_delivery", label: "🚴 Delivering",   cls: "border-indigo-300 text-indigo-700 bg-indigo-50" },
+            { key: "delivered",        label: "✅ Delivered",   cls: "border-green-300 text-green-700 bg-green-50" },
+            { key: "cancelled",        label: "❌ Cancelled",   cls: "border-red-300 text-red-600 bg-red-50" },
+          ].map(({ key, label, cls }) => (
             <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-3 py-2 rounded-xl text-sm font-semibold capitalize transition-colors border ${
-                typeFilter === t ? "bg-primary text-white border-primary" : "bg-muted/30 border-border/50 text-muted-foreground hover:border-primary"
+              key={key}
+              onClick={() => setStatusFilter(key)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                statusFilter === key ? "bg-primary text-white border-primary" : `bg-muted/30 ${cls}`
               }`}
             >
-              {t === "mart" ? "🛒 " : t === "food" ? "🍔 " : ""}{t}
+              {label}
             </button>
           ))}
         </div>
       </Card>
 
+      {/* Table */}
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <Table className="min-w-[640px]">
@@ -115,10 +211,10 @@ export default function Orders() {
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No orders found.</TableCell></TableRow>
               ) : (
                 filtered.map((order: any) => (
-                  <TableRow key={order.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSelectedOrder(order)}>
+                  <TableRow key={order.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => { setSelectedOrder(order); setShowCancelConfirm(false); }}>
                     <TableCell>
                       <p className="font-mono font-medium text-sm">{order.id.slice(-8).toUpperCase()}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{Array.isArray(order.items) ? `${order.items.length} items` : 'N/A'}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{Array.isArray(order.items) ? `${order.items.length} items` : "N/A"}</p>
                     </TableCell>
                     <TableCell>
                       {order.userName ? (
@@ -136,27 +232,32 @@ export default function Orders() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={order.type === 'food' ? 'default' : 'secondary'} className="capitalize">
-                        {order.type === 'food' ? '🍔 ' : '🛒 '}{order.type}
+                      <Badge variant={order.type === "food" ? "default" : "secondary"} className="capitalize">
+                        {order.type === "food" ? "🍔 " : order.type === "pharmacy" ? "💊 " : "🛒 "}{order.type}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-bold text-foreground">{formatCurrency(order.total)}</TableCell>
                     <TableCell onClick={e => e.stopPropagation()}>
                       <Select
                         value={order.status}
-                        onValueChange={(val) => handleUpdateStatus(order.id, val)}
+                        onValueChange={(val) => {
+                          if (!allowedNext(order).includes(val)) {
+                            toast({ title: "Invalid transition", description: `Can't move ${STATUS_LABELS[order.status]} → ${STATUS_LABELS[val]}`, variant: "destructive" }); return;
+                          }
+                          handleUpdateStatus(order.id, val);
+                        }}
                       >
-                        <SelectTrigger className={`w-36 h-8 text-[11px] font-bold uppercase tracking-wider border-2 ${getStatusColor(order.status)}`}>
+                        <SelectTrigger className={`w-36 h-8 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider border-2 ${getStatusColor(order.status)}`}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {STATUSES.map(s => (
-                            <SelectItem key={s} value={s} className="text-xs uppercase font-bold tracking-wider">{s.replace('_', ' ')}</SelectItem>
+                          {allowedNext(order).map(s => (
+                            <SelectItem key={s} value={s} className="text-xs uppercase font-bold">{STATUS_LABELS[s] ?? s.replace("_", " ")}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground whitespace-nowrap">
+                    <TableCell className="text-right text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
                       {formatDate(order.createdAt)}
                     </TableCell>
                   </TableRow>
@@ -168,44 +269,69 @@ export default function Orders() {
       </Card>
 
       {/* Order Detail Modal */}
-      <Dialog open={!!selectedOrder} onOpenChange={open => { if (!open) setSelectedOrder(null); }}>
-        <DialogContent className="w-[95vw] max-w-lg rounded-3xl">
+      <Dialog open={!!selectedOrder} onOpenChange={open => { if (!open) { setSelectedOrder(null); setShowCancelConfirm(false); } }}>
+        <DialogContent className="w-[95vw] max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShoppingBag className="w-5 h-5 text-indigo-600" />
               Order Detail
+              {selectedOrder && (
+                <Badge variant="outline" className={`ml-2 text-[10px] font-bold uppercase ${getStatusColor(selectedOrder.status)}`}>
+                  {STATUS_LABELS[selectedOrder.status]}
+                </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
+
           {selectedOrder && (
             <div className="space-y-4 mt-2">
+
+              {/* Cancel confirmation inline */}
+              {showCancelConfirm && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    <p className="text-sm font-bold text-red-700">Cancel Order #{selectedOrder.id.slice(-6).toUpperCase()}?</p>
+                  </div>
+                  <p className="text-xs text-red-600">
+                    {selectedOrder.paymentMethod === "wallet"
+                      ? `Rs. ${Math.round(selectedOrder.total)} customer ki wallet mein refund ho jayega.`
+                      : "Cash order — no wallet refund needed."}
+                  </p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowCancelConfirm(false)}
+                      className="flex-1 h-9 bg-white border border-red-200 text-red-600 text-sm font-bold rounded-xl">
+                      Back
+                    </button>
+                    <button onClick={handleCancelOrder} disabled={cancelling}
+                      className="flex-1 h-9 bg-red-600 text-white text-sm font-bold rounded-xl disabled:opacity-60">
+                      {cancelling ? "Cancelling..." : "Confirm Cancel"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Info */}
               <div className="bg-muted/40 rounded-xl p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Order ID</span>
                   <span className="font-mono font-bold">{selectedOrder.id.slice(-8).toUpperCase()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Customer</span>
-                  <span className="font-semibold">{selectedOrder.userName || "Guest"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Phone</span>
-                  <span>{selectedOrder.userPhone || "—"}</span>
-                </div>
-                <div className="flex justify-between">
                   <span className="text-muted-foreground">Type</span>
-                  <Badge variant={selectedOrder.type === 'food' ? 'default' : 'secondary'} className="capitalize">
-                    {selectedOrder.type}
+                  <Badge variant={selectedOrder.type === "food" ? "default" : "secondary"} className="capitalize">
+                    {selectedOrder.type === "food" ? "🍔 " : selectedOrder.type === "pharmacy" ? "💊 " : "🛒 "}{selectedOrder.type}
                   </Badge>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status</span>
-                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase border ${getStatusColor(selectedOrder.status)}`}>
-                    {selectedOrder.status.replace('_', ' ')}
-                  </span>
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-bold text-lg text-foreground">{formatCurrency(selectedOrder.total)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Payment</span>
-                  <span className="capitalize font-medium">{selectedOrder.paymentMethod}</span>
+                  <span className={`font-medium capitalize ${selectedOrder.paymentMethod === "wallet" ? "text-blue-600" : "text-green-600"}`}>
+                    {selectedOrder.paymentMethod === "wallet" ? "💳 Wallet" : "💵 Cash"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Delivery Address</span>
@@ -213,7 +339,24 @@ export default function Orders() {
                 </div>
               </div>
 
-              {/* Order Items */}
+              {/* Customer contact */}
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1">
+                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1"><User className="w-3 h-3" /> Customer</p>
+                <p className="text-sm font-semibold text-gray-800">{selectedOrder.userName || "Guest"}</p>
+                {selectedOrder.userPhone && (
+                  <div className="flex gap-3 mt-1">
+                    <a href={`tel:${selectedOrder.userPhone}`} className="flex items-center gap-1 text-xs text-blue-600 font-medium hover:underline">
+                      <Phone className="w-3 h-3" /> {selectedOrder.userPhone}
+                    </a>
+                    <a href={`https://wa.me/92${selectedOrder.userPhone.replace(/^(\+92|0)/, "")}`} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-green-600 font-medium hover:underline">
+                      💬 WhatsApp
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* Items */}
               {Array.isArray(selectedOrder.items) && selectedOrder.items.length > 0 && (
                 <div>
                   <p className="text-sm font-bold mb-2 flex items-center gap-2">
@@ -237,7 +380,47 @@ export default function Orders() {
                 </div>
               )}
 
-              <div className="flex justify-between text-xs text-muted-foreground">
+              {/* Action buttons */}
+              {!isTerminal(selectedOrder.status) && (
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground font-medium mb-1.5">Move to Next Status</p>
+                    <Select
+                      value={selectedOrder.status}
+                      onValueChange={(val) => {
+                        if (val === selectedOrder.status) return;
+                        handleUpdateStatus(selectedOrder.id, val, { localUpdate: true });
+                      }}
+                    >
+                      <SelectTrigger className={`h-9 text-[11px] font-bold uppercase tracking-wider border-2 ${getStatusColor(selectedOrder.status)}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allowedNext(selectedOrder).filter(s => s !== "cancelled").map(s => (
+                          <SelectItem key={s} value={s} className="text-xs uppercase font-bold">
+                            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-green-500" />{STATUS_LABELS[s]}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {canCancel(selectedOrder) && !showCancelConfirm && (
+                    <div>
+                      <p className="text-xs text-muted-foreground font-medium mb-1.5">Admin Actions</p>
+                      <button
+                        onClick={() => setShowCancelConfirm(true)}
+                        className="h-9 px-4 bg-red-50 hover:bg-red-100 border-2 border-red-300 text-red-600 text-xs font-bold rounded-xl whitespace-nowrap transition-colors flex items-center gap-1.5"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Cancel & Refund
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between text-xs text-muted-foreground border-t border-border/40 pt-3">
                 <span>Ordered: {formatDate(selectedOrder.createdAt)}</span>
                 <span>Updated: {formatDate(selectedOrder.updatedAt)}</span>
               </div>

@@ -15,16 +15,88 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { useQuery } from "@tanstack/react-query";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 
+const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+
 const C      = Colors.light;
 const W      = Dimensions.get("window").width;
 const H_PAD  = 16;
 const HALF_W = (W - H_PAD * 2 - 12) / 2;
+
+/* ─────────────────────────── Active Order/Ride Tracker Strip ─────────────────────────── */
+function ActiveTrackerStrip({ userId }: { userId: string }) {
+  const { data: ordersData } = useQuery({
+    queryKey: ["home-active-orders", userId],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/orders?userId=${userId}`);
+      return r.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 30000,
+    staleTime: 20000,
+  });
+
+  const { data: ridesData } = useQuery({
+    queryKey: ["home-active-rides", userId],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/rides?userId=${userId}`);
+      return r.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 30000,
+    staleTime: 20000,
+  });
+
+  const activeOrders = (ordersData?.orders || []).filter((o: any) =>
+    !["delivered", "cancelled"].includes(o.status)
+  );
+  const activeRides = (ridesData?.rides || []).filter((r: any) =>
+    !["completed", "cancelled"].includes(r.status)
+  );
+  const totalActive = activeOrders.length + activeRides.length;
+
+  if (totalActive === 0) return null;
+
+  const hasRide  = activeRides.length > 0;
+  const hasOrder = activeOrders.length > 0;
+
+  let label = "";
+  let icon: keyof typeof Ionicons.glyphMap = "timer-outline";
+  let c1 = "#059669"; let c2 = "#10B981";
+
+  if (hasRide && hasOrder) {
+    label = `${activeRides.length} active ride • ${activeOrders.length} active order`;
+    icon = "car-outline"; c1 = "#1D4ED8"; c2 = "#2563EB";
+  } else if (hasRide) {
+    const r = activeRides[0];
+    const statusMap: Record<string, string> = { searching: "Rider dhoondh raha hai...", accepted: "Rider aa raha hai", arrived: "Rider pohonch gaya!", in_transit: "Safar jari hai 🚗" };
+    label = statusMap[r.status] || "Ride active hai";
+    icon = "car-outline"; c1 = "#059669"; c2 = "#10B981";
+  } else {
+    const o = activeOrders[0];
+    const statusMap: Record<string, string> = { pending: "Order mila, confirm ho raha hai", confirmed: "Order confirm! Prepare ho raha hai", preparing: "Aapka khaana tayyar ho raha hai 🍳", out_for_delivery: "Order aa raha hai! 🚴", ready: "Order ready for pickup" };
+    label = statusMap[o.status] || `${activeOrders.length} active order`;
+    icon = o.type === "ride" ? "car-outline" : o.type === "food" ? "restaurant-outline" : "storefront-outline";
+    c1 = "#1D4ED8"; c2 = "#2563EB";
+  }
+
+  return (
+    <Pressable onPress={() => router.push("/(tabs)/orders")} style={styles.trackerWrap}>
+      <LinearGradient colors={[c1, c2]} start={{ x:0,y:0 }} end={{ x:1,y:0 }} style={styles.trackerCard}>
+        <View style={styles.trackerDot} />
+        <Ionicons name={icon} size={15} color="#fff" />
+        <Text style={styles.trackerTxt} numberOfLines={1}>{label}</Text>
+        <Text style={styles.trackerCta}>Track →</Text>
+      </LinearGradient>
+    </Pressable>
+  );
+}
 
 /* ─────────────────────────── animated tap wrapper ─────────────────────────── */
 function Tap({ children, onPress, style, delay = 0 }: {
@@ -382,6 +454,9 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* ──── ACTIVE ORDER / RIDE TRACKER STRIP ──── */}
+      {user?.id && <ActiveTrackerStrip userId={user.id} />}
+
       {/* ──── HEADER ──── */}
       <Animated.View style={{ opacity: hdOp }}>
         <LinearGradient
@@ -539,6 +614,13 @@ export default function HomeScreen() {
 /* ══════════════════════════════ STYLES ══════════════════════════════ */
 const styles = StyleSheet.create({
   root: { flex: 1 },
+
+  /* active order/ride tracker strip */
+  trackerWrap: { marginHorizontal: H_PAD, marginTop: 8, marginBottom: 0 },
+  trackerCard: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14 },
+  trackerDot:  { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#fff", opacity: 0.9 },
+  trackerTxt:  { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
+  trackerCta:  { fontFamily: "Inter_700Bold", fontSize: 12, color: "rgba(255,255,255,0.85)" },
 
   /* header */
   header: { paddingHorizontal: H_PAD, paddingBottom: 18 },
