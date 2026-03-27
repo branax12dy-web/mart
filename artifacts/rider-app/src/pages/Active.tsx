@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { usePlatformConfig } from "../lib/useConfig";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Camera } from "lucide-react";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
@@ -54,6 +54,18 @@ export default function Active() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelTarget, setCancelTarget]           = useState<"order" | "ride">("ride");
   const [orderPickedUp, setOrderPickedUp]         = useState(false);
+  const [proofPhoto, setProofPhoto]               = useState<string | null>(null);
+  const [proofFileName, setProofFileName]         = useState<string>("");
+  const photoInputRef                             = useRef<HTMLInputElement>(null);
+
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProofFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => { setProofPhoto(ev.target?.result as string); };
+    reader.readAsDataURL(file);
+  };
 
   const showToast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
@@ -266,11 +278,52 @@ export default function Active() {
                     <CallButton name={order.customerName} phone={order.customerPhone} />
                   </div>
 
+                  {/* ── Proof of Delivery ── */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                    <p className="text-xs font-bold text-blue-700 mb-2 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5" /> Proof of Delivery (Recommended)
+                    </p>
+                    {proofPhoto ? (
+                      <div className="space-y-2">
+                        <div className="relative rounded-xl overflow-hidden h-40 bg-gray-100">
+                          <img src={proofPhoto} alt="Delivery proof" className="w-full h-full object-cover" />
+                          <div className="absolute top-2 right-2">
+                            <span className="bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">✓ Photo Ready</span>
+                          </div>
+                        </div>
+                        <button onClick={() => { setProofPhoto(null); setProofFileName(""); }}
+                          className="w-full text-xs text-blue-600 font-bold py-1.5 border border-blue-200 rounded-lg bg-white">
+                          📷 Retake Photo
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          ref={photoInputRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={handlePhotoCapture}
+                        />
+                        <button
+                          onClick={() => photoInputRef.current?.click()}
+                          className="w-full border-2 border-dashed border-blue-200 rounded-xl py-4 flex flex-col items-center gap-2 bg-white text-blue-500 hover:bg-blue-50 transition-colors">
+                          <Camera className="w-6 h-6" />
+                          <span className="text-xs font-bold">Take Delivery Photo</span>
+                          <span className="text-[10px] text-blue-400">Opens camera on your phone</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   <button
-                    onClick={() => updateOrderMut.mutate({ id: order.id, status: "delivered" })}
+                    onClick={() => {
+                      updateOrderMut.mutate({ id: order.id, status: "delivered" });
+                    }}
                     disabled={updateOrderMut.isPending}
-                    className="w-full bg-green-600 text-white font-extrabold rounded-xl py-3.5 text-lg disabled:opacity-60">
-                    {updateOrderMut.isPending ? "Updating..." : "✅ Mark as Delivered"}
+                    className={`w-full font-extrabold rounded-xl py-3.5 text-lg disabled:opacity-60 transition-colors ${proofPhoto ? "bg-green-600 text-white" : "bg-green-500 text-white"}`}>
+                    {updateOrderMut.isPending ? "Updating..." : proofPhoto ? "✅ Confirm Delivery with Proof" : "✅ Mark as Delivered"}
                   </button>
 
                   <button
