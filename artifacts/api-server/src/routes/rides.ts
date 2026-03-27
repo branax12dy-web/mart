@@ -4,7 +4,7 @@ import { liveLocationsTable, notificationsTable, rideBidsTable, rideServiceTypes
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { ensureDefaultRideServices, ensureDefaultLocations, getPlatformSettings } from "./admin.js";
-import { customerAuth, riderAuth } from "../middleware/security.js";
+import { customerAuth, riderAuth, verifyUserJwt } from "../middleware/security.js";
 
 const router: IRouter = Router();
 
@@ -323,9 +323,10 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     }
   }
 
+  /* Include userId in WHERE to close the TOCTOU window between ownership check and update */
   const [updated] = await db.update(ridesTable)
     .set({ status: "cancelled", updatedAt: new Date() })
-    .where(eq(ridesTable.id, req.params["id"]!))
+    .where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.userId, userId)))
     .returning();
 
   /* Reject all pending bids (InDrive multi-bid) */
@@ -409,7 +410,8 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
     }).catch(() => {});
   }
 
-  /* Update the ride — assign rider, set fare, mark accepted */
+  /* Update the ride — assign rider, set fare, mark accepted.
+     Include userId in WHERE to close TOCTOU between ownership check and update. */
   const [updated] = await db.update(ridesTable)
     .set({
       status:        "accepted",
@@ -422,7 +424,7 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
       acceptedAt:    new Date(),
       updatedAt:     new Date(),
     })
-    .where(eq(ridesTable.id, rideId))
+    .where(and(eq(ridesTable.id, rideId), eq(ridesTable.userId, userId)))
     .returning();
 
   /* Atomically accept this bid + reject all other pending bids for this ride in a single transaction */
@@ -477,6 +479,7 @@ router.patch("/:id/customer-counter", customerAuth, async (req, res) => {
     .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
 
   const currentRounds = ride.bargainRounds ?? 0;
+  /* Include userId in WHERE — closes TOCTOU between ownership check and update */
   const [updated] = await db.update(ridesTable)
     .set({
       offeredFare:   parsedOffer.toFixed(2),
@@ -490,7 +493,7 @@ router.patch("/:id/customer-counter", customerAuth, async (req, res) => {
       riderPhone:    null,
       updatedAt:     new Date(),
     })
-    .where(eq(ridesTable.id, rideId))
+    .where(and(eq(ridesTable.id, rideId), eq(ridesTable.userId, userId)))
     .returning();
 
   res.json(formatRide(updated!));
@@ -510,11 +513,28 @@ router.get("/", customerAuth, async (req, res) => {
 
 /* ══════════════════════════════════════════════════════
    GET /rides/:id — Single ride details + pending bids (InDrive)
+   Requires valid JWT. Caller must be the customer OR the assigned rider.
 ══════════════════════════════════════════════════════ */
 router.get("/:id", async (req, res) => {
+  /* Flexible auth — accepts customer or rider JWT */
+  const authHeader  = req.headers["authorization"] as string | undefined;
+  const tokenHeader = req.headers["x-auth-token"]  as string | undefined;
+  const raw = tokenHeader || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
+  if (!raw) { res.status(401).json({ error: "Authentication required" }); return; }
+  const payload = verifyUserJwt(raw);
+  if (!payload) { res.status(401).json({ error: "Invalid or expired session. Please log in again." }); return; }
+  const callerId = payload.userId;
+
   const rideId = req.params["id"]!;
   const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  /* Ownership check: requester must be the customer or the assigned rider */
+  const isCustomer = ride.userId  === callerId;
+  const isRider    = ride.riderId === callerId;
+  if (!isCustomer && !isRider) {
+    res.status(403).json({ error: "Access denied — not your ride" }); return;
+  }
 
   /* Enrich with rider info if riderId set but riderName not stored */
   let riderName = ride.riderName;
@@ -578,10 +598,13 @@ router.post("/:id/event-log", riderAuth, async (req, res) => {
     return;
   }
 
-  /* Verify ride exists */
-  const [ride] = await db.select({ id: ridesTable.id })
+  /* Verify ride exists AND this rider is the assigned rider */
+  const [ride] = await db.select({ id: ridesTable.id, riderId: ridesTable.riderId })
     .from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (!ride.riderId || ride.riderId !== riderId) {
+    res.status(403).json({ error: "You are not the assigned rider for this ride" }); return;
+  }
 
   const id = generateId();
   await db.insert(rideEventLogsTable).values({
@@ -599,9 +622,15 @@ router.post("/:id/event-log", riderAuth, async (req, res) => {
 });
 
 /* ════════════════════════════════════════════════════════
-   GET /rides/:id/event-logs   (public — used by admin)
+   GET /rides/:id/event-logs   — Admin only (journey audit trail)
 ════════════════════════════════════════════════════════ */
 router.get("/:id/event-logs", async (req, res) => {
+  /* Admin-secret guard — prevents public scraping of rider GPS journey history */
+  const adminSecret = process.env.ADMIN_SECRET;
+  const provided    = req.headers["x-admin-secret"] as string | undefined;
+  if (!adminSecret || !provided || provided !== adminSecret) {
+    res.status(401).json({ error: "Admin authentication required" }); return;
+  }
   const logs = await db.select().from(rideEventLogsTable)
     .where(eq(rideEventLogsTable.rideId, req.params["id"]!))
     .orderBy(asc(rideEventLogsTable.createdAt));

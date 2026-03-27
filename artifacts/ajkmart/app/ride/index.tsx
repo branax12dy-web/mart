@@ -157,7 +157,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
   useEffect(() => {
     const poll = async () => {
       try {
-        const r = await fetch(`${API}/rides/${rideId}`);
+        const r = await fetch(`${API}/rides/${rideId}`, { headers: authHdrs });
         if (r.ok) setRide(await r.json());
       } catch {}
     };
