@@ -18,7 +18,7 @@ router.post("/update", async (req, res) => {
   const authHeader = req.headers.authorization ?? "";
   if (authHeader.startsWith("Bearer ")) {
     const payload = verifyUserJwt(authHeader.slice(7));
-    if (payload?.sub) userId = payload.sub;
+    if (payload?.userId) userId = payload.userId;
   }
 
   const { latitude, longitude, role, accuracy } = req.body;
