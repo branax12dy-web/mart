@@ -4,7 +4,12 @@ import { api } from "./api";
 interface AuthUser {
   id: string; phone: string; name?: string; email?: string;
   avatar?: string; isOnline: boolean; walletBalance: number;
-  stats: { deliveriesToday: number; earningsToday: number; totalDeliveries: number; totalEarnings: number };
+  createdAt?: string; lastLoginAt?: string;
+  stats: { deliveriesToday: number; earningsToday: number; totalDeliveries: number; totalEarnings: number; rating?: number };
+  // Profile fields
+  cnic?: string; city?: string; address?: string; emergencyContact?: string;
+  vehicleType?: string; vehiclePlate?: string;
+  bankName?: string; bankAccount?: string; bankAccountTitle?: string;
 }
 
 interface AuthCtx {

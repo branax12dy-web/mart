@@ -15,6 +15,9 @@ export interface AuthUser {
   storeIsOpen: boolean;
   lastLoginAt?: string; createdAt?: string;
   stats: { todayOrders: number; todayRevenue: number; totalOrders: number; totalRevenue: number };
+  // Profile fields
+  cnic?: string; city?: string; address?: string; businessType?: string;
+  bankName?: string; bankAccount?: string; bankAccountTitle?: string;
 }
 
 interface AuthCtx {

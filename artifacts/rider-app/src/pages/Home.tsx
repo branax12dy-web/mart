@@ -156,7 +156,7 @@ export default function Home() {
   });
 
   const getDeliveryEarn = (type: string) => {
-    const fee = (config.deliveryFee as Record<string, number>)[type] ?? config.deliveryFee.mart ?? 100;
+    const fee = (config.deliveryFee as Record<string, unknown>)[type] as number ?? config.deliveryFee.mart ?? 100;
     return fee * (config.finance.riderEarningPct / 100);
   };
 

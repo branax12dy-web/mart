@@ -101,6 +101,15 @@ export interface PlatformConfig {
     vendorSettleDays: number;
     referralBonus: number;
   };
+  wallet?: {
+    withdrawalProcessingDays?: number;
+  };
+  payment?: {
+    jazzcashNumber?: string;
+    easypaisaNumber?: string;
+    bankIban?: string;
+    bankName?: string;
+  };
   security?: {
     gpsTracking: boolean;
     gpsInterval: number;

@@ -714,10 +714,10 @@ export default function Wallet() {
   const codRemittances: any[] = codData?.remittances ?? [];
   const codPending    = codRemittances.filter(r => r.reference === "pending");
   const codAccount    = {
-    jazzcash:  config.payment?.jazzcashNumber  || config.platform?.jazzcashNumber  || "",
-    easypaisa: config.payment?.easypaisaNumber || config.platform?.easypaisaNumber || "",
-    bank:      config.payment?.bankIban        || config.platform?.bankIban        || "",
-    bankName:  config.payment?.bankName        || config.platform?.bankName        || "",
+    jazzcash:  config.payment?.jazzcashNumber  || "",
+    easypaisa: config.payment?.easypaisaNumber || "",
+    bank:      config.payment?.bankIban        || "",
+    bankName:  config.payment?.bankName        || "",
   };
 
   const filtered = useMemo(() => {
