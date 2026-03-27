@@ -84,17 +84,21 @@ router.post("/update", async (req, res) => {
        Requires a configured boundary — aspirational without polygon data. */
   }
 
+  const action: string | null = req.body.action ?? null;
+
   await db.insert(liveLocationsTable).values({
     userId,
-    latitude: lat.toString(),
+    latitude:  lat.toString(),
     longitude: lon.toString(),
-    role: role || "customer",
+    role:      role || "customer",
+    action,
     updatedAt: new Date(),
   }).onConflictDoUpdate({
     target: liveLocationsTable.userId,
     set: {
-      latitude: lat.toString(),
+      latitude:  lat.toString(),
       longitude: lon.toString(),
+      action,
       updatedAt: new Date(),
     },
   });

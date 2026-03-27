@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import * as Location from "expo-location";
 import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
@@ -278,6 +279,29 @@ export default function CartScreen() {
     if (finalPayMethod === "wallet") {
       updateUser({ walletBalance: user!.walletBalance - grandTotal });
     }
+
+    /* ── Fire-and-forget: save customer GPS at order placement ── */
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status !== "granted") return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const API_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+        await fetch(`${API_URL}/locations/update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId:    user!.id,
+            latitude:  pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy:  pos.coords.accuracy ?? null,
+            role:      "customer",
+            action:    "order_placed",
+          }),
+        });
+      } catch { /* silent — never block the user flow */ }
+    })();
+
     clearCart();
     setOrderSuccess({
       id: (order as any).id?.slice(-6).toUpperCase() || "------",

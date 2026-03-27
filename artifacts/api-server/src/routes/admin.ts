@@ -2513,4 +2513,47 @@ router.get("/live-riders", async (_req, res) => {
   res.json({ riders: enriched, total: enriched.length, freshCount: enriched.filter(r => r.isFresh).length });
 });
 
+/* ══════════════════════════════════════════════════════════
+   GET /admin/customer-locations
+   Returns customers who sent a GPS update (ride booking or
+   order placement). Shows their identity + last position.
+   "Fresh" = updated within last 2 hours.
+══════════════════════════════════════════════════════════ */
+router.get("/customer-locations", async (_req, res) => {
+  const STALE_MS = 2 * 60 * 60 * 1000; /* 2 hours */
+  const cutoff   = new Date(Date.now() - STALE_MS);
+
+  const locs = await db.select().from(liveLocationsTable)
+    .where(eq(liveLocationsTable.role, "customer"))
+    .orderBy(desc(liveLocationsTable.updatedAt));
+
+  const enriched = await Promise.all(locs.map(async loc => {
+    const [user] = await db
+      .select({ name: usersTable.name, phone: usersTable.phone, email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.id, loc.userId))
+      .limit(1);
+
+    const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt as string);
+    const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
+    const isFresh    = updatedAt >= cutoff;
+    const action     = loc.action ?? null;
+
+    return {
+      userId:     loc.userId,
+      name:       user?.name  ?? "Unknown User",
+      phone:      user?.phone ?? null,
+      email:      user?.email ?? null,
+      lat:        parseFloat(String(loc.latitude)),
+      lng:        parseFloat(String(loc.longitude)),
+      action,
+      updatedAt:  updatedAt.toISOString(),
+      ageSeconds,
+      isFresh,
+    };
+  }));
+
+  res.json({ customers: enriched, total: enriched.length, freshCount: enriched.filter(c => c.isFresh).length });
+});
+
 export default router;

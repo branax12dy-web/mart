@@ -4,7 +4,7 @@ import {
   useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
   usePopularLocations, useCreateLocation, useUpdateLocation, useDeleteLocation,
   useSchoolRoutes, useCreateSchoolRoute, useUpdateSchoolRoute, useDeleteSchoolRoute, useSchoolSubscriptions,
-  useLiveRiders,
+  useLiveRiders, useCustomerLocations,
 } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -1155,6 +1155,11 @@ export default function Rides() {
   const liveRiders: any[] = liveRidersData?.riders || [];
   const freshRiders = liveRiders.filter((r: any) => r.isFresh);
 
+  /* ── Customer Locations (GPS at booking / order time) ── */
+  const { data: custLocData } = useCustomerLocations();
+  const customerLocs: any[] = custLocData?.customers || [];
+  const freshCustomers = customerLocs.filter((c: any) => c.isFresh);
+
   /* ── Grouped Rides ── */
   const bargaining  = rides.filter((r: any) => r.status === "bargaining");
   const searching   = rides.filter((r: any) => r.status === "searching");
@@ -1514,6 +1519,72 @@ export default function Rides() {
                         >
                           <MapPin className="w-4 h-4" />
                           <span className="text-[9px] font-mono">{r.lat.toFixed(3)},{r.lng.toFixed(3)}</span>
+                        </a>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Active Customers GPS ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <User className="w-4 h-4 text-purple-500" />
+              <h2 className="font-bold text-purple-700">Active Customers (Last Location)</h2>
+              {freshCustomers.length > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                  {freshCustomers.length} Recent
+                </span>
+              )}
+            </div>
+            {customerLocs.length === 0 ? (
+              <Card className="p-6 rounded-2xl border-border/50 text-center">
+                <p className="text-2xl mb-2">👤</p>
+                <p className="text-muted-foreground text-sm font-semibold">Abhi koi customer active nahi</p>
+                <p className="text-muted-foreground text-xs mt-1">Ride book ya order place hone par customer ka GPS yahan dikhega</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {customerLocs.map((c: any) => {
+                  const age = c.ageSeconds < 60
+                    ? `${c.ageSeconds}s ago`
+                    : c.ageSeconds < 3600
+                      ? `${Math.floor(c.ageSeconds / 60)}m ago`
+                      : `${Math.floor(c.ageSeconds / 3600)}h ago`;
+                  const actionLabel: Record<string, string> = {
+                    ride_booked:   "🛺 Ride",
+                    order_placed:  "🛒 Order",
+                  };
+                  const actionDisplay = c.action ? (actionLabel[c.action] ?? c.action) : "📍 Activity";
+                  return (
+                    <Card key={c.userId} className={`p-4 rounded-2xl border-2 ${c.isFresh ? "border-purple-200 bg-purple-50/40" : "border-dashed border-muted-foreground/30 opacity-60"}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-purple-500 text-white font-bold text-base shrink-0">
+                          {c.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate">{c.name}</p>
+                          {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                              {actionDisplay}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${c.isFresh ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`}>
+                              🕐 {age}
+                            </span>
+                          </div>
+                        </div>
+                        <a
+                          href={`https://www.google.com/maps?q=${c.lat},${c.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-0.5 text-purple-600 hover:text-purple-800 transition-colors shrink-0"
+                          title="Open in Maps"
+                        >
+                          <MapPin className="w-4 h-4" />
+                          <span className="text-[9px] font-mono">{c.lat.toFixed(3)},{c.lng.toFixed(3)}</span>
                         </a>
                       </div>
                     </Card>

@@ -1106,6 +1106,27 @@ export default function RideScreen() {
         updateUser({ walletBalance: (user.walletBalance ?? 0) - data.effectiveFare });
       }
       setBooked(data);
+
+      /* ── Fire-and-forget: save customer GPS at booking time ── */
+      (async () => {
+        try {
+          const perm = await Location.getForegroundPermissionsAsync();
+          if (perm.status !== "granted") return;
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          await fetch(`${API}/locations/update`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId:    user.id,
+              latitude:  pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy:  pos.coords.accuracy ?? null,
+              role:      "customer",
+              action:    "ride_booked",
+            }),
+          });
+        } catch { /* silent — never block the user flow */ }
+      })();
     } catch { showToast("Network error. Dobara try karein.", "error"); }
     finally { setBooking(false); }
   };

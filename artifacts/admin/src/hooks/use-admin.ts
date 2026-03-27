@@ -573,3 +573,11 @@ export const useLiveRiders = () => {
     refetchInterval: 20_000,
   });
 };
+
+export const useCustomerLocations = () => {
+  return useQuery({
+    queryKey: ["admin-customer-locations"],
+    queryFn: () => fetcher("/customer-locations"),
+    refetchInterval: 30_000,
+  });
+};
