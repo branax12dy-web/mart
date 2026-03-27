@@ -216,7 +216,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-sm text-orange-100 font-medium">Your Commission</p>
-              <p className="text-4xl font-extrabold">85%</p>
+              <p className="text-4xl font-extrabold">{Math.round(100 - (config.platform.vendorCommissionPct ?? 15))}%</p>
               <p className="text-xs text-orange-100 mt-0.5">of every order value</p>
             </div>
             <div className="text-right">
