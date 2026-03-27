@@ -23,24 +23,29 @@ export const api = {
   sendOtp:  (phone: string) => apiFetch("/auth/send-otp", { method: "POST", body: JSON.stringify({ phone }) }),
   verifyOtp:(phone: string, otp: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp }) }),
 
-  getMe:       () => apiFetch("/rider/me"),
-  setOnline:   (isOnline: boolean) => apiFetch("/rider/online", { method: "PATCH", body: JSON.stringify({ isOnline }) }),
+  getMe:        () => apiFetch("/rider/me"),
+  setOnline:    (isOnline: boolean) => apiFetch("/rider/online", { method: "PATCH", body: JSON.stringify({ isOnline }) }),
   updateProfile:(data: any) => apiFetch("/rider/profile", { method: "PATCH", body: JSON.stringify(data) }),
-  getRequests: () => apiFetch("/rider/requests"),
-  getActive:   () => apiFetch("/rider/active"),
-  acceptOrder: (id: string) => apiFetch(`/rider/orders/${id}/accept`, { method: "POST", body: "{}" }),
-  updateOrder: (id: string, status: string) => apiFetch(`/rider/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  acceptRide:  (id: string) => apiFetch(`/rider/rides/${id}/accept`, { method: "POST", body: "{}" }),
-  updateRide:  (id: string, status: string) => apiFetch(`/rider/rides/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  getHistory:  () => apiFetch("/rider/history"),
-  getEarnings: () => apiFetch("/rider/earnings"),
+  getRequests:  () => apiFetch("/rider/requests"),
+  getActive:    () => apiFetch("/rider/active"),
+  acceptOrder:  (id: string) => apiFetch(`/rider/orders/${id}/accept`, { method: "POST", body: "{}" }),
+  updateOrder:  (id: string, status: string) => apiFetch(`/rider/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  acceptRide:   (id: string) => apiFetch(`/rider/rides/${id}/accept`, { method: "POST", body: "{}" }),
+  updateRide:   (id: string, status: string) => apiFetch(`/rider/rides/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  getHistory:   () => apiFetch("/rider/history"),
+  getEarnings:  () => apiFetch("/rider/earnings"),
 
-  // Wallet
+  // Wallet — earnings & withdrawals
   getWallet:      () => apiFetch("/rider/wallet/transactions"),
   withdrawWallet: (data: { amount: number; bankName: string; accountNumber: string; accountTitle: string; paymentMethod?: string; note?: string }) =>
     apiFetch("/rider/wallet/withdraw", { method: "POST", body: JSON.stringify(data) }),
 
+  // COD Remittance — cash deposit framework
+  getCodSummary: () => apiFetch("/rider/cod-summary"),
+  submitCodRemittance: (data: { amount: number; paymentMethod: string; accountNumber: string; transactionId?: string; note?: string }) =>
+    apiFetch("/rider/cod/remit", { method: "POST", body: JSON.stringify(data) }),
+
   // Notifications
-  getNotifications:  () => apiFetch("/rider/notifications"),
-  markAllRead:       () => apiFetch("/rider/notifications/read-all", { method: "PATCH", body: "{}" }),
+  getNotifications: () => apiFetch("/rider/notifications"),
+  markAllRead:      () => apiFetch("/rider/notifications/read-all", { method: "PATCH", body: "{}" }),
 };

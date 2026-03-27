@@ -552,6 +552,54 @@ router.post("/wallet/withdraw", async (req, res) => {
   }
 });
 
+/* ── GET /rider/cod-summary — COD balance + remittance history ── */
+router.get("/cod-summary", async (req, res) => {
+  const riderId = (req as any).riderId;
+  const [codAgg, verifiedAgg, remittances] = await Promise.all([
+    db.select({ total: sum(ordersTable.total), count: count() }).from(ordersTable)
+      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), eq(ordersTable.paymentMethod, "cod"))),
+    db.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'verified:%'`)),
+    db.select().from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance")))
+      .orderBy(desc(walletTransactionsTable.createdAt)).limit(30),
+  ]);
+  const totalCollected = safeNum(codAgg[0]?.total);
+  const totalVerified  = safeNum(verifiedAgg[0]?.total);
+  res.json({
+    totalCollected,
+    totalVerified,
+    netOwed:       Math.max(0, totalCollected - totalVerified),
+    codOrderCount: Number(codAgg[0]?.count ?? 0),
+    remittances:   remittances.map(r => ({ ...r, amount: safeNum(r.amount) })),
+  });
+});
+
+/* ── POST /rider/cod/remit — Submit a COD remittance ── */
+router.post("/cod/remit", async (req, res) => {
+  const riderId = (req as any).riderId;
+  const { amount, paymentMethod, accountNumber, transactionId, note } = req.body;
+  const amt = safeNum(amount);
+  if (!amt || amt <= 0) { res.status(400).json({ error: "Valid amount required" }); return; }
+  if (!paymentMethod)   { res.status(400).json({ error: "Payment method required" }); return; }
+  if (!accountNumber)   { res.status(400).json({ error: "Account / transaction reference required" }); return; }
+  const txId = generateId();
+  await db.insert(walletTransactionsTable).values({
+    id: txId, userId: riderId, type: "cod_remittance",
+    amount: amt.toFixed(2),
+    description: `COD Remittance — ${paymentMethod} · ${accountNumber}${transactionId ? ` · TxID: ${transactionId}` : ""}${note ? ` · ${note}` : ""}`,
+    reference: "pending",
+    paymentMethod,
+  });
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: riderId,
+    title: "COD Remittance Submitted ✅",
+    body: `Rs. ${amt} COD remittance submitted. Admin 24 hours mein verify karega.`,
+    type: "wallet", icon: "cash-outline",
+  }).catch(() => {});
+  res.json({ success: true, txId, amount: amt });
+});
+
 /* ── GET /rider/notifications ── */
 router.get("/notifications", async (req, res) => {
   const riderId = (req as any).riderId;

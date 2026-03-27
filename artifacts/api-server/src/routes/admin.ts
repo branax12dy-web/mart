@@ -2039,4 +2039,91 @@ router.delete("/mfa/disable", adminAuth, async (req, res) => {
   res.json({ success: true, message: "MFA has been disabled for your account." });
 });
 
+/* ══════════════════════════════════════════════════════
+   COD REMITTANCE MANAGEMENT
+══════════════════════════════════════════════════════ */
+
+/* ── GET /admin/cod-remittances ── */
+router.get("/cod-remittances", async (_req, res) => {
+  const txns = await db.select().from(walletTransactionsTable)
+    .where(eq(walletTransactionsTable.type, "cod_remittance"))
+    .orderBy(desc(walletTransactionsTable.createdAt))
+    .limit(300);
+  const enriched = await Promise.all(txns.map(async t => {
+    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+      .from(usersTable).where(eq(usersTable.id, t.userId)).limit(1);
+    const ref = t.reference ?? "pending";
+    const status = ref === "pending" ? "pending" : ref.startsWith("verified:") ? "verified" : ref.startsWith("rejected:") ? "rejected" : "pending";
+    const refDetail = ref.startsWith("verified:") ? ref.slice(9) : ref.startsWith("rejected:") ? ref.slice(9) : "";
+    return { ...t, amount: parseFloat(String(t.amount)), user: user || null, status, refDetail };
+  }));
+  res.json({ remittances: enriched });
+});
+
+/* ── PATCH /admin/cod-remittances/:id/verify ── */
+router.patch("/cod-remittances/:id/verify", async (req, res) => {
+  const { note } = req.body;
+  const txId = req.params["id"]!;
+  const [tx] = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+  if (!tx) { res.status(404).json({ error: "Remittance not found" }); return; }
+  if (tx.type !== "cod_remittance") { res.status(400).json({ error: "Not a COD remittance record" }); return; }
+  const dateStr = new Date().toISOString().split("T")[0];
+  const [updated] = await db.update(walletTransactionsTable)
+    .set({ reference: `verified:${dateStr}` })
+    .where(eq(walletTransactionsTable.id, txId)).returning();
+  await sendUserNotification(
+    tx.userId, "COD Remittance Verified ✅",
+    `Rs. ${parseFloat(String(tx.amount)).toLocaleString()} COD remittance verified hai.${note ? ` Note: ${note}` : ""} Shukriya!`,
+    "wallet", "checkmark-circle-outline"
+  );
+  res.json({ success: true, remittance: updated });
+});
+
+/* ── PATCH /admin/cod-remittances/:id/reject ── */
+router.patch("/cod-remittances/:id/reject", async (req, res) => {
+  const { reason } = req.body;
+  const txId = req.params["id"]!;
+  const [tx] = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+  if (!tx) { res.status(404).json({ error: "Remittance not found" }); return; }
+  if (tx.type !== "cod_remittance") { res.status(400).json({ error: "Not a COD remittance record" }); return; }
+  const [updated] = await db.update(walletTransactionsTable)
+    .set({ reference: `rejected:${reason || "Verification failed"}` })
+    .where(eq(walletTransactionsTable.id, txId)).returning();
+  await sendUserNotification(
+    tx.userId, "COD Remittance Rejected ❌",
+    `Rs. ${parseFloat(String(tx.amount)).toLocaleString()} remittance reject ho gaya. Reason: ${reason || "Verification failed"}. Please resubmit with correct details.`,
+    "wallet", "close-circle-outline"
+  );
+  res.json({ success: true, remittance: updated });
+});
+
+/* ── POST /admin/riders/:id/credit — Manual wallet credit for rider ── */
+router.post("/riders/:id/credit", async (req, res) => {
+  const { amount, description, type } = req.body;
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    res.status(400).json({ error: "Valid amount required" }); return;
+  }
+  const [rider] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
+  if (!rider) { res.status(404).json({ error: "Rider not found" }); return; }
+  const roles = (rider.role || rider.roles || "").split(",").map((r: string) => r.trim());
+  if (!roles.includes("rider")) { res.status(400).json({ error: "User is not a rider" }); return; }
+  const amt = Number(amount);
+  const txType = type === "bonus" ? "bonus" : "credit";
+  const [updated] = await db.update(usersTable)
+    .set({ walletBalance: sql`wallet_balance + ${amt}`, updatedAt: new Date() })
+    .where(eq(usersTable.id, rider.id)).returning();
+  await db.insert(walletTransactionsTable).values({
+    id: generateId(), userId: rider.id, type: txType, amount: String(amt),
+    description: description || `Admin credit: Rs. ${amt}`,
+    reference: txType === "bonus" ? "rider_bonus" : "admin_credit",
+  });
+  await sendUserNotification(
+    rider.id,
+    txType === "bonus" ? "Bonus Received! 🎉" : "Wallet Credited 💰",
+    `Rs. ${amt} aapke wallet mein add ho gaya. ${description || ""}`,
+    "wallet", "wallet-outline"
+  );
+  res.json({ success: true, amount: amt, newBalance: parseFloat(updated?.walletBalance ?? "0") });
+});
+
 export default router;

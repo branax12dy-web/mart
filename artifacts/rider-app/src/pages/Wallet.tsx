@@ -336,6 +336,207 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess }: {
 }
 
 /* ══════════════════════════════════════════
+   COD REMITTANCE MODAL — 3-step flow
+══════════════════════════════════════════ */
+const COD_METHODS = [
+  { id: "jazzcash",  label: "JazzCash",      logo: "🔴", desc: "0300-XXXXXXX par send karein", placeholder: "03XX-XXXXXXX" },
+  { id: "easypaisa", label: "EasyPaisa",     logo: "🟢", desc: "EasyPaisa number par send karein", placeholder: "03XX-XXXXXXX" },
+  { id: "bank",      label: "Bank Transfer", logo: "🏦", desc: "Company ke bank account mein",  placeholder: "IBAN / Account No." },
+];
+
+function RemittanceModal({ codAccount, netOwed, onClose, onSuccess }: {
+  codAccount: { jazzcash?: string; easypaisa?: string; bank?: string; bankName?: string };
+  netOwed: number;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [step, setStep]           = useState<"method"|"details"|"confirm"|"done">("method");
+  const [method, setMethod]       = useState<typeof COD_METHODS[0] | null>(null);
+  const [amount, setAmount]       = useState(String(Math.ceil(netOwed)));
+  const [acNo, setAcNo]           = useState("");
+  const [txId, setTxId]           = useState("");
+  const [note, setNote]           = useState("");
+  const [err, setErr]             = useState("");
+  const INPUT = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:bg-white transition-colors";
+
+  const mut = useMutation({
+    mutationFn: () => api.submitCodRemittance({
+      amount: Number(amount), paymentMethod: method!.label,
+      accountNumber: acNo, transactionId: txId, note,
+    }),
+    onSuccess: () => setStep("done"),
+    onError:   (e: any) => setErr(e.message),
+  });
+
+  const goToDetails = (m: typeof COD_METHODS[0]) => {
+    setMethod(m);
+    const saved = m.id === "jazzcash" ? codAccount.jazzcash : m.id === "easypaisa" ? codAccount.easypaisa : codAccount.bank;
+    setAcNo(saved || "");
+    setErr(""); setStep("details");
+  };
+
+  const goToConfirm = () => {
+    const amt = Number(amount);
+    if (!amount || isNaN(amt) || amt <= 0) { setErr("Valid amount likhein"); return; }
+    if (!acNo.trim()) { setErr("Account / phone number required"); return; }
+    if (!txId.trim()) { setErr("Transaction reference ID required hai"); return; }
+    setErr(""); setStep("confirm");
+  };
+
+  const STEP_LABELS = ["method","details","confirm"];
+  const stepIdx = STEP_LABELS.indexOf(step);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl max-h-[93vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full"/>
+        </div>
+        {step !== "done" && stepIdx >= 0 && (
+          <div className="px-6 pb-3 flex-shrink-0">
+            <div className="flex gap-1.5 mt-1">
+              {STEP_LABELS.map((_,i) => (
+                <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i <= stepIdx ? "bg-blue-500" : "bg-gray-100"}`}/>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1 text-right">Step {stepIdx+1}/{STEP_LABELS.length}</p>
+          </div>
+        )}
+        <div className="overflow-y-auto flex-1">
+
+          {/* DONE */}
+          {step === "done" && (
+            <div className="p-8 text-center">
+              <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-5 text-5xl">✅</div>
+              <h3 className="text-2xl font-extrabold text-gray-800">Remittance Submitted!</h3>
+              <p className="text-gray-500 mt-2 text-sm">Admin 24 hours mein verify karega. Verify hone par notification milegi.</p>
+              <div className="mt-5 bg-blue-50 rounded-2xl p-5 text-left space-y-3">
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{method?.logo} {method?.label}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Account</span><span className="font-bold font-mono">{acNo}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Tx Ref</span><span className="font-bold font-mono">{txId}</span></div>
+                <div className="flex justify-between items-center pt-2 border-t border-blue-100">
+                  <span className="text-gray-600 font-semibold">Amount Remitted</span>
+                  <span className="text-2xl font-extrabold text-blue-600">{fc(Number(amount))}</span>
+                </div>
+              </div>
+              <button onClick={() => { onSuccess(); onClose(); }} className="mt-5 w-full h-14 bg-blue-600 text-white font-extrabold rounded-2xl">Done ✓</button>
+            </div>
+          )}
+
+          {/* CONFIRM */}
+          {step === "confirm" && (
+            <div className="p-6">
+              <h3 className="text-xl font-extrabold text-gray-800 mb-1">Confirm Remittance</h3>
+              <p className="text-sm text-gray-500 mb-5">Submit se pehle sab details check karein</p>
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-3 mb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 text-sm">Amount</span>
+                  <span className="font-extrabold text-blue-600 text-3xl">{fc(Number(amount))}</span>
+                </div>
+                <div className="h-px bg-blue-100"/>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{method?.logo} {method?.label}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">To Account</span><span className="font-bold font-mono">{acNo}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Tx Reference</span><span className="font-bold font-mono">{txId}</span></div>
+                {note && <div className="flex justify-between text-sm"><span className="text-gray-500">Note</span><span className="font-bold">{note}</span></div>}
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-4 flex gap-2">
+                <span>⚠️</span>
+                <p className="text-xs text-amber-700 font-medium">Galat transaction ID se rejection ho sakta hai. Real TxID daalen.</p>
+              </div>
+              {err && <div className="bg-red-50 rounded-xl px-4 py-2.5 mb-3"><p className="text-red-500 text-sm font-semibold">⚠️ {err}</p></div>}
+              <div className="flex gap-3">
+                <button onClick={() => { setStep("details"); setErr(""); }} className="flex-1 border-2 border-gray-200 text-gray-600 font-bold rounded-2xl py-3 text-sm">← Edit</button>
+                <button onClick={() => mut.mutate()} disabled={mut.isPending} className="flex-[2] bg-blue-600 text-white font-extrabold rounded-2xl py-3 disabled:opacity-60 text-sm">
+                  {mut.isPending ? "⏳ Submitting..." : "✅ Submit Remittance"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* DETAILS */}
+          {step === "details" && method && (
+            <div className="p-6">
+              <button onClick={() => setStep("method")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold">← Back</button>
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center text-3xl">{method.logo}</div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-gray-800">{method.label}</h3>
+                  <p className="text-xs text-gray-500">{method.desc}</p>
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4">
+                <p className="text-xs font-bold text-blue-700 mb-1">Company Account Details</p>
+                {method.id === "jazzcash"  && <p className="text-sm font-mono font-bold text-blue-800">{codAccount.jazzcash || "Contact admin for account"}</p>}
+                {method.id === "easypaisa" && <p className="text-sm font-mono font-bold text-blue-800">{codAccount.easypaisa || "Contact admin for account"}</p>}
+                {method.id === "bank"      && <p className="text-sm font-mono font-bold text-blue-800">{codAccount.bank || "Contact admin for IBAN"}{codAccount.bankName ? ` · ${codAccount.bankName}` : ""}</p>}
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount Remitted (Rs.) *</p>
+                  <input type="number" inputMode="numeric" value={amount}
+                    onChange={e => { setAmount(e.target.value); setErr(""); }} className={INPUT} placeholder="0"/>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">{method.id === "bank" ? "Your Account No." : "Your Phone (Sender)"} *</p>
+                  <input value={acNo} onChange={e => { setAcNo(e.target.value); setErr(""); }}
+                    placeholder={method.placeholder} className={INPUT}/>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Transaction ID / Reference *</p>
+                  <input value={txId} onChange={e => { setTxId(e.target.value); setErr(""); }}
+                    placeholder="JazzCash/EasyPaisa TxID ya bank ref no." className={INPUT}/>
+                  <p className="text-[10px] text-gray-400 mt-1">JazzCash app ya bank SMS mein milta hai</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Note (Optional)</p>
+                  <input value={note} onChange={e => setNote(e.target.value)} placeholder="Koi additional info" className={INPUT}/>
+                </div>
+                {err && <div className="bg-red-50 rounded-xl px-4 py-2.5"><p className="text-red-500 text-sm font-semibold">⚠️ {err}</p></div>}
+                <button onClick={goToConfirm} className="w-full h-14 bg-blue-600 text-white font-extrabold rounded-2xl">Review & Submit →</button>
+              </div>
+            </div>
+          )}
+
+          {/* METHOD SELECTION */}
+          {step === "method" && (
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-extrabold text-gray-800">💵 Remit COD Cash</h3>
+                <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-xl font-bold text-gray-500">✕</button>
+              </div>
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-white mb-5">
+                <p className="text-sm text-blue-200">Total COD Owed</p>
+                <p className="text-4xl font-extrabold mt-0.5">{fc(netOwed)}</p>
+                <p className="text-xs text-blue-300 mt-2">Company ke account mein remit karein</p>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">Kahan bheja? Method select karein:</p>
+              <div className="space-y-3">
+                {COD_METHODS.map(m => (
+                  <button key={m.id} onClick={() => goToDetails(m)}
+                    className="w-full text-left bg-gray-50 border-2 border-gray-200 rounded-2xl p-4 flex items-center gap-4 hover:border-blue-400 hover:bg-blue-50 active:scale-[0.98] transition-all">
+                    <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-sm flex-shrink-0">{m.logo}</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-extrabold text-gray-800">{m.label}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+                    </div>
+                    <span className="text-gray-400 text-xl">›</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 flex gap-2">
+                <span>💡</span>
+                <p className="text-xs text-amber-700 font-medium">Pehle company account mein transfer karein, phir yahan Transaction ID ke sath submit karein.</p>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
    7-DAY EARNINGS CHART (CSS bars)
 ══════════════════════════════════════════ */
 function EarningsChart({ transactions }: { transactions: any[] }) {
@@ -463,10 +664,12 @@ export default function Wallet() {
   const procDays          = config.wallet?.withdrawalProcessingDays ?? 2;
   const qc = useQueryClient();
 
-  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [showWithdraw, setShowWithdraw]     = useState(false);
+  const [showRemittance, setShowRemittance] = useState(false);
   const [toast, setToast]     = useState("");
   const [filter, setFilter]   = useState<TxFilter>("all");
-  const [showRequests, setShowRequests] = useState(true);
+  const [showRequests, setShowRequests]     = useState(true);
+  const [showCodHistory, setShowCodHistory] = useState(false);
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
 
@@ -474,6 +677,13 @@ export default function Wallet() {
     queryKey: ["rider-wallet"],
     queryFn: () => api.getWallet(),
     refetchInterval: 30000,
+    enabled: config.features.wallet,
+  });
+
+  const { data: codData, refetch: refetchCod } = useQuery({
+    queryKey: ["rider-cod"],
+    queryFn: () => api.getCodSummary(),
+    refetchInterval: 60000,
     enabled: config.features.wallet,
   });
 
@@ -495,6 +705,20 @@ export default function Wallet() {
   );
   const pendingRequests = withdrawalRequests.filter(t => !t.reference || t.reference === "pending");
   const pendingAmt = pendingRequests.reduce((s, t) => s + Number(t.amount), 0);
+
+  // COD tracking
+  const codNetOwed    = codData?.netOwed       ?? 0;
+  const codCollected  = codData?.totalCollected ?? 0;
+  const codVerified   = codData?.totalVerified  ?? 0;
+  const codOrderCount = codData?.codOrderCount  ?? 0;
+  const codRemittances: any[] = codData?.remittances ?? [];
+  const codPending    = codRemittances.filter(r => r.reference === "pending");
+  const codAccount    = {
+    jazzcash:  config.payment?.jazzcashNumber  || config.platform?.jazzcashNumber  || "",
+    easypaisa: config.payment?.easypaisaNumber || config.platform?.easypaisaNumber || "",
+    bank:      config.payment?.bankIban        || config.platform?.bankIban        || "",
+    bankName:  config.payment?.bankName        || config.platform?.bankName        || "",
+  };
 
   const filtered = useMemo(() => {
     if (filter === "all") return transactions;
@@ -602,6 +826,87 @@ export default function Wallet() {
 
         {/* ── 7-DAY EARNINGS CHART ── */}
         <EarningsChart transactions={transactions}/>
+
+        {/* ── COD DEPOSIT SECTION ── */}
+        {codOrderCount > 0 && (
+          <div className={`rounded-2xl shadow-sm overflow-hidden border ${codNetOwed > 0 ? "border-blue-200 bg-white" : "border-green-200 bg-white"}`}>
+            <div className="px-4 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${codNetOwed > 0 ? "bg-blue-100" : "bg-green-100"}`}>
+                  💵
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">COD Cash Balance</p>
+                  <p className="text-xs text-gray-500">Cash on delivery collected</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className={`text-lg font-extrabold ${codNetOwed > 0 ? "text-blue-600" : "text-green-600"}`}>{fc(codNetOwed)}</p>
+                <p className="text-[10px] text-gray-400">{codNetOwed > 0 ? "Remit karna baki" : "✅ All clear"}</p>
+              </div>
+            </div>
+
+            <div className="px-4 pb-3 grid grid-cols-3 gap-2 text-center border-t border-gray-50 pt-3">
+              <div>
+                <p className="text-xs font-extrabold text-gray-800">{fc(codCollected)}</p>
+                <p className="text-[9px] text-gray-400 font-medium">Total Collected</p>
+              </div>
+              <div>
+                <p className="text-xs font-extrabold text-green-600">{fc(codVerified)}</p>
+                <p className="text-[9px] text-gray-400 font-medium">Verified</p>
+              </div>
+              <div>
+                <p className={`text-xs font-extrabold ${codNetOwed > 0 ? "text-blue-600" : "text-gray-400"}`}>{fc(codNetOwed)}</p>
+                <p className="text-[9px] text-gray-400 font-medium">Owed</p>
+              </div>
+            </div>
+
+            {codPending.length > 0 && (
+              <div className="mx-4 mb-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse flex-shrink-0"/>
+                <p className="text-xs text-amber-700 font-semibold">{codPending.length} remittance verification pending hai</p>
+              </div>
+            )}
+
+            <div className="px-4 pb-4 flex gap-2">
+              {codNetOwed > 0 && (
+                <button onClick={() => setShowRemittance(true)}
+                  className="flex-1 bg-blue-600 text-white font-extrabold rounded-2xl py-3 flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
+                  💵 Remit COD Cash
+                </button>
+              )}
+              <button onClick={() => setShowCodHistory(!showCodHistory)}
+                className={`${codNetOwed > 0 ? "w-auto px-4" : "flex-1"} bg-gray-100 text-gray-600 font-bold rounded-2xl py-3 text-sm`}>
+                {showCodHistory ? "Hide" : "History"}
+              </button>
+            </div>
+
+            {showCodHistory && codRemittances.length > 0 && (
+              <div className="border-t border-gray-100 divide-y divide-gray-50">
+                {codRemittances.map(r => {
+                  const ref = r.reference ?? "pending";
+                  const st  = ref === "pending" ? "pending" : ref.startsWith("verified:") ? "verified" : ref.startsWith("rejected:") ? "rejected" : "pending";
+                  const stBadge = st === "pending" ? "bg-amber-100 text-amber-700" : st === "verified" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600";
+                  const stLabel = st === "pending" ? "⏳ Pending" : st === "verified" ? "✅ Verified" : "❌ Rejected";
+                  const parts = (r.description || "").replace("COD Remittance — ", "").split(" · ");
+                  return (
+                    <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                      <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center text-base flex-shrink-0">💵</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-800">{parts[0] || "Remittance"}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-[10px] text-gray-400">{new Date(r.createdAt).toLocaleDateString("en-PK", { day:"numeric", month:"short" })}</p>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${stBadge}`}>{stLabel}</span>
+                        </div>
+                      </div>
+                      <p className="text-sm font-extrabold text-blue-600 flex-shrink-0">{fc(Number(r.amount))}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── WITHDRAWAL REQUESTS SECTION ── */}
         {withdrawalRequests.length > 0 && (
@@ -738,6 +1043,20 @@ export default function Wallet() {
 
         <p className="text-center text-xs text-gray-400 pb-2">🔐 All transactions encrypted & audited by {config.platform.appName}</p>
       </div>
+
+      {/* ── COD REMITTANCE MODAL ── */}
+      {showRemittance && (
+        <RemittanceModal
+          codAccount={codAccount}
+          netOwed={codNetOwed}
+          onClose={() => setShowRemittance(false)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["rider-cod"] });
+            refetchCod();
+            showToast("✅ COD Remittance submitted! Admin verify karega.");
+          }}
+        />
+      )}
 
       {/* ── WITHDRAW MODAL ── */}
       {showWithdraw && withdrawalEnabled && (
