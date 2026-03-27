@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Bike, Search, RefreshCw, Wallet, CircleDollarSign, Gift,
-  CheckCircle2, Ban, AlertTriangle, Star,
+  CheckCircle2, Ban, AlertTriangle, Star, Phone,
 } from "lucide-react";
 import { useRiders, useUpdateRiderStatus, useRiderPayout, useRiderBonus } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -271,7 +271,15 @@ export default function Riders() {
                         <p className="font-bold text-sm text-foreground">{r.name || "Unknown Rider"}</p>
                         {getStatusBadge(r)}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{r.phone}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <a href={`tel:${r.phone}`} className="flex items-center gap-1 text-xs text-blue-600 font-medium hover:underline">
+                          <Phone className="w-3 h-3" /> {r.phone}
+                        </a>
+                        <a href={`https://wa.me/92${r.phone.replace(/^(\+92|0)/, "")}`} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-xs text-green-600 font-medium hover:underline">
+                          💬 WhatsApp
+                        </a>
+                      </div>
                       <p className="text-xs text-muted-foreground">Joined {formatDate(r.createdAt)}</p>
                     </div>
                   </div>

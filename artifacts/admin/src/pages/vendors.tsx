@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Store, Search, RefreshCw, Wallet, TrendingUp, ShoppingBag,
   CheckCircle2, XCircle, Ban, CircleDollarSign, CreditCard,
-  Package, Phone, ToggleLeft, ToggleRight, AlertTriangle, X,
+  Package, Phone, ToggleLeft, ToggleRight, AlertTriangle, X, MessageCircle,
 } from "lucide-react";
 import { useVendors, useUpdateVendorStatus, useVendorPayout, useVendorCredit, usePlatformSettings } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -281,7 +281,16 @@ export default function Vendors() {
                           <Badge variant="outline" className="text-[10px] capitalize">{v.storeCategory}</Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{v.name || "—"} · {v.phone}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{v.name || "—"}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <a href={`tel:${v.phone}`} className="flex items-center gap-1 text-xs text-blue-600 font-medium hover:underline">
+                          <Phone className="w-3 h-3" /> {v.phone}
+                        </a>
+                        <a href={`https://wa.me/92${v.phone.replace(/^(\+92|0)/, "")}`} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-xs text-green-600 font-medium hover:underline">
+                          <MessageCircle className="w-3 h-3" /> WhatsApp
+                        </a>
+                      </div>
                       <p className="text-xs text-muted-foreground">Joined {formatDate(v.createdAt)}</p>
                     </div>
                   </div>
