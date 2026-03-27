@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   usersTable,
   ordersTable,
+  rideBidsTable,
   ridesTable,
   pharmacyOrdersTable,
   parcelBookingsTable,
@@ -1213,18 +1214,28 @@ router.get("/orders-enriched", async (_req, res) => {
 });
 
 router.get("/rides-enriched", async (_req, res) => {
-  const rides = await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(200);
-  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
-  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  const [rides, users, bidCounts] = await Promise.all([
+    db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(200),
+    db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable),
+    /* Count bids per ride for bargaining transparency */
+    db.select({ rideId: rideBidsTable.rideId, total: count(rideBidsTable.id) })
+      .from(rideBidsTable)
+      .groupBy(rideBidsTable.rideId),
+  ]);
+  const userMap    = Object.fromEntries(users.map(u => [u.id, u]));
+  const bidCountMap = Object.fromEntries(bidCounts.map(b => [b.rideId, Number(b.total)]));
   res.json({
     rides: rides.map(r => ({
       ...r,
-      fare: parseFloat(r.fare),
-      distance: parseFloat(r.distance),
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-      userName: userMap[r.userId]?.name || null,
-      userPhone: userMap[r.userId]?.phone || null,
+      fare:        parseFloat(r.fare),
+      distance:    parseFloat(r.distance),
+      offeredFare: r.offeredFare ? parseFloat(r.offeredFare) : null,
+      counterFare: r.counterFare ? parseFloat(r.counterFare) : null,
+      createdAt:   r.createdAt.toISOString(),
+      updatedAt:   r.updatedAt.toISOString(),
+      userName:    userMap[r.userId]?.name  || null,
+      userPhone:   userMap[r.userId]?.phone || null,
+      totalBids:   bidCountMap[r.id] ?? 0,
     })),
     total: rides.length,
   });

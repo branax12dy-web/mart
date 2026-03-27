@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, desc, and, or, sql, count, sum, gte, isNull, ne } from "drizzle-orm";
+import { eq, desc, and, or, sql, count, sum, gte, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 

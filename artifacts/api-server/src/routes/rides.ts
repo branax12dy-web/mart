@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { notificationsTable, rideBidsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 
@@ -359,13 +359,15 @@ router.patch("/:id/accept-bid", async (req, res) => {
     .where(eq(ridesTable.id, rideId))
     .returning();
 
-  /* Accept this bid, reject all others */
-  await db.update(rideBidsTable)
-    .set({ status: "accepted", updatedAt: new Date() })
-    .where(eq(rideBidsTable.id, bidId));
-  await db.update(rideBidsTable)
-    .set({ status: "rejected", updatedAt: new Date() })
-    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
+  /* Atomically accept this bid + reject all other pending bids for this ride in a single transaction */
+  await db.transaction(async (tx) => {
+    await tx.update(rideBidsTable)
+      .set({ status: "accepted", updatedAt: new Date() })
+      .where(eq(rideBidsTable.id, bidId));
+    await tx.update(rideBidsTable)
+      .set({ status: "rejected", updatedAt: new Date() })
+      .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending"), ne(rideBidsTable.id, bidId)));
+  });
 
   /* Notify winning rider */
   await db.insert(notificationsTable).values({

@@ -23,10 +23,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const BARGAIN_STATUS_LABELS: Record<string, string> = {
-  customer_offered:  "Offer Sent",
-  rider_countered:   "Rider Countered",
-  customer_countered:"Customer Countered",
-  agreed:            "Agreed",
+  customer_offered:  "Bids Open",
+  rider_countered:   "Rider Countered",   /* legacy */
+  customer_countered:"Customer Countered", /* legacy */
+  agreed:            "Deal Agreed",
   expired:           "Expired",
 };
 
@@ -450,8 +450,14 @@ export default function Rides() {
                 )}
                 {selectedRide.counterFare != null && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Rider Counter</span>
-                    <span className="font-bold text-purple-600">{formatCurrency(selectedRide.counterFare)}</span>
+                    <span className="text-muted-foreground">Agreed Bid Fare</span>
+                    <span className="font-bold text-green-600">{formatCurrency(selectedRide.counterFare)}</span>
+                  </div>
+                )}
+                {(selectedRide.totalBids ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rider Bids Received</span>
+                    <span className="font-bold text-blue-600">{selectedRide.totalBids}</span>
                   </div>
                 )}
                 {selectedRide.bargainStatus && (
