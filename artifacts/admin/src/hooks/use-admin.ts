@@ -564,3 +564,12 @@ export const useSchoolSubscriptions = (routeId?: string) => {
     refetchInterval: REFETCH_INTERVAL,
   });
 };
+
+
+export const useLiveRiders = () => {
+  return useQuery({
+    queryKey: ["admin-live-riders"],
+    queryFn: () => fetcher("/live-riders"),
+    refetchInterval: 20_000,
+  });
+};

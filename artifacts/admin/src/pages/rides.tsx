@@ -4,6 +4,7 @@ import {
   useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
   usePopularLocations, useCreateLocation, useUpdateLocation, useDeleteLocation,
   useSchoolRoutes, useCreateSchoolRoute, useUpdateSchoolRoute, useDeleteSchoolRoute, useSchoolSubscriptions,
+  useLiveRiders,
 } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -1027,7 +1028,7 @@ function ServiceManager() {
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-border/30" style={{ backgroundColor: `${svc.color}18` ?? "#6B728018" }}>
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-border/30" style={{ backgroundColor: svc.color ? `${svc.color}18` : "#6B728018" }}>
                       {svc.icon}
                     </div>
                     <div>
@@ -1148,6 +1149,11 @@ export default function Rides() {
   }, []);
 
   const rides = data?.rides || [];
+
+  /* ── Live Riders (GPS positions) ── */
+  const { data: liveRidersData } = useLiveRiders();
+  const liveRiders: any[] = liveRidersData?.riders || [];
+  const freshRiders = liveRiders.filter((r: any) => r.isFresh);
 
   /* ── Grouped Rides ── */
   const bargaining  = rides.filter((r: any) => r.status === "bargaining");
@@ -1459,6 +1465,63 @@ export default function Rides() {
               <p className="text-gray-400 text-sm mt-1">No rides need attention right now</p>
             </Card>
           )}
+
+          {/* ── Live Riders GPS ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Navigation className="w-4 h-4 text-blue-500" />
+              <h2 className="font-bold text-blue-700">Live Riders GPS</h2>
+              {freshRiders.length > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                  {freshRiders.length} Active
+                </span>
+              )}
+            </div>
+            {liveRiders.length === 0 ? (
+              <Card className="p-6 rounded-2xl border-border/50 text-center">
+                <p className="text-2xl mb-2">📡</p>
+                <p className="text-muted-foreground text-sm font-semibold">No GPS data yet</p>
+                <p className="text-muted-foreground text-xs mt-1">Riders share location when online or on an active ride</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {liveRiders.map((r: any) => {
+                  const age = r.ageSeconds < 60 ? `${r.ageSeconds}s ago` : r.ageSeconds < 3600 ? `${Math.floor(r.ageSeconds / 60)}m ago` : `${Math.floor(r.ageSeconds / 3600)}h ago`;
+                  return (
+                    <Card key={r.userId} className={`p-4 rounded-2xl border-2 ${r.isFresh ? "border-blue-200 bg-blue-50/40" : "border-dashed border-muted-foreground/30 opacity-60"}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-base shrink-0 ${r.isOnline ? "bg-green-500" : "bg-gray-400"}`}>
+                          {r.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate">{r.name}</p>
+                          {r.phone && <p className="text-xs text-muted-foreground">{r.phone}</p>}
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${r.isOnline ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                              {r.isOnline ? "Online" : "Offline"}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${r.isFresh ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400"}`}>
+                              📡 {age}
+                            </span>
+                          </div>
+                        </div>
+                        <a
+                          href={`https://www.google.com/maps?q=${r.lat},${r.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-0.5 text-blue-600 hover:text-blue-800 transition-colors shrink-0"
+                          title="Open in Maps"
+                        >
+                          <MapPin className="w-4 h-4" />
+                          <span className="text-[9px] font-mono">{r.lat.toFixed(3)},{r.lng.toFixed(3)}</span>
+                        </a>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

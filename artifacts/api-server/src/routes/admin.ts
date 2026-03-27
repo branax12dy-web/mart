@@ -18,6 +18,7 @@ import {
   popularLocationsTable,
   schoolRoutesTable,
   schoolSubscriptionsTable,
+  liveLocationsTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -2466,5 +2467,50 @@ router.get("/school-subscriptions", async (req, res) => {
   res.json({ subscriptions: enriched, total: enriched.length });
 });
 
+/* ══════════════════════════════════════════════════════════
+   GET /admin/live-riders
+   Returns all riders who have recently sent GPS updates,
+   enriched with their name, phone and online status.
+   "Fresh" = updated within last 5 minutes.
+══════════════════════════════════════════════════════════ */
+router.get("/live-riders", async (_req, res) => {
+  const STALE_MS = 5 * 60 * 1000; /* 5 minutes */
+  const cutoff   = new Date(Date.now() - STALE_MS);
+
+  const locs = await db.select().from(liveLocationsTable)
+    .where(eq(liveLocationsTable.role, "rider"));
+
+  const enriched = await Promise.all(locs.map(async loc => {
+    const [user] = await db
+      .select({ name: usersTable.name, phone: usersTable.phone, isOnline: usersTable.isOnline })
+      .from(usersTable)
+      .where(eq(usersTable.id, loc.userId))
+      .limit(1);
+
+    const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt);
+    const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
+    const isFresh    = updatedAt >= cutoff;
+
+    return {
+      userId:     loc.userId,
+      name:       user?.name  ?? "Unknown Rider",
+      phone:      user?.phone ?? null,
+      isOnline:   user?.isOnline ?? false,
+      lat:        parseFloat(String(loc.latitude)),
+      lng:        parseFloat(String(loc.longitude)),
+      updatedAt:  updatedAt.toISOString(),
+      ageSeconds,
+      isFresh,
+    };
+  }));
+
+  /* Sort: online first, then by freshness */
+  enriched.sort((a, b) => {
+    if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+    return a.ageSeconds - b.ageSeconds;
+  });
+
+  res.json({ riders: enriched, total: enriched.length, freshCount: enriched.filter(r => r.isFresh).length });
+});
 
 export default router;

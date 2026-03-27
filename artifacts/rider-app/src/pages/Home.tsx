@@ -97,6 +97,40 @@ export default function Home() {
     prevIdsRef.current = currentIds;
   }, [allOrders.length, allRides.length]);
 
+  /* ── GPS location tracking — sends position every 30s when online with no active task ──
+     Active.tsx handles every-15s tracking during rides/orders (higher frequency).
+     Here we track at lower frequency just to keep admin's live rider view fresh. ── */
+  useEffect(() => {
+    if (!user?.isOnline || hasActiveTask || !user?.id) return;
+    if (!navigator?.geolocation) return;
+
+    let lastSentTime = 0;
+    const MIN_INTERVAL_MS = 30_000;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now();
+        if (now - lastSentTime < MIN_INTERVAL_MS) return;
+        lastSentTime = now;
+        fetch("/api/locations/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId:    user.id,
+            latitude:  pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy:  pos.coords.accuracy,
+            role:      "rider",
+          }),
+        }).catch(() => {});
+      },
+      () => {},
+      { enableHighAccuracy: false, maximumAge: 20_000, timeout: 30_000 },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [user?.isOnline, hasActiveTask, user?.id]);
+
   // Filter out dismissed
   const orders = allOrders.filter((o: any) => !dismissed.has(o.id));
   const rides  = allRides.filter((r: any) => !dismissed.has(r.id));
