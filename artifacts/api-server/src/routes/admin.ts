@@ -328,6 +328,48 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "payment_max_online",           value: "100000",   label: "Maximum Online Payment (Rs.)",         category: "payment" },
   { key: "payment_receipt_required",     value: "on",       label: "Require Receipt for Manual Payments",  category: "payment" },
   { key: "payment_verify_window_hours",  value: "4",        label: "Manual Payment Verify Window (hours)", category: "payment" },
+
+  /* ═══════════════════  Maps / Tracking  ═══════════════════ */
+  { key: "maps_base_fare",       value: "50",   label: "Maps Base Fare (Rs.)",                    category: "integrations" },
+  { key: "maps_per_km_rate",     value: "25",   label: "Maps Per KM Rate (Rs.)",                  category: "integrations" },
+  { key: "maps_max_radius_km",   value: "15",   label: "Maps Max Delivery Radius (KM)",           category: "integrations" },
+  { key: "maps_surge_multiplier",value: "1.5",  label: "Maps Surge Multiplier",                   category: "integrations" },
+  { key: "maps_use_customer_app",value: "on",   label: "Use Maps in Customer App",                category: "integrations" },
+  { key: "maps_use_rider_app",   value: "on",   label: "Use Maps in Rider App",                   category: "integrations" },
+  { key: "maps_use_vendor_app",  value: "off",  label: "Use Maps in Vendor App",                  category: "integrations" },
+  { key: "maps_live_tracking",   value: "on",   label: "Live Order Tracking Enabled",             category: "integrations" },
+
+  /* ═══════════════════  Email Admin Alerts  ═══════════════════ */
+  { key: "email_alert_new_vendor",        value: "on",  label: "Email Alert: New Vendor Registration",   category: "integrations" },
+  { key: "email_alert_high_value_order",  value: "on",  label: "Email Alert: High Value Order",          category: "integrations" },
+  { key: "email_alert_fraud",             value: "on",  label: "Email Alert: Fraud / Fake Order",        category: "integrations" },
+  { key: "email_alert_low_balance",       value: "on",  label: "Email Alert: Low Wallet Balance",        category: "integrations" },
+  { key: "email_alert_daily_summary",     value: "off", label: "Email Alert: Daily Summary Report",      category: "integrations" },
+  { key: "email_alert_weekly_report",     value: "off", label: "Email Alert: Weekly Revenue Report",     category: "integrations" },
+
+  /* ═══════════════════  WhatsApp Send Flags  ═══════════════════ */
+  { key: "wa_send_otp",          value: "on",  label: "WhatsApp: Send OTP Messages",             category: "integrations" },
+  { key: "wa_send_order_update", value: "on",  label: "WhatsApp: Send Order Status Updates",     category: "integrations" },
+  { key: "wa_send_ride_update",  value: "on",  label: "WhatsApp: Send Ride Status Updates",      category: "integrations" },
+  { key: "wa_send_promo",        value: "off", label: "WhatsApp: Send Promotional Messages",     category: "integrations" },
+  { key: "wa_send_rider_notif",  value: "on",  label: "WhatsApp: Send Rider Assignment Alerts",  category: "integrations" },
+  { key: "wa_send_vendor_notif", value: "on",  label: "WhatsApp: Send New Order to Vendor",      category: "integrations" },
+
+  /* ═══════════════════  Analytics Event Tracking  ═══════════════════ */
+  { key: "track_order_placed",   value: "on",  label: "Track: Order Placed Events",              category: "integrations" },
+  { key: "track_ride_booked",    value: "on",  label: "Track: Ride Booked Events",               category: "integrations" },
+  { key: "track_user_signup",    value: "on",  label: "Track: User Signup Events",               category: "integrations" },
+  { key: "track_wallet_topup",   value: "on",  label: "Track: Wallet Top-Up Events",             category: "integrations" },
+  { key: "track_screen_views",   value: "on",  label: "Track: Screen / Page Views",              category: "integrations" },
+  { key: "track_search_queries", value: "off", label: "Track: Search Query Events",              category: "integrations" },
+
+  /* ═══════════════════  Sentry Capture Flags  ═══════════════════ */
+  { key: "sentry_capture_api",       value: "on",  label: "Sentry: Capture API Server Errors",   category: "integrations" },
+  { key: "sentry_capture_admin",     value: "on",  label: "Sentry: Capture Admin Panel Errors",  category: "integrations" },
+  { key: "sentry_capture_vendor",    value: "off", label: "Sentry: Capture Vendor App Errors",   category: "integrations" },
+  { key: "sentry_capture_rider",     value: "off", label: "Sentry: Capture Rider App Errors",    category: "integrations" },
+  { key: "sentry_capture_unhandled", value: "on",  label: "Sentry: Capture Unhandled Rejections",category: "integrations" },
+  { key: "sentry_capture_perf",      value: "on",  label: "Sentry: Performance Monitoring",      category: "integrations" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {

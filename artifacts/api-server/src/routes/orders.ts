@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ordersTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable } from "@workspace/db/schema";
 import { eq, and, gte, count, SQL } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -26,6 +26,47 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     createdAt: o.createdAt.toISOString(),
   };
 }
+
+/* ── Promo code helper ─────────────────────────────────────────────────────── */
+async function validatePromoCode(code: string, orderTotal: number, orderType: string): Promise<{
+  valid: boolean; discount: number; discountType: "pct" | "flat" | null; error?: string;
+  promoId?: string; maxDiscount?: number | null;
+}> {
+  const [promo] = await db.select().from(promoCodesTable)
+    .where(eq(promoCodesTable.code, code.toUpperCase().trim())).limit(1);
+
+  if (!promo)                                          return { valid: false, discount: 0, discountType: null, error: "Yeh promo code exist nahi karta." };
+  if (!promo.isActive)                                 return { valid: false, discount: 0, discountType: null, error: "Yeh promo code active nahi hai." };
+  if (promo.expiresAt && new Date() > promo.expiresAt) return { valid: false, discount: 0, discountType: null, error: "Yeh promo code expire ho gaya hai." };
+  if (promo.usageLimit !== null && promo.usedCount >= promo.usageLimit)
+    return { valid: false, discount: 0, discountType: null, error: "Yeh promo code apni limit reach kar chuka hai." };
+  if (promo.minOrderAmount && orderTotal < parseFloat(String(promo.minOrderAmount)))
+    return { valid: false, discount: 0, discountType: null, error: `Minimum order Rs. ${promo.minOrderAmount} hona chahiye is code ke liye.` };
+  if (promo.appliesTo !== "all" && promo.appliesTo !== orderType)
+    return { valid: false, discount: 0, discountType: null, error: `Yeh code sirf ${promo.appliesTo} orders ke liye hai.` };
+
+  let discount = 0;
+  let discountType: "pct" | "flat" = "flat";
+  if (promo.discountPct) {
+    discountType = "pct";
+    discount = Math.round(orderTotal * parseFloat(String(promo.discountPct)) / 100);
+    if (promo.maxDiscount) discount = Math.min(discount, parseFloat(String(promo.maxDiscount)));
+  } else if (promo.discountFlat) {
+    discount = parseFloat(String(promo.discountFlat));
+  }
+  discount = Math.min(discount, orderTotal);
+  return { valid: true, discount, discountType, promoId: promo.id, maxDiscount: promo.maxDiscount ? parseFloat(String(promo.maxDiscount)) : null };
+}
+
+/* ── GET /orders/validate-promo?code=&total=&type= ───────────────────────── */
+router.get("/validate-promo", async (req, res) => {
+  const code  = String(req.query["code"]  || "").trim();
+  const total = parseFloat(String(req.query["total"] || "0"));
+  const type  = String(req.query["type"]  || "mart");
+  if (!code) { res.status(400).json({ valid: false, error: "code required" }); return; }
+  const result = await validatePromoCode(code, total, type);
+  res.json(result);
+});
 
 /* ── GET /orders?userId=&status= ─────────────────────────────────────────── */
 router.get("/", async (req, res) => {
@@ -135,7 +176,19 @@ router.post("/", async (req, res) => {
     return (fee > 0 && itemsTotal < freeAb) ? fee : 0;
   })();
 
-  const total = itemsTotal + deliveryFee + gstAmount + codFee;
+  let promoDiscount = 0;
+  let promoId: string | null = null;
+  const promoCode = req.body.promoCode as string | undefined;
+  if (promoCode) {
+    const promoResult = await validatePromoCode(promoCode, itemsTotal, type ?? "mart");
+    if (!promoResult.valid) {
+      res.status(400).json({ error: promoResult.error ?? "Invalid promo code" }); return;
+    }
+    promoDiscount = promoResult.discount;
+    promoId = promoResult.promoId ?? null;
+  }
+
+  const total = Math.max(0, itemsTotal + deliveryFee + gstAmount + codFee - promoDiscount);
 
   /* ── Prep time from admin Order settings ── */
   const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
@@ -275,9 +328,13 @@ router.post("/", async (req, res) => {
           deliveryAddress, paymentMethod,
           estimatedTime,
         }).returning();
+        if (promoId) {
+          const [cp] = await tx.select({ c: promoCodesTable.usedCount }).from(promoCodesTable).where(eq(promoCodesTable.id, promoId)).limit(1);
+          await tx.update(promoCodesTable).set({ usedCount: (cp?.c ?? 0) + 1 }).where(eq(promoCodesTable.id, promoId)).catch(() => {});
+        }
         return newOrder!;
       });
-      res.status(201).json(mapOrder(order, deliveryFee, gstAmount, codFee));
+      res.status(201).json({ ...mapOrder(order, deliveryFee, gstAmount, codFee), promoDiscount });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -291,7 +348,11 @@ router.post("/", async (req, res) => {
     deliveryAddress, paymentMethod,
     estimatedTime,
   }).returning();
-  res.status(201).json(mapOrder(order!, deliveryFee, gstAmount, codFee));
+  if (promoId) {
+    const [cp] = await db.select({ c: promoCodesTable.usedCount }).from(promoCodesTable).where(eq(promoCodesTable.id, promoId)).limit(1);
+    await db.update(promoCodesTable).set({ usedCount: (cp?.c ?? 0) + 1 }).where(eq(promoCodesTable.id, promoId)).catch(() => {});
+  }
+  res.status(201).json({ ...mapOrder(order!, deliveryFee, gstAmount, codFee), promoDiscount });
 });
 
 /* ── PATCH /orders/:id ────────────────────────────────────────────────────── */

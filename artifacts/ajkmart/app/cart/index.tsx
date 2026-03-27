@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -125,6 +126,14 @@ export default function CartScreen() {
     { id: "wallet", label: `${appName} Wallet`,   logo: "💰", available: true,  description: "Wallet se instant pay" },
   ]);
 
+  // Promo code state
+  const [promoInput, setPromoInput] = useState("");
+  const [promoCode, setPromoCode] = useState<string | null>(null);
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoApplied, setPromoApplied] = useState(false);
+
   // Gateway payment modal state
   const [showGwModal, setShowGwModal] = useState(false);
   const [gwMobile, setGwMobile] = useState("");
@@ -172,7 +181,7 @@ export default function CartScreen() {
   const deliveryFee = (freeDeliveryEnabled && total >= freeDeliveryAbove) ? 0 : rawDeliveryFee;
   const gstAmount   = finance.gstEnabled ? Math.round(total * finance.gstPct / 100) : 0;
   const cashbackAmt = finance.cashbackEnabled ? Math.min(Math.round(total * finance.cashbackPct / 100), finance.cashbackMaxRs) : 0;
-  const grandTotal  = total + deliveryFee + gstAmount;
+  const grandTotal  = Math.max(0, total + deliveryFee + gstAmount - promoDiscount);
   const walletCashbackApplies = payMethod === "wallet" && customer.walletCashbackPct > 0 && customer.walletCashbackOrders;
   const walletCashbackAmt = walletCashbackApplies ? Math.round(grandTotal * customer.walletCashbackPct / 100) : 0;
 
@@ -213,6 +222,43 @@ export default function CartScreen() {
       .finally(() => setAddrLoading(false));
   }, [user?.id]);
 
+  const applyPromo = async () => {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) return;
+    setPromoLoading(true);
+    setPromoError(null);
+    try {
+      const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+      const orderType = cartType === "mixed" ? "mart" : cartType;
+      const res = await fetch(`${API}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${total}&type=${orderType}`);
+      const data = await res.json();
+      if (data.valid) {
+        setPromoCode(code);
+        setPromoDiscount(data.discount);
+        setPromoApplied(true);
+        setPromoError(null);
+        showToast(`Promo code apply ho gaya! Rs. ${data.discount} discount mila`, "success");
+      } else {
+        setPromoCode(null);
+        setPromoDiscount(0);
+        setPromoApplied(false);
+        setPromoError(data.error || "Invalid promo code");
+      }
+    } catch {
+      setPromoError("Network error — dobara try karein");
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
+  const removePromo = () => {
+    setPromoCode(null);
+    setPromoDiscount(0);
+    setPromoApplied(false);
+    setPromoInput("");
+    setPromoError(null);
+  };
+
   // Place order after payment cleared
   const placeOrder = async (finalPayMethod: PayMethod) => {
     const order = await createOrder({
@@ -227,7 +273,8 @@ export default function CartScreen() {
       })),
       deliveryAddress: deliveryLine,
       paymentMethod: finalPayMethod,
-    });
+      ...(promoCode ? { promoCode } : {}),
+    } as any);
     if (finalPayMethod === "wallet") {
       updateUser({ walletBalance: user!.walletBalance - grandTotal });
     }
@@ -704,6 +751,62 @@ export default function CartScreen() {
           })}
         </View>
 
+        {/* Promo Code */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Promo Code</Text>
+          <View style={[styles.summaryCard, { padding: 12 }]}>
+            {promoApplied ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ flex: 1, backgroundColor: "#ECFDF5", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={{ fontSize: 18 }}>🏷️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#065F46" }}>{promoCode}</Text>
+                    <Text style={{ fontSize: 12, color: "#059669" }}>Rs. {promoDiscount.toLocaleString()} discount apply hua!</Text>
+                  </View>
+                </View>
+                <Pressable onPress={removePromo} style={{ padding: 8 }}>
+                  <Ionicons name="close-circle" size={24} color="#DC2626" />
+                </Pressable>
+              </View>
+            ) : (
+              <View>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TextInput
+                    value={promoInput}
+                    onChangeText={t => { setPromoInput(t.toUpperCase()); setPromoError(null); }}
+                    placeholder="Promo code enter karein"
+                    placeholderTextColor={C.textSecondary}
+                    autoCapitalize="characters"
+                    style={{
+                      flex: 1, borderWidth: 1.5, borderColor: promoError ? "#DC2626" : C.border,
+                      borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+                      fontSize: 14, color: C.text, backgroundColor: C.surface,
+                      fontFamily: "Inter_500Medium", letterSpacing: 1,
+                    }}
+                  />
+                  <Pressable
+                    onPress={applyPromo}
+                    disabled={promoLoading || !promoInput.trim()}
+                    style={{
+                      backgroundColor: promoInput.trim() ? C.primary : C.border,
+                      borderRadius: 12, paddingHorizontal: 16, alignItems: "center", justifyContent: "center",
+                      minWidth: 70,
+                    }}
+                  >
+                    {promoLoading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>Apply</Text>
+                    }
+                  </Pressable>
+                </View>
+                {promoError && (
+                  <Text style={{ fontSize: 12, color: "#DC2626", marginTop: 6, marginLeft: 2 }}>{promoError}</Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Order Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Order Summary</Text>
@@ -722,6 +825,12 @@ export default function CartScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>GST ({finance.gstPct}%)</Text>
                 <Text style={[styles.summaryValue, { color: "#D97706" }]}>Rs. {gstAmount.toLocaleString()}</Text>
+              </View>
+            )}
+            {promoDiscount > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, { color: "#059669" }]}>🏷️ Promo Discount ({promoCode})</Text>
+                <Text style={[styles.summaryValue, { color: "#059669" }]}>- Rs. {promoDiscount.toLocaleString()}</Text>
               </View>
             )}
             <View style={[styles.summaryRow, styles.summaryDivider]}>
