@@ -1,4 +1,5 @@
-import { decimal, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, decimal, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -14,6 +15,8 @@ export const walletTransactionsTable = pgTable("wallet_transactions", {
 }, (t) => [
   index("wallet_txn_user_id_idx").on(t.userId),
   index("wallet_txn_created_at_idx").on(t.createdAt),
+  /* Transaction amounts must be non-negative (type field records debit/credit direction) */
+  check("wallet_txn_amount_non_negative", sql`${t.amount} >= 0`),
 ]);
 
 export const insertWalletTransactionSchema = createInsertSchema(walletTransactionsTable).omit({ createdAt: true });

@@ -1,4 +1,5 @@
-import { boolean, decimal, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, decimal, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -57,7 +58,11 @@ export const usersTable = pgTable("users", {
   lastLoginAt:       timestamp("last_login_at"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
   updatedAt:       timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  /* DB-level floor: wallet can never go below zero.
+     Application layer already enforces this; the DB constraint is the final guard. */
+  check("users_wallet_non_negative", sql`${t.walletBalance} >= 0`),
+]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ createdAt: true, updatedAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;

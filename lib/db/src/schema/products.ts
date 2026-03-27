@@ -1,4 +1,5 @@
-import { boolean, decimal, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, decimal, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -26,6 +27,8 @@ export const productsTable = pgTable("products", {
   index("products_category_idx").on(t.category),
   index("products_in_stock_idx").on(t.inStock),
   index("products_type_idx").on(t.type),
+  /* Product price must be positive */
+  check("products_price_positive", sql`${t.price} > 0`),
 ]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ createdAt: true });

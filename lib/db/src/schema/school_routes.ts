@@ -1,4 +1,5 @@
 import { boolean, decimal, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const schoolRoutesTable = pgTable("school_routes", {
   id:             text("id").primaryKey(),
@@ -40,10 +41,9 @@ export const schoolSubscriptionsTable = pgTable("school_subscriptions", {
   createdAt:       timestamp("created_at").notNull().defaultNow(),
   updatedAt:       timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
-  /* One active subscription per user per route
-     Note: uniqueness is enforced at application level for active-only constraint;
-     this index covers the lookup pattern and prevents exact duplicates */
-  uniqueIndex("school_subs_user_route_uidx").on(t.userId, t.routeId),
+  /* Partial unique: one active/paused subscription per user per route.
+     Cancelled subscriptions are excluded so the user can re-subscribe later. */
+  uniqueIndex("school_subs_user_route_uidx").on(t.userId, t.routeId).where(sql`status != 'cancelled'`),
   index("school_subs_user_id_idx").on(t.userId),
   index("school_subs_route_id_idx").on(t.routeId),
   index("school_subs_status_idx").on(t.status),

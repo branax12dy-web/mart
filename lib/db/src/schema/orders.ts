@@ -1,4 +1,5 @@
-import { decimal, index, json, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, decimal, index, json, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -22,6 +23,8 @@ export const ordersTable = pgTable("orders", {
   index("orders_vendor_id_idx").on(t.vendorId),
   index("orders_status_idx").on(t.status),
   index("orders_created_at_idx").on(t.createdAt),
+  /* Orders can never have a negative total */
+  check("orders_total_non_negative", sql`${t.total} >= 0`),
 ]);
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ createdAt: true, updatedAt: true });

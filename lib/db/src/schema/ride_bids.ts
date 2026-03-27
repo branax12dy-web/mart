@@ -1,4 +1,5 @@
 import { decimal, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -14,8 +15,9 @@ export const rideBidsTable = pgTable("ride_bids", {
   createdAt:  timestamp("created_at").notNull().defaultNow(),
   updatedAt:  timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
-  /* A rider can only have one active bid per ride */
-  uniqueIndex("ride_bids_ride_rider_uidx").on(t.rideId, t.riderId),
+  /* Partial unique: a rider can only have one PENDING bid per ride.
+     Rejected bids are excluded so the rider can rebid after rejection. */
+  uniqueIndex("ride_bids_ride_rider_uidx").on(t.rideId, t.riderId).where(sql`status = 'pending'`),
   index("ride_bids_ride_id_idx").on(t.rideId),
   index("ride_bids_rider_id_idx").on(t.riderId),
   index("ride_bids_status_idx").on(t.status),
