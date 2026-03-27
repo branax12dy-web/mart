@@ -503,7 +503,7 @@ router.get("/wallet/transactions", async (req, res) => {
 /* ── POST /rider/wallet/withdraw — Atomic withdrawal (prevents race condition) ── */
 router.post("/wallet/withdraw", async (req, res) => {
   const riderId = (req as any).riderId;
-  const { amount, accountTitle, accountNumber, bankName, note } = req.body;
+  const { amount, accountTitle, accountNumber, bankName, paymentMethod, note } = req.body;
   const amt = safeNum(amount);
 
   const s = await getPlatformSettings();
@@ -520,6 +520,7 @@ router.post("/wallet/withdraw", async (req, res) => {
   }
 
   try {
+    const txId = generateId();
     const result = await db.transaction(async (tx) => {
       const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
       if (!user) throw new Error("User not found");
@@ -529,9 +530,11 @@ router.post("/wallet/withdraw", async (req, res) => {
 
       await tx.update(usersTable).set({ walletBalance: sql`wallet_balance - ${amt}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
       await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId: riderId, type: "debit",
+        id: txId, userId: riderId, type: "debit",
         amount: amt.toFixed(2),
         description: `Withdrawal — ${bankName} · ${accountNumber} · ${accountTitle}${note ? ` · ${note}` : ""}`,
+        reference: "pending",
+        paymentMethod: paymentMethod || bankName,
       });
       return balance - amt;
     });
@@ -543,7 +546,7 @@ router.post("/wallet/withdraw", async (req, res) => {
       type: "wallet", icon: "cash-outline",
     }).catch(() => {});
 
-    res.json({ success: true, newBalance: parseFloat(result.toFixed(2)), amount: amt });
+    res.json({ success: true, newBalance: parseFloat(result.toFixed(2)), amount: amt, txId });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }

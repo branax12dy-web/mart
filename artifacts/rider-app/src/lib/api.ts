@@ -37,7 +37,7 @@ export const api = {
 
   // Wallet
   getWallet:      () => apiFetch("/rider/wallet/transactions"),
-  withdrawWallet: (data: { amount: number; bankName: string; accountNumber: string; accountTitle: string; note?: string }) =>
+  withdrawWallet: (data: { amount: number; bankName: string; accountNumber: string; accountTitle: string; paymentMethod?: string; note?: string }) =>
     apiFetch("/rider/wallet/withdraw", { method: "POST", body: JSON.stringify(data) }),
 
   // Notifications

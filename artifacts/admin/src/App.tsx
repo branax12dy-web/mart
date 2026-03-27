@@ -23,6 +23,7 @@ import Vendors from "@/pages/vendors";
 import Riders from "@/pages/riders";
 import PromoCodes from "@/pages/promo-codes";
 import Notifications from "@/pages/notifications";
+import Withdrawals from "@/pages/Withdrawals";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -91,6 +92,7 @@ function Router() {
       <Route path="/riders"><ProtectedRoute component={Riders} /></Route>
       <Route path="/promo-codes"><ProtectedRoute component={PromoCodes} /></Route>
       <Route path="/notifications"><ProtectedRoute component={Notifications} /></Route>
+      <Route path="/withdrawals"><ProtectedRoute component={Withdrawals} /></Route>
 
       <Route component={NotFound} />
     </Switch>

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
-import { api } from "../lib/api";
+import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 
-const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Other"];
+const TRADITIONAL_BANKS = ["HBL","MCB","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Bank Al Habib","Faysal Bank","Askari Bank","Other"];
 const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
 const fd = (d: string | Date) => new Date(d).toLocaleString("en-PK", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
 
@@ -18,62 +18,99 @@ function txIcon(type: string) {
   return                          { emoji: "💸", label: "Withdrawal", bg: "bg-red-50",    text: "text-red-500",    badge: "bg-red-100 text-red-600"      };
 }
 
+type PayMethod = { id: string; label: string; logo: string; type?: string; description?: string };
+
 function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess }: {
   balance: number; minPayout: number; maxPayout: number; onClose: () => void; onSuccess: () => void;
 }) {
-  const [amount, setAmount]    = useState("");
-  const [bank, setBank]        = useState("");
-  const [acNo, setAcNo]        = useState("");
-  const [acName, setAcName]    = useState("");
-  const [note, setNote]        = useState("");
-  const [step, setStep]        = useState<"form"|"confirm"|"done">("form");
-  const [err, setErr]          = useState("");
+  const [amount, setAmount]        = useState("");
+  const [selectedMethod, setMethod] = useState<PayMethod | null>(null);
+  const [acNo, setAcNo]            = useState("");
+  const [acName, setAcName]        = useState("");
+  const [bankName, setBankName]    = useState("");
+  const [note, setNote]            = useState("");
+  const [step, setStep]            = useState<"amount"|"method"|"details"|"confirm"|"done">("amount");
+  const [err, setErr]              = useState("");
+  const [methods, setMethods]      = useState<PayMethod[]>([]);
+  const [loadingMethods, setLoadingMethods] = useState(true);
   const { user } = useAuth();
 
   const INPUT  = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:border-green-400 focus:bg-white transition-colors";
   const SELECT = "w-full h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:border-green-400 appearance-none";
 
+  useEffect(() => {
+    apiFetch("/payments/methods").then((data: any) => {
+      const enabled: PayMethod[] = [];
+      const ms: any[] = data.methods || [];
+      if (ms.find((m: any) => m.id === "jazzcash"))  enabled.push({ id: "jazzcash",  label: "JazzCash",       logo: "🔴", description: "JazzCash mobile wallet mein transfer" });
+      if (ms.find((m: any) => m.id === "easypaisa")) enabled.push({ id: "easypaisa", label: "EasyPaisa",      logo: "🟢", description: "EasyPaisa account mein transfer" });
+      if (ms.find((m: any) => m.id === "bank"))      enabled.push({ id: "bank",      label: "Bank Transfer",  logo: "🏦", description: "IBFT ya RAAST ke zariye bank mein" });
+      if (enabled.length === 0) {
+        enabled.push({ id: "bank", label: "Bank Transfer", logo: "🏦", description: "IBFT ya RAAST ke zariye bank mein" });
+      }
+      setMethods(enabled);
+    }).catch(() => {
+      setMethods([{ id: "bank", label: "Bank Transfer", logo: "🏦", description: "Bank account mein transfer" }]);
+    }).finally(() => setLoadingMethods(false));
+  }, []);
+
   const mut = useMutation({
-    mutationFn: () => api.withdrawWallet({ amount: Number(amount), bankName: bank, accountNumber: acNo, accountTitle: acName, note }),
+    mutationFn: () => {
+      const m = selectedMethod!;
+      const displayBank = m.id === "bank" ? bankName : m.label;
+      return api.withdrawWallet({
+        amount: Number(amount), bankName: displayBank,
+        accountNumber: acNo, accountTitle: acName,
+        paymentMethod: m.id, note,
+      });
+    },
     onSuccess: () => setStep("done"),
     onError: (e: any) => setErr(e.message),
   });
 
-  const validate = () => {
+  const goToMethod = () => {
     const amt = Number(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Valid amount likhein"); return; }
-    if (amt < minPayout)   { setErr(`Minimum withdrawal: ${fc(minPayout)}`); return; }
-    if (amt > maxPayout)   { setErr(`Maximum withdrawal: ${fc(maxPayout)}`); return; }
-    if (amt > balance) { setErr(`Available balance: ${fc(balance)}`); return; }
-    if (!bank)         { setErr("Bank ya wallet select karein"); return; }
-    if (!acNo.trim())  { setErr("Account / phone number required"); return; }
-    if (!acName.trim()) { setErr("Account holder ka naam likhein"); return; }
+    if (amt < minPayout) { setErr(`Minimum: ${fc(minPayout)}`); return; }
+    if (amt > maxPayout) { setErr(`Maximum: ${fc(maxPayout)}`); return; }
+    if (amt > balance)   { setErr(`Available: ${fc(balance)}`); return; }
+    setErr(""); setStep("method");
+  };
+
+  const goToDetails = (m: PayMethod) => { setMethod(m); setAcNo(""); setAcName(""); setBankName(""); setErr(""); setStep("details"); };
+
+  const goToConfirm = () => {
+    if (!acNo.trim())   { setErr("Account / phone number required"); return; }
+    if (!acName.trim()) { setErr("Account holder name required"); return; }
+    if (selectedMethod?.id === "bank" && !bankName) { setErr("Bank name select karein"); return; }
     setErr(""); setStep("confirm");
   };
 
+  const displayAccount = selectedMethod?.id === "bank" ? `${bankName} — ${acNo}` : `${selectedMethod?.label} — ${acNo}`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
-        {step === "done" ? (
+        {/* ── DONE ── */}
+        {step === "done" && (
           <div className="p-8 text-center">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-5xl">✅</div>
             <h3 className="text-2xl font-extrabold text-gray-800">Request Submitted!</h3>
-            <p className="text-gray-500 mt-2">
-              <span className="font-extrabold text-green-600">{fc(Number(amount))}</span> withdrawal queued.
-            </p>
+            <p className="text-gray-500 mt-2"><span className="font-extrabold text-green-600">{fc(Number(amount))}</span> withdrawal queued.</p>
             <p className="text-sm text-gray-400 mt-1">Admin 24–48 hours mein process karega.</p>
             <div className="mt-4 bg-green-50 rounded-2xl p-4 text-left space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Bank / Wallet</span><span className="font-bold">{bank}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{selectedMethod?.logo} {selectedMethod?.label}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Account</span><span className="font-bold">{acNo}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name</span><span className="font-bold">{acName}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Name</span><span className="font-bold">{acName}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Amount</span><span className="font-extrabold text-green-600">{fc(Number(amount))}</span></div>
             </div>
-            <button onClick={() => { onSuccess(); onClose(); }}
-              className="mt-6 w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl text-lg">Done ✓</button>
+            <button onClick={() => { onSuccess(); onClose(); }} className="mt-6 w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl text-lg">Done ✓</button>
           </div>
+        )}
 
-        ) : step === "confirm" ? (
+        {/* ── CONFIRM ── */}
+        {step === "confirm" && (
           <div className="p-6">
             <h3 className="text-xl font-extrabold text-gray-800 mb-5">Confirm Withdrawal</h3>
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-5 space-y-3 mb-5">
@@ -81,8 +118,9 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess }: {
                 <span className="text-gray-500 text-sm">Amount</span>
                 <span className="font-extrabold text-green-600 text-2xl">{fc(Number(amount))}</span>
               </div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Bank / Wallet</span><span className="font-bold">{bank}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Account No.</span><span className="font-bold">{acNo}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{selectedMethod?.logo} {selectedMethod?.label}</span></div>
+              {selectedMethod?.id === "bank" && <div className="flex justify-between text-sm"><span className="text-gray-500">Bank</span><span className="font-bold">{bankName}</span></div>}
+              <div className="flex justify-between text-sm"><span className="text-gray-500">{selectedMethod?.id === "bank" ? "Account No." : "Phone"}</span><span className="font-bold">{acNo}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name</span><span className="font-bold">{acName}</span></div>
               {note && <div className="flex justify-between text-sm"><span className="text-gray-500">Note</span><span className="font-bold">{note}</span></div>}
             </div>
@@ -91,28 +129,118 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess }: {
             </div>
             {err && <p className="text-red-500 text-sm font-semibold mb-3 bg-red-50 px-3 py-2 rounded-xl">⚠️ {err}</p>}
             <div className="flex gap-3">
-              <button onClick={() => { setStep("form"); setErr(""); }}
-                className="flex-1 h-13 border-2 border-gray-200 text-gray-600 font-bold rounded-2xl py-3">← Edit</button>
-              <button onClick={() => mut.mutate()} disabled={mut.isPending}
-                className="flex-1 h-13 bg-green-600 text-white font-bold rounded-2xl py-3 disabled:opacity-60">
+              <button onClick={() => { setStep("details"); setErr(""); }} className="flex-1 border-2 border-gray-200 text-gray-600 font-bold rounded-2xl py-3">← Edit</button>
+              <button onClick={() => mut.mutate()} disabled={mut.isPending} className="flex-1 bg-green-600 text-white font-bold rounded-2xl py-3 disabled:opacity-60">
                 {mut.isPending ? "Processing..." : "✓ Confirm"}
               </button>
             </div>
           </div>
+        )}
 
-        ) : (
+        {/* ── DETAILS ── */}
+        {step === "details" && selectedMethod && (
+          <div className="p-6">
+            <button onClick={() => setStep("method")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold">← Back</button>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-2xl">{selectedMethod.logo}</div>
+              <div>
+                <h3 className="text-lg font-extrabold text-gray-800">{selectedMethod.label}</h3>
+                <p className="text-xs text-gray-500">{selectedMethod.description}</p>
+              </div>
+            </div>
+
+            {/* Auto-fill from profile */}
+            {(user as any)?.bankName && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-xs font-bold text-blue-700">Saved Account</p>
+                  <p className="text-xs text-blue-600 mt-0.5">{(user as any).bankName} · {(user as any).bankAccount}</p>
+                </div>
+                <button onClick={() => {
+                  setBankName((user as any).bankName || "");
+                  setAcNo((user as any).bankAccount || "");
+                  setAcName((user as any).bankAccountTitle || "");
+                  setErr("");
+                }} className="text-xs font-extrabold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-lg">Use →</button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {selectedMethod.id === "bank" && (
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Bank Name *</p>
+                  <select value={bankName} onChange={e => { setBankName(e.target.value); setErr(""); }} className={SELECT}>
+                    <option value="">Bank select karein</option>
+                    {TRADITIONAL_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                  {selectedMethod.id === "bank" ? "Account No. / IBAN *" : "Phone Number *"}
+                </p>
+                <input value={acNo} onChange={e => { setAcNo(e.target.value); setErr(""); }}
+                  inputMode="numeric"
+                  placeholder={selectedMethod.id === "bank" ? "PK36SCBL0000001234567801" : "03XX-XXXXXXX"}
+                  className={INPUT}/>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Account Holder Name *</p>
+                <input value={acName} onChange={e => { setAcName(e.target.value); setErr(""); }}
+                  placeholder="Full name as on account" className={INPUT}/>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Note (Optional)</p>
+                <input value={note} onChange={e => setNote(e.target.value)} placeholder="Any note for admin" className={INPUT}/>
+              </div>
+              {err && <div className="bg-red-50 rounded-xl px-4 py-2.5"><p className="text-red-500 text-sm font-semibold">⚠️ {err}</p></div>}
+              <button onClick={goToConfirm} className="w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl text-base">Review Withdrawal →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── METHOD SELECTION ── */}
+        {step === "method" && (
+          <div className="p-6">
+            <button onClick={() => setStep("amount")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold">← Back</button>
+            <h3 className="text-xl font-extrabold text-gray-800 mb-1">Payment Method</h3>
+            <p className="text-sm text-gray-500 mb-5">Paise kahan receive karna chahte hain?</p>
+            <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 mb-5 flex items-center justify-between">
+              <span className="text-sm font-semibold text-green-700">Withdrawal Amount</span>
+              <span className="text-xl font-extrabold text-green-600">{fc(Number(amount))}</span>
+            </div>
+            {loadingMethods ? (
+              <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse"/>)}</div>
+            ) : (
+              <div className="space-y-3">
+                {methods.map(m => (
+                  <button key={m.id} onClick={() => goToDetails(m)}
+                    className="w-full text-left bg-gray-50 border-2 border-gray-200 rounded-2xl p-4 flex items-center gap-4 hover:border-green-400 hover:bg-green-50 transition-all active:scale-[0.98]">
+                    <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-sm flex-shrink-0">{m.logo}</div>
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-gray-800 text-base">{m.label}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{m.description}</p>
+                    </div>
+                    <span className="ml-auto text-gray-400 text-lg flex-shrink-0">›</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── AMOUNT ── */}
+        {step === "amount" && (
           <div className="p-6">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-xl font-extrabold text-gray-800">💸 Withdraw Funds</h3>
               <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-xl font-bold text-gray-500">✕</button>
             </div>
-            {/* Balance Banner */}
             <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl p-4 text-white mb-5">
               <p className="text-sm text-green-200">Available Balance</p>
               <p className="text-4xl font-extrabold mt-0.5">{fc(balance)}</p>
               <p className="text-xs text-green-300 mt-2">Min: {fc(minPayout)} · Max: {fc(maxPayout)}</p>
             </div>
-            {/* Quick amount buttons */}
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Quick Select</p>
             <div className="flex gap-2 mb-4 flex-wrap">
               {[500, 1000, 2000, 5000].filter(v => v <= balance && v >= minPayout).map(v => (
@@ -135,51 +263,14 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess }: {
                   onChange={e => { setAmount(e.target.value); setErr(""); }}
                   placeholder="0" className={INPUT}/>
               </div>
-              {/* Auto-fill from profile */}
-              {(user as any)?.bankName && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-bold text-blue-700">Saved Account</p>
-                    <p className="text-xs text-blue-600 mt-0.5">{(user as any).bankName} · {(user as any).bankAccount}</p>
-                  </div>
-                  <button onClick={() => {
-                    setBank((user as any).bankName || "");
-                    setAcNo((user as any).bankAccount || "");
-                    setAcName((user as any).bankAccountTitle || "");
-                    setErr("");
-                  }} className="text-xs font-extrabold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-lg">Use →</button>
-                </div>
-              )}
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Bank / Mobile Wallet *</p>
-                <select value={bank} onChange={e => { setBank(e.target.value); setErr(""); }} className={SELECT}>
-                  <option value="">Select bank or wallet</option>
-                  {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Account / Phone Number *</p>
-                <input value={acNo} onChange={e => { setAcNo(e.target.value); setErr(""); }}
-                  inputMode="numeric" placeholder="03XX-XXXXXXX or IBAN" className={INPUT}/>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Account Holder Name *</p>
-                <input value={acName} onChange={e => { setAcName(e.target.value); setErr(""); }}
-                  placeholder="Full name as on account" className={INPUT}/>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Note (Optional)</p>
-                <input value={note} onChange={e => setNote(e.target.value)}
-                  placeholder="Any note for admin" className={INPUT}/>
-              </div>
               {err && <div className="bg-red-50 rounded-xl px-4 py-2.5"><p className="text-red-500 text-sm font-semibold">⚠️ {err}</p></div>}
-              <button onClick={validate}
-                className="w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl text-base">
-                Review Withdrawal →
+              <button onClick={goToMethod} className="w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl text-base">
+                Next: Select Method →
               </button>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );
@@ -219,8 +310,8 @@ export default function Wallet() {
   const weekAgo  = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
   const todayEarned   = transactions.filter(t => t.type === "credit" && new Date(t.createdAt) >= today).reduce((s, t) => s + Number(t.amount), 0);
   const weekEarned    = transactions.filter(t => t.type === "credit" && new Date(t.createdAt) >= weekAgo).reduce((s, t) => s + Number(t.amount), 0);
-  const totalWithdrawn = transactions.filter(t => t.type === "debit").reduce((s, t) => s + Number(t.amount), 0);
-  const pendingWithdrawal = transactions.filter(t => t.type === "debit" && new Date(t.createdAt) >= today).reduce((s, t) => s + Number(t.amount), 0);
+  const totalWithdrawn = transactions.filter(t => t.type === "debit" && !t.reference?.startsWith("refund:")).reduce((s, t) => s + Number(t.amount), 0);
+  const pendingWithdrawal = transactions.filter(t => t.type === "debit" && (t.reference === "pending" || !t.reference)).reduce((s, t) => s + Number(t.amount), 0);
 
   const filtered = filter === "all" ? transactions : transactions.filter(t => t.type === filter);
 
@@ -351,6 +442,10 @@ export default function Wallet() {
               {filtered.map((t: any) => {
                 const info = txIcon(t.type);
                 const isCredit = t.type === "credit" || t.type === "bonus" || t.type === "loyalty" || t.type === "cashback";
+                const isWithdrawal = t.type === "debit" && t.description?.startsWith("Withdrawal");
+                const wStatus = !isWithdrawal ? null : t.reference === "pending" ? "pending" : t.reference?.startsWith("paid:") ? "paid" : t.reference?.startsWith("rejected:") ? "rejected" : null;
+                const wStatusBadge = wStatus === "pending" ? "bg-amber-100 text-amber-700" : wStatus === "paid" ? "bg-green-100 text-green-700" : wStatus === "rejected" ? "bg-red-100 text-red-600" : null;
+                const wStatusLabel = wStatus === "pending" ? "⏳ Pending" : wStatus === "paid" ? `✅ Paid · ${t.reference?.slice(5) || ""}` : wStatus === "rejected" ? "❌ Rejected · Refunded" : null;
                 return (
                   <div key={t.id} className="px-4 py-3.5 flex items-start gap-3">
                     <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 text-xl ${info.bg}`}>
@@ -358,13 +453,16 @@ export default function Wallet() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">{t.description}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <p className="text-xs text-gray-400">{fd(t.createdAt)}</p>
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${info.badge}`}>{info.label}</span>
+                        {wStatusBadge && wStatusLabel && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${wStatusBadge}`}>{wStatusLabel}</span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className={`text-base font-extrabold ${isCredit ? "text-green-600" : "text-red-500"}`}>
+                      <p className={`text-base font-extrabold ${isCredit ? "text-green-600" : wStatus === "rejected" ? "text-gray-400 line-through" : "text-red-500"}`}>
                         {isCredit ? "+" : "−"}{fc(Number(t.amount))}
                       </p>
                     </div>

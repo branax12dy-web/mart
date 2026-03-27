@@ -8,6 +8,8 @@ export const walletTransactionsTable = pgTable("wallet_transactions", {
   type: text("type").notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description").notNull(),
+  reference: text("reference"),
+  paymentMethod: text("payment_method"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

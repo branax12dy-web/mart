@@ -1663,17 +1663,72 @@ router.post("/riders/:id/bonus", async (req, res) => {
 });
 
 /* ── GET /admin/withdrawal-requests ─────────── */
-router.get("/withdrawal-requests", async (_req, res) => {
+router.get("/withdrawal-requests", async (req, res) => {
+  const statusFilter = req.query["status"] as string | undefined;
   const txns = await db.select().from(walletTransactionsTable)
     .where(sql`description LIKE 'Withdrawal —%' AND type = 'debit'`)
     .orderBy(desc(walletTransactionsTable.createdAt))
-    .limit(200);
+    .limit(300);
   const enriched = await Promise.all(txns.map(async t => {
     const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
       .from(usersTable).where(eq(usersTable.id, t.userId)).limit(1);
-    return { ...t, amount: parseFloat(String(t.amount)), user: user || null };
+    const ref = t.reference ?? "pending";
+    const status = ref === "pending" ? "pending" : ref.startsWith("paid:") ? "paid" : ref.startsWith("rejected:") ? "rejected" : ref;
+    const refNo = ref.startsWith("paid:") ? ref.slice(5) : ref.startsWith("rejected:") ? ref.slice(9) : "";
+    return { ...t, amount: parseFloat(String(t.amount)), user: user || null, status, refNo };
   }));
-  res.json({ withdrawals: enriched });
+  const filtered = statusFilter ? enriched.filter(w => w.status === statusFilter) : enriched;
+  res.json({ withdrawals: filtered });
+});
+
+/* ── PATCH /admin/withdrawal-requests/:id/approve ─── */
+router.patch("/withdrawal-requests/:id/approve", async (req, res) => {
+  const { refNo, note } = req.body;
+  const txId = req.params["id"]!;
+  const [tx] = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+  if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
+  if (tx.reference && tx.reference !== "pending") {
+    res.status(400).json({ error: `Already processed (${tx.reference})` }); return;
+  }
+  const ref = refNo ? `paid:${refNo.trim()}` : "paid:manual";
+  await db.update(walletTransactionsTable).set({ reference: ref }).where(eq(walletTransactionsTable.id, txId));
+  const amt = parseFloat(String(tx.amount));
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: tx.userId,
+    title: "Withdrawal Processed ✅",
+    body: `Rs. ${amt.toFixed(0)} aapke account mein transfer kar diya gaya hai.${refNo ? ` Reference: ${refNo}` : ""}${note ? ` Note: ${note}` : ""}`,
+    type: "wallet", icon: "checkmark-circle-outline",
+  }).catch(() => {});
+  res.json({ success: true, txId, status: "paid", refNo: refNo || "manual" });
+});
+
+/* ── PATCH /admin/withdrawal-requests/:id/reject ─── */
+router.patch("/withdrawal-requests/:id/reject", async (req, res) => {
+  const { reason } = req.body;
+  const txId = req.params["id"]!;
+  const [tx] = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+  if (!tx) { res.status(404).json({ error: "Withdrawal not found" }); return; }
+  if (tx.reference && tx.reference !== "pending") {
+    res.status(400).json({ error: `Already processed (${tx.reference})` }); return;
+  }
+  const rejReason = reason?.trim() || "Admin rejected";
+  await db.update(walletTransactionsTable).set({ reference: `rejected:${rejReason}` }).where(eq(walletTransactionsTable.id, txId));
+  const amt = parseFloat(String(tx.amount));
+  await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${amt}`, updatedAt: new Date() }).where(eq(usersTable.id, tx.userId));
+  await db.insert(walletTransactionsTable).values({
+    id: generateId(), userId: tx.userId, type: "credit",
+    amount: amt.toFixed(2),
+    description: `Withdrawal Refunded — ${rejReason}`,
+    reference: `refund:${txId}`,
+    paymentMethod: null,
+  });
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: tx.userId,
+    title: "Withdrawal Rejected ❌",
+    body: `Rs. ${amt.toFixed(0)} withdrawal reject ho gaya. Reason: ${rejReason}. Raqam wapas wallet mein aa gaya hai.`,
+    type: "wallet", icon: "close-circle-outline",
+  }).catch(() => {});
+  res.json({ success: true, txId, status: "rejected", reason: rejReason, refunded: amt });
 });
 
 /* ── GET /admin/all-notifications ─────────── */

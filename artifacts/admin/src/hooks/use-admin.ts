@@ -378,11 +378,29 @@ export const useDeletePromoCode = () => {
 };
 
 // Withdrawal Requests
-export const useWithdrawalRequests = () => {
+export const useWithdrawalRequests = (status?: string) => {
   return useQuery({
-    queryKey: ["admin-withdrawals"],
-    queryFn: () => fetcher("/withdrawal-requests"),
+    queryKey: ["admin-withdrawals", status],
+    queryFn: () => fetcher(`/withdrawal-requests${status ? `?status=${status}` : ""}`),
     refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+export const useApproveWithdrawal = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, refNo, note }: { id: string; refNo: string; note?: string }) =>
+      fetcher(`/withdrawal-requests/${id}/approve`, { method: "PATCH", body: JSON.stringify({ refNo, note }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-withdrawals"] }),
+  });
+};
+
+export const useRejectWithdrawal = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      fetcher(`/withdrawal-requests/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-withdrawals"] }),
   });
 };
 
