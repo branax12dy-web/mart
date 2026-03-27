@@ -155,11 +155,10 @@ router.get("/my-subscriptions", customerAuth, async (req, res) => {
 
 /* ══════════════════════════════════════════════════════
    PATCH /school/subscriptions/:id/cancel
-   Body: { userId }
+   Requires JWT — cancels the calling user's own subscription.
 ══════════════════════════════════════════════════════ */
-router.patch("/subscriptions/:id/cancel", async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) { res.status(400).json({ error: "userId required" }); return; }
+router.patch("/subscriptions/:id/cancel", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
 
   const [sub] = await db.select().from(schoolSubscriptionsTable)
     .where(and(eq(schoolSubscriptionsTable.id, req.params["id"]!), eq(schoolSubscriptionsTable.userId, userId)))
