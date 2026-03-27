@@ -347,7 +347,12 @@ pnpm --filter @workspace/api-spec run codegen
 ## Packages
 
 ### `lib/db` (`@workspace/db`)
-Drizzle ORM + PostgreSQL. Exports `db` client and schema tables. Schema includes: `usersTable`, `productsTable`, `ordersTable`, `walletTransactionsTable`, `ridesTable`, `liveLocationsTable`.
+Drizzle ORM + PostgreSQL. Exports `db` client and schema tables. Schema includes: `usersTable`, `productsTable`, `ordersTable`, `walletTransactionsTable`, `ridesTable`, `rideBidsTable`, `liveLocationsTable`, `rideServiceTypesTable`, `popularLocationsTable`, `schoolRoutesTable`, `schoolSubscriptionsTable`.
+
+**New tables (Popular Locations + School Shift, 2026-03-27):**
+- `popularLocationsTable` — Admin-managed quick-pick stops shown in customer app. Auto-seeded with 12 AJK locations (Muzaffarabad, Mirpur, Rawalakot, Bagh, Kotli, Poonch, Neelum Valley, AJK University, DHQ Hospital, Bus Stand, Kohala Bridge, Hattian Bala). Each has Urdu name, emoji icon, category, lat/lng.
+- `schoolRoutesTable` — Monthly school transport routes. Fields: routeName, schoolName, fromArea, toAddress, monthlyPrice, morningTime, afternoonTime, capacity, enrolledCount.
+- `schoolSubscriptionsTable` — Student subscriptions to school routes. Fields: userId, routeId, studentName, studentClass, monthlyAmount, status, paymentMethod, nextBillingDate.
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 OpenAPI 3.1 spec (`openapi.yaml`) + Orval codegen config. Run `pnpm --filter @workspace/api-spec run codegen` to regenerate client.

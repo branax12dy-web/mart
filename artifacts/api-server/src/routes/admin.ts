@@ -15,6 +15,9 @@ import {
   promoCodesTable,
   adminAccountsTable,
   rideServiceTypesTable,
+  popularLocationsTable,
+  schoolRoutesTable,
+  schoolSubscriptionsTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -2236,6 +2239,238 @@ router.delete("/ride-services/:id", async (req, res) => {
   if (!existing.isCustom) { res.status(400).json({ error: "Built-in services cannot be deleted. Disable them instead." }); return; }
   await db.delete(rideServiceTypesTable).where(eq(rideServiceTypesTable.id, svcId));
   res.json({ success: true });
+});
+
+/* ══════════════════════════════════════════════════════
+   POPULAR LOCATIONS — Admin CRUD
+   GET  /admin/locations
+   POST /admin/locations
+   PATCH /admin/locations/:id
+   DELETE /admin/locations/:id
+══════════════════════════════════════════════════════ */
+
+const DEFAULT_LOCATIONS = [
+  { name: "Muzaffarabad Chowk",      nameUrdu: "مظفرآباد چوک",      lat: 34.3697, lng: 73.4716, category: "chowk",   icon: "🏙️", sortOrder: 1 },
+  { name: "Kohala Bridge",           nameUrdu: "کوہالہ پل",         lat: 34.2021, lng: 73.3791, category: "landmark", icon: "🌉", sortOrder: 2 },
+  { name: "Mirpur City Centre",      nameUrdu: "میرپور سٹی سینٹر",  lat: 33.1413, lng: 73.7508, category: "chowk",   icon: "🏙️", sortOrder: 3 },
+  { name: "Rawalakot Bazar",         nameUrdu: "راولاکوٹ بازار",    lat: 33.8572, lng: 73.7613, category: "bazar",   icon: "🛍️", sortOrder: 4 },
+  { name: "Bagh City",               nameUrdu: "باغ شہر",           lat: 33.9732, lng: 73.7729, category: "general",  icon: "🌆", sortOrder: 5 },
+  { name: "Kotli Main Chowk",        nameUrdu: "کوٹلی مین چوک",     lat: 33.5152, lng: 73.9019, category: "chowk",   icon: "🏙️", sortOrder: 6 },
+  { name: "Poonch City",             nameUrdu: "پونچھ شہر",         lat: 33.7700, lng: 74.0954, category: "general",  icon: "🌆", sortOrder: 7 },
+  { name: "Neelum Valley",           nameUrdu: "نیلم ویلی",         lat: 34.5689, lng: 73.8765, category: "landmark", icon: "🏔️", sortOrder: 8 },
+  { name: "AJK University",          nameUrdu: "یونیورسٹی آف آزاد کشمیر", lat: 34.3601, lng: 73.5088, category: "school",  icon: "🎓", sortOrder: 9 },
+  { name: "District Headquarters Hospital", nameUrdu: "ضلعی ہیڈکوارٹر ہسپتال", lat: 34.3712, lng: 73.4730, category: "hospital", icon: "🏥", sortOrder: 10 },
+  { name: "Muzaffarabad Bus Stand",  nameUrdu: "مظفرآباد بس اڈہ",  lat: 34.3664, lng: 73.4726, category: "landmark", icon: "🚏", sortOrder: 11 },
+  { name: "Hattian Bala",            nameUrdu: "ہٹیاں بالا",        lat: 34.0949, lng: 73.8185, category: "general",  icon: "🌆", sortOrder: 12 },
+];
+
+export async function ensureDefaultLocations() {
+  const existing = await db.select({ c: count() }).from(popularLocationsTable);
+  if ((existing[0]?.c ?? 0) === 0) {
+    await db.insert(popularLocationsTable).values(
+      DEFAULT_LOCATIONS.map(l => ({
+        id:        `loc_${l.name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
+        name:      l.name,
+        nameUrdu:  l.nameUrdu,
+        lat:       l.lat.toFixed(6),
+        lng:       l.lng.toFixed(6),
+        category:  l.category,
+        icon:      l.icon,
+        isActive:  true,
+        sortOrder: l.sortOrder,
+      }))
+    ).onConflictDoNothing();
+  }
+}
+
+router.get("/locations", async (_req, res) => {
+  await ensureDefaultLocations();
+  const locs = await db.select().from(popularLocationsTable)
+    .orderBy(asc(popularLocationsTable.sortOrder), asc(popularLocationsTable.name));
+  res.json({
+    locations: locs.map(l => ({
+      ...l,
+      lat: parseFloat(String(l.lat)),
+      lng: parseFloat(String(l.lng)),
+    })),
+  });
+});
+
+router.post("/locations", async (req, res) => {
+  const { name, nameUrdu, lat, lng, category = "general", icon = "📍", isActive = true, sortOrder = 0 } = req.body;
+  if (!name || !lat || !lng) { res.status(400).json({ error: "name, lat, lng required" }); return; }
+  const [loc] = await db.insert(popularLocationsTable).values({
+    id: generateId(), name, nameUrdu: nameUrdu || null,
+    lat: String(lat), lng: String(lng), category, icon,
+    isActive: Boolean(isActive), sortOrder: Number(sortOrder),
+  }).returning();
+  res.status(201).json({ ...loc, lat: parseFloat(String(loc!.lat)), lng: parseFloat(String(loc!.lng)) });
+});
+
+router.patch("/locations/:id", async (req, res) => {
+  const { name, nameUrdu, lat, lng, category, icon, isActive, sortOrder } = req.body;
+  const patch: any = { updatedAt: new Date() };
+  if (name      !== undefined) patch.name      = name;
+  if (nameUrdu  !== undefined) patch.nameUrdu  = nameUrdu || null;
+  if (lat       !== undefined) patch.lat       = String(lat);
+  if (lng       !== undefined) patch.lng       = String(lng);
+  if (category  !== undefined) patch.category  = category;
+  if (icon      !== undefined) patch.icon      = icon;
+  if (isActive  !== undefined) patch.isActive  = Boolean(isActive);
+  if (sortOrder !== undefined) patch.sortOrder = Number(sortOrder);
+  const [updated] = await db.update(popularLocationsTable).set(patch).where(eq(popularLocationsTable.id, req.params["id"]!)).returning();
+  if (!updated) { res.status(404).json({ error: "Location not found" }); return; }
+  res.json({ ...updated, lat: parseFloat(String(updated.lat)), lng: parseFloat(String(updated.lng)) });
+});
+
+router.delete("/locations/:id", async (req, res) => {
+  const [existing] = await db.select({ id: popularLocationsTable.id })
+    .from(popularLocationsTable).where(eq(popularLocationsTable.id, req.params["id"]!)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Location not found" }); return; }
+  await db.delete(popularLocationsTable).where(eq(popularLocationsTable.id, req.params["id"]!));
+  res.json({ success: true });
+});
+
+/* ══════════════════════════════════════════════════════
+   SCHOOL ROUTES — Admin CRUD + Subscriptions view
+   GET  /admin/school-routes
+   POST /admin/school-routes
+   PATCH /admin/school-routes/:id
+   DELETE /admin/school-routes/:id
+   GET  /admin/school-subscriptions
+══════════════════════════════════════════════════════ */
+
+function fmtRoute(r: any) {
+  return {
+    ...r,
+    monthlyPrice:  parseFloat(String(r.monthlyPrice ?? "0")),
+    fromLat:       r.fromLat ? parseFloat(String(r.fromLat)) : null,
+    fromLng:       r.fromLng ? parseFloat(String(r.fromLng)) : null,
+    toLat:         r.toLat   ? parseFloat(String(r.toLat))   : null,
+    toLng:         r.toLng   ? parseFloat(String(r.toLng))   : null,
+    createdAt:     r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    updatedAt:     r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
+  };
+}
+
+router.get("/school-routes", async (_req, res) => {
+  const routes = await db.select().from(schoolRoutesTable)
+    .orderBy(asc(schoolRoutesTable.sortOrder), asc(schoolRoutesTable.schoolName));
+  res.json({ routes: routes.map(fmtRoute) });
+});
+
+router.post("/school-routes", async (req, res) => {
+  const {
+    routeName, schoolName, schoolNameUrdu, fromArea, fromAreaUrdu, toAddress,
+    fromLat, fromLng, toLat, toLng, monthlyPrice, morningTime, afternoonTime,
+    capacity = 30, vehicleType = "school_shift", notes, isActive = true, sortOrder = 0,
+  } = req.body;
+  if (!routeName || !schoolName || !fromArea || !toAddress || !monthlyPrice) {
+    res.status(400).json({ error: "routeName, schoolName, fromArea, toAddress, monthlyPrice required" }); return;
+  }
+  const [route] = await db.insert(schoolRoutesTable).values({
+    id: generateId(), routeName, schoolName, schoolNameUrdu: schoolNameUrdu || null,
+    fromArea, fromAreaUrdu: fromAreaUrdu || null, toAddress,
+    fromLat: fromLat ? String(fromLat) : null, fromLng: fromLng ? String(fromLng) : null,
+    toLat:   toLat   ? String(toLat)   : null, toLng:   toLng   ? String(toLng)   : null,
+    monthlyPrice: String(parseFloat(monthlyPrice)),
+    morningTime: morningTime || "7:30 AM",
+    afternoonTime: afternoonTime || null,
+    capacity: Number(capacity), enrolledCount: 0,
+    vehicleType, notes: notes || null,
+    isActive: Boolean(isActive), sortOrder: Number(sortOrder),
+  }).returning();
+  res.status(201).json(fmtRoute(route!));
+});
+
+router.patch("/school-routes/:id", async (req, res) => {
+  const routeId = req.params["id"]!;
+  const {
+    routeName, schoolName, schoolNameUrdu, fromArea, fromAreaUrdu, toAddress,
+    fromLat, fromLng, toLat, toLng, monthlyPrice, morningTime, afternoonTime,
+    capacity, vehicleType, notes, isActive, sortOrder,
+  } = req.body;
+  const patch: any = { updatedAt: new Date() };
+  if (routeName      !== undefined) patch.routeName      = routeName;
+  if (schoolName     !== undefined) patch.schoolName     = schoolName;
+  if (schoolNameUrdu !== undefined) patch.schoolNameUrdu = schoolNameUrdu || null;
+  if (fromArea       !== undefined) patch.fromArea       = fromArea;
+  if (fromAreaUrdu   !== undefined) patch.fromAreaUrdu   = fromAreaUrdu || null;
+  if (toAddress      !== undefined) patch.toAddress      = toAddress;
+  if (fromLat        !== undefined) patch.fromLat        = fromLat ? String(fromLat) : null;
+  if (fromLng        !== undefined) patch.fromLng        = fromLng ? String(fromLng) : null;
+  if (toLat          !== undefined) patch.toLat          = toLat   ? String(toLat)   : null;
+  if (toLng          !== undefined) patch.toLng          = toLng   ? String(toLng)   : null;
+  if (monthlyPrice   !== undefined) patch.monthlyPrice   = String(parseFloat(monthlyPrice));
+  if (morningTime    !== undefined) patch.morningTime    = morningTime;
+  if (afternoonTime  !== undefined) patch.afternoonTime  = afternoonTime || null;
+  if (capacity       !== undefined) patch.capacity       = Number(capacity);
+  if (vehicleType    !== undefined) patch.vehicleType    = vehicleType;
+  if (notes          !== undefined) patch.notes          = notes || null;
+  if (isActive       !== undefined) patch.isActive       = Boolean(isActive);
+  if (sortOrder      !== undefined) patch.sortOrder      = Number(sortOrder);
+  const [updated] = await db.update(schoolRoutesTable).set(patch).where(eq(schoolRoutesTable.id, routeId)).returning();
+  if (!updated) { res.status(404).json({ error: "Route not found" }); return; }
+  res.json(fmtRoute(updated));
+});
+
+router.delete("/school-routes/:id", async (req, res) => {
+  const routeId = req.params["id"]!;
+  /* Only delete if no active subscriptions */
+  const [activeSub] = await db.select({ id: schoolSubscriptionsTable.id })
+    .from(schoolSubscriptionsTable)
+    .where(and(eq(schoolSubscriptionsTable.routeId, routeId), eq(schoolSubscriptionsTable.status, "active")))
+    .limit(1);
+  if (activeSub) {
+    res.status(409).json({ error: "Cannot delete route with active subscriptions. Disable it instead." }); return;
+  }
+  const [existing] = await db.select({ id: schoolRoutesTable.id })
+    .from(schoolRoutesTable).where(eq(schoolRoutesTable.id, routeId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Route not found" }); return; }
+  await db.delete(schoolRoutesTable).where(eq(schoolRoutesTable.id, routeId));
+  res.json({ success: true });
+});
+
+router.get("/school-subscriptions", async (req, res) => {
+  const routeIdFilter = req.query["routeId"] as string | undefined;
+  const query = routeIdFilter
+    ? db.select().from(schoolSubscriptionsTable).where(eq(schoolSubscriptionsTable.routeId, routeIdFilter))
+    : db.select().from(schoolSubscriptionsTable);
+  const subs = await query.orderBy(desc(schoolSubscriptionsTable.createdAt));
+  /* Enrich with user info */
+  const enriched = await Promise.all(subs.map(async sub => {
+    const [user] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+      .from(usersTable).where(eq(usersTable.id, sub.userId)).limit(1);
+    const [route] = await db.select({ routeName: schoolRoutesTable.routeName, schoolName: schoolRoutesTable.schoolName })
+      .from(schoolRoutesTable).where(eq(schoolRoutesTable.id, sub.routeId)).limit(1);
+    return {
+      ...sub,
+      monthlyAmount:   parseFloat(String(sub.monthlyAmount ?? "0")),
+      userName:        user?.name  || null,
+      userPhone:       user?.phone || null,
+      routeName:       route?.routeName   || null,
+      schoolName:      route?.schoolName  || null,
+      startDate:       sub.startDate instanceof Date       ? sub.startDate.toISOString()       : sub.startDate,
+      nextBillingDate: sub.nextBillingDate instanceof Date ? sub.nextBillingDate.toISOString() : sub.nextBillingDate,
+      createdAt:       sub.createdAt instanceof Date       ? sub.createdAt.toISOString()       : sub.createdAt,
+    };
+  }));
+  res.json({ subscriptions: enriched, total: enriched.length });
+});
+
+/* Public endpoint — GET /api/stops — active popular locations */
+router.get("/public-locations", async (_req, res) => {
+  await ensureDefaultLocations();
+  const locs = await db.select().from(popularLocationsTable)
+    .where(eq(popularLocationsTable.isActive, true))
+    .orderBy(asc(popularLocationsTable.sortOrder));
+  res.json({
+    locations: locs.map(l => ({
+      id: l.id, name: l.name, nameUrdu: l.nameUrdu,
+      lat: parseFloat(String(l.lat)), lng: parseFloat(String(l.lng)),
+      category: l.category, icon: l.icon,
+    })),
+  });
 });
 
 export default router;

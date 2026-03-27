@@ -480,3 +480,87 @@ export const useAllNotifications = (role?: string) => {
     refetchInterval: REFETCH_INTERVAL,
   });
 };
+
+// ══════════════════════════════════════════════════════
+// POPULAR LOCATIONS
+// ══════════════════════════════════════════════════════
+
+export const usePopularLocations = () => {
+  return useQuery({
+    queryKey: ["admin-popular-locations"],
+    queryFn: () => fetcher("/locations"),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+export const useCreateLocation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      fetcher("/locations", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-popular-locations"] }),
+  });
+};
+
+export const useUpdateLocation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; [k: string]: unknown }) =>
+      fetcher(`/locations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-popular-locations"] }),
+  });
+};
+
+export const useDeleteLocation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/locations/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-popular-locations"] }),
+  });
+};
+
+// ══════════════════════════════════════════════════════
+// SCHOOL ROUTES
+// ══════════════════════════════════════════════════════
+
+export const useSchoolRoutes = () => {
+  return useQuery({
+    queryKey: ["admin-school-routes"],
+    queryFn: () => fetcher("/school-routes"),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+export const useCreateSchoolRoute = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      fetcher("/school-routes", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-school-routes"] }),
+  });
+};
+
+export const useUpdateSchoolRoute = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; [k: string]: unknown }) =>
+      fetcher(`/school-routes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-school-routes"] }),
+  });
+};
+
+export const useDeleteSchoolRoute = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/school-routes/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-school-routes"] }),
+  });
+};
+
+export const useSchoolSubscriptions = (routeId?: string) => {
+  return useQuery({
+    queryKey: ["admin-school-subscriptions", routeId],
+    queryFn: () => fetcher(`/school-subscriptions${routeId ? `?routeId=${routeId}` : ""}`),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};

@@ -30,16 +30,8 @@ const W   = Dimensions.get("window").width;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 /* ─── Popular spots (quick-fill chips) ─── */
-const POPULAR_SPOTS = [
-  { name: "Muzaffarabad Chowk", lat: 34.3697, lng: 73.4716 },
-  { name: "Mirpur City Centre", lat: 33.1413, lng: 73.7508 },
-  { name: "Rawalakot Bazar",    lat: 33.8572, lng: 73.7613 },
-  { name: "Bagh City",          lat: 33.9732, lng: 73.7729 },
-  { name: "Kotli Main Chowk",   lat: 33.5152, lng: 73.9019 },
-  { name: "Poonch City",        lat: 33.7700, lng: 74.0954 },
-  { name: "Neelum Valley",      lat: 34.5689, lng: 73.8765 },
-  { name: "AJK University",     lat: 34.3601, lng: 73.5088 },
-];
+/* Popular spots — fetched dynamically from admin-managed API */
+type PopularSpot = { id: string; name: string; nameUrdu?: string; lat: number; lng: number; icon?: string; category?: string };
 
 
 
@@ -873,9 +865,35 @@ export default function RideScreen() {
   const [pickupFocus, setPickupFocus] = useState(false);
   const [dropFocus,   setDropFocus]   = useState(false);
 
+  /* Popular spots — fetched from admin-managed API */
+  const [popularSpots,   setPopularSpots]   = useState<PopularSpot[]>([]);
+  const [schoolRoutes,   setSchoolRoutes]   = useState<any[]>([]);
+  const [showSchoolModal,setShowSchoolModal] = useState(false);
+  const [selectedRoute,  setSelectedRoute]  = useState<any>(null);
+  const [schoolStudent,  setSchoolStudent]  = useState("");
+  const [schoolClass,    setSchoolClass]    = useState("");
+  const [subscribing,    setSubscribing]    = useState(false);
+
   /* Live autocomplete from Maps API */
   const { predictions: pickupPreds, loading: pickupLoading } = useMapsAutocomplete(pickupFocus ? pickup : "");
   const { predictions: dropPreds,   loading: dropLoading }   = useMapsAutocomplete(dropFocus   ? drop   : "");
+
+  /* ── Fetch popular spots from API ── */
+  useEffect(() => {
+    fetch(`${API}/rides/stops`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.locations?.length) setPopularSpots(data.locations); })
+      .catch(() => {});
+  }, []);
+
+  /* ── Fetch school routes when school_shift is selected ── */
+  useEffect(() => {
+    if (rideType !== "school_shift") return;
+    fetch(`${API}/school/routes`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.routes?.length) setSchoolRoutes(data.routes); })
+      .catch(() => {});
+  }, [rideType]);
 
   /* ── Fetch enabled payment methods from admin config ── */
   useEffect(() => {
@@ -976,13 +994,42 @@ export default function RideScreen() {
   }, []);
 
   /* ── Select popular spot chip ── */
-  const handleChip = (spot: typeof POPULAR_SPOTS[0]) => {
+  const handleChip = (spot: PopularSpot) => {
     if (!pickupObj) {
       setPickup(spot.name);
       setPickupObj({ lat: spot.lat, lng: spot.lng, address: spot.name });
     } else if (!dropObj) {
       setDrop(spot.name);
       setDropObj({ lat: spot.lat, lng: spot.lng, address: spot.name });
+    }
+  };
+
+  /* ── School Shift subscribe ── */
+  const handleSchoolSubscribe = async () => {
+    if (!user)          { showToast("Login karein", "error"); return; }
+    if (!selectedRoute) { showToast("Route select karein", "error"); return; }
+    if (!schoolStudent.trim()) { showToast("Student ka naam likhein", "error"); return; }
+    if (!schoolClass.trim())   { showToast("Student ki class likhein", "error"); return; }
+    setSubscribing(true);
+    try {
+      const res = await fetch(`${API}/school/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id, routeId: selectedRoute.id,
+          studentName: schoolStudent.trim(), studentClass: schoolClass.trim(),
+          paymentMethod: payMethod,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) { showToast(json.error || "Subscribe nahi ho saka", "error"); return; }
+      setShowSchoolModal(false);
+      setSelectedRoute(null); setSchoolStudent(""); setSchoolClass("");
+      showToast(`🎉 ${schoolStudent} ko ${selectedRoute.schoolName} ke liye subscribe kar diya!`, "success");
+    } catch {
+      showToast("Network error. Dobara try karein.", "error");
+    } finally {
+      setSubscribing(false);
     }
   };
 
@@ -1179,15 +1226,34 @@ export default function RideScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={rs.scroll}>
         {/* Popular Locations */}
-        <View style={rs.secRow}><Text style={rs.secTitle}>Popular Locations</Text></View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={rs.chips}>
-          {POPULAR_SPOTS.map(spot => (
-            <Pressable key={spot.name} onPress={() => handleChip(spot)} style={rs.chip}>
-              <Ionicons name="location-outline" size={12} color="#059669" />
-              <Text style={rs.chipTxt}>{spot.name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {popularSpots.length > 0 && (
+          <>
+            <View style={rs.secRow}><Text style={rs.secTitle}>Popular Locations</Text></View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={rs.chips}>
+              {popularSpots.map(spot => (
+                <Pressable key={spot.id} onPress={() => handleChip(spot)} style={rs.chip}>
+                  <Text style={{ fontSize: 12 }}>{spot.icon || "📍"}</Text>
+                  <Text style={rs.chipTxt}>{spot.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        {/* School Shift Subscribe button — shown when school_shift is selected */}
+        {rideType === "school_shift" && (
+          <Pressable
+            onPress={() => setShowSchoolModal(true)}
+            style={{ marginHorizontal: 16, marginBottom: 10, backgroundColor: "#EFF6FF", borderWidth: 1.5, borderColor: "#BFDBFE", borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}
+          >
+            <Text style={{ fontSize: 24 }}>🚌</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: "#1D4ED8" }}>School Shift Subscribe</Text>
+              <Text style={{ fontSize: 12, color: "#3B82F6", marginTop: 2 }}>Monthly school transport — student registration</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
+          </Pressable>
+        )}
 
         {/* Surge Banner */}
         {rideCfg.surgeEnabled && (
@@ -1442,6 +1508,102 @@ export default function RideScreen() {
               <View style={{ height: 30 }} />
             </ScrollView>
           )}
+        </View>
+      </Modal>
+
+      {/* ── School Shift Subscription Modal ── */}
+      <Modal visible={showSchoolModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSchoolModal(false)}>
+        <View style={{ flex: 1, backgroundColor: "#fff" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", padding: 20, borderBottomWidth: 1, borderColor: "#F1F5F9" }}>
+            <Text style={{ fontSize: 18, fontFamily: "Inter_700Bold", flex: 1, color: "#1E293B" }}>🚌 School Shift Subscribe</Text>
+            <Pressable onPress={() => setShowSchoolModal(false)} style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="close" size={18} color="#374151" />
+            </Pressable>
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 16 }}>
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#374151", marginBottom: 4 }}>Route Select Karein</Text>
+            {schoolRoutes.length === 0 ? (
+              <View style={{ backgroundColor: "#F8FAFC", borderRadius: 14, padding: 24, alignItems: "center" }}>
+                <Text style={{ fontSize: 24, marginBottom: 8 }}>🚌</Text>
+                <Text style={{ fontFamily: "Inter_600SemiBold", color: "#64748B" }}>Koi route available nahi</Text>
+                <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 4, textAlign: "center" }}>Admin se contact karein school shift routes add karne ke liye</Text>
+              </View>
+            ) : (
+              schoolRoutes.map((r: any) => (
+                <Pressable key={r.id} onPress={() => setSelectedRoute(r)}
+                  style={{ borderWidth: 2, borderColor: selectedRoute?.id === r.id ? "#3B82F6" : "#E2E8F0", borderRadius: 14, padding: 14, backgroundColor: selectedRoute?.id === r.id ? "#EFF6FF" : "#FAFAFA" }}>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 22 }}>🚌</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#1E293B" }}>{r.routeName}</Text>
+                      <Text style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{r.schoolName}</Text>
+                      {r.schoolNameUrdu ? <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }} allowFontScaling={false}>{r.schoolNameUrdu}</Text> : null}
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                        <View style={{ backgroundColor: "#DCFCE7", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: "#16A34A" }}>Rs. {r.monthlyPrice?.toLocaleString()}/month</Text>
+                        </View>
+                        <View style={{ backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: 11, color: "#475569" }}>🕗 {r.morningTime}</Text>
+                        </View>
+                        {r.afternoonTime ? <View style={{ backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ fontSize: 11, color: "#475569" }}>🕑 {r.afternoonTime}</Text></View> : null}
+                        <View style={{ backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: 11, color: "#475569" }}>👥 {r.enrolledCount}/{r.capacity} students</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>📍 {r.fromArea} → {r.toAddress}</Text>
+                    </View>
+                    {selectedRoute?.id === r.id && <Ionicons name="checkmark-circle" size={22} color="#3B82F6" />}
+                  </View>
+                </Pressable>
+              ))
+            )}
+
+            {selectedRoute && (
+              <>
+                <View style={{ height: 1, backgroundColor: "#F1F5F9" }} />
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#374151" }}>Student Details</Text>
+                <View style={{ gap: 12 }}>
+                  <View>
+                    <Text style={{ fontSize: 12, color: "#6B7280", marginBottom: 6, fontFamily: "Inter_500Medium" }}>Student Ka Naam *</Text>
+                    <View style={{ borderWidth: 1.5, borderColor: "#E2E8F0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: "#FAFAFA" }}>
+                      <TextInput
+                        value={schoolStudent}
+                        onChangeText={setSchoolStudent}
+                        placeholder="Masalan: Ali Khan"
+                        style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#1E293B" }}
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 12, color: "#6B7280", marginBottom: 6, fontFamily: "Inter_500Medium" }}>Class / Grade *</Text>
+                    <View style={{ borderWidth: 1.5, borderColor: "#E2E8F0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: "#FAFAFA" }}>
+                      <TextInput
+                        value={schoolClass}
+                        onChangeText={setSchoolClass}
+                        placeholder="Masalan: 7th Grade"
+                        style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#1E293B" }}
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: "#FFFBEB", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#FDE68A", marginTop: 4 }}>
+                  <Text style={{ fontSize: 12, color: "#92400E", fontFamily: "Inter_500Medium" }}>
+                    💳 First month payment: Rs. {selectedRoute.monthlyPrice?.toLocaleString()} — {payMethod === "wallet" ? "Wallet se katega" : "Cash on pickup"}
+                  </Text>
+                </View>
+                <Pressable onPress={handleSchoolSubscribe} disabled={subscribing}
+                  style={{ backgroundColor: subscribing ? "#93C5FD" : "#3B82F6", borderRadius: 14, padding: 16, alignItems: "center", marginTop: 8, opacity: subscribing ? 0.8 : 1 }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>
+                    {subscribing ? "Subscribe Ho Raha Hai..." : `🚌 Subscribe — Rs. ${selectedRoute.monthlyPrice?.toLocaleString()}/month`}
+                  </Text>
+                </Pressable>
+              </>
+            )}
+          </ScrollView>
         </View>
       </Modal>
     </View>

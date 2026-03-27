@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, usersTable, walletTransactionsTable, popularLocationsTable } from "@workspace/db/schema";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-import { ensureDefaultRideServices, getPlatformSettings } from "./admin.js";
+import { ensureDefaultRideServices, ensureDefaultLocations, getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -80,6 +80,23 @@ router.get("/services", async (_req, res) => {
       maxPassengers:   s.maxPassengers,
       allowBargaining: s.allowBargaining,
       sortOrder:       s.sortOrder,
+    })),
+  });
+});
+
+/* ══════════════════════════════════════════════════════
+   GET /rides/stops — Public popular locations (admin-managed)
+══════════════════════════════════════════════════════ */
+router.get("/stops", async (_req, res) => {
+  try { await ensureDefaultLocations(); } catch {}
+  const locs = await db.select().from(popularLocationsTable)
+    .where(eq(popularLocationsTable.isActive, true))
+    .orderBy(asc(popularLocationsTable.sortOrder));
+  res.json({
+    locations: locs.map(l => ({
+      id: l.id, name: l.name, nameUrdu: l.nameUrdu,
+      lat: parseFloat(String(l.lat)), lng: parseFloat(String(l.lng)),
+      category: l.category, icon: l.icon,
     })),
   });
 });

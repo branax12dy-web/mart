@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService } from "@/hooks/use-admin";
+import {
+  useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
+  usePopularLocations, useCreateLocation, useUpdateLocation, useDeleteLocation,
+  useSchoolRoutes, useCreateSchoolRoute, useUpdateSchoolRoute, useDeleteSchoolRoute, useSchoolSubscriptions,
+} from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
@@ -14,6 +18,7 @@ import {
   TrendingUp, UserCheck, AlertTriangle, CheckCircle2,
   MessageCircle, Clock, Zap, History, Activity, Settings2,
   Plus, Pencil, Trash2, ToggleLeft, ToggleRight, ChevronUp, ChevronDown, Layers,
+  GraduationCap, Bus, X, Users,
 } from "lucide-react";
 
 /* ─── constants ─── */
@@ -365,10 +370,469 @@ function RideDetailModal({
   );
 }
 
+/* ─────────────────────────────────────────────────────────
+   LOCATIONS MANAGER — "locations" tab
+   ───────────────────────────────────────────────────────── */
+function LocationsManager() {
+  const { data, isLoading } = usePopularLocations();
+  const createMut  = useCreateLocation();
+  const updateMut  = useUpdateLocation();
+  const deleteMut  = useDeleteLocation();
+  const { toast }  = useToast();
+
+  const [showForm, setShowForm] = useState(false);
+  const [editing,  setEditing]  = useState<any>(null);
+  const [form, setForm] = useState({ name: "", nameUrdu: "", lat: "", lng: "", category: "general", icon: "📍", sortOrder: "0", isActive: true });
+
+  const locations = data?.locations || [];
+
+  const CATEGORIES = ["chowk", "school", "hospital", "bazar", "park", "landmark", "general"];
+
+  const openAdd = () => { setEditing(null); setForm({ name: "", nameUrdu: "", lat: "", lng: "", category: "general", icon: "📍", sortOrder: "0", isActive: true }); setShowForm(true); };
+  const openEdit = (l: any) => { setEditing(l); setForm({ name: l.name, nameUrdu: l.nameUrdu || "", lat: String(l.lat), lng: String(l.lng), category: l.category, icon: l.icon, sortOrder: String(l.sortOrder), isActive: l.isActive }); setShowForm(true); };
+
+  const handleSave = () => {
+    if (!form.name || !form.lat || !form.lng) { toast({ title: "Name, Lat & Lng required", variant: "destructive" }); return; }
+    const payload = { ...form, sortOrder: Number(form.sortOrder), lat: parseFloat(form.lat), lng: parseFloat(form.lng) };
+    if (editing) {
+      updateMut.mutate({ id: editing.id, ...payload }, {
+        onSuccess: () => { toast({ title: "Location updated ✅" }); setShowForm(false); },
+        onError: e => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      });
+    } else {
+      createMut.mutate(payload, {
+        onSuccess: () => { toast({ title: "Location added ✅" }); setShowForm(false); },
+        onError: e => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      });
+    }
+  };
+
+  const handleToggle = (l: any) => {
+    updateMut.mutate({ id: l.id, isActive: !l.isActive }, {
+      onSuccess: () => toast({ title: `${l.isActive ? "Disabled" : "Enabled"} ✅` }),
+    });
+  };
+
+  const handleDelete = (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"?`)) return;
+    deleteMut.mutate(id, {
+      onSuccess: () => toast({ title: "Deleted ✅" }),
+      onError: e => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold">Popular Locations</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Manage quick-pick stops shown in the customer app</p>
+        </div>
+        <button onClick={openAdd} className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors">
+          <Plus className="w-4 h-4" /> Add Location
+        </button>
+      </div>
+
+      {isLoading ? (
+        <Card className="p-8 rounded-2xl text-center"><p className="text-muted-foreground">Loading…</p></Card>
+      ) : locations.length === 0 ? (
+        <Card className="p-8 rounded-2xl text-center">
+          <MapPin className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+          <p className="font-semibold text-muted-foreground">No locations yet</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {locations.map((l: any) => (
+            <Card key={l.id} className={`p-4 rounded-2xl border-2 transition-all ${l.isActive ? "border-border/50" : "border-dashed border-muted-foreground/30 opacity-60"}`}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">{l.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm truncate">{l.name}</p>
+                  {l.nameUrdu && <p className="text-xs text-muted-foreground" dir="rtl">{l.nameUrdu}</p>}
+                  <p className="text-[10px] text-muted-foreground mt-1">{l.lat?.toFixed(4)}, {l.lng?.toFixed(4)}</p>
+                  <span className="inline-block text-[10px] font-semibold bg-muted px-2 py-0.5 rounded-full mt-1 capitalize">{l.category}</span>
+                </div>
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  <button onClick={() => handleToggle(l)} className="text-muted-foreground hover:text-foreground transition-colors" title={l.isActive ? "Disable" : "Enable"}>
+                    {l.isActive ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5" />}
+                  </button>
+                  <button onClick={() => openEdit(l)} className="text-muted-foreground hover:text-blue-600 transition-colors"><Pencil className="w-4 h-4" /></button>
+                  <button onClick={() => handleDelete(l.id, l.name)} className="text-muted-foreground hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${l.isActive ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                  {l.isActive ? "Active" : "Inactive"}
+                </span>
+                <span className="text-[10px] text-muted-foreground">Order #{l.sortOrder}</span>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="rounded-2xl max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Location" : "Add Location"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Name (English)</label>
+                <Input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} placeholder="Muzaffarabad Chowk" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Name (Urdu)</label>
+                <Input value={form.nameUrdu} onChange={e => setForm(f => ({...f, nameUrdu: e.target.value}))} placeholder="مظفرآباد چوک" dir="rtl" className="rounded-xl mt-1" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Latitude</label>
+                <Input type="number" step="0.000001" value={form.lat} onChange={e => setForm(f => ({...f, lat: e.target.value}))} placeholder="34.3697" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Longitude</label>
+                <Input type="number" step="0.000001" value={form.lng} onChange={e => setForm(f => ({...f, lng: e.target.value}))} placeholder="73.4716" className="rounded-xl mt-1" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Category</label>
+                <Select value={form.category} onValueChange={v => setForm(f => ({...f, category: v}))}>
+                  <SelectTrigger className="rounded-xl mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Icon (emoji)</label>
+                <Input value={form.icon} onChange={e => setForm(f => ({...f, icon: e.target.value}))} placeholder="📍" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Sort Order</label>
+                <Input type="number" value={form.sortOrder} onChange={e => setForm(f => ({...f, sortOrder: e.target.value}))} placeholder="0" className="rounded-xl mt-1" />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({...f, isActive: e.target.checked}))} className="w-4 h-4 rounded" />
+              <span className="text-sm font-medium">Active (visible in customer app)</span>
+            </label>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setShowForm(false)} className="px-4 py-2 rounded-xl border text-sm font-medium hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}
+                className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+                {editing ? "Save Changes" : "Add Location"}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+   SCHOOL ROUTES MANAGER — "school" tab
+   ───────────────────────────────────────────────────────── */
+function SchoolRoutesManager() {
+  const { data: routesData, isLoading }  = useSchoolRoutes();
+  const { data: subsData }               = useSchoolSubscriptions();
+  const createMut  = useCreateSchoolRoute();
+  const updateMut  = useUpdateSchoolRoute();
+  const deleteMut  = useDeleteSchoolRoute();
+  const { toast }  = useToast();
+
+  const [showForm,   setShowForm]   = useState(false);
+  const [showSubs,   setShowSubs]   = useState<any>(null); /* route whose subs to view */
+  const [editing,    setEditing]    = useState<any>(null);
+  const [activeTab,  setActiveTab]  = useState<"routes"|"subs">("routes");
+  const [form, setForm] = useState({
+    routeName: "", schoolName: "", schoolNameUrdu: "",
+    fromArea: "", fromAreaUrdu: "", toAddress: "",
+    monthlyPrice: "", morningTime: "7:30 AM", afternoonTime: "",
+    capacity: "30", vehicleType: "school_shift",
+    notes: "", isActive: true, sortOrder: "0",
+  });
+
+  const routes = routesData?.routes || [];
+  const allSubs = subsData?.subscriptions || [];
+
+  const openAdd = () => {
+    setEditing(null);
+    setForm({ routeName: "", schoolName: "", schoolNameUrdu: "", fromArea: "", fromAreaUrdu: "", toAddress: "", monthlyPrice: "", morningTime: "7:30 AM", afternoonTime: "", capacity: "30", vehicleType: "school_shift", notes: "", isActive: true, sortOrder: "0" });
+    setShowForm(true);
+  };
+  const openEdit = (r: any) => {
+    setEditing(r);
+    setForm({
+      routeName: r.routeName, schoolName: r.schoolName, schoolNameUrdu: r.schoolNameUrdu || "",
+      fromArea: r.fromArea, fromAreaUrdu: r.fromAreaUrdu || "", toAddress: r.toAddress,
+      monthlyPrice: String(r.monthlyPrice), morningTime: r.morningTime || "7:30 AM",
+      afternoonTime: r.afternoonTime || "", capacity: String(r.capacity),
+      vehicleType: r.vehicleType, notes: r.notes || "", isActive: r.isActive, sortOrder: String(r.sortOrder),
+    });
+    setShowForm(true);
+  };
+
+  const handleSave = () => {
+    if (!form.routeName || !form.schoolName || !form.fromArea || !form.toAddress || !form.monthlyPrice) {
+      toast({ title: "Route Name, School, From, To & Price required", variant: "destructive" }); return;
+    }
+    const payload = { ...form, sortOrder: Number(form.sortOrder), capacity: Number(form.capacity), monthlyPrice: parseFloat(form.monthlyPrice) };
+    if (editing) {
+      updateMut.mutate({ id: editing.id, ...payload }, {
+        onSuccess: () => { toast({ title: "Route updated ✅" }); setShowForm(false); },
+        onError: e => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      });
+    } else {
+      createMut.mutate(payload, {
+        onSuccess: () => { toast({ title: "Route added ✅" }); setShowForm(false); },
+        onError: e => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      });
+    }
+  };
+
+  const handleToggle = (r: any) => {
+    updateMut.mutate({ id: r.id, isActive: !r.isActive }, {
+      onSuccess: () => toast({ title: `${r.isActive ? "Disabled" : "Enabled"} ✅` }),
+    });
+  };
+
+  const handleDelete = (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This will fail if active subscribers exist.`)) return;
+    deleteMut.mutate(id, {
+      onSuccess: () => toast({ title: "Deleted ✅" }),
+      onError: e => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+    });
+  };
+
+  const routeSubs = showSubs ? allSubs.filter((s: any) => s.routeId === showSubs.id) : [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold">School Shift Routes</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Monthly school transport subscriptions for students</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-xl border border-border/60 overflow-hidden text-xs font-semibold">
+            <button onClick={() => setActiveTab("routes")} className={`px-3 py-1.5 ${activeTab === "routes" ? "bg-primary text-white" : "text-muted-foreground hover:bg-muted"} transition-colors`}>Routes</button>
+            <button onClick={() => setActiveTab("subs")} className={`px-3 py-1.5 ${activeTab === "subs" ? "bg-primary text-white" : "text-muted-foreground hover:bg-muted"} transition-colors`}>
+              Subscriptions {allSubs.filter((s:any) => s.status === "active").length > 0 && <span className="ml-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-[10px]">{allSubs.filter((s:any) => s.status === "active").length}</span>}
+            </button>
+          </div>
+          {activeTab === "routes" && (
+            <button onClick={openAdd} className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors">
+              <Plus className="w-4 h-4" /> Add Route
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Routes Tab */}
+      {activeTab === "routes" && (
+        isLoading ? (
+          <Card className="p-8 rounded-2xl text-center"><p className="text-muted-foreground">Loading…</p></Card>
+        ) : routes.length === 0 ? (
+          <Card className="p-10 rounded-2xl text-center">
+            <Bus className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+            <p className="font-bold text-muted-foreground">No routes yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Add school routes for monthly student transport subscriptions</p>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {routes.map((r: any) => (
+              <Card key={r.id} className={`p-4 rounded-2xl border-2 transition-all ${r.isActive ? "border-border/50" : "border-dashed border-muted-foreground/30 opacity-60"}`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center shrink-0 text-lg">🚌</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm">{r.routeName}</p>
+                    <p className="text-xs text-muted-foreground">{r.schoolName}</p>
+                    {r.schoolNameUrdu && <p className="text-xs text-muted-foreground" dir="rtl">{r.schoolNameUrdu}</p>}
+                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+                      <MapPin className="w-3 h-3" />{r.fromArea} → {r.toAddress}
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Rs. {r.monthlyPrice?.toLocaleString()}/month</span>
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🕗 {r.morningTime}</span>
+                      {r.afternoonTime && <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🕑 {r.afternoonTime}</span>}
+                      <span className="text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                        <Users className="w-3 h-3 inline mr-0.5" />{r.enrolledCount}/{r.capacity}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button onClick={() => handleToggle(r)} title={r.isActive ? "Disable" : "Enable"}>
+                      {r.isActive ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5 text-muted-foreground" />}
+                    </button>
+                    <button onClick={() => openEdit(r)} className="text-muted-foreground hover:text-blue-600 transition-colors"><Pencil className="w-4 h-4" /></button>
+                    <button onClick={() => handleDelete(r.id, r.routeName)} className="text-muted-foreground hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border/50">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.isActive ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                    {r.isActive ? "Active" : "Inactive"}
+                  </span>
+                  <button onClick={() => { setShowSubs(r); setActiveTab("subs"); }}
+                    className="text-[10px] text-blue-600 font-medium hover:underline ml-auto">
+                    View subscribers →
+                  </button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Subscriptions Tab */}
+      {activeTab === "subs" && (
+        <div className="space-y-3">
+          {showSubs && (
+            <div className="flex items-center gap-2 text-sm font-medium bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+              <Bus className="w-4 h-4 text-blue-600" />
+              Filtered by: <span className="font-bold text-blue-700">{showSubs.routeName}</span>
+              <button onClick={() => setShowSubs(null)} className="ml-auto text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+            </div>
+          )}
+          {allSubs.length === 0 ? (
+            <Card className="p-10 rounded-2xl text-center">
+              <GraduationCap className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+              <p className="font-bold text-muted-foreground">No subscriptions yet</p>
+            </Card>
+          ) : (
+            <Card className="rounded-2xl overflow-hidden border-border/50 shadow-sm">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead>Student</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Route</TableHead>
+                      <TableHead>Monthly</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Next Billing</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(showSubs ? routeSubs : allSubs).map((s: any) => (
+                      <TableRow key={s.id} className="hover:bg-muted/20">
+                        <TableCell>
+                          <p className="font-semibold text-sm">{s.studentName}</p>
+                          <p className="text-xs text-muted-foreground">Class {s.studentClass}</p>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm">{s.userName || "—"}</p>
+                          <p className="text-xs text-muted-foreground">{s.userPhone || "—"}</p>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm font-medium">{s.routeName || "—"}</p>
+                          <p className="text-xs text-muted-foreground">{s.schoolName || "—"}</p>
+                        </TableCell>
+                        <TableCell className="font-bold text-green-700">Rs. {s.monthlyAmount?.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge className={`text-xs ${s.status === "active" ? "bg-green-100 text-green-700 border-green-200" : "bg-muted text-muted-foreground"}`}>
+                            {s.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {s.nextBillingDate ? new Date(s.nextBillingDate).toLocaleDateString() : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="rounded-2xl max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit School Route" : "Add School Route"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground">Route Name</label>
+                <Input value={form.routeName} onChange={e => setForm(f => ({...f, routeName: e.target.value}))} placeholder="Muzaffarabad City → APS" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">School Name</label>
+                <Input value={form.schoolName} onChange={e => setForm(f => ({...f, schoolName: e.target.value}))} placeholder="Army Public School" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">School Name (Urdu)</label>
+                <Input value={form.schoolNameUrdu} onChange={e => setForm(f => ({...f, schoolNameUrdu: e.target.value}))} placeholder="آرمی پبلک اسکول" dir="rtl" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">From Area</label>
+                <Input value={form.fromArea} onChange={e => setForm(f => ({...f, fromArea: e.target.value}))} placeholder="Kohala Chowk" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">From Area (Urdu)</label>
+                <Input value={form.fromAreaUrdu} onChange={e => setForm(f => ({...f, fromAreaUrdu: e.target.value}))} placeholder="کوہالہ چوک" dir="rtl" className="rounded-xl mt-1" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground">School Address (To)</label>
+                <Input value={form.toAddress} onChange={e => setForm(f => ({...f, toAddress: e.target.value}))} placeholder="APS Muzaffarabad, Near DHQ Hospital" className="rounded-xl mt-1" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Monthly Price (Rs.)</label>
+                <Input type="number" value={form.monthlyPrice} onChange={e => setForm(f => ({...f, monthlyPrice: e.target.value}))} placeholder="3000" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Morning Time</label>
+                <Input value={form.morningTime} onChange={e => setForm(f => ({...f, morningTime: e.target.value}))} placeholder="7:30 AM" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Afternoon Time</label>
+                <Input value={form.afternoonTime} onChange={e => setForm(f => ({...f, afternoonTime: e.target.value}))} placeholder="2:00 PM" className="rounded-xl mt-1" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Capacity (students)</label>
+                <Input type="number" value={form.capacity} onChange={e => setForm(f => ({...f, capacity: e.target.value}))} placeholder="30" className="rounded-xl mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Sort Order</label>
+                <Input type="number" value={form.sortOrder} onChange={e => setForm(f => ({...f, sortOrder: e.target.value}))} placeholder="0" className="rounded-xl mt-1" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+              <Input value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} placeholder="AC van, door-to-door pickup" className="rounded-xl mt-1" />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({...f, isActive: e.target.checked}))} className="w-4 h-4 rounded" />
+              <span className="text-sm font-medium">Active (visible for customer subscriptions)</span>
+            </label>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setShowForm(false)} className="px-4 py-2 rounded-xl border text-sm font-medium hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}
+                className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+                {editing ? "Save Changes" : "Add Route"}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 /* ────────────────────────────────────────────────────
    MAIN PAGE
    ──────────────────────────────────────────────────── */
-type Tab = "live" | "active" | "history" | "services";
+type Tab = "live" | "active" | "history" | "services" | "locations" | "school";
 
 /* ─────────────────────────────────────────────────────────
    SERVICE MANAGEMENT UI — shown in the "services" tab
@@ -918,10 +1382,12 @@ export default function Rides() {
 
       {/* ── Tabs ── */}
       <div className="flex flex-wrap gap-2">
-        <TabBtn id="live"    icon={Zap}      label="Live"        count={liveRides.length}   urgent />
-        <TabBtn id="active"  icon={Activity} label="In Progress" count={inProgress.length}         />
-        <TabBtn id="history" icon={History}  label="History"     count={completed.length + cancelled.length} />
-        <TabBtn id="services" icon={Layers}  label="Services"    count={0} />
+        <TabBtn id="live"      icon={Zap}           label="Live"         count={liveRides.length}   urgent />
+        <TabBtn id="active"    icon={Activity}      label="In Progress"  count={inProgress.length}         />
+        <TabBtn id="history"   icon={History}       label="History"      count={completed.length + cancelled.length} />
+        <TabBtn id="services"  icon={Layers}        label="Services"     count={0} />
+        <TabBtn id="locations" icon={MapPin}        label="Stops"        count={0} />
+        <TabBtn id="school"    icon={GraduationCap} label="School Shift" count={0} />
       </div>
 
       {/* ══════════ TAB: LIVE ══════════ */}
@@ -1211,6 +1677,12 @@ export default function Rides() {
 
       {/* ══════════ TAB: SERVICES ══════════ */}
       {tab === "services" && <ServiceManager />}
+
+      {/* ══════════ TAB: LOCATIONS ══════════ */}
+      {tab === "locations" && <LocationsManager />}
+
+      {/* ══════════ TAB: SCHOOL SHIFT ══════════ */}
+      {tab === "school" && <SchoolRoutesManager />}
 
       {/* ── Ride Detail Modal ── */}
       {selectedRide && (
