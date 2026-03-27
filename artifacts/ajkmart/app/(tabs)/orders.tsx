@@ -44,6 +44,14 @@ const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; lab
   cancelled:  { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",      label: "Cancelled" },
 };
 
+const PARCEL_STATUS: Record<string, { color: string; bg: string; icon: string; label: string }> = {
+  pending:    { color: "#D97706", bg: "#FEF3C7", icon: "time-outline",              label: "Awaiting Rider" },
+  accepted:   { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            label: "Rider Assigned" },
+  in_transit: { color: "#059669", bg: "#D1FAE5", icon: "cube-outline",              label: "In Transit" },
+  completed:  { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",    label: "Delivered" },
+  cancelled:  { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",      label: "Cancelled" },
+};
+
 /* ─────────────────────────── Tab config ─────────────────────────── */
 const TABS = [
   { key: "all",      label: "All",       icon: "layers-outline" },
@@ -354,14 +362,18 @@ function PharmacyCard({ order, reviews, onRate }: {
 
 /* ─────────────────────────── Parcel Card ─────────────────────────── */
 function ParcelCard({ booking }: { booking: any }) {
-  const cfg = RIDE_STATUS[booking.status] || RIDE_STATUS["searching"]!;
+  const cfg = PARCEL_STATUS[booking.status] || PARCEL_STATUS["pending"]!;
+  const isActive = !["completed", "cancelled"].includes(booking.status);
+  const parcelLabel = booking.parcelType
+    ? booking.parcelType.charAt(0).toUpperCase() + booking.parcelType.slice(1)
+    : "Parcel";
 
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <View style={[styles.chip, { backgroundColor: "#FFF8E1" }]}>
           <Ionicons name="cube-outline" size={13} color="#E65100" />
-          <Text style={[styles.chipText, { color: "#E65100" }]}>Parcel</Text>
+          <Text style={[styles.chipText, { color: "#E65100" }]}>Parcel · {parcelLabel}</Text>
         </View>
         <Text style={styles.cardId}>#{booking.id.slice(-8).toUpperCase()}</Text>
       </View>
@@ -384,9 +396,7 @@ function ParcelCard({ booking }: { booking: any }) {
           <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
         </View>
         <View style={styles.totalWrap}>
-          <Text style={styles.totalLabel}>
-            {booking.parcelType ? `${booking.parcelType.charAt(0).toUpperCase() + booking.parcelType.slice(1)}` : "Parcel"}
-          </Text>
+          <Text style={styles.totalLabel}>Fare</Text>
           <Text style={styles.totalAmount}>Rs. {(booking.fare || booking.estimatedFare)?.toLocaleString()}</Text>
         </View>
       </View>
@@ -394,7 +404,23 @@ function ParcelCard({ booking }: { booking: any }) {
       {booking.receiverName && (
         <View style={styles.etaBar}>
           <Ionicons name="person-outline" size={12} color={C.primary} />
-          <Text style={styles.etaText}>Receiver: {booking.receiverName} · {booking.receiverPhone}</Text>
+          <Text style={styles.etaText} numberOfLines={1}>To: {booking.receiverName} · {booking.receiverPhone}</Text>
+        </View>
+      )}
+
+      {isActive && booking.estimatedTime && (
+        <View style={styles.etaBar}>
+          <Ionicons name="time-outline" size={12} color="#D97706" />
+          <Text style={[styles.etaText, { color: "#92400E" }]}>ETA: {booking.estimatedTime}</Text>
+          <View style={styles.payBadge}>
+            <Ionicons
+              name={booking.paymentMethod === "wallet" ? "wallet-outline" : "cash-outline"}
+              size={11} color={C.textMuted}
+            />
+            <Text style={styles.payText}>
+              {booking.paymentMethod === "wallet" ? "Wallet" : booking.paymentMethod === "jazzcash" ? "JazzCash" : booking.paymentMethod === "easypaisa" ? "EasyPaisa" : "Cash"}
+            </Text>
+          </View>
         </View>
       )}
     </View>

@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useMapsAutocomplete, resolveLocation } from "@/hooks/useMaps";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -99,13 +99,45 @@ export default function ParcelScreen() {
   const [weight, setWeight] = useState("");
   const [description, setDescription] = useState("");
 
-  const [payMethod, setPayMethod] = useState<"wallet" | "cash">("cash");
+  const [payMethod, setPayMethod] = useState<string>("cash");
+  const [payMethods, setPayMethods] = useState<Array<{ id: string; label: string; logo: string; description: string }>>([
+    { id: "cash", label: "Cash on Pickup", logo: "💵", description: "Driver parcel lene aake payment le ga" },
+  ]);
 
-  const parcelPerKg = platformConfig.deliveryFee?.parcelPerKg ?? 40;
+  /* ── Server-calculated fare (replaces hardcoded per-type fares) ── */
+  const [estimatedFare, setEstimatedFare] = useState(0);
+  const [fareLoading, setFareLoading] = useState(false);
+
   const selectedType = PARCEL_TYPES.find(t => t.id === parcelType);
-  const estimatedFare = selectedType
-    ? selectedType.baseFare + (parseFloat(weight) > 2 ? Math.round((parseFloat(weight) - 2) * parcelPerKg) : 0)
-    : 0;
+
+  /* ── Fetch enabled payment methods ── */
+  useEffect(() => {
+    fetch(`${API}/payments/methods`)
+      .then(r => r.json())
+      .then((methods: Array<{ id: string; label: string; logo: string; description: string }>) => {
+        if (Array.isArray(methods) && methods.length > 0) {
+          setPayMethods(methods);
+          setPayMethod(methods[0]!.id);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  /* ── Fetch server fare estimate when parcel type or weight changes ── */
+  useEffect(() => {
+    if (!parcelType) { setEstimatedFare(0); return; }
+    setFareLoading(true);
+    const wgt = parseFloat(weight) || 0;
+    fetch(`${API}/parcel-bookings/estimate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parcelType, weight: wgt }),
+    })
+      .then(r => r.json())
+      .then(data => { if (data.fare) setEstimatedFare(data.fare); })
+      .catch(() => {})
+      .finally(() => setFareLoading(false));
+  }, [parcelType, weight]);
 
   const validateStep = (s: number): boolean => {
     if (s === 0) {
@@ -189,9 +221,15 @@ export default function ParcelScreen() {
             <Text style={ss.fareLbl}>Total Fare</Text>
             <Text style={ss.fareVal}>Rs. {confirmedFare.toLocaleString()}</Text>
           </View>
-          <Pressable style={ss.doneBtn} onPress={() => { setConfirmed(false); router.push("/(tabs)"); }}>
-            <Text style={ss.doneBtnTxt}>Back to Home</Text>
-          </Pressable>
+          <View style={{ flexDirection: "row", gap: 10, width: "100%" }}>
+            <Pressable style={[ss.doneBtn, { flex: 1, backgroundColor: "#F0FDF4" }]} onPress={() => { setConfirmed(false); router.push("/(tabs)"); }}>
+              <Text style={[ss.doneBtnTxt, { color: "#059669" }]}>Home</Text>
+            </Pressable>
+            <Pressable style={[ss.doneBtn, { flex: 2 }]} onPress={() => { setConfirmed(false); router.push("/(tabs)/orders"); }}>
+              <Ionicons name="cube-outline" size={16} color="#fff" style={{ marginRight: 4 }} />
+              <Text style={ss.doneBtnTxt}>Track Parcel</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     );
@@ -282,7 +320,6 @@ export default function ParcelScreen() {
                     <Text style={{ fontSize: 24 }}>{pt.emoji}</Text>
                     <Text style={[ss.typeLabel, parcelType === pt.id && { color: "#D97706" }]}>{pt.label}</Text>
                     <Text style={ss.typeDesc}>{pt.desc}</Text>
-                    <Text style={[ss.typeFare, parcelType === pt.id && { color: "#D97706" }]}>Rs. {pt.baseFare}+</Text>
                   </Pressable>
                 ))}
               </View>
@@ -297,9 +334,9 @@ export default function ParcelScreen() {
                 style={ss.input}
                 keyboardType="decimal-pad"
               />
-              {weight && parseFloat(weight) > 2 && (
+              {weight && parseFloat(weight) > 0 && (
                 <Text style={ss.weightNote}>
-                  Extra {(parseFloat(weight) - 2).toFixed(1)} kg → +Rs. {Math.round((parseFloat(weight) - 2) * parcelPerKg)} extra charge (Rs.{parcelPerKg}/kg)
+                  Weight: {parseFloat(weight).toFixed(1)} kg — fare auto-calculated by admin settings
                 </Text>
               )}
               <Text style={ss.label}>Description — Optional</Text>
@@ -316,9 +353,12 @@ export default function ParcelScreen() {
               <View style={ss.fareCard}>
                 <View>
                   <Text style={ss.fareLbl2}>Estimated Fare</Text>
-                  <Text style={ss.fareNote}>Base + weight charge</Text>
+                  <Text style={ss.fareNote}>Base + weight charge (admin rates)</Text>
                 </View>
-                <Text style={ss.fareAmt}>Rs. {estimatedFare}</Text>
+                {fareLoading
+                  ? <ActivityIndicator color="#D97706" size="small" />
+                  : <Text style={ss.fareAmt}>Rs. {estimatedFare}</Text>
+                }
               </View>
             )}
           </View>
@@ -329,26 +369,40 @@ export default function ParcelScreen() {
           <View>
             <View style={ss.card}>
               <Text style={ss.cardTitle}>💳 Payment Method</Text>
-              <Pressable onPress={() => setPayMethod("cash")} style={[ss.payOpt, payMethod === "cash" && ss.payOptActive]}>
-                <View style={[ss.payIcon, { backgroundColor: "#D1FAE5" }]}>
-                  <Ionicons name="cash-outline" size={22} color="#059669" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.payLabel, payMethod === "cash" && { color: "#D97706" }]}>Cash on Pickup</Text>
-                  <Text style={ss.paySub}>Driver parcel lene aake payment le ga</Text>
-                </View>
-                {payMethod === "cash" && <Ionicons name="checkmark-circle" size={20} color="#D97706" />}
-              </Pressable>
-              <Pressable onPress={() => setPayMethod("wallet")} style={[ss.payOpt, payMethod === "wallet" && ss.payOptActive]}>
-                <View style={[ss.payIcon, { backgroundColor: "#EFF6FF" }]}>
-                  <Ionicons name="wallet-outline" size={22} color={C.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.payLabel, payMethod === "wallet" && { color: "#D97706" }]}>{appName} Wallet</Text>
-                  <Text style={ss.paySub}>Balance: Rs. {(user?.walletBalance ?? 0).toLocaleString()}</Text>
-                </View>
-                {payMethod === "wallet" && <Ionicons name="checkmark-circle" size={20} color="#D97706" />}
-              </Pressable>
+              {payMethods.map(pm => {
+                const active = payMethod === pm.id;
+                const isWallet = pm.id === "wallet";
+                const iconName: any = pm.id === "cash" ? "cash-outline"
+                  : pm.id === "wallet" ? "wallet-outline"
+                  : pm.id === "jazzcash" ? "phone-portrait-outline"
+                  : pm.id === "easypaisa" ? "phone-portrait-outline"
+                  : "card-outline";
+                const iconBg = pm.id === "cash" ? "#D1FAE5"
+                  : pm.id === "wallet" ? "#EFF6FF"
+                  : pm.id === "jazzcash" ? "#FFE4E6"
+                  : "#E0F2FE";
+                const iconColor = pm.id === "cash" ? "#059669"
+                  : pm.id === "wallet" ? C.primary
+                  : pm.id === "jazzcash" ? "#BE123C"
+                  : "#0284C7";
+                const subLabel = isWallet
+                  ? `Balance: Rs. ${(user?.walletBalance ?? 0).toLocaleString()}`
+                  : (pm as any).description || pm.label;
+                return (
+                  <Pressable key={pm.id} onPress={() => setPayMethod(pm.id)} style={[ss.payOpt, active && ss.payOptActive]}>
+                    <View style={[ss.payIcon, { backgroundColor: iconBg }]}>
+                      <Ionicons name={iconName} size={22} color={iconColor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[ss.payLabel, active && { color: "#D97706" }]}>
+                        {isWallet ? `${appName} Wallet` : pm.label}
+                      </Text>
+                      <Text style={ss.paySub}>{subLabel}</Text>
+                    </View>
+                    {active && <Ionicons name="checkmark-circle" size={20} color="#D97706" />}
+                  </Pressable>
+                );
+              })}
             </View>
 
             {/* Summary */}
@@ -552,6 +606,6 @@ const ss = StyleSheet.create({
   fareBox: { width: "100%", backgroundColor: "#FFFBEB", borderRadius: 12, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   fareLbl: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#92400E" },
   fareVal: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#D97706" },
-  doneBtn: { backgroundColor: "#D97706", borderRadius: 13, paddingVertical: 13, paddingHorizontal: 24, alignItems: "center", width: "100%" },
+  doneBtn: { backgroundColor: "#D97706", borderRadius: 13, paddingVertical: 13, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", flexDirection: "row" },
   doneBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 });

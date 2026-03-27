@@ -617,6 +617,10 @@ export default function RideScreen() {
   const [dropObj,    setDropObj]   = useState<LocObj | null>(null);
   const [rideType,   setRideType]  = useState<"bike" | "car">("bike");
   const [payMethod,  setPayMethod] = useState<"cash" | "wallet">("cash");
+  const [payMethods, setPayMethods] = useState<Array<{ id: string; label: string }>>([
+    { id: "cash", label: "Cash" },
+    { id: "wallet", label: "Wallet" },
+  ]);
   const [estimate,   setEstimate]  = useState<{ fare: number; dist: number; dur: string } | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [booking,    setBooking]   = useState(false);
@@ -632,6 +636,20 @@ export default function RideScreen() {
   /* Live autocomplete from Maps API */
   const { predictions: pickupPreds, loading: pickupLoading } = useMapsAutocomplete(pickupFocus ? pickup : "");
   const { predictions: dropPreds,   loading: dropLoading }   = useMapsAutocomplete(dropFocus   ? drop   : "");
+
+  /* ── Fetch enabled payment methods from admin config ── */
+  useEffect(() => {
+    fetch(`${API}/payments/methods`)
+      .then(r => r.json())
+      .then((methods: Array<{ id: string; label: string }>) => {
+        const rideCompatible = methods.filter(m => m.id === "cash" || m.id === "wallet");
+        if (rideCompatible.length > 0) {
+          setPayMethods(rideCompatible);
+          setPayMethod(rideCompatible[0]!.id as "cash" | "wallet");
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   /* ── Get device location for pickup auto-fill ── */
   const handleMyLocation = async () => {
@@ -967,19 +985,24 @@ export default function RideScreen() {
         {/* Payment */}
         <View style={rs.secRow}><Text style={rs.secTitle}>Payment Method</Text></View>
         <View style={rs.payRow}>
-          {(["cash", "wallet"] as const).map(pm => {
-            const active = payMethod === pm;
-            const insufficient = pm === "wallet" && estimate && (user?.walletBalance ?? 0) < estimate.fare;
+          {payMethods.map(pm => {
+            const pmId = pm.id as "cash" | "wallet";
+            const active = payMethod === pmId;
+            const isWallet = pmId === "wallet";
+            const isCash   = pmId === "cash";
+            const insufficient = isWallet && estimate && (user?.walletBalance ?? 0) < estimate.fare;
             return (
-              <Pressable key={pm} onPress={() => setPayMethod(pm)} style={[rs.payCard, active && rs.payCardActive]}>
-                <View style={[rs.payIcon, { backgroundColor: active ? (pm === "wallet" ? "#DBEAFE" : "#D1FAE5") : "#F1F5F9" }]}>
-                  <Ionicons name={pm === "cash" ? "cash-outline" : "wallet-outline"} size={22} color={active ? (pm === "wallet" ? C.primary : C.success) : C.textSecondary} />
+              <Pressable key={pmId} onPress={() => setPayMethod(pmId)} style={[rs.payCard, active && rs.payCardActive]}>
+                <View style={[rs.payIcon, { backgroundColor: active ? (isWallet ? "#DBEAFE" : "#D1FAE5") : "#F1F5F9" }]}>
+                  <Ionicons name={isCash ? "cash-outline" : "wallet-outline"} size={22} color={active ? (isWallet ? C.primary : C.success) : C.textSecondary} />
                 </View>
-                <Text style={[rs.payLbl, active && { color: C.text, fontFamily: "Inter_700Bold" }]}>{pm === "cash" ? "Cash" : "Wallet"}</Text>
-                <Text style={[rs.paySub, insufficient && { color: C.danger }]}>
-                  {pm === "cash" ? "Pay on arrival" : `Rs. ${(user?.walletBalance ?? 0).toLocaleString()}`}
+                <Text style={[rs.payLbl, active && { color: C.text, fontFamily: "Inter_700Bold" }]}>
+                  {isCash ? "Cash" : "Wallet"}
                 </Text>
-                {active && <View style={[rs.payCheck, { backgroundColor: pm === "wallet" ? C.primary : C.success }]}><Ionicons name="checkmark" size={11} color="#fff" /></View>}
+                <Text style={[rs.paySub, insufficient && { color: C.danger }]}>
+                  {isCash ? "Pay on arrival" : `Rs. ${(user?.walletBalance ?? 0).toLocaleString()}`}
+                </Text>
+                {active && <View style={[rs.payCheck, { backgroundColor: isWallet ? C.primary : C.success }]}><Ionicons name="checkmark" size={11} color="#fff" /></View>}
               </Pressable>
             );
           })}
