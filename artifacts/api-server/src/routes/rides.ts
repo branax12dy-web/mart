@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { notificationsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { notificationsTable, rideBidsTable, ridesTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 
@@ -263,6 +263,11 @@ router.patch("/:id/cancel", async (req, res) => {
     .where(eq(ridesTable.id, req.params["id"]!))
     .returning();
 
+  /* Reject all pending bids (InDrive multi-bid) */
+  await db.update(rideBidsTable)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(and(eq(rideBidsTable.rideId, req.params["id"]!), eq(rideBidsTable.status, "pending")));
+
   /* Refund wallet fare if wallet payment + not bargaining (bargaining rides haven't charged yet) */
   if (ride.paymentMethod === "wallet" && ride.status !== "bargaining" && ride.bargainStatus !== "customer_offered") {
     const refundAmt = parseFloat(ride.fare);
@@ -302,22 +307,28 @@ router.patch("/:id/cancel", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════
-   PATCH /rides/:id/accept-counter — Customer accepts rider's counter offer
+   PATCH /rides/:id/accept-bid — Customer accepts a specific rider's bid
+   Body: { userId, bidId }
 ══════════════════════════════════════════════════════ */
-router.patch("/:id/accept-counter", async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) { res.status(400).json({ error: "userId required" }); return; }
+router.patch("/:id/accept-bid", async (req, res) => {
+  const { userId, bidId } = req.body;
+  if (!userId || !bidId) { res.status(400).json({ error: "userId and bidId required" }); return; }
 
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
+  const rideId = req.params["id"]!;
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
   if (ride.userId !== userId) { res.status(403).json({ error: "Not your ride" }); return; }
-  if (ride.bargainStatus !== "rider_countered") {
-    res.status(400).json({ error: "No rider counter offer to accept" }); return;
-  }
+  if (ride.status !== "bargaining") { res.status(400).json({ error: "Ride is not in bargaining state" }); return; }
 
-  const agreedFare = parseFloat(ride.counterFare ?? ride.fare);
+  /* Fetch the bid being accepted */
+  const [bid] = await db.select().from(rideBidsTable)
+    .where(and(eq(rideBidsTable.id, bidId), eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")))
+    .limit(1);
+  if (!bid) { res.status(404).json({ error: "Bid not found or no longer pending" }); return; }
 
-  /* If wallet payment, deduct now */
+  const agreedFare = parseFloat(bid.fare);
+
+  /* Wallet deduction if wallet payment */
   if (ride.paymentMethod === "wallet") {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
@@ -328,86 +339,90 @@ router.patch("/:id/accept-counter", async (req, res) => {
     await db.update(usersTable).set({ walletBalance: (balance - agreedFare).toFixed(2) }).where(eq(usersTable.id, userId));
     await db.insert(walletTransactionsTable).values({
       id: generateId(), userId, type: "debit", amount: agreedFare.toFixed(2),
-      description: `Ride payment (bargained) — #${ride.id.slice(-6).toUpperCase()}`,
+      description: `Ride payment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
     }).catch(() => {});
   }
 
+  /* Update the ride — assign rider, set fare, mark accepted */
   const [updated] = await db.update(ridesTable)
     .set({
-      status: "searching", /* now open for riders to accept at agreed price */
-      fare: agreedFare.toFixed(2),
+      status:        "accepted",
+      riderId:       bid.riderId,
+      riderName:     bid.riderName,
+      riderPhone:    bid.riderPhone,
+      fare:          agreedFare.toFixed(2),
+      counterFare:   agreedFare.toFixed(2),
       bargainStatus: "agreed",
-      offeredFare: agreedFare.toFixed(2),
-      updatedAt: new Date(),
+      acceptedAt:    new Date(),
+      updatedAt:     new Date(),
     })
-    .where(eq(ridesTable.id, req.params["id"]!))
+    .where(eq(ridesTable.id, rideId))
     .returning();
 
-  /* Notify rider who countered */
-  if (ride.riderId) {
-    await db.insert(notificationsTable).values({
-      id: generateId(), userId: ride.riderId,
-      title: "Customer ne Counter Accept Kiya! 🎉",
-      body: `Rs. ${agreedFare.toFixed(0)} ke fare par saudaa ho gaya.`,
-      type: "ride", icon: "checkmark-circle-outline",
-    }).catch(() => {});
-  }
+  /* Accept this bid, reject all others */
+  await db.update(rideBidsTable)
+    .set({ status: "accepted", updatedAt: new Date() })
+    .where(eq(rideBidsTable.id, bidId));
+  await db.update(rideBidsTable)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
+
+  /* Notify winning rider */
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: bid.riderId,
+    title: "Aapka Bid Accept Ho Gaya! 🎉",
+    body: `Customer ne aapka Rs. ${agreedFare.toFixed(0)} ka offer accept kar liya. Pickup ke liye jaayein!`,
+    type: "ride", icon: "checkmark-circle-outline",
+  }).catch(() => {});
 
   res.json({ ...formatRide(updated!), agreedFare });
 });
 
 /* ══════════════════════════════════════════════════════
-   PATCH /rides/:id/customer-counter — Customer sends a new counter offer
+   PATCH /rides/:id/customer-counter — Customer updates their offered fare
+   Body: { userId, offeredFare, note? }
+   Works anytime during bargaining; rejects all pending bids → riders re-bid
 ══════════════════════════════════════════════════════ */
 router.patch("/:id/customer-counter", async (req, res) => {
   const { userId, offeredFare: newOffer, note } = req.body;
   if (!userId || !newOffer) { res.status(400).json({ error: "userId and offeredFare required" }); return; }
 
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
+  const rideId = req.params["id"]!;
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
   if (ride.userId !== userId) { res.status(403).json({ error: "Not your ride" }); return; }
-  if (ride.bargainStatus !== "rider_countered") {
-    res.status(400).json({ error: "Can only counter when rider has sent a counter offer" }); return;
-  }
+  if (ride.status !== "bargaining") { res.status(400).json({ error: "Ride is not in bargaining state" }); return; }
 
   const s = await getPlatformSettings();
-  const bargainMaxRound = parseInt(s["ride_bargaining_max_rounds"] ?? "3", 10);
-  const bargainMinPct   = parseFloat(s["ride_bargaining_min_pct"] ?? "70");
-  const currentRounds   = ride.bargainRounds ?? 0;
-
-  if (currentRounds >= bargainMaxRound) {
-    res.status(400).json({ error: `Maximum ${bargainMaxRound} bargaining rounds allowed. Please accept or decline.` }); return;
-  }
-
-  const platformFare = parseFloat(ride.fare);
-  const parsedOffer  = parseFloat(String(newOffer));
-  const minOffer     = Math.ceil(platformFare * (bargainMinPct / 100));
+  const bargainMinPct = parseFloat(s["ride_bargaining_min_pct"] ?? "70");
+  const platformFare  = parseFloat(ride.fare);
+  const parsedOffer   = parseFloat(String(newOffer));
+  const minOffer      = Math.ceil(platformFare * (bargainMinPct / 100));
   if (parsedOffer < minOffer) {
     res.status(400).json({ error: `Minimum offer is Rs. ${minOffer}` }); return;
   }
 
+  /* Reject all pending bids so riders see fresh offer */
+  await db.update(rideBidsTable)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
+
+  const currentRounds = ride.bargainRounds ?? 0;
   const [updated] = await db.update(ridesTable)
     .set({
       offeredFare:   parsedOffer.toFixed(2),
       counterFare:   null,
-      bargainStatus: "customer_countered",
+      bargainStatus: "customer_offered",
       bargainRounds: currentRounds + 1,
       bargainNote:   note || ride.bargainNote,
       status:        "bargaining",
+      riderId:       null,
+      riderName:     null,
+      riderPhone:    null,
       updatedAt:     new Date(),
     })
-    .where(eq(ridesTable.id, req.params["id"]!))
+    .where(eq(ridesTable.id, rideId))
     .returning();
-
-  /* Notify the rider who countered */
-  if (ride.riderId) {
-    await db.insert(notificationsTable).values({
-      id: generateId(), userId: ride.riderId,
-      title: "Customer ne Counter Kiya 💬",
-      body: `Customer ka naya offer: Rs. ${parsedOffer.toFixed(0)}`,
-      type: "ride", icon: "chatbubble-outline",
-    }).catch(() => {});
-  }
 
   res.json(formatRide(updated!));
 });
@@ -426,10 +441,11 @@ router.get("/", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════
-   GET /rides/:id — Single ride details (with rider name join)
+   GET /rides/:id — Single ride details + pending bids (InDrive)
 ══════════════════════════════════════════════════════ */
 router.get("/:id", async (req, res) => {
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
+  const rideId = req.params["id"]!;
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
 
   /* Enrich with rider info if riderId set but riderName not stored */
@@ -442,7 +458,21 @@ router.get("/:id", async (req, res) => {
     riderPhone = riderUser?.phone || null;
   }
 
-  res.json({ ...formatRide(ride), riderName, riderPhone });
+  /* Include pending bids for bargaining rides */
+  const bids = ride.status === "bargaining"
+    ? await db.select().from(rideBidsTable)
+        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")))
+        .orderBy(rideBidsTable.createdAt)
+    : [];
+
+  const formattedBids = bids.map(b => ({
+    ...b,
+    fare: parseFloat(b.fare),
+    createdAt: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
+    updatedAt: b.updatedAt instanceof Date ? b.updatedAt.toISOString() : b.updatedAt,
+  }));
+
+  res.json({ ...formatRide(ride), riderName, riderPhone, bids: formattedBids });
 });
 
 export default router;

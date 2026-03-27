@@ -171,17 +171,16 @@
   - Previous: General Settings (appTagline, appVersion, supportEmail, supportHours, businessAddress, socialFacebook, socialInstagram) all wired. app_status is live/maintenance toggle. Vendor login footer uses dynamic commission % and businessAddress. -->
 <!-- Previous: Content Settings fully wired: all 9 content fields (6 text + 3 feature toggles) now propagate admin → API → all 3 apps with no loopholes. Customer profile support section fixed (phone dialer + WhatsApp). Admin Content section upgraded with textarea, char counters, app coverage hints. -->
 
-<!-- Previous: BARGAINING FRAMEWORK COMPLETE (Mol-Tol System):
-  - DB: rides table — offeredFare, counterFare, bargainStatus (null|customer_offered|rider_countered|customer_countered|agreed|expired), bargainRounds, bargainNote, acceptedAt columns
-  - Backend rides.ts: POST /rides/estimate returns bargainEnabled+minOffer; POST /rides supports offeredFare+bargainNote; PATCH /rides/:id/accept-counter; PATCH /rides/:id/customer-counter; GET /rides/:id with riderName JOIN
-  - Backend rider.ts: /rider/requests includes bargaining rides; /rider/rides/:id/accept handles bargaining wallet deduction; POST /rider/rides/:id/counter; POST /rider/rides/:id/reject-offer
-  - Customer app (ride/index.tsx): Estimate uses server fare (GST+surge), bargaining panel (toggle, offer input, note), RideTracker has "bargaining" + "rider_countered" screens with accept/counter/cancel UI
-  - Rider app (Home.tsx): Bargaining ride cards show 💬 badge, customer offer price, Accept/Counter/Reject buttons, counter offer input panel
-  - Admin rides.tsx: bargaining status filter button, bargainStatus badge + offered/counter fare in table and detail modal
-  - Admin settings.tsx: Ride Pricing tab has new "Price Bargaining" section with toggle+min%+maxRounds controls and live example
-  - platform-config.ts: bargainingEnabled, bargainingMinPct, bargainingMaxRounds exposed to customer app
-  - PlatformConfigContext.tsx: rides type + default + mapping updated with bargaining fields + riderEarningPct
-  - Admin defaults seeded: ride_bargaining_enabled=on, ride_bargaining_min_pct=70, ride_bargaining_max_rounds=3
+<!-- Previous: INDRIVE-EXACT MULTI-BID BARGAINING (Mol-Tol System — Complete Rebuild):
+  - NEW DB: ride_bids table (id, rideId, riderId, riderName, riderPhone, fare, note, status[pending|accepted|rejected], createdAt, updatedAt)
+  - OLD DB: rides table still has offeredFare, counterFare, bargainStatus, bargainRounds, bargainNote, acceptedAt (used for agreed state tracking)
+  - FLOW: Customer offers → ALL riders see bargaining ride simultaneously → riders submit bids (rideBids table, no ride lock) → customer sees LIVE list of all incoming bids → customer picks any bid → ride assigned + other bids rejected
+  - Backend rides.ts: PATCH /rides/:id/accept-bid (customer accepts specific bid by bidId), PATCH /rides/:id/customer-counter (update offer + reject all pending bids), GET /rides/:id now returns bids:[] array, PATCH /rides/:id/cancel rejects all pending bids
+  - Backend rider.ts: /rider/requests returns myBid:{id,fare,note}|null per ride; POST /rider/rides/:id/counter UPSERTS into rideBids (no ride lock); POST /rider/rides/:id/accept clears all pending bids; POST /rider/rides/:id/reject-offer cancels rider's own pending bid
+  - Customer app RideTracker: unified "bargaining" screen — amber gradient, shows "Mol-Tol Jari Hai", live bids list (each: rider name, price, Accept button), "Update Offer" collapsible section, Cancel button; polls every 5s
+  - Rider app Home.tsx: bargaining cards show myBid pending badge "WAITING FOR CUSTOMER" + Update/Cancel, or Accept/Bid buttons if no bid yet
+  - Admin: bargainStatus badge still shows customer_offered→agreed, ride_bids table visible via DB queries
+  - Admin settings: ride_bargaining_enabled/min_pct/max_rounds still wired
 -->
 
 ## Project Overview

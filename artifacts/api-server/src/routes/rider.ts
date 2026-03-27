@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, ridesTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, desc, and, or, sql, count, sum, gte, isNull } from "drizzle-orm";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
+import { eq, desc, and, or, sql, count, sum, gte, isNull, ne } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 
@@ -131,31 +131,43 @@ router.patch("/profile", async (req, res) => {
   });
 });
 
-/* ── GET /rider/requests — Available orders + rides (incl. bargaining) ── */
+/* ── GET /rider/requests — Available orders + rides (incl. bargaining, with own bid info) ── */
 router.get("/requests", async (req, res) => {
-  const [orders, rides] = await Promise.all([
+  const riderId = (req as any).riderId;
+  const [orders, rides, myBids] = await Promise.all([
     db.select().from(ordersTable)
       .where(or(eq(ordersTable.status, "confirmed"), eq(ordersTable.status, "preparing")))
       .orderBy(desc(ordersTable.createdAt)).limit(20),
+    /* Show searching rides + bargaining rides (unassigned, open to all) */
     db.select().from(ridesTable)
-      .where(or(
-        eq(ridesTable.status, "searching"),
-        /* Bargaining rides: show those where no rider has countered yet (open to all),
-           plus rides where this specific rider previously countered (customer_countered back to them) */
-        eq(ridesTable.status, "bargaining"),
+      .where(and(
+        or(eq(ridesTable.status, "searching"), eq(ridesTable.status, "bargaining")),
+        isNull(ridesTable.riderId),
       ))
-      .where(isNull(ridesTable.riderId))        /* only unassigned rides */
       .orderBy(desc(ridesTable.createdAt)).limit(30),
+    /* Fetch this rider's own bids on bargaining rides */
+    db.select().from(rideBidsTable)
+      .where(and(eq(rideBidsTable.riderId, riderId), eq(rideBidsTable.status, "pending"))),
   ]);
+
+  /* Map each bid by rideId for quick lookup */
+  const myBidMap = new Map<string, (typeof myBids)[0]>(myBids.map(b => [b.rideId, b]));
+
   res.json({
     orders: orders.map(o => ({ ...o, total: safeNum(o.total) })),
     rides:  rides.map(r => ({
       ...r,
-      fare:         safeNum(r.fare),
-      distance:     safeNum(r.distance),
-      offeredFare:  r.offeredFare  ? safeNum(r.offeredFare)  : null,
-      counterFare:  r.counterFare  ? safeNum(r.counterFare)  : null,
+      fare:          safeNum(r.fare),
+      distance:      safeNum(r.distance),
+      offeredFare:   r.offeredFare ? safeNum(r.offeredFare) : null,
+      counterFare:   r.counterFare ? safeNum(r.counterFare) : null,
       bargainRounds: r.bargainRounds ?? 0,
+      /* InDrive: include this rider's pending bid (if any) so UI can show "Bid Submitted" */
+      myBid: myBidMap.has(r.id) ? {
+        id:   myBidMap.get(r.id)!.id,
+        fare: safeNum(myBidMap.get(r.id)!.fare),
+        note: myBidMap.get(r.id)!.note,
+      } : null,
     })),
   });
 });
@@ -443,6 +455,11 @@ router.post("/rides/:id/accept", async (req, res) => {
     res.status(409).json({ error: "Ride already taken by another rider" }); return;
   }
 
+  /* Reject any pending bids on this ride (InDrive multi-bid cleanup) */
+  await db.update(rideBidsTable)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
+
   await db.insert(notificationsTable).values({
     id: generateId(), userId: updated.userId,
     title: "Rider Assigned! 🚗",
@@ -501,7 +518,7 @@ router.patch("/rides/:id/status", async (req, res) => {
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
 
-/* ── POST /rider/rides/:id/counter — Rider sends a counter offer on a bargaining ride ── */
+/* ── POST /rider/rides/:id/counter — Rider submits a bid on a bargaining ride (InDrive multi-bid) ── */
 router.post("/rides/:id/counter", async (req, res) => {
   const riderId   = (req as any).riderId;
   const riderUser = (req as any).riderUser;
@@ -515,85 +532,71 @@ router.post("/rides/:id/counter", async (req, res) => {
   if (ride.status !== "bargaining") {
     res.status(400).json({ error: "This ride is not in bargaining state" }); return;
   }
-  if (ride.riderId && ride.riderId !== riderId) {
-    res.status(403).json({ error: "Another rider has already countered this ride" }); return;
-  }
-
-  const s = await getPlatformSettings();
-  const bargainMaxRounds = parseInt(s["ride_bargaining_max_rounds"] ?? "3", 10);
-  const currentRounds    = ride.bargainRounds ?? 0;
-
-  if (currentRounds >= bargainMaxRounds) {
-    res.status(400).json({ error: `Maximum ${bargainMaxRounds} bargaining rounds allowed` }); return;
-  }
 
   const parsedCounter = safeNum(counterFare);
   const platformFare  = safeNum(ride.fare);
+  const offeredAmt    = safeNum(ride.offeredFare ?? 0);
+
   if (parsedCounter > platformFare) {
     res.status(400).json({ error: `Counter offer cannot exceed platform fare (Rs. ${platformFare.toFixed(0)})` }); return;
   }
-  const offeredAmt = safeNum(ride.offeredFare ?? 0);
   if (parsedCounter <= offeredAmt) {
     res.status(400).json({ error: `Counter offer must be higher than customer's offer (Rs. ${offeredAmt.toFixed(0)})` }); return;
   }
 
-  const [updated] = await db.update(ridesTable)
-    .set({
-      riderId,   /* tentatively lock this bargain to this rider */
-      riderName: riderUser.name || "Rider",
-      riderPhone: riderUser.phone,
-      counterFare: parsedCounter.toFixed(2),
-      bargainStatus: "rider_countered",
-      bargainRounds: currentRounds + 1,
-      bargainNote: note || ride.bargainNote,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)))
-    .returning();
+  /* Upsert: update existing pending bid OR insert new one */
+  const [existingBid] = await db.select({ id: rideBidsTable.id })
+    .from(rideBidsTable)
+    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.riderId, riderId), eq(rideBidsTable.status, "pending")))
+    .limit(1);
 
-  if (!updated) {
-    res.status(409).json({ error: "Another rider already responded to this ride" }); return;
+  let bid;
+  if (existingBid) {
+    /* Update existing bid */
+    const [b] = await db.update(rideBidsTable)
+      .set({ fare: parsedCounter.toFixed(2), note: note ?? null, updatedAt: new Date() })
+      .where(eq(rideBidsTable.id, existingBid.id))
+      .returning();
+    bid = b;
+  } else {
+    /* Insert fresh bid */
+    const [b] = await db.insert(rideBidsTable).values({
+      id:         generateId(),
+      rideId,
+      riderId,
+      riderName:  riderUser.name || "Rider",
+      riderPhone: riderUser.phone ?? null,
+      fare:       parsedCounter.toFixed(2),
+      note:       note ?? null,
+      status:     "pending",
+    }).returning();
+    bid = b;
   }
 
-  /* Notify customer */
-  await db.insert(notificationsTable).values({
-    id: generateId(), userId: ride.userId,
-    title: "Rider ne Counter Kiya 💬",
-    body: `${riderUser.name || "Ek rider"} ka counter offer: Rs. ${parsedCounter.toFixed(0)}. Accept ya counter karein!`,
-    type: "ride", icon: "chatbubble-outline", link: "/ride",
-  }).catch(() => {});
+  /* Notify customer that a new bid has come in (only on first bid from this rider) */
+  if (!existingBid) {
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: ride.userId,
+      title: "Naya Bid Aaya! 💬",
+      body: `${riderUser.name || "Ek rider"} ne Rs. ${parsedCounter.toFixed(0)} ka bid diya. Dekhein aur choose karein!`,
+      type: "ride", icon: "chatbubble-outline", link: "/ride",
+    }).catch(() => {});
+  }
 
-  res.json({ ...updated, fare: safeNum(updated.fare), counterFare: parsedCounter });
+  res.json({ success: true, bid: { ...bid, fare: safeNum(bid!.fare) } });
 });
 
-/* ── POST /rider/rides/:id/reject-offer — Rider rejects/passes on a bargaining ride ── */
+/* ── POST /rider/rides/:id/reject-offer — Rider dismisses a bargaining ride (local dismiss, no DB lock) ── */
 router.post("/rides/:id/reject-offer", async (req, res) => {
+  /* InDrive model: riders don't lock the ride anymore, so "rejection" is purely a local dismiss.
+     If this rider had submitted a pending bid, we cancel it. */
   const riderId = (req as any).riderId;
   const rideId  = req.params["id"]!;
 
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
-  if (!["bargaining", "searching"].includes(ride.status)) {
-    res.status(400).json({ error: "Cannot reject this ride at its current stage" }); return;
-  }
-  /* Only the rider who countered (riderId set) can reject; unassigned bargains just get dismissed locally */
-  if (ride.riderId && ride.riderId !== riderId) {
-    res.status(403).json({ error: "Not your bargaining session" }); return;
-  }
-
-  /* If this rider had tentatively locked the bargain, free it for others */
-  if (ride.riderId === riderId) {
-    await db.update(ridesTable)
-      .set({
-        riderId:      null,
-        riderName:    null,
-        riderPhone:   null,
-        counterFare:  null,
-        bargainStatus: "customer_offered",  /* reset to customer's original offer */
-        updatedAt: new Date(),
-      })
-      .where(eq(ridesTable.id, rideId));
-  }
+  /* Cancel any pending bid this rider submitted */
+  await db.update(rideBidsTable)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.riderId, riderId), eq(rideBidsTable.status, "pending")));
 
   res.json({ success: true, message: "Ride dismissed" });
 });

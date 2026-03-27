@@ -358,7 +358,6 @@ export default function Home() {
                     const offeredFare  = r.offeredFare  ?? r.fare;
                     const effectiveFare = isBargain ? offeredFare : r.fare;
                     const earnings     = effectiveFare * (config.finance.riderEarningPct / 100);
-                    const isMyCounter  = r.bargainStatus === "customer_countered"; /* customer countered back to this rider */
                     const mapsUrl = (r.pickupLat && r.pickupLng)
                       ? `https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`
                       : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`;
@@ -377,9 +376,9 @@ export default function Home() {
                                   💬 BARGAIN OFFER
                                 </span>
                               )}
-                              {isMyCounter && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-                                  ↩ Customer Countered
+                              {isBargain && r.myBid && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                  ✓ Bid Submitted
                                 </span>
                               )}
                               <RequestAge createdAt={r.createdAt} />
@@ -435,64 +434,98 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* Bargaining actions */}
+                        {/* Bargaining actions — InDrive multi-bid model */}
                         {isBargain && (
                           <div className="mt-3 space-y-2">
-                            {/* Accept the customer's offer */}
-                            <div className="flex gap-2">
-                              <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl flex-shrink-0">
-                                🗺️
-                              </a>
-                              <button onClick={() => acceptRideMut.mutate(r.id)}
-                                disabled={acceptRideMut.isPending}
-                                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                                ✓ Accept Rs. {offeredFare}
-                              </button>
-                              <button onClick={() => rejectOfferMut.mutate(r.id)}
-                                disabled={rejectOfferMut.isPending}
-                                className="bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-red-200 transition-colors">
-                                ✕
-                              </button>
-                            </div>
 
-                            {/* Counter offer toggle */}
-                            {!showCounter[r.id] ? (
-                              <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
-                                className="w-full border-2 border-orange-300 text-orange-700 font-bold py-2.5 rounded-xl text-sm bg-orange-50 hover:bg-orange-100 transition-colors">
-                                💬 Counter Offer karein
-                              </button>
-                            ) : (
-                              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2">
-                                <p className="text-xs font-semibold text-orange-700">
-                                  Counter offer (Rs. {offeredFare} – Rs. {r.fare} ke beech):
-                                </p>
-                                <div className="flex gap-2">
-                                  <div className="flex-1 flex items-center bg-white border border-orange-300 rounded-xl px-3">
-                                    <span className="text-sm font-bold text-gray-500 mr-1">Rs.</span>
-                                    <input
-                                      type="number"
-                                      value={counterInputs[r.id] || ""}
-                                      onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                      placeholder={String(Math.ceil((offeredFare + r.fare) / 2))}
-                                      className="flex-1 py-2.5 text-sm font-bold text-gray-900 outline-none bg-transparent"
-                                    />
+                            {/* If rider has already submitted a bid → show pending badge + update */}
+                            {r.myBid ? (
+                              <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-xs font-bold text-orange-700">💬 Aapka Bid Pending</p>
+                                    <p className="text-lg font-extrabold text-orange-600">Rs. {Math.round(r.myBid.fare)}</p>
                                   </div>
-                                  <button
-                                    onClick={() => {
-                                      const amt = parseFloat(counterInputs[r.id] || "");
-                                      if (!isNaN(amt)) counterRideMut.mutate({ id: r.id, counterFare: amt });
-                                    }}
-                                    disabled={counterRideMut.isPending || !counterInputs[r.id]}
-                                    className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                                    {counterRideMut.isPending ? "..." : "Send"}
+                                  <span className="text-[10px] font-bold px-2 py-1 bg-orange-100 text-orange-600 rounded-full animate-pulse">
+                                    WAITING FOR CUSTOMER
+                                  </span>
+                                </div>
+                                {/* Update bid option */}
+                                {!showCounter[r.id] ? (
+                                  <div className="flex gap-2">
+                                    <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
+                                      className="flex-1 border border-orange-300 text-orange-700 font-bold py-2 rounded-lg text-sm bg-white hover:bg-orange-50 transition-colors">
+                                      ✏️ Update Bid
+                                    </button>
+                                    <button onClick={() => rejectOfferMut.mutate(r.id)}
+                                      disabled={rejectOfferMut.isPending}
+                                      className="bg-gray-100 text-gray-500 font-bold px-4 py-2 rounded-lg text-sm hover:bg-gray-200 transition-colors">
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-2">
+                                    <div className="flex-1 flex items-center bg-white border border-orange-300 rounded-xl px-3">
+                                      <span className="text-sm font-bold text-gray-500 mr-1">Rs.</span>
+                                      <input type="number" value={counterInputs[r.id] || ""} onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                        placeholder={String(Math.ceil((offeredFare + r.fare) / 2))}
+                                        className="flex-1 py-2 text-sm font-bold text-gray-900 outline-none bg-transparent" />
+                                    </div>
+                                    <button onClick={() => { const amt = parseFloat(counterInputs[r.id] || ""); if (!isNaN(amt)) counterRideMut.mutate({ id: r.id, counterFare: amt }); }}
+                                      disabled={counterRideMut.isPending || !counterInputs[r.id]}
+                                      className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-sm disabled:opacity-60 transition-colors">
+                                      {counterRideMut.isPending ? "..." : "Update"}
+                                    </button>
+                                    <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))} className="bg-gray-100 text-gray-500 font-bold px-3 rounded-xl text-sm">✕</button>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              /* No bid yet → Accept or Submit Bid */
+                              <>
+                                <div className="flex gap-2">
+                                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl flex-shrink-0">
+                                    🗺️
+                                  </a>
+                                  <button onClick={() => acceptRideMut.mutate(r.id)}
+                                    disabled={acceptRideMut.isPending}
+                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
+                                    ✓ Accept Rs. {Math.round(offeredFare)}
                                   </button>
-                                  <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))}
-                                    className="bg-gray-100 text-gray-500 font-bold px-3 rounded-xl text-sm">
+                                  <button onClick={() => rejectOfferMut.mutate(r.id)}
+                                    disabled={rejectOfferMut.isPending}
+                                    className="bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-red-200 transition-colors">
                                     ✕
                                   </button>
                                 </div>
-                              </div>
+                                {!showCounter[r.id] ? (
+                                  <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
+                                    className="w-full border-2 border-orange-300 text-orange-700 font-bold py-2.5 rounded-xl text-sm bg-orange-50 hover:bg-orange-100 transition-colors">
+                                    💬 Apna Bid Submit Karein
+                                  </button>
+                                ) : (
+                                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2">
+                                    <p className="text-xs font-semibold text-orange-700">
+                                      Aapka bid (Rs. {Math.round(offeredFare)} – Rs. {Math.round(r.fare)} ke beech):
+                                    </p>
+                                    <div className="flex gap-2">
+                                      <div className="flex-1 flex items-center bg-white border border-orange-300 rounded-xl px-3">
+                                        <span className="text-sm font-bold text-gray-500 mr-1">Rs.</span>
+                                        <input type="number" value={counterInputs[r.id] || ""} onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                          placeholder={String(Math.ceil((offeredFare + r.fare) / 2))}
+                                          className="flex-1 py-2.5 text-sm font-bold text-gray-900 outline-none bg-transparent" />
+                                      </div>
+                                      <button onClick={() => { const amt = parseFloat(counterInputs[r.id] || ""); if (!isNaN(amt)) counterRideMut.mutate({ id: r.id, counterFare: amt }); }}
+                                        disabled={counterRideMut.isPending || !counterInputs[r.id]}
+                                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
+                                        {counterRideMut.isPending ? "..." : "Bid"}
+                                      </button>
+                                      <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))} className="bg-gray-100 text-gray-500 font-bold px-3 rounded-xl text-sm">✕</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         )}

@@ -122,29 +122,30 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
     prevStatus.current = st || "";
   }, [ride?.status]);
 
-  /* Bargaining counter state */
-  const [counterInput,   setCounterInput]   = useState("");
-  const [counterLoading, setCounterLoading] = useState(false);
-  const [acceptLoading,  setAcceptLoading]  = useState(false);
+  /* Bargaining state — InDrive multi-bid model */
+  const [updateOfferInput,  setUpdateOfferInput]  = useState("");
+  const [updateOfferLoading,setUpdateOfferLoading] = useState(false);
+  const [showUpdateOffer,   setShowUpdateOffer]    = useState(false);
+  const [acceptBidId,       setAcceptBidId]        = useState<string | null>(null);  /* which bid is loading */
 
-  const acceptCounter = async () => {
-    setAcceptLoading(true);
+  const acceptBid = async (bidId: string) => {
+    setAcceptBidId(bidId);
     try {
-      const r = await fetch(`${API}/rides/${rideId}/accept-counter`, {
+      const r = await fetch(`${API}/rides/${rideId}/accept-bid`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, bidId }),
       });
       const d = await r.json();
       if (r.ok) setRide(d);
     } catch {}
-    setAcceptLoading(false);
+    setAcceptBidId(null);
   };
 
-  const sendCustomerCounter = async () => {
-    const amt = parseFloat(counterInput);
+  const sendUpdateOffer = async () => {
+    const amt = parseFloat(updateOfferInput);
     if (isNaN(amt) || amt <= 0) return;
-    setCounterLoading(true);
+    setUpdateOfferLoading(true);
     try {
       const r = await fetch(`${API}/rides/${rideId}/customer-counter`, {
         method: "PATCH",
@@ -152,9 +153,9 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
         body: JSON.stringify({ userId, offeredFare: amt }),
       });
       const d = await r.json();
-      if (r.ok) { setRide(d); setCounterInput(""); }
+      if (r.ok) { setRide(d); setUpdateOfferInput(""); setShowUpdateOffer(false); }
     } catch {}
-    setCounterLoading(false);
+    setUpdateOfferLoading(false);
   };
 
   /* ── Poll every 5s ── */
@@ -196,146 +197,145 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
   const stepIdx  = STEPS.indexOf(status);
   const elapsedStr = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
-  /* ════════════════ BARGAINING — Rider Counter Offer ════════════════ */
-  if (status === "bargaining" && ride?.bargainStatus === "rider_countered") {
-    const riderCounter = ride?.counterFare ?? 0;
-    const platformFare = ride?.fare ?? 0;
-    const riderName    = ride?.riderName || "Rider";
-    return (
-      <View style={{ flex: 1 }}>
-        <LinearGradient colors={["#7C3AED", "#6D28D9", "#5B21B6"]} style={StyleSheet.absoluteFillObject} />
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 20 }}>
-          <View style={{ backgroundColor: "rgba(255,255,255,0.15)", width: 90, height: 90, borderRadius: 45, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontSize: 42 }}>💬</Text>
-          </View>
-          <View style={{ alignItems: "center", gap: 6 }}>
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: "#fff", textAlign: "center" }}>
-              {riderName} ka Counter Offer!
-            </Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.75)", textAlign: "center" }}>
-              Rider ne aapka offer dekhaa aur nayi price suggest ki
-            </Text>
-          </View>
-
-          {/* Counter fare box */}
-          <View style={{ backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 20, padding: 24, alignItems: "center", width: "100%", gap: 4 }}>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Rider ki suggested price</Text>
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 38, color: "#FCD34D" }}>Rs. {riderCounter}</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-              Platform fare: Rs. {platformFare} · Aapka offer: Rs. {ride?.offeredFare ?? 0}
-            </Text>
-          </View>
-
-          <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: "rgba(255,255,255,0.85)", textAlign: "center" }}>
-            Kya karein?
-          </Text>
-
-          {/* Action buttons */}
-          <View style={{ width: "100%", gap: 10 }}>
-            {/* Accept counter */}
-            <Pressable
-              onPress={acceptCounter}
-              disabled={acceptLoading}
-              style={{ backgroundColor: "#10B981", borderRadius: 16, paddingVertical: 16, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}>
-              {acceptLoading ? <ActivityIndicator color="#fff" size="small" /> : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Accept Rs. {riderCounter}</Text>
-                </>
-              )}
-            </Pressable>
-
-            {/* Customer counter */}
-            <View style={{ backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 16, padding: 14, gap: 8 }}>
-              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>Ya apna counter offer karein:</Text>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <View style={{ flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12 }}>
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Rs.</Text>
-                  <TextInput
-                    value={counterInput}
-                    onChangeText={setCounterInput}
-                    keyboardType="numeric"
-                    placeholder={String(Math.ceil((riderCounter + (ride?.offeredFare ?? 0)) / 2))}
-                    placeholderTextColor="#9CA3AF"
-                    style={{ flex: 1, fontFamily: "Inter_700Bold", fontSize: 18, color: "#1F2937", paddingVertical: 10, paddingHorizontal: 6 }}
-                  />
-                </View>
-                <Pressable
-                  onPress={sendCustomerCounter}
-                  disabled={counterLoading || !counterInput}
-                  style={{ backgroundColor: "#F59E0B", borderRadius: 12, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", opacity: (!counterInput || counterLoading) ? 0.6 : 1 }}>
-                  {counterLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>Counter</Text>}
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Cancel */}
-            <Pressable
-              onPress={cancelRide}
-              disabled={cancelling}
-              style={{ alignItems: "center", padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.08)" }}>
-              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "rgba(255,255,255,0.8)" }}>
-                {cancelling ? "Cancelling..." : "Cancel Ride"}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-        <View style={{ paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 24) }}>
-          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>
-            Ride #{rideId.slice(-8).toUpperCase()} · Round {ride?.bargainRounds ?? 1}
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  /* ════════════════ BARGAINING — Waiting for Rider Response ════════════════ */
+  /* ════════════════ BARGAINING — InDrive Live Bids Screen ════════════════ */
   if (status === "bargaining") {
     const offeredFare = ride?.offeredFare ?? 0;
+    const bids: any[]  = ride?.bids ?? [];
+    const hasBids      = bids.length > 0;
+
     return (
       <View style={{ flex: 1 }}>
-        <LinearGradient colors={["#92400E", "#B45309", "#D97706"]} style={StyleSheet.absoluteFillObject} />
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
-          <View style={{ backgroundColor: "rgba(255,255,255,0.13)", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginBottom: 36 }}>
-            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: "rgba(255,255,255,0.9)", letterSpacing: 1 }}>
-              OFFER PENDING · #{rideId.slice(-8).toUpperCase()}
+        <LinearGradient colors={["#78350F", "#B45309", "#D97706"]} style={StyleSheet.absoluteFillObject} />
+
+        {/* Header */}
+        <View style={{ paddingTop: topPad + 16, paddingHorizontal: 24, paddingBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <View>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" }}>Mol-Tol Jari Hai 💬</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+              #{rideId.slice(-8).toUpperCase()} · {elapsedStr}
             </Text>
           </View>
-
-          {/* Animated chat bubble */}
-          <View style={{ width: 230, height: 230, alignItems: "center", justifyContent: "center" }}>
-            <Animated.View style={{ position: "absolute", width: 230, height: 230, borderRadius: 115, backgroundColor: "rgba(255,255,255,0.07)", transform: [{ scale: ring3 }], opacity: ring3Op }} />
-            <Animated.View style={{ position: "absolute", width: 176, height: 176, borderRadius: 88,  backgroundColor: "rgba(255,255,255,0.11)", transform: [{ scale: ring2 }], opacity: ring2Op }} />
-            <Animated.View style={{ position: "absolute", width: 122, height: 122, borderRadius: 61,  backgroundColor: "rgba(255,255,255,0.17)", transform: [{ scale: ring1 }], opacity: ring1Op }} />
-            <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: "rgba(255,255,255,0.24)", alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)" }}>
-              <Text style={{ fontSize: 40 }}>💬</Text>
-            </View>
-          </View>
-
-          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: "#fff", marginTop: 36, textAlign: "center" }}>
-            Offer Bheja Gaya!
-          </Text>
-          <View style={{ backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 16, padding: 18, marginTop: 20, width: "100%", alignItems: "center", gap: 4 }}>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.8)" }}>Aapka offer</Text>
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 34, color: "#FCD34D" }}>Rs. {offeredFare}</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-              Riders ko aapka offer dikh raha hai. Jab rider respond karega, aapko notification milegi.
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: 18, backgroundColor: "rgba(255,255,255,0.12)", paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 }}>
-            <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.8)" />
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
-              Waiting for {elapsedStr}
-            </Text>
+          <View style={{ backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, alignItems: "center" }}>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: "#FCD34D" }}>Rs. {offeredFare}</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: "rgba(255,255,255,0.7)" }}>aapka offer</Text>
           </View>
         </View>
 
-        <View style={{ paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 24) + 16 }}>
-          <Pressable onPress={cancelRide} disabled={cancelling} style={{ alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.1)" }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120, gap: 12 }} showsVerticalScrollIndicator={false}>
+
+          {/* ── No bids yet — waiting animation ── */}
+          {!hasBids && (
+            <View style={{ alignItems: "center", paddingVertical: 40 }}>
+              <View style={{ width: 180, height: 180, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
+                <Animated.View style={{ position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.07)", transform: [{ scale: ring3 }], opacity: ring3Op }} />
+                <Animated.View style={{ position: "absolute", width: 136, height: 136, borderRadius: 68,  backgroundColor: "rgba(255,255,255,0.11)", transform: [{ scale: ring2 }], opacity: ring2Op }} />
+                <Animated.View style={{ position: "absolute", width: 92,  height: 92,  borderRadius: 46,  backgroundColor: "rgba(255,255,255,0.17)", transform: [{ scale: ring1 }], opacity: ring1Op }} />
+                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "rgba(255,255,255,0.24)", alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ fontSize: 34 }}>💬</Text>
+                </View>
+              </View>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff", textAlign: "center" }}>Riders Dekh Rahe Hain</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.7)", textAlign: "center", marginTop: 6, lineHeight: 20 }}>
+                Jab koi rider bid karega, aap yahaan dekh sakte hain aur best offer choose kar sakte hain
+              </Text>
+            </View>
+          )}
+
+          {/* ── Bids list ── */}
+          {hasBids && (
+            <>
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "rgba(255,255,255,0.85)", marginBottom: 4 }}>
+                {bids.length} Rider{bids.length > 1 ? "s ne" : " ne"} Bid Diya — Best choose karein:
+              </Text>
+              {bids.map((bid: any) => (
+                <View key={bid.id} style={{ backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 20, padding: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" }}>
+                  {/* Rider info */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 22 }}>🏍️</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>{bid.riderName}</Text>
+                      {bid.note ? (
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>💬 {bid.note}</Text>
+                      ) : null}
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: "#FCD34D" }}>Rs. {Math.round(bid.fare)}</Text>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: "rgba(255,255,255,0.6)" }}>
+                        {bid.fare < offeredFare ? `Rs. ${Math.round(offeredFare - bid.fare)} zyada` : bid.fare === offeredFare ? "aapke offer pe" : `Rs. ${Math.round(bid.fare - offeredFare)} kam mein`}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Accept this bid */}
+                  <Pressable
+                    onPress={() => acceptBid(bid.id)}
+                    disabled={acceptBidId !== null}
+                    style={{ backgroundColor: "#10B981", borderRadius: 14, paddingVertical: 13, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, opacity: acceptBidId !== null ? 0.7 : 1 }}>
+                    {acceptBidId === bid.id
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : (
+                        <>
+                          <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Accept — Rs. {Math.round(bid.fare)}</Text>
+                        </>
+                      )
+                    }
+                  </Pressable>
+                </View>
+              ))}
+            </>
+          )}
+
+          {/* ── Update Offer Section ── */}
+          <View style={{ backgroundColor: "rgba(255,255,255,0.11)", borderRadius: 18, overflow: "hidden" }}>
+            <Pressable
+              onPress={() => setShowUpdateOffer(v => !v)}
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16 }}>
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" }}>✏️ Apna Offer Update Karein</Text>
+              <Ionicons name={showUpdateOffer ? "chevron-up" : "chevron-down"} size={18} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+            {showUpdateOffer && (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                  Naya offer dene se sab pending bids cancel ho jayenge aur riders fresh bid karenge
+                </Text>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <View style={{ flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12 }}>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Rs.</Text>
+                    <TextInput
+                      value={updateOfferInput}
+                      onChangeText={setUpdateOfferInput}
+                      keyboardType="numeric"
+                      placeholder={String(Math.ceil(offeredFare * 1.1))}
+                      placeholderTextColor="#9CA3AF"
+                      style={{ flex: 1, fontFamily: "Inter_700Bold", fontSize: 18, color: "#1F2937", paddingVertical: 10, paddingHorizontal: 6 }}
+                    />
+                  </View>
+                  <Pressable
+                    onPress={sendUpdateOffer}
+                    disabled={updateOfferLoading || !updateOfferInput}
+                    style={{ backgroundColor: "#F59E0B", borderRadius: 12, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", opacity: (!updateOfferInput || updateOfferLoading) ? 0.6 : 1 }}>
+                    {updateOfferLoading
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>Update</Text>
+                    }
+                  </Pressable>
+                </View>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+
+        {/* Cancel button */}
+        <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 24) + 8, backgroundColor: "transparent" }}>
+          <Pressable
+            onPress={() => setShowCancelModal(true)}
+            disabled={cancelling}
+            style={{ alignItems: "center", padding: 15, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)", backgroundColor: "rgba(0,0,0,0.25)" }}>
             {cancelling
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>Cancel Offer</Text>
+              : <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "rgba(255,255,255,0.9)" }}>Cancel Offer</Text>
             }
           </Pressable>
         </View>
