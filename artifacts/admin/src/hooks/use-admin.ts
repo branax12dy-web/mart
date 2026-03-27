@@ -265,7 +265,7 @@ export const useRidesEnriched = () => {
   return useQuery({
     queryKey: ["admin-rides-enriched"],
     queryFn: () => fetcher("/rides-enriched"),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: 10_000,
   });
 };
 

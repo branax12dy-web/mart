@@ -63,7 +63,7 @@ function RideDetailModal({
   ride: any;
   onClose: () => void;
   onUpdateStatus: (id: string, status: string, opts?: any) => void;
-  onAssign: (id: string, name: string, phone: string) => void;
+  onAssign: (id: string, name: string, phone: string) => Promise<void>;
 }) {
   const [assignName,  setAssignName]  = useState("");
   const [assignPhone, setAssignPhone] = useState("");
@@ -80,12 +80,16 @@ function RideDetailModal({
     }
   };
 
-  const handleAssign = () => {
+  const handleAssign = async () => {
     if (!assignName.trim() || !assignPhone.trim()) {
       toast({ title: "Name aur phone number zaroor likhein", variant: "destructive" }); return;
     }
     setAssigning(true);
-    onAssign(ride.id, assignName.trim(), assignPhone.trim());
+    try {
+      await onAssign(ride.id, assignName.trim(), assignPhone.trim());
+    } catch {
+      setAssigning(false);
+    }
   };
 
   const handleCancel = () => {
@@ -143,7 +147,9 @@ function RideDetailModal({
               </p>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div>
-                  <p className="text-xl font-extrabold text-orange-600">{formatCurrency(ride.offeredFare ?? 0)}</p>
+                  <p className="text-xl font-extrabold text-orange-600">
+                    {ride.offeredFare != null ? formatCurrency(ride.offeredFare) : "—"}
+                  </p>
                   <p className="text-[10px] text-orange-500">Customer Offer</p>
                 </div>
                 <div>
@@ -391,14 +397,14 @@ export default function Rides() {
 
   /* ── Stats ── */
   const activeCount = bargaining.length + searching.length + inProgress.length;
-  const totalRevenue = completed.reduce((s: number, r: any) => s + (r.fare || 0), 0);
+  const totalRevenue = completed.reduce((s: number, r: any) => s + (r.counterFare ?? r.fare ?? 0), 0);
 
   /* ── History search filter ── */
   const q = search.toLowerCase();
   const historyFiltered = [...completed, ...cancelled].filter((r: any) =>
     r.id.toLowerCase().includes(q) ||
     (r.userName  || "").toLowerCase().includes(q) ||
-    (r.userPhone || "").includes(q) ||
+    (r.userPhone || "").toLowerCase().includes(q) ||
     (r.riderName || "").toLowerCase().includes(q)
   );
 
@@ -410,13 +416,19 @@ export default function Rides() {
     });
   };
 
-  const handleAssign = (id: string, name: string, phone: string) => {
-    updateMutation.mutate({ id, status: "accepted", riderName: name, riderPhone: phone }, {
-      onSuccess: () => {
-        toast({ title: "Rider assigned & Accepted ✅" });
-        setSelectedRide(null);
-      },
-      onError: err => toast({ title: "Assignment failed", description: err.message, variant: "destructive" }),
+  const handleAssign = (id: string, name: string, phone: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      updateMutation.mutate({ id, status: "accepted", riderName: name, riderPhone: phone }, {
+        onSuccess: () => {
+          toast({ title: "Rider assigned & Accepted ✅" });
+          setSelectedRide(null);
+          resolve();
+        },
+        onError: err => {
+          toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
+          reject(err);
+        },
+      });
     });
   };
 
@@ -746,22 +758,32 @@ export default function Rides() {
                           <p className="text-xs text-muted-foreground">{r.distance} km</p>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
-                          <Select
-                            value={r.status}
-                            onValueChange={val => {
-                              if (!allowedNext(r).includes(val)) return;
-                              handleUpdateStatus(r.id, val);
-                            }}
-                          >
-                            <SelectTrigger className={`w-32 h-8 text-[10px] font-bold uppercase tracking-wider border-2 ${getStatusColor(r.status)}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allowedNext(r).map(s => (
-                                <SelectItem key={s} value={s} className="text-xs uppercase font-bold">{STATUS_LABELS[s]}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center gap-1.5">
+                            <Select
+                              value={r.status}
+                              onValueChange={val => {
+                                if (val === r.status || val === "cancelled") return;
+                                if (!allowedNext(r).includes(val)) return;
+                                handleUpdateStatus(r.id, val);
+                              }}
+                            >
+                              <SelectTrigger className={`w-28 h-8 text-[10px] font-bold uppercase tracking-wider border-2 ${getStatusColor(r.status)}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {allowedNext(r).filter(s => s !== "cancelled").map(s => (
+                                  <SelectItem key={s} value={s} className="text-xs uppercase font-bold">{STATUS_LABELS[s]}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <button
+                              onClick={() => openRide(r)}
+                              title="Open detail for cancel & more options"
+                              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border/50 hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -896,7 +918,7 @@ export default function Rides() {
           onClose={() => setSelectedRide(null)}
           onUpdateStatus={(id, status, opts) => {
             handleUpdateStatus(id, status, opts);
-            setSelectedRide((r: any) => r ? { ...r, status } : null);
+            setSelectedRide(null);
           }}
           onAssign={handleAssign}
         />
