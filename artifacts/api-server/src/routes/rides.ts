@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { liveLocationsTable, notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, usersTable, walletTransactionsTable, popularLocationsTable } from "@workspace/db/schema";
+import { liveLocationsTable, notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, usersTable, walletTransactionsTable, popularLocationsTable, rideEventLogsTable } from "@workspace/db/schema";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { ensureDefaultRideServices, ensureDefaultLocations, getPlatformSettings } from "./admin.js";
@@ -557,6 +557,64 @@ router.get("/:id", async (req, res) => {
   }
 
   res.json({ ...formatRide(ride), riderName, riderPhone, bids: formattedBids, riderLat, riderLng, riderLocAge });
+});
+
+/* ════════════════════════════════════════════════════════
+   POST /rides/:id/event-log
+   Rider calls this on every status change (accepted →
+   arrived → in_transit → completed / cancelled).
+   Saves rider GPS + event type with the ride reference.
+   Professional journey audit trail — used by admin.
+════════════════════════════════════════════════════════ */
+router.post("/:id/event-log", async (req, res) => {
+  const rideId  = req.params["id"]!;
+  const { riderId, event, lat, lng, notes } = req.body;
+
+  if (!riderId || !event) {
+    res.status(400).json({ error: "riderId and event are required" });
+    return;
+  }
+
+  /* Verify ride exists */
+  const [ride] = await db.select({ id: ridesTable.id })
+    .from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  const id = generateId();
+  await db.insert(rideEventLogsTable).values({
+    id,
+    rideId,
+    riderId,
+    event,
+    lat:  lat  != null ? String(lat)  : null,
+    lng:  lng  != null ? String(lng)  : null,
+    notes: notes ?? null,
+    createdAt: new Date(),
+  });
+
+  res.json({ success: true, id });
+});
+
+/* ════════════════════════════════════════════════════════
+   GET /rides/:id/event-logs   (public — used by admin)
+════════════════════════════════════════════════════════ */
+router.get("/:id/event-logs", async (req, res) => {
+  const logs = await db.select().from(rideEventLogsTable)
+    .where(eq(rideEventLogsTable.rideId, req.params["id"]!))
+    .orderBy(asc(rideEventLogsTable.createdAt));
+
+  const formatted = logs.map(l => ({
+    id:        l.id,
+    rideId:    l.rideId,
+    riderId:   l.riderId,
+    event:     l.event,
+    lat:       l.lat  != null ? parseFloat(String(l.lat))  : null,
+    lng:       l.lng  != null ? parseFloat(String(l.lng))  : null,
+    notes:     l.notes,
+    createdAt: l.createdAt instanceof Date ? l.createdAt.toISOString() : l.createdAt,
+  }));
+
+  res.json({ logs: formatted, total: formatted.length });
 });
 
 export default router;

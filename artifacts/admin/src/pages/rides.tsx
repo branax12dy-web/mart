@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { fetcher } from "@/lib/api";
 import {
   useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
   usePopularLocations, useCreateLocation, useUpdateLocation, useDeleteLocation,
@@ -371,6 +373,9 @@ function RideDetailModal({
             </div>
           )}
 
+          {/* ── Journey Log (GPS milestones) ── */}
+          <RideJourneyLog rideId={ride.id} />
+
           {/* Timestamps */}
           <div className="flex justify-between text-xs text-muted-foreground border-t border-border/40 pt-3">
             <span>Booked: {formatDate(ride.createdAt)}</span>
@@ -379,6 +384,88 @@ function RideDetailModal({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ── Ride Journey Log Component ── */
+const EVENT_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
+  accepted:         { label: "Ride Accepted",      icon: "✅", color: "text-green-700 bg-green-50 border-green-200"   },
+  arrived:          { label: "Rider Arrived",      icon: "📍", color: "text-blue-700 bg-blue-50 border-blue-200"     },
+  in_transit:       { label: "Ride Started",       icon: "🚀", color: "text-indigo-700 bg-indigo-50 border-indigo-200"},
+  completed:        { label: "Ride Completed",     icon: "🏁", color: "text-purple-700 bg-purple-50 border-purple-200"},
+  cancelled:        { label: "Ride Cancelled",     icon: "❌", color: "text-red-700 bg-red-50 border-red-200"         },
+  order_store:      { label: "Going to Store",     icon: "🏪", color: "text-amber-700 bg-amber-50 border-amber-200"  },
+  order_picked_up:  { label: "Order Picked Up",   icon: "📦", color: "text-blue-700 bg-blue-50 border-blue-200"     },
+  order_delivered:  { label: "Order Delivered",   icon: "✅", color: "text-green-700 bg-green-50 border-green-200"   },
+  order_cancelled:  { label: "Order Cancelled",   icon: "❌", color: "text-red-700 bg-red-50 border-red-200"         },
+};
+
+function RideJourneyLog({ rideId }: { rideId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["ride-event-logs", rideId],
+    queryFn:  () => fetcher(`/rides/${rideId}/event-logs`),
+    refetchInterval: 15_000,
+    enabled: !!rideId,
+  });
+
+  const logs: any[] = data?.logs ?? [];
+
+  if (isLoading) return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+      <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
+      Journey log lod ho raha hai...
+    </div>
+  );
+
+  if (logs.length === 0) return (
+    <div className="text-xs text-muted-foreground/60 italic py-1 text-center border border-dashed border-muted rounded-xl p-3">
+      📡 Journey milestones yahan dikhenge jab rider GPS ke saath status update kare
+    </div>
+  );
+
+  return (
+    <div>
+      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+        <Navigation className="w-3 h-3" /> Journey Log ({logs.length} milestones)
+      </p>
+      <div className="space-y-2">
+        {logs.map((log: any, i: number) => {
+          const cfg = EVENT_CONFIG[log.event] ?? { label: log.event, icon: "📌", color: "text-gray-700 bg-gray-50 border-gray-200" };
+          const ts  = new Date(log.createdAt);
+          const timeStr = ts.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          const dateStr = ts.toLocaleDateString("en-PK", { day: "numeric", month: "short" });
+          return (
+            <div key={log.id} className={`flex items-start gap-3 p-2.5 rounded-xl border ${cfg.color}`}>
+              <div className="w-7 h-7 rounded-lg bg-white/70 flex items-center justify-center text-base shrink-0 shadow-sm border border-white">
+                {cfg.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold">{cfg.label}</p>
+                  <span className="text-[9px] font-mono shrink-0">{dateStr} {timeStr}</span>
+                </div>
+                {log.lat != null && log.lng != null ? (
+                  <a
+                    href={`https://www.google.com/maps?q=${log.lat},${log.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono flex items-center gap-0.5 hover:underline mt-0.5"
+                  >
+                    <MapPin className="w-2.5 h-2.5 shrink-0" />
+                    {log.lat.toFixed(5)}, {log.lng.toFixed(5)}
+                  </a>
+                ) : (
+                  <p className="text-[10px] opacity-50 mt-0.5">GPS unavailable at this moment</p>
+                )}
+              </div>
+              {i < logs.length - 1 && (
+                <div className="absolute left-[17px] mt-7 w-0.5 h-2 bg-current opacity-20" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

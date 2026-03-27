@@ -81,11 +81,44 @@ export default function Active() {
   const qc = useQueryClient();
   const { config } = usePlatformConfig();
   const { user } = useAuth();
-  const [toastMsg, setToastMsg]   = useState("");
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [cancelTarget, setCancelTarget]           = useState<"order" | "ride">("ride");
-  const [orderPickedUp, _setOrderPickedUp]         = useState(() => sessionStorage.getItem("orderPickedUp") === "true");
+  const [toastMsg, setToastMsg]                    = useState("");
+  const [showCancelConfirm, setShowCancelConfirm]  = useState(false);
+  const [cancelTarget, setCancelTarget]            = useState<"order" | "ride">("ride");
+  const [orderPickedUp, _setOrderPickedUp]          = useState(() => sessionStorage.getItem("orderPickedUp") === "true");
   const setOrderPickedUp = (v: boolean) => { _setOrderPickedUp(v); sessionStorage.setItem("orderPickedUp", String(v)); };
+  const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
+  const [proofFileName, setProofFileName]          = useState<string>("");
+  const photoInputRef                              = useRef<HTMLInputElement>(null);
+
+  const showToast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
+
+  /* ── useQuery MUST come before any useEffect that reads `data` ── */
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["rider-active"],
+    queryFn:  () => api.getActive(),
+    refetchInterval: 8000,
+  });
+
+  /* ── GPS milestone event logger (fire-and-forget) ── */
+  const logRideEvent = (rideId: string, event: string) => {
+    const doLog = (lat?: number, lng?: number) => {
+      fetch(`/api/rides/${rideId}/event-log`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riderId: user?.id, event, lat, lng }),
+      }).catch(() => {});
+    };
+    if (navigator?.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => doLog(pos.coords.latitude, pos.coords.longitude),
+        ()    => doLog(),
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 15_000 },
+      );
+    } else {
+      doLog();
+    }
+  };
+
   /* Sync orderPickedUp from API order status — survives page refresh & device switch */
   useEffect(() => {
     if (data?.order?.status === "picked_up") _setOrderPickedUp(true);
@@ -106,7 +139,7 @@ export default function Active() {
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
         fetch("/api/locations/update", {
-          method: "POST",
+          method:  "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId:    user.id,
@@ -124,10 +157,6 @@ export default function Active() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [!!data?.order, !!data?.ride, user?.id]);
 
-  const [proofPhoto, setProofPhoto]               = useState<string | null>(null);
-  const [proofFileName, setProofFileName]         = useState<string>("");
-  const photoInputRef                             = useRef<HTMLInputElement>(null);
-
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -137,14 +166,6 @@ export default function Active() {
     reader.readAsDataURL(file);
   };
 
-  const showToast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["rider-active"],
-    queryFn: () => api.getActive(),
-    refetchInterval: 8000,
-  });
-
   const updateOrderMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => api.updateOrder(id, status),
     onSuccess: (_, vars) => {
@@ -152,6 +173,8 @@ export default function Active() {
       qc.invalidateQueries({ queryKey: ["rider-history"] });
       qc.invalidateQueries({ queryKey: ["rider-earnings"] });
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      /* Log GPS milestone for every order status change */
+      logRideEvent(vars.id, `order_${vars.status}`);
       if (vars.status === "delivered") {
         sessionStorage.removeItem("orderPickedUp");
         setProofPhoto(null);
@@ -175,6 +198,8 @@ export default function Active() {
       qc.invalidateQueries({ queryKey: ["rider-history"] });
       qc.invalidateQueries({ queryKey: ["rider-earnings"] });
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      /* Log GPS milestone for every ride status change */
+      logRideEvent(vars.id, vars.status);
       if (vars.status === "completed") showToast("🎉 Ride completed! Earnings credited.");
       else if (vars.status === "cancelled") { setShowCancelConfirm(false); showToast("Ride cancel ho gaya."); }
       else showToast("✅ Status updated!");

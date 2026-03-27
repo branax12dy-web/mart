@@ -138,11 +138,32 @@ export default function Home() {
 
   const dismiss = (id: string) => setDismissed(prev => new Set([...prev, id]));
 
+  /* ── GPS milestone logger — fired on accept / status change ── */
+  const logRideEvent = (rideId: string, event: string) => {
+    const doLog = (lat?: number, lng?: number) => {
+      fetch(`/api/rides/${rideId}/event-log`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riderId: user?.id, event, lat, lng }),
+      }).catch(() => {});
+    };
+    if (navigator?.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => doLog(pos.coords.latitude, pos.coords.longitude),
+        ()    => doLog(),
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 15_000 },
+      );
+    } else {
+      doLog();
+    }
+  };
+
   const acceptOrderMut = useMutation({
     mutationFn: (id: string) => api.acceptOrder(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
+      logRideEvent(id, "accepted");
       showToast("✅ Order accepted! Active tab mein dekho.");
     },
     onError: (e: any) => {
@@ -153,9 +174,10 @@ export default function Home() {
 
   const acceptRideMut = useMutation({
     mutationFn: (id: string) => api.acceptRide(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
+      logRideEvent(id, "accepted");
       showToast("✅ Ride accepted! Active tab mein dekho.");
     },
     onError: (e: any) => {
