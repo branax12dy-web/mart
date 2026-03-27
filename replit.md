@@ -1,5 +1,5 @@
 # AJKMart Super App — Workspace
-<!-- Last updated: 2026-03-27 — JWT SECURITY OVERHAUL COMPLETE
+<!-- Last updated: 2026-03-27 — SECURITY AUDIT PASS 18 COMPLETE
 
   SCOPE: Replaced all Base64 token auth with signed JWTs (jsonwebtoken, HS256).
   Token payload: { sub: userId, phone, role, roles }, expiresIn: ${sessionDays}d

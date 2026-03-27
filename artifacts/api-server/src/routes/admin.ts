@@ -36,6 +36,13 @@ import {
 } from "../middleware/security.js";
 import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri } from "../services/totp.js";
 
+/* ── Sensitive field stripper — never leak hashes or OTP codes to API responses ── */
+function stripUser(u: Record<string, any>) {
+  const { passwordHash: _ph, otpCode: _otp, otpExpiry: _exp,
+          emailOtpCode: _eotp, emailOtpExpiry: _eexp, ...safe } = u;
+  return safe;
+}
+
 /* ── Default Platform Settings ── */
 export const DEFAULT_PLATFORM_SETTINGS = [
   /* Delivery */
@@ -666,8 +673,8 @@ router.get("/stats", async (_req, res) => {
 router.get("/users", async (_req, res) => {
   const users = await db.select().from(usersTable).orderBy(desc(usersTable.createdAt));
   res.json({
-    users: users.map(({ otpCode: _otp, otpExpiry: _exp, ...u }) => ({
-      ...u,
+    users: users.map((u) => ({
+      ...stripUser(u),
       walletBalance: parseFloat(u.walletBalance ?? "0"),
       createdAt: u.createdAt.toISOString(),
       updatedAt: u.updatedAt.toISOString(),
@@ -702,7 +709,7 @@ router.patch("/users/:id", async (req, res) => {
     .returning();
 
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  res.json({ ...user, walletBalance: parseFloat(user.walletBalance ?? "0") });
+  res.json({ ...stripUser(user), walletBalance: parseFloat(user.walletBalance ?? "0") });
 });
 
 /* ── Pending Approval Users ── */
@@ -730,7 +737,7 @@ router.post("/users/:id/approve", async (req, res) => {
     .returning();
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   addAuditEntry({ action: "user_approved", ip: "admin", details: `User approved: ${user.phone} — ${user.name || "unnamed"}`, result: "success" });
-  res.json({ success: true, user: { ...user, walletBalance: parseFloat(user.walletBalance ?? "0") } });
+  res.json({ success: true, user: { ...stripUser(user), walletBalance: parseFloat(user.walletBalance ?? "0") } });
 });
 
 /* ── Reject User ── */
@@ -742,7 +749,7 @@ router.post("/users/:id/reject", async (req, res) => {
     .returning();
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   addAuditEntry({ action: "user_rejected", ip: "admin", details: `User rejected: ${user.phone} — ${note || "no reason"}`, result: "success" });
-  res.json({ success: true, user: { ...user, walletBalance: parseFloat(user.walletBalance ?? "0") } });
+  res.json({ success: true, user: { ...stripUser(user), walletBalance: parseFloat(user.walletBalance ?? "0") } });
 });
 
 /* ── Wallet Top-up ── */
@@ -785,7 +792,7 @@ router.post("/users/:id/wallet-topup", async (req, res) => {
   res.json({
     success: true,
     newBalance,
-    user: { ...updatedUser!, walletBalance: newBalance },
+    user: { ...stripUser(updatedUser!), walletBalance: newBalance },
   });
 });
 
@@ -899,17 +906,17 @@ router.patch("/rides/:id/status", async (req, res) => {
     const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
     const riderEarning = parseFloat((fare * riderKeepPct).toFixed(2));
     if (ride.riderId) {
-      const [rider] = await db.select().from(usersTable).where(eq(usersTable.id, ride.riderId));
-      if (rider) {
-        const riderNewBal = (parseFloat(rider.walletBalance ?? "0") + riderEarning).toFixed(2);
-        await db.update(usersTable).set({ walletBalance: riderNewBal, updatedAt: new Date() }).where(eq(usersTable.id, rider.id));
-        await db.insert(walletTransactionsTable).values({
-          id: generateId(), userId: rider.id, type: "credit",
-          amount: String(riderEarning),
-          description: `Ride earnings — #${ride.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
-        });
-        await sendUserNotification(rider.id, "Ride Payment Received 💰", `Rs. ${riderEarning} wallet mein add ho gaya!`, "ride", "wallet-outline");
-      }
+      /* Atomic credit — uses sql`wallet_balance + X` to avoid clobbering
+         concurrent balance changes (same pattern as all other wallet mutations) */
+      await db.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${riderEarning}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, ride.riderId));
+      await db.insert(walletTransactionsTable).values({
+        id: generateId(), userId: ride.riderId, type: "credit",
+        amount: String(riderEarning),
+        description: `Ride earnings — #${ride.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
+      });
+      await sendUserNotification(ride.riderId, "Ride Payment Received 💰", `Rs. ${riderEarning} wallet mein add ho gaya!`, "ride", "wallet-outline");
     }
   }
 
@@ -1632,7 +1639,7 @@ router.post("/vendors/:id/payout", async (req, res) => {
     description: description || `Admin payout processed: Rs. ${amt}`, reference: "admin_payout",
   });
   await sendUserNotification(vendor.id, "Payout Processed 💰", `Rs. ${amt} has been paid out from your vendor wallet.`, "system", "cash-outline");
-  res.json({ success: true, amount: amt, newBalance: newBal, vendor: { ...updated, walletBalance: newBal } });
+  res.json({ success: true, amount: amt, newBalance: newBal, vendor: { ...stripUser(updated!), walletBalance: newBal } });
 });
 
 router.post("/vendors/:id/credit", async (req, res) => {
@@ -1650,7 +1657,7 @@ router.post("/vendors/:id/credit", async (req, res) => {
     description: description || `Admin credit: Rs. ${amt}`, reference: "admin_credit",
   });
   await sendUserNotification(vendor.id, "Wallet Credited 💰", `Rs. ${amt} has been credited to your vendor wallet.`, "system", "wallet-outline");
-  res.json({ success: true, amount: amt, newBalance: newBal, vendor: { ...updated, walletBalance: newBal } });
+  res.json({ success: true, amount: amt, newBalance: newBal, vendor: { ...stripUser(updated!), walletBalance: newBal } });
 });
 
 /* ══════════════════════════════════════
