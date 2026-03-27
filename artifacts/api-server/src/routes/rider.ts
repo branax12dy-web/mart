@@ -408,41 +408,61 @@ router.post("/rides/:id/accept", async (req, res) => {
     ? (targetRide.offeredFare ?? targetRide.fare)
     : targetRide.fare;
 
-  /* For wallet-payment bargaining rides, deduct wallet now (wasn't deducted at booking) */
+  /* Pre-flight balance check for bargaining + wallet — fail fast before touching the DB.
+     The actual deduction happens AFTER the atomic accept to prevent double-charging:
+     if two riders race, only the winner should pay; loser's wallet stays untouched. */
   if (isBargaining && targetRide.paymentMethod === "wallet") {
     const fareAmt = safeNum(agreedFare);
-    const [customer] = await db.select().from(usersTable).where(eq(usersTable.id, targetRide.userId)).limit(1);
+    const [customer] = await db.select({ walletBalance: usersTable.walletBalance })
+      .from(usersTable).where(eq(usersTable.id, targetRide.userId)).limit(1);
     if (!customer) { res.status(404).json({ error: "Customer not found" }); return; }
-    const balance = safeNum(customer.walletBalance);
-    if (balance < fareAmt) {
+    if (safeNum(customer.walletBalance) < fareAmt) {
       res.status(400).json({ error: "Customer has insufficient wallet balance" }); return;
     }
-    await db.update(usersTable)
-      .set({ walletBalance: (balance - fareAmt).toFixed(2) })
-      .where(eq(usersTable.id, targetRide.userId));
-    await db.insert(walletTransactionsTable).values({
-      id: generateId(), userId: targetRide.userId, type: "debit",
-      amount: fareAmt.toFixed(2),
-      description: `Ride payment (bargained) — #${targetRide.id.slice(-6).toUpperCase()}`,
-    }).catch(() => {});
   }
 
-  // Atomic accept: only succeeds if riderId is still NULL
+  /* Atomic accept: only succeeds if riderId is still NULL in the DB.
+     Wallet deduction happens inside the same transaction so it's all-or-nothing:
+     the losing rider gets a 409 with their money completely untouched. */
   const acceptedAt = new Date();
-  const [updated] = await db
-    .update(ridesTable)
-    .set({
-      riderId,
-      riderName: riderUser.name || "Rider",
-      riderPhone: riderUser.phone,
-      status: "accepted",
-      fare: isBargaining ? safeNum(agreedFare).toFixed(2) : targetRide.fare,
-      bargainStatus: isBargaining ? "agreed" : targetRide.bargainStatus,
-      acceptedAt,
-      updatedAt: acceptedAt,
-    })
-    .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)))
-    .returning();
+  const fareAmt    = safeNum(agreedFare);
+
+  let updated: typeof ridesTable.$inferSelect | undefined;
+  try {
+    updated = await db.transaction(async (tx) => {
+      const [accepted] = await tx
+        .update(ridesTable)
+        .set({
+          riderId,
+          riderName: riderUser.name || "Rider",
+          riderPhone: riderUser.phone,
+          status: "accepted",
+          fare: isBargaining ? fareAmt.toFixed(2) : targetRide.fare,
+          bargainStatus: isBargaining ? "agreed" : targetRide.bargainStatus,
+          acceptedAt,
+          updatedAt: acceptedAt,
+        })
+        .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)))
+        .returning();
+
+      if (!accepted) return undefined; // another rider won the race
+
+      /* Deduct wallet only if this rider won the accept race */
+      if (isBargaining && targetRide.paymentMethod === "wallet") {
+        await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance - ${fareAmt}`, updatedAt: new Date() })
+          .where(eq(usersTable.id, targetRide.userId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: targetRide.userId, type: "debit",
+          amount: fareAmt.toFixed(2),
+          description: `Ride payment (bargained) — #${targetRide.id.slice(-6).toUpperCase()}`,
+        });
+      }
+      return accepted;
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to accept ride. Please try again." }); return;
+  }
 
   if (!updated) {
     res.status(409).json({ error: "Ride already taken by another rider" }); return;
@@ -474,7 +494,8 @@ router.patch("/rides/:id/status", async (req, res) => {
   const [ride] = await db.select().from(ridesTable).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found or not yours" }); return; }
 
-  const [updated] = await db.update(ridesTable).set({ status, updatedAt: new Date() }).where(eq(ridesTable.id, req.params["id"]!)).returning();
+  /* Include riderId in WHERE to close TOCTOU between ownership check and update */
+  const [updated] = await db.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
 
   if (status === "completed") {
     const s = await getPlatformSettings();
@@ -545,10 +566,10 @@ router.post("/rides/:id/counter", async (req, res) => {
 
   let bid;
   if (existingBid) {
-    /* Update existing bid */
+    /* Update existing bid — include riderId in WHERE to close TOCTOU */
     const [b] = await db.update(rideBidsTable)
       .set({ fare: parsedCounter.toFixed(2), note: note ?? null, updatedAt: new Date() })
-      .where(eq(rideBidsTable.id, existingBid.id))
+      .where(and(eq(rideBidsTable.id, existingBid.id), eq(rideBidsTable.riderId, riderId)))
       .returning();
     bid = b;
   } else {

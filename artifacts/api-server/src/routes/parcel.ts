@@ -219,17 +219,34 @@ router.post("/", customerAuth, async (req, res) => {
 router.patch("/:id/status", riderAuth, async (req, res) => {
   const riderId = (req as any).riderId as string;
   const { status } = req.body;
-  const updateData: Partial<typeof parcelBookingsTable.$inferInsert> = { status, riderId, updatedAt: new Date() };
+
+  /* Whitelist allowed status transitions — prevents arbitrary string injection */
+  const allowedStatuses = ["picked_up", "in_transit", "delivered", "cancelled"];
+  if (!allowedStatuses.includes(status)) {
+    res.status(400).json({ error: `Invalid status. Allowed: ${allowedStatuses.join(", ")}` }); return;
+  }
+
+  /* Ownership check: rider must be accepting (parcel unassigned) or already the assigned rider */
   const [booking] = await db
+    .select()
+    .from(parcelBookingsTable)
+    .where(eq(parcelBookingsTable.id, req.params["id"]!))
+    .limit(1);
+  if (!booking) { res.status(404).json({ error: "Parcel booking not found" }); return; }
+
+  const isUnassigned  = !booking.riderId;
+  const isAssignedToMe = booking.riderId === riderId;
+  if (!isUnassigned && !isAssignedToMe) {
+    res.status(403).json({ error: "This parcel is assigned to another rider" }); return;
+  }
+
+  const [updated] = await db
     .update(parcelBookingsTable)
-    .set(updateData)
+    .set({ status, riderId, updatedAt: new Date() })
     .where(eq(parcelBookingsTable.id, req.params["id"]!))
     .returning();
-  if (!booking) {
-    res.status(404).json({ error: "Parcel booking not found" });
-    return;
-  }
-  res.json(mapBooking(booking));
+
+  res.json(mapBooking(updated!));
 });
 
 export default router;
