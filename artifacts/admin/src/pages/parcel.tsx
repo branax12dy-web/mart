@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParcelBookings, useUpdateParcelBooking } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +37,15 @@ export default function Parcel() {
   const [selectedBooking, setSelectedBooking]   = useState<any>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling]             = useState(false);
+
+  /* Last-refreshed ticker */
+  const [secAgo, setSecAgo] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  useEffect(() => { if (!isLoading) { setLastRefreshed(new Date()); setSecAgo(0); } }, [isLoading]);
+  useEffect(() => {
+    const t = setInterval(() => setSecAgo(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [lastRefreshed]);
 
   const handleUpdateStatus = (id: string, status: string) => {
     updateMutation.mutate({ id, status }, {
@@ -87,15 +96,36 @@ export default function Parcel() {
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 sm:w-12 sm:h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center shrink-0">
-          <Box className="w-5 h-5 sm:w-6 sm:h-6" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center shrink-0">
+            <Box className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Parcel Bookings</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm">{totalCount} total · {pendingCount} pending · {activeCount} active</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Parcel Bookings</h1>
-          <p className="text-muted-foreground text-xs sm:text-sm">{totalCount} total · {pendingCount} pending · {activeCount} active</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+          <span className={`w-2 h-2 rounded-full ${secAgo < 35 ? "bg-green-500" : "bg-amber-400"} animate-pulse`} />
+          {isLoading ? "Refreshing..." : `Refreshed ${secAgo}s ago`}
         </div>
       </div>
+
+      {/* Pending parcel bookings alert */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-3 bg-orange-50 border-2 border-orange-400 rounded-2xl px-4 py-3">
+          <span className="text-2xl">📫</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-orange-800">
+              {pendingCount} parcel booking{pendingCount > 1 ? "s" : ""} pending / searching for a rider!
+            </p>
+            <p className="text-xs text-orange-600">
+              {bookings.filter((b: any) => ["pending","searching"].includes(b.status)).slice(0,3).map((b: any) => `#${b.id.slice(-6).toUpperCase()}`).join(" · ")}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

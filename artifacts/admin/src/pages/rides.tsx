@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRidesEnriched, useUpdateRide } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -108,12 +108,22 @@ export default function Rides() {
     return matchSearch && matchType && matchStatus;
   });
 
-  const bikeCount      = rides.filter((r: any) => r.type === "bike").length;
-  const carCount       = rides.filter((r: any) => r.type === "car").length;
-  const activeCount    = rides.filter((r: any) => ["searching","accepted","arrived","in_transit"].includes(r.status)).length;
-  const completedCount = rides.filter((r: any) => r.status === "completed").length;
-  const cancelledCount = rides.filter((r: any) => r.status === "cancelled").length;
-  const totalRevenue   = rides.filter((r: any) => r.status === "completed").reduce((sum: number, r: any) => sum + (r.fare || 0), 0);
+  const bikeCount        = rides.filter((r: any) => r.type === "bike").length;
+  const carCount         = rides.filter((r: any) => r.type === "car").length;
+  const activeCount      = rides.filter((r: any) => ["searching","accepted","arrived","in_transit"].includes(r.status)).length;
+  const completedCount   = rides.filter((r: any) => r.status === "completed").length;
+  const cancelledCount   = rides.filter((r: any) => r.status === "cancelled").length;
+  const totalRevenue     = rides.filter((r: any) => r.status === "completed").reduce((sum: number, r: any) => sum + (r.fare || 0), 0);
+  const searchingRides   = rides.filter((r: any) => r.status === "searching");
+
+  /* Last-refreshed ticker */
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  const [secAgo, setSecAgo] = useState(0);
+  useEffect(() => { if (!isLoading) { setLastRefreshed(new Date()); setSecAgo(0); } }, [isLoading]);
+  useEffect(() => {
+    const t = setInterval(() => setSecAgo(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [lastRefreshed]);
 
   const openInMaps = (ride: any) => {
     if (ride.pickupLat && ride.dropLat) {
@@ -140,7 +150,32 @@ export default function Rides() {
             <p className="text-muted-foreground text-xs sm:text-sm">{bikeCount} bike · {carCount} car · {rides.length} total</p>
           </div>
         </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+          <span className={`w-2 h-2 rounded-full ${secAgo < 35 ? "bg-green-500" : "bg-amber-400"} animate-pulse`} />
+          {isLoading ? "Refreshing..." : `Refreshed ${secAgo}s ago`}
+        </div>
       </div>
+
+      {/* Live dispatch alert — searching rides */}
+      {searchingRides.length > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border-2 border-amber-400 rounded-2xl px-4 py-3 animate-pulse-slow">
+          <span className="text-2xl">🚨</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-800">
+              {searchingRides.length} ride{searchingRides.length > 1 ? "s" : ""} searching for a rider right now!
+            </p>
+            <p className="text-xs text-amber-600">
+              {searchingRides.map((r: any) => `${r.type === "bike" ? "🏍️" : "🚗"} ${r.id.slice(-6).toUpperCase()}`).join(" · ")}
+            </p>
+          </div>
+          <button
+            onClick={() => { setStatusFilter("searching"); setTypeFilter("all"); }}
+            className="px-3 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-xl whitespace-nowrap hover:bg-amber-600 transition-colors"
+          >
+            View All
+          </button>
+        </div>
+      )}
 
       {/* Stat Cards — 5 cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

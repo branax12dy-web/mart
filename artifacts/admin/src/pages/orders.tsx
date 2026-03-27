@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useOrdersEnriched, useUpdateOrder } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -83,11 +83,21 @@ export default function Orders() {
   });
 
   const totalCount     = orders.length;
-  const pendingCount   = orders.filter((o: any) => o.status === "pending").length;
+  const pendingOrders  = orders.filter((o: any) => o.status === "pending");
+  const pendingCount   = pendingOrders.length;
   const activeCount    = orders.filter((o: any) => ["confirmed","preparing","out_for_delivery"].includes(o.status)).length;
   const deliveredCount = orders.filter((o: any) => o.status === "delivered").length;
   const cancelledCount = orders.filter((o: any) => o.status === "cancelled").length;
   const totalRevenue   = orders.filter((o: any) => o.status === "delivered").reduce((s: number, o: any) => s + (o.total || 0), 0);
+
+  /* Last-refreshed ticker */
+  const [secAgo, setSecAgo] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  useEffect(() => { if (!isLoading) { setLastRefreshed(new Date()); setSecAgo(0); } }, [isLoading]);
+  useEffect(() => {
+    const t = setInterval(() => setSecAgo(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [lastRefreshed]);
 
   const isTerminal  = (s: string) => s === "delivered" || s === "cancelled";
   const canCancel   = (o: any) => !isTerminal(o.status);
@@ -106,7 +116,33 @@ export default function Orders() {
             <p className="text-muted-foreground text-xs sm:text-sm">{totalCount} total · {pendingCount} pending · {deliveredCount} delivered</p>
           </div>
         </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+          <span className={`w-2 h-2 rounded-full ${secAgo < 35 ? "bg-green-500" : "bg-amber-400"} animate-pulse`} />
+          {isLoading ? "Refreshing..." : `Refreshed ${secAgo}s ago`}
+        </div>
       </div>
+
+      {/* New Pending Orders Alert */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border-2 border-amber-400 rounded-2xl px-4 py-3">
+          <span className="text-2xl">📦</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-800">
+              {pendingCount} new order{pendingCount > 1 ? "s" : ""} waiting for confirmation!
+            </p>
+            <p className="text-xs text-amber-600">
+              {pendingOrders.slice(0,3).map((o: any) => `#${o.id.slice(-6).toUpperCase()} (${o.type})`).join(" · ")}
+              {pendingOrders.length > 3 ? ` +${pendingOrders.length - 3} more` : ""}
+            </p>
+          </div>
+          <button
+            onClick={() => setStatusFilter("pending")}
+            className="px-3 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-xl whitespace-nowrap hover:bg-amber-600 transition-colors"
+          >
+            View All
+          </button>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

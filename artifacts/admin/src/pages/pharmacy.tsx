@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePharmacyOrders, useUpdatePharmacyOrder } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -85,25 +85,63 @@ export default function Pharmacy() {
     return matchSearch && matchStatus;
   });
 
-  const pendingCount   = orders.filter((o: any) => o.status === "pending").length;
+  const pendingOrders  = orders.filter((o: any) => o.status === "pending");
+  const pendingCount   = pendingOrders.length;
   const activeCount    = orders.filter((o: any) => ["confirmed","preparing","out_for_delivery"].includes(o.status)).length;
   const deliveredCount = orders.filter((o: any) => o.status === "delivered").length;
   const cancelledCount = orders.filter((o: any) => o.status === "cancelled").length;
   const totalRevenue   = orders.filter((o: any) => o.status === "delivered").reduce((s: number, o: any) => s + parseFloat(o.total || 0), 0);
 
+  /* Last-refreshed ticker */
+  const [secAgo, setSecAgo] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  useEffect(() => { if (!isLoading) { setLastRefreshed(new Date()); setSecAgo(0); } }, [isLoading]);
+  useEffect(() => {
+    const t = setInterval(() => setSecAgo(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [lastRefreshed]);
+
   return (
     <div className="space-y-5 sm:space-y-6">
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 sm:w-12 sm:h-12 bg-pink-100 text-pink-600 rounded-xl flex items-center justify-center shrink-0">
-          <Pill className="w-5 h-5 sm:w-6 sm:h-6" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 bg-pink-100 text-pink-600 rounded-xl flex items-center justify-center shrink-0">
+            <Pill className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Pharmacy Orders</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm">Medicine deliveries — {orders.length} total</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Pharmacy Orders</h1>
-          <p className="text-muted-foreground text-xs sm:text-sm">Medicine deliveries — {orders.length} total</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+          <span className={`w-2 h-2 rounded-full ${secAgo < 35 ? "bg-green-500" : "bg-amber-400"} animate-pulse`} />
+          {isLoading ? "Refreshing..." : `Refreshed ${secAgo}s ago`}
         </div>
       </div>
+
+      {/* Pending pharmacy orders alert */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-3 bg-pink-50 border-2 border-pink-300 rounded-2xl px-4 py-3">
+          <span className="text-2xl">💊</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-pink-800">
+              {pendingCount} pharmacy order{pendingCount > 1 ? "s" : ""} waiting for confirmation!
+            </p>
+            <p className="text-xs text-pink-600">
+              {pendingOrders.slice(0,3).map((o: any) => `#${o.id.slice(-6).toUpperCase()}`).join(" · ")}
+              {pendingOrders.length > 3 ? ` +${pendingOrders.length - 3} more` : ""}
+            </p>
+          </div>
+          <button
+            onClick={() => setStatusFilter("pending")}
+            className="px-3 py-1.5 bg-pink-500 text-white text-xs font-bold rounded-xl whitespace-nowrap hover:bg-pink-600 transition-colors"
+          >
+            View All
+          </button>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
