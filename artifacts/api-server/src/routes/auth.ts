@@ -70,6 +70,22 @@ router.post("/send-otp", async (req, res) => {
     return;
   }
 
+  /* ── Per-phone OTP resend cooldown (60 s) — prevents SMS bombing ──
+     OTP expiry is set to now+10 min; if it's still >9 min away the
+     code was issued less than 60 seconds ago — block the resend. ── */
+  const otpCooldownMs = parseInt(settings["security_otp_cooldown_sec"] ?? "60", 10) * 1000;
+  const existingOtpExpiry = existingUser[0]?.otpExpiry;
+  if (existingOtpExpiry) {
+    const otpValidityMs = 10 * 60 * 1000;
+    const issuedAgoMs   = otpValidityMs - (existingOtpExpiry.getTime() - Date.now());
+    if (issuedAgoMs < otpCooldownMs) {
+      const waitSec = Math.ceil((otpCooldownMs - issuedAgoMs) / 1000);
+      addSecurityEvent({ type: "otp_resend_throttle", ip, details: `OTP resend too soon for ${phone} — ${waitSec}s remaining`, severity: "low" });
+      res.status(429).json({ error: `Please wait ${waitSec} second(s) before requesting a new OTP.`, retryAfterSeconds: waitSec });
+      return;
+    }
+  }
+
   /* ── Determine approval status for NEW users ── */
   const isNewUser = existingUser.length === 0;
   const requireApproval = (settings["user_require_approval"] ?? "off") === "on";

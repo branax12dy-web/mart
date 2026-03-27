@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -75,6 +75,14 @@ export default function AuthScreen() {
   const [profilePassword, setProfilePassword] = useState("");
   const [showProfilePwd, setShowProfilePwd]   = useState(false);
 
+  /* OTP resend cooldown — counts down to 0 before resend is allowed */
+  const [resendCooldown, setResendCooldown] = useState(0);
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const slide = () =>
@@ -85,12 +93,20 @@ export default function AuthScreen() {
   const handleSendPhoneOtp = async () => {
     clearError();
     if (!phone || phone.length < 10) { setError("Valid phone number enter karein (10 digits)"); return; }
+    if (resendCooldown > 0) { setError(`Please wait ${resendCooldown}s before resending.`); return; }
     setLoading(true);
     try {
       const res = await sendOtp({ phone });
       if (res.otp) setDevOtp(res.otp);
+      setResendCooldown(60);
       slide(); setStep("otp");
-    } catch (e: any) { setError(e.message || "OTP send nahi hua. Dobara try karein."); }
+    } catch (e: any) {
+      const msg: string = e.message || "OTP send nahi hua. Dobara try karein.";
+      setError(msg);
+      /* If the server says wait N seconds, start the visual countdown */
+      const match = msg.match(/wait (\d+) second/);
+      if (match) setResendCooldown(parseInt(match[1]!, 10));
+    }
     setLoading(false);
   };
 
@@ -355,8 +371,14 @@ export default function AuthScreen() {
                   <Text style={styles.devOtpTxt}>Dev OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{devOtp}</Text></Text>
                 </View>
               ) : null}
-              <Pressable onPress={handleSendPhoneOtp} style={styles.resendBtn}>
-                <Text style={styles.resendText}>OTP dobara bhejein</Text>
+              <Pressable
+                onPress={handleSendPhoneOtp}
+                style={[styles.resendBtn, resendCooldown > 0 && { opacity: 0.4 }]}
+                disabled={resendCooldown > 0}
+              >
+                <Text style={styles.resendText}>
+                  {resendCooldown > 0 ? `OTP dobara bhejein (${resendCooldown}s)` : "OTP dobara bhejein"}
+                </Text>
               </Pressable>
             </>
           )}
