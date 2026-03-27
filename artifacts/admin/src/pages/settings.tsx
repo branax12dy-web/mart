@@ -2606,9 +2606,10 @@ function renderSection(
       { label: "Referral card/bonus", key: "feature_referral",      enforced: "📱 Client" },
       { label: "New user sign-up",    key: "feature_new_users",     enforced: "✅ API" },
       { label: "Chat/WhatsApp",       key: "feature_chat",          enforced: "📱 Client" },
-      { label: "Live GPS tracking",   key: "feature_live_tracking", enforced: "✅ API + Client" },
-      { label: "Reviews & ratings",   key: "feature_reviews",       enforced: "✅ API" },
-    ];
+      { label: "Live GPS tracking",   key: "feature_live_tracking", enforced: "✅ API + Client", inverted: false },
+      { label: "Reviews & ratings",   key: "feature_reviews",       enforced: "✅ API",          inverted: false },
+      { label: "Admin approval gate", key: "user_require_approval",  enforced: "✅ API",         inverted: true  },
+    ] as { label: string; key: string; enforced: string; inverted?: boolean }[];
 
     return (
       <div className="space-y-6">
@@ -2664,6 +2665,46 @@ function renderSection(
           </div>
         </div>
 
+        {/* Access Controls */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Shield size={15} className="text-slate-500" />
+            <p className="font-semibold text-sm text-slate-700">Access Controls</p>
+            <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">user approval / registration gating</span>
+          </div>
+          <div className={`rounded-xl border p-4 transition-all ${fv("user_require_approval") ? "bg-amber-50 border-amber-200" : "bg-white border-slate-200"}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 flex-1 min-w-0">
+                <span className="text-2xl mt-0.5 shrink-0">🔒</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm text-slate-800">Require Admin Approval for New Users</p>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+                      <Server size={9} />API Enforced
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    When ON — new accounts are created as <span className="font-mono font-bold">inactive</span> and cannot log in until an admin approves them from the Users page.
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1 font-mono">📱 Customer  •  🏪 Vendor  •  🏍️ Rider</p>
+                </div>
+              </div>
+              <div className="shrink-0 flex flex-col items-center gap-1" onClick={() => handleToggle("user_require_approval", !fv("user_require_approval"))}>
+                <div className={`w-11 h-6 rounded-full relative transition-colors cursor-pointer ${fv("user_require_approval") ? "bg-amber-500" : "bg-gray-300"} ${dirtyKeys.has("user_require_approval") ? "ring-2 ring-amber-400" : ""}`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform ${fv("user_require_approval") ? "translate-x-5" : "translate-x-0.5"}`} />
+                </div>
+                <span className={`text-[10px] font-bold ${fv("user_require_approval") ? "text-amber-600" : "text-gray-400"}`}>{fv("user_require_approval") ? "ON" : "OFF"}</span>
+              </div>
+            </div>
+            {fv("user_require_approval") && (
+              <div className="mt-3 pt-3 border-t border-amber-200 flex items-center gap-1.5 text-amber-700">
+                <AlertTriangle size={11} />
+                <span className="text-[11px] font-medium">Approval mode active — new accounts need manual activation from the Users page</span>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Server size={14} className="text-slate-500" />
@@ -2686,9 +2727,14 @@ function renderSection(
                     <td className="py-2 font-mono text-slate-400">{r.key}</td>
                     <td className="py-2 text-slate-500">{r.enforced}</td>
                     <td className="py-2 text-right">
-                      {fv(r.key)
-                        ? <span className="text-green-600 font-bold">ON</span>
-                        : <span className="text-red-600 font-bold">OFF</span>}
+                      {r.inverted
+                        ? fv(r.key)
+                          ? <span className="text-amber-600 font-bold">ACTIVE</span>
+                          : <span className="text-slate-400 font-bold">OPEN</span>
+                        : fv(r.key)
+                          ? <span className="text-green-600 font-bold">ON</span>
+                          : <span className="text-red-600 font-bold">OFF</span>
+                      }
                     </td>
                   </tr>
                 ))}
