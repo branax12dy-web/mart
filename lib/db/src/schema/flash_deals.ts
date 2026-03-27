@@ -1,4 +1,4 @@
-import { boolean, decimal, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, decimal, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -15,7 +15,11 @@ export const flashDealsTable = pgTable("flash_deals", {
   soldCount:    integer("sold_count").notNull().default(0),
   isActive:     boolean("is_active").notNull().default(true),
   createdAt:    timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("flash_deals_product_id_idx").on(t.productId),
+  index("flash_deals_is_active_idx").on(t.isActive),
+  index("flash_deals_end_time_idx").on(t.endTime),
+]);
 
 export const insertFlashDealSchema = createInsertSchema(flashDealsTable).omit({ createdAt: true, soldCount: true });
 export type InsertFlashDeal = z.infer<typeof insertFlashDealSchema>;

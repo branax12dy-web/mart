@@ -1,4 +1,4 @@
-import { boolean, decimal, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, decimal, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,7 +17,11 @@ export const promoCodesTable = pgTable("promo_codes", {
   vendorId:       text("vendor_id"),
   isActive:       boolean("is_active").notNull().default(true),
   createdAt:      timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("promo_codes_vendor_id_idx").on(t.vendorId),
+  index("promo_codes_is_active_idx").on(t.isActive),
+  index("promo_codes_expires_at_idx").on(t.expiresAt),
+]);
 
 export const insertPromoCodeSchema = createInsertSchema(promoCodesTable).omit({ createdAt: true, usedCount: true });
 export type InsertPromoCode = z.infer<typeof insertPromoCodeSchema>;

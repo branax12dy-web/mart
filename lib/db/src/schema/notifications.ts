@@ -1,4 +1,4 @@
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -12,7 +12,12 @@ export const notificationsTable = pgTable("notifications", {
   icon: text("icon").default("notifications-outline"),
   link: text("link"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("notifications_user_id_idx").on(t.userId),
+  /* Composite index for the common query pattern: user's unread notifications */
+  index("notifications_user_read_idx").on(t.userId, t.isRead),
+  index("notifications_created_at_idx").on(t.createdAt),
+]);
 
 export const insertNotificationSchema = createInsertSchema(notificationsTable).omit({ createdAt: true });
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;

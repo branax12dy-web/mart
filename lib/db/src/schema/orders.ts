@@ -1,4 +1,4 @@
-import { decimal, json, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { decimal, index, json, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -16,7 +16,13 @@ export const ordersTable = pgTable("orders", {
   estimatedTime: text("estimated_time"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("orders_user_id_idx").on(t.userId),
+  index("orders_rider_id_idx").on(t.riderId),
+  index("orders_vendor_id_idx").on(t.vendorId),
+  index("orders_status_idx").on(t.status),
+  index("orders_created_at_idx").on(t.createdAt),
+]);
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;

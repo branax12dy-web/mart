@@ -1,4 +1,4 @@
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -11,7 +11,9 @@ export const savedAddressesTable = pgTable("saved_addresses", {
   icon: text("icon").notNull().default("location-outline"),
   isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("saved_addresses_user_id_idx").on(t.userId),
+]);
 
 export const insertSavedAddressSchema = createInsertSchema(savedAddressesTable).omit({ createdAt: true });
 export type InsertSavedAddress = z.infer<typeof insertSavedAddressSchema>;

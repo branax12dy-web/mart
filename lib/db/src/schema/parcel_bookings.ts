@@ -1,4 +1,4 @@
-import { decimal, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { decimal, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -21,7 +21,12 @@ export const parcelBookingsTable = pgTable("parcel_bookings", {
   riderId: text("rider_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("parcel_bookings_user_id_idx").on(t.userId),
+  index("parcel_bookings_rider_id_idx").on(t.riderId),
+  index("parcel_bookings_status_idx").on(t.status),
+  index("parcel_bookings_created_at_idx").on(t.createdAt),
+]);
 
 export const insertParcelBookingSchema = createInsertSchema(parcelBookingsTable).omit({ createdAt: true, updatedAt: true });
 export type InsertParcelBooking = z.infer<typeof insertParcelBookingSchema>;

@@ -1,4 +1,4 @@
-import { boolean, decimal, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, decimal, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const schoolRoutesTable = pgTable("school_routes", {
   id:             text("id").primaryKey(),
@@ -26,22 +26,30 @@ export const schoolRoutesTable = pgTable("school_routes", {
 });
 
 export const schoolSubscriptionsTable = pgTable("school_subscriptions", {
-  id:             text("id").primaryKey(),
-  userId:         text("user_id").notNull(),
-  routeId:        text("route_id").notNull(),
-  studentName:    text("student_name").notNull(),
-  studentClass:   text("student_class").notNull(),
-  monthlyAmount:  decimal("monthly_amount", { precision: 10, scale: 2 }).notNull(),
-  status:         text("status").notNull().default("active"), /* active | paused | cancelled */
-  paymentMethod:  text("payment_method").notNull().default("cash"),
-  startDate:      timestamp("start_date").notNull().defaultNow(),
+  id:              text("id").primaryKey(),
+  userId:          text("user_id").notNull(),
+  routeId:         text("route_id").notNull(),
+  studentName:     text("student_name").notNull(),
+  studentClass:    text("student_class").notNull(),
+  monthlyAmount:   decimal("monthly_amount", { precision: 10, scale: 2 }).notNull(),
+  status:          text("status").notNull().default("active"), /* active | paused | cancelled */
+  paymentMethod:   text("payment_method").notNull().default("cash"),
+  startDate:       timestamp("start_date").notNull().defaultNow(),
   nextBillingDate: timestamp("next_billing_date"),
-  notes:          text("notes"),
-  createdAt:      timestamp("created_at").notNull().defaultNow(),
-  updatedAt:      timestamp("updated_at").notNull().defaultNow(),
-});
+  notes:           text("notes"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  /* One active subscription per user per route
+     Note: uniqueness is enforced at application level for active-only constraint;
+     this index covers the lookup pattern and prevents exact duplicates */
+  uniqueIndex("school_subs_user_route_uidx").on(t.userId, t.routeId),
+  index("school_subs_user_id_idx").on(t.userId),
+  index("school_subs_route_id_idx").on(t.routeId),
+  index("school_subs_status_idx").on(t.status),
+]);
 
-export type SchoolRoute         = typeof schoolRoutesTable.$inferSelect;
-export type NewSchoolRoute      = typeof schoolRoutesTable.$inferInsert;
-export type SchoolSubscription  = typeof schoolSubscriptionsTable.$inferSelect;
+export type SchoolRoute          = typeof schoolRoutesTable.$inferSelect;
+export type NewSchoolRoute       = typeof schoolRoutesTable.$inferInsert;
+export type SchoolSubscription   = typeof schoolSubscriptionsTable.$inferSelect;
 export type NewSchoolSubscription = typeof schoolSubscriptionsTable.$inferInsert;
