@@ -10,9 +10,10 @@ import { Car, Search, User, MapPin, Navigation, Phone, TrendingUp, UserCheck, Al
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
-const STATUSES = ["searching", "accepted", "arrived", "in_transit", "completed", "cancelled"];
+const STATUSES = ["bargaining", "searching", "accepted", "arrived", "in_transit", "completed", "cancelled"];
 
 const STATUS_LABELS: Record<string, string> = {
+  bargaining: "Bargaining",
   searching:  "Searching",
   accepted:   "Accepted",
   arrived:    "Arrived",
@@ -21,8 +22,17 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled:  "Cancelled",
 };
 
+const BARGAIN_STATUS_LABELS: Record<string, string> = {
+  customer_offered:  "Offer Sent",
+  rider_countered:   "Rider Countered",
+  customer_countered:"Customer Countered",
+  agreed:            "Agreed",
+  expired:           "Expired",
+};
+
 /* Only allow logical forward transitions (and admin can force-cancel anything active) */
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  bargaining: ["searching", "cancelled"],
   searching:  ["accepted", "cancelled"],
   accepted:   ["arrived", "cancelled"],
   arrived:    ["in_transit", "cancelled"],
@@ -103,14 +113,15 @@ export default function Rides() {
       || (r.riderName || "").toLowerCase().includes(q);
     const matchType   = typeFilter   === "all" || r.type   === typeFilter;
     const matchStatus = statusFilter === "all"
-      || (statusFilter === "active" && ["searching","accepted","arrived","in_transit"].includes(r.status))
+      || (statusFilter === "active" && ["bargaining","searching","accepted","arrived","in_transit"].includes(r.status))
       || r.status === statusFilter;
     return matchSearch && matchType && matchStatus;
   });
 
   const bikeCount        = rides.filter((r: any) => r.type === "bike").length;
   const carCount         = rides.filter((r: any) => r.type === "car").length;
-  const activeCount      = rides.filter((r: any) => ["searching","accepted","arrived","in_transit"].includes(r.status)).length;
+  const activeCount      = rides.filter((r: any) => ["bargaining","searching","accepted","arrived","in_transit"].includes(r.status)).length;
+  const bargainingCount  = rides.filter((r: any) => r.status === "bargaining").length;
   const completedCount   = rides.filter((r: any) => r.status === "completed").length;
   const cancelledCount   = rides.filter((r: any) => r.status === "cancelled").length;
   const totalRevenue     = rides.filter((r: any) => r.status === "completed").reduce((sum: number, r: any) => sum + (r.fare || 0), 0);
@@ -234,11 +245,12 @@ export default function Rides() {
         {/* Status Filter Row */}
         <div className="flex flex-wrap gap-2">
           {[
-            { key: "all",       label: "All",        cls: "border-border/50 text-muted-foreground hover:border-primary" },
-            { key: "active",    label: "🔵 Active",    cls: "border-blue-300 text-blue-700 bg-blue-50" },
-            { key: "searching", label: "🟡 Searching", cls: "border-amber-300 text-amber-700 bg-amber-50" },
-            { key: "completed", label: "✅ Completed", cls: "border-green-300 text-green-700 bg-green-50" },
-            { key: "cancelled", label: "❌ Cancelled", cls: "border-red-300 text-red-600 bg-red-50" },
+            { key: "all",         label: "All",            cls: "border-border/50 text-muted-foreground hover:border-primary" },
+            { key: "active",      label: "🔵 Active",       cls: "border-blue-300 text-blue-700 bg-blue-50" },
+            { key: "bargaining",  label: `💬 Bargaining${bargainingCount > 0 ? ` (${bargainingCount})` : ""}`, cls: "border-purple-300 text-purple-700 bg-purple-50" },
+            { key: "searching",   label: "🟡 Searching",    cls: "border-amber-300 text-amber-700 bg-amber-50" },
+            { key: "completed",   label: "✅ Completed",    cls: "border-green-300 text-green-700 bg-green-50" },
+            { key: "cancelled",   label: "❌ Cancelled",    cls: "border-red-300 text-red-600 bg-red-50" },
           ].map(({ key, label, cls }) => (
             <button
               key={key}
@@ -325,7 +337,19 @@ export default function Rides() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <p className="font-bold">{formatCurrency(ride.fare)}</p>
+                      {ride.status === "bargaining" && ride.offeredFare ? (
+                        <>
+                          <p className="font-bold text-orange-600">{formatCurrency(ride.offeredFare)}</p>
+                          <p className="text-[10px] text-muted-foreground line-through">{formatCurrency(ride.fare)}</p>
+                          {ride.bargainStatus && (
+                            <Badge variant="outline" className="mt-0.5 text-[9px] font-bold bg-purple-50 text-purple-700 border-purple-200">
+                              💬 {BARGAIN_STATUS_LABELS[ride.bargainStatus] ?? ride.bargainStatus}
+                            </Badge>
+                          )}
+                        </>
+                      ) : (
+                        <p className="font-bold">{formatCurrency(ride.fare)}</p>
+                      )}
                       <p className="text-xs text-muted-foreground">{ride.distance} km</p>
                     </TableCell>
                     <TableCell onClick={e => e.stopPropagation()}>
@@ -415,9 +439,36 @@ export default function Rides() {
                   </Badge>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Fare</span>
+                  <span className="text-muted-foreground">Platform Fare</span>
                   <span className="font-bold text-foreground">{formatCurrency(selectedRide.fare)}</span>
                 </div>
+                {selectedRide.offeredFare != null && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Customer Offer</span>
+                    <span className="font-bold text-orange-600">{formatCurrency(selectedRide.offeredFare)}</span>
+                  </div>
+                )}
+                {selectedRide.counterFare != null && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rider Counter</span>
+                    <span className="font-bold text-purple-600">{formatCurrency(selectedRide.counterFare)}</span>
+                  </div>
+                )}
+                {selectedRide.bargainStatus && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Bargain Stage</span>
+                    <Badge variant="outline" className="text-[10px] font-bold bg-purple-50 text-purple-700 border-purple-200">
+                      💬 {BARGAIN_STATUS_LABELS[selectedRide.bargainStatus] ?? selectedRide.bargainStatus}
+                      {selectedRide.bargainRounds > 0 ? ` · Round ${selectedRide.bargainRounds}` : ""}
+                    </Badge>
+                  </div>
+                )}
+                {selectedRide.bargainNote && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Customer Note</span>
+                    <span className="text-xs text-orange-700 italic max-w-[55%] text-right">"{selectedRide.bargainNote}"</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Distance</span>
                   <span>{selectedRide.distance} km</span>

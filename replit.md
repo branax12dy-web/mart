@@ -171,6 +171,19 @@
   - Previous: General Settings (appTagline, appVersion, supportEmail, supportHours, businessAddress, socialFacebook, socialInstagram) all wired. app_status is live/maintenance toggle. Vendor login footer uses dynamic commission % and businessAddress. -->
 <!-- Previous: Content Settings fully wired: all 9 content fields (6 text + 3 feature toggles) now propagate admin → API → all 3 apps with no loopholes. Customer profile support section fixed (phone dialer + WhatsApp). Admin Content section upgraded with textarea, char counters, app coverage hints. -->
 
+<!-- Previous: BARGAINING FRAMEWORK COMPLETE (Mol-Tol System):
+  - DB: rides table — offeredFare, counterFare, bargainStatus (null|customer_offered|rider_countered|customer_countered|agreed|expired), bargainRounds, bargainNote, acceptedAt columns
+  - Backend rides.ts: POST /rides/estimate returns bargainEnabled+minOffer; POST /rides supports offeredFare+bargainNote; PATCH /rides/:id/accept-counter; PATCH /rides/:id/customer-counter; GET /rides/:id with riderName JOIN
+  - Backend rider.ts: /rider/requests includes bargaining rides; /rider/rides/:id/accept handles bargaining wallet deduction; POST /rider/rides/:id/counter; POST /rider/rides/:id/reject-offer
+  - Customer app (ride/index.tsx): Estimate uses server fare (GST+surge), bargaining panel (toggle, offer input, note), RideTracker has "bargaining" + "rider_countered" screens with accept/counter/cancel UI
+  - Rider app (Home.tsx): Bargaining ride cards show 💬 badge, customer offer price, Accept/Counter/Reject buttons, counter offer input panel
+  - Admin rides.tsx: bargaining status filter button, bargainStatus badge + offered/counter fare in table and detail modal
+  - Admin settings.tsx: Ride Pricing tab has new "Price Bargaining" section with toggle+min%+maxRounds controls and live example
+  - platform-config.ts: bargainingEnabled, bargainingMinPct, bargainingMaxRounds exposed to customer app
+  - PlatformConfigContext.tsx: rides type + default + mapping updated with bargaining fields + riderEarningPct
+  - Admin defaults seeded: ride_bargaining_enabled=on, ride_bargaining_min_pct=70, ride_bargaining_max_rounds=3
+-->
+
 ## Project Overview
 
 **AJKMart** is a full-stack "Super App" combining Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking, Pharmacy, and Parcel Delivery with a unified digital wallet. Built for Azad Jammu & Kashmir (AJK), Pakistan.

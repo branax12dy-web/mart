@@ -58,12 +58,24 @@ router.get("/me", async (req, res) => {
   const s = await getPlatformSettings();
   const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
 
-  const [deliveriesToday, earningsToday, totalDeliveries, totalEarnings] = await Promise.all([
-    db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, today))),
-    db.select({ s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, today))),
-    db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"))),
-    db.select({ s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"))),
+  const [
+    ordersTodayStats, ordersAllStats,
+    ridesTodayStats,  ridesAllStats,
+  ] = await Promise.all([
+    db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable)
+      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, today))),
+    db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable)
+      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"))),
+    db.select({ c: count(), s: sum(ridesTable.fare) }).from(ridesTable)
+      .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, today))),
+    db.select({ c: count(), s: sum(ridesTable.fare) }).from(ridesTable)
+      .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"))),
   ]);
+
+  const deliveriesToday = (ordersTodayStats[0]?.c ?? 0) + (ridesTodayStats[0]?.c ?? 0);
+  const earningsToday   = (safeNum(ordersTodayStats[0]?.s) + safeNum(ridesTodayStats[0]?.s)) * riderKeepPct;
+  const totalDeliveries = (ordersAllStats[0]?.c ?? 0) + (ridesAllStats[0]?.c ?? 0);
+  const totalEarnings   = (safeNum(ordersAllStats[0]?.s) + safeNum(ridesAllStats[0]?.s)) * riderKeepPct;
 
   res.json({
     id: user.id, phone: user.phone, name: user.name, email: user.email,
@@ -75,10 +87,10 @@ router.get("/me", async (req, res) => {
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
     lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
     stats: {
-      deliveriesToday: deliveriesToday[0]?.c ?? 0,
-      earningsToday:   safeNum(earningsToday[0]?.s)  * riderKeepPct,
-      totalDeliveries: totalDeliveries[0]?.c ?? 0,
-      totalEarnings:   safeNum(totalEarnings[0]?.s)  * riderKeepPct,
+      deliveriesToday,
+      earningsToday:   parseFloat(earningsToday.toFixed(2)),
+      totalDeliveries,
+      totalEarnings:   parseFloat(totalEarnings.toFixed(2)),
     },
   });
 });
@@ -119,19 +131,32 @@ router.patch("/profile", async (req, res) => {
   });
 });
 
-/* ── GET /rider/requests — Available orders to pick up ── */
+/* ── GET /rider/requests — Available orders + rides (incl. bargaining) ── */
 router.get("/requests", async (req, res) => {
   const [orders, rides] = await Promise.all([
     db.select().from(ordersTable)
       .where(or(eq(ordersTable.status, "confirmed"), eq(ordersTable.status, "preparing")))
       .orderBy(desc(ordersTable.createdAt)).limit(20),
     db.select().from(ridesTable)
-      .where(eq(ridesTable.status, "searching"))
-      .orderBy(desc(ridesTable.createdAt)).limit(20),
+      .where(or(
+        eq(ridesTable.status, "searching"),
+        /* Bargaining rides: show those where no rider has countered yet (open to all),
+           plus rides where this specific rider previously countered (customer_countered back to them) */
+        eq(ridesTable.status, "bargaining"),
+      ))
+      .where(isNull(ridesTable.riderId))        /* only unassigned rides */
+      .orderBy(desc(ridesTable.createdAt)).limit(30),
   ]);
   res.json({
     orders: orders.map(o => ({ ...o, total: safeNum(o.total) })),
-    rides:  rides.map(r => ({ ...r, fare: safeNum(r.fare), distance: safeNum(r.distance) })),
+    rides:  rides.map(r => ({
+      ...r,
+      fare:         safeNum(r.fare),
+      distance:     safeNum(r.distance),
+      offeredFare:  r.offeredFare  ? safeNum(r.offeredFare)  : null,
+      counterFare:  r.counterFare  ? safeNum(r.counterFare)  : null,
+      bargainRounds: r.bargainRounds ?? 0,
+    })),
   });
 });
 
@@ -368,24 +393,63 @@ router.post("/rides/:id/accept", async (req, res) => {
     res.status(429).json({ error: `Maximum ${maxDeliveries} active deliveries allowed. Complete a current delivery first.` }); return;
   }
 
+  /* Check if this is a bargaining ride — load it first */
+  const [targetRide] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!targetRide) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  /* For bargaining rides, rider accepts the customer's offered fare */
+  const isBargaining = targetRide.status === "bargaining";
+  const agreedFare   = isBargaining
+    ? (targetRide.offeredFare ?? targetRide.fare)
+    : targetRide.fare;
+
+  /* For wallet-payment bargaining rides, deduct wallet now (wasn't deducted at booking) */
+  if (isBargaining && targetRide.paymentMethod === "wallet") {
+    const fareAmt = safeNum(agreedFare);
+    const [customer] = await db.select().from(usersTable).where(eq(usersTable.id, targetRide.userId)).limit(1);
+    if (!customer) { res.status(404).json({ error: "Customer not found" }); return; }
+    const balance = safeNum(customer.walletBalance);
+    if (balance < fareAmt) {
+      res.status(400).json({ error: "Customer has insufficient wallet balance" }); return;
+    }
+    await db.update(usersTable)
+      .set({ walletBalance: (balance - fareAmt).toFixed(2) })
+      .where(eq(usersTable.id, targetRide.userId));
+    await db.insert(walletTransactionsTable).values({
+      id: generateId(), userId: targetRide.userId, type: "debit",
+      amount: fareAmt.toFixed(2),
+      description: `Ride payment (bargained) — #${targetRide.id.slice(-6).toUpperCase()}`,
+    }).catch(() => {});
+  }
+
   // Atomic accept: only succeeds if riderId is still NULL
+  const acceptedAt = new Date();
   const [updated] = await db
     .update(ridesTable)
-    .set({ riderId, riderName: riderUser.name || "Rider", riderPhone: riderUser.phone, status: "accepted", updatedAt: new Date() })
+    .set({
+      riderId,
+      riderName: riderUser.name || "Rider",
+      riderPhone: riderUser.phone,
+      status: "accepted",
+      fare: isBargaining ? safeNum(agreedFare).toFixed(2) : targetRide.fare,
+      bargainStatus: isBargaining ? "agreed" : targetRide.bargainStatus,
+      acceptedAt,
+      updatedAt: acceptedAt,
+    })
     .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)))
     .returning();
 
   if (!updated) {
-    const [existing] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-    if (!existing) { res.status(404).json({ error: "Ride not found" }); return; }
     res.status(409).json({ error: "Ride already taken by another rider" }); return;
   }
 
   await db.insert(notificationsTable).values({
     id: generateId(), userId: updated.userId,
     title: "Rider Assigned! 🚗",
-    body: `${riderUser.name || "Your rider"} is coming to pick you up.`,
-    type: "ride", icon: "car-outline",
+    body: isBargaining
+      ? `${riderUser.name || "Your rider"} ne Rs. ${safeNum(agreedFare).toFixed(0)} par offer accept kar liya!`
+      : `${riderUser.name || "Your rider"} is coming to pick you up.`,
+    type: "ride", icon: updated.type === "bike" ? "bicycle-outline" : "car-outline",
   }).catch(() => {});
 
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
@@ -437,6 +501,103 @@ router.patch("/rides/:id/status", async (req, res) => {
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
 
+/* ── POST /rider/rides/:id/counter — Rider sends a counter offer on a bargaining ride ── */
+router.post("/rides/:id/counter", async (req, res) => {
+  const riderId   = (req as any).riderId;
+  const riderUser = (req as any).riderUser;
+  const rideId    = req.params["id"]!;
+  const { counterFare, note } = req.body;
+
+  if (!counterFare) { res.status(400).json({ error: "counterFare required" }); return; }
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (ride.status !== "bargaining") {
+    res.status(400).json({ error: "This ride is not in bargaining state" }); return;
+  }
+  if (ride.riderId && ride.riderId !== riderId) {
+    res.status(403).json({ error: "Another rider has already countered this ride" }); return;
+  }
+
+  const s = await getPlatformSettings();
+  const bargainMaxRounds = parseInt(s["ride_bargaining_max_rounds"] ?? "3", 10);
+  const currentRounds    = ride.bargainRounds ?? 0;
+
+  if (currentRounds >= bargainMaxRounds) {
+    res.status(400).json({ error: `Maximum ${bargainMaxRounds} bargaining rounds allowed` }); return;
+  }
+
+  const parsedCounter = safeNum(counterFare);
+  const platformFare  = safeNum(ride.fare);
+  if (parsedCounter > platformFare) {
+    res.status(400).json({ error: `Counter offer cannot exceed platform fare (Rs. ${platformFare.toFixed(0)})` }); return;
+  }
+  const offeredAmt = safeNum(ride.offeredFare ?? 0);
+  if (parsedCounter <= offeredAmt) {
+    res.status(400).json({ error: `Counter offer must be higher than customer's offer (Rs. ${offeredAmt.toFixed(0)})` }); return;
+  }
+
+  const [updated] = await db.update(ridesTable)
+    .set({
+      riderId,   /* tentatively lock this bargain to this rider */
+      riderName: riderUser.name || "Rider",
+      riderPhone: riderUser.phone,
+      counterFare: parsedCounter.toFixed(2),
+      bargainStatus: "rider_countered",
+      bargainRounds: currentRounds + 1,
+      bargainNote: note || ride.bargainNote,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)))
+    .returning();
+
+  if (!updated) {
+    res.status(409).json({ error: "Another rider already responded to this ride" }); return;
+  }
+
+  /* Notify customer */
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: ride.userId,
+    title: "Rider ne Counter Kiya 💬",
+    body: `${riderUser.name || "Ek rider"} ka counter offer: Rs. ${parsedCounter.toFixed(0)}. Accept ya counter karein!`,
+    type: "ride", icon: "chatbubble-outline", link: "/ride",
+  }).catch(() => {});
+
+  res.json({ ...updated, fare: safeNum(updated.fare), counterFare: parsedCounter });
+});
+
+/* ── POST /rider/rides/:id/reject-offer — Rider rejects/passes on a bargaining ride ── */
+router.post("/rides/:id/reject-offer", async (req, res) => {
+  const riderId = (req as any).riderId;
+  const rideId  = req.params["id"]!;
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (!["bargaining", "searching"].includes(ride.status)) {
+    res.status(400).json({ error: "Cannot reject this ride at its current stage" }); return;
+  }
+  /* Only the rider who countered (riderId set) can reject; unassigned bargains just get dismissed locally */
+  if (ride.riderId && ride.riderId !== riderId) {
+    res.status(403).json({ error: "Not your bargaining session" }); return;
+  }
+
+  /* If this rider had tentatively locked the bargain, free it for others */
+  if (ride.riderId === riderId) {
+    await db.update(ridesTable)
+      .set({
+        riderId:      null,
+        riderName:    null,
+        riderPhone:   null,
+        counterFare:  null,
+        bargainStatus: "customer_offered",  /* reset to customer's original offer */
+        updatedAt: new Date(),
+      })
+      .where(eq(ridesTable.id, rideId));
+  }
+
+  res.json({ success: true, message: "Ride dismissed" });
+});
+
 /* ── GET /rider/history — Delivery history ── */
 router.get("/history", async (req, res) => {
   const riderId = (req as any).riderId;
@@ -466,22 +627,23 @@ router.get("/earnings", async (req, res) => {
   const s = await getPlatformSettings();
   const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
 
-  const [todayOrders, weekOrders, monthOrders, todayRides, weekRides] = await Promise.all([
+  const [todayOrders, weekOrders, monthOrders, todayRides, weekRides, monthRides] = await Promise.all([
     db.select({ s: sum(ordersTable.total), c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.updatedAt, today))),
     db.select({ s: sum(ordersTable.total), c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.updatedAt, weekAgo))),
     db.select({ s: sum(ordersTable.total), c: count() }).from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.updatedAt, monthAgo))),
-    db.select({ s: sum(ridesTable.fare), c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, today))),
-    db.select({ s: sum(ridesTable.fare), c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, weekAgo))),
+    db.select({ s: sum(ridesTable.fare),   c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, today))),
+    db.select({ s: sum(ridesTable.fare),   c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, weekAgo))),
+    db.select({ s: sum(ridesTable.fare),   c: count() }).from(ridesTable).where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, monthAgo))),
   ]);
 
   const todayTotal = (safeNum(todayOrders[0]?.s) + safeNum(todayRides[0]?.s)) * riderKeepPct;
   const weekTotal  = (safeNum(weekOrders[0]?.s)  + safeNum(weekRides[0]?.s))  * riderKeepPct;
-  const monthTotal =  safeNum(monthOrders[0]?.s)                               * riderKeepPct;
+  const monthTotal = (safeNum(monthOrders[0]?.s) + safeNum(monthRides[0]?.s)) * riderKeepPct;
 
   res.json({
     today:  { earnings: parseFloat(todayTotal.toFixed(2)), deliveries: (todayOrders[0]?.c ?? 0) + (todayRides[0]?.c ?? 0) },
     week:   { earnings: parseFloat(weekTotal.toFixed(2)),  deliveries: (weekOrders[0]?.c  ?? 0) + (weekRides[0]?.c  ?? 0) },
-    month:  { earnings: parseFloat(monthTotal.toFixed(2)), deliveries: monthOrders[0]?.c ?? 0 },
+    month:  { earnings: parseFloat(monthTotal.toFixed(2)), deliveries: (monthOrders[0]?.c ?? 0) + (monthRides[0]?.c ?? 0) },
   });
 });
 

@@ -122,6 +122,41 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
     prevStatus.current = st || "";
   }, [ride?.status]);
 
+  /* Bargaining counter state */
+  const [counterInput,   setCounterInput]   = useState("");
+  const [counterLoading, setCounterLoading] = useState(false);
+  const [acceptLoading,  setAcceptLoading]  = useState(false);
+
+  const acceptCounter = async () => {
+    setAcceptLoading(true);
+    try {
+      const r = await fetch(`${API}/rides/${rideId}/accept-counter`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const d = await r.json();
+      if (r.ok) setRide(d);
+    } catch {}
+    setAcceptLoading(false);
+  };
+
+  const sendCustomerCounter = async () => {
+    const amt = parseFloat(counterInput);
+    if (isNaN(amt) || amt <= 0) return;
+    setCounterLoading(true);
+    try {
+      const r = await fetch(`${API}/rides/${rideId}/customer-counter`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, offeredFare: amt }),
+      });
+      const d = await r.json();
+      if (r.ok) { setRide(d); setCounterInput(""); }
+    } catch {}
+    setCounterLoading(false);
+  };
+
   /* ── Poll every 5s ── */
   useEffect(() => {
     const poll = async () => {
@@ -160,6 +195,153 @@ function RideTracker({ rideId, initialType, userId, cancellationFee, onReset }: 
   const LABELS   = ["Accepted", "Arrived", "On Route", "Done"];
   const stepIdx  = STEPS.indexOf(status);
   const elapsedStr = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
+  /* ════════════════ BARGAINING — Rider Counter Offer ════════════════ */
+  if (status === "bargaining" && ride?.bargainStatus === "rider_countered") {
+    const riderCounter = ride?.counterFare ?? 0;
+    const platformFare = ride?.fare ?? 0;
+    const riderName    = ride?.riderName || "Rider";
+    return (
+      <View style={{ flex: 1 }}>
+        <LinearGradient colors={["#7C3AED", "#6D28D9", "#5B21B6"]} style={StyleSheet.absoluteFillObject} />
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 20 }}>
+          <View style={{ backgroundColor: "rgba(255,255,255,0.15)", width: 90, height: 90, borderRadius: 45, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 42 }}>💬</Text>
+          </View>
+          <View style={{ alignItems: "center", gap: 6 }}>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: "#fff", textAlign: "center" }}>
+              {riderName} ka Counter Offer!
+            </Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.75)", textAlign: "center" }}>
+              Rider ne aapka offer dekhaa aur nayi price suggest ki
+            </Text>
+          </View>
+
+          {/* Counter fare box */}
+          <View style={{ backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 20, padding: 24, alignItems: "center", width: "100%", gap: 4 }}>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Rider ki suggested price</Text>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 38, color: "#FCD34D" }}>Rs. {riderCounter}</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+              Platform fare: Rs. {platformFare} · Aapka offer: Rs. {ride?.offeredFare ?? 0}
+            </Text>
+          </View>
+
+          <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: "rgba(255,255,255,0.85)", textAlign: "center" }}>
+            Kya karein?
+          </Text>
+
+          {/* Action buttons */}
+          <View style={{ width: "100%", gap: 10 }}>
+            {/* Accept counter */}
+            <Pressable
+              onPress={acceptCounter}
+              disabled={acceptLoading}
+              style={{ backgroundColor: "#10B981", borderRadius: 16, paddingVertical: 16, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}>
+              {acceptLoading ? <ActivityIndicator color="#fff" size="small" /> : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Accept Rs. {riderCounter}</Text>
+                </>
+              )}
+            </Pressable>
+
+            {/* Customer counter */}
+            <View style={{ backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 16, padding: 14, gap: 8 }}>
+              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>Ya apna counter offer karein:</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12 }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Rs.</Text>
+                  <TextInput
+                    value={counterInput}
+                    onChangeText={setCounterInput}
+                    keyboardType="numeric"
+                    placeholder={String(Math.ceil((riderCounter + (ride?.offeredFare ?? 0)) / 2))}
+                    placeholderTextColor="#9CA3AF"
+                    style={{ flex: 1, fontFamily: "Inter_700Bold", fontSize: 18, color: "#1F2937", paddingVertical: 10, paddingHorizontal: 6 }}
+                  />
+                </View>
+                <Pressable
+                  onPress={sendCustomerCounter}
+                  disabled={counterLoading || !counterInput}
+                  style={{ backgroundColor: "#F59E0B", borderRadius: 12, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", opacity: (!counterInput || counterLoading) ? 0.6 : 1 }}>
+                  {counterLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>Counter</Text>}
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Cancel */}
+            <Pressable
+              onPress={cancelRide}
+              disabled={cancelling}
+              style={{ alignItems: "center", padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.08)" }}>
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "rgba(255,255,255,0.8)" }}>
+                {cancelling ? "Cancelling..." : "Cancel Ride"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+        <View style={{ paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 24) }}>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>
+            Ride #{rideId.slice(-8).toUpperCase()} · Round {ride?.bargainRounds ?? 1}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  /* ════════════════ BARGAINING — Waiting for Rider Response ════════════════ */
+  if (status === "bargaining") {
+    const offeredFare = ride?.offeredFare ?? 0;
+    return (
+      <View style={{ flex: 1 }}>
+        <LinearGradient colors={["#92400E", "#B45309", "#D97706"]} style={StyleSheet.absoluteFillObject} />
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
+          <View style={{ backgroundColor: "rgba(255,255,255,0.13)", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginBottom: 36 }}>
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: "rgba(255,255,255,0.9)", letterSpacing: 1 }}>
+              OFFER PENDING · #{rideId.slice(-8).toUpperCase()}
+            </Text>
+          </View>
+
+          {/* Animated chat bubble */}
+          <View style={{ width: 230, height: 230, alignItems: "center", justifyContent: "center" }}>
+            <Animated.View style={{ position: "absolute", width: 230, height: 230, borderRadius: 115, backgroundColor: "rgba(255,255,255,0.07)", transform: [{ scale: ring3 }], opacity: ring3Op }} />
+            <Animated.View style={{ position: "absolute", width: 176, height: 176, borderRadius: 88,  backgroundColor: "rgba(255,255,255,0.11)", transform: [{ scale: ring2 }], opacity: ring2Op }} />
+            <Animated.View style={{ position: "absolute", width: 122, height: 122, borderRadius: 61,  backgroundColor: "rgba(255,255,255,0.17)", transform: [{ scale: ring1 }], opacity: ring1Op }} />
+            <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: "rgba(255,255,255,0.24)", alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)" }}>
+              <Text style={{ fontSize: 40 }}>💬</Text>
+            </View>
+          </View>
+
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: "#fff", marginTop: 36, textAlign: "center" }}>
+            Offer Bheja Gaya!
+          </Text>
+          <View style={{ backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 16, padding: 18, marginTop: 20, width: "100%", alignItems: "center", gap: 4 }}>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.8)" }}>Aapka offer</Text>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 34, color: "#FCD34D" }}>Rs. {offeredFare}</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+              Riders ko aapka offer dikh raha hai. Jab rider respond karega, aapko notification milegi.
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: 18, backgroundColor: "rgba(255,255,255,0.12)", paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 }}>
+            <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.8)" />
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
+              Waiting for {elapsedStr}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 24) + 16 }}>
+          <Pressable onPress={cancelRide} disabled={cancelling} style={{ alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.1)" }}>
+            {cancelling
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>Cancel Offer</Text>
+            }
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   /* ════════════════ SEARCHING ════════════════ */
   if (status === "searching") {
@@ -621,7 +803,11 @@ export default function RideScreen() {
     { id: "cash", label: "Cash" },
     { id: "wallet", label: "Wallet" },
   ]);
-  const [estimate,   setEstimate]  = useState<{ fare: number; dist: number; dur: string } | null>(null);
+  const [estimate,   setEstimate]  = useState<{
+    fare: number; dist: number; dur: string;
+    baseFare: number; gstAmount: number;
+    bargainEnabled: boolean; minOffer: number;
+  } | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [booking,    setBooking]   = useState(false);
   const [booked,     setBooked]    = useState<any>(null);
@@ -629,6 +815,9 @@ export default function RideScreen() {
   const [history,    setHistory]   = useState<any[]>([]);
   const [histLoading,setHistLoading] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
+  const [showBargain,setShowBargain] = useState(false);
+  const [offeredFare,setOfferedFare] = useState("");
+  const [bargainNote,setBargainNote] = useState("");
 
   const [pickupFocus, setPickupFocus] = useState(false);
   const [dropFocus,   setDropFocus]   = useState(false);
@@ -671,20 +860,40 @@ export default function RideScreen() {
     }
   };
 
-  /* ── Fetch real directions when both locations set ── */
+  /* ── Fetch server-side fare estimate (includes GST, surge, bargaining info) ── */
   useEffect(() => {
     if (!pickupObj || !dropObj) { setEstimate(null); return; }
-
+    let cancelled = false;
     setEstimating(true);
-    getDirections(pickupObj.lat, pickupObj.lng, dropObj.lat, dropObj.lng,
-      rideType === "bike" ? "bicycling" : "driving"
-    ).then(result => {
-      const dist = result?.distanceKm ?? 0;
-      const dur  = result?.durationText ?? `${Math.round(dist * 3 + 5)} min`;
-      const fare = calcFareFromConfig(dist, rideType, rideCfg);
-      setEstimate({ fare, dist, dur });
-    }).finally(() => setEstimating(false));
-  }, [pickupObj, dropObj, rideType, rideCfg]);
+    fetch(`${API}/rides/estimate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pickupLat: pickupObj.lat, pickupLng: pickupObj.lng,
+        dropLat:   dropObj.lat,   dropLng:   dropObj.lng,
+        type: rideType,
+      }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data) return;
+        setEstimate({
+          fare:           data.fare,
+          dist:           data.distance,
+          dur:            data.duration,
+          baseFare:       data.baseFare ?? data.fare,
+          gstAmount:      data.gstAmount ?? 0,
+          bargainEnabled: data.bargainEnabled ?? false,
+          minOffer:       data.minOffer ?? data.fare,
+        });
+      })
+      .catch(() => {
+        /* If server unreachable, silently clear estimate */
+        if (!cancelled) setEstimate(null);
+      })
+      .finally(() => { if (!cancelled) setEstimating(false); });
+    return () => { cancelled = true; };
+  }, [pickupObj?.lat, pickupObj?.lng, dropObj?.lat, dropObj?.lng, rideType]);
 
   /* ── Select a prediction from the list ── */
   const selectPickup = useCallback(async (pred: MapPrediction) => {
@@ -715,12 +924,30 @@ export default function RideScreen() {
   };
 
   const handleBook = async () => {
-    if (!pickup || !drop) { showToast("Pickup aur drop location select karein", "error"); return; }
-    if (!user)            { showToast("Login karein ride book karne ke liye", "error"); return; }
-    if (payMethod === "wallet" && estimate && (user.walletBalance ?? 0) < estimate.fare) {
-      showToast(`Wallet balance Rs. ${user.walletBalance} — fare Rs. ${estimate.fare} se kam hai. Wallet top up karein.`, "error");
+    if (!pickup || !drop)    { showToast("Pickup aur drop location select karein", "error"); return; }
+    if (!pickupObj)          { showToast("Pickup location list se select karein (exact location required)", "error"); return; }
+    if (!dropObj)            { showToast("Drop location list se select karein (exact location required)", "error"); return; }
+    if (!user)               { showToast("Login karein ride book karne ke liye", "error"); return; }
+    if (!estimate)           { showToast("Fare estimate calculate ho raha hai. Thoda wait karein.", "error"); return; }
+
+    /* Validate bargaining offer */
+    let parsedOffer: number | undefined;
+    if (showBargain && offeredFare) {
+      parsedOffer = parseFloat(offeredFare);
+      if (isNaN(parsedOffer) || parsedOffer <= 0) {
+        showToast("Valid amount enter karein offer ke liye", "error"); return;
+      }
+      if (parsedOffer < estimate.minOffer) {
+        showToast(`Minimum offer Rs. ${estimate.minOffer} hai (${Math.round((estimate.minOffer / estimate.fare) * 100)}% of platform fare)`, "error"); return;
+      }
+    }
+
+    const effectiveFare = parsedOffer ?? estimate.fare;
+    if (payMethod === "wallet" && (user.walletBalance ?? 0) < effectiveFare) {
+      showToast(`Wallet balance Rs. ${user.walletBalance} — Rs. ${effectiveFare} se kam hai. Top up karein.`, "error");
       return;
     }
+
     setBooking(true);
     try {
       const res = await fetch(`${API}/rides`, {
@@ -729,14 +956,18 @@ export default function RideScreen() {
         body: JSON.stringify({
           userId: user.id, type: rideType,
           pickupAddress: pickup, dropAddress: drop,
-          pickupLat: pickupObj?.lat ?? 34.37, pickupLng: pickupObj?.lng ?? 73.47,
-          dropLat: dropObj?.lat ?? 33.14,     dropLng: dropObj?.lng ?? 73.75,
+          pickupLat: pickupObj.lat, pickupLng: pickupObj.lng,
+          dropLat:   dropObj.lat,   dropLng:   dropObj.lng,
           paymentMethod: payMethod,
+          ...(parsedOffer !== undefined && { offeredFare: parsedOffer }),
+          ...(bargainNote && { bargainNote }),
         }),
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error || "Booking fail ho gayi", "error"); return; }
-      if (payMethod === "wallet") updateUser({ walletBalance: (user.walletBalance ?? 0) - data.fare });
+      if (payMethod === "wallet" && !data.isBargaining) {
+        updateUser({ walletBalance: (user.walletBalance ?? 0) - data.effectiveFare });
+      }
       setBooked(data);
     } catch { showToast("Network error. Dobara try karein.", "error"); }
     finally { setBooking(false); }
@@ -978,7 +1209,72 @@ export default function RideScreen() {
                   <Text style={[rs.fareItemVal, { color: "#059669", fontSize: 20 }]}>Rs. {estimate.fare}</Text>
                 </View>
               </View>
+              {/* GST breakdown */}
+              {estimate.gstAmount > 0 && (
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: "rgba(5,150,105,0.15)" }}>
+                  <Text style={{ fontSize: 11, color: "#065F46", opacity: 0.7 }}>Base fare: Rs. {estimate.baseFare}</Text>
+                  <Text style={{ fontSize: 11, color: "#065F46", opacity: 0.7 }}>GST: Rs. {estimate.gstAmount}</Text>
+                </View>
+              )}
             </LinearGradient>
+          </View>
+        )}
+
+        {/* ── Bargaining Panel ── */}
+        {!estimating && estimate?.bargainEnabled && (
+          <View style={{ marginTop: 8 }}>
+            <Pressable
+              onPress={() => { setShowBargain(v => !v); setOfferedFare(""); setBargainNote(""); }}
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: showBargain ? "#FFF7ED" : "#F8FAFC", borderWidth: 1.5, borderColor: showBargain ? "#FB923C" : "#E2E8F0", borderRadius: 14, padding: 14 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: showBargain ? "#FFEDD5" : "#F1F5F9", alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ fontSize: 18 }}>💬</Text>
+                </View>
+                <View>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: showBargain ? "#C2410C" : "#374151" }}>
+                    {showBargain ? "Bargaining Mode ON" : "Make an Offer"}
+                  </Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: showBargain ? "#EA580C" : "#6B7280" }}>
+                    {showBargain ? `Min: Rs. ${estimate.minOffer}` : `Apna price suggest karein (min Rs. ${estimate.minOffer})`}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name={showBargain ? "chevron-up" : "chevron-down"} size={18} color={showBargain ? "#EA580C" : "#9CA3AF"} />
+            </Pressable>
+
+            {showBargain && (
+              <View style={{ backgroundColor: "#FFF7ED", borderWidth: 1, borderColor: "#FED7AA", borderTopWidth: 0, borderBottomLeftRadius: 14, borderBottomRightRadius: 14, padding: 14, gap: 10 }}>
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E" }}>
+                  Platform fare: Rs. {estimate.fare} · Minimum offer: Rs. {estimate.minOffer}
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1.5, borderColor: "#FB923C", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 4 }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: "#374151", marginRight: 4 }}>Rs.</Text>
+                  <TextInput
+                    value={offeredFare}
+                    onChangeText={setOfferedFare}
+                    keyboardType="numeric"
+                    placeholder={String(estimate.minOffer)}
+                    placeholderTextColor="#D1D5DB"
+                    style={{ flex: 1, fontFamily: "Inter_700Bold", fontSize: 20, color: "#1F2937", paddingVertical: 10 }}
+                  />
+                  {offeredFare !== "" && (
+                    <Pressable onPress={() => setOfferedFare("")}>
+                      <Ionicons name="close-circle" size={18} color="#D1D5DB" />
+                    </Pressable>
+                  )}
+                </View>
+                <TextInput
+                  value={bargainNote}
+                  onChangeText={setBargainNote}
+                  placeholder="Note (optional) — e.g. 'Main pass hoon'"
+                  placeholderTextColor="#D1D5DB"
+                  style={{ backgroundColor: "#fff", borderWidth: 1, borderColor: "#FED7AA", borderRadius: 10, padding: 10, fontFamily: "Inter_400Regular", fontSize: 13, color: "#374151" }}
+                />
+                <Text style={{ fontSize: 11, color: "#9A3412", lineHeight: 16 }}>
+                  💡 Rider aapka offer dekh ke accept, counter, ya reject kar sakta hai. Counter aane par aapko notification milegi.
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -1023,11 +1319,15 @@ export default function RideScreen() {
         </View>
 
         {/* Book Button */}
-        <Pressable onPress={handleBook} disabled={booking} style={[rs.bookBtn, booking && { opacity: 0.7 }]}>
+        <Pressable onPress={handleBook} disabled={booking || !estimate} style={[rs.bookBtn, (booking || !estimate) && { opacity: 0.7 }, showBargain && offeredFare ? { backgroundColor: "#EA580C" } : {}]}>
           {booking ? <ActivityIndicator color="#fff" /> : (
             <>
-              <Ionicons name={rideType === "bike" ? "bicycle" : "car"} size={20} color="#fff" />
-              <Text style={rs.bookBtnTxt}>Book {rideType === "bike" ? "Bike" : "Car"} Now{estimate ? ` • Rs. ${estimate.fare}` : ""}</Text>
+              <Ionicons name={showBargain && offeredFare ? "chatbubble-ellipses" : (rideType === "bike" ? "bicycle" : "car")} size={20} color="#fff" />
+              <Text style={rs.bookBtnTxt}>
+                {showBargain && offeredFare
+                  ? `Send Offer • Rs. ${offeredFare}`
+                  : `Book ${rideType === "bike" ? "Bike" : "Car"} Now${estimate ? ` • Rs. ${estimate.fare}` : ""}`}
+              </Text>
             </>
           )}
         </Pressable>

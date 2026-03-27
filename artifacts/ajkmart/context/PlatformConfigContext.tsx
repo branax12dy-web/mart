@@ -74,6 +74,10 @@ export interface PlatformConfig {
     surgeEnabled: boolean;
     surgeMultiplier: number;
     cancellationFee: number;
+    bargainingEnabled: boolean;
+    bargainingMinPct: number;
+    bargainingMaxRounds: number;
+    riderEarningPct: number;
   };
   finance: {
     gstEnabled: boolean;
@@ -181,6 +185,8 @@ const DEFAULT: PlatformConfig = {
     bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50,
     carBaseFare: 25, carPerKm: 12, carMinFare: 80,
     surgeEnabled: false, surgeMultiplier: 1.5, cancellationFee: 30,
+    bargainingEnabled: true, bargainingMinPct: 70, bargainingMaxRounds: 3,
+    riderEarningPct: 80,
   },
   finance: {
     gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100,
@@ -304,9 +310,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           carBaseFare:     raw.rides?.carBaseFare     ?? DEFAULT.rides.carBaseFare,
           carPerKm:        raw.rides?.carPerKm        ?? DEFAULT.rides.carPerKm,
           carMinFare:      raw.rides?.carMinFare      ?? DEFAULT.rides.carMinFare,
-          surgeEnabled:    raw.rides?.surgeEnabled    ?? DEFAULT.rides.surgeEnabled,
-          surgeMultiplier: raw.rides?.surgeMultiplier ?? DEFAULT.rides.surgeMultiplier,
-          cancellationFee: raw.rides?.cancellationFee ?? DEFAULT.rides.cancellationFee,
+          surgeEnabled:        raw.rides?.surgeEnabled        ?? DEFAULT.rides.surgeEnabled,
+          surgeMultiplier:     raw.rides?.surgeMultiplier     ?? DEFAULT.rides.surgeMultiplier,
+          cancellationFee:     raw.rides?.cancellationFee     ?? DEFAULT.rides.cancellationFee,
+          bargainingEnabled:   raw.rides?.bargainingEnabled   ?? DEFAULT.rides.bargainingEnabled,
+          bargainingMinPct:    raw.rides?.bargainingMinPct    ?? DEFAULT.rides.bargainingMinPct,
+          bargainingMaxRounds: raw.rides?.bargainingMaxRounds ?? DEFAULT.rides.bargainingMaxRounds,
+          riderEarningPct:     raw.rides?.riderEarningPct     ?? DEFAULT.rides.riderEarningPct,
         },
         finance: {
           gstEnabled:           raw.finance?.gstEnabled           ?? DEFAULT.finance.gstEnabled,

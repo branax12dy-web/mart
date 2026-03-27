@@ -130,6 +130,31 @@ export default function Home() {
     },
   });
 
+  /* Counter input state per ride */
+  const [counterInputs, setCounterInputs] = useState<Record<string, string>>({});
+  const [showCounter,   setShowCounter]   = useState<Record<string, boolean>>({});
+
+  const counterRideMut = useMutation({
+    mutationFn: ({ id, counterFare }: { id: string; counterFare: number }) =>
+      api.counterRide(id, { counterFare }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      setCounterInputs(prev => ({ ...prev, [vars.id]: "" }));
+      setShowCounter(prev => ({ ...prev, [vars.id]: false }));
+      showToast("💬 Counter offer bhej diya gaya!");
+    },
+    onError: (e: any) => showToast("❌ " + (e.message || "Counter offer nahi gaya")),
+  });
+
+  const rejectOfferMut = useMutation({
+    mutationFn: (id: string) => api.rejectOffer(id),
+    onSuccess: (_, id) => {
+      dismiss(id);
+      showToast("Ride skip kar diya gaya.");
+    },
+    onError: (e: any) => showToast("❌ " + e.message),
+  });
+
   const getDeliveryEarn = (type: string) => {
     const fee = (config.deliveryFee as Record<string, number>)[type] ?? config.deliveryFee.mart ?? 100;
     return fee * (config.finance.riderEarningPct / 100);
@@ -328,63 +353,152 @@ export default function Home() {
                   ))}
 
                   {/* ─ RIDE Requests ─ */}
-                  {rides.map((r: any) => (
-                    <div key={r.id} className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-green-50 flex items-center justify-center text-2xl flex-shrink-0">
-                          {r.type === "bike" ? "🏍️" : "🚗"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                            <p className="font-extrabold text-gray-900 capitalize">{r.type} Ride</p>
-                            <RequestAge createdAt={r.createdAt} />
+                  {rides.map((r: any) => {
+                    const isBargain    = r.status === "bargaining" && r.offeredFare != null;
+                    const offeredFare  = r.offeredFare  ?? r.fare;
+                    const effectiveFare = isBargain ? offeredFare : r.fare;
+                    const earnings     = effectiveFare * (config.finance.riderEarningPct / 100);
+                    const isMyCounter  = r.bargainStatus === "customer_countered"; /* customer countered back to this rider */
+                    const mapsUrl = (r.pickupLat && r.pickupLng)
+                      ? `https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`
+                      : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`;
+
+                    return (
+                      <div key={r.id} className={`p-4 ${isBargain ? "border-l-4 border-orange-400 bg-orange-50/30" : ""}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 ${isBargain ? "bg-orange-100" : "bg-green-50"}`}>
+                            {isBargain ? "💬" : (r.type === "bike" ? "🏍️" : "🚗")}
                           </div>
-                          <p className="text-xs text-gray-500 truncate">🟢 {r.pickupAddress}</p>
-                          <p className="text-xs text-gray-400 truncate">🔴 {r.dropAddress}</p>
-                          <div className="flex items-center gap-4 mt-2">
-                            <div>
-                              <p className="text-lg font-extrabold text-green-600">+{formatCurrency(r.fare * (config.finance.riderEarningPct / 100))}</p>
-                              <p className="text-[10px] text-gray-400">your earnings</p>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                              <p className="font-extrabold text-gray-900 capitalize">{r.type} Ride</p>
+                              {isBargain && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 animate-pulse">
+                                  💬 BARGAIN OFFER
+                                </span>
+                              )}
+                              {isMyCounter && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                  ↩ Customer Countered
+                                </span>
+                              )}
+                              <RequestAge createdAt={r.createdAt} />
                             </div>
-                            {r.distance && (
+                            <p className="text-xs text-gray-500 truncate">🟢 {r.pickupAddress}</p>
+                            <p className="text-xs text-gray-400 truncate">🔴 {r.dropAddress}</p>
+                            <div className="flex items-center gap-4 mt-2 flex-wrap">
                               <div>
-                                <p className="text-sm font-bold text-gray-700">{r.distance} km</p>
-                                <p className="text-[10px] text-gray-400">distance</p>
+                                <p className={`text-lg font-extrabold ${isBargain ? "text-orange-600" : "text-green-600"}`}>
+                                  +{formatCurrency(earnings)}
+                                </p>
+                                <p className="text-[10px] text-gray-400">your earnings</p>
+                              </div>
+                              {isBargain && (
+                                <div>
+                                  <p className="text-sm font-bold text-orange-700">{formatCurrency(offeredFare)}</p>
+                                  <p className="text-[10px] text-gray-400">customer offer</p>
+                                </div>
+                              )}
+                              {r.distance && (
+                                <div>
+                                  <p className="text-sm font-bold text-gray-700">{r.distance} km</p>
+                                  <p className="text-[10px] text-gray-400">distance</p>
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-sm font-bold text-gray-400 line-through">{formatCurrency(r.fare)}</p>
+                                <p className="text-[10px] text-gray-400">platform fare</p>
+                              </div>
+                            </div>
+                            {r.bargainNote && (
+                              <p className="text-xs text-orange-700 mt-1.5 italic">💬 "{r.bargainNote}"</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Standard actions (searching rides) */}
+                        {!isBargain && (
+                          <div className="flex gap-2 mt-3">
+                            <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
+                              🗺️
+                            </a>
+                            <button onClick={() => dismiss(r.id)}
+                              className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors">
+                              ✕
+                            </button>
+                            <button onClick={() => acceptRideMut.mutate(r.id)}
+                              disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
+                              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
+                              {acceptRideMut.isPending ? "Accepting..." : "✓ Accept Ride"}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Bargaining actions */}
+                        {isBargain && (
+                          <div className="mt-3 space-y-2">
+                            {/* Accept the customer's offer */}
+                            <div className="flex gap-2">
+                              <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl flex-shrink-0">
+                                🗺️
+                              </a>
+                              <button onClick={() => acceptRideMut.mutate(r.id)}
+                                disabled={acceptRideMut.isPending}
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
+                                ✓ Accept Rs. {offeredFare}
+                              </button>
+                              <button onClick={() => rejectOfferMut.mutate(r.id)}
+                                disabled={rejectOfferMut.isPending}
+                                className="bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-red-200 transition-colors">
+                                ✕
+                              </button>
+                            </div>
+
+                            {/* Counter offer toggle */}
+                            {!showCounter[r.id] ? (
+                              <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
+                                className="w-full border-2 border-orange-300 text-orange-700 font-bold py-2.5 rounded-xl text-sm bg-orange-50 hover:bg-orange-100 transition-colors">
+                                💬 Counter Offer karein
+                              </button>
+                            ) : (
+                              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2">
+                                <p className="text-xs font-semibold text-orange-700">
+                                  Counter offer (Rs. {offeredFare} – Rs. {r.fare} ke beech):
+                                </p>
+                                <div className="flex gap-2">
+                                  <div className="flex-1 flex items-center bg-white border border-orange-300 rounded-xl px-3">
+                                    <span className="text-sm font-bold text-gray-500 mr-1">Rs.</span>
+                                    <input
+                                      type="number"
+                                      value={counterInputs[r.id] || ""}
+                                      onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                      placeholder={String(Math.ceil((offeredFare + r.fare) / 2))}
+                                      className="flex-1 py-2.5 text-sm font-bold text-gray-900 outline-none bg-transparent"
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      const amt = parseFloat(counterInputs[r.id] || "");
+                                      if (!isNaN(amt)) counterRideMut.mutate({ id: r.id, counterFare: amt });
+                                    }}
+                                    disabled={counterRideMut.isPending || !counterInputs[r.id]}
+                                    className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
+                                    {counterRideMut.isPending ? "..." : "Send"}
+                                  </button>
+                                  <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))}
+                                    className="bg-gray-100 text-gray-500 font-bold px-3 rounded-xl text-sm">
+                                    ✕
+                                  </button>
+                                </div>
                               </div>
                             )}
-                            <div>
-                              <p className="text-sm font-bold text-gray-700">{formatCurrency(r.fare)}</p>
-                              <p className="text-[10px] text-gray-400">total fare</p>
-                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
-                      <div className="flex gap-2 mt-3">
-                        {(r.pickupLat && r.pickupLng) ? (
-                          <a href={`https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`}
-                            target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
-                            🗺️
-                          </a>
-                        ) : r.pickupAddress ? (
-                          <a href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`}
-                            target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
-                            🗺️
-                          </a>
-                        ) : null}
-                        <button onClick={() => dismiss(r.id)}
-                          className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors">
-                          ✕
-                        </button>
-                        <button onClick={() => acceptRideMut.mutate(r.id)}
-                          disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                          {acceptRideMut.isPending ? "Accepting..." : "✓ Accept Ride"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {dismissed.size > 0 && (
                     <div className="px-4 py-3 flex items-center justify-between bg-gray-50 border-t border-gray-100">

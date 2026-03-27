@@ -1,4 +1,4 @@
-import { decimal, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { decimal, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -19,6 +19,14 @@ export const ridesTable = pgTable("rides", {
   riderName: text("rider_name"),
   riderPhone: text("rider_phone"),
   paymentMethod: text("payment_method").notNull(),
+  /* ── Bargaining fields ── */
+  offeredFare:    decimal("offered_fare",   { precision: 10, scale: 2 }),
+  counterFare:    decimal("counter_fare",   { precision: 10, scale: 2 }),
+  bargainStatus:  text("bargain_status"),   /* null | "customer_offered" | "rider_countered" | "customer_countered" | "agreed" | "expired" */
+  bargainRounds:  integer("bargain_rounds").default(0),
+  bargainNote:    text("bargain_note"),     /* customer note / rider message */
+  /* ── Timestamps ── */
+  acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

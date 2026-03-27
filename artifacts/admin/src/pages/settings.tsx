@@ -74,6 +74,7 @@ const TOGGLE_KEYS = new Set([
   "finance_invoice_enabled",
   "delivery_free_enabled",
   "ride_surge_enabled",
+  "ride_bargaining_enabled",
 ]);
 
 const TEXT_KEYS = new Set([
@@ -3270,30 +3271,38 @@ function renderSection(
   if (cat === "rides") {
     const BIKE_KEYS   = new Set(["ride_bike_base_fare","ride_bike_per_km","ride_bike_min_fare"]);
     const CAR_KEYS    = new Set(["ride_car_base_fare","ride_car_per_km","ride_car_min_fare"]);
-    const RULES_KEYS  = new Set(["ride_surge_enabled","ride_surge_multiplier","ride_cancellation_fee"]);
+    const RULES_KEYS   = new Set(["ride_surge_enabled","ride_surge_multiplier","ride_cancellation_fee"]);
+    const BARGAIN_KEYS = new Set(["ride_bargaining_enabled","ride_bargaining_min_pct","ride_bargaining_max_rounds"]);
 
-    const bikeFields  = catSettings.filter(s => BIKE_KEYS.has(s.key));
-    const carFields   = catSettings.filter(s => CAR_KEYS.has(s.key));
-    const rulesFields = catSettings.filter(s => RULES_KEYS.has(s.key));
+    const bikeFields    = catSettings.filter(s => BIKE_KEYS.has(s.key));
+    const carFields     = catSettings.filter(s => CAR_KEYS.has(s.key));
+    const rulesFields   = catSettings.filter(s => RULES_KEYS.has(s.key));
+    const bargainFields = catSettings.filter(s => BARGAIN_KEYS.has(s.key));
 
     const SUFFIX: Record<string,string> = {
       ride_bike_base_fare: "Rs.", ride_bike_per_km: "Rs./km", ride_bike_min_fare: "Rs.",
       ride_car_base_fare: "Rs.", ride_car_per_km: "Rs./km", ride_car_min_fare: "Rs.",
       ride_surge_multiplier: "×", ride_cancellation_fee: "Rs.",
+      ride_bargaining_min_pct: "%", ride_bargaining_max_rounds: "rounds",
     };
     const HINT: Record<string,string> = {
-      ride_bike_base_fare:    "Fixed starting fare charged on every bike ride, regardless of distance",
-      ride_bike_per_km:       "Additional charge per kilometre for bike rides, added on top of base fare",
-      ride_bike_min_fare:     "Floor fare for bike rides — short trips will never cost less than this",
-      ride_car_base_fare:     "Fixed starting fare charged on every car ride, regardless of distance",
-      ride_car_per_km:        "Additional charge per kilometre for car rides, added on top of base fare",
-      ride_car_min_fare:      "Floor fare for car rides — short trips will never cost less than this",
-      ride_surge_enabled:     "When ON, all ride fares are multiplied by the surge multiplier below. Use during peak hours or high demand",
-      ride_surge_multiplier:  "Multiplier applied to the calculated fare when surge is active. 1.5 = 50% premium",
-      ride_cancellation_fee:  "Fee charged to the customer if they cancel a ride after a driver has already accepted it",
+      ride_bike_base_fare:         "Fixed starting fare charged on every bike ride, regardless of distance",
+      ride_bike_per_km:            "Additional charge per kilometre for bike rides, added on top of base fare",
+      ride_bike_min_fare:          "Floor fare for bike rides — short trips will never cost less than this",
+      ride_car_base_fare:          "Fixed starting fare charged on every car ride, regardless of distance",
+      ride_car_per_km:             "Additional charge per kilometre for car rides, added on top of base fare",
+      ride_car_min_fare:           "Floor fare for car rides — short trips will never cost less than this",
+      ride_surge_enabled:          "When ON, all ride fares are multiplied by the surge multiplier below. Use during peak hours or high demand",
+      ride_surge_multiplier:       "Multiplier applied to the calculated fare when surge is active. 1.5 = 50% premium",
+      ride_cancellation_fee:       "Fee charged to the customer if they cancel a ride after a driver has already accepted it",
+      ride_bargaining_enabled:     "Allow customers to offer a custom price below the platform fare. Riders can accept, counter, or reject",
+      ride_bargaining_min_pct:     "Minimum offer as % of platform fare. Offers below this threshold are automatically rejected (e.g. 70 = customer can offer as low as Rs.70 for a Rs.100 fare)",
+      ride_bargaining_max_rounds:  "Maximum back-and-forth counter offers allowed per ride before bargaining expires",
     };
 
-    const surgeOn = (localValues["ride_surge_enabled"] ?? catSettings.find(s=>s.key==="ride_surge_enabled")?.value ?? "off") === "on";
+    const surgeOn    = (localValues["ride_surge_enabled"]      ?? catSettings.find(s=>s.key==="ride_surge_enabled")?.value      ?? "off") === "on";
+    const bargainOn  = (localValues["ride_bargaining_enabled"] ?? catSettings.find(s=>s.key==="ride_bargaining_enabled")?.value ?? "on")  === "on";
+    const bargainMin = parseFloat(localValues["ride_bargaining_min_pct"] ?? catSettings.find(s=>s.key==="ride_bargaining_min_pct")?.value ?? "70");
     const bikeBase  = parseFloat(localValues["ride_bike_base_fare"] ?? catSettings.find(s=>s.key==="ride_bike_base_fare")?.value ?? "15");
     const bikeKm    = parseFloat(localValues["ride_bike_per_km"]    ?? catSettings.find(s=>s.key==="ride_bike_per_km")?.value    ?? "8");
     const bikeMin   = parseFloat(localValues["ride_bike_min_fare"]  ?? catSettings.find(s=>s.key==="ride_bike_min_fare")?.value  ?? "50");
@@ -3395,6 +3404,51 @@ function renderSection(
               <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-orange-700 leading-relaxed">
                 <strong>Surge pricing is currently ACTIVE.</strong> All ride fares are being multiplied by <strong>×{surge}</strong>. Customers see a surge badge on the booking screen. Remember to turn this off after peak hours.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Group 4: Price Bargaining ── */}
+        <div className="space-y-3 border-t border-border/40 pt-6">
+          <SLabel icon={MessageSquare}>Price Bargaining (Mol-Tol)</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">
+            When enabled, customers can offer a custom price below the platform fare. Riders can accept the offer, counter with their own price, or reject it.
+            This is like the real-world Muzaffarabad bargaining culture — brought into the app.
+          </p>
+
+          {/* Toggle first */}
+          {bargainFields.filter(s => TOGGLE_KEYS.has(s.key)).map(s => (
+            <Toggle key={s.key} checked={(localValues[s.key] ?? s.value) === "on"}
+              onChange={v => handleToggle(s.key, v)} label={s.label}
+              isDirty={dirtyKeys.has(s.key)} icon="💬"
+              sub="Customers can offer their own price; riders can accept, counter, or reject" />
+          ))}
+
+          {/* Numeric fields — only show when bargaining is on */}
+          {bargainOn && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {bargainFields.filter(s => !TOGGLE_KEYS.has(s.key)).map(s => <RideNumField key={s.key} s={s} />)}
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3.5 flex gap-2.5">
+                <Info className="w-4 h-4 text-purple-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-purple-700 leading-relaxed">
+                  <strong>Bargaining example:</strong>{" "}
+                  Bike platform fare Rs.{exampleFare(bikeBase, bikeKm, bikeMin, 5)} →
+                  customer can offer as low as <strong>Rs.{Math.ceil(exampleFare(bikeBase, bikeKm, bikeMin, 5) * bargainMin / 100)}</strong> ({bargainMin}% minimum).
+                  If rider counters, customer can accept, counter back, or cancel.
+                  The cycle repeats up to the max rounds limit.
+                </p>
+              </div>
+            </>
+          )}
+
+          {!bargainOn && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5 flex gap-2.5">
+              <Info className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Bargaining is currently <strong>disabled</strong>. Customers will only see the platform fare. Enable to allow price negotiation.
               </p>
             </div>
           )}

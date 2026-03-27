@@ -30,8 +30,10 @@ export const api = {
   getActive:    () => apiFetch("/rider/active"),
   acceptOrder:  (id: string) => apiFetch(`/rider/orders/${id}/accept`, { method: "POST", body: "{}" }),
   updateOrder:  (id: string, status: string) => apiFetch(`/rider/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  acceptRide:   (id: string) => apiFetch(`/rider/rides/${id}/accept`, { method: "POST", body: "{}" }),
-  updateRide:   (id: string, status: string) => apiFetch(`/rider/rides/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  acceptRide:     (id: string) => apiFetch(`/rider/rides/${id}/accept`, { method: "POST", body: "{}" }),
+  updateRide:     (id: string, status: string) => apiFetch(`/rider/rides/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  counterRide:    (id: string, data: { counterFare: number; note?: string }) => apiFetch(`/rider/rides/${id}/counter`, { method: "POST", body: JSON.stringify(data) }),
+  rejectOffer:    (id: string) => apiFetch(`/rider/rides/${id}/reject-offer`, { method: "POST", body: "{}" }),
   getHistory:   () => apiFetch("/rider/history"),
   getEarnings:  () => apiFetch("/rider/earnings"),
 
