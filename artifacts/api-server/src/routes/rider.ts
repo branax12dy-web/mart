@@ -33,8 +33,8 @@ async function riderAuth(req: Request, res: Response, next: NextFunction) {
     res.status(403).json({ error: "Access denied. This portal is for riders only." }); return;
   }
 
-  req.riderId! = user.id;
-  req.riderUser! = user;
+  req.riderId = user.id;
+  req.riderUser = user;
   next();
 }
 

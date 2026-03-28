@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { useAuth } from "../lib/auth";
-import { api } from "../lib/api";
+import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -112,11 +112,9 @@ export default function Home() {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
-        fetch("/api/locations/update", {
+        apiFetch("/locations/update", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId:    user.id,
             latitude:  pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy:  pos.coords.accuracy,
@@ -141,10 +139,9 @@ export default function Home() {
   /* ── GPS milestone logger — fired on accept / status change ── */
   const logRideEvent = (rideId: string, event: string) => {
     const doLog = (lat?: number, lng?: number) => {
-      fetch(`/api/rides/${rideId}/event-log`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ riderId: user?.id, event, lat, lng }),
+      apiFetch(`/rides/${rideId}/event-log`, {
+        method: "POST",
+        body: JSON.stringify({ event, lat, lng }),
       }).catch(() => {});
     };
     if (navigator?.geolocation) {

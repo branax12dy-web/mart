@@ -192,7 +192,8 @@ router.get("/methods", async (_req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 router.get("/test-connection/:gateway", async (req, res) => {
   const adminSecret = String(req.headers["x-admin-secret"] ?? "");
-  if (adminSecret !== (process.env.ADMIN_SECRET || "ajkmart-admin-2025")) {
+  const requiredSecret = process.env.ADMIN_SECRET;
+  if (!requiredSecret || adminSecret !== requiredSecret) {
     res.status(403).json({ error: "Forbidden" }); return;
   }
 
@@ -439,7 +440,8 @@ router.post("/initiate", customerAuth, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 router.post("/verify-manual", async (req, res) => {
   const adminSecret = String(req.headers["x-admin-secret"] ?? "");
-  if (adminSecret !== (process.env.ADMIN_SECRET || "ajkmart-admin-2025")) {
+  const requiredSecretV = process.env.ADMIN_SECRET;
+  if (!requiredSecretV || adminSecret !== requiredSecretV) {
     res.status(403).json({ error: "Forbidden — admin secret required" }); return;
   }
   const { orderId, gateway, transactionId } = req.body;
@@ -448,7 +450,7 @@ router.post("/verify-manual", async (req, res) => {
   res.json({ success: true, orderId, gateway, transactionId, message: "Manual payment verified — order confirmed ✅" });
 });
 
-const _ADMIN_SECRET = process.env["ADMIN_SECRET"] || "ajkmart-admin-2025";
+const _ADMIN_SECRET = process.env["ADMIN_SECRET"] || "";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GET /api/payments/simulate/:gateway/:txnRef/:orderId

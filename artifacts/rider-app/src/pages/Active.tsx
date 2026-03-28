@@ -163,6 +163,7 @@ export default function Active() {
     setProofFileName(file.name);
     const reader = new FileReader();
     reader.onload = (ev) => { setProofPhoto(ev.target?.result as string); };
+    reader.onerror = () => { setProofFileName(""); };
     reader.readAsDataURL(file);
   };
 

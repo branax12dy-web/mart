@@ -47,8 +47,8 @@ async function vendorAuth(req: Request, res: Response, next: NextFunction) {
     res.status(403).json({ error: "Access denied. Vendor role required." }); return;
   }
 
-  req.vendorId! = user.id;
-  req.vendorUser! = user;
+  req.vendorId = user.id;
+  req.vendorUser = user;
   next();
 }
 router.use(vendorAuth);
