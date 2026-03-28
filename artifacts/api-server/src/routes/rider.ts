@@ -953,6 +953,26 @@ router.patch("/notifications/read-all", async (req, res) => {
   res.json({ success: true });
 });
 
+/* ── PATCH /rider/notifications/:id/read ── */
+router.patch("/notifications/:id/read", async (req, res) => {
+  try {
+    const riderId = req.riderId!;
+    const { id } = req.params;
+    if (!id || typeof id !== "string") {
+      return res.status(400).json({ error: "Invalid notification id" });
+    }
+    const result = await db.update(notificationsTable).set({ isRead: true }).where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, riderId)));
+    const rowCount = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
+    if (rowCount === 0) {
+      return res.status(404).json({ error: "Notification not found" });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to mark notification read:", err);
+    res.status(500).json({ error: "Failed to mark notification as read" });
+  }
+});
+
 /* ── GET /rider/wallet/min-balance — Returns min balance config ── */
 router.get("/wallet/min-balance", async (req, res) => {
   const riderId = req.riderId!;

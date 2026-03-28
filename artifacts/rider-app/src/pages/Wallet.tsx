@@ -11,10 +11,11 @@ import {
   Banknote, ArrowUpFromLine, Lock, Wallet2, CreditCard,
   RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle,
   Landmark, Smartphone, ChevronDown, ChevronUp, ShieldCheck,
+  Eye, EyeOff, Sparkles,
 } from "lucide-react";
 
 const fc  = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
-const fd  = (d: string | Date) => new Date(d).toLocaleString("en-PK", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
+const fd  = (d: string | Date) => new Date(d).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const fdr = (d: string | Date) => {
   const diff = Date.now() - new Date(d).getTime();
   const h = Math.floor(diff / 3600000);
@@ -23,16 +24,28 @@ const fdr = (d: string | Date) => {
   return `${Math.floor(h / 24)} din pehle`;
 };
 
+function dateGroupLabel(d: string): string {
+  const now = new Date();
+  const dt  = new Date(d);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (dt >= today) return "Today";
+  if (dt >= yesterday) return "Yesterday";
+  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
+  if (dt >= weekAgo) return "This Week";
+  return dt.toLocaleDateString("en-PK", { month: "long", year: "numeric" });
+}
+
 function TxIcon({ type }: { type: string }) {
-  if (type === "credit")         return <TrendingUp   size={20} className="text-green-600"/>;
-  if (type === "bonus")          return <Gift         size={20} className="text-blue-600"/>;
-  if (type === "loyalty")        return <Star         size={20} className="text-purple-600"/>;
-  if (type === "cashback")       return <Heart        size={20} className="text-pink-600"/>;
-  if (type === "platform_fee")   return <Building2    size={20} className="text-orange-500"/>;
-  if (type === "deposit")        return <ArrowDownToLine size={20} className="text-teal-600"/>;
-  if (type === "cod_remittance") return <Banknote     size={20} className="text-blue-600"/>;
-  if (type === "cash_collection") return <Banknote    size={20} className="text-blue-400"/>;
-  return                                <ArrowUpFromLine size={20} className="text-red-500"/>;
+  if (type === "credit")          return <TrendingUp      size={18} className="text-green-600"/>;
+  if (type === "bonus")           return <Gift            size={18} className="text-blue-600"/>;
+  if (type === "loyalty")         return <Star            size={18} className="text-purple-600"/>;
+  if (type === "cashback")        return <Heart           size={18} className="text-pink-600"/>;
+  if (type === "platform_fee")    return <Building2       size={18} className="text-orange-500"/>;
+  if (type === "deposit")         return <ArrowDownToLine size={18} className="text-teal-600"/>;
+  if (type === "cod_remittance")  return <Banknote        size={18} className="text-blue-600"/>;
+  if (type === "cash_collection") return <Banknote        size={18} className="text-blue-400"/>;
+  return                                 <ArrowUpFromLine size={18} className="text-red-500"/>;
 }
 
 function txMeta(type: string) {
@@ -48,15 +61,15 @@ function txMeta(type: string) {
 }
 
 function MethodIcon({ method }: { method: string | null }) {
-  if (!method) return <Landmark size={18} className="text-blue-500"/>;
+  if (!method) return <Landmark size={16} className="text-blue-500"/>;
   const m = method.toLowerCase();
-  if (m.includes("jazzcash"))  return <Smartphone size={18} className="text-red-500"/>;
-  if (m.includes("easypaisa")) return <Smartphone size={18} className="text-green-500"/>;
-  return <Landmark size={18} className="text-blue-500"/>;
+  if (m.includes("jazzcash"))  return <Smartphone size={16} className="text-red-500"/>;
+  if (m.includes("easypaisa")) return <Smartphone size={16} className="text-green-500"/>;
+  return <Landmark size={16} className="text-blue-500"/>;
 }
 
 /* ══════════════════════════════════════════
-   7-DAY EARNINGS CHART (CSS bars)
+   7-DAY EARNINGS CHART
 ══════════════════════════════════════════ */
 function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
   const days = useMemo(() => {
@@ -79,24 +92,36 @@ function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
   }, [transactions]);
 
   const maxVal = Math.max(...days.map(d => d.amount), 1);
+  const weekTotal = days.reduce((s, d) => s + d.amount, 0);
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm p-4">
-      <div className="flex items-center justify-between mb-4">
-        <p className="font-bold text-gray-800 text-sm">7-Day Earnings</p>
-        <span className="text-xs text-gray-400">{fc(days.reduce((s, d) => s + d.amount, 0))} this week</span>
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <p className="font-bold text-gray-900 text-[15px]">7-Day Earnings</p>
+          <p className="text-xs text-gray-400 mt-0.5">Last 7 days performance</p>
+        </div>
+        <div className="text-right">
+          <p className="text-lg font-extrabold text-green-600">{fc(weekTotal)}</p>
+          <p className="text-[10px] text-gray-400">this week</p>
+        </div>
       </div>
-      <div className="flex items-end gap-1.5 h-20">
+      <div className="flex items-end gap-2 h-24">
         {days.map((d, i) => (
-          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-            <div className="w-full flex items-end justify-center" style={{ height: "56px" }}>
+          <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+            {d.amount > 0 && (
+              <p className="text-[8px] text-gray-400 font-bold">{fc(d.amount).replace("Rs. ", "")}</p>
+            )}
+            <div className="w-full flex items-end justify-center" style={{ height: "64px" }}>
               <div
-                className={`w-full rounded-t-lg transition-all ${i === 6 ? "bg-green-500" : "bg-green-200"}`}
-                style={{ height: `${Math.max((d.amount / maxVal) * 56, d.amount > 0 ? 4 : 0)}px` }}
+                className={`w-full max-w-[28px] rounded-lg transition-all duration-500 ${
+                  i === 6 ? "bg-gradient-to-t from-green-600 to-emerald-400" : "bg-gradient-to-t from-green-200 to-green-100"
+                }`}
+                style={{ height: `${Math.max((d.amount / maxVal) * 64, d.amount > 0 ? 6 : 2)}px` }}
                 title={`${d.date}: ${fc(d.amount)}`}
               />
             </div>
-            <p className="text-[9px] text-gray-400 font-medium text-center leading-tight">{d.label}</p>
+            <p className={`text-[10px] font-medium text-center leading-tight ${i === 6 ? "text-green-600 font-bold" : "text-gray-400"}`}>{d.label}</p>
           </div>
         ))}
       </div>
@@ -118,9 +143,9 @@ function PendingRequestCard({ tx }: { tx: WalletTx }) {
   const refNo  = ref.startsWith("paid:") ? ref.slice(5) : ref.startsWith("rejected:") ? ref.slice(9) : "";
 
   const statusConfig = {
-    pending:  { label: "Processing", icon: <Clock size={11}/>,      bg: "bg-amber-50", border: "border-amber-200", badge: "bg-amber-100 text-amber-700", dot: "bg-amber-400"  },
-    paid:     { label: "Paid",       icon: <CheckCircle size={11}/>, bg: "bg-green-50", border: "border-green-200", badge: "bg-green-100 text-green-700",  dot: "bg-green-400" },
-    rejected: { label: "Rejected",   icon: <XCircle size={11}/>,     bg: "bg-red-50",   border: "border-red-200",   badge: "bg-red-100 text-red-600",       dot: "bg-red-400"   },
+    pending:  { label: "Processing", icon: <Clock size={11}/>,       bg: "bg-amber-50",  border: "border-amber-200", badge: "bg-amber-100 text-amber-700", dot: "bg-amber-400"  },
+    paid:     { label: "Paid",       icon: <CheckCircle size={11}/>, bg: "bg-green-50",  border: "border-green-200", badge: "bg-green-100 text-green-700",  dot: "bg-green-400" },
+    rejected: { label: "Rejected",   icon: <XCircle size={11}/>,     bg: "bg-red-50",    border: "border-red-200",   badge: "bg-red-100 text-red-600",     dot: "bg-red-400"   },
   }[status] ?? { label: "Processing", icon: <Clock size={11}/>, bg: "bg-amber-50", border: "border-amber-200", badge: "bg-amber-100 text-amber-700", dot: "bg-amber-400" };
 
   return (
@@ -161,7 +186,7 @@ function PendingRequestCard({ tx }: { tx: WalletTx }) {
 }
 
 /* ══════════════════════════════════════════
-   FILTER TABS
+   TYPES & FILTERS
 ══════════════════════════════════════════ */
 type WalletTx = {
   id: string; type: string; amount: string | number;
@@ -201,6 +226,7 @@ export default function Wallet() {
   const [filter, setFilter]                 = useState<TxFilter>("all");
   const [showRequests, setShowRequests]     = useState(true);
   const [showCodHistory, setShowCodHistory] = useState(false);
+  const [balanceHidden, setBalanceHidden]   = useState(false);
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
 
@@ -250,7 +276,20 @@ export default function Wallet() {
     return transactions.filter(t => t.type === filter);
   }, [filter, transactions]);
 
-  /* ── Wallet disabled state ── */
+  const groupedTx = useMemo(() => {
+    const groups: { label: string; items: WalletTx[] }[] = [];
+    const groupMap = new Map<string, WalletTx[]>();
+    for (const t of filtered) {
+      const g = dateGroupLabel(t.createdAt);
+      if (!groupMap.has(g)) {
+        groupMap.set(g, []);
+        groups.push({ label: g, items: groupMap.get(g)! });
+      }
+      groupMap.get(g)!.push(t);
+    }
+    return groups;
+  }, [filtered]);
+
   if (!config.features.wallet) {
     return (
       <div className="bg-gray-50 pb-24 min-h-screen">
@@ -258,7 +297,7 @@ export default function Wallet() {
           <h1 className="text-2xl font-bold text-white">Wallet</h1>
         </div>
         <div className="px-4 py-8 text-center">
-          <div className="bg-white rounded-3xl p-10 shadow-sm">
+          <div className="bg-white rounded-3xl p-10 shadow-sm border border-gray-100">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Lock size={32} className="text-gray-400"/>
             </div>
@@ -273,34 +312,41 @@ export default function Wallet() {
   return (
     <div className="bg-gray-50 pb-28 min-h-screen">
 
-      {/* ── HEADER ── */}
-      <div className="bg-gradient-to-br from-green-600 to-emerald-700 px-5 pt-12 pb-24 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full -translate-y-1/2 translate-x-1/2"/>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/2 -translate-x-1/2"/>
+      {/* ══ HEADER ══ */}
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-28 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.07]">
+          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+          <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
         </div>
         <div className="relative flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-extrabold text-white">Wallet</h1>
+            <h1 className="text-2xl font-extrabold text-white tracking-tight">Wallet</h1>
             <p className="text-green-200 text-sm mt-0.5">Earnings & Withdrawals</p>
           </div>
-          <button onClick={() => refetch()} className="h-9 w-9 bg-white/20 text-white rounded-xl flex items-center justify-center">
+          <button onClick={() => refetch()} className="h-10 w-10 bg-white/15 backdrop-blur-sm text-white rounded-xl flex items-center justify-center border border-white/10 active:bg-white/25 transition-colors">
             <RefreshCw size={16}/>
           </button>
         </div>
       </div>
 
-      <div className="px-4 -mt-16 space-y-4">
+      <div className="px-4 -mt-20 space-y-4">
 
-        {/* ── BALANCE CARD ── */}
-        <div className="bg-white rounded-3xl shadow-xl p-5 relative overflow-hidden">
-          <div className="absolute -top-6 -right-6 w-24 h-24 bg-green-50 rounded-full"/>
-          <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-emerald-50 rounded-full"/>
+        {/* ══ BALANCE CARD ══ */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 relative overflow-hidden">
+          <div className="absolute -top-8 -right-8 w-28 h-28 bg-green-50 rounded-full opacity-50"/>
+          <div className="absolute -bottom-6 -left-6 w-20 h-20 bg-emerald-50 rounded-full opacity-50"/>
           <div className="relative">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Available Balance</p>
-                <p className="text-5xl font-extrabold text-green-600 mt-1 leading-none">{fc(balance)}</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Available Balance</p>
+                  <button onClick={() => setBalanceHidden(v => !v)} className="text-gray-400 active:text-gray-600 transition-colors">
+                    {balanceHidden ? <EyeOff size={14}/> : <Eye size={14}/>}
+                  </button>
+                </div>
+                <p className="text-4xl font-extrabold text-green-600 leading-none">
+                  {balanceHidden ? "Rs. ••••••" : fc(balance)}
+                </p>
                 <p className="text-xs text-gray-400 mt-2">{riderKeepPct}% of every delivery — credited instantly</p>
               </div>
               {pendingAmt > 0 && (
@@ -311,9 +357,8 @@ export default function Wallet() {
               )}
             </div>
 
-            {/* Min balance warning */}
             {minBalance > 0 && balance < minBalance && (
-              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-2">
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 flex items-center gap-2">
                 <AlertTriangle size={16} className="text-amber-500 flex-shrink-0"/>
                 <div>
                   <p className="text-xs text-amber-700 font-bold">Cash orders ke liye minimum {fc(minBalance)} chahiye</p>
@@ -325,27 +370,27 @@ export default function Wallet() {
             <div className="flex gap-2 mt-4">
               {withdrawalEnabled ? (
                 <button onClick={() => setShowWithdraw(true)}
-                  className="flex-1 bg-green-600 text-white font-extrabold rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-95 transition-transform">
-                  <ArrowUpFromLine size={18}/> Withdraw
+                  className="flex-1 bg-green-600 text-white font-extrabold rounded-xl py-3.5 flex items-center justify-center gap-2 active:bg-green-700 transition-colors shadow-sm">
+                  <ArrowUpFromLine size={17}/> Withdraw
                 </button>
               ) : (
-                <button disabled className="flex-1 bg-gray-200 text-gray-400 font-bold rounded-2xl py-3.5 flex items-center justify-center gap-2 cursor-not-allowed">
+                <button disabled className="flex-1 bg-gray-200 text-gray-400 font-bold rounded-xl py-3.5 flex items-center justify-center gap-2 cursor-not-allowed">
                   <Lock size={16}/> Withdrawals Paused
                 </button>
               )}
               {depositEnabled && (
                 <button onClick={() => setShowDeposit(true)}
-                  className="flex-1 bg-teal-600 text-white font-extrabold rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-95 transition-transform">
-                  <ArrowDownToLine size={18}/> Deposit
+                  className="flex-1 bg-teal-600 text-white font-extrabold rounded-xl py-3.5 flex items-center justify-center gap-2 active:bg-teal-700 transition-colors shadow-sm">
+                  <ArrowDownToLine size={17}/> Deposit
                 </button>
               )}
-              <button onClick={() => refetch()} className="w-14 h-14 bg-gray-100 text-gray-600 font-bold rounded-2xl flex items-center justify-center active:scale-95 transition-transform">
-                <RefreshCw size={18}/>
+              <button onClick={() => refetch()} className="w-[52px] h-[52px] bg-gray-50 text-gray-500 font-bold rounded-xl flex items-center justify-center active:bg-gray-100 transition-colors border border-gray-100">
+                <RefreshCw size={17}/>
               </button>
             </div>
 
             {!withdrawalEnabled && (
-              <div className="mt-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2 flex items-center gap-2">
+              <div className="mt-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
                 <XCircle size={14} className="text-red-500 flex-shrink-0"/>
                 <p className="text-xs text-red-600 font-medium">Admin ne temporarily withdrawals band ki hain. Earnings safe hain.</p>
               </div>
@@ -353,50 +398,50 @@ export default function Wallet() {
           </div>
         </div>
 
-        {/* ── STATS GRID ── */}
+        {/* ══ STATS GRID ══ */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "Earned Today",    value: fc(todayEarned),   icon: <TrendingUp size={20} className="text-amber-600"/>,  bg: "bg-amber-50",  text: "text-amber-700"  },
-            { label: "Earned This Week",value: fc(weekEarned),    icon: <CreditCard size={20} className="text-blue-600"/>,    bg: "bg-blue-50",   text: "text-blue-700"   },
-            { label: "Total Earned",    value: fc(totalEarned),   icon: <Wallet2    size={20} className="text-green-600"/>,   bg: "bg-green-50",  text: "text-green-700"  },
-            { label: "Total Withdrawn", value: fc(totalWithdrawn),icon: <ArrowUpFromLine size={20} className="text-red-500"/>,bg: "bg-red-50",    text: "text-red-600"    },
+            { label: "Earned Today",     value: fc(todayEarned),    icon: <TrendingUp size={18} className="text-amber-600"/>,   bg: "bg-amber-50",  text: "text-amber-700",  border: "border-amber-100"  },
+            { label: "Earned This Week",  value: fc(weekEarned),     icon: <CreditCard size={18} className="text-blue-600"/>,    bg: "bg-blue-50",   text: "text-blue-700",   border: "border-blue-100"   },
+            { label: "Total Earned",      value: fc(totalEarned),    icon: <Wallet2    size={18} className="text-green-600"/>,   bg: "bg-green-50",  text: "text-green-700",  border: "border-green-100"  },
+            { label: "Total Withdrawn",   value: fc(totalWithdrawn), icon: <ArrowUpFromLine size={18} className="text-red-500"/>,bg: "bg-red-50",    text: "text-red-600",    border: "border-red-100"    },
           ].map(s => (
-            <div key={s.label} className={`${s.bg} rounded-2xl p-4`}>
-              <div className="mb-1">{s.icon}</div>
+            <div key={s.label} className={`${s.bg} rounded-2xl p-4 border ${s.border}`}>
+              <div className="mb-1.5">{s.icon}</div>
               <p className={`text-lg font-extrabold ${s.text} leading-tight`}>{s.value}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5 font-semibold">{s.label}</p>
+              <p className="text-[10px] text-gray-500 mt-1 font-semibold">{s.label}</p>
             </div>
           ))}
         </div>
 
-        {/* ── 7-DAY EARNINGS CHART ── */}
+        {/* ══ 7-DAY EARNINGS CHART ══ */}
         <EarningsChart transactions={transactions}/>
 
-        {/* ── COD CASH SECTION ── */}
+        {/* ══ COD CASH SECTION ══ */}
         {codOrderCount > 0 && (
           <div className={`rounded-2xl shadow-sm overflow-hidden border ${codNetOwed > 0 ? "border-blue-200 bg-white" : "border-green-200 bg-white"}`}>
-            <div className="px-4 py-3.5 flex items-center justify-between">
+            <div className="px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${codNetOwed > 0 ? "bg-blue-100" : "bg-green-100"}`}>
                   <Banknote size={20} className={codNetOwed > 0 ? "text-blue-600" : "text-green-600"}/>
                 </div>
                 <div>
-                  <p className="font-bold text-gray-900 text-sm">COD Cash Balance</p>
+                  <p className="font-bold text-gray-900 text-[15px]">COD Cash Balance</p>
                   <p className="text-xs text-gray-500">Cash on delivery collected</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className={`text-lg font-extrabold ${codNetOwed > 0 ? "text-blue-600" : "text-green-600"}`}>{fc(codNetOwed)}</p>
+                <p className={`text-xl font-extrabold ${codNetOwed > 0 ? "text-blue-600" : "text-green-600"}`}>{fc(codNetOwed)}</p>
                 <p className="text-[10px] text-gray-400 flex items-center gap-1 justify-end">
                   {codNetOwed > 0 ? "Remit karna baki" : <><CheckCircle size={10} className="text-green-500"/> All clear</>}
                 </p>
               </div>
             </div>
 
-            <div className="px-4 pb-3 grid grid-cols-3 gap-2 text-center border-t border-gray-50 pt-3">
+            <div className="px-5 pb-3 grid grid-cols-3 gap-2 text-center border-t border-gray-50 pt-3">
               <div>
                 <p className="text-xs font-extrabold text-gray-800">{fc(codCollected)}</p>
-                <p className="text-[9px] text-gray-400 font-medium">Total Collected</p>
+                <p className="text-[9px] text-gray-400 font-medium">Collected</p>
               </div>
               <div>
                 <p className="text-xs font-extrabold text-green-600">{fc(codVerified)}</p>
@@ -409,21 +454,21 @@ export default function Wallet() {
             </div>
 
             {codPending.length > 0 && (
-              <div className="mx-4 mb-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 flex items-center gap-2">
+              <div className="mx-5 mb-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 flex items-center gap-2">
                 <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse flex-shrink-0"/>
                 <p className="text-xs text-amber-700 font-semibold">{codPending.length} remittance verification pending hai</p>
               </div>
             )}
 
-            <div className="px-4 pb-4 flex gap-2">
+            <div className="px-5 pb-4 flex gap-2">
               {codNetOwed > 0 && (
                 <button onClick={() => setShowRemittance(true)}
-                  className="flex-1 bg-blue-600 text-white font-extrabold rounded-2xl py-3 flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
+                  className="flex-1 bg-blue-600 text-white font-extrabold rounded-xl py-3 flex items-center justify-center gap-2 text-sm active:bg-blue-700 transition-colors shadow-sm">
                   <Banknote size={16}/> Remit COD Cash
                 </button>
               )}
               <button onClick={() => setShowCodHistory(!showCodHistory)}
-                className={`${codNetOwed > 0 ? "w-auto px-4" : "flex-1"} bg-gray-100 text-gray-600 font-bold rounded-2xl py-3 text-sm flex items-center justify-center gap-1.5`}>
+                className={`${codNetOwed > 0 ? "w-auto px-4" : "flex-1"} bg-gray-50 text-gray-600 font-bold rounded-xl py-3 text-sm flex items-center justify-center gap-1.5 border border-gray-100 active:bg-gray-100 transition-colors`}>
                 {showCodHistory ? <><ChevronUp size={14}/> Hide</> : "History"}
               </button>
             </div>
@@ -438,7 +483,7 @@ export default function Wallet() {
                   const stLabel = st === "pending" ? "Pending" : st === "verified" ? "Verified" : "Rejected";
                   const parts = (r.description || "").replace("COD Remittance — ", "").split(" · ");
                   return (
-                    <div key={r.id} className="px-4 py-3 flex items-center gap-3">
+                    <div key={r.id} className="px-5 py-3.5 flex items-center gap-3">
                       <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
                         <Banknote size={16} className="text-blue-600"/>
                       </div>
@@ -458,15 +503,15 @@ export default function Wallet() {
           </div>
         )}
 
-        {/* ── WITHDRAWAL REQUESTS ── */}
+        {/* ══ WITHDRAWAL REQUESTS ══ */}
         {withdrawalRequests.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <button
-              className="w-full flex items-center justify-between px-4 py-3.5 border-b border-gray-100"
+              className="w-full flex items-center justify-between px-5 py-4"
               onClick={() => setShowRequests(!showRequests)}
             >
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-gray-800 text-sm">Withdrawal Requests</span>
+              <div className="flex items-center gap-2.5">
+                <span className="font-bold text-gray-900 text-[15px]">Withdrawal Requests</span>
                 {pendingRequests.length > 0 && (
                   <span className="text-[10px] font-extrabold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Clock size={9}/> {pendingRequests.length} Pending
@@ -476,9 +521,9 @@ export default function Wallet() {
               {showRequests ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
             </button>
             {showRequests && (
-              <div className="p-3 space-y-3">
+              <div className="px-4 pb-4 space-y-3 border-t border-gray-50 pt-3">
                 {withdrawalRequests.map(tx => <PendingRequestCard key={tx.id} tx={tx}/>)}
-                <div className="bg-blue-50 rounded-xl p-3 flex gap-2">
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex gap-2">
                   <ShieldCheck size={14} className="text-blue-500 flex-shrink-0 mt-0.5"/>
                   <p className="text-xs text-blue-700 font-medium">
                     Processing time: {procDays * 24}–{procDays * 24 + 24} hours. Admin approve karte hi notification aayegi.
@@ -489,22 +534,24 @@ export default function Wallet() {
           </div>
         )}
 
-        {/* ── HOW WALLET WORKS ── */}
+        {/* ══ HOW WALLET WORKS ══ */}
         {withdrawalRequests.length === 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="font-bold text-gray-800 text-sm mb-3">Wallet Kaise Kaam Karta Hai</p>
-            <div className="space-y-2.5">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p className="font-bold text-gray-900 text-[15px] mb-4 flex items-center gap-2">
+              <Sparkles size={16} className="text-green-500"/> How It Works
+            </p>
+            <div className="space-y-3">
               {[
-                { step: "1", icon: <TrendingUp size={16} className="text-green-600"/>, title: "Delivery Complete Karein", desc: `${riderKeepPct}% earnings foran wallet mein add ho jati hain` },
-                { step: "2", icon: <Wallet2 size={16} className="text-green-600"/>,    title: "Balance Accumulate Karein", desc: `Minimum ${fc(minPayout)} hone par withdrawal request dein` },
-                { step: "3", icon: <ArrowUpFromLine size={16} className="text-green-600"/>, title: "Withdrawal Request Dein", desc: "JazzCash, EasyPaisa, ya bank account select karein" },
-                { step: "4", icon: <CheckCircle size={16} className="text-green-600"/>, title: "Payment Receive Karein",   desc: `${procDays * 24}–${procDays * 24 + 24} hours mein transfer ho jata hai` },
+                { step: "1", icon: <TrendingUp size={15} className="text-green-600"/>, title: "Complete Deliveries",    desc: `${riderKeepPct}% earnings foran wallet mein add` },
+                { step: "2", icon: <Wallet2 size={15} className="text-green-600"/>,    title: "Build Your Balance",    desc: `Min ${fc(minPayout)} hone par withdraw karein`   },
+                { step: "3", icon: <ArrowUpFromLine size={15} className="text-green-600"/>, title: "Request Withdrawal", desc: "JazzCash, EasyPaisa, ya bank select karein"     },
+                { step: "4", icon: <CheckCircle size={15} className="text-green-600"/>, title: "Receive Payment",       desc: `${procDays * 24}–${procDays * 24 + 24}h mein transfer` },
               ].map(s => (
                 <div key={s.step} className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-green-100 rounded-xl flex items-center justify-center text-sm font-extrabold text-green-600 flex-shrink-0">{s.step}</div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 pt-0.5">
                     <p className="text-sm font-bold text-gray-800 flex items-center gap-1.5">{s.icon} {s.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{s.desc}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{s.desc}</p>
                   </div>
                 </div>
               ))}
@@ -512,17 +559,21 @@ export default function Wallet() {
           </div>
         )}
 
-        {/* ── TRANSACTION HISTORY ── */}
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 pt-4 pb-2 border-b border-gray-100">
+        {/* ══ TRANSACTION HISTORY ══ */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-5 pt-5 pb-3">
             <div className="flex items-center justify-between mb-3">
-              <p className="font-bold text-gray-800 text-sm">Transaction History</p>
-              <span className="text-xs text-gray-400">{filtered.length} records</span>
+              <p className="font-bold text-gray-900 text-[15px]">Transaction History</p>
+              <span className="text-xs text-gray-400 font-medium">{filtered.length} records</span>
             </div>
             <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
               {FILTER_TABS.map(tab => (
                 <button key={tab.key} onClick={() => setFilter(tab.key)}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${filter === tab.key ? "bg-green-600 text-white" : "bg-gray-100 text-gray-500"}`}>
+                  className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    filter === tab.key
+                      ? "bg-green-600 text-white border-green-600"
+                      : "bg-gray-50 text-gray-500 border-gray-100 active:bg-gray-100"
+                  }`}>
                   {tab.label}
                 </button>
               ))}
@@ -530,74 +581,86 @@ export default function Wallet() {
           </div>
 
           {isLoading ? (
-            <div className="p-4 space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse"/>)}</div>
+            <div className="p-5 space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-gray-50 rounded-xl animate-pulse"/>)}</div>
           ) : filtered.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <CreditCard size={28} className="text-gray-300"/>
+            <div className="px-5 py-12 text-center border-t border-gray-50">
+              <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <CreditCard size={28} className="text-gray-200"/>
               </div>
               <p className="font-bold text-gray-600">No {filter === "all" ? "" : filter} transactions yet</p>
               <p className="text-sm text-gray-400 mt-1">Deliveries complete karo aur yahan earnings track karo</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-50">
-              {filtered.map((t: WalletTx) => {
-                const meta = txMeta(t.type);
-                const isDebitType = t.type === "debit" || t.type === "platform_fee";
-                const isCredit = !isDebitType;
-                const isW = t.type === "debit" && t.description?.startsWith("Withdrawal");
-                const isDeposit = t.type === "deposit";
-                const ref = (isW || isDeposit) ? (t.reference ?? "pending") : null;
-                const wStatus = !ref ? null
-                  : ref === "pending" ? "pending"
-                  : (ref.startsWith("paid:") || ref.startsWith("approved:")) ? "approved"
-                  : ref.startsWith("rejected:") ? "rejected" : null;
-                return (
-                  <div key={t.id} className="px-4 py-3.5 flex items-start gap-3">
-                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
-                      <TxIcon type={t.type}/>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">{t.description}</p>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <p className="text-xs text-gray-400">{fd(t.createdAt)}</p>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${meta.badge}`}>{meta.label}</span>
-                        {wStatus === "pending"  && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-0.5"><Clock size={9}/> Pending</span>}
-                        {wStatus === "approved" && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-0.5"><CheckCircle size={9}/> {isDeposit ? "Credited" : "Paid"}</span>}
-                        {wStatus === "rejected" && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5"><XCircle size={9}/> Rejected</span>}
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className={`text-base font-extrabold ${
-                        isDeposit && wStatus === "pending" ? "text-amber-500"
-                        : isDeposit ? "text-teal-600"
-                        : isCredit ? "text-green-600"
-                        : wStatus === "rejected" ? "text-gray-400 line-through"
-                        : "text-red-500"
-                      }`}>
-                        {isDebitType ? "−" : "+"}{fc(Number(t.amount))}
-                      </p>
-                    </div>
+            <div className="border-t border-gray-50">
+              {groupedTx.map(group => (
+                <div key={group.label}>
+                  <div className="px-5 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">{group.label}</p>
+                    <span className="text-[10px] text-gray-400">{group.items.length}</span>
                   </div>
-                );
-              })}
+                  <div className="divide-y divide-gray-50">
+                    {group.items.map((t: WalletTx) => {
+                      const meta = txMeta(t.type);
+                      const isDebitType = t.type === "debit" || t.type === "platform_fee";
+                      const isCredit = !isDebitType;
+                      const isW = t.type === "debit" && t.description?.startsWith("Withdrawal");
+                      const isDeposit = t.type === "deposit";
+                      const ref = (isW || isDeposit) ? (t.reference ?? "pending") : null;
+                      const wStatus = !ref ? null
+                        : ref === "pending" ? "pending"
+                        : (ref.startsWith("paid:") || ref.startsWith("approved:")) ? "approved"
+                        : ref.startsWith("rejected:") ? "rejected" : null;
+                      return (
+                        <div key={t.id} className="px-5 py-3.5 flex items-start gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
+                            <TxIcon type={t.type}/>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">{t.description}</p>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <p className="text-[10px] text-gray-400">{fd(t.createdAt)}</p>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${meta.badge}`}>{meta.label}</span>
+                              {wStatus === "pending"  && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-0.5"><Clock size={8}/> Pending</span>}
+                              {wStatus === "approved" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-0.5"><CheckCircle size={8}/> {isDeposit ? "Credited" : "Paid"}</span>}
+                              {wStatus === "rejected" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-0.5"><XCircle size={8}/> Rejected</span>}
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className={`text-[15px] font-extrabold ${
+                              isDeposit && wStatus === "pending" ? "text-amber-500"
+                              : isDeposit ? "text-teal-600"
+                              : isCredit ? "text-green-600"
+                              : wStatus === "rejected" ? "text-gray-400 line-through"
+                              : "text-red-500"
+                            }`}>
+                              {isDebitType ? "−" : "+"}{fc(Number(t.amount))}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* ── PAYOUT POLICY ── */}
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-4">
-          <p className="text-xs font-extrabold text-green-700 mb-3">Payout Policy</p>
-          <div className="space-y-2">
+        {/* ══ PAYOUT POLICY ══ */}
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-5">
+          <p className="text-[15px] font-bold text-green-800 mb-3 flex items-center gap-2">
+            <ShieldCheck size={16}/> Payout Policy
+          </p>
+          <div className="space-y-2.5">
             {[
-              { icon: <TrendingUp size={13} className="text-green-600"/>, text: `${riderKeepPct}% aapka — ${100 - riderKeepPct}% platform fee` },
-              { icon: <CreditCard size={13} className="text-green-600"/>, text: `Min withdrawal: ${fc(minPayout)} · Max: ${fc(maxPayout)}` },
-              { icon: <Clock size={13} className="text-green-600"/>,      text: `${procDays * 24}–${procDays * 24 + 24} hours mein process hota hai` },
-              { icon: <Smartphone size={13} className="text-green-600"/>, text: "JazzCash, EasyPaisa, ya bank account mein transfer" },
-              { icon: <ShieldCheck size={13} className="text-green-600"/>,text: "Rejected requests automatically refund ho jate hain" },
+              { icon: <TrendingUp size={13}/>,   text: `${riderKeepPct}% aapka — ${100 - riderKeepPct}% platform fee` },
+              { icon: <CreditCard size={13}/>,   text: `Min withdrawal: ${fc(minPayout)} · Max: ${fc(maxPayout)}` },
+              { icon: <Clock size={13}/>,        text: `${procDays * 24}–${procDays * 24 + 24} hours mein process hota hai` },
+              { icon: <Smartphone size={13}/>,   text: "JazzCash, EasyPaisa, ya bank account mein transfer" },
+              { icon: <ShieldCheck size={13}/>,  text: "Rejected requests automatically refund ho jate hain" },
             ].map((p, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="flex-shrink-0">{p.icon}</span>
+              <div key={i} className="flex items-center gap-2.5">
+                <span className="text-green-500 flex-shrink-0">{p.icon}</span>
                 <p className="text-xs text-green-700 font-medium">{p.text}</p>
               </div>
             ))}
@@ -609,7 +672,7 @@ export default function Wallet() {
         </p>
       </div>
 
-      {/* ── COD REMITTANCE MODAL ── */}
+      {/* ══ MODALS ══ */}
       {showRemittance && (
         <RemittanceModal
           netOwed={codNetOwed}
@@ -622,7 +685,6 @@ export default function Wallet() {
         />
       )}
 
-      {/* ── WITHDRAW MODAL ── */}
       {showWithdraw && withdrawalEnabled && (
         <WithdrawModal
           balance={balance} minPayout={minPayout} maxPayout={maxPayout}
@@ -635,7 +697,6 @@ export default function Wallet() {
         />
       )}
 
-      {/* ── DEPOSIT MODAL ── */}
       {showDeposit && depositEnabled && (
         <DepositModal
           balance={balance} minBalance={minBalance}
@@ -647,7 +708,7 @@ export default function Wallet() {
         />
       )}
 
-      {/* ── TOAST ── */}
+      {/* ══ TOAST ══ */}
       {toast && (
         <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none">
           <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl text-center">{toast}</div>
