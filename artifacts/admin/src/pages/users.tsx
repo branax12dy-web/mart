@@ -704,6 +704,7 @@ export default function Users() {
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
           </Button>
+        </div>
       </div>
 
       {pendingUsers.length > 0 && (
