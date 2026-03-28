@@ -32,3 +32,4 @@ channel = "stable-25_05"
 
 [userenv.shared]
 ADMIN_SECRET = "AJK-hig2QXaC_VG7OPZqgMT-VsVHtN8"
+ADMIN_JWT_SECRET = "QOHAcA0Y3m6yyQ1jW8FnQu995T5e8XupSnhKch6SF8RIKFn5KNZatDnFzqUDX2OL"

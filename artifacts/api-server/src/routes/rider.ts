@@ -5,7 +5,7 @@ import { eq, desc, and, or, sql, count, sum, gte, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const router: IRouter = Router();
 

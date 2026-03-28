@@ -20,7 +20,8 @@
     "pino": "^9",
     "pino-http": "^10",
     "qrcode": "^1.5.4",
-    "twilio": "^5.13.1"
+    "twilio": "^5.13.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

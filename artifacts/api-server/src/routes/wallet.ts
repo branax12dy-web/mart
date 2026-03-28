@@ -1,13 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, and, gte, sum, desc } from "drizzle-orm";
+import { eq, and, gte, sum, desc, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-import { getPlatformSettings } from "./admin.js";
+import { getPlatformSettings, adminAuth } from "./admin.js";
 import { customerAuth } from "../middleware/security.js";
-
-/* Only the admin panel may credit wallets — prevents self-top-up exploits */
-const ADMIN_SECRET = process.env["ADMIN_SECRET"] || "ajkmart-admin-2025";
 
 const router: IRouter = Router();
 
@@ -42,16 +39,11 @@ router.get("/", customerAuth, async (req, res) => {
 });
 
 /* ── POST /wallet/topup — ADMIN ONLY ────────────────────────────────────────
-   Restricted to admin panel. Requires x-admin-secret header.
+   Restricted to admin panel. Requires admin JWT or x-admin-secret header.
    Body: { userId, amount, method? }
    Customers cannot self-credit — all credits must go through payment verification.
 ─────────────────────────────────────────────────────────────────────────── */
-router.post("/topup", async (req, res) => {
-  const incomingSecret = req.headers["x-admin-secret"] as string | undefined;
-  if (!incomingSecret || incomingSecret !== ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized. Admin secret required for wallet top-up." });
-    return;
-  }
+router.post("/topup", adminAuth, async (req, res) => {
 
   const { userId, amount, method } = req.body;
   if (!userId) { res.status(400).json({ error: "userId required" }); return; }
@@ -117,6 +109,26 @@ router.post("/deposit", customerAuth, async (req, res) => {
   const amt = parseFloat(String(amount));
   if (isNaN(amt) || amt <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
 
+  /* ── Duplicate Transaction ID check ──
+     Normalize TxID (trim + uppercase) both on check and on storage
+     to prevent bypass via whitespace/casing variations. */
+  const normalizedTxId = transactionId.trim().toUpperCase().replace(/\s+/g, "");
+  if (!normalizedTxId) { res.status(400).json({ error: "transactionId cannot be empty" }); return; }
+
+  const txidTag = `txid:${normalizedTxId}`;
+  const existingDeposit = await db.select({ id: walletTransactionsTable.id })
+    .from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.type, "deposit"),
+      sql`${walletTransactionsTable.reference} LIKE ${'%' + txidTag}`,
+    ))
+    .limit(1);
+
+  if (existingDeposit.length > 0) {
+    res.status(409).json({ error: "This Transaction ID has already been used. Please check your transaction history or use a different TxID." });
+    return;
+  }
+
   const s = await getPlatformSettings();
   const walletEnabled = (s["feature_wallet"] ?? "on") === "on";
   const minTopup      = parseFloat(s["wallet_min_topup"]   ?? "100");
@@ -138,7 +150,7 @@ router.post("/deposit", customerAuth, async (req, res) => {
     id: txId, userId, type: "deposit",
     amount: amt.toFixed(2),
     description: desc,
-    reference: "pending",
+    reference: `pending:txid:${normalizedTxId}`,
     paymentMethod,
   });
 
@@ -162,8 +174,9 @@ router.get("/deposits", customerAuth, async (req, res) => {
 
   const mapped = deposits.map(d => {
     const ref = d.reference ?? "pending";
-    const status = ref === "pending" ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
-    const refNo = ref.startsWith("approved:") || ref.startsWith("rejected:") ? ref.slice(9) : "";
+    const isPending = ref === "pending" || ref.startsWith("pending:");
+    const status = isPending ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
+    const refNo = ref.startsWith("approved:") || ref.startsWith("rejected:") ? ref.split(":").slice(1).join(":") : "";
     return { ...d, amount: parseFloat(String(d.amount)), status, refNo };
   });
 

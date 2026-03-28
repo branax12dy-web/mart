@@ -17,6 +17,24 @@ import { customerAuth } from "../middleware/security.js";
 
 const router: IRouter = Router();
 
+const paymentTracker = new Map<string, { status: string; orderId?: string; gateway: string; createdAt: number }>();
+const PAYMENT_TTL_MS = 30 * 60 * 1000;
+
+function trackPayment(txnRef: string, gateway: string, orderId?: string) {
+  paymentTracker.set(txnRef, { status: "pending", orderId, gateway, createdAt: Date.now() });
+  if (paymentTracker.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of paymentTracker) {
+      if (now - v.createdAt > PAYMENT_TTL_MS) paymentTracker.delete(k);
+    }
+  }
+}
+
+function resolvePayment(txnRef: string, status: "success" | "failed") {
+  const entry = paymentTracker.get(txnRef);
+  if (entry) entry.status = status;
+}
+
 // ─── Crypto Helpers ───────────────────────────────────────────────────────────
 
 function hmacSHA256(key: string, data: string): string {
@@ -331,6 +349,7 @@ router.post("/initiate", customerAuth, async (req, res) => {
     params["pp_SecureHash"] = buildJazzCashHash(params, salt || "sandbox_salt");
 
     const isSandbox = mode === "sandbox";
+    trackPayment(txnRef, "jazzcash", orderId);
     res.json({
       gateway: "jazzcash", mode, type: "api", txnRef, orderId,
       gatewayUrl: isSandbox
@@ -412,6 +431,7 @@ router.post("/initiate", customerAuth, async (req, res) => {
         });
         const epData = await epRes.json() as any;
         if (epData?.responseCode === "0000") {
+          trackPayment(txnRef, "easypaisa", orderId);
           res.json({ gateway: "easypaisa", mode: "live", type: "api", txnRef, token: epData.token, orderId,
             instructions: `Mobile ${mobileNumber} pe notification aayegi — approve karein.` });
           return;
@@ -422,6 +442,7 @@ router.post("/initiate", customerAuth, async (req, res) => {
       }
     }
 
+    trackPayment(txnRef, "easypaisa", orderId);
     res.json({
       gateway: "easypaisa", mode, type: "api", txnRef, orderId, payload,
       instructions: isSandbox ? "Sandbox mode — payment simulate hogi." : `EasyPaisa notification aayegi — approve karein.`,
@@ -474,6 +495,7 @@ router.get("/simulate/:gateway/:txnRef/:orderId", async (req, res) => {
   }
 
   await confirmOrder(orderId);
+  resolvePayment(req.params["txnRef"]!, "success");
   res.json({ status: "success", txnRef: req.params["txnRef"], orderId, gateway: gw, message: "Sandbox payment simulated ✅ — Order confirmed" });
 });
 
@@ -527,8 +549,10 @@ router.post("/callback/jazzcash", async (req, res) => {
 
   if (responseCode === "000") {
     if (orderId) await confirmOrder(orderId);
+    if (txnRef) resolvePayment(txnRef, "success");
     res.json({ success: true, txnRef, orderId, message: "JazzCash payment confirmed — order updated ✅" });
   } else {
+    if (txnRef) resolvePayment(txnRef, "failed");
     res.json({ success: false, txnRef, responseCode, message: "JazzCash payment failed or cancelled" });
   }
 });
@@ -564,17 +588,14 @@ router.post("/callback/easypaisa", async (req, res) => {
   }
 
   if (responseCode === "0000") {
-    // ✅ Payment confirmed — update real order
-    // EasyPaisa sends their internal orderId (txnRef), not our orderId.
-    // Find order by txnRef stored in description or search recent pending orders.
-    // For now mark the order if orderId matches our format
     if (orderId && orderId.startsWith("EP")) {
-      // This is the txnRef we sent — need to find actual order by looking at recent pending orders.
-      // In a full implementation, you'd store txnRef→orderId mapping in a separate table.
-      // For now, log and return success.
+      resolvePayment(orderId, "success");
+      const tracked = paymentTracker.get(orderId);
+      if (tracked?.orderId) await confirmOrder(tracked.orderId);
     }
     res.json({ success: true, txnRefNo, message: "EasyPaisa payment confirmed ✅" });
   } else {
+    if (orderId && orderId.startsWith("EP")) resolvePayment(orderId, "failed");
     res.json({ success: false, txnRefNo, responseCode, message: "EasyPaisa payment failed" });
   }
 });
@@ -584,11 +605,27 @@ router.post("/callback/easypaisa", async (req, res) => {
 //  Poll payment status (gateway status check)
 // ═══════════════════════════════════════════════════════════════════════════════
 router.get("/status/:txnRef", async (req, res) => {
-  res.json({
-    txnRef:  req.params["txnRef"],
-    status:  "pending",
-    message: "Awaiting payment confirmation from gateway",
-  });
+  const txnRef = req.params["txnRef"]!;
+  const tracked = paymentTracker.get(txnRef);
+
+  if (!tracked) {
+    res.json({ txnRef, status: "pending", message: "Awaiting payment confirmation from gateway" });
+    return;
+  }
+
+  const elapsed = Date.now() - tracked.createdAt;
+  if (tracked.status === "pending" && elapsed > PAYMENT_TTL_MS) {
+    tracked.status = "expired";
+  }
+
+  const messages: Record<string, string> = {
+    pending: "Awaiting payment confirmation from gateway",
+    success: "Payment confirmed",
+    failed: "Payment failed or was cancelled",
+    expired: "Payment session expired",
+  };
+
+  res.json({ txnRef, status: tracked.status, message: messages[tracked.status] || tracked.status });
 });
 
 export default router;

@@ -19,6 +19,8 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useCart } from "@/context/CartContext";
+import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual } from "@workspace/i18n";
@@ -67,7 +69,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 /* ─────────────────────────── Grocery/Food Card ─────────────────────────── */
-function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, ratingWindowHours, onRate, onCancel }: {
+function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, ratingWindowHours, onRate, onCancel, onReorder }: {
   order: any;
   liveTracking: boolean;
   reviews: boolean;
@@ -76,6 +78,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   ratingWindowHours: number;
   onRate: (o: any) => void;
   onCancel: (o: any) => void;
+  onReorder?: (o: any) => void;
 }) {
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isFood = order.type === "food";
@@ -178,6 +181,13 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
           <Ionicons name="star" size={13} color="#F59E0B" />
           <Text style={styles.reviewedText}>Reviewed — Thank you!</Text>
         </View>
+      )}
+
+      {(isDelivered || isCancelled) && onReorder && order.items?.length > 0 && (
+        <Pressable style={styles.reorderBtn} onPress={() => onReorder(order)}>
+          <Ionicons name="refresh-outline" size={14} color={C.primary} />
+          <Text style={styles.reorderBtnText}>Reorder</Text>
+        </Pressable>
       )}
 
       {/* Refund info on cancelled orders */}
@@ -563,6 +573,8 @@ function SectionHeader({ title, count, active }: { title: string; count: number;
 export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
+  const { addItem } = useCart();
+  const { showToast } = useToast();
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
@@ -574,6 +586,33 @@ export default function OrdersScreen() {
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
 
   const orderRules = config.orderRules;
+
+  const handleReorder = useCallback((order: any) => {
+    if (!order.items || order.items.length === 0) return;
+    const validItems = order.items.filter((i: any) => i.productId);
+    if (validItems.length === 0) {
+      showToast("Is order ke items ab available nahi hain", "error");
+      return;
+    }
+    let count = 0;
+    for (const item of validItems) {
+      addItem({
+        productId: item.productId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity || 1,
+        image: item.image,
+        type: order.type || "mart",
+      });
+      count++;
+    }
+    if (validItems.length < order.items.length) {
+      showToast(`${count} items add — ${order.items.length - validItems.length} unavailable items skip kiye gaye`, "info");
+    } else {
+      showToast(`${count} items cart mein add ho gaye`, "success");
+    }
+    router.push("/cart");
+  }, [addItem, showToast]);
 
   const handleRate = useCallback((order: any) => {
     if (!reviewedIds.has(order.id)) setReviewTarget(order);
@@ -807,7 +846,7 @@ export default function OrdersScreen() {
         {anyActive > 0 && (
           <>
             <SectionHeader title={T("activeLabel")} count={anyActive} active />
-            {activeOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} onRate={handleRate} onCancel={handleCancel} />)}
+            {activeOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} />)}
             {activeRides.map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} />)}
             {activePharm.map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} onRate={handleRate} />)}
             {activeParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
@@ -817,7 +856,7 @@ export default function OrdersScreen() {
         {anyPast > 0 && (
           <>
             <SectionHeader title={T("historyLabel")} count={anyPast} />
-            {pastOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} onRate={handleRate} onCancel={handleCancel} />)}
+            {pastOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} />)}
             {pastRides.map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} />)}
             {pastPharm.map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} onRate={handleRate} />)}
             {pastParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
@@ -995,4 +1034,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ECFDF5",
   },
   refundText: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#047857" },
+  reorderBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    marginTop: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: "#EFF6FF",
+    borderWidth: 1, borderColor: "#BFDBFE",
+  },
+  reorderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
 });

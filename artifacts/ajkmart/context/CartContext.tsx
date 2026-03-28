@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { Alert } from "react-native";
 
 export interface CartItem {
@@ -20,29 +20,71 @@ interface CartContextType {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
   clearCart: () => void;
+  validateCart: () => Promise<void>;
+  isValidating: boolean;
 }
 
 const CartContext = createContext<CartContextType | null>(null);
 
+const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [isValidating, setIsValidating] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem("@ajkmart_cart").then(stored => {
-      if (!stored) return;
+      if (!stored) { setHasLoaded(true); return; }
       try {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) setItems(parsed);
       } catch {
         AsyncStorage.removeItem("@ajkmart_cart");
       }
+      setHasLoaded(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (hasLoaded && items.length > 0) {
+      validateCartItems(items);
+    }
+  }, [hasLoaded]);
 
   const save = (newItems: CartItem[]) => {
     setItems(newItems);
     AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(newItems));
   };
+
+  const validateCartItems = async (cartItems: CartItem[]) => {
+    if (cartItems.length === 0) return;
+    setIsValidating(true);
+    try {
+      const res = await fetch(`${API_BASE}/orders/validate-cart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: cartItems }),
+      });
+      if (!res.ok) { setIsValidating(false); return; }
+      const data = await res.json();
+      if (!data.valid) {
+        save(data.items);
+        if (data.removed.length > 0) {
+          Alert.alert("Items Removed", `The following items are no longer available and were removed: ${data.removed.join(", ")}`);
+        }
+        if (data.priceChanges.length > 0) {
+          const changes = data.priceChanges.map((c: any) => `${c.name}: Rs.${c.oldPrice} → Rs.${c.newPrice}`).join("\n");
+          Alert.alert("Prices Updated", `Some prices have changed:\n${changes}`);
+        }
+      }
+    } catch { /* network error — skip validation silently */ }
+    setIsValidating(false);
+  };
+
+  const validateCart = useCallback(async () => {
+    await validateCartItems(items);
+  }, [items]);
 
   const addItem = (item: CartItem) => {
     const existing = items.find(i => i.productId === item.productId);
@@ -96,7 +138,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     "mixed";
 
   return (
-    <CartContext.Provider value={{ items, itemCount, total, cartType, addItem, removeItem, updateQuantity, clearCart }}>
+    <CartContext.Provider value={{ items, itemCount, total, cartType, addItem, removeItem, updateQuantity, clearCart, validateCart, isValidating }}>
       {children}
     </CartContext.Provider>
   );

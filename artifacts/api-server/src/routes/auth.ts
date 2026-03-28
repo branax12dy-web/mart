@@ -206,9 +206,11 @@ router.post("/verify-otp", async (req, res) => {
   }
 
   /* ── OTP Bypass Mode (dev/testing only) ──
-     security_phone_verify=on overrides the bypass, enforcing real OTP for all users. ── */
+     Hard-disabled in production regardless of config.
+     security_phone_verify=on also overrides the bypass. ── */
+  const isProduction = process.env.NODE_ENV === "production";
   const phoneVerifyRequired = settings["security_phone_verify"] === "on";
-  const otpBypass = settings["security_otp_bypass"] === "on" && !phoneVerifyRequired;
+  const otpBypass = !isProduction && settings["security_otp_bypass"] === "on" && !phoneVerifyRequired;
 
   /* ── Atomic OTP consumption via a single conditional UPDATE ──
      The WHERE clause combines: correct code + not-yet-used + not-expired.

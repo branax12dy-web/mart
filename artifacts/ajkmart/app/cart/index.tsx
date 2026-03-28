@@ -24,6 +24,7 @@ import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { createOrder } from "@workspace/api-client-react";
 
 const C = Colors.light;
+const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 type PayMethod = "cash" | "wallet" | "jazzcash" | "easypaisa";
 
 interface PaymentMethod {
@@ -92,6 +93,12 @@ function AddressPickerModal({
               );
             })}
           </ScrollView>
+          <Pressable onPress={() => { onClose(); router.push("/(tabs)/profile"); }} style={[styles.addrOpt, { borderColor: C.primary, borderStyle: "dashed", marginTop: 8 }]}>
+            <View style={[styles.addrOptIcon, { backgroundColor: "#DBEAFE" }]}>
+              <Ionicons name="add-outline" size={20} color={C.primary} />
+            </View>
+            <Text style={[styles.addrOptLabel, { color: C.primary }]}>Add New Address</Text>
+          </Pressable>
           <Pressable onPress={onClose} style={styles.cancelBtn}>
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </Pressable>
@@ -147,8 +154,7 @@ export default function CartScreen() {
   const freeDeliveryEnabled = platformConfig.deliveryFee.freeEnabled;
 
   useEffect(() => {
-    const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
-    fetch(`${API}/platform-config`)
+    fetch(`${API_BASE}/platform-config`)
       .then(r => r.json())
       .then(d => {
         if (d.payment?.methods) {
@@ -193,13 +199,12 @@ export default function CartScreen() {
   const selectedAddr = addresses.find(a => a.id === selectedAddrId);
   const deliveryLine = selectedAddr
     ? `${selectedAddr.label} — ${selectedAddr.address}, ${selectedAddr.city}`
-    : "Home, AJK, Pakistan";
+    : "";
 
   useEffect(() => {
     if (!user?.id) return;
-    const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
     setAddrLoading(true);
-    fetch(`${API}/addresses`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    fetch(`${API_BASE}/addresses`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(r => r.json())
       .then(d => {
         const addrs: SavedAddress[] = d.addresses || [];
@@ -211,15 +216,39 @@ export default function CartScreen() {
       .finally(() => setAddrLoading(false));
   }, [user?.id]);
 
+  const cartFingerprint = items.map(i => `${i.productId}:${i.quantity}:${i.price}`).join("|");
+  useEffect(() => {
+    if (promoApplied && promoCode) {
+      revalidatePromo(promoCode);
+    }
+  }, [cartFingerprint]);
+
+  const revalidatePromo = async (code: string) => {
+    try {
+      const orderType = cartType === "mixed" ? "mart" : cartType;
+      const res = await fetch(`${API_BASE}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${total}&type=${orderType}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setPromoDiscount(data.discount);
+      } else {
+        setPromoCode(null);
+        setPromoDiscount(0);
+        setPromoApplied(false);
+        showToast("Promo code ab valid nahi raha — removed", "error");
+      }
+    } catch { /* silent */ }
+  };
+
   const applyPromo = async () => {
     const code = promoInput.trim().toUpperCase();
     if (!code) return;
     setPromoLoading(true);
     setPromoError(null);
     try {
-      const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
       const orderType = cartType === "mixed" ? "mart" : cartType;
-      const res = await fetch(`${API}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${total}&type=${orderType}`, {
+      const res = await fetch(`${API_BASE}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${total}&type=${orderType}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
@@ -275,8 +304,7 @@ export default function CartScreen() {
         const perm = await Location.getForegroundPermissionsAsync();
         if (perm.status !== "granted") return;
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const API_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
-        await fetch(`${API_URL}/locations/update`, {
+          await fetch(`${API_BASE}/locations/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({
@@ -299,8 +327,14 @@ export default function CartScreen() {
   };
 
   const handleCheckout = async () => {
+    if (loading) return;
     if (!user) { showToast("Login karein order place karne ke liye", "error"); return; }
     if (items.length === 0) { showToast("Cart mein koi item nahi", "error"); return; }
+    if (!deliveryLine) {
+      showToast("Delivery address select karein", "error");
+      setShowAddrPicker(true);
+      return;
+    }
     if (total < orderRules.minOrderAmount) {
       showToast(`Minimum order Rs.${orderRules.minOrderAmount} — Rs.${orderRules.minOrderAmount - total} aur add karein`, "error");
       return;
@@ -336,7 +370,6 @@ export default function CartScreen() {
     setLoading(false);
   };
 
-  // Gateway payment flow (JazzCash / EasyPaisa)
   const handleGwPay = async () => {
     if (!gwMobile || gwMobile.replace(/\D/g, "").length < 10) {
       showToast("Sahih mobile number darj karein (03XX-XXXXXXX)", "error");
@@ -345,44 +378,109 @@ export default function CartScreen() {
     setGwPaying(true);
     setGwStep("waiting");
     try {
-      const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
-      const tempOrderId = `TEMP-${Date.now()}`;
-      const r = await fetch(`${API}/payments/initiate`, {
+      const order = await createOrder({
+        type: cartType === "mixed" ? "mart" : cartType,
+        items: items.map(i => ({
+          productId: i.productId,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity,
+          image: i.image,
+        })),
+        deliveryAddress: deliveryLine,
+        paymentMethod: payMethod,
+        ...(promoCode ? { promoCode } : {}),
+      } as any);
+      const realOrderId = (order as any).id;
+      if (!realOrderId) throw new Error("Order create nahi ho saka");
+
+      const r = await fetch(`${API_BASE}/payments/initiate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           gateway:      payMethod,
           amount:       grandTotal,
-          orderId:      tempOrderId,
+          orderId:      realOrderId,
           mobileNumber: gwMobile.replace(/\D/g, ""),
         }),
       });
       const data = await r.json() as any;
-      if (!r.ok) throw new Error(data.error || "Payment initiate nahi ho saka");
+      if (!r.ok) {
+        await cancelPendingOrder(realOrderId);
+        throw new Error(data.error || "Payment initiate nahi ho saka");
+      }
 
-      // Sandbox: auto-simulate after 2s; Live: user approves on their app
       const isSandbox = data.mode === "sandbox";
       if (isSandbox) {
         await new Promise(res => setTimeout(res, 2200));
         setGwStep("done");
         await new Promise(res => setTimeout(res, 800));
-        await placeOrder(payMethod);
+        clearCart();
+        setOrderSuccess({
+          id: realOrderId.slice(-6).toUpperCase(),
+          time: (order as any).estimatedTime || "30-45 min",
+          payMethod,
+        });
         setShowGwModal(false);
       } else {
-        // Live mode — show waiting state for user to approve on their phone
-        setGwStep("waiting");
-        await new Promise(res => setTimeout(res, 3000));
-        // In production, you'd poll /api/payments/status/:txnRef here
-        setGwStep("done");
-        await new Promise(res => setTimeout(res, 600));
-        await placeOrder(payMethod);
-        setShowGwModal(false);
+        const txnRef = data.txnRef || data.transactionRef || realOrderId;
+        const POLL_INTERVAL = 4000;
+        const MAX_POLL_TIME = 120000;
+        const startTime = Date.now();
+        let resolved = false;
+
+        while (!resolved && (Date.now() - startTime) < MAX_POLL_TIME) {
+          await new Promise(res => setTimeout(res, POLL_INTERVAL));
+          try {
+            const statusRes = await fetch(`${API_BASE}/payments/status/${encodeURIComponent(txnRef)}`);
+            const statusData = await statusRes.json() as any;
+            if (statusData.status === "completed" || statusData.status === "success") {
+              resolved = true;
+              setGwStep("done");
+              await new Promise(res => setTimeout(res, 600));
+              clearCart();
+              setOrderSuccess({
+                id: realOrderId.slice(-6).toUpperCase(),
+                time: (order as any).estimatedTime || "30-45 min",
+                payMethod,
+              });
+              setShowGwModal(false);
+            } else if (statusData.status === "failed" || statusData.status === "expired") {
+              await cancelPendingOrder(realOrderId);
+              throw new Error(statusData.message || "Payment fail ho gaya");
+            }
+          } catch (pollErr: any) {
+            if (pollErr.message && pollErr.message !== "Failed to fetch") {
+              throw pollErr;
+            }
+          }
+        }
+
+        if (!resolved) {
+          await cancelPendingOrder(realOrderId);
+          throw new Error("Payment timeout — 2 minute mein response nahi aaya. Apna account check karein.");
+        }
       }
     } catch (e: any) {
       showToast(e.message || "Payment fail ho gaya. Dobara try karein.", "error");
       setGwStep("input");
     }
     setGwPaying(false);
+  };
+
+  const cancelPendingOrder = async (orderId: string) => {
+    try {
+      await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    } catch {}
   };
 
   // ── Gateway Payment Modal ─────────────────────────────────────────
@@ -669,10 +767,10 @@ export default function CartScreen() {
               ) : (
                 <>
                   <Text style={styles.addrCardLabel}>
-                    {selectedAddr ? selectedAddr.label : "Home"}
+                    {selectedAddr ? selectedAddr.label : "Delivery Address"}
                   </Text>
                   <Text style={styles.addrCardValue} numberOfLines={2}>
-                    {selectedAddr ? `${selectedAddr.address}, ${selectedAddr.city}` : "AJK, Pakistan"}
+                    {selectedAddr ? `${selectedAddr.address}, ${selectedAddr.city}` : "Address select karein"}
                   </Text>
                 </>
               )}

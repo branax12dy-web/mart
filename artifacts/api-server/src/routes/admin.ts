@@ -453,7 +453,7 @@ function resetAdminLoginAttempts(ip: string) {
   adminLoginAttempts.delete(ip);
 }
 
-async function adminAuth(req: Request, res: Response, next: NextFunction) {
+export async function adminAuth(req: Request, res: Response, next: NextFunction) {
   const ip = getClientIp(req);
 
   /* ── Prefer new signed admin JWT (x-admin-token header) ── */
@@ -1962,8 +1962,9 @@ router.get("/deposit-requests", async (req, res) => {
     const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
       .from(usersTable).where(eq(usersTable.id, t.userId)).limit(1);
     const ref = t.reference ?? "pending";
-    const status = ref === "pending" ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
-    const refNo = ref.startsWith("approved:") ? ref.slice(9) : ref.startsWith("rejected:") ? ref.slice(9) : "";
+    const isPending = ref === "pending" || ref.startsWith("pending:");
+    const status = isPending ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
+    const refNo = ref.startsWith("approved:") || ref.startsWith("rejected:") ? ref.split(":").slice(1).join(":") : "";
     return { ...t, amount: parseFloat(String(t.amount)), user: user || null, status, refNo };
   }));
   const filtered = statusFilter ? enriched.filter(d => d.status === statusFilter) : enriched;
@@ -1981,7 +1982,8 @@ router.patch("/deposit-requests/:id/approve", async (req, res) => {
   if (tx.type !== "deposit") { res.status(400).json({ error: "Not a deposit record" }); return; }
 
   const amt = parseFloat(String(tx.amount));
-  const approvedRef = refNo ? `approved:${refNo.trim()}` : "approved:manual";
+  const txidSuffix = (tx.reference && tx.reference.includes("txid:")) ? `:${tx.reference.split("txid:").pop()}` : "";
+  const approvedRef = refNo ? `approved:${refNo.trim()}${txidSuffix}` : `approved:manual${txidSuffix}`;
 
   /* Fully atomic: conditional state-transition + wallet credit in ONE transaction.
      If the conditional update hits 0 rows (already processed), transaction rolls back
@@ -1991,7 +1993,7 @@ router.patch("/deposit-requests/:id/approve", async (req, res) => {
     await db.transaction(async (trx) => {
       const [marked] = await trx.update(walletTransactionsTable)
         .set({ reference: approvedRef })
-        .where(and(eq(walletTransactionsTable.id, txId), eq(walletTransactionsTable.reference, "pending")))
+        .where(and(eq(walletTransactionsTable.id, txId), sql`(${walletTransactionsTable.reference} = 'pending' OR ${walletTransactionsTable.reference} LIKE 'pending:%')`))
         .returning({ id: walletTransactionsTable.id });
       if (!marked) throw new Error("ALREADY_PROCESSED");
       await trx.update(usersTable)
@@ -2029,12 +2031,11 @@ router.patch("/deposit-requests/:id/reject", async (req, res) => {
   if (tx.type !== "deposit") { res.status(400).json({ error: "Not a deposit record" }); return; }
 
   const rejReason = reason?.trim() || "Admin rejected";
+  const txidSuffix = (tx.reference && tx.reference.includes("txid:")) ? `:${tx.reference.split("txid:").pop()}` : "";
 
-  /* Conditional update: only transitions reference 'pending' → 'rejected:...'
-     Prevents race with concurrent approve or reject that already processed this deposit */
   const [marked] = await db.update(walletTransactionsTable)
-    .set({ reference: `rejected:${rejReason}` })
-    .where(and(eq(walletTransactionsTable.id, txId), eq(walletTransactionsTable.reference, "pending")))
+    .set({ reference: `rejected:${rejReason}${txidSuffix}` })
+    .where(and(eq(walletTransactionsTable.id, txId), sql`(${walletTransactionsTable.reference} = 'pending' OR ${walletTransactionsTable.reference} LIKE 'pending:%')`))
     .returning({ id: walletTransactionsTable.id });
 
   if (!marked) {

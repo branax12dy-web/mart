@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable } from "@workspace/db/schema";
-import { eq, and, gte, count, SQL, sql } from "drizzle-orm";
+import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable } from "@workspace/db/schema";
+import { eq, and, gte, count, SQL, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth } from "../middleware/security.js";
@@ -58,6 +58,55 @@ async function validatePromoCode(code: string, orderTotal: number, orderType: st
   return { valid: true, discount, discountType, promoId: promo.id, maxDiscount: promo.maxDiscount ? parseFloat(String(promo.maxDiscount)) : null };
 }
 
+/* ── POST /orders/validate-cart — Validate cart items against DB ── */
+router.post("/validate-cart", async (req, res) => {
+  const { items } = req.body;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    res.json({ valid: true, items: [], removed: [], priceChanges: [] });
+    return;
+  }
+
+  const productIds = items.map((it: any) => it.productId).filter(Boolean);
+  if (productIds.length === 0) {
+    res.json({ valid: true, items, removed: [], priceChanges: [] });
+    return;
+  }
+
+  const dbProducts = await db.select({
+    id: productsTable.id,
+    price: productsTable.price,
+    inStock: productsTable.inStock,
+    name: productsTable.name,
+  }).from(productsTable).where(inArray(productsTable.id, productIds));
+
+  const productMap = new Map(dbProducts.map(p => [p.id, p]));
+  const removed: string[] = [];
+  const priceChanges: { productId: string; name: string; oldPrice: number; newPrice: number }[] = [];
+  const validItems: any[] = [];
+
+  for (const item of items) {
+    const dbProduct = productMap.get(item.productId);
+    if (!dbProduct || dbProduct.inStock === false) {
+      removed.push(item.name || item.productId);
+      continue;
+    }
+    const dbPrice = parseFloat(dbProduct.price);
+    if (Math.abs(dbPrice - Number(item.price)) > 0.01) {
+      priceChanges.push({ productId: item.productId, name: dbProduct.name || item.name, oldPrice: item.price, newPrice: dbPrice });
+      validItems.push({ ...item, price: dbPrice });
+    } else {
+      validItems.push(item);
+    }
+  }
+
+  res.json({
+    valid: removed.length === 0 && priceChanges.length === 0,
+    items: validItems,
+    removed,
+    priceChanges,
+  });
+});
+
 /* ── GET /orders/validate-promo?code=&total=&type= ───────────────────────── */
 router.get("/validate-promo", customerAuth, async (req, res) => {
   const code  = String(req.query["code"]  || "").trim();
@@ -108,6 +157,60 @@ router.post("/", customerAuth, async (req, res) => {
   if (badItem) {
     res.status(400).json({ error: "Each item must have a valid positive price and quantity" }); return;
   }
+
+  /* ── Server-side price verification — every item must have a productId ── */
+  const missingProductId = (items as any[]).find((it: any) => !it.productId);
+  if (missingProductId) {
+    res.status(400).json({ error: "Each item must include a valid productId" }); return;
+  }
+
+  const productIds = (items as any[]).map((it: any) => it.productId);
+  {
+    const dbProducts = await db.select({
+      id: productsTable.id,
+      price: productsTable.price,
+      inStock: productsTable.inStock,
+      name: productsTable.name,
+    }).from(productsTable).where(inArray(productsTable.id, productIds));
+
+    const productMap = new Map(dbProducts.map(p => [p.id, p]));
+
+    const unavailable: string[] = [];
+    const priceChanges: string[] = [];
+
+    for (const item of items as any[]) {
+      const dbProduct = productMap.get(item.productId);
+      if (!dbProduct) {
+        unavailable.push(item.name || item.productId);
+        continue;
+      }
+      if (dbProduct.inStock === false) {
+        unavailable.push(dbProduct.name || item.productId);
+        continue;
+      }
+      const dbPrice = parseFloat(dbProduct.price);
+      if (Math.abs(dbPrice - Number(item.price)) > 0.01) {
+        priceChanges.push(`${dbProduct.name}: Rs.${item.price} → Rs.${dbPrice}`);
+        item.price = dbPrice;
+      }
+    }
+
+    if (unavailable.length > 0) {
+      res.status(400).json({
+        error: `The following items are no longer available: ${unavailable.join(", ")}. Please remove them from your cart.`,
+        unavailableItems: unavailable,
+      });
+      return;
+    }
+
+    if (priceChanges.length > 0) {
+      res.status(409).json({
+        error: `Prices have changed for some items: ${priceChanges.join("; ")}. Please review your cart.`,
+        priceChanges,
+      });
+      return;
+    }
+  }  /* end price verification block */
 
   const itemsTotal = items.reduce(
     (sum: number, item: { price: number; quantity: number }) => sum + (item.price * item.quantity),

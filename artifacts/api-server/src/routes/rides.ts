@@ -160,6 +160,20 @@ router.post("/", customerAuth, async (req, res) => {
     res.status(400).json({ error: "Exact coordinates required. Please select pickup/drop from the location list." }); return;
   }
 
+  /* ── Prevent duplicate active rides ── */
+  const existingActive = await db.select({ id: ridesTable.id, status: ridesTable.status })
+    .from(ridesTable)
+    .where(and(eq(ridesTable.userId, userId), sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')`))
+    .limit(1);
+  if (existingActive.length > 0) {
+    res.status(409).json({
+      error: "Aapki ek ride pehle se active hai. Naye ride ke liye pehle wali complete ya cancel karein.",
+      activeRideId: existingActive[0]!.id,
+      activeRideStatus: existingActive[0]!.status,
+    });
+    return;
+  }
+
   const s = await getPlatformSettings();
 
   if ((s["app_status"] ?? "active") === "maintenance") {
@@ -303,47 +317,73 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
   const cancelFee = parseFloat(s["ride_cancellation_fee"] ?? "30");
   const riderAssigned = ["accepted", "arrived", "in_transit"].includes(ride.status);
 
-  /* Cancellation fee only if rider was assigned */
+  /* All-or-nothing transaction: cancel ride + bid rejection + cancellation fee + refund */
   let actualCancelFee = 0;
-  if (riderAssigned && cancelFee > 0 && ride.paymentMethod === "wallet") {
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-    if (user) {
-      const balance = parseFloat(user.walletBalance ?? "0");
-      actualCancelFee = Math.min(cancelFee, balance);
-      if (actualCancelFee > 0) {
-        await db.update(usersTable)
-          .set({ walletBalance: (balance - actualCancelFee).toFixed(2) })
-          .where(eq(usersTable.id, userId));
-        await db.insert(walletTransactionsTable).values({
-          id: generateId(), userId, type: "debit",
-          amount: actualCancelFee.toFixed(2),
-          description: `Ride cancellation fee — #${ride.id.slice(-6).toUpperCase()}`,
-        }).catch(() => {});
+  let cancelFeeAsDebt = false;
+
+  const cancelResult = await db.transaction(async (tx) => {
+    const [upd] = await tx.update(ridesTable)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(and(eq(ridesTable.id, String(req.params["id"])), eq(ridesTable.userId, userId)))
+      .returning();
+
+    await tx.update(rideBidsTable)
+      .set({ status: "rejected", updatedAt: new Date() })
+      .where(and(eq(rideBidsTable.rideId, String(req.params["id"])), eq(rideBidsTable.status, "pending")));
+
+    if (riderAssigned && cancelFee > 0) {
+      const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+      if (user) {
+        const balance = parseFloat(user.walletBalance ?? "0");
+        if (balance >= cancelFee) {
+          actualCancelFee = cancelFee;
+          await tx.update(usersTable)
+            .set({ walletBalance: (balance - cancelFee).toFixed(2) })
+            .where(eq(usersTable.id, userId));
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId, type: "debit",
+            amount: cancelFee.toFixed(2),
+            description: `Ride cancellation fee — #${ride.id.slice(-6).toUpperCase()}`,
+          });
+        } else if (balance > 0) {
+          actualCancelFee = balance;
+          cancelFeeAsDebt = true;
+          await tx.update(usersTable)
+            .set({ walletBalance: "0" })
+            .where(eq(usersTable.id, userId));
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId, type: "debit",
+            amount: balance.toFixed(2),
+            description: `Ride cancellation fee (partial, Rs.${(cancelFee - balance).toFixed(0)} as debt) — #${ride.id.slice(-6).toUpperCase()}`,
+          });
+        } else {
+          cancelFeeAsDebt = true;
+        }
       }
     }
-  }
 
-  /* Include userId in WHERE to close the TOCTOU window between ownership check and update */
-  const [updated] = await db.update(ridesTable)
-    .set({ status: "cancelled", updatedAt: new Date() })
-    .where(and(eq(ridesTable.id, String(req.params["id"])), eq(ridesTable.userId, userId)))
-    .returning();
+    if (cancelFeeAsDebt && upd) {
+      await tx.update(ridesTable)
+        .set({ bargainNote: `Cancellation debt: Rs.${cancelFee}` })
+        .where(eq(ridesTable.id, upd.id));
+    }
 
-  /* Reject all pending bids (InDrive multi-bid) */
-  await db.update(rideBidsTable)
-    .set({ status: "rejected", updatedAt: new Date() })
-    .where(and(eq(rideBidsTable.rideId, String(req.params["id"])), eq(rideBidsTable.status, "pending")));
+    if (ride.paymentMethod === "wallet" && ride.status !== "bargaining" && ride.bargainStatus !== "customer_offered") {
+      const refundAmt = parseFloat(ride.fare);
+      await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, userId));
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId, type: "credit", amount: refundAmt.toFixed(2),
+        description: `Ride refund — #${ride.id.slice(-6).toUpperCase()} cancelled`,
+      });
+    }
 
-  /* Refund wallet fare if wallet payment + not bargaining (bargaining rides haven't charged yet) */
+    return upd;
+  });
+
   if (ride.paymentMethod === "wallet" && ride.status !== "bargaining" && ride.bargainStatus !== "customer_offered") {
     const refundAmt = parseFloat(ride.fare);
-    await db.update(usersTable)
-      .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
-      .where(eq(usersTable.id, userId));
-    await db.insert(walletTransactionsTable).values({
-      id: generateId(), userId, type: "credit", amount: refundAmt.toFixed(2),
-      description: `Ride refund — #${ride.id.slice(-6).toUpperCase()} cancelled`,
-    }).catch(() => {});
     await db.insert(notificationsTable).values({
       id: generateId(), userId,
       title: "Ride Refund 💰",
@@ -361,14 +401,17 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     await db.insert(notificationsTable).values({
       id: generateId(), userId,
       title: "Ride Cancelled",
-      body: riderAssigned && cancelFee > 0 ? `A cancellation fee of Rs. ${cancelFee} has been applied.` : "Aapki ride cancel ho gayi.",
+      body: riderAssigned && cancelFee > 0
+        ? `A cancellation fee of Rs. ${cancelFee} has been applied.${cancelFeeAsDebt ? " Remaining balance will be deducted from future wallet top-ups." : ""}`
+        : "Aapki ride cancel ho gayi.",
       type: "ride", icon: "close-circle-outline",
     }).catch(() => {});
   }
 
   res.json({
-    ...formatRide(updated!),
+    ...formatRide(cancelResult!),
     cancellationFee: actualCancelFee,
+    cancelFeeAsDebt,
   });
 });
 
@@ -395,47 +438,56 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
 
   const agreedFare = parseFloat(bid.fare);
 
-  /* Wallet deduction if wallet payment */
-  if (ride.paymentMethod === "wallet") {
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-    if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    const balance = parseFloat(user.walletBalance ?? "0");
-    if (balance < agreedFare) {
-      res.status(400).json({ error: `Insufficient wallet balance. Need Rs. ${agreedFare.toFixed(0)}` }); return;
-    }
-    await db.update(usersTable).set({ walletBalance: (balance - agreedFare).toFixed(2) }).where(eq(usersTable.id, userId));
-    await db.insert(walletTransactionsTable).values({
-      id: generateId(), userId, type: "debit", amount: agreedFare.toFixed(2),
-      description: `Ride payment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
-    }).catch(() => {});
+  /* ── Single transaction: wallet deduction + ride update + bid acceptance ── */
+  let updated: any;
+  try {
+    updated = await db.transaction(async (tx) => {
+      if (ride.paymentMethod === "wallet") {
+        const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+        if (!user) throw new Error("User not found");
+        const balance = parseFloat(user.walletBalance ?? "0");
+        if (balance < agreedFare) throw new Error(`Insufficient wallet balance. Need Rs. ${agreedFare.toFixed(0)}`);
+        await tx.update(usersTable).set({ walletBalance: (balance - agreedFare).toFixed(2) }).where(eq(usersTable.id, userId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId, type: "debit", amount: agreedFare.toFixed(2),
+          description: `Ride payment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
+        });
+      }
+
+      const [rideUpdate] = await tx.update(ridesTable)
+        .set({
+          status:        "accepted",
+          riderId:       bid.riderId,
+          riderName:     bid.riderName,
+          riderPhone:    bid.riderPhone,
+          fare:          agreedFare.toFixed(2),
+          counterFare:   agreedFare.toFixed(2),
+          bargainStatus: "agreed",
+          acceptedAt:    new Date(),
+          updatedAt:     new Date(),
+        })
+        .where(and(eq(ridesTable.id, rideId), eq(ridesTable.userId, userId), eq(ridesTable.status, "bargaining")))
+        .returning();
+
+      if (!rideUpdate) throw new Error("Ride is no longer available for acceptance");
+
+      const bidUpdateResult = await tx.update(rideBidsTable)
+        .set({ status: "accepted", updatedAt: new Date() })
+        .where(and(eq(rideBidsTable.id, bidId), eq(rideBidsTable.status, "pending")))
+        .returning();
+
+      if (bidUpdateResult.length === 0) throw new Error("Bid is no longer available");
+
+      await tx.update(rideBidsTable)
+        .set({ status: "rejected", updatedAt: new Date() })
+        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending"), ne(rideBidsTable.id, bidId)));
+
+      return rideUpdate;
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+    return;
   }
-
-  /* Update the ride — assign rider, set fare, mark accepted.
-     Include userId in WHERE to close TOCTOU between ownership check and update. */
-  const [updated] = await db.update(ridesTable)
-    .set({
-      status:        "accepted",
-      riderId:       bid.riderId,
-      riderName:     bid.riderName,
-      riderPhone:    bid.riderPhone,
-      fare:          agreedFare.toFixed(2),
-      counterFare:   agreedFare.toFixed(2),
-      bargainStatus: "agreed",
-      acceptedAt:    new Date(),
-      updatedAt:     new Date(),
-    })
-    .where(and(eq(ridesTable.id, rideId), eq(ridesTable.userId, userId)))
-    .returning();
-
-  /* Atomically accept this bid + reject all other pending bids for this ride in a single transaction */
-  await db.transaction(async (tx) => {
-    await tx.update(rideBidsTable)
-      .set({ status: "accepted", updatedAt: new Date() })
-      .where(eq(rideBidsTable.id, bidId));
-    await tx.update(rideBidsTable)
-      .set({ status: "rejected", updatedAt: new Date() })
-      .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending"), ne(rideBidsTable.id, bidId)));
-  });
 
   /* Notify winning rider */
   await db.insert(notificationsTable).values({

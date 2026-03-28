@@ -34,7 +34,7 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - **Product Management:** Vendors can manage products, including bulk additions with image and description support, inventory tracking, and category assignments.
 - **Notifications:** In-app notification systems for various events across all applications.
 - **Location Services:** Integration with mapping services for autocomplete, geocoding, distance matrix calculations, and real-time location tracking for rides/deliveries.
-- **Security:** Implementation of signed JWTs for authentication, input validation using Zod schemas, and role-based access control for API endpoints.
+- **Security:** Implementation of signed JWTs for authentication, input validation using Zod schemas, and role-based access control for API endpoints. Admin endpoints use a separate `ADMIN_JWT_SECRET` (required env var, server will not start without it). Server-side price verification on order placement. Deposit TxID duplicate protection with normalized case-insensitive matching. OTP bypass is hard-disabled in production (`NODE_ENV=production`).
 
 **Database Schema Highlights:**
 - `usersTable`: Stores user details, including auth-related fields, approval status, and roles.

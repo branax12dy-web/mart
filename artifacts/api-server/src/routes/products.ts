@@ -1,19 +1,9 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { productsTable } from "@workspace/db/schema";
 import { eq, ilike, and, SQL } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-
-const ADMIN_SECRET = process.env.ADMIN_SECRET || "ajkmart-admin-2025";
-
-function requireAdmin(req: Request, res: Response): boolean {
-  const secret = String(req.headers["x-admin-secret"] || "");
-  if (secret !== ADMIN_SECRET) {
-    res.status(401).json({ error: "Admin authentication required." });
-    return false;
-  }
-  return true;
-}
+import { adminAuth } from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -51,8 +41,7 @@ router.get("/:id", async (req, res) => {
   });
 });
 
-router.post("/", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post("/", adminAuth, async (req, res) => {
   const { name, description, price, category, type, image, vendorId, unit } = req.body;
   const [product] = await db.insert(productsTable).values({
     id: generateId(),
