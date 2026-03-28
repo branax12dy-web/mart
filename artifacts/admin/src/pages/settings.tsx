@@ -62,7 +62,7 @@ const TOGGLE_KEYS = new Set([
   "feature_parcel","feature_wallet","feature_referral","feature_new_users",
   "user_require_approval",
   "customer_referral_enabled","customer_loyalty_enabled",
-  "rider_cash_allowed","rider_auto_approve","rider_withdrawal_enabled",
+  "rider_cash_allowed","rider_auto_approve","rider_withdrawal_enabled","rider_deposit_enabled",
   "vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
   "feature_chat","feature_live_tracking","feature_reviews",
   "security_otp_bypass","security_mfa_required","security_multi_device","security_gps_tracking",

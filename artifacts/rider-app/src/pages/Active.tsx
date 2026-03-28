@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera } from "lucide-react";
+import {
+  AlertTriangle, Camera, MapPin, Phone, Package, ShoppingCart,
+  UtensilsCrossed, Bike, Car, User, CheckCircle, X, RefreshCw,
+  MapPinned, ArrowDown,
+} from "lucide-react";
 import { api } from "../lib/api";
 import { useState, useRef, useEffect } from "react";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -53,7 +57,7 @@ function NavButton({ label, lat, lng, address, color = "blue" }: {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer"
       className={`flex items-center justify-center gap-1.5 border text-sm font-bold px-4 py-2.5 rounded-xl transition-colors ${colors[color]}`}>
-      🗺️ {label}
+      <MapPin size={15}/> {label}
     </a>
   );
 }
@@ -63,15 +67,21 @@ function CallButton({ name, phone, label }: { name?: string | null; phone?: stri
   return (
     <a href={`tel:${phone}`}
       className="flex items-center justify-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-green-100 transition-colors">
-      📞 {label || `Call ${name || "Customer"}`}
+      <Phone size={15}/> {label || `Call ${name || "Customer"}`}
     </a>
   );
 }
 
+type OrderItem = { name: string; quantity: number; price: number };
+
 /* ── Order Progress Steps ── */
 const ORDER_STEPS  = ["store",    "picked_up",  "delivered"];
 const ORDER_LABELS = ["Go to Store", "Picked Up", "Delivered"];
-const ORDER_ICONS  = ["🏪",        "📦",         "✅"];
+const ORDER_STEP_ICONS = [
+  <ShoppingCart key="store" size={14}/>,
+  <Package      key="picked" size={14}/>,
+  <CheckCircle  key="done"  size={14}/>,
+];
 
 /* ── Ride Progress Steps ── */
 const RIDE_STEPS  = ["accepted", "arrived", "in_transit", "completed"];
@@ -92,7 +102,6 @@ export default function Active() {
 
   const showToast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
-  /* ── useQuery MUST come before any useEffect that reads `data` ── */
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["rider-active"],
     queryFn:  () => api.getActive(),
@@ -106,7 +115,9 @@ export default function Active() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ riderId: user?.id, event, lat, lng }),
-      }).catch(() => {});
+      }).catch((err: Error) => {
+        console.warn("[Active] GPS event log failed:", err.message);
+      });
     };
     if (navigator?.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -148,7 +159,9 @@ export default function Active() {
             accuracy:  pos.coords.accuracy,
             role:      "rider",
           }),
-        }).catch(() => {});
+        }).catch((err: Error) => {
+          console.warn("[Active] GPS location update failed:", err.message);
+        });
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },
@@ -174,22 +187,21 @@ export default function Active() {
       qc.invalidateQueries({ queryKey: ["rider-history"] });
       qc.invalidateQueries({ queryKey: ["rider-earnings"] });
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      /* Log GPS milestone for every order status change */
       logRideEvent(vars.id, `order_${vars.status}`);
       if (vars.status === "delivered") {
         sessionStorage.removeItem("orderPickedUp");
         setProofPhoto(null);
-        showToast("🎉 Order delivered! Earnings credited.");
+        showToast("Order delivered! Earnings credited.");
       } else if (vars.status === "cancelled") {
         sessionStorage.removeItem("orderPickedUp");
         setProofPhoto(null);
         setShowCancelConfirm(false);
         showToast("Order cancel ho gaya. Customer ko naya rider milega.");
       } else {
-        showToast("✅ Status updated!");
+        showToast("Status updated!");
       }
     },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast(e.message),
   });
 
   const updateRideMut = useMutation({
@@ -199,13 +211,12 @@ export default function Active() {
       qc.invalidateQueries({ queryKey: ["rider-history"] });
       qc.invalidateQueries({ queryKey: ["rider-earnings"] });
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      /* Log GPS milestone for every ride status change */
       logRideEvent(vars.id, vars.status);
-      if (vars.status === "completed") showToast("🎉 Ride completed! Earnings credited.");
+      if (vars.status === "completed") showToast("Ride completed! Earnings credited.");
       else if (vars.status === "cancelled") { setShowCancelConfirm(false); showToast("Ride cancel ho gaya."); }
-      else showToast("✅ Status updated!");
+      else showToast("Status updated!");
     },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast(e.message),
   });
 
   if (isLoading) return (
@@ -228,26 +239,27 @@ export default function Active() {
       </div>
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="text-center">
-          <p className="text-7xl mb-4">🏍️</p>
+          <Bike size={72} className="text-gray-200 mx-auto mb-4"/>
           <h2 className="text-xl font-bold text-gray-700">No Active Task</h2>
           <p className="text-gray-400 mt-2 text-sm">Accept an order or ride from the Home tab to get started</p>
           <button onClick={() => refetch()}
-            className="mt-5 bg-green-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold">
-            ↻ Refresh
+            className="mt-5 bg-green-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto">
+            <RefreshCw size={14}/> Refresh
           </button>
         </div>
       </div>
     </div>
   );
 
-  /* ── Order UI step (local state) ── */
   const orderStep = orderPickedUp ? 1 : 0;
-
-  /* ── Ride progress ── */
-  const rideStep = ride ? RIDE_STEPS.indexOf(ride.status) : -1;
-
-  /* ── Elapsed timer ── */
+  const rideStep  = ride ? RIDE_STEPS.indexOf(ride.status) : -1;
   const startedAt = order?.acceptedAt || order?.updatedAt || ride?.acceptedAt || ride?.updatedAt || null;
+
+  function OrderTypeIcon({ type }: { type: string }) {
+    if (type === "food") return <UtensilsCrossed size={20} className="text-white"/>;
+    if (type === "mart") return <ShoppingCart size={20} className="text-white"/>;
+    return <Package size={20} className="text-white"/>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -274,8 +286,8 @@ export default function Active() {
             {/* Order Header Card */}
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl">
-                  {order.type === "food" ? "🍔" : order.type === "mart" ? "🛒" : "📦"}
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <OrderTypeIcon type={order.type}/>
                 </div>
                 <div className="flex-1">
                   <p className="font-bold text-white capitalize">{order.type} Order</p>
@@ -292,14 +304,11 @@ export default function Active() {
                 <div className="flex items-center justify-between">
                   {ORDER_LABELS.map((label, i) => (
                     <div key={i} className="flex flex-col items-center gap-1 flex-1">
-                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm transition-all
+                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all
                         ${i <= orderStep ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-300 text-gray-300"}`}>
-                        {i < orderStep ? "✓" : ORDER_ICONS[i]}
+                        {i < orderStep ? <CheckCircle size={14}/> : ORDER_STEP_ICONS[i]}
                       </div>
                       <p className={`text-[9px] font-bold text-center leading-tight ${i <= orderStep ? "text-blue-600" : "text-gray-400"}`}>{label}</p>
-                      {i < ORDER_LABELS.length - 1 && (
-                        <div className={`hidden`}/>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -315,14 +324,16 @@ export default function Active() {
             {!orderPickedUp && (
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 <div className="bg-orange-50 px-4 py-2.5 border-b border-orange-100">
-                  <p className="text-xs font-bold text-orange-600 uppercase tracking-wide">📍 Step 1 — Go to Store</p>
+                  <p className="text-xs font-bold text-orange-600 uppercase tracking-wide flex items-center gap-1.5">
+                    <MapPin size={12}/> Step 1 — Go to Store
+                  </p>
                 </div>
                 <div className="p-4 space-y-3">
                   <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
-                    <p className="text-xs text-orange-500 font-bold mb-1">🏪 Vendor / Store</p>
+                    <p className="text-xs text-orange-500 font-bold mb-1 flex items-center gap-1"><ShoppingCart size={11}/> Vendor / Store</p>
                     <p className="text-base font-bold text-gray-900">{order.vendorStoreName || "Store"}</p>
                     {order.vendorPhone && (
-                      <p className="text-xs text-gray-500 mt-0.5">📞 {order.vendorPhone}</p>
+                      <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Phone size={10}/> {order.vendorPhone}</p>
                     )}
                   </div>
 
@@ -331,7 +342,7 @@ export default function Active() {
                     <div className="bg-gray-50 rounded-xl p-3">
                       <p className="text-xs text-gray-500 font-bold mb-2">Items to Collect ({order.items.length})</p>
                       <div className="space-y-1">
-                        {order.items.slice(0, 5).map((item: any, i: number) => (
+                        {(order.items as OrderItem[]).slice(0, 5).map((item: OrderItem, i: number) => (
                           <div key={i} className="flex justify-between text-sm">
                             <span className="text-gray-700">{item.name} × {item.quantity}</span>
                             <span className="font-semibold text-gray-800">{formatCurrency(item.price * item.quantity)}</span>
@@ -351,15 +362,15 @@ export default function Active() {
 
                   <button
                     onClick={() => setOrderPickedUp(true)}
-                    className="w-full bg-blue-600 text-white font-extrabold rounded-xl py-3.5 text-base">
-                    📦 I've Picked Up the Order →
+                    className="w-full bg-blue-600 text-white font-extrabold rounded-xl py-3.5 text-base flex items-center justify-center gap-2">
+                    <Package size={18}/> I've Picked Up the Order
                   </button>
 
                   {/* Cancel Order */}
                   <button
                     onClick={() => { setCancelTarget("order"); setShowCancelConfirm(true); }}
-                    className="w-full border border-red-200 text-red-500 text-sm font-bold rounded-xl py-2.5 bg-red-50">
-                    ✕ Can't Pick Up — Cancel Order
+                    className="w-full border border-red-200 text-red-500 text-sm font-bold rounded-xl py-2.5 bg-red-50 flex items-center justify-center gap-1.5">
+                    <X size={14}/> Can't Pick Up — Cancel Order
                   </button>
                 </div>
               </div>
@@ -369,13 +380,15 @@ export default function Active() {
             {orderPickedUp && (
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 <div className="bg-green-50 px-4 py-2.5 border-b border-green-100">
-                  <p className="text-xs font-bold text-green-600 uppercase tracking-wide">🚗 Step 2 — Deliver to Customer</p>
+                  <p className="text-xs font-bold text-green-600 uppercase tracking-wide flex items-center gap-1.5">
+                    <Car size={12}/> Step 2 — Deliver to Customer
+                  </p>
                 </div>
                 <div className="p-4 space-y-3">
                   {/* Customer info */}
                   {order.customerName && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                      <span className="text-xl">👤</span>
+                      <User size={20} className="text-blue-400 flex-shrink-0"/>
                       <div>
                         <p className="text-xs text-blue-500 font-bold">Customer</p>
                         <p className="text-sm font-bold text-gray-800">{order.customerName}</p>
@@ -386,7 +399,7 @@ export default function Active() {
 
                   {/* Delivery Address */}
                   <div className="bg-red-50 border border-red-100 rounded-xl p-3">
-                    <p className="text-xs text-red-500 font-bold mb-1">🔴 Delivery Address</p>
+                    <p className="text-xs text-red-500 font-bold mb-1 flex items-center gap-1"><MapPinned size={11}/> Delivery Address</p>
                     <p className="text-sm font-bold text-gray-900">{order.deliveryAddress || "Address not provided"}</p>
                   </div>
 
@@ -405,12 +418,14 @@ export default function Active() {
                         <div className="relative rounded-xl overflow-hidden h-40 bg-gray-100">
                           <img src={proofPhoto} alt="Delivery proof" className="w-full h-full object-cover" />
                           <div className="absolute top-2 right-2">
-                            <span className="bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">✓ Photo Ready</span>
+                            <span className="bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                              <CheckCircle size={9}/> Photo Ready
+                            </span>
                           </div>
                         </div>
                         <button onClick={() => { setProofPhoto(null); setProofFileName(""); }}
-                          className="w-full text-xs text-blue-600 font-bold py-1.5 border border-blue-200 rounded-lg bg-white">
-                          📷 Retake Photo
+                          className="w-full text-xs text-blue-600 font-bold py-1.5 border border-blue-200 rounded-lg bg-white flex items-center justify-center gap-1.5">
+                          <Camera size={12}/> Retake Photo
                         </button>
                       </div>
                     ) : (
@@ -435,12 +450,11 @@ export default function Active() {
                   </div>
 
                   <button
-                    onClick={() => {
-                      updateOrderMut.mutate({ id: order.id, status: "delivered" });
-                    }}
+                    onClick={() => { updateOrderMut.mutate({ id: order.id, status: "delivered" }); }}
                     disabled={updateOrderMut.isPending}
-                    className={`w-full font-extrabold rounded-xl py-3.5 text-lg disabled:opacity-60 transition-colors ${proofPhoto ? "bg-green-600 text-white" : "bg-green-500 text-white"}`}>
-                    {updateOrderMut.isPending ? "Updating..." : proofPhoto ? "✅ Confirm Delivery with Proof" : "✅ Mark as Delivered"}
+                    className="w-full font-extrabold rounded-xl py-3.5 text-lg disabled:opacity-60 transition-colors bg-green-600 text-white flex items-center justify-center gap-2">
+                    <CheckCircle size={20}/>
+                    {updateOrderMut.isPending ? "Updating..." : proofPhoto ? "Confirm Delivery with Proof" : "Mark as Delivered"}
                   </button>
 
                   <button
@@ -453,8 +467,8 @@ export default function Active() {
                   <button
                     onClick={() => { setCancelTarget("order"); setShowCancelConfirm(true); }}
                     disabled={updateOrderMut.isPending}
-                    className="w-full border border-red-200 text-red-500 text-sm font-bold rounded-xl py-2.5 bg-red-50">
-                    ✕ Cannot Deliver — Cancel Order
+                    className="w-full border border-red-200 text-red-500 text-sm font-bold rounded-xl py-2.5 bg-red-50 flex items-center justify-center gap-1.5">
+                    <X size={14}/> Cannot Deliver — Cancel Order
                   </button>
                 </div>
               </div>
@@ -469,8 +483,8 @@ export default function Active() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl">
-                {ride.type === "bike" ? "🏍️" : "🚗"}
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                {ride.type === "bike" ? <Bike size={20} className="text-white"/> : <Car size={20} className="text-white"/>}
               </div>
               <div className="flex-1">
                 <p className="font-bold text-white capitalize">{ride.type} Ride</p>
@@ -491,7 +505,7 @@ export default function Active() {
                       <div key={i} className="flex flex-col items-center gap-1">
                         <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[11px] font-bold transition-all
                           ${i <= rideStep ? "bg-green-600 border-green-600 text-white" : "bg-white border-gray-300 text-gray-300"}`}>
-                          {i < rideStep ? "✓" : i + 1}
+                          {i < rideStep ? <CheckCircle size={12}/> : <span>{i + 1}</span>}
                         </div>
                         <p className={`text-[9px] font-bold text-center ${i <= rideStep ? "text-green-600" : "text-gray-400"}`}>{label}</p>
                       </div>
@@ -506,19 +520,19 @@ export default function Active() {
 
               {/* Pickup → Drop route */}
               <div className="bg-green-50 rounded-xl p-3">
-                <p className="text-xs text-green-600 font-bold mb-1">🟢 PICKUP</p>
+                <p className="text-xs text-green-600 font-bold mb-1 flex items-center gap-1"><MapPin size={10} className="fill-green-500"/> PICKUP</p>
                 <p className="text-sm font-semibold text-gray-800">{ride.pickupAddress}</p>
               </div>
-              <div className="text-center text-gray-400 text-xl font-bold">↓</div>
+              <div className="text-center text-gray-400"><ArrowDown size={20} className="mx-auto"/></div>
               <div className="bg-red-50 rounded-xl p-3">
-                <p className="text-xs text-red-600 font-bold mb-1">🔴 DROP</p>
+                <p className="text-xs text-red-600 font-bold mb-1 flex items-center gap-1"><MapPin size={10} className="fill-red-500"/> DROP</p>
                 <p className="text-sm font-semibold text-gray-800">{ride.dropAddress}</p>
               </div>
 
               {/* Customer Info */}
               {ride.customerName && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                  <span className="text-xl">👤</span>
+                  <User size={20} className="text-blue-400 flex-shrink-0"/>
                   <div className="flex-1">
                     <p className="text-xs text-blue-500 font-bold">Passenger</p>
                     <p className="text-sm font-bold text-gray-800">{ride.customerName}</p>
@@ -543,33 +557,32 @@ export default function Active() {
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "arrived" })}
                     disabled={updateRideMut.isPending}
-                    className="flex-1 bg-purple-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60">
-                    📍 I'm at Pickup
+                    className="flex-1 bg-purple-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60 flex items-center justify-center gap-2">
+                    <MapPin size={16}/> I'm at Pickup
                   </button>
                 )}
                 {ride.status === "arrived" && (
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "in_transit" })}
                     disabled={updateRideMut.isPending}
-                    className="flex-1 bg-blue-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60">
-                    🚗 Start Ride
+                    className="flex-1 bg-blue-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60 flex items-center justify-center gap-2">
+                    <Car size={16}/> Start Ride
                   </button>
                 )}
                 {ride.status === "in_transit" && (
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "completed" })}
                     disabled={updateRideMut.isPending}
-                    className="flex-1 bg-green-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60">
-                    ✅ Complete Ride
+                    className="flex-1 bg-green-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60 flex items-center justify-center gap-2">
+                    <CheckCircle size={16}/> Complete Ride
                   </button>
                 )}
-                {/* Cancel button for rides (not completed) */}
                 {(ride.status === "accepted" || ride.status === "arrived" || ride.status === "in_transit") && (
                   <button
                     onClick={() => { setCancelTarget("ride"); setShowCancelConfirm(true); }}
                     disabled={updateRideMut.isPending}
                     className="px-4 bg-red-50 text-red-600 font-bold rounded-xl py-3.5 text-sm border border-red-200">
-                    ✕
+                    <X size={16}/>
                   </button>
                 )}
               </div>
@@ -592,8 +605,9 @@ export default function Active() {
               </div>
             </div>
             <div className="p-5 space-y-3">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                <p className="text-xs text-amber-800 font-medium">⚠️ Sirf emergency mein cancel karein. Zyada cancellations se account par ban lag sakta hai.</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-2">
+                <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+                <p className="text-xs text-amber-800 font-medium">Sirf emergency mein cancel karein. Zyada cancellations se account par ban lag sakta hai.</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={() => setShowCancelConfirm(false)}

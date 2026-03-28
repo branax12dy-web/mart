@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Bell, MapPin, Circle, Bike, User, Landmark, Home, Wallet,
+  ClipboardList, BarChart2, Pencil, Star, Rocket, Zap, Gem,
+  Shield, Clock, CheckCircle, AlertTriangle, Lightbulb,
+  CreditCard, Phone, Mail, Facebook, Instagram, MessageCircle,
+  FileText, Lock, HelpCircle, Info, LogOut, RefreshCcw,
+} from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -18,6 +25,13 @@ const LABEL  = "text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5 
 
 type EditSection = "personal" | "vehicle" | "bank" | null;
 
+type ProfilePayload = {
+  name?: string; email?: string; cnic?: string; city?: string;
+  address?: string; emergencyContact?: string;
+  vehicleType?: string; vehiclePlate?: string;
+  bankName?: string; bankAccount?: string; bankAccountTitle?: string;
+};
+
 function InfoRow({ label, value, empty = "Not set" }: { label: string; value?: string | null; empty?: string }) {
   return (
     <div className="flex justify-between items-start py-2.5 border-b border-gray-50 last:border-0 gap-3">
@@ -26,6 +40,8 @@ function InfoRow({ label, value, empty = "Not set" }: { label: string; value?: s
     </div>
   );
 }
+
+type QuickLink = { href: string; icon: React.ReactElement; label: string; badge?: number };
 
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
@@ -44,7 +60,6 @@ export default function Profile() {
   const [saving, setSaving]     = useState(false);
   const [toast, setToast]       = useState("");
 
-  // Personal
   const [name, setName]             = useState(user?.name || "");
   const [email, setEmail]           = useState(user?.email || "");
   const [cnic, setCnic]             = useState(user?.cnic || "");
@@ -52,11 +67,9 @@ export default function Profile() {
   const [address, setAddress]       = useState(user?.address || "");
   const [emergency, setEmergency]   = useState(user?.emergencyContact || "");
 
-  // Vehicle
   const [vehicleType, setVehicleType]   = useState(user?.vehicleType || "");
   const [vehiclePlate, setVehiclePlate] = useState(user?.vehiclePlate || "");
 
-  // Bank
   const [bankName, setBankName]               = useState(user?.bankName || "");
   const [bankAccount, setBankAccount]         = useState(user?.bankAccount || "");
   const [bankAccountTitle, setBankAccountTitle] = useState(user?.bankAccountTitle || "");
@@ -78,22 +91,41 @@ export default function Profile() {
   const saveSection = async (section: EditSection) => {
     setSaving(true);
     try {
-      const payload: any = {};
-      if (section === "personal") Object.assign(payload, { name, email, cnic, city, address, emergencyContact: emergency });
+      const payload: ProfilePayload = {};
+      if (section === "personal") {
+        if (cnic && cnic.trim()) {
+          const cnicPattern = /^\d{5}-\d{7}-\d{1}$/;
+          if (!cnicPattern.test(cnic.trim())) {
+            showToast("CNIC format galat hai — sahi format: XXXXX-XXXXXXX-X");
+            setSaving(false);
+            return;
+          }
+        }
+        Object.assign(payload, { name, email, cnic: cnic.trim(), city, address, emergencyContact: emergency });
+      }
       if (section === "vehicle")  Object.assign(payload, { vehicleType, vehiclePlate });
       if (section === "bank")     Object.assign(payload, { bankName, bankAccount, bankAccountTitle });
       await api.updateProfile(payload);
       await refreshUser();
       setEditing(null);
-      showToast("✅ Changes saved successfully!");
-    } catch (e: any) {
-      showToast("❌ " + (e.message || "Failed to save"));
+      showToast("Changes saved successfully!");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to save";
+      showToast(msg);
     }
     setSaving(false);
   };
 
   const completionFields = [user?.name, user?.cnic, user?.city, user?.vehicleType, user?.vehiclePlate, user?.bankName];
   const completionPct    = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100);
+
+  const quickLinks: QuickLink[] = [
+    { href: "/",              icon: <Home size={16}/>,          label: "Home & Dashboard"    },
+    { href: "/wallet",        icon: <Wallet size={16}/>,        label: "Wallet & Withdrawals" },
+    { href: "/notifications", icon: <Bell size={16}/>,          label: "Notifications", badge: unread },
+    { href: "/history",       icon: <ClipboardList size={16}/>, label: "Delivery History"    },
+    { href: "/earnings",      icon: <BarChart2 size={16}/>,     label: "Earnings Report"     },
+  ];
 
   return (
     <div className="bg-gray-50 pb-24">
@@ -103,7 +135,7 @@ export default function Profile() {
           <h1 className="text-2xl font-bold text-white">My Account</h1>
           <div className="flex gap-2">
             <Link href="/notifications" className="relative h-9 w-9 flex items-center justify-center bg-white/20 text-white rounded-xl">
-              🔔
+              <Bell size={18}/>
               {unread > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full w-4 h-4 flex items-center justify-center">
                   {unread > 9 ? "9+" : unread}
@@ -126,12 +158,19 @@ export default function Profile() {
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-extrabold text-gray-900 leading-tight">{user?.name || "Rider"}</h2>
             <p className="text-sm text-gray-500">{user?.phone}</p>
-            {user?.city && <p className="text-xs text-gray-400 mt-0.5">📍 {user.city}</p>}
+            {user?.city && (
+              <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                <MapPin size={11}/> {user.city}
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2 mt-2">
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${user?.isOnline ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-                {user?.isOnline ? "🟢 Online" : "⚫ Offline"}
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${user?.isOnline ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                <Circle size={8} className={user?.isOnline ? "fill-green-500 text-green-500" : "fill-gray-400 text-gray-400"}/>
+                {user?.isOnline ? "Online" : "Offline"}
               </span>
-              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">🏍️ Rider</span>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                <Bike size={11}/> Rider
+              </span>
               {user?.vehicleType && (
                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{user.vehicleType.split("/")[0].trim()}</span>
               )}
@@ -142,13 +181,13 @@ export default function Profile() {
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Deliveries",   value: String(user?.stats?.totalDeliveries || 0),    icon: "📦", bg: "bg-blue-50",   text: "text-blue-700"   },
-            { label: "Total Earned", value: fc(user?.stats?.totalEarnings || 0),          icon: "💰", bg: "bg-green-50",  text: "text-green-700"  },
-            { label: "Wallet",       value: fc(Number(user?.walletBalance || 0)),          icon: "💳", bg: "bg-orange-50", text: "text-orange-700" },
+            { label: "Deliveries",   value: String(user?.stats?.totalDeliveries || 0), icon: <ClipboardList size={18} className="text-blue-600"/>,  bg: "bg-blue-50"   },
+            { label: "Total Earned", value: fc(user?.stats?.totalEarnings || 0),        icon: <CreditCard size={18} className="text-green-600"/>,    bg: "bg-green-50"  },
+            { label: "Wallet",       value: fc(Number(user?.walletBalance || 0)),        icon: <Wallet size={18} className="text-orange-600"/>,       bg: "bg-orange-50" },
           ].map(s => (
             <div key={s.label} className={`${s.bg} rounded-2xl p-3 text-center`}>
-              <p className="text-xl">{s.icon}</p>
-              <p className={`text-sm font-extrabold ${s.text} mt-1 leading-tight`}>{s.value}</p>
+              <div className="flex justify-center mb-1">{s.icon}</div>
+              <p className="text-sm font-extrabold text-gray-800 leading-tight">{s.value}</p>
               <p className="text-[10px] text-gray-500 mt-0.5">{s.label}</p>
             </div>
           ))}
@@ -157,31 +196,33 @@ export default function Profile() {
         {/* Rating & Achievements */}
         {((user?.stats?.totalDeliveries || 0) > 0) && (
           <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="text-sm font-bold text-gray-700 mb-3">⭐ Rating & Achievements</p>
+            <p className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+              <Star size={15} className="text-yellow-400"/> Rating &amp; Achievements
+            </p>
             <div className="flex items-center gap-4">
               <div className="text-center">
                 <div className="flex items-center gap-0.5 justify-center">
                   {[1,2,3,4,5].map(s => (
-                    <span key={s} className={`text-xl ${s <= Math.round(user?.stats?.rating || 5) ? "text-yellow-400" : "text-gray-200"}`}>★</span>
+                    <Star key={s} size={20} className={s <= Math.round(user?.stats?.rating || 5) ? "fill-yellow-400 text-yellow-400" : "text-gray-200 fill-gray-200"}/>
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-1 font-medium">{(user?.stats?.rating || 5.0).toFixed(1)} / 5.0</p>
               </div>
               <div className="flex-1 flex gap-2 flex-wrap">
                 {(user?.stats?.totalDeliveries || 0) >= 1 && (
-                  <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">🚀 First Delivery</span>
+                  <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full flex items-center gap-1"><Rocket size={11}/> First Delivery</span>
                 )}
                 {(user?.stats?.totalDeliveries || 0) >= 50 && (
-                  <span className="text-xs font-bold bg-green-100 text-green-700 px-2.5 py-1 rounded-full">⚡ 50 Deliveries</span>
+                  <span className="text-xs font-bold bg-green-100 text-green-700 px-2.5 py-1 rounded-full flex items-center gap-1"><Zap size={11}/> 50 Deliveries</span>
                 )}
                 {(user?.stats?.totalDeliveries || 0) >= 100 && (
-                  <span className="text-xs font-bold bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full">💎 Century Rider</span>
+                  <span className="text-xs font-bold bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full flex items-center gap-1"><Gem size={11}/> Century Rider</span>
                 )}
                 {(user?.stats?.totalEarnings || 0) >= 10000 && (
-                  <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full">💰 Rs. 10K+ Earned</span>
+                  <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full flex items-center gap-1"><CreditCard size={11}/> Rs. 10K+ Earned</span>
                 )}
                 {(user?.stats?.rating || 5) >= 4.8 && (
-                  <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2.5 py-1 rounded-full">⭐ Top Rated</span>
+                  <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2.5 py-1 rounded-full flex items-center gap-1"><Star size={11}/> Top Rated</span>
                 )}
               </div>
             </div>
@@ -204,12 +245,12 @@ export default function Profile() {
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <p className="font-bold text-gray-800 text-sm">👤 Personal Information</p>
-              <p className="text-xs text-gray-400 mt-0.5">Identity & contact details</p>
+              <p className="font-bold text-gray-800 text-sm flex items-center gap-1.5"><User size={14}/> Personal Information</p>
+              <p className="text-xs text-gray-400 mt-0.5">Identity &amp; contact details</p>
             </div>
             <button onClick={() => editing === "personal" ? setEditing(null) : startEdit("personal")}
-              className="text-green-600 text-sm font-bold py-1">
-              {editing === "personal" ? "Cancel" : "✏️ Edit"}
+              className="text-green-600 text-sm font-bold py-1 flex items-center gap-1">
+              {editing === "personal" ? "Cancel" : <><Pencil size={13}/> Edit</>}
             </button>
           </div>
 
@@ -226,7 +267,7 @@ export default function Profile() {
               <div>
                 <label className={LABEL}>CNIC / National ID</label>
                 <input value={cnic} onChange={e => setCnic(e.target.value)} inputMode="numeric" placeholder="XXXXX-XXXXXXX-X" className={INPUT}/>
-                <p className="text-[10px] text-gray-400 mt-1">Required for account verification</p>
+                <p className="text-[10px] text-gray-400 mt-1">Format: XXXXX-XXXXXXX-X (dashes ke saath) — account verification ke liye zaroori hai</p>
               </div>
               <div>
                 <label className={LABEL}>City</label>
@@ -245,8 +286,8 @@ export default function Profile() {
                 <p className="text-[10px] text-gray-400 mt-1">In case of emergency during delivery</p>
               </div>
               <button onClick={() => saveSection("personal")} disabled={saving}
-                className="w-full h-12 bg-green-600 text-white font-bold rounded-2xl disabled:opacity-60">
-                {saving ? "Saving..." : "✓ Save Personal Info"}
+                className="w-full h-12 bg-green-600 text-white font-bold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2">
+                {saving ? <><RefreshCcw size={15} className="animate-spin"/> Saving...</> : <><CheckCircle size={15}/> Save Personal Info</>}
               </button>
             </div>
           ) : (
@@ -266,12 +307,12 @@ export default function Profile() {
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <p className="font-bold text-gray-800 text-sm">🏍️ Vehicle Details</p>
+              <p className="font-bold text-gray-800 text-sm flex items-center gap-1.5"><Bike size={14}/> Vehicle Details</p>
               <p className="text-xs text-gray-400 mt-0.5">Your delivery vehicle info</p>
             </div>
             <button onClick={() => editing === "vehicle" ? setEditing(null) : startEdit("vehicle")}
-              className="text-green-600 text-sm font-bold py-1">
-              {editing === "vehicle" ? "Cancel" : "✏️ Edit"}
+              className="text-green-600 text-sm font-bold py-1 flex items-center gap-1">
+              {editing === "vehicle" ? "Cancel" : <><Pencil size={13}/> Edit</>}
             </button>
           </div>
 
@@ -290,8 +331,8 @@ export default function Profile() {
                 <p className="text-[10px] text-gray-400 mt-1">As printed on your registration documents</p>
               </div>
               <button onClick={() => saveSection("vehicle")} disabled={saving}
-                className="w-full h-12 bg-green-600 text-white font-bold rounded-2xl disabled:opacity-60">
-                {saving ? "Saving..." : "✓ Save Vehicle Info"}
+                className="w-full h-12 bg-green-600 text-white font-bold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2">
+                {saving ? <><RefreshCcw size={15} className="animate-spin"/> Saving...</> : <><CheckCircle size={15}/> Save Vehicle Info</>}
               </button>
             </div>
           ) : (
@@ -303,7 +344,7 @@ export default function Profile() {
                 </>
               ) : (
                 <div className="py-6 text-center">
-                  <p className="text-3xl mb-2">🏍️</p>
+                  <Bike size={40} className="text-gray-200 mx-auto mb-2"/>
                   <p className="text-sm font-bold text-gray-600">No vehicle info added</p>
                   <p className="text-xs text-gray-400 mt-1">Add your vehicle details for identity verification</p>
                   <button onClick={() => startEdit("vehicle")}
@@ -320,12 +361,12 @@ export default function Profile() {
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <p className="font-bold text-gray-800 text-sm">🏦 Withdrawal Account</p>
+              <p className="font-bold text-gray-800 text-sm flex items-center gap-1.5"><Landmark size={14}/> Withdrawal Account</p>
               <p className="text-xs text-gray-400 mt-0.5">Bank or mobile wallet for payouts</p>
             </div>
             <button onClick={() => editing === "bank" ? setEditing(null) : startEdit("bank")}
-              className="text-green-600 text-sm font-bold py-1">
-              {editing === "bank" ? "Cancel" : "✏️ Edit"}
+              className="text-green-600 text-sm font-bold py-1 flex items-center gap-1">
+              {editing === "bank" ? "Cancel" : <><Pencil size={13}/> Edit</>}
             </button>
           </div>
 
@@ -346,12 +387,13 @@ export default function Profile() {
                 <label className={LABEL}>Account Holder Name *</label>
                 <input value={bankAccountTitle} onChange={e => setBankAccountTitle(e.target.value)} placeholder="Full name as on account" className={INPUT}/>
               </div>
-              <div className="bg-amber-50 rounded-xl p-3">
-                <p className="text-xs text-amber-700 font-medium">⚠️ Ensure details match your bank records. Incorrect info may delay withdrawals.</p>
+              <div className="bg-amber-50 rounded-xl p-3 flex gap-2">
+                <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+                <p className="text-xs text-amber-700 font-medium">Ensure details match your bank records. Incorrect info may delay withdrawals.</p>
               </div>
               <button onClick={() => saveSection("bank")} disabled={saving}
-                className="w-full h-12 bg-green-600 text-white font-bold rounded-2xl disabled:opacity-60">
-                {saving ? "Saving..." : "✓ Save Account Details"}
+                className="w-full h-12 bg-green-600 text-white font-bold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2">
+                {saving ? <><RefreshCcw size={15} className="animate-spin"/> Saving...</> : <><CheckCircle size={15}/> Save Account Details</>}
               </button>
             </div>
           ) : (
@@ -359,13 +401,15 @@ export default function Profile() {
               {user?.bankName ? (
                 <>
                   <div className="flex items-center gap-3 bg-green-50 rounded-xl p-3 mb-3">
-                    <span className="text-2xl">🏦</span>
+                    <Landmark size={24} className="text-green-600 flex-shrink-0"/>
                     <div>
                       <p className="font-bold text-gray-800 text-sm">{user.bankName}</p>
                       <p className="text-xs text-gray-500">{user.bankAccount}</p>
                       <p className="text-xs text-gray-500">{user.bankAccountTitle}</p>
                     </div>
-                    <span className="ml-auto text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ Set</span>
+                    <span className="ml-auto text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                      <CheckCircle size={10}/> Set
+                    </span>
                   </div>
                   <InfoRow label="Bank"          value={user.bankName}         />
                   <InfoRow label="Account No."   value={user.bankAccount}      />
@@ -373,7 +417,7 @@ export default function Profile() {
                 </>
               ) : (
                 <div className="py-6 text-center">
-                  <p className="text-3xl mb-2">🏦</p>
+                  <Landmark size={40} className="text-gray-200 mx-auto mb-2"/>
                   <p className="text-sm font-bold text-gray-600">No withdrawal account set</p>
                   <p className="text-xs text-gray-400 mt-1">Add your account to receive payouts</p>
                   <button onClick={() => startEdit("bank")}
@@ -389,26 +433,20 @@ export default function Profile() {
         {/* Quick Links */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3.5 border-b border-gray-100">
-            <p className="font-bold text-gray-800 text-sm">⚡ Quick Links</p>
+            <p className="font-bold text-gray-800 text-sm flex items-center gap-1.5"><Zap size={14}/> Quick Links</p>
           </div>
           <div className="p-3 space-y-1">
-            {[
-              { href: "/",              icon: "🏠", label: "Home & Dashboard"       },
-              { href: "/wallet",        icon: "💰", label: "Wallet & Withdrawals"   },
-              { href: "/notifications", icon: "🔔", label: "Notifications", badge: unread },
-              { href: "/history",       icon: "📋", label: "Delivery History"       },
-              { href: "/earnings",      icon: "📊", label: "Earnings Report"        },
-            ].map(item => (
+            {quickLinks.map(item => (
               <Link key={item.href} href={item.href}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-green-50 transition-colors relative">
-                <span className="text-lg">{item.icon}</span>
+                <span className="text-gray-500">{item.icon}</span>
                 <span className="text-sm font-semibold text-gray-700">{item.label}</span>
-                {(item as any).badge > 0 && (
+                {(item.badge ?? 0) > 0 && (
                   <span className="bg-red-500 text-white text-[10px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {(item as any).badge}
+                    {item.badge}
                   </span>
                 )}
-                <span className="ml-auto text-gray-300 text-sm">→</span>
+                <span className="ml-auto text-gray-300 text-sm">›</span>
               </Link>
             ))}
           </div>
@@ -417,38 +455,39 @@ export default function Profile() {
         {/* Security */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3.5 border-b border-gray-100">
-            <p className="font-bold text-gray-800 text-sm">🔒 Security & Session</p>
+            <p className="font-bold text-gray-800 text-sm flex items-center gap-1.5"><Shield size={14}/> Security &amp; Session</p>
           </div>
           <div className="px-4 py-2">
             <InfoRow label="Member Since" value={user?.createdAt ? fd(user.createdAt) : "—"}         />
             <InfoRow label="Last Login"   value={user?.lastLoginAt ? fd(user.lastLoginAt) : "Now"}   />
-            <InfoRow label="Status"       value="✓ Active & Verified"                                />
-            <div className="bg-blue-50 rounded-xl p-3 my-3">
-              <p className="text-xs text-blue-700 font-medium">🔐 Your account is secured with encrypted OTP authentication. All session data is protected.</p>
+            <InfoRow label="Status"       value="Active & Verified"                                   />
+            <div className="bg-blue-50 rounded-xl p-3 my-3 flex gap-2">
+              <Lock size={14} className="text-blue-500 flex-shrink-0 mt-0.5"/>
+              <p className="text-xs text-blue-700 font-medium">Your account is secured with encrypted OTP authentication. All session data is protected.</p>
             </div>
           </div>
         </div>
 
         {/* Payout Policy */}
         <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-4">
-          <p className="font-bold text-green-700 text-sm mb-2">💡 Payout Policy</p>
+          <p className="font-bold text-green-700 text-sm mb-2 flex items-center gap-1.5"><Lightbulb size={14}/> Payout Policy</p>
           <div className="space-y-2">
             {[
-              { icon: "✅", text: `${riderKeepPct}% earnings — ${100 - riderKeepPct}% platform fee` },
-              { icon: "💸", text: `Minimum withdrawal: Rs. ${config.rider?.minPayout ?? 500}` },
-              { icon: "⏱️", text: "Processed in 24–48 hours by admin" },
-              { icon: "🔒", text: "CNIC + vehicle details required for verification" },
+              { icon: <CheckCircle size={12} className="text-green-600 flex-shrink-0 mt-0.5"/>, text: `${riderKeepPct}% earnings — ${100 - riderKeepPct}% platform fee` },
+              { icon: <CreditCard  size={12} className="text-green-600 flex-shrink-0 mt-0.5"/>, text: `Minimum withdrawal: Rs. ${config.rider?.minPayout ?? 500}` },
+              { icon: <Clock       size={12} className="text-green-600 flex-shrink-0 mt-0.5"/>, text: "Processed in 24–48 hours by admin" },
+              { icon: <Lock        size={12} className="text-green-600 flex-shrink-0 mt-0.5"/>, text: "CNIC + vehicle details required for verification" },
             ].map((p, i) => (
               <div key={i} className="flex gap-2 text-xs text-green-700">
-                <span className="flex-shrink-0">{p.icon}</span>
+                {p.icon}
                 <span>{p.text}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <button onClick={logout} className="w-full h-12 border-2 border-red-200 text-red-500 font-bold rounded-2xl hover:bg-red-50 transition-colors text-sm">
-          🚪 Logout from This Device
+        <button onClick={logout} className="w-full h-12 border-2 border-red-200 text-red-500 font-bold rounded-2xl hover:bg-red-50 transition-colors text-sm flex items-center justify-center gap-2">
+          <LogOut size={16}/> Logout from This Device
         </button>
 
         <div className="bg-gray-100 rounded-2xl p-4 space-y-3">
@@ -457,20 +496,27 @@ export default function Profile() {
             <a href={`tel:${config.platform.supportPhone}`} className="text-green-600 font-semibold">{config.platform.supportPhone}</a>
           </p>
           {config.platform.supportHours && (
-            <p className="text-xs text-gray-400 text-center">⏰ {config.platform.supportHours}</p>
+            <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
+              <Clock size={11}/> {config.platform.supportHours}
+            </p>
           )}
           {config.platform.supportEmail && (
-            <p className="text-xs text-gray-500 text-center">
-              ✉️ <a href={`mailto:${config.platform.supportEmail}`} className="text-green-600 hover:text-green-800">{config.platform.supportEmail}</a>
+            <p className="text-xs text-gray-500 text-center flex items-center justify-center gap-1">
+              <Mail size={11}/>
+              <a href={`mailto:${config.platform.supportEmail}`} className="text-green-600 hover:text-green-800">{config.platform.supportEmail}</a>
             </p>
           )}
           {(config.platform.socialFacebook || config.platform.socialInstagram) && (
             <div className="flex gap-3 justify-center">
               {config.platform.socialFacebook && (
-                <a href={config.platform.socialFacebook} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800">📘 Facebook</a>
+                <a href={config.platform.socialFacebook} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                  <Facebook size={12}/> Facebook
+                </a>
               )}
               {config.platform.socialInstagram && (
-                <a href={config.platform.socialInstagram} target="_blank" rel="noopener noreferrer" className="text-xs text-pink-600 hover:text-pink-800">📸 Instagram</a>
+                <a href={config.platform.socialInstagram} target="_blank" rel="noopener noreferrer" className="text-xs text-pink-600 hover:text-pink-800 flex items-center gap-1">
+                  <Instagram size={12}/> Instagram
+                </a>
               )}
             </div>
           )}
@@ -478,38 +524,38 @@ export default function Profile() {
             <div className="flex flex-wrap gap-2 justify-center">
               {config.content.tncUrl && (
                 <a href={config.content.tncUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
-                  📋 Terms of Service
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors flex items-center gap-1">
+                  <FileText size={11}/> Terms of Service
                 </a>
               )}
               {config.content.privacyUrl && (
                 <a href={config.content.privacyUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
-                  🔒 Privacy Policy
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors flex items-center gap-1">
+                  <Lock size={11}/> Privacy Policy
                 </a>
               )}
               {config.content.refundPolicyUrl && (
                 <a href={config.content.refundPolicyUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
-                  ↩️ Refund Policy
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors flex items-center gap-1">
+                  <RefreshCcw size={11}/> Refund Policy
                 </a>
               )}
               {config.content.faqUrl && (
                 <a href={config.content.faqUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
-                  ❓ Help & FAQs
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors flex items-center gap-1">
+                  <HelpCircle size={11}/> Help &amp; FAQs
                 </a>
               )}
               {config.content.aboutUrl && (
                 <a href={config.content.aboutUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
-                  ℹ️ About Us
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors flex items-center gap-1">
+                  <Info size={11}/> About Us
                 </a>
               )}
               {config.features.chat && (
                 <a href={`https://wa.me/${config.platform.supportPhone.replace(/^0/, "92")}`} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors">
-                  💬 {config.content.supportMsg || "Live Support"}
+                  className="text-xs text-green-600 underline underline-offset-2 hover:text-green-800 transition-colors flex items-center gap-1">
+                  <MessageCircle size={11}/> {config.content.supportMsg || "Live Support"}
                 </a>
               )}
             </div>

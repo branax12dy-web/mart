@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  ClipboardList, Package, Bike, Car, UtensilsCrossed,
+  ShoppingCart, CreditCard,
+} from "lucide-react";
 import { api } from "../lib/api";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
@@ -11,6 +15,12 @@ function formatDate(d: string | Date) {
 type FilterPeriod = "today" | "week" | "all";
 type FilterKind   = "all" | "order" | "ride";
 
+type HistoryItem = {
+  id: string; kind: "order" | "ride"; type: string;
+  status: string; earnings: number; amount: number;
+  address?: string; createdAt: string;
+};
+
 export default function History() {
   const [period, setPeriod]   = useState<FilterPeriod>("all");
   const [kind,   setKind]     = useState<FilterKind>("all");
@@ -20,9 +30,8 @@ export default function History() {
     queryFn: () => api.getHistory(),
   });
 
-  const raw: any[] = data?.history || [];
+  const raw: HistoryItem[] = data?.history || [];
 
-  /* ── Date filter ── */
   const now      = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekStart  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -36,7 +45,6 @@ export default function History() {
     return true;
   });
 
-  /* ── Summary stats for current filter ── */
   const totalEarnings  = filtered.reduce((s, i) => s + (i.earnings || 0), 0);
   const completedItems = filtered.filter(i => i.status === "delivered" || i.status === "completed");
   const cancelledItems = filtered.filter(i => i.status === "cancelled");
@@ -46,11 +54,23 @@ export default function History() {
     { key: "week",  label: "This Week" },
     { key: "all",   label: "All Time" },
   ];
-  const KIND_TABS: { key: FilterKind; label: string; icon: string }[] = [
-    { key: "all",   label: "All",     icon: "📋" },
-    { key: "order", label: "Orders",  icon: "📦" },
-    { key: "ride",  label: "Rides",   icon: "🏍️" },
+  type KindTab = { key: FilterKind; label: string; icon: React.ReactElement };
+  const KIND_TABS: KindTab[] = [
+    { key: "all",   label: "All",    icon: <ClipboardList size={12}/> },
+    { key: "order", label: "Orders", icon: <Package size={12}/>       },
+    { key: "ride",  label: "Rides",  icon: <Bike size={12}/>          },
   ];
+
+  function ItemIcon({ kind, type }: { kind: string; type: string }) {
+    if (kind === "ride") {
+      return type === "bike"
+        ? <Bike size={20} className="text-green-600"/>
+        : <Car  size={20} className="text-green-600"/>;
+    }
+    if (type === "food") return <UtensilsCrossed size={20} className="text-blue-600"/>;
+    if (type === "mart") return <ShoppingCart    size={20} className="text-blue-600"/>;
+    return                      <Package         size={20} className="text-blue-600"/>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -95,7 +115,7 @@ export default function History() {
         <div className="flex gap-2">
           {KIND_TABS.map(tab => (
             <button key={tab.key} onClick={() => setKind(tab.key)}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${kind === tab.key ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-500 border-gray-200"}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${kind === tab.key ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-500 border-gray-200"}`}>
               {tab.icon} {tab.label}
             </button>
           ))}
@@ -103,28 +123,26 @@ export default function History() {
       </div>
 
       {/* List */}
-      <div className="px-4 py-3 space-y-3">
+      <div className="px-4 py-3 space-y-3 pb-24">
         {isLoading ? (
           [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-2xl animate-pulse"/>)
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-5xl mb-3">📋</p>
+            <ClipboardList size={56} className="text-gray-200 mx-auto mb-3"/>
             <p className="font-bold text-gray-700">No records found</p>
             <p className="text-gray-400 text-sm mt-1">
               {period !== "all" ? "Try selecting a wider time period" : "Your deliveries will appear here"}
             </p>
           </div>
         ) : (
-          filtered.map((item: any) => {
+          filtered.map((item: HistoryItem) => {
             const completed = item.status === "delivered" || item.status === "completed";
             const cancelled = item.status === "cancelled";
             return (
               <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 <div className="p-4 flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
-                    {item.kind === "ride"
-                      ? (item.type === "bike" ? "🏍️" : "🚗")
-                      : (item.type === "food" ? "🍔" : item.type === "mart" ? "🛒" : "📦")}
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
+                    <ItemIcon kind={item.kind} type={item.type}/>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-gray-800 capitalize">
@@ -152,7 +170,7 @@ export default function History() {
                 {completed && item.earnings > 0 && (
                   <div className="px-4 pb-3">
                     <div className="bg-green-50 rounded-lg px-3 py-1.5 flex items-center justify-between">
-                      <span className="text-xs text-green-600 font-medium">💰 Earnings credited</span>
+                      <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CreditCard size={11}/> Earnings credited</span>
                       <span className="text-xs font-extrabold text-green-700">{formatCurrency(item.earnings)}</span>
                     </div>
                   </div>

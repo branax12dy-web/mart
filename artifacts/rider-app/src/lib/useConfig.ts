@@ -11,6 +11,8 @@ export interface PlatformConfig {
     cashAllowed: boolean;
     withdrawalEnabled: boolean;
     autoApprove: boolean;
+    minBalance: number;
+    depositEnabled: boolean;
   };
   platform: {
     appName: string;

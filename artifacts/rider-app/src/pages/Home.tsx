@@ -4,6 +4,12 @@ import { useAuth } from "../lib/auth";
 import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
+  ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
+  X, Timer, CheckCircle, MessageSquare, ChevronRight,
+  TrendingUp, Calendar, Trophy, Radio,
+} from "lucide-react";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
@@ -29,11 +35,31 @@ function RequestAge({ createdAt }: { createdAt: string }) {
   const diffSec = (Date.now() - new Date(createdAt).getTime()) / 1000;
   const urgent = diffSec > 90;
   return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${urgent ? "bg-red-100 text-red-600 animate-pulse" : "bg-gray-100 text-gray-500"}`}>
-      ⏱ {label}
+    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${urgent ? "bg-red-100 text-red-600 animate-pulse" : "bg-gray-100 text-gray-500"}`}>
+      <Timer size={9}/> {label}
     </span>
   );
 }
+
+function OrderTypeIcon({ type }: { type: string }) {
+  if (type === "food")     return <ShoppingBag size={22} className="text-orange-500"/>;
+  if (type === "mart")     return <ShoppingCart size={22} className="text-blue-500"/>;
+  if (type === "pharmacy") return <Pill size={22} className="text-green-600"/>;
+  if (type === "grocery")  return <Banana size={22} className="text-yellow-500"/>;
+  return <Package size={22} className="text-indigo-500"/>;
+}
+
+function RideTypeIcon({ type }: { type: string }) {
+  if (type === "car")          return <Car  size={22} className="text-blue-600"/>;
+  if (type === "rickshaw")     return <Bike size={22} className="text-yellow-600"/>;
+  if (type === "daba")         return <Bus  size={22} className="text-gray-600"/>;
+  if (type === "school_shift") return <Bus  size={22} className="text-green-600"/>;
+  return <Bike size={22} className="text-green-600"/>;
+}
+
+const SVC_NAMES: Record<string, string> = {
+  bike: "Bike", car: "Car", rickshaw: "Rickshaw", daba: "Daba / Van", school_shift: "School Shift",
+};
 
 export default function Home() {
   const { user, refreshUser } = useAuth();
@@ -57,8 +83,8 @@ export default function Home() {
       const newStatus = !user?.isOnline;
       await api.setOnline(newStatus);
       await refreshUser();
-      showToast(newStatus ? "🟢 You are now Online!" : "🔴 You are now Offline");
-    } catch (e: any) { showToast("❌ " + e.message); }
+      showToast(newStatus ? "You are now Online!" : "You are now Offline");
+    } catch (e: any) { showToast(e.message); }
     setToggling(false);
   };
 
@@ -84,7 +110,6 @@ export default function Home() {
   const allOrders: any[] = requestsData?.orders || [];
   const allRides:  any[] = requestsData?.rides  || [];
 
-  // Detect truly NEW request IDs to trigger flash
   useEffect(() => {
     const currentIds = new Set<string>([...allOrders.map((o: any) => o.id), ...allRides.map((r: any) => r.id)]);
     const prevIds = prevIdsRef.current;
@@ -97,9 +122,7 @@ export default function Home() {
     prevIdsRef.current = currentIds;
   }, [allOrders.length, allRides.length]);
 
-  /* ── GPS location tracking — sends position every 30s when online with no active task ──
-     Active.tsx handles every-15s tracking during rides/orders (higher frequency).
-     Here we track at lower frequency just to keep admin's live rider view fresh. ── */
+  /* ── GPS location tracking — sends position every 30s when online with no active task ── */
   useEffect(() => {
     if (!user?.isOnline || hasActiveTask || !user?.id) return;
     if (!navigator?.geolocation) return;
@@ -120,7 +143,9 @@ export default function Home() {
             accuracy:  pos.coords.accuracy,
             role:      "rider",
           }),
-        }).catch(() => {});
+        }).catch((err: Error) => {
+          console.warn("[Home] GPS location update failed:", err.message);
+        });
       },
       () => {},
       { enableHighAccuracy: false, maximumAge: 20_000, timeout: 30_000 },
@@ -129,20 +154,20 @@ export default function Home() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [user?.isOnline, hasActiveTask, user?.id]);
 
-  // Filter out dismissed
   const orders = allOrders.filter((o: any) => !dismissed.has(o.id));
   const rides  = allRides.filter((r: any) => !dismissed.has(r.id));
   const totalRequests = orders.length + rides.length;
 
   const dismiss = (id: string) => setDismissed(prev => new Set([...prev, id]));
 
-  /* ── GPS milestone logger — fired on accept / status change ── */
   const logRideEvent = (rideId: string, event: string) => {
     const doLog = (lat?: number, lng?: number) => {
       apiFetch(`/rides/${rideId}/event-log`, {
         method: "POST",
         body: JSON.stringify({ event, lat, lng }),
-      }).catch(() => {});
+      }).catch((err: Error) => {
+        console.warn("[Home] ride event log failed:", err.message);
+      });
     };
     if (navigator?.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -161,11 +186,11 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       logRideEvent(id, "accepted");
-      showToast("✅ Order accepted! Active tab mein dekho.");
+      showToast("Order accepted! Active tab mein dekho.");
     },
     onError: (e: any) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      showToast("❌ " + (e.message || "Order accept nahi hua — shayad kisi ne pehle le liya"));
+      showToast(e.message || "Order accept nahi hua — shayad kisi ne pehle le liya");
     },
   });
 
@@ -175,15 +200,14 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       logRideEvent(id, "accepted");
-      showToast("✅ Ride accepted! Active tab mein dekho.");
+      showToast("Ride accepted! Active tab mein dekho.");
     },
     onError: (e: any) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      showToast("❌ " + (e.message || "Ride accept nahi hua — shayad kisi ne pehle le li"));
+      showToast(e.message || "Ride accept nahi hua — shayad kisi ne pehle le li");
     },
   });
 
-  /* Counter input state per ride */
   const [counterInputs, setCounterInputs] = useState<Record<string, string>>({});
   const [showCounter,   setShowCounter]   = useState<Record<string, boolean>>({});
 
@@ -194,9 +218,9 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       setCounterInputs(prev => ({ ...prev, [vars.id]: "" }));
       setShowCounter(prev => ({ ...prev, [vars.id]: false }));
-      showToast("💬 Counter offer bhej diya gaya!");
+      showToast("Counter offer bhej diya gaya!");
     },
-    onError: (e: any) => showToast("❌ " + (e.message || "Counter offer nahi gaya")),
+    onError: (e: any) => showToast(e.message || "Counter offer nahi gaya"),
   });
 
   const rejectOfferMut = useMutation({
@@ -205,7 +229,7 @@ export default function Home() {
       dismiss(id);
       showToast("Ride skip kar diya gaya.");
     },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: any) => showToast(e.message),
   });
 
   const getDeliveryEarn = (type: string) => {
@@ -231,10 +255,12 @@ export default function Home() {
       <div className="bg-gradient-to-br from-green-600 to-emerald-700 text-white px-5 pt-12 pb-20">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <p className="text-green-200 text-xs font-medium">
-              <LiveClock /> · AJKMart Rider
+            <p className="text-green-200 text-xs font-medium flex items-center gap-1.5">
+              <LiveClock/> · AJKMart Rider
             </p>
-            <h1 className="text-2xl font-extrabold mt-0.5">{user?.name || "Rider"} 🏍️</h1>
+            <h1 className="text-2xl font-extrabold mt-0.5 flex items-center gap-2">
+              <Bike size={22}/> {user?.name || "Rider"}
+            </h1>
           </div>
           <div className="text-right">
             <p className="text-green-200 text-xs">Wallet</p>
@@ -268,21 +294,47 @@ export default function Home() {
         {/* Notice Banner */}
         {config.content.riderNotice && (
           <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-start gap-3">
-            <span className="text-blue-500 text-base flex-shrink-0 mt-0.5">📌</span>
+            <Pin size={16} className="text-blue-500 flex-shrink-0 mt-0.5"/>
             <p className="text-sm text-blue-700 font-medium leading-snug flex-1">{config.content.riderNotice}</p>
           </div>
         )}
 
+        {/* Minimum Balance Warning */}
+        {(() => {
+          const minBal  = config.rider?.minBalance ?? 0;
+          const curBal  = Number(user?.walletBalance) || 0;
+          if (minBal <= 0 || curBal >= minBal) return null;
+          const shortfall = minBal - curBal;
+          return (
+            <Link href="/wallet">
+              <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-start gap-3 cursor-pointer active:opacity-80">
+                <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-800">Wallet Balance Kam Hai</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Cash orders accept karne ke liye minimum <strong>Rs. {Math.round(minBal)}</strong> chahiye.
+                    Aapka balance: <strong>Rs. {Math.round(curBal)}</strong>.
+                    {shortfall > 0 && <> Rs. {Math.round(shortfall)} aur chahiye.</>}
+                  </p>
+                  <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-1">
+                    Wallet tab mein tap karke deposit karein <ChevronRight size={10}/>
+                  </p>
+                </div>
+              </div>
+            </Link>
+          );
+        })()}
+
         {/* Stats Grid */}
         <div className="grid grid-cols-4 gap-2">
           {[
-            { icon: "📦", label: "Today",  value: String(user?.stats?.deliveriesToday || 0),        sub: "deliveries" },
-            { icon: "💰", label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0),  sub: "today"      },
-            { icon: "📅", label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0), sub: "earnings"  },
-            { icon: "🏆", label: "Total",  value: String(user?.stats?.totalDeliveries || 0),         sub: "lifetime"  },
+            { icon: <Package size={16} className="text-indigo-500"/>,    label: "Today",  value: String(user?.stats?.deliveriesToday || 0),         sub: "deliveries" },
+            { icon: <TrendingUp size={16} className="text-green-600"/>,  label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0),   sub: "today"      },
+            { icon: <Calendar size={16} className="text-blue-500"/>,     label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0),  sub: "earnings"   },
+            { icon: <Trophy size={16} className="text-amber-500"/>,      label: "Total",  value: String(user?.stats?.totalDeliveries || 0),          sub: "lifetime"   },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-2xl p-3 shadow-sm text-center">
-              <p className="text-base mb-0.5">{s.icon}</p>
+              <div className="flex justify-center mb-0.5">{s.icon}</div>
               <p className="text-xs font-extrabold text-gray-800 leading-tight">{s.value}</p>
               <p className="text-[9px] text-gray-400 mt-0.5 font-medium">{s.sub}</p>
             </div>
@@ -308,7 +360,9 @@ export default function Home() {
                         : `Ride → ${activeData?.ride?.dropAddress || "Drop location"}`}
                     </p>
                   </div>
-                  <span className="text-amber-500 font-bold text-xs bg-amber-100 px-2 py-1 rounded-full flex-shrink-0">Go →</span>
+                  <span className="text-amber-500 font-bold text-xs bg-amber-100 px-2 py-1 rounded-full flex-shrink-0 flex items-center gap-1">
+                    Go <ChevronRight size={12}/>
+                  </span>
                 </div>
               </Link>
             )}
@@ -320,7 +374,7 @@ export default function Home() {
                   {totalRequests > 0 ? (
                     <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse inline-block" />
                   ) : (
-                    <span className="text-lg">📡</span>
+                    <Radio size={16} className="text-white"/>
                   )}
                   <p className="font-extrabold text-white text-sm">
                     {totalRequests > 0
@@ -335,13 +389,13 @@ export default function Home() {
 
               {totalRequests === 0 ? (
                 <div className="bg-white p-8 text-center">
-                  <p className="text-4xl mb-2">🏍️</p>
+                  <div className="flex justify-center mb-2"><Bike size={40} className="text-gray-300"/></div>
                   <p className="text-gray-500 font-semibold">No requests right now</p>
                   <p className="text-gray-400 text-xs mt-1">Auto-refreshes every 12 seconds</p>
                   {dismissed.size > 0 && (
                     <button onClick={() => setDismissed(new Set())}
                       className="mt-3 text-xs text-green-600 font-bold bg-green-50 px-3 py-1.5 rounded-xl">
-                      ↺ Show {dismissed.size} hidden request{dismissed.size > 1 ? "s" : ""}
+                      Show {dismissed.size} hidden request{dismissed.size > 1 ? "s" : ""}
                     </button>
                   )}
                 </div>
@@ -352,8 +406,8 @@ export default function Home() {
                   {orders.map((o: any) => (
                     <div key={o.id} className="p-4">
                       <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-2xl flex-shrink-0">
-                          {o.type === "food" ? "🍔" : o.type === "mart" ? "🛒" : o.type === "pharmacy" ? "💊" : "📦"}
+                        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                          <OrderTypeIcon type={o.type}/>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
@@ -361,9 +415,13 @@ export default function Home() {
                             <RequestAge createdAt={o.createdAt} />
                           </div>
                           {o.vendorStoreName && (
-                            <p className="text-xs text-blue-600 font-semibold truncate">🏪 {o.vendorStoreName}</p>
+                            <p className="text-xs text-blue-600 font-semibold truncate flex items-center gap-1">
+                              <MapPin size={10}/> {o.vendorStoreName}
+                            </p>
                           )}
-                          <p className="text-xs text-gray-500 truncate mt-0.5">📍 {o.deliveryAddress || "Destination"}</p>
+                          <p className="text-xs text-gray-500 truncate mt-0.5 flex items-center gap-1">
+                            <Navigation size={10}/> {o.deliveryAddress || "Destination"}
+                          </p>
                           <div className="flex items-center gap-3 mt-2">
                             <div>
                               <p className="text-lg font-extrabold text-green-600">+{formatCurrency(getDeliveryEarn(o.type))}</p>
@@ -389,17 +447,18 @@ export default function Home() {
                           <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.deliveryAddress)}`}
                             target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
-                            🗺️
+                            <MapPin size={14}/>
                           </a>
                         )}
                         <button onClick={() => dismiss(o.id)}
-                          className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors">
-                          ✕
+                          className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                          <X size={16}/>
                         </button>
                         <button onClick={() => acceptOrderMut.mutate(o.id)}
                           disabled={acceptOrderMut.isPending || acceptRideMut.isPending}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                          {acceptOrderMut.isPending ? "Accepting..." : "✓ Accept Order"}
+                          className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors flex items-center justify-center gap-1.5">
+                          <CheckCircle size={15}/>
+                          {acceptOrderMut.isPending ? "Accepting..." : "Accept Order"}
                         </button>
                       </div>
                     </div>
@@ -414,34 +473,37 @@ export default function Home() {
                     const mapsUrl = (r.pickupLat && r.pickupLng)
                       ? `https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`
                       : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`;
-                    const SVC_ICONS: Record<string, string> = { bike: "🏍️", car: "🚗", rickshaw: "🛺", daba: "🚐", school_shift: "🚌" };
-                    const SVC_NAMES: Record<string, string> = { bike: "Bike", car: "Car", rickshaw: "Rickshaw", daba: "Daba / Van", school_shift: "School Shift" };
-                    const svcIcon = SVC_ICONS[r.type] ?? "🚗";
                     const svcName = SVC_NAMES[r.type] ?? r.type?.replace(/_/g, " ") ?? "Ride";
 
                     return (
                       <div key={r.id} className={`p-4 ${isBargain ? "border-l-4 border-orange-400 bg-orange-50/30" : ""}`}>
                         <div className="flex items-start gap-3">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 ${isBargain ? "bg-orange-100" : "bg-green-50"}`}>
-                            {isBargain ? "💬" : svcIcon}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${isBargain ? "bg-orange-100" : "bg-green-50"}`}>
+                            {isBargain ? <MessageSquare size={22} className="text-orange-500"/> : <RideTypeIcon type={r.type}/>}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                               <p className="font-extrabold text-gray-900">{svcName} Ride</p>
                               {isBargain && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 animate-pulse">
-                                  💬 BARGAIN OFFER
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 animate-pulse flex items-center gap-1">
+                                  <MessageSquare size={8}/> BARGAIN OFFER
                                 </span>
                               )}
                               {isBargain && r.myBid && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                                  ✓ Bid Submitted
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
+                                  <CheckCircle size={8}/> Bid Submitted
                                 </span>
                               )}
                               <RequestAge createdAt={r.createdAt} />
                             </div>
-                            <p className="text-xs text-gray-500 truncate">🟢 {r.pickupAddress}</p>
-                            <p className="text-xs text-gray-400 truncate">🔴 {r.dropAddress}</p>
+                            <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                              <span className="w-2 h-2 bg-green-500 rounded-full inline-block flex-shrink-0"/>
+                              {r.pickupAddress}
+                            </p>
+                            <p className="text-xs text-gray-400 truncate flex items-center gap-1">
+                              <span className="w-2 h-2 bg-red-500 rounded-full inline-block flex-shrink-0"/>
+                              {r.dropAddress}
+                            </p>
                             <div className="flex items-center gap-4 mt-2 flex-wrap">
                               <div>
                                 <p className={`text-lg font-extrabold ${isBargain ? "text-orange-600" : "text-green-600"}`}>
@@ -467,122 +529,115 @@ export default function Home() {
                               </div>
                             </div>
                             {r.bargainNote && (
-                              <p className="text-xs text-orange-700 mt-1.5 italic">💬 "{r.bargainNote}"</p>
+                              <p className="text-xs text-orange-700 mt-1.5 italic flex items-center gap-1">
+                                <MessageSquare size={11}/> "{r.bargainNote}"
+                              </p>
                             )}
                           </div>
                         </div>
 
-                        {/* Standard actions (searching rides) */}
+                        {/* Standard actions */}
                         {!isBargain && (
                           <div className="flex gap-2 mt-3">
                             <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
                               className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
-                              🗺️
+                              <MapPin size={14}/>
                             </a>
                             <button onClick={() => dismiss(r.id)}
-                              className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors">
-                              ✕
+                              className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                              <X size={16}/>
                             </button>
                             <button onClick={() => acceptRideMut.mutate(r.id)}
                               disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                              {acceptRideMut.isPending ? "Accepting..." : "✓ Accept Ride"}
+                              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors flex items-center justify-center gap-1.5">
+                              <CheckCircle size={15}/>
+                              {acceptRideMut.isPending ? "Accepting..." : "Accept Ride"}
                             </button>
                           </div>
                         )}
 
-                        {/* Bargaining actions — InDrive multi-bid model */}
+                        {/* Bargaining actions */}
                         {isBargain && (
                           <div className="mt-3 space-y-2">
-
-                            {/* If rider has already submitted a bid → show pending badge + update */}
                             {r.myBid ? (
                               <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-3 space-y-2">
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <p className="text-xs font-bold text-orange-700">💬 Aapka Bid Pending</p>
+                                    <p className="text-xs font-bold text-orange-700 flex items-center gap-1"><MessageSquare size={11}/> Aapka Bid Pending</p>
                                     <p className="text-lg font-extrabold text-orange-600">Rs. {Math.round(r.myBid.fare)}</p>
                                   </div>
                                   <span className="text-[10px] font-bold px-2 py-1 bg-orange-100 text-orange-600 rounded-full animate-pulse">
                                     WAITING FOR CUSTOMER
                                   </span>
                                 </div>
-                                {/* Update bid option */}
-                                {!showCounter[r.id] ? (
-                                  <div className="flex gap-2">
-                                    <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
-                                      className="flex-1 border border-orange-300 text-orange-700 font-bold py-2 rounded-lg text-sm bg-white hover:bg-orange-50 transition-colors">
-                                      ✏️ Update Bid
-                                    </button>
-                                    <button onClick={() => rejectOfferMut.mutate(r.id)}
-                                      disabled={rejectOfferMut.isPending}
-                                      className="bg-gray-100 text-gray-500 font-bold px-4 py-2 rounded-lg text-sm hover:bg-gray-200 transition-colors">
-                                      Cancel
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex gap-2">
-                                    <div className="flex-1 flex items-center bg-white border border-orange-300 rounded-xl px-3">
-                                      <span className="text-sm font-bold text-gray-500 mr-1">Rs.</span>
-                                      <input type="number" value={counterInputs[r.id] || ""} onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                        placeholder={String(Math.ceil((offeredFare + r.fare) / 2))}
-                                        className="flex-1 py-2 text-sm font-bold text-gray-900 outline-none bg-transparent" />
-                                    </div>
-                                    <button onClick={() => { const amt = parseFloat(counterInputs[r.id] || ""); if (!isNaN(amt)) counterRideMut.mutate({ id: r.id, counterFare: amt }); }}
-                                      disabled={counterRideMut.isPending || !counterInputs[r.id]}
-                                      className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                                      {counterRideMut.isPending ? "..." : "Update"}
-                                    </button>
-                                    <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))} className="bg-gray-100 text-gray-500 font-bold px-3 rounded-xl text-sm">✕</button>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              /* No bid yet → Accept or Submit Bid */
-                              <>
                                 <div className="flex gap-2">
-                                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                                    className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl flex-shrink-0">
-                                    🗺️
-                                  </a>
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    value={counterInputs[r.id] || ""}
+                                    onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                    placeholder="Update bid..."
+                                    className="flex-1 h-9 px-3 bg-white border border-orange-200 rounded-xl text-sm focus:outline-none focus:border-orange-400"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const v = Number(counterInputs[r.id] || 0);
+                                      if (v > 0) counterRideMut.mutate({ id: r.id, counterFare: v });
+                                    }}
+                                    disabled={counterRideMut.isPending}
+                                    className="bg-orange-500 text-white font-bold px-3 py-2 rounded-xl text-sm disabled:opacity-60">
+                                    Update
+                                  </button>
                                   <button onClick={() => acceptRideMut.mutate(r.id)}
                                     disabled={acceptRideMut.isPending}
-                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                                    ✓ Accept Rs. {Math.round(offeredFare)}
-                                  </button>
-                                  <button onClick={() => rejectOfferMut.mutate(r.id)}
-                                    disabled={rejectOfferMut.isPending}
-                                    className="bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-red-200 transition-colors">
-                                    ✕
+                                    className="bg-green-600 text-white font-bold px-3 py-2 rounded-xl text-sm disabled:opacity-60 flex items-center gap-1">
+                                    <CheckCircle size={13}/> Accept
                                   </button>
                                 </div>
-                                {!showCounter[r.id] ? (
-                                  <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
-                                    className="w-full border-2 border-orange-300 text-orange-700 font-bold py-2.5 rounded-xl text-sm bg-orange-50 hover:bg-orange-100 transition-colors">
-                                    💬 Apna Bid Submit Karein
-                                  </button>
-                                ) : (
-                                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2">
-                                    <p className="text-xs font-semibold text-orange-700">
-                                      Aapka bid (Rs. {Math.round(offeredFare)} – Rs. {Math.round(r.fare)} ke beech):
-                                    </p>
-                                    <div className="flex gap-2">
-                                      <div className="flex-1 flex items-center bg-white border border-orange-300 rounded-xl px-3">
-                                        <span className="text-sm font-bold text-gray-500 mr-1">Rs.</span>
-                                        <input type="number" value={counterInputs[r.id] || ""} onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                          placeholder={String(Math.ceil((offeredFare + r.fare) / 2))}
-                                          className="flex-1 py-2.5 text-sm font-bold text-gray-900 outline-none bg-transparent" />
-                                      </div>
-                                      <button onClick={() => { const amt = parseFloat(counterInputs[r.id] || ""); if (!isNaN(amt)) counterRideMut.mutate({ id: r.id, counterFare: amt }); }}
-                                        disabled={counterRideMut.isPending || !counterInputs[r.id]}
-                                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
-                                        {counterRideMut.isPending ? "..." : "Bid"}
-                                      </button>
-                                      <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))} className="bg-gray-100 text-gray-500 font-bold px-3 rounded-xl text-sm">✕</button>
-                                    </div>
-                                  </div>
-                                )}
-                              </>
+                              </div>
+                            ) : showCounter[r.id] ? (
+                              <div className="flex gap-2">
+                                <input
+                                  type="number" inputMode="numeric"
+                                  value={counterInputs[r.id] || ""}
+                                  onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                  placeholder="Your counter fare..."
+                                  className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400"
+                                />
+                                <button
+                                  onClick={() => {
+                                    const v = Number(counterInputs[r.id] || 0);
+                                    if (v > 0) counterRideMut.mutate({ id: r.id, counterFare: v });
+                                  }}
+                                  disabled={counterRideMut.isPending}
+                                  className="bg-orange-500 text-white font-extrabold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60">
+                                  {counterRideMut.isPending ? "..." : "Submit"}
+                                </button>
+                                <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))}
+                                  className="bg-gray-100 text-gray-500 px-3 py-2.5 rounded-xl flex items-center">
+                                  <X size={15}/>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                                  className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
+                                  <MapPin size={14}/>
+                                </a>
+                                <button onClick={() => rejectOfferMut.mutate(r.id)}
+                                  className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm flex items-center">
+                                  <X size={16}/>
+                                </button>
+                                <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
+                                  className="flex-1 bg-orange-100 text-orange-700 font-extrabold py-2.5 rounded-xl text-sm flex items-center justify-center gap-1.5">
+                                  <MessageSquare size={14}/> Counter Offer
+                                </button>
+                                <button onClick={() => acceptRideMut.mutate(r.id)}
+                                  disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
+                                  className="flex-1 bg-green-600 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5">
+                                  <CheckCircle size={14}/>
+                                  Accept
+                                </button>
+                              </div>
                             )}
                           </div>
                         )}
@@ -590,77 +645,27 @@ export default function Home() {
                     );
                   })}
 
-                  {dismissed.size > 0 && (
-                    <div className="px-4 py-3 flex items-center justify-between bg-gray-50 border-t border-gray-100">
-                      <p className="text-xs text-gray-400">{dismissed.size} dismissed request{dismissed.size > 1 ? "s" : ""}</p>
-                      <button onClick={() => setDismissed(new Set())}
-                        className="text-xs text-green-600 font-bold">
-                        ↺ Show All
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           </>
         ) : (
+          /* Offline state */
           <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
-            <p className="text-5xl mb-3">😴</p>
-            <p className="font-bold text-gray-700 text-lg">You're Offline</p>
-            <p className="text-gray-400 text-sm mt-1">Toggle online above to start accepting orders</p>
-            <button onClick={toggleOnline} disabled={toggling}
-              className="mt-5 bg-green-600 text-white px-8 py-3 rounded-xl font-extrabold text-base disabled:opacity-60">
-              🟢 Go Online Now
-            </button>
-          </div>
-        )}
-
-        {/* ── Quick Links ── */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { href: "/history",  icon: "📋", label: "History"  },
-            { href: "/earnings", icon: "📈", label: "Earnings" },
-            { href: "/wallet",   icon: "💳", label: "Wallet"   },
-          ].map(link => (
-            <Link key={link.href} href={link.href}
-              className="bg-white rounded-2xl p-4 shadow-sm text-center flex flex-col items-center gap-1.5 hover:bg-green-50 transition-colors">
-              <span className="text-2xl">{link.icon}</span>
-              <span className="text-xs font-bold text-gray-600">{link.label}</span>
-            </Link>
-          ))}
-        </div>
-
-        {/* Feature disabled notices */}
-        {!config.features.liveTracking && (
-          <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <span className="text-lg">📍</span>
-            <div>
-              <p className="text-xs font-bold text-amber-800">Live Tracking Disabled</p>
-              <p className="text-xs text-amber-600">Orders manual accept karein.</p>
+            <div className="flex justify-center mb-3">
+              <Wifi size={40} className="text-gray-300"/>
             </div>
+            <p className="text-gray-500 font-semibold">You are Offline</p>
+            <p className="text-gray-400 text-xs mt-1">Toggle switch to start accepting orders</p>
           </div>
         )}
-        {config.rider?.cashAllowed === false && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
-            <span className="text-amber-500 text-base flex-shrink-0 mt-0.5">💵</span>
-            <p className="text-sm text-amber-700 font-medium leading-snug">Cash-on-delivery disabled by admin.</p>
-          </div>
-        )}
+
       </div>
 
-      {/* WhatsApp Chat Support FAB */}
-      {config.features.chat && (
-        <a href={`https://wa.me/${config.platform.supportPhone?.replace(/^0/, "92")}`}
-          target="_blank" rel="noopener noreferrer"
-          className="fixed bottom-24 right-4 z-50 w-14 h-14 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all active:scale-95">
-          💬
-        </a>
-      )}
-
-      {/* Toast */}
+      {/* ── TOAST ── */}
       {toastMsg && (
-        <div className="fixed top-6 left-4 right-4 z-50 bg-gray-900 text-white text-sm font-semibold px-4 py-3 rounded-2xl shadow-2xl text-center">
-          {toastMsg}
+        <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none">
+          <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl text-center">{toastMsg}</div>
         </div>
       )}
     </div>

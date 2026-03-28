@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import {
+  Bell, Package, Wallet, Bike, Settings, AlertTriangle,
+  RefreshCw, CheckCheck, ChevronRight,
+} from "lucide-react";
 import { api } from "../lib/api";
 
 const fd = (d: string | Date) => {
@@ -13,28 +17,42 @@ const fd = (d: string | Date) => {
 
 type NFilter = "all" | "order" | "wallet" | "ride" | "system";
 
-function typeInfo(type: string) {
-  if (type === "order")  return { emoji: "📦", label: "Order",  bg: "bg-blue-100",   text: "text-blue-700",   badge: "bg-blue-100 text-blue-700"   };
-  if (type === "wallet") return { emoji: "💰", label: "Wallet", bg: "bg-green-100",  text: "text-green-700",  badge: "bg-green-100 text-green-700"  };
-  if (type === "ride")   return { emoji: "🏍️", label: "Ride",   bg: "bg-purple-100", text: "text-purple-700", badge: "bg-purple-100 text-purple-700" };
-  if (type === "system") return { emoji: "⚙️", label: "System", bg: "bg-gray-100",   text: "text-gray-600",   badge: "bg-gray-100 text-gray-600"    };
-  if (type === "alert")  return { emoji: "⚠️", label: "Alert",  bg: "bg-amber-100",  text: "text-amber-700",  badge: "bg-amber-100 text-amber-700"  };
-  return                        { emoji: "🔔", label: "Other",  bg: "bg-gray-100",   text: "text-gray-600",   badge: "bg-gray-100 text-gray-600"    };
+type NotifRecord = {
+  id: string; type: string; title: string; body: string;
+  isRead: boolean; createdAt: string;
+};
+
+type TypeInfo = {
+  icon: React.ReactElement;
+  label: string;
+  bg: string;
+  text: string;
+  badge: string;
+};
+
+function typeInfo(type: string): TypeInfo {
+  if (type === "order")  return { icon: <Package  size={22} className="text-blue-600"/>,   label: "Order",  bg: "bg-blue-100",   text: "text-blue-700",   badge: "bg-blue-100 text-blue-700"   };
+  if (type === "wallet") return { icon: <Wallet   size={22} className="text-green-600"/>,  label: "Wallet", bg: "bg-green-100",  text: "text-green-700",  badge: "bg-green-100 text-green-700"  };
+  if (type === "ride")   return { icon: <Bike     size={22} className="text-purple-600"/>, label: "Ride",   bg: "bg-purple-100", text: "text-purple-700", badge: "bg-purple-100 text-purple-700" };
+  if (type === "system") return { icon: <Settings size={22} className="text-gray-500"/>,   label: "System", bg: "bg-gray-100",   text: "text-gray-600",   badge: "bg-gray-100 text-gray-600"    };
+  if (type === "alert")  return { icon: <AlertTriangle size={22} className="text-amber-500"/>, label: "Alert", bg: "bg-amber-100", text: "text-amber-700", badge: "bg-amber-100 text-amber-700" };
+  return                        { icon: <Bell     size={22} className="text-gray-500"/>,   label: "Other",  bg: "bg-gray-100",   text: "text-gray-600",   badge: "bg-gray-100 text-gray-600"    };
 }
 
-function navTarget(type: string) {
+function navTarget(type: string): string | null {
   if (type === "order")  return "/active";
   if (type === "ride")   return "/active";
   if (type === "wallet") return "/wallet";
   return null;
 }
 
-const FILTER_TABS: { key: NFilter; label: string; emoji: string }[] = [
-  { key: "all",    label: "All",    emoji: "🔔" },
-  { key: "order",  label: "Orders", emoji: "📦" },
-  { key: "wallet", label: "Wallet", emoji: "💰" },
-  { key: "ride",   label: "Rides",  emoji: "🏍️" },
-  { key: "system", label: "System", emoji: "⚙️" },
+type FilterTab = { key: NFilter; label: string; icon: React.ReactElement };
+const FILTER_TABS: FilterTab[] = [
+  { key: "all",    label: "All",    icon: <Bell size={13}/>    },
+  { key: "order",  label: "Orders", icon: <Package size={13}/>  },
+  { key: "wallet", label: "Wallet", icon: <Wallet size={13}/>   },
+  { key: "ride",   label: "Rides",  icon: <Bike size={13}/>     },
+  { key: "system", label: "System", icon: <Settings size={13}/> },
 ];
 
 export default function Notifications() {
@@ -48,7 +66,7 @@ export default function Notifications() {
     refetchInterval: 30000,
   });
 
-  const notifs: any[] = data?.notifications || [];
+  const notifs: NotifRecord[] = data?.notifications || [];
   const unread: number = data?.unread || 0;
 
   const markAllMut = useMutation({
@@ -69,18 +87,18 @@ export default function Notifications() {
           <div>
             <h1 className="text-2xl font-bold text-white">Notifications</h1>
             <p className="text-green-200 text-sm mt-0.5">
-              {unread > 0 ? `${unread} unread` : "All caught up ✓"}
+              {unread > 0 ? `${unread} unread` : "All caught up"}
             </p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => refetch()}
               className="h-9 w-9 bg-white/20 text-white text-sm font-bold rounded-xl flex items-center justify-center">
-              ↻
+              <RefreshCw size={16}/>
             </button>
             {unread > 0 && (
               <button onClick={() => markAllMut.mutate()} disabled={markAllMut.isPending}
-                className="h-9 px-4 bg-white/20 text-white text-sm font-bold rounded-xl">
-                ✓ Mark All Read
+                className="h-9 px-4 bg-white/20 text-white text-sm font-bold rounded-xl flex items-center gap-1.5">
+                <CheckCheck size={15}/> Mark All Read
               </button>
             )}
           </div>
@@ -92,10 +110,10 @@ export default function Notifications() {
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
           {FILTER_TABS.map(tab => (
             <button key={tab.key} onClick={() => setFilter(tab.key)}
-              className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${filter === tab.key ? "bg-green-600 text-white shadow-sm" : "bg-white text-gray-500"}`}>
-              {tab.emoji} {tab.label}
+              className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${filter === tab.key ? "bg-green-600 text-white shadow-sm" : "bg-white text-gray-500"}`}>
+              {tab.icon} {tab.label}
               {tab.key !== "all" && notifs.filter(n => n.type === tab.key && !n.isRead).length > 0 && (
-                <span className="ml-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full px-1.5">
+                <span className="bg-red-500 text-white text-[9px] font-extrabold rounded-full px-1.5">
                   {notifs.filter(n => n.type === tab.key && !n.isRead).length}
                 </span>
               )}
@@ -107,10 +125,10 @@ export default function Notifications() {
         {notifs.length > 0 && (
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label: "Total",  value: notifs.length,                                       bg: "bg-white"       },
-              { label: "Orders", value: notifs.filter(n => n.type === "order").length,        bg: "bg-blue-50"     },
-              { label: "Wallet", value: notifs.filter(n => n.type === "wallet").length,       bg: "bg-green-50"    },
-              { label: "Rides",  value: notifs.filter(n => n.type === "ride").length,         bg: "bg-purple-50"   },
+              { label: "Total",  value: notifs.length,                                      bg: "bg-white"     },
+              { label: "Orders", value: notifs.filter(n => n.type === "order").length,       bg: "bg-blue-50"   },
+              { label: "Wallet", value: notifs.filter(n => n.type === "wallet").length,      bg: "bg-green-50"  },
+              { label: "Rides",  value: notifs.filter(n => n.type === "ride").length,        bg: "bg-purple-50" },
             ].map(s => (
               <div key={s.label} className={`${s.bg} rounded-2xl p-2.5 text-center shadow-sm`}>
                 <p className="text-base font-extrabold text-gray-800">{s.value}</p>
@@ -126,7 +144,7 @@ export default function Notifications() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm px-4 py-16 text-center">
-            <p className="text-5xl mb-4">🔔</p>
+            <Bell size={48} className="text-gray-200 mx-auto mb-4"/>
             <p className="font-bold text-gray-700">
               {filter === "all" ? "No notifications yet" : `No ${filter} notifications`}
             </p>
@@ -147,17 +165,17 @@ export default function Notifications() {
               )}
             </div>
             <div className="divide-y divide-gray-50">
-              {filtered.map((n: any) => {
+              {filtered.map((n: NotifRecord) => {
                 const info = typeInfo(n.type);
                 const dest = navTarget(n.type);
                 const Wrapper = dest ? "button" : "div";
                 return (
                   <Wrapper key={n.id}
                     className={`w-full px-4 py-4 flex gap-3 text-left transition-colors ${!n.isRead ? "bg-green-50/50" : ""} ${dest ? "hover:bg-gray-50 active:bg-gray-100 cursor-pointer" : ""}`}
-                    onClick={dest ? () => navigate(dest) : undefined}>
+                    onClick={dest ? () => navigate(dest!) : undefined}>
                     {/* Icon */}
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 text-2xl ${!n.isRead ? info.bg : "bg-gray-100"}`}>
-                      {info.emoji}
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${!n.isRead ? info.bg : "bg-gray-100"}`}>
+                      {info.icon}
                     </div>
                     {/* Content */}
                     <div className="flex-1 min-w-0">
@@ -176,7 +194,9 @@ export default function Notifications() {
                           {info.label}
                         </span>
                         {dest && (
-                          <span className="text-[10px] text-green-600 font-bold">→ Tap to view</span>
+                          <span className="text-[10px] text-green-600 font-bold flex items-center gap-0.5">
+                            Tap to view <ChevronRight size={10}/>
+                          </span>
                         )}
                       </div>
                     </div>

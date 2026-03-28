@@ -219,13 +219,34 @@ router.post("/orders/:id/accept", async (req, res) => {
 
   const s = await getPlatformSettings();
 
+  /* ── Load target order first (needed for cash/COD checks) ── */
+  const [targetOrder] = await db.select({ paymentMethod: ordersTable.paymentMethod })
+    .from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+
   /* ── Cash-order gate: admin can restrict riders from taking cash orders ── */
   const cashAllowed = (s["rider_cash_allowed"] ?? "on") === "on";
   if (!cashAllowed) {
-    const [targetOrder] = await db.select({ paymentMethod: ordersTable.paymentMethod })
-      .from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
-    if (targetOrder?.paymentMethod === "cash") {
+    if (targetOrder?.paymentMethod === "cash" || targetOrder?.paymentMethod === "cod") {
       res.status(403).json({ error: "Cash-on-delivery orders are currently not available for riders." }); return;
+    }
+  }
+
+  /* ── Minimum wallet balance gate for cash/COD orders ── */
+  const isCashOrder = targetOrder?.paymentMethod === "cash" || targetOrder?.paymentMethod === "cod";
+  if (isCashOrder) {
+    const minBalance = parseFloat(s["rider_min_balance"] ?? "0");
+    if (minBalance > 0) {
+      const [riderRow] = await db.select({ walletBalance: usersTable.walletBalance })
+        .from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
+      const currentBal = safeNum(riderRow?.walletBalance);
+      if (currentBal < minBalance) {
+        res.status(403).json({
+          error: `Minimum wallet balance required for cash orders is Rs. ${minBalance}. Your balance: Rs. ${currentBal.toFixed(0)}. Please top up your wallet to accept cash orders.`,
+          code: "BELOW_MIN_BALANCE",
+          required: minBalance,
+          current: currentBal,
+        }); return;
+      }
     }
   }
 
@@ -259,7 +280,7 @@ router.post("/orders/:id/accept", async (req, res) => {
     title: "Rider on the Way! 🚴",
     body: "Your order has been picked up. Rider is on the way!",
     type: "order", icon: "bicycle-outline",
-  }).catch(() => {});
+  }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
 
   res.json({ ...updated, total: safeNum(updated.total) });
 });
@@ -285,7 +306,7 @@ router.patch("/orders/:id/status", async (req, res) => {
       id: generateId(), userId: order.userId,
       title: "Rider Change 🔄", body: "Your rider had to cancel. We're finding a new rider for you.",
       type: "order", icon: "refresh-outline",
-    }).catch(() => {});
+    }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
     res.json({ ...cancelled, total: safeNum(cancelled?.total || 0), status: "cancelled_by_rider" }); return;
   }
 
@@ -295,34 +316,80 @@ router.patch("/orders/:id/status", async (req, res) => {
   if (status === "delivered") {
     const s = await getPlatformSettings();
     const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const platformFeePct = 1 - riderKeepPct;
     const bonusPerTrip = parseFloat(s["rider_bonus_per_trip"] ?? "0");
-    const earnings = parseFloat((safeNum(order.total) * riderKeepPct).toFixed(2));
-    const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
+    const orderTotal = safeNum(order.total);
+    const isCash = order.paymentMethod === "cash" || order.paymentMethod === "cod";
 
-    // Credit rider earnings + bonus
-    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
-    await db.insert(walletTransactionsTable).values({
-      id: generateId(), userId: riderId, type: "credit",
-      amount: earnings.toFixed(2),
-      description: `Delivery earnings — Order #${order.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
-    }).catch(() => {});
-    if (bonusPerTrip > 0) {
-      await db.insert(walletTransactionsTable).values({
-        id: generateId(), userId: riderId, type: "bonus",
-        amount: bonusPerTrip.toFixed(2),
-        description: `Per-trip bonus — Order #${order.id.slice(-6).toUpperCase()}`,
-      }).catch(() => {});
+    if (isCash) {
+      /* ── CASH ORDER: record cash collection + deduct platform fee from wallet (atomic) ── */
+      const platformFee = parseFloat((orderTotal * platformFeePct).toFixed(2));
+      const riderShare  = parseFloat((orderTotal - platformFee).toFixed(2));
+      await db.transaction(async (tx) => {
+        /* 1. Cash-collection ledger: rider physically collected full amount in cash */
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: riderId, type: "cash_collection",
+          amount: orderTotal.toFixed(2),
+          description: `Cash collected — Order #${order.id.slice(-6).toUpperCase()} (Rs. ${orderTotal.toFixed(0)} total)`,
+          reference: `order:${order.id}`,
+          paymentMethod: "cash",
+        });
+        /* 2. Platform fee deduction from wallet (commission) */
+        await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance - ${platformFee}`, updatedAt: new Date() })
+          .where(eq(usersTable.id, riderId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: riderId, type: "platform_fee",
+          amount: platformFee.toFixed(2),
+          description: `Platform fee (${Math.round(platformFeePct * 100)}%) — Cash Order #${order.id.slice(-6).toUpperCase()} · Rider keeps Rs. ${riderShare}`,
+          reference: `order:${order.id}`,
+        });
+        /* Bonus still applies for cash orders */
+        if (bonusPerTrip > 0) {
+          await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${bonusPerTrip}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId: riderId, type: "bonus",
+            amount: bonusPerTrip.toFixed(2),
+            description: `Per-trip bonus — Order #${order.id.slice(-6).toUpperCase()}`,
+          });
+        }
+      });
+      await db.insert(notificationsTable).values({
+        id: generateId(), userId: riderId,
+        title: "Cash Delivery Completed", body: `Rs. ${platformFee} platform fee deducted from wallet. Cash collected: Rs. ${orderTotal.toFixed(0)}.`,
+        type: "wallet", icon: "wallet-outline",
+      }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
+    } else {
+      /* ── WALLET/ONLINE ORDER: credit rider's share (atomic) ── */
+      const earnings = parseFloat((orderTotal * riderKeepPct).toFixed(2));
+      const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
+      await db.transaction(async (tx) => {
+        await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: riderId, type: "credit",
+          amount: earnings.toFixed(2),
+          description: `Delivery earnings — Order #${order.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
+        });
+        if (bonusPerTrip > 0) {
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId: riderId, type: "bonus",
+            amount: bonusPerTrip.toFixed(2),
+            description: `Per-trip bonus — Order #${order.id.slice(-6).toUpperCase()}`,
+          });
+        }
+      });
+      await db.insert(notificationsTable).values({
+        id: generateId(), userId: riderId,
+        title: "Delivery Earning Credited", body: `Rs. ${earnings} wallet mein add ho gaya!`,
+        type: "wallet", icon: "wallet-outline",
+      }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
     }
+
     await db.insert(notificationsTable).values({
       id: generateId(), userId: order.userId,
       title: "Order Delivered! 🎉", body: "Your order has been delivered. Enjoy!",
       type: "order", icon: "bag-check-outline",
-    }).catch(() => {});
-    await db.insert(notificationsTable).values({
-      id: generateId(), userId: riderId,
-      title: "Delivery Earning Credited 💰", body: `Rs. ${earnings} wallet mein add ho gaya!`,
-      type: "wallet", icon: "wallet-outline",
-    }).catch(() => {});
+    }).catch(e => console.error("customer notif insert failed:", e));
 
     /* ── Customer loyalty points (customer_loyalty_enabled + customer_loyalty_pts) ── */
     const loyaltyEnabled = (s["customer_loyalty_enabled"] ?? "on") === "on";
@@ -335,17 +402,17 @@ router.patch("/orders/:id/status", async (req, res) => {
         await db.update(usersTable)
           .set({ walletBalance: sql`wallet_balance + ${loyaltyPts}`, updatedAt: new Date() })
           .where(eq(usersTable.id, order.userId))
-          .catch(() => {});
+          .catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
         await db.insert(walletTransactionsTable).values({
           id: generateId(), userId: order.userId, type: "loyalty",
           amount: loyaltyPts.toFixed(2),
           description: `Loyalty points (${loyaltyPtsPerHundred} pts/Rs.100) — Order #${order.id.slice(-6).toUpperCase()}`,
-        }).catch(() => {});
+        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
         await db.insert(notificationsTable).values({
           id: generateId(), userId: order.userId,
           title: "Loyalty Points Earned! ⭐", body: `+${loyaltyPts} loyalty points added for your order!`,
           type: "wallet", icon: "star-outline",
-        }).catch(() => {});
+        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
       }
     }
 
@@ -361,17 +428,17 @@ router.patch("/orders/:id/status", async (req, res) => {
         await db.update(usersTable)
           .set({ walletBalance: sql`wallet_balance + ${cashbackAmt}`, updatedAt: new Date() })
           .where(eq(usersTable.id, order.userId))
-          .catch(() => {});
+          .catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
         await db.insert(walletTransactionsTable).values({
           id: generateId(), userId: order.userId, type: "cashback",
           amount: cashbackAmt.toFixed(2),
           description: `Cashback ${Math.round(cashbackPct * 100)}% — Order #${order.id.slice(-6).toUpperCase()}`,
-        }).catch(() => {});
+        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
         await db.insert(notificationsTable).values({
           id: generateId(), userId: order.userId,
           title: "Cashback Credited! 🎁", body: `Rs. ${cashbackAmt} cashback added to your wallet!`,
           type: "wallet", icon: "wallet-outline",
-        }).catch(() => {});
+        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
       }
     }
   }
@@ -401,6 +468,24 @@ router.post("/rides/:id/accept", async (req, res) => {
   /* Check if this is a bargaining ride — load it first */
   const [targetRide] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!targetRide) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  /* ── Minimum wallet balance gate for cash rides ── */
+  if (targetRide.paymentMethod === "cash") {
+    const minBalance = parseFloat(s["rider_min_balance"] ?? "0");
+    if (minBalance > 0) {
+      const [riderRow] = await db.select({ walletBalance: usersTable.walletBalance })
+        .from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
+      const currentBal = safeNum(riderRow?.walletBalance);
+      if (currentBal < minBalance) {
+        res.status(403).json({
+          error: `Minimum wallet balance required for cash rides is Rs. ${minBalance}. Your balance: Rs. ${currentBal.toFixed(0)}. Please top up your wallet first.`,
+          code: "BELOW_MIN_BALANCE",
+          required: minBalance,
+          current: currentBal,
+        }); return;
+      }
+    }
+  }
 
   /* For bargaining rides, rider accepts the customer's offered fare */
   const isBargaining = targetRide.status === "bargaining";
@@ -463,7 +548,12 @@ router.post("/rides/:id/accept", async (req, res) => {
       }
       return accepted;
     });
-  } catch {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Insufficient wallet balance")) {
+      res.status(402).json({ error: msg, code: "INSUFFICIENT_WALLET" }); return;
+    }
+    console.error("[rider] ride accept transaction failed:", msg);
     res.status(500).json({ error: "Failed to accept ride. Please try again." }); return;
   }
 
@@ -483,7 +573,7 @@ router.post("/rides/:id/accept", async (req, res) => {
       ? `${riderUser.name || "Your rider"} ne Rs. ${safeNum(agreedFare).toFixed(0)} par offer accept kar liya!`
       : `${riderUser.name || "Your rider"} is coming to pick you up.`,
     type: "ride", icon: updated.type === "bike" ? "bicycle-outline" : "car-outline",
-  }).catch(() => {});
+  }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
 
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
@@ -503,33 +593,79 @@ router.patch("/rides/:id/status", async (req, res) => {
   if (status === "completed") {
     const s = await getPlatformSettings();
     const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const platformFeePct = 1 - riderKeepPct;
     const bonusPerTrip = parseFloat(s["rider_bonus_per_trip"] ?? "0");
-    const earnings = parseFloat((safeNum(ride.fare) * riderKeepPct).toFixed(2));
-    const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
+    const fareAmt = safeNum(ride.fare);
+    const isCashRide = ride.paymentMethod === "cash";
 
-    await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
-    await db.insert(walletTransactionsTable).values({
-      id: generateId(), userId: riderId, type: "credit",
-      amount: earnings.toFixed(2),
-      description: `Ride earnings — #${ride.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
-    }).catch(() => {});
-    if (bonusPerTrip > 0) {
-      await db.insert(walletTransactionsTable).values({
-        id: generateId(), userId: riderId, type: "bonus",
-        amount: bonusPerTrip.toFixed(2),
-        description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
-      }).catch(() => {});
+    if (isCashRide) {
+      /* ── CASH RIDE: record cash collection + deduct platform fee from wallet (atomic) ── */
+      const platformFee = parseFloat((fareAmt * platformFeePct).toFixed(2));
+      const riderShare  = parseFloat((fareAmt - platformFee).toFixed(2));
+      await db.transaction(async (tx) => {
+        /* 1. Cash-collection ledger: rider physically collected full fare in cash */
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: riderId, type: "cash_collection",
+          amount: fareAmt.toFixed(2),
+          description: `Cash collected — Ride #${ride.id.slice(-6).toUpperCase()} (Rs. ${fareAmt.toFixed(0)} total)`,
+          reference: `ride:${ride.id}`,
+          paymentMethod: "cash",
+        });
+        /* 2. Platform fee deduction: commission paid from wallet */
+        await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance - ${platformFee}`, updatedAt: new Date() })
+          .where(eq(usersTable.id, riderId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: riderId, type: "platform_fee",
+          amount: platformFee.toFixed(2),
+          description: `Platform fee (${Math.round(platformFeePct * 100)}%) — Cash Ride #${ride.id.slice(-6).toUpperCase()} · Rider keeps Rs. ${riderShare}`,
+          reference: `ride:${ride.id}`,
+        });
+        if (bonusPerTrip > 0) {
+          await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${bonusPerTrip}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId: riderId, type: "bonus",
+            amount: bonusPerTrip.toFixed(2),
+            description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
+          });
+        }
+      });
+      await db.insert(notificationsTable).values({
+        id: generateId(), userId: riderId,
+        title: "Cash Ride Completed", body: `Rs. ${platformFee} platform fee deducted from wallet. Cash collected: Rs. ${fareAmt.toFixed(0)}.`,
+        type: "wallet", icon: "wallet-outline",
+      }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
+    } else {
+      /* ── WALLET RIDE: credit rider's share (atomic) ── */
+      const earnings = parseFloat((fareAmt * riderKeepPct).toFixed(2));
+      const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
+      await db.transaction(async (tx) => {
+        await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: riderId, type: "credit",
+          amount: earnings.toFixed(2),
+          description: `Ride earnings — #${ride.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
+        });
+        if (bonusPerTrip > 0) {
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId: riderId, type: "bonus",
+            amount: bonusPerTrip.toFixed(2),
+            description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
+          });
+        }
+      });
+      await db.insert(notificationsTable).values({
+        id: generateId(), userId: riderId,
+        title: "Ride Earning Credited", body: `Rs. ${earnings} wallet mein add ho gaya!`,
+        type: "wallet", icon: "wallet-outline",
+      }).catch(e => console.error("notif insert failed:", e));
     }
+
     await db.insert(notificationsTable).values({
       id: generateId(), userId: ride.userId,
       title: "Ride Completed! ✅", body: "Thanks for riding with AJKMart. Rate your experience!",
       type: "ride", icon: "checkmark-circle-outline",
-    }).catch(() => {});
-    await db.insert(notificationsTable).values({
-      id: generateId(), userId: riderId,
-      title: "Ride Earning Credited 💰", body: `Rs. ${earnings} wallet mein add ho gaya!`,
-      type: "wallet", icon: "wallet-outline",
-    }).catch(() => {});
+    }).catch(e => console.error("customer notif insert failed:", e));
   }
 
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
@@ -597,7 +733,7 @@ router.post("/rides/:id/counter", async (req, res) => {
       title: "Naya Bid Aaya! 💬",
       body: `${riderUser.name || "Ek rider"} ne Rs. ${parsedCounter.toFixed(0)} ka bid diya. Dekhein aur choose karein!`,
       type: "ride", icon: "chatbubble-outline", link: "/ride",
-    }).catch(() => {});
+    }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
   }
 
   res.json({ success: true, bid: { ...bid, fare: safeNum(bid!.fare) } });
@@ -731,7 +867,7 @@ router.post("/wallet/withdraw", async (req, res) => {
       title: "Withdrawal Requested ✅",
       body: `Rs. ${amt} withdrawal submitted. Admin will process within 24-48 hours.`,
       type: "wallet", icon: "cash-outline",
-    }).catch(() => {});
+    }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
 
     res.json({ success: true, newBalance: parseFloat(result.toFixed(2)), amount: amt, txId });
   } catch (e: any) {
@@ -770,6 +906,19 @@ router.post("/cod/remit", async (req, res) => {
   if (!amt || amt <= 0) { res.status(400).json({ error: "Valid amount required" }); return; }
   if (!paymentMethod)   { res.status(400).json({ error: "Payment method required" }); return; }
   if (!accountNumber)   { res.status(400).json({ error: "Account / transaction reference required" }); return; }
+
+  /* Build explicit allowlist of currently-enabled payment methods */
+  const s = await getPlatformSettings();
+  const PAYMENT_METHOD_SETTING: Record<string, string> = {
+    jazzcash: "jazzcash_enabled", easypaisa: "easypaisa_enabled", bank: "bank_enabled",
+  };
+  const enabledMethods = Object.entries(PAYMENT_METHOD_SETTING)
+    .filter(([, settingKey]) => (s[settingKey] ?? "off") === "on")
+    .map(([key]) => key);
+  const methodKey = paymentMethod.toLowerCase().replace(/\s+/g, "");
+  if (enabledMethods.length > 0 && !enabledMethods.includes(methodKey)) {
+    res.status(400).json({ error: `Payment method '${paymentMethod}' is not enabled. Available: ${enabledMethods.join(", ")}.` }); return;
+  }
   const txId = generateId();
   await db.insert(walletTransactionsTable).values({
     id: txId, userId: riderId, type: "cod_remittance",
@@ -783,7 +932,7 @@ router.post("/cod/remit", async (req, res) => {
     title: "COD Remittance Submitted ✅",
     body: `Rs. ${amt} COD remittance submitted. Admin 24 hours mein verify karega.`,
     type: "wallet", icon: "cash-outline",
-  }).catch(() => {});
+  }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
   res.json({ success: true, txId, amount: amt });
 });
 
@@ -802,6 +951,81 @@ router.patch("/notifications/read-all", async (req, res) => {
   const riderId = req.riderId!;
   await db.update(notificationsTable).set({ isRead: true }).where(eq(notificationsTable.userId, riderId));
   res.json({ success: true });
+});
+
+/* ── GET /rider/wallet/min-balance — Returns min balance config ── */
+router.get("/wallet/min-balance", async (req, res) => {
+  const riderId = req.riderId!;
+  const s = await getPlatformSettings();
+  const minBalance = parseFloat(s["rider_min_balance"] ?? "0");
+  const depositEnabled = (s["rider_deposit_enabled"] ?? "on") === "on";
+  const [user] = await db.select({ walletBalance: usersTable.walletBalance }).from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
+  const currentBalance = safeNum(user?.walletBalance);
+  res.json({
+    minBalance,
+    depositEnabled,
+    currentBalance,
+    isBelowMin: minBalance > 0 && currentBalance < minBalance,
+    shortfall: minBalance > 0 ? Math.max(0, minBalance - currentBalance) : 0,
+  });
+});
+
+/* ── POST /rider/wallet/deposit — Submit a manual deposit request ── */
+router.post("/wallet/deposit", async (req, res) => {
+  const riderId = req.riderId!;
+  const { amount, paymentMethod, accountNumber, transactionId, note } = req.body;
+  const amt = safeNum(amount);
+
+  const s = await getPlatformSettings();
+  const depositEnabled = (s["rider_deposit_enabled"] ?? "on") === "on";
+
+  if (!depositEnabled) {
+    res.status(403).json({ error: "Deposits are currently disabled by admin. Please contact support." }); return;
+  }
+  if (!amt || amt <= 0) { res.status(400).json({ error: "Valid amount required" }); return; }
+  if (amt < 100) { res.status(400).json({ error: "Minimum deposit is Rs. 100" }); return; }
+  if (!paymentMethod) { res.status(400).json({ error: "Payment method required" }); return; }
+  if (!transactionId?.trim()) { res.status(400).json({ error: "Transaction ID is required for verification" }); return; }
+
+  /* Build explicit allowlist of currently-enabled payment methods */
+  const PAYMENT_METHOD_SETTING: Record<string, string> = {
+    jazzcash: "jazzcash_enabled", easypaisa: "easypaisa_enabled", bank: "bank_enabled",
+  };
+  const enabledMethods = Object.entries(PAYMENT_METHOD_SETTING)
+    .filter(([, settingKey]) => (s[settingKey] ?? "off") === "on")
+    .map(([key]) => key);
+  const methodKey = paymentMethod.toLowerCase().replace(/\s+/g, "");
+  if (enabledMethods.length > 0 && !enabledMethods.includes(methodKey)) {
+    res.status(400).json({ error: `Payment method '${paymentMethod}' is not enabled. Available: ${enabledMethods.join(", ")}.` }); return;
+  }
+
+  const txId = generateId();
+  await db.insert(walletTransactionsTable).values({
+    id: txId, userId: riderId, type: "deposit",
+    amount: amt.toFixed(2),
+    description: `Wallet Deposit — ${paymentMethod}${accountNumber ? ` · From: ${accountNumber}` : ""}${transactionId ? ` · TxID: ${transactionId}` : ""}${note ? ` · ${note}` : ""}`,
+    reference: "pending",
+    paymentMethod,
+  });
+
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: riderId,
+    title: "Deposit Request Submitted ✅",
+    body: `Rs. ${amt} deposit request mein hai. Admin 24 hours mein verify karke wallet credit karega.`,
+    type: "wallet", icon: "wallet-outline",
+  }).catch(e => console.error("deposit notif insert failed:", e));
+
+  res.json({ success: true, txId, amount: amt });
+});
+
+/* ── GET /rider/wallet/deposits — Deposit history ── */
+router.get("/wallet/deposits", async (req, res) => {
+  const riderId = req.riderId!;
+  const deposits = await db.select().from(walletTransactionsTable)
+    .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "deposit")))
+    .orderBy(desc(walletTransactionsTable.createdAt))
+    .limit(20);
+  res.json({ deposits: deposits.map(d => ({ ...d, amount: safeNum(d.amount) })) });
 });
 
 export default router;

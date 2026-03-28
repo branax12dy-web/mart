@@ -2,9 +2,19 @@ import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
+import {
+  Phone, Mail, User, Bike, Clock, Lightbulb, Eye, EyeOff,
+  ArrowLeft, Loader2,
+} from "lucide-react";
 
 type LoginMethod = "phone" | "email" | "username";
 type Step = "input" | "otp" | "pending";
+
+type AuthResponse = {
+  token: string; refreshToken?: string;
+  pendingApproval?: boolean;
+  user?: { roles?: string; role?: string };
+};
 
 export default function Login() {
   const { login } = useAuth();
@@ -16,33 +26,30 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState("");
 
-  /* Phone OTP */
   const [phone, setPhone]   = useState("");
   const [otp, setOtp]       = useState("");
   const [devOtp, setDevOtp] = useState("");
 
-  /* Email OTP */
   const [email, setEmail]     = useState("");
   const [emailOtp, setEmailOtp] = useState("");
   const [emailDevOtp, setEmailDevOtp] = useState("");
 
-  /* Username */
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd]   = useState(false);
 
   const clearError = () => setError("");
 
-  const checkRiderRole = (res: any): boolean => {
+  const checkRiderRole = (res: AuthResponse): boolean => {
     const roles = (res.user?.roles || res.user?.role || "").split(",").map((r: string) => r.trim());
     if (!roles.includes("rider")) {
-      setError("❌ Access denied. This app is only for riders. Contact admin to be assigned as a rider.");
+      setError("Access denied. This app is only for riders. Contact admin to be assigned as a rider.");
       return false;
     }
     return true;
   };
 
-  const doLogin = async (res: any) => {
+  const doLogin = async (res: AuthResponse) => {
     if (!checkRiderRole(res)) return;
     if (res.pendingApproval) { setStep("pending"); return; }
     api.storeTokens(res.token, res.refreshToken);
@@ -50,7 +57,6 @@ export default function Login() {
     login(res.token, profile, res.refreshToken);
   };
 
-  /* Phone OTP */
   const sendPhoneOtp = async () => {
     if (!phone || phone.length < 10) { setError("Enter a valid phone number"); return; }
     setLoading(true); clearError();
@@ -58,7 +64,7 @@ export default function Login() {
       const res = await api.sendOtp(phone);
       setDevOtp(res.otp || "");
       setStep("otp");
-    } catch(e: any) { setError(e.message); }
+    } catch(e: unknown) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
     setLoading(false);
   };
 
@@ -68,11 +74,10 @@ export default function Login() {
     try {
       const res = await api.verifyOtp(phone, otp);
       await doLogin(res);
-    } catch(e: any) { setError(e.message); }
+    } catch(e: unknown) { setError(e instanceof Error ? e.message : "Verification failed"); }
     setLoading(false);
   };
 
-  /* Email OTP */
   const sendEmailOtp = async () => {
     if (!email || !email.includes("@")) { setError("Enter a valid email address"); return; }
     setLoading(true); clearError();
@@ -80,7 +85,7 @@ export default function Login() {
       const res = await api.sendEmailOtp(email);
       setEmailDevOtp(res.otp || "");
       setStep("otp");
-    } catch(e: any) { setError(e.message); }
+    } catch(e: unknown) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
     setLoading(false);
   };
 
@@ -90,11 +95,10 @@ export default function Login() {
     try {
       const res = await api.verifyEmailOtp(email, emailOtp);
       await doLogin(res);
-    } catch(e: any) { setError(e.message); }
+    } catch(e: unknown) { setError(e instanceof Error ? e.message : "Verification failed"); }
     setLoading(false);
   };
 
-  /* Username + Password */
   const loginUsername = async () => {
     if (!username || username.length < 3) { setError("Enter your username"); return; }
     if (!password || password.length < 6) { setError("Enter your password"); return; }
@@ -102,7 +106,7 @@ export default function Login() {
     try {
       const res = await api.loginUsername(username, password);
       await doLogin(res);
-    } catch(e: any) { setError(e.message); }
+    } catch(e: unknown) { setError(e instanceof Error ? e.message : "Login failed"); }
     setLoading(false);
   };
 
@@ -123,17 +127,18 @@ export default function Login() {
       <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
           <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-5">
-            <span className="text-4xl">⏳</span>
+            <Clock size={40} className="text-amber-500"/>
           </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-3">Approval Pending</h2>
           <p className="text-gray-500 text-sm leading-relaxed mb-5">
             Your account is awaiting admin approval. You'll be able to log in once approved. This typically takes 24-48 hours.
           </p>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 text-left">
-            <p className="text-amber-700 text-xs font-medium">💡 If you've already been approved, try logging in again.</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 text-left flex gap-2">
+            <Lightbulb size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+            <p className="text-amber-700 text-xs font-medium">If you've already been approved, try logging in again.</p>
           </div>
-          <button onClick={() => setStep("input")} className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors text-sm">
-            ← Back to Login
+          <button onClick={() => setStep("input")} className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+            <ArrowLeft size={15}/> Back to Login
           </button>
         </div>
       </div>
@@ -146,7 +151,7 @@ export default function Login() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl">
-            <span className="text-4xl">🏍️</span>
+            <Bike size={40} className="text-green-600"/>
           </div>
           <h1 className="text-3xl font-bold text-white">Rider Portal</h1>
           <p className="text-green-200 mt-1">{appName} Delivery Partner</p>
@@ -160,11 +165,11 @@ export default function Login() {
                 <button
                   key={m}
                   onClick={() => selectMethod(m)}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${
                     method === m ? "bg-white text-green-700 shadow-sm" : "text-gray-400"
                   }`}
                 >
-                  {m === "phone" ? "📱 Phone" : m === "email" ? "✉️ Email" : "👤 Username"}
+                  {m === "phone" ? <><Phone size={11}/> Phone</> : m === "email" ? <><Mail size={11}/> Email</> : <><User size={11}/> Username</>}
                 </button>
               ))}
             </div>
@@ -174,7 +179,7 @@ export default function Login() {
           {step === "otp" && (
             <button onClick={() => { setStep("input"); clearError(); setDevOtp(""); setEmailDevOtp(""); }}
               className="text-green-600 text-sm font-semibold mb-4 flex items-center gap-1">
-              ← Back
+              <ArrowLeft size={14}/> Back
             </button>
           )}
 
@@ -228,11 +233,11 @@ export default function Login() {
               <p className="text-sm text-gray-500 mb-4">Enter your username and password</p>
               <input type="text" placeholder="Username" value={username} onChange={e => setUsername(e.target.value.toLowerCase())} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 mb-3" autoFocus />
-              <div className="relative">
+              <div className="relative mb-4">
                 <input type={showPwd ? "text" : "password"} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
-                  className="w-full h-12 px-4 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 mb-4" />
+                  className="w-full h-12 px-4 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 <button onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600">
-                  {showPwd ? "🙈" : "👁️"}
+                  {showPwd ? <EyeOff size={18}/> : <Eye size={18}/>}
                 </button>
               </div>
             </>
@@ -242,11 +247,11 @@ export default function Login() {
 
           <button onClick={handleSubmit} disabled={loading}
             className="w-full h-12 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-            {loading ? <span className="animate-spin text-lg">⟳</span> : null}
+            {loading ? <Loader2 size={18} className="animate-spin"/> : null}
             {loading ? "Please wait..." :
-              method === "phone" ? (step === "input" ? "Send OTP →" : "Verify & Login ✓") :
-              method === "email" ? (step === "input" ? "Send Email OTP →" : "Verify & Login ✓") :
-              "Login →"
+              method === "phone" ? (step === "input" ? "Send OTP" : "Verify & Login") :
+              method === "email" ? (step === "input" ? "Send Email OTP" : "Verify & Login") :
+              "Login"
             }
           </button>
         </div>

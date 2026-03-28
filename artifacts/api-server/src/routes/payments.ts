@@ -81,7 +81,7 @@ router.get("/methods", async (_req, res) => {
     methods.push({
       id:          "cash",
       label:       "Cash on Delivery",
-      logo:        "💵",
+      logo:        "cash",
       available:   true,
       mode:        "live",
       description: s["cod_notes"] || "Delivery par cash dein",
@@ -96,7 +96,7 @@ router.get("/methods", async (_req, res) => {
     methods.push({
       id:          "wallet",
       label:       "AJK Wallet",
-      logo:        "💰",
+      logo:        "wallet",
       available:   true,
       mode:        "live",
       description: "Apni wallet se instant payment karein",
@@ -112,7 +112,7 @@ router.get("/methods", async (_req, res) => {
     const entry: Record<string, unknown> = {
       id:           "jazzcash",
       label:        "JazzCash",
-      logo:         "🔴",
+      logo:         "jazzcash",
       available:    true,
       mode:         jcType === "api" ? (s["jazzcash_mode"] ?? "sandbox") : "manual",
       type:         jcType,
@@ -135,7 +135,7 @@ router.get("/methods", async (_req, res) => {
     const entry: Record<string, unknown> = {
       id:           "easypaisa",
       label:        "EasyPaisa",
-      logo:         "🟢",
+      logo:         "easypaisa",
       available:    true,
       mode:         epType === "api" ? (s["easypaisa_mode"] ?? "sandbox") : "manual",
       type:         epType,
@@ -157,7 +157,7 @@ router.get("/methods", async (_req, res) => {
     methods.push({
       id:              "bank",
       label:           "Bank Transfer",
-      logo:            "🏦",
+      logo:            "bank",
       available:       true,
       mode:            "manual",
       type:            "manual",

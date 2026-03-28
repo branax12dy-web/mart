@@ -116,15 +116,17 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "customer_loyalty_enabled",  value: "on",    label: "Loyalty Points Program Active",   category: "customer" },
   { key: "customer_signup_bonus",     value: "0",     label: "New User Signup Bonus (Rs.)",     category: "customer" },
   /* Rider Role Settings */
-  { key: "rider_keep_pct",         value: "80",    label: "Rider Earnings % (of fare)",    category: "rider" },
-  { key: "rider_acceptance_km",    value: "5",     label: "Acceptance Radius (KM)",        category: "rider" },
-  { key: "rider_max_deliveries",   value: "3",     label: "Max Active Deliveries",         category: "rider" },
-  { key: "rider_bonus_per_trip",   value: "0",     label: "Bonus Per Trip (Rs.)",          category: "rider" },
-  { key: "rider_min_payout",       value: "500",   label: "Minimum Payout (Rs.)",          category: "rider" },
-  { key: "rider_cash_allowed",     value: "on",    label: "Allow Cash Payments",           category: "rider" },
-  { key: "rider_auto_approve",     value: "off",   label: "Auto-Approve New Riders",        category: "rider" },
-  { key: "rider_withdrawal_enabled", value: "on",  label: "Riders Can Submit Withdrawals",  category: "rider" },
-  { key: "rider_max_payout",       value: "50000", label: "Maximum Single Payout (Rs.)",   category: "rider" },
+  { key: "rider_keep_pct",         value: "80",    label: "Rider Earnings % (of fare)",                    category: "rider" },
+  { key: "rider_acceptance_km",    value: "5",     label: "Acceptance Radius (KM)",                        category: "rider" },
+  { key: "rider_max_deliveries",   value: "3",     label: "Max Active Deliveries",                         category: "rider" },
+  { key: "rider_bonus_per_trip",   value: "0",     label: "Bonus Per Trip (Rs.)",                          category: "rider" },
+  { key: "rider_min_payout",       value: "500",   label: "Minimum Payout (Rs.)",                          category: "rider" },
+  { key: "rider_cash_allowed",     value: "on",    label: "Allow Cash Payments",                           category: "rider" },
+  { key: "rider_auto_approve",     value: "off",   label: "Auto-Approve New Riders",                       category: "rider" },
+  { key: "rider_withdrawal_enabled", value: "on",  label: "Riders Can Submit Withdrawals",                 category: "rider" },
+  { key: "rider_max_payout",       value: "50000", label: "Maximum Single Payout (Rs.)",                   category: "rider" },
+  { key: "rider_min_balance",      value: "500",   label: "Minimum Wallet Balance for Cash Orders (Rs.)",  category: "rider" },
+  { key: "rider_deposit_enabled",  value: "on",    label: "Riders Can Submit Wallet Deposit Requests",     category: "rider" },
   /* Vendor Role Settings */
   { key: "vendor_commission_pct",      value: "15",     label: "Vendor Platform Commission (%)",         category: "vendor" },
   { key: "vendor_min_order",           value: "100",    label: "Platform Default Min Order (Rs.)",       category: "vendor" },
@@ -1948,6 +1950,107 @@ router.patch("/withdrawal-requests/batch-reject", async (req, res) => {
   res.json({ success: true, rejected: results });
 });
 
+/* ── GET /admin/deposit-requests — List all rider deposit requests ─── */
+router.get("/deposit-requests", async (req, res) => {
+  const statusFilter = req.query["status"] as string | undefined;
+  const txns = await db.select().from(walletTransactionsTable)
+    .where(eq(walletTransactionsTable.type, "deposit"))
+    .orderBy(desc(walletTransactionsTable.createdAt))
+    .limit(200);
+  const enriched = await Promise.all(txns.map(async t => {
+    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+      .from(usersTable).where(eq(usersTable.id, t.userId)).limit(1);
+    const ref = t.reference ?? "pending";
+    const status = ref === "pending" ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
+    const refNo = ref.startsWith("approved:") ? ref.slice(9) : ref.startsWith("rejected:") ? ref.slice(9) : "";
+    return { ...t, amount: parseFloat(String(t.amount)), user: user || null, status, refNo };
+  }));
+  const filtered = statusFilter ? enriched.filter(d => d.status === statusFilter) : enriched;
+  res.json({ deposits: filtered });
+});
+
+/* ── PATCH /admin/deposit-requests/:id/approve — Approve a rider deposit (credits wallet, atomic) ─── */
+router.patch("/deposit-requests/:id/approve", async (req, res) => {
+  const { refNo, note } = req.body;
+  const txId = req.params["id"]!;
+
+  /* First, verify it exists and is the right type */
+  const [tx] = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+  if (!tx) { res.status(404).json({ error: "Deposit not found" }); return; }
+  if (tx.type !== "deposit") { res.status(400).json({ error: "Not a deposit record" }); return; }
+
+  const amt = parseFloat(String(tx.amount));
+  const approvedRef = refNo ? `approved:${refNo.trim()}` : "approved:manual";
+
+  /* Fully atomic: conditional state-transition + wallet credit in ONE transaction.
+     If the conditional update hits 0 rows (already processed), transaction rolls back
+     and we return 409. No double-credit or orphaned approval possible. */
+  let approved = false;
+  try {
+    await db.transaction(async (trx) => {
+      const [marked] = await trx.update(walletTransactionsTable)
+        .set({ reference: approvedRef })
+        .where(and(eq(walletTransactionsTable.id, txId), eq(walletTransactionsTable.reference, "pending")))
+        .returning({ id: walletTransactionsTable.id });
+      if (!marked) throw new Error("ALREADY_PROCESSED");
+      await trx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${amt}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, tx.userId));
+    });
+    approved = true;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "ALREADY_PROCESSED") {
+      const [current] = await db.select({ reference: walletTransactionsTable.reference }).from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+      res.status(409).json({ error: `Deposit already processed (${current?.reference ?? "unknown state"})` }); return;
+    }
+    throw err;
+  }
+
+  if (!approved) return;
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: tx.userId,
+    title: "Deposit Credited ✅",
+    body: `Rs. ${amt.toFixed(0)} aapki wallet mein add kar diya gaya hai!${refNo ? ` Ref: ${refNo}` : ""}${note ? ` Note: ${note}` : ""}`,
+    type: "wallet", icon: "wallet-outline",
+  }).catch(e => console.error("deposit approval notif failed:", e));
+  res.json({ success: true, txId, status: "approved", credited: amt });
+});
+
+/* ── PATCH /admin/deposit-requests/:id/reject — Reject a rider deposit (atomic state transition) ─── */
+router.patch("/deposit-requests/:id/reject", async (req, res) => {
+  const { reason } = req.body;
+  const txId = req.params["id"]!;
+
+  /* Verify type first (cheap read) */
+  const [tx] = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+  if (!tx) { res.status(404).json({ error: "Deposit not found" }); return; }
+  if (tx.type !== "deposit") { res.status(400).json({ error: "Not a deposit record" }); return; }
+
+  const rejReason = reason?.trim() || "Admin rejected";
+
+  /* Conditional update: only transitions reference 'pending' → 'rejected:...'
+     Prevents race with concurrent approve or reject that already processed this deposit */
+  const [marked] = await db.update(walletTransactionsTable)
+    .set({ reference: `rejected:${rejReason}` })
+    .where(and(eq(walletTransactionsTable.id, txId), eq(walletTransactionsTable.reference, "pending")))
+    .returning({ id: walletTransactionsTable.id });
+
+  if (!marked) {
+    const [current] = await db.select({ reference: walletTransactionsTable.reference }).from(walletTransactionsTable).where(eq(walletTransactionsTable.id, txId)).limit(1);
+    res.status(409).json({ error: `Deposit already processed (${current?.reference ?? "unknown state"})` }); return;
+  }
+
+  const amt = parseFloat(String(tx.amount));
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: tx.userId,
+    title: "Deposit Rejected ❌",
+    body: `Rs. ${amt.toFixed(0)} deposit request reject ho gayi. Reason: ${rejReason}.`,
+    type: "wallet", icon: "close-circle-outline",
+  }).catch(e => console.error("deposit rejection notif failed:", e));
+  res.json({ success: true, txId, status: "rejected", reason: rejReason });
+});
+
 /* ── GET /admin/all-notifications ─────────── */
 router.get("/all-notifications", async (req, res) => {
   const role = req.query["role"] as string | undefined;
@@ -2954,14 +3057,19 @@ router.patch("/users/bulk-ban", async (req, res) => {
 
 /* ── PATCH /admin/orders/:id/assign-rider — manually assign a rider to an order ── */
 router.patch("/orders/:id/assign-rider", async (req, res) => {
-  const { riderId, riderName, riderPhone } = req.body as { riderId?: string; riderName?: string; riderPhone?: string };
+  const { riderId } = req.body as { riderId?: string };
   const [order] = await db.update(ordersTable)
-    .set({ riderId: riderId || null, riderName: riderName || null, riderPhone: riderPhone || null, updatedAt: new Date() })
+    .set({ riderId: riderId || null, updatedAt: new Date() })
     .where(eq(ordersTable.id, req.params["id"]!))
     .returning();
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  addAuditEntry({ action: "order_rider_assigned", ip: getClientIp(req), adminId: (req as any).adminId, details: `Rider ${riderName} assigned to order ${req.params["id"]}`, result: "success" });
-  res.json({ success: true, order: { ...order, total: parseFloat(String(order.total)) } });
+  let riderName: string | null = null;
+  if (riderId) {
+    const [rider] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, riderId));
+    riderName = rider?.name ?? null;
+  }
+  addAuditEntry({ action: "order_rider_assigned", ip: getClientIp(req), adminId: (req as any).adminId, details: `Rider ${riderName ?? riderId ?? "unassigned"} assigned to order ${req.params["id"]}`, result: "success" });
+  res.json({ success: true, order: { ...order, total: parseFloat(String(order.total)), riderName } });
 });
 
 /* ── PATCH /admin/vendors/:id/commission — set per-vendor commission override ── */

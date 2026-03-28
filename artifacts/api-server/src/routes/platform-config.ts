@@ -183,6 +183,8 @@ router.get("/", async (req, res) => {
       cashAllowed:        (s["rider_cash_allowed"]                  ?? "on")  === "on",
       withdrawalEnabled:  (s["rider_withdrawal_enabled"]            ?? "on")  === "on",
       autoApprove:        (s["rider_auto_approve"]                  ?? "off") === "on",
+      minBalance:         parseFloat(s["rider_min_balance"]         ?? "500"),
+      depositEnabled:     (s["rider_deposit_enabled"]               ?? "on")  === "on",
     },
     vendor: {
       commissionPct:      parseFloat(s["vendor_commission_pct"]     ?? "15"),

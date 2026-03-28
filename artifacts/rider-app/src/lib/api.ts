@@ -61,14 +61,20 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
   }
 
   if (!res.ok) {
-    if (res.status === 403) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      /* 403 from role/ban denial — revoke local session and force relogin */
-      clearTokens();
-      window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "access_denied" } }));
-      throw Object.assign(new Error(err.error || "Access denied"), { status: 403 });
-    }
     const err = await res.json().catch(() => ({ error: res.statusText }));
+    /* 403 only triggers logout when the server signals an auth/role denial, NOT for
+       business-rule rejections (e.g. "insufficient balance" or "deposits disabled").
+       We distinguish by checking the error message — auth denials say "Access denied"
+       or "Unauthorized" while business-rule 403s carry a descriptive message. */
+    if (res.status === 403) {
+      const msg = err.error || "";
+      const isAuthDenial = msg.toLowerCase() === "access denied" || msg.toLowerCase() === "forbidden";
+      if (isAuthDenial) {
+        clearTokens();
+        window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "access_denied" } }));
+      }
+      throw Object.assign(new Error(msg || "Access denied"), { status: 403 });
+    }
     throw new Error(err.error || "Request failed");
   }
   return res.json();
@@ -112,8 +118,12 @@ export const api = {
 
   /* Wallet */
   getWallet:      () => apiFetch("/rider/wallet/transactions"),
+  getMinBalance:  () => apiFetch("/rider/wallet/min-balance"),
   withdrawWallet: (data: { amount: number; bankName: string; accountNumber: string; accountTitle: string; paymentMethod?: string; note?: string }) =>
     apiFetch("/rider/wallet/withdraw", { method: "POST", body: JSON.stringify(data) }),
+  submitDeposit:  (data: { amount: number; paymentMethod: string; transactionId: string; accountNumber?: string; note?: string }) =>
+    apiFetch("/rider/wallet/deposit", { method: "POST", body: JSON.stringify(data) }),
+  getDeposits:    () => apiFetch("/rider/wallet/deposits"),
 
   /* COD Remittance */
   getCodSummary:       () => apiFetch("/rider/cod-summary"),

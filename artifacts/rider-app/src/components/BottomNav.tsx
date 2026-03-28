@@ -1,15 +1,17 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { Home, MapPin, Wallet, Bell, User } from "lucide-react";
 
-interface NavItem { href: string; label: string; icon: string; }
+import type { LucideProps } from "lucide-react";
+interface NavItem { href: string; label: string; Icon: React.ComponentType<LucideProps>; }
 
 const items: NavItem[] = [
-  { href: "/",               label: "Home",     icon: "🏠" },
-  { href: "/active",         label: "Active",   icon: "📍" },
-  { href: "/wallet",         label: "Wallet",   icon: "💰" },
-  { href: "/notifications",  label: "Alerts",   icon: "🔔" },
-  { href: "/profile",        label: "Profile",  icon: "👤" },
+  { href: "/",               label: "Home",     Icon: Home    },
+  { href: "/active",         label: "Active",   Icon: MapPin  },
+  { href: "/wallet",         label: "Wallet",   Icon: Wallet  },
+  { href: "/notifications",  label: "Alerts",   Icon: Bell    },
+  { href: "/profile",        label: "Profile",  Icon: User    },
 ];
 
 export function BottomNav() {
@@ -37,13 +39,14 @@ export function BottomNav() {
       <div className="flex max-w-md mx-auto">
         {items.map(item => {
           const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+          const { Icon } = item;
           return (
             <Link key={item.href} href={item.href}
               className="flex-1 flex flex-col items-center pt-2.5 pb-1 gap-0.5 relative android-press min-h-0">
               {active && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-green-600 rounded-full"/>}
               <div className="relative">
-                <span className={`text-xl leading-none flex items-center justify-center w-10 h-7 rounded-xl ${active ? "bg-green-50" : ""}`}>
-                  {item.icon}
+                <span className={`flex items-center justify-center w-10 h-7 rounded-xl ${active ? "bg-green-50" : ""}`}>
+                  <Icon size={20} strokeWidth={active ? 2.5 : 1.8} className={active ? "text-green-600" : "text-gray-400"} />
                 </span>
                 {/* Notification badge */}
                 {item.href === "/notifications" && unread > 0 && (
