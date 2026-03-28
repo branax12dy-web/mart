@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { usersTable, walletTransactionsTable } from "@workspace/db/schema";
-import { eq, and, gte, sum } from "drizzle-orm";
+import { usersTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
+import { eq, and, gte, sum, desc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { customerAuth } from "../middleware/security.js";
@@ -17,6 +17,7 @@ function mapTx(t: typeof walletTransactionsTable.$inferSelect) {
     type: t.type,
     amount: parseFloat(t.amount),
     description: t.description,
+    reference: t.reference,
     createdAt: t.createdAt.toISOString(),
   };
 }
@@ -102,6 +103,71 @@ router.post("/topup", async (req, res) => {
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
+});
+
+/* ── POST /wallet/deposit — Submit a manual deposit request (customer) ───── */
+router.post("/deposit", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const { amount, paymentMethod, transactionId, accountNumber, note } = req.body;
+
+  if (!amount)          { res.status(400).json({ error: "amount required" }); return; }
+  if (!paymentMethod)   { res.status(400).json({ error: "paymentMethod required" }); return; }
+  if (!transactionId)   { res.status(400).json({ error: "transactionId required" }); return; }
+
+  const amt = parseFloat(String(amount));
+  if (isNaN(amt) || amt <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
+
+  const s = await getPlatformSettings();
+  const walletEnabled = (s["feature_wallet"] ?? "on") === "on";
+  const minTopup      = parseFloat(s["wallet_min_topup"]   ?? "100");
+  const maxTopup      = parseFloat(s["wallet_max_topup"]   ?? "25000");
+
+  if (!walletEnabled) { res.status(503).json({ error: "Wallet service is currently disabled" }); return; }
+  if (amt < minTopup) { res.status(400).json({ error: `Minimum deposit is Rs. ${minTopup}` }); return; }
+  if (amt > maxTopup) { res.status(400).json({ error: `Maximum single deposit is Rs. ${maxTopup}` }); return; }
+
+  const txId = generateId();
+  const desc = [
+    `Manual deposit — ${paymentMethod}`,
+    transactionId ? `TxID: ${transactionId}` : null,
+    accountNumber ? `Sender: ${accountNumber}` : null,
+    note ? `Note: ${note}` : null,
+  ].filter(Boolean).join(" · ");
+
+  await db.insert(walletTransactionsTable).values({
+    id: txId, userId, type: "deposit",
+    amount: amt.toFixed(2),
+    description: desc,
+    reference: "pending",
+    paymentMethod,
+  });
+
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId,
+    title: "Deposit Request Submitted ✅",
+    body: `Rs. ${amt.toFixed(0)} deposit request mein hai. Admin 1-2 hours mein verify karke wallet credit karega.`,
+    type: "wallet", icon: "wallet-outline",
+  }).catch(e => console.error("customer deposit notif insert failed:", e));
+
+  res.json({ success: true, txId, status: "pending", amount: amt });
+});
+
+/* ── GET /wallet/deposits — Customer deposit history ────────────────────── */
+router.get("/deposits", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const deposits = await db.select()
+    .from(walletTransactionsTable)
+    .where(and(eq(walletTransactionsTable.userId, userId), eq(walletTransactionsTable.type, "deposit")))
+    .orderBy(desc(walletTransactionsTable.createdAt));
+
+  const mapped = deposits.map(d => {
+    const ref = d.reference ?? "pending";
+    const status = ref === "pending" ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
+    const refNo = ref.startsWith("approved:") || ref.startsWith("rejected:") ? ref.slice(9) : "";
+    return { ...d, amount: parseFloat(String(d.amount)), status, refNo };
+  });
+
+  res.json({ deposits: mapped });
 });
 
 /* ── POST /wallet/send ───────────────────────────────────────────────────── */

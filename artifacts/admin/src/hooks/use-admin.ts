@@ -409,6 +409,39 @@ export const useDeletePromoCode = () => {
   });
 };
 
+// Deposit Requests
+export const useDepositRequests = (status?: string) => {
+  return useQuery({
+    queryKey: ["admin-deposits", status],
+    queryFn: () => fetcher(`/deposit-requests${status ? `?status=${status}` : ""}`),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+export const useApproveDeposit = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, refNo, note }: { id: string; refNo?: string; note?: string }) =>
+      fetcher(`/deposit-requests/${id}/approve`, { method: "PATCH", body: JSON.stringify({ refNo, note }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-deposits"] });
+      qc.invalidateQueries({ queryKey: ["admin-transactions"] });
+      qc.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
+  });
+};
+
+export const useRejectDeposit = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      fetcher(`/deposit-requests/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-deposits"] });
+    },
+  });
+};
+
 // Withdrawal Requests
 export const useWithdrawalRequests = (status?: string) => {
   return useQuery({

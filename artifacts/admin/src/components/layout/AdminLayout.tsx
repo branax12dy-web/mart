@@ -23,6 +23,7 @@ import {
   BellRing,
   BanknoteIcon,
   Banknote,
+  ArrowDownToLine,
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,9 +64,10 @@ const navGroups = [
   {
     label: "Finance",
     items: [
-      { name: "Transactions",    href: "/transactions",    icon: Receipt },
-      { name: "Withdrawals",     href: "/withdrawals",     icon: BanknoteIcon },
-      { name: "COD Remittances", href: "/cod-remittances", icon: Banknote },
+      { name: "Transactions",    href: "/transactions",     icon: Receipt },
+      { name: "Withdrawals",     href: "/withdrawals",      icon: BanknoteIcon },
+      { name: "Deposit Requests",href: "/deposit-requests", icon: ArrowDownToLine },
+      { name: "COD Remittances", href: "/cod-remittances",  icon: Banknote },
     ],
   },
   {
