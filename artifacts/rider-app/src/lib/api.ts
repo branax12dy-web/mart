@@ -42,8 +42,9 @@ async function attemptTokenRefresh(): Promise<boolean> {
 
 export async function apiFetch(path: string, opts: RequestInit = {}, _retry = true): Promise<any> {
   const token = getToken();
+  const isFormData = opts.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(opts.headers as Record<string, string> || {}),
   };
@@ -108,13 +109,16 @@ export const api = {
   getRequests:  () => apiFetch("/rider/requests"),
   getActive:    () => apiFetch("/rider/active"),
   acceptOrder:  (id: string) => apiFetch(`/rider/orders/${id}/accept`, { method: "POST", body: "{}" }),
-  updateOrder:  (id: string, status: string) => apiFetch(`/rider/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  updateOrder:  (id: string, status: string, proofPhoto?: string) => apiFetch(`/rider/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, ...(proofPhoto ? { proofPhoto } : {}) }) }),
   acceptRide:   (id: string) => apiFetch(`/rider/rides/${id}/accept`, { method: "POST", body: "{}" }),
   updateRide:   (id: string, status: string) => apiFetch(`/rider/rides/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   counterRide:  (id: string, data: { counterFare: number; note?: string }) => apiFetch(`/rider/rides/${id}/counter`, { method: "POST", body: JSON.stringify(data) }),
   rejectOffer:  (id: string) => apiFetch(`/rider/rides/${id}/reject-offer`, { method: "POST", body: "{}" }),
   getHistory:   () => apiFetch("/rider/history"),
   getEarnings:  () => apiFetch("/rider/earnings"),
+
+  /* Location */
+  updateLocation: (data: { latitude: number; longitude: number; accuracy?: number }) => apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) }),
 
   /* Wallet */
   getWallet:      () => apiFetch("/rider/wallet/transactions"),

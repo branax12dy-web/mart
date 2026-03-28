@@ -1,14 +1,82 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable, liveLocationsTable } from "@workspace/db/schema";
 import { eq, desc, and, or, sql, count, sum, gte, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
-import { verifyUserJwt } from "../middleware/security.js";
+import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
 const safeNum = (v: any, def = 0) => { const n = parseFloat(String(v ?? def)); return isNaN(n) ? def : n; };
+
+const onlineSchema = z.object({ isOnline: z.boolean() });
+
+const profileSchema = z.object({
+  name: z.string().optional(),
+  email: z.string().email().optional(),
+  cnic: z.string().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  emergencyContact: z.string().optional(),
+  vehicleType: z.string().optional(),
+  vehiclePlate: z.string().optional(),
+  bankName: z.string().optional(),
+  bankAccount: z.string().optional(),
+  bankAccountTitle: z.string().optional(),
+});
+
+const MAX_PROOF_PHOTO_BYTES = 5 * 1024 * 1024;
+const orderStatusSchema = z.object({
+  status: z.enum(["out_for_delivery", "delivered", "cancelled"]),
+  proofPhoto: z.string()
+    .refine(v => v.startsWith("data:image/"), "proofPhoto must be a base64 data URI (data:image/...)")
+    .refine(v => v.length <= MAX_PROOF_PHOTO_BYTES, "proofPhoto exceeds 5 MB limit")
+    .optional(),
+});
+
+const rideStatusSchema = z.object({
+  status: z.enum(["arrived", "in_transit", "completed", "cancelled"]),
+});
+
+const counterSchema = z.object({
+  counterFare: z.number().positive(),
+  note: z.string().optional(),
+});
+
+const withdrawSchema = z.object({
+  amount: z.number().positive(),
+  bankName: z.string().min(1),
+  accountNumber: z.string().min(1),
+  accountTitle: z.string().min(1),
+  paymentMethod: z.string().optional(),
+  note: z.string().optional(),
+});
+
+const depositSchema = z.object({
+  amount: z.number().min(100),
+  paymentMethod: z.string().min(1),
+  transactionId: z.string().min(1),
+  accountNumber: z.string().optional(),
+  note: z.string().optional(),
+});
+
+const codRemitSchema = z.object({
+  amount: z.number().positive(),
+  paymentMethod: z.string().min(1),
+  accountNumber: z.string().min(1),
+  transactionId: z.string().optional(),
+  note: z.string().optional(),
+});
+
+const idParamSchema = z.object({ id: z.string().min(1, "ID is required") });
+
+const locationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracy: z.number().optional(),
+});
 
 /* ── Auth Middleware ── */
 async function riderAuth(req: Request, res: Response, next: NextFunction) {
@@ -88,16 +156,20 @@ router.get("/me", async (req, res) => {
 
 /* ── PATCH /rider/online — Toggle online status ── */
 router.patch("/online", async (req, res) => {
+  const parsed = onlineSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
-  const { isOnline } = req.body;
+  const { isOnline } = parsed.data;
   await db.update(usersTable).set({ isOnline: !!isOnline, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
   res.json({ success: true, isOnline: !!isOnline });
 });
 
 /* ── PATCH /rider/profile — Update profile ── */
 router.patch("/profile", async (req, res) => {
+  const parsed = profileSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
-  const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, bankName, bankAccount, bankAccountTitle } = req.body;
+  const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, bankName, bankAccount, bankAccountTitle } = parsed.data;
   const updates: any = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
   if (email            !== undefined) updates.email            = email;
@@ -214,8 +286,10 @@ router.get("/active", async (req, res) => {
 /* ── POST /rider/orders/:id/accept — Accept an order ──
    Uses WHERE riderId IS NULL to prevent two riders accepting the same order (race condition) */
 router.post("/orders/:id/accept", async (req, res) => {
+  const paramParsed = idParamSchema.safeParse(req.params);
+  if (!paramParsed.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   const riderId   = req.riderId!;
-  const orderId   = req.params["id"]!;
+  const orderId   = paramParsed.data.id;
 
   const s = await getPlatformSettings();
 
@@ -287,10 +361,10 @@ router.post("/orders/:id/accept", async (req, res) => {
 
 /* ── PATCH /rider/orders/:id/status — Update order status (delivered) ── */
 router.patch("/orders/:id/status", async (req, res) => {
+  const parsed = orderStatusSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid status" }); return; }
   const riderId = req.riderId!;
-  const { status } = req.body;
-  const validStatuses = ["out_for_delivery", "delivered", "cancelled"];
-  if (!validStatuses.includes(status)) { res.status(400).json({ error: "Invalid status" }); return; }
+  const { status, proofPhoto } = parsed.data;
 
   const [order] = await db.select().from(ordersTable).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).limit(1);
   if (!order) { res.status(404).json({ error: "Order not found or not yours" }); return; }
@@ -311,7 +385,11 @@ router.patch("/orders/:id/status", async (req, res) => {
   }
 
   /* Include riderId in WHERE to close the TOCTOU window — only the assigned rider can advance status */
-  const [updated] = await db.update(ordersTable).set({ status, updatedAt: new Date() }).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
+  const updateData: Record<string, any> = { status, updatedAt: new Date() };
+  if (status === "delivered" && proofPhoto) {
+    updateData.proofPhotoUrl = proofPhoto;
+  }
+  const [updated] = await db.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
 
   if (status === "delivered") {
     const s = await getPlatformSettings();
@@ -449,9 +527,11 @@ router.patch("/orders/:id/status", async (req, res) => {
 /* ── POST /rider/rides/:id/accept — Accept a ride ──
    Uses WHERE riderId IS NULL to prevent two riders accepting same ride (race condition) */
 router.post("/rides/:id/accept", async (req, res) => {
+  const paramParsed = idParamSchema.safeParse(req.params);
+  if (!paramParsed.success) { res.status(400).json({ error: "Invalid ride ID" }); return; }
   const riderId   = req.riderId!;
   const riderUser = req.riderUser!;
-  const rideId    = req.params["id"]!;
+  const rideId    = paramParsed.data.id;
 
   // Check max simultaneous deliveries limit
   const s = await getPlatformSettings();
@@ -580,9 +660,10 @@ router.post("/rides/:id/accept", async (req, res) => {
 
 /* ── PATCH /rider/rides/:id/status — Update ride status (completed/cancelled) ── */
 router.patch("/rides/:id/status", async (req, res) => {
+  const parsed = rideStatusSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid status" }); return; }
   const riderId = req.riderId!;
-  const { status } = req.body;
-  if (!["arrived", "in_transit", "completed", "cancelled"].includes(status)) { res.status(400).json({ error: "Invalid status" }); return; }
+  const { status } = parsed.data;
 
   const [ride] = await db.select().from(ridesTable).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found or not yours" }); return; }
@@ -673,12 +754,12 @@ router.patch("/rides/:id/status", async (req, res) => {
 
 /* ── POST /rider/rides/:id/counter — Rider submits a bid on a bargaining ride (InDrive multi-bid) ── */
 router.post("/rides/:id/counter", async (req, res) => {
+  const parsed = counterSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "counterFare required" }); return; }
   const riderId   = req.riderId!;
   const riderUser = req.riderUser!;
   const rideId    = req.params["id"]!;
-  const { counterFare, note } = req.body;
-
-  if (!counterFare) { res.status(400).json({ error: "counterFare required" }); return; }
+  const { counterFare, note } = parsed.data;
 
   const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
@@ -820,9 +901,11 @@ router.get("/wallet/transactions", async (req, res) => {
 
 /* ── POST /rider/wallet/withdraw — Atomic withdrawal (prevents race condition) ── */
 router.post("/wallet/withdraw", async (req, res) => {
+  const parsed = withdrawSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
-  const { amount, accountTitle, accountNumber, bankName, paymentMethod, note } = req.body;
-  const amt = safeNum(amount);
+  const { amount, accountTitle, accountNumber, bankName, paymentMethod, note } = parsed.data;
+  const amt = amount;
 
   const s = await getPlatformSettings();
   const withdrawalEnabled = (s["rider_withdrawal_enabled"] ?? "on") === "on";
@@ -900,12 +983,11 @@ router.get("/cod-summary", async (req, res) => {
 
 /* ── POST /rider/cod/remit — Submit a COD remittance ── */
 router.post("/cod/remit", async (req, res) => {
+  const parsed = codRemitSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
-  const { amount, paymentMethod, accountNumber, transactionId, note } = req.body;
-  const amt = safeNum(amount);
-  if (!amt || amt <= 0) { res.status(400).json({ error: "Valid amount required" }); return; }
-  if (!paymentMethod)   { res.status(400).json({ error: "Payment method required" }); return; }
-  if (!accountNumber)   { res.status(400).json({ error: "Account / transaction reference required" }); return; }
+  const { amount, paymentMethod, accountNumber, transactionId, note } = parsed.data;
+  const amt = amount;
 
   /* Build explicit allowlist of currently-enabled payment methods */
   const s = await getPlatformSettings();
@@ -992,9 +1074,11 @@ router.get("/wallet/min-balance", async (req, res) => {
 
 /* ── POST /rider/wallet/deposit — Submit a manual deposit request ── */
 router.post("/wallet/deposit", async (req, res) => {
+  const parsed = depositSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
-  const { amount, paymentMethod, accountNumber, transactionId, note } = req.body;
-  const amt = safeNum(amount);
+  const { amount, paymentMethod, accountNumber, transactionId, note } = parsed.data;
+  const amt = amount;
 
   const s = await getPlatformSettings();
   const depositEnabled = (s["rider_deposit_enabled"] ?? "on") === "on";
@@ -1036,6 +1120,68 @@ router.post("/wallet/deposit", async (req, res) => {
   }).catch(e => console.error("deposit notif insert failed:", e));
 
   res.json({ success: true, txId, amount: amt });
+});
+
+/* ── PATCH /rider/location — GPS heartbeat: rider sends periodic location updates ── */
+router.patch("/location", async (req, res) => {
+  const parsed = locationSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid location data" }); return; }
+  const riderId = req.riderId!;
+  const { latitude, longitude, accuracy } = parsed.data;
+
+  const settings = await getCachedSettings();
+
+  if (settings["security_gps_tracking"] === "off") {
+    res.status(403).json({ error: "GPS tracking is currently disabled by admin." }); return;
+  }
+
+  if (accuracy !== undefined) {
+    const minAccuracyMeters = parseInt(settings["security_gps_accuracy"] ?? "50", 10);
+    if (accuracy > minAccuracyMeters) {
+      console.warn(`[rider/location] Rider ${riderId} GPS accuracy ${accuracy}m exceeds threshold ${minAccuracyMeters}m`);
+    }
+  }
+
+  if (settings["security_spoof_detection"] === "on") {
+    const maxSpeedKmh = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
+    const [prev] = await db.select().from(liveLocationsTable).where(eq(liveLocationsTable.userId, riderId)).limit(1);
+    if (prev) {
+      const prevLat = parseFloat(String(prev.latitude));
+      const prevLon = parseFloat(String(prev.longitude));
+      const { spoofed, speedKmh } = detectGPSSpoof(prevLat, prevLon, prev.updatedAt, latitude, longitude, maxSpeedKmh);
+      if (spoofed) {
+        const ip = getClientIp(req);
+        addSecurityEvent({
+          type: "gps_spoof_detected", ip, userId: riderId,
+          details: `GPS spoof detected: speed ${speedKmh.toFixed(1)} km/h exceeds limit of ${maxSpeedKmh} km/h`,
+          severity: "high",
+        });
+        res.status(422).json({
+          error: "GPS location rejected: movement speed is physically impossible. Please disable mock location apps.",
+          code: "GPS_SPOOF_DETECTED",
+          detectedSpeedKmh: Math.round(speedKmh),
+          maxAllowedKmh: maxSpeedKmh,
+        }); return;
+      }
+    }
+  }
+
+  await db.insert(liveLocationsTable).values({
+    userId: riderId,
+    latitude: latitude.toString(),
+    longitude: longitude.toString(),
+    role: "rider",
+    updatedAt: new Date(),
+  }).onConflictDoUpdate({
+    target: liveLocationsTable.userId,
+    set: {
+      latitude: latitude.toString(),
+      longitude: longitude.toString(),
+      updatedAt: new Date(),
+    },
+  });
+
+  res.json({ success: true, updatedAt: new Date().toISOString() });
 });
 
 /* ── GET /rider/wallet/deposits — Deposit history ── */

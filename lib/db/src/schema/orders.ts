@@ -15,6 +15,7 @@ export const ordersTable = pgTable("orders", {
   riderId: text("rider_id"),
   vendorId: text("vendor_id"),
   estimatedTime: text("estimated_time"),
+  proofPhotoUrl: text("proof_photo_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

@@ -105,7 +105,18 @@ export default function WithdrawModal({
   const goToConfirm  = () => {
     if (!acNo.trim())   { setErr("Account / phone number required"); return; }
     if (!acName.trim()) { setErr("Account holder name required"); return; }
-    if (selectedMethod?.id === "bank" && !bankName) { setErr("Bank name select karein"); return; }
+    if (acName.trim().length < 3) { setErr("Account holder name at least 3 characters hona chahiye"); return; }
+    if (selectedMethod?.id === "bank") {
+      if (!bankName) { setErr("Bank name select karein"); return; }
+      const cleaned = acNo.replace(/[\s-]/g, "");
+      const isIban = /^PK\d{2}[A-Z]{4}\d{16}$/i.test(cleaned);
+      const isAccountNo = /^\d{8,20}$/.test(cleaned);
+      if (!isIban && !isAccountNo) { setErr("Valid IBAN (e.g. PK36SCBL0000001234567801) ya 8-20 digit account number daalen"); return; }
+    }
+    if (selectedMethod?.id === "jazzcash" || selectedMethod?.id === "easypaisa") {
+      const cleanPhone = acNo.replace(/[\s-]/g, "");
+      if (!/^0[3]\d{9}$/.test(cleanPhone)) { setErr("Valid Pakistani mobile number daalen (e.g. 03XX-XXXXXXX, 11 digits)"); return; }
+    }
     setErr(""); setStep("confirm");
   };
 

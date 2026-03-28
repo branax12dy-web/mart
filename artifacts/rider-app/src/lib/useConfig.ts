@@ -13,6 +13,7 @@ export interface PlatformConfig {
     autoApprove: boolean;
     minBalance: number;
     depositEnabled: boolean;
+    dailyGoal: number;
   };
   platform: {
     appName: string;

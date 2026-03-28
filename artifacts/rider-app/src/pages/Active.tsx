@@ -4,7 +4,7 @@ import {
   UtensilsCrossed, Bike, Car, User, CheckCircle, X, RefreshCw,
   MapPinned, ArrowDown,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, apiFetch } from "../lib/api";
 import { useState, useRef, useEffect } from "react";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useAuth } from "../lib/auth";
@@ -112,15 +112,16 @@ export default function Active() {
     refetchInterval: 8000,
   });
 
+  const [gpsWarning, setGpsWarning] = useState<string | null>(null);
+
   /* ── GPS milestone event logger (fire-and-forget) ── */
   const logRideEvent = (rideId: string, event: string) => {
     const doLog = (lat?: number, lng?: number) => {
-      fetch(`/api/rides/${rideId}/event-log`, {
+      apiFetch(`/rides/${rideId}/event-log`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ riderId: user?.id, event, lat, lng }),
+        body: JSON.stringify({ event, lat, lng }),
       }).catch((err: Error) => {
-        console.warn("[Active] GPS event log failed:", err.message);
+        setGpsWarning(`GPS event log failed: ${err.message}`);
       });
     };
     if (navigator?.geolocation) {
@@ -153,21 +154,21 @@ export default function Active() {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
-        fetch("/api/locations/update", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId:    user.id,
-            latitude:  pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy:  pos.coords.accuracy,
-            role:      "rider",
-          }),
+        api.updateLocation({
+          latitude:  pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy:  pos.coords.accuracy,
+        }).then(() => {
+          if (gpsWarning) setGpsWarning(null);
         }).catch((err: Error) => {
-          console.warn("[Active] GPS location update failed:", err.message);
+          const msg = err.message || "Location update failed";
+          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
+          setGpsWarning(isSpoofError ? `⚠️ GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
       },
-      () => {},
+      (geoErr) => {
+        setGpsWarning(`GPS unavailable: ${geoErr.message}`);
+      },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },
     );
 
@@ -185,7 +186,7 @@ export default function Active() {
   };
 
   const updateOrderMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => api.updateOrder(id, status),
+    mutationFn: ({ id, status }: { id: string; status: string }) => api.updateOrder(id, status, status === "delivered" ? (proofPhoto ?? undefined) : undefined),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       qc.invalidateQueries({ queryKey: ["rider-history"] });
@@ -279,6 +280,16 @@ export default function Active() {
           <ElapsedBadge startIso={startedAt}/>
         </div>
       </div>
+
+      {gpsWarning && (
+        <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+          <div className="flex-1">
+            <p className="text-xs font-bold text-amber-700">{gpsWarning}</p>
+          </div>
+          <button onClick={() => setGpsWarning(null)} className="text-amber-400 hover:text-amber-600"><X size={14}/></button>
+        </div>
+      )}
 
       <div className="px-4 py-4 space-y-4">
 

@@ -126,6 +126,8 @@ export default function Home() {
     prevIdsRef.current = currentIds;
   }, [allOrders.length, allRides.length]);
 
+  const [gpsWarning, setGpsWarning] = useState<string | null>(null);
+
   /* ── GPS location tracking — sends position every 30s when online with no active task ── */
   useEffect(() => {
     if (!user?.isOnline || hasActiveTask || !user?.id) return;
@@ -139,19 +141,21 @@ export default function Home() {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
-        apiFetch("/locations/update", {
-          method: "POST",
-          body: JSON.stringify({
-            latitude:  pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy:  pos.coords.accuracy,
-            role:      "rider",
-          }),
+        api.updateLocation({
+          latitude:  pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy:  pos.coords.accuracy,
+        }).then(() => {
+          if (gpsWarning) setGpsWarning(null);
         }).catch((err: Error) => {
-          console.warn("[Home] GPS location update failed:", err.message);
+          const msg = err.message || "Location update failed";
+          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
+          setGpsWarning(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
       },
-      () => {},
+      (geoErr) => {
+        setGpsWarning(`GPS unavailable: ${geoErr.message}`);
+      },
       { enableHighAccuracy: false, maximumAge: 20_000, timeout: 30_000 },
     );
 
@@ -170,7 +174,7 @@ export default function Home() {
         method: "POST",
         body: JSON.stringify({ event, lat, lng }),
       }).catch((err: Error) => {
-        console.warn("[Home] ride event log failed:", err.message);
+        showToast(`GPS event log failed: ${err.message}`);
       });
     };
     if (navigator?.geolocation) {
@@ -237,7 +241,7 @@ export default function Home() {
   });
 
   const getDeliveryEarn = (type: string) => {
-    const fee = (config.deliveryFee as Record<string, unknown>)[type] as number ?? config.deliveryFee.mart ?? 100;
+    const fee = (config.deliveryFee as Record<string, unknown>)[type] as number ?? config.deliveryFee.mart;
     return fee * (config.finance.riderEarningPct / 100);
   };
 
@@ -294,6 +298,15 @@ export default function Home() {
 
       {/* ── Stats Pull Cards ── */}
       <div className="px-4 -mt-10 space-y-3">
+
+        {/* GPS Warning Banner */}
+        {gpsWarning && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
+            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+            <p className="text-xs font-bold text-amber-700 flex-1">{gpsWarning}</p>
+            <button onClick={() => setGpsWarning(null)} className="text-amber-400 hover:text-amber-600"><X size={14}/></button>
+          </div>
+        )}
 
         {/* Notice Banner */}
         {config.content.riderNotice && (

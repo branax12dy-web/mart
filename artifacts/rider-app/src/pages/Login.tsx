@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
-import { api } from "../lib/api";
+import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -47,6 +47,9 @@ export default function Login() {
   const checkRiderRole = (res: AuthResponse): boolean => {
     const roles = (res.user?.roles || res.user?.role || "").split(",").map((r: string) => r.trim());
     if (!roles.includes("rider")) {
+      api.storeTokens(res.token, res.refreshToken);
+      apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => {});
+      api.clearTokens();
       setError(T("accessDenied"));
       return false;
     }
