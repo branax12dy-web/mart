@@ -122,7 +122,7 @@ export default function ParcelScreen() {
           setPayMethod(data.methods[0]!.id);
         }
       })
-      .catch(() => {});
+      .catch(() => { /* payment methods fallback to default cash */ });
   }, []);
 
   /* ── Fetch server fare estimate (via api-client-react) ── */

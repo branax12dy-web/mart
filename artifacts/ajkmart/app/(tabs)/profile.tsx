@@ -437,6 +437,18 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
     showToast("Address delete ho gaya", "info");
   };
 
+  const [settingDefault, setSettingDefault] = useState<string | null>(null);
+  const setDefault = async (id: string) => {
+    setSettingDefault(id);
+    try {
+      const r = await fetch(`${API}/addresses/${id}/set-default`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHdrs } });
+      if (!r.ok) throw new Error();
+      setList(p => p.map(a => ({ ...a, isDefault: a.id === id })));
+      showToast("Default address set ho gaya!", "success");
+    } catch { showToast("Default set nahi ho saka", "error"); }
+    setSettingDefault(null);
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: "#fff" }}>
@@ -506,20 +518,29 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
                     <Text style={ad.iAddr}>{a.address}</Text>
                     <Text style={ad.iCity}>{a.city}, AJK</Text>
                   </View>
-                  {deleteConfirmId === a.id ? (
-                    <View style={{ flexDirection: "row", gap: 6 }}>
-                      <Pressable onPress={() => del(a.id)} style={[ad.delBtn, { backgroundColor: "#FEE2E2", paddingHorizontal: 8, borderRadius: 6, width: "auto" as any }]}>
-                        <Text style={{ fontSize: 11, color: C.danger, fontWeight: "600" }}>Haan</Text>
+                  <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                    {!a.isDefault && (
+                      <Pressable onPress={() => setDefault(a.id)} disabled={settingDefault === a.id} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: "#EFF6FF", borderWidth: 1, borderColor: "#BFDBFE" }}>
+                        {settingDefault === a.id
+                          ? <ActivityIndicator size="small" color={C.primary} />
+                          : <Text style={{ fontSize: 10, color: C.primary, fontFamily: "Inter_600SemiBold" }}>Set Default</Text>}
                       </Pressable>
-                      <Pressable onPress={() => setDeleteConfirmId(null)} style={[ad.delBtn, { backgroundColor: "#F1F5F9", paddingHorizontal: 8, borderRadius: 6, width: "auto" as any }]}>
-                        <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: "600" }}>Nahi</Text>
+                    )}
+                    {deleteConfirmId === a.id ? (
+                      <View style={{ flexDirection: "row", gap: 6 }}>
+                        <Pressable onPress={() => del(a.id)} style={[ad.delBtn, { backgroundColor: "#FEE2E2", paddingHorizontal: 8, borderRadius: 6, width: "auto" as any }]}>
+                          <Text style={{ fontSize: 11, color: C.danger, fontWeight: "600" }}>Haan</Text>
+                        </Pressable>
+                        <Pressable onPress={() => setDeleteConfirmId(null)} style={[ad.delBtn, { backgroundColor: "#F1F5F9", paddingHorizontal: 8, borderRadius: 6, width: "auto" as any }]}>
+                          <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: "600" }}>Nahi</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Pressable onPress={() => setDeleteConfirmId(a.id)} style={ad.delBtn}>
+                        <Ionicons name="trash-outline" size={16} color={C.danger} />
                       </Pressable>
-                    </View>
-                  ) : (
-                    <Pressable onPress={() => setDeleteConfirmId(a.id)} style={ad.delBtn}>
-                      <Ionicons name="trash-outline" size={16} color={C.danger} />
-                    </Pressable>
-                  )}
+                    )}
+                  </View>
                 </View>
               );
             })}

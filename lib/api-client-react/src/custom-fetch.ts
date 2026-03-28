@@ -17,7 +17,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
-let _onUnauthorized: (() => void) | null = null;
+let _onUnauthorized: ((statusCode?: number, errorMsg?: string) => void) | null = null;
 let _refreshTokenGetter: (() => Promise<string | null> | string | null) | null = null;
 let _onTokenRefreshed: ((newToken: string, newRefreshToken: string) => void) | null = null;
 
@@ -48,7 +48,7 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
  * Register a callback to invoke whenever a 401 response is received and
  * the token refresh attempt also fails. Typically used to trigger logout.
  */
-export function setOnUnauthorized(handler: (() => void) | null): void {
+export function setOnUnauthorized(handler: ((statusCode?: number, errorMsg?: string) => void) | null): void {
   _onUnauthorized = handler;
 }
 
@@ -422,16 +422,16 @@ export async function customFetch<T = unknown>(
       return customFetch<T>(input, options, true);
     }
     // Refresh failed — notify the app to logout
-    if (_onUnauthorized) _onUnauthorized();
+    if (_onUnauthorized) _onUnauthorized(401);
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
-    /* 403 from role/ban denial — clear local session (same as 401 after failed refresh) */
     if (response.status === 403 && _onUnauthorized) {
-      _onUnauthorized();
+      const errMsg = getStringField(errorData, "error") || getStringField(errorData, "message") || undefined;
+      _onUnauthorized(403, errMsg);
     }
     throw new ApiError(response, errorData, requestInfo);
   }

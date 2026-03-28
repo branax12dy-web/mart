@@ -28,9 +28,12 @@ interface AuthContextType {
   user: AppUser | null;
   token: string | null;
   isLoading: boolean;
+  isSuspended: boolean;
+  suspendedMessage: string;
   login: (user: AppUser, token: string, refreshToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<AppUser>) => void;
+  clearSuspended: () => void;
 }
 
 const TOKEN_KEY         = "@ajkmart_token";
@@ -43,6 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [suspendedMessage, setSuspendedMessage] = useState("");
 
   const doLogout = async () => {
     await AsyncStorage.multiRemove([USER_KEY, TOKEN_KEY, REFRESH_TOKEN_KEY]);
@@ -68,7 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthTokenGetter(() => newToken);
     });
 
-    setOnUnauthorized(() => {
+    setOnUnauthorized((statusCode?: number, errorMsg?: string) => {
+      if (statusCode === 403) {
+        setIsSuspended(true);
+        setSuspendedMessage(errorMsg || "Your account has been suspended. Contact support.");
+        return;
+      }
       doLogout();
     });
   };
@@ -117,8 +127,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const clearSuspended = () => {
+    setIsSuspended(false);
+    setSuspendedMessage("");
+    doLogout();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, isLoading, isSuspended, suspendedMessage, login, logout, updateUser, clearSuspended }}>
       {children}
     </AuthContext.Provider>
   );

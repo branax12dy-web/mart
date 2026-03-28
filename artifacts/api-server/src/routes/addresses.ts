@@ -53,6 +53,19 @@ router.put("/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+router.patch("/:id/set-default", async (req, res) => {
+  const userId = req.customerId!;
+  const { id } = req.params;
+
+  const [existing] = await db.select().from(savedAddressesTable).where(eq(savedAddressesTable.id, id!)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Address not found" }); return; }
+  if (existing.userId !== userId) { res.status(403).json({ error: "Access denied" }); return; }
+
+  await db.update(savedAddressesTable).set({ isDefault: false }).where(eq(savedAddressesTable.userId, userId));
+  await db.update(savedAddressesTable).set({ isDefault: true }).where(eq(savedAddressesTable.id, id!));
+  res.json({ success: true });
+});
+
 router.delete("/:id", async (req, res) => {
   const userId = req.customerId!;
 

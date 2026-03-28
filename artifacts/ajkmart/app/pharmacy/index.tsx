@@ -92,6 +92,7 @@ export default function PharmacyScreen() {
   const [medicines, setMedicines] = useState<Med[]>([]);
   const [categories, setCategories] = useState<string[]>(["All"]);
   const [loadingMeds, setLoadingMeds] = useState(true);
+  const [medsError, setMedsError] = useState(false);
   const [activeTab, setActiveTab] = useState("All");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -110,6 +111,7 @@ export default function PharmacyScreen() {
     if (!pharmacyEnabled) return;
     setLoadingMeds(true);
     const params: GetProductsParams = { type: "pharmacy" as GetProductsType };
+    setMedsError(false);
     getProducts(params)
       .then(data => {
         if (data?.products?.length) {
@@ -128,7 +130,7 @@ export default function PharmacyScreen() {
           setCategories(cats);
         }
       })
-      .catch(() => {})
+      .catch(() => { setMedsError(true); })
       .finally(() => setLoadingMeds(false));
   }, [pharmacyEnabled]);
 
@@ -304,6 +306,15 @@ export default function PharmacyScreen() {
           <View style={{ alignItems: "center", paddingTop: 60 }}>
             <ActivityIndicator size="large" color="#7C3AED" />
             <Text style={[s.emptyTxt, { marginTop: 12 }]}>Medicines load ho rahi hain...</Text>
+          </View>
+        ) : medsError ? (
+          <View style={{ alignItems: "center", paddingTop: 60, gap: 8 }}>
+            <Ionicons name="cloud-offline-outline" size={48} color="#9CA3AF" />
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: "#374151" }}>Load nahi ho sakein</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280" }}>Internet check karein aur retry karein</Text>
+            <Pressable onPress={() => { setLoadingMeds(true); setMedsError(false); getProducts({ type: "pharmacy" as GetProductsType }).then(data => { if (data?.products?.length) { const meds: Med[] = data.products.map(p => ({ id: p.id, name: p.name, brand: p.vendorName ?? "Various", category: p.category, price: p.price, unit: p.unit ?? p.description ?? "1 unit", emoji: "💊", requires_prescription: false })); setMedicines(meds); setCategories(["All", ...new Set(meds.map(m => m.category))]); } }).catch(() => setMedsError(true)).finally(() => setLoadingMeds(false)); }} style={{ backgroundColor: "#7C3AED", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8 }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Retry</Text>
+            </Pressable>
           </View>
         ) : filtered.length === 0 ? (
           <View style={{ alignItems: "center", paddingTop: 60 }}>

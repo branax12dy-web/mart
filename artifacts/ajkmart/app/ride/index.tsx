@@ -375,6 +375,38 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
   /* ════════════════ SEARCHING ════════════════ */
   if (status === "searching") {
+    const SEARCH_TIMEOUT = 180;
+    const timedOut = elapsed >= SEARCH_TIMEOUT;
+
+    if (timedOut) {
+      return (
+        <View style={{ flex: 1 }}>
+          <LinearGradient colors={["#7C2D12", "#B91C1C", "#DC2626"]} style={StyleSheet.absoluteFillObject} />
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
+            <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", marginBottom: 24 }}>
+              <Ionicons name="sad-outline" size={52} color="#fff" />
+            </View>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: "#fff", textAlign: "center", marginBottom: 10 }}>
+              Koi Driver Nahi Mila
+            </Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 21, marginBottom: 32 }}>
+              3 minute search karne ke baad koi driver available nahi mila. Dobara try karein ya baad mein book karein.
+            </Text>
+            <Pressable
+              onPress={() => { cancelRideHandler(); }}
+              style={{ backgroundColor: "#fff", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 32, alignItems: "center", width: "100%", marginBottom: 12 }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#DC2626" }}>Cancel & Rebook</Text>
+            </Pressable>
+            <Pressable
+              onPress={onReset}
+              style={{ borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 32, alignItems: "center", width: "100%" }}>
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>Go Back Home</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View style={{ flex: 1 }}>
         <LinearGradient colors={["#0D47C0", "#1565C0", "#1E88E5"]} style={StyleSheet.absoluteFillObject} />

@@ -61,12 +61,13 @@ function FoodCard({ item }: { item: any }) {
 
 export default function FoodScreen() {
   const insets = useSafeAreaInsets();
+  const { itemCount } = useCart();
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const { data: catData } = useGetCategories({ type: "food" });
-  const { data, isLoading } = useGetProducts({ type: "food", search: search || undefined, category: selectedCat });
+  const { data, isLoading, isError, refetch } = useGetProducts({ type: "food", search: search || undefined, category: selectedCat });
 
   const categories = catData?.categories || [];
   const items = data?.products || [];
@@ -81,6 +82,11 @@ export default function FoodScreen() {
           <Text style={styles.headerTitle}>Food Delivery</Text>
           <Pressable onPress={() => router.push("/cart")} style={styles.cartBtn}>
             <Ionicons name="bag-outline" size={22} color={C.food} />
+            {itemCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeTxt}>{itemCount}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
         <View style={styles.searchBar}>
@@ -116,6 +122,16 @@ export default function FoodScreen() {
         {isLoading ? (
           <View style={styles.center}>
             <ActivityIndicator color={C.food} size="large" />
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginTop: 10 }}>Loading food items...</Text>
+          </View>
+        ) : isError ? (
+          <View style={styles.center}>
+            <Ionicons name="cloud-offline-outline" size={56} color={C.textMuted} />
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 17, color: C.text, marginTop: 12 }}>Load nahi ho saka</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginTop: 4 }}>Internet check karein aur retry karein</Text>
+            <Pressable onPress={() => refetch()} style={{ backgroundColor: C.food, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 16 }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Retry</Text>
+            </Pressable>
           </View>
         ) : items.length === 0 ? (
           <View style={styles.center}>
@@ -141,6 +157,8 @@ const styles = StyleSheet.create({
   backBtn: { padding: 6, marginRight: 10 },
   headerTitle: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 20, color: C.text },
   cartBtn: { padding: 6 },
+  cartBadge: { position: "absolute", top: -4, right: -4, backgroundColor: C.food, borderRadius: 9, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 3, borderWidth: 1.5, borderColor: "#fff" },
+  cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#fff" },
   searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.background, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
   searchInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text },
   catScroll: { marginTop: 12 },
