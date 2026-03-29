@@ -1,12 +1,173 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { liveLocationsTable, notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, rideRatingsTable, riderPenaltiesTable, usersTable, walletTransactionsTable, popularLocationsTable, rideEventLogsTable } from "@workspace/db/schema";
-import { and, asc, eq, ne, sql, or, isNull, gte, desc } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql, or, isNull, gte, count } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { ensureDefaultRideServices, ensureDefaultLocations, getPlatformSettings } from "./admin.js";
 import { customerAuth, riderAuth, verifyUserJwt } from "../middleware/security.js";
 
 const router: IRouter = Router();
+
+const activeDispatchers = new Map<string, ReturnType<typeof setInterval>>();
+
+async function dispatchRide(rideId: string) {
+  if (activeDispatchers.has(rideId)) return;
+
+  const tick = async () => {
+    try {
+      const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+      if (!ride || !["searching"].includes(ride.status)) {
+        stopDispatcher(rideId);
+        return;
+      }
+
+      const s = await getPlatformSettings();
+      const timeoutSec = parseInt(s["dispatch_request_timeout"] ?? "30", 10);
+      const maxLoops = parseInt(s["dispatch_max_loops"] ?? "3", 10);
+      const radiusKm = parseFloat(s["dispatch_min_radius_km"] ?? "5");
+      const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "30");
+
+      if (ride.dispatchedRiderId && ride.expiresAt) {
+        if (new Date() < new Date(ride.expiresAt)) return;
+
+        const expiredRiderId = ride.dispatchedRiderId;
+        const currentAttempts = ride.dispatchAttempts ? JSON.parse(ride.dispatchAttempts) : [];
+        if (!currentAttempts.includes(expiredRiderId)) currentAttempts.push(expiredRiderId);
+
+        await db.update(usersTable)
+          .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
+          .where(eq(usersTable.id, expiredRiderId));
+
+        const s = await getPlatformSettings();
+        const ignoreThreshold = parseInt(s["dispatch_ignore_threshold"] ?? "10", 10);
+        const ignorePenaltyAmt = parseFloat(s["dispatch_ignore_penalty"] ?? "25");
+
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const [countRow] = await db.select({ c: count() })
+          .from(riderPenaltiesTable)
+          .where(and(
+            eq(riderPenaltiesTable.riderId, expiredRiderId),
+            eq(riderPenaltiesTable.type, "ignore"),
+            gte(riderPenaltiesTable.createdAt, today),
+          ));
+        const dailyIgnores = (countRow?.c ?? 0) + 1;
+
+        let penaltyApplied = 0;
+        if (dailyIgnores > ignoreThreshold) {
+          penaltyApplied = ignorePenaltyAmt;
+          await db.transaction(async (tx) => {
+            await tx.update(usersTable)
+              .set({ walletBalance: sql`wallet_balance - ${ignorePenaltyAmt}`, updatedAt: new Date() })
+              .where(eq(usersTable.id, expiredRiderId));
+            await tx.insert(walletTransactionsTable).values({
+              id: generateId(), userId: expiredRiderId, type: "ignore_penalty",
+              amount: ignorePenaltyAmt.toFixed(2),
+              description: `Auto-expire penalty (${dailyIgnores}/${ignoreThreshold} today) — Rs. ${ignorePenaltyAmt}`,
+              reference: `ignore_penalty:${Date.now()}`,
+            });
+          });
+          await db.insert(notificationsTable).values({
+            id: generateId(), userId: expiredRiderId,
+            title: "Ignore Penalty ⚠️",
+            body: `Ride request expired ${dailyIgnores} times today (limit: ${ignoreThreshold}). Rs. ${ignorePenaltyAmt} penalty applied.`,
+            type: "system", icon: "alert-circle-outline",
+          }).catch(() => {});
+        }
+
+        await db.insert(riderPenaltiesTable).values({
+          id: generateId(), riderId: expiredRiderId, type: "ignore",
+          amount: penaltyApplied > 0 ? ignorePenaltyAmt.toFixed(2) : "0",
+          reason: `Auto-expired: ride ${rideId.slice(-6).toUpperCase()} (${dailyIgnores} today)`,
+        });
+
+        await db.update(ridesTable).set({
+          dispatchedRiderId: null,
+          dispatchAttempts: JSON.stringify(currentAttempts),
+          expiresAt: null,
+          updatedAt: new Date(),
+        }).where(eq(ridesTable.id, rideId));
+      }
+
+      const freshRide = (await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1))[0];
+      if (!freshRide || freshRide.status !== "searching") { stopDispatcher(rideId); return; }
+
+      const loopCount = freshRide.dispatchLoopCount ?? 0;
+      if (loopCount >= maxLoops) {
+        await db.update(ridesTable).set({ status: "no_riders", updatedAt: new Date() }).where(eq(ridesTable.id, rideId));
+        await db.insert(notificationsTable).values({
+          id: generateId(), userId: freshRide.userId,
+          title: "No Riders Available",
+          body: "Koi rider available nahi hai. Thodi der baad try karein ya fare adjust karein.",
+          type: "ride", icon: "alert-circle-outline",
+        }).catch(() => {});
+        stopDispatcher(rideId);
+        return;
+      }
+
+      const excludedIds: string[] = freshRide.dispatchAttempts ? JSON.parse(freshRide.dispatchAttempts) : [];
+      const pickupLat = parseFloat(freshRide.pickupLat ?? "0");
+      const pickupLng = parseFloat(freshRide.pickupLng ?? "0");
+
+      const onlineRiders = await db.select({
+        userId: liveLocationsTable.userId,
+        latitude: liveLocationsTable.latitude,
+        longitude: liveLocationsTable.longitude,
+      }).from(liveLocationsTable)
+        .where(and(
+          eq(liveLocationsTable.role, "rider"),
+          gte(liveLocationsTable.updatedAt, new Date(Date.now() - 5 * 60 * 1000)),
+        ));
+
+      let nearestRider: { userId: string; dist: number } | null = null;
+      for (const r of onlineRiders) {
+        if (excludedIds.includes(r.userId)) continue;
+        const dist = calcDistance(pickupLat, pickupLng, parseFloat(r.latitude), parseFloat(r.longitude));
+        if (dist > radiusKm) continue;
+        const [user] = await db.select({ isActive: usersTable.isActive, isBanned: usersTable.isBanned, isRestricted: usersTable.isRestricted })
+          .from(usersTable).where(eq(usersTable.id, r.userId)).limit(1);
+        if (!user || !user.isActive || user.isBanned || user.isRestricted) continue;
+        if (!nearestRider || dist < nearestRider.dist) {
+          nearestRider = { userId: r.userId, dist };
+        }
+      }
+
+      if (nearestRider) {
+        const etaMin = Math.max(1, Math.round((nearestRider.dist / avgSpeed) * 60));
+        const expiresAt = new Date(Date.now() + timeoutSec * 1000);
+
+        await db.update(ridesTable).set({
+          dispatchedRiderId: nearestRider.userId,
+          expiresAt,
+          updatedAt: new Date(),
+        }).where(eq(ridesTable.id, rideId));
+
+        await db.insert(notificationsTable).values({
+          id: generateId(), userId: nearestRider.userId,
+          title: "New Ride Request! 🚗",
+          body: `${freshRide.pickupAddress} → ${freshRide.dropAddress} · Rs. ${parseFloat(freshRide.fare ?? "0").toFixed(0)} · ${nearestRider.dist.toFixed(1)} km away · ETA ${etaMin} min`,
+          type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
+        }).catch(() => {});
+      } else {
+        await db.update(ridesTable).set({
+          dispatchLoopCount: loopCount + 1,
+          dispatchAttempts: "[]",
+          updatedAt: new Date(),
+        }).where(eq(ridesTable.id, rideId));
+      }
+    } catch (err) {
+      console.error(`[dispatch] Error for ride ${rideId}:`, err);
+    }
+  };
+
+  const interval = setInterval(tick, 5000);
+  activeDispatchers.set(rideId, interval);
+  tick();
+}
+
+function stopDispatcher(rideId: string) {
+  const interval = activeDispatchers.get(rideId);
+  if (interval) { clearInterval(interval); activeDispatchers.delete(rideId); }
+}
 
 /* ── Haversine distance (km) ── */
 function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -289,6 +450,10 @@ router.post("/", customerAuth, async (req, res) => {
       type: "ride", icon: ({ bike: "bicycle-outline", car: "car-outline", rickshaw: "car-outline", daba: "bus-outline", school_shift: "bus-outline" } as Record<string, string>)[type] ?? "car-outline", link: `/ride`,
     }).catch(() => {});
 
+    if (!isBargaining && rideRecord) {
+      dispatchRide(rideRecord.id);
+    }
+
     res.status(201).json({
       ...formatRide(rideRecord),
       baseFare, gstAmount,
@@ -313,6 +478,7 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     res.status(400).json({ error: "Ride cannot be cancelled at this stage" }); return;
   }
 
+  stopDispatcher(String(req.params["id"]));
   const s = await getPlatformSettings();
   const cancelFee = parseFloat(s["ride_cancellation_fee"] ?? "30");
   const riderAssigned = ["accepted", "arrived", "in_transit"].includes(ride.status);
@@ -745,7 +911,14 @@ router.post("/:id/rate", customerAuth, async (req, res) => {
     comment: comment || null,
   }).returning();
 
-  res.json(rating);
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: ride.riderId,
+    title: `${stars} Star Rating ⭐`,
+    body: comment ? `Customer ne ${stars} stars diye: "${comment}"` : `Customer ne aapko ${stars} stars diye!`,
+    type: "ride", icon: "star-outline",
+  }).catch(() => {});
+
+  res.json({ success: true, rating });
 });
 
 /* ══════════════════════════════════════════════════════
@@ -776,6 +949,74 @@ router.get("/:id/status", customerAuth, async (req, res) => {
     distance: parseFloat(ride.distance),
     hasRating: hasRating.length > 0,
   });
+});
+
+/* ══════════════════════════════════════════════════════
+   GET /rides/:id/dispatch-status — Alias for dispatch progress
+══════════════════════════════════════════════════════ */
+router.get("/:id/dispatch-status", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const rideId = String(req.params["id"]);
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (ride.userId !== userId) { res.status(403).json({ error: "Not your ride" }); return; }
+
+  const s = await getPlatformSettings();
+  const maxLoops = parseInt(s["dispatch_max_loops"] ?? "2", 10);
+  const timeoutSec = parseInt(s["dispatch_request_timeout_sec"] ?? "30", 10);
+  const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
+  const attempts = (ride.dispatchAttempts as string[] | null) || [];
+
+  let riderDistance: number | null = null;
+  let riderEta: number | null = null;
+  if (ride.dispatchedRiderId) {
+    const [loc] = await db.select().from(liveLocationsTable)
+      .where(eq(liveLocationsTable.userId, ride.dispatchedRiderId)).limit(1);
+    if (loc) {
+      riderDistance = Math.round(calcDistance(
+        parseFloat(ride.pickupLat ?? "0"), parseFloat(ride.pickupLng ?? "0"),
+        parseFloat(loc.latitude), parseFloat(loc.longitude)
+      ) * 10) / 10;
+      riderEta = Math.max(1, Math.round((riderDistance / avgSpeed) * 60));
+    }
+  }
+
+  res.json({
+    status: ride.status,
+    dispatchedRiderId: ride.dispatchedRiderId,
+    dispatchLoopCount: ride.dispatchLoopCount ?? 0,
+    maxLoops,
+    attemptCount: attempts.length,
+    expiresAt: ride.expiresAt ? ride.expiresAt.toISOString() : null,
+    timeoutSec,
+    riderDistance,
+    riderEta,
+  });
+});
+
+/* ══════════════════════════════════════════════════════
+   POST /rides/:id/retry — Customer retries dispatch after no_riders/expired
+══════════════════════════════════════════════════════ */
+router.post("/:id/retry", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const rideId = String(req.params["id"]);
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (ride.userId !== userId) { res.status(403).json({ error: "Not your ride" }); return; }
+  if (ride.status !== "no_riders" && ride.status !== "expired") { res.status(400).json({ error: "Ride is not in no_riders/expired state" }); return; }
+
+  await db.update(ridesTable).set({
+    status: "searching",
+    dispatchedRiderId: null,
+    dispatchAttempts: [],
+    dispatchLoopCount: 0,
+    dispatchedAt: null,
+    expiresAt: null,
+    updatedAt: new Date(),
+  }).where(eq(ridesTable.id, rideId));
+
+  res.json({ success: true, message: "Dispatch restarted" });
 });
 
 /* ══════════════════════════════════════════════════════

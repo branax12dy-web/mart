@@ -9,3 +9,4 @@ export {
   setOnTokenRefreshed,
 } from "./custom-fetch";
 export type { AuthTokenGetter } from "./custom-fetch";
+export { rateRide, getDispatchStatus, retryRideDispatch } from "./ride-dispatch";

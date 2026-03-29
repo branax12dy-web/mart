@@ -38,6 +38,9 @@ import {
   getSchoolRoutes,
   subscribeSchoolRoute,
   geocodeAddress,
+  rateRide,
+  getDispatchStatus,
+  retryRideDispatch,
 } from "@workspace/api-client-react";
 import type { BookRideRequest, EstimateFareRequest } from "@workspace/api-client-react";
 
@@ -87,7 +90,10 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
   const [showCancelModal,setShowCancelModal]= useState(false);
   const [rating,         setRating]         = useState(0);
   const [ratingDone,     setRatingDone]     = useState(false);
+  const [ratingComment,  setRatingComment]  = useState("");
   const [elapsed,        setElapsed]        = useState(0);
+  const [dispatchInfo,   setDispatchInfo]   = useState<any>(null);
+  const [retrying,       setRetrying]       = useState(false);
   const prevStatus   = useRef<string>("");
 
   /* ── Triple concentric pulse (staggered) ── */
@@ -170,6 +176,32 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
     const iv = setInterval(poll, 5000);
     return () => clearInterval(iv);
   }, [rideId]);
+
+  useEffect(() => {
+    const status = ride?.status;
+    if (status !== "searching" && status !== "no_riders") return;
+    const poll = async () => {
+      try {
+        const d = await getDispatchStatus(rideId);
+        setDispatchInfo(d);
+      } catch {}
+    };
+    poll();
+    const iv = setInterval(poll, 5000);
+    return () => clearInterval(iv);
+  }, [rideId, ride?.status]);
+
+  const handleRetryDispatch = async () => {
+    setRetrying(true);
+    try {
+      await retryRideDispatch(rideId);
+      setRide((r: any) => r ? { ...r, status: "searching" } : r);
+      setDispatchInfo(null);
+    } catch {
+      showToast("Could not retry. Please try again.", "error");
+    }
+    setRetrying(false);
+  };
 
   const { showToast } = useToast();
 
@@ -375,38 +407,54 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
   }
 
   /* ════════════════ SEARCHING ════════════════ */
-  if (status === "searching") {
-    const SEARCH_TIMEOUT = 180;
-    const timedOut = elapsed >= SEARCH_TIMEOUT;
-
-    if (timedOut) {
-      return (
-        <View style={{ flex: 1 }}>
-          <LinearGradient colors={["#7C2D12", "#B91C1C", "#DC2626"]} style={StyleSheet.absoluteFillObject} />
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
-            <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", marginBottom: 24 }}>
-              <Ionicons name="sad-outline" size={52} color="#fff" />
-            </View>
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: "#fff", textAlign: "center", marginBottom: 10 }}>
-              No Driver Found
-            </Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 21, marginBottom: 32 }}>
-              No driver was available after 3 minutes of searching. Please try again or book later.
-            </Text>
-            <Pressable
-              onPress={() => { cancelRideHandler(); }}
-              style={{ backgroundColor: "#fff", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 32, alignItems: "center", width: "100%", marginBottom: 12 }}>
-              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#DC2626" }}>Cancel & Rebook</Text>
-            </Pressable>
-            <Pressable
-              onPress={onReset}
-              style={{ borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 32, alignItems: "center", width: "100%" }}>
-              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>Go Back Home</Text>
-            </Pressable>
+  if (status === "no_riders" || (status === "searching" && elapsed >= 180)) {
+    return (
+      <View style={{ flex: 1 }}>
+        <LinearGradient colors={["#7C2D12", "#B91C1C", "#DC2626"]} style={StyleSheet.absoluteFillObject} />
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
+          <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", marginBottom: 24 }}>
+            <Ionicons name="sad-outline" size={52} color="#fff" />
           </View>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: "#fff", textAlign: "center", marginBottom: 10 }}>
+            No Driver Found
+          </Text>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 21, marginBottom: 8 }}>
+            {dispatchInfo?.attemptCount > 0
+              ? `We contacted ${dispatchInfo.attemptCount} driver(s) but none were available. Try again?`
+              : "No driver was available. Please try again or book later."}
+          </Text>
+          {dispatchInfo?.dispatchLoopCount != null && (
+            <View style={{ backgroundColor: "rgba(255,255,255,0.12)", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 14, marginBottom: 20 }}>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)" }}>
+                Dispatch round {dispatchInfo.dispatchLoopCount}/{dispatchInfo.maxLoops} completed
+              </Text>
+            </View>
+          )}
+          <Pressable
+            onPress={handleRetryDispatch}
+            disabled={retrying}
+            style={{ backgroundColor: "#fff", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 32, alignItems: "center", width: "100%", marginBottom: 12, opacity: retrying ? 0.6 : 1 }}>
+            {retrying
+              ? <ActivityIndicator color="#DC2626" size="small" />
+              : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#DC2626" }}>Retry Search</Text>
+            }
+          </Pressable>
+          <Pressable
+            onPress={() => { cancelRideHandler(); }}
+            style={{ borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 32, alignItems: "center", width: "100%", marginBottom: 12 }}>
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>Cancel Ride</Text>
+          </Pressable>
+          <Pressable
+            onPress={onReset}
+            style={{ borderWidth: 1.5, borderColor: "rgba(255,255,255,0.25)", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 32, alignItems: "center", width: "100%" }}>
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "rgba(255,255,255,0.7)" }}>Go Back Home</Text>
+          </Pressable>
         </View>
-      );
-    }
+      </View>
+    );
+  }
+
+  if (status === "searching") {
 
     return (
       <View style={{ flex: 1 }}>
@@ -448,6 +496,15 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
               Searching for {elapsedStr}
             </Text>
           </View>
+
+          {dispatchInfo && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: 8, backgroundColor: "rgba(255,255,255,0.08)", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}>
+              <Ionicons name="navigate-outline" size={13} color="rgba(255,255,255,0.7)" />
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                Attempt {(dispatchInfo.dispatchLoopCount ?? 0) + 1}/{dispatchInfo.maxLoops || "?"} · {dispatchInfo.attemptCount || 0} driver(s) contacted
+              </Text>
+            </View>
+          )}
 
           {/* Stats */}
           <View style={{ flexDirection: "row", backgroundColor: "rgba(255,255,255,0.11)", borderRadius: 16, overflow: "hidden", marginTop: 36, width: "100%" }}>
@@ -563,15 +620,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
               <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#065F46" }}>Rate Your Driver</Text>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 {[1,2,3,4,5].map(s => (
-                  <Pressable key={s} onPress={() => {
-                    setRating(s);
-                    const apiUrl = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
-                    fetch(`${apiUrl}/rides/${rideId}/rate`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                      body: JSON.stringify({ stars: s }),
-                    }).then(r => { if (r.ok) setRatingDone(true); }).catch(() => {});
-                  }}>
+                  <Pressable key={s} onPress={() => setRating(s)}>
                     <Ionicons name={s <= rating ? "star" : "star-outline"} size={36} color={s <= rating ? "#F59E0B" : "#D1D5DB"} />
                   </Pressable>
                 ))}
@@ -579,6 +628,29 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#6B7280" }}>
                 {rating === 0 ? "Tap to rate" : rating === 5 ? "Zabardast! ⭐⭐⭐⭐⭐" : rating >= 4 ? "Acha tha! 👍" : rating >= 3 ? "Theek tha" : "Masail the"}
               </Text>
+              {rating > 0 && (
+                <>
+                  <TextInput
+                    placeholder="Optional comment..."
+                    value={ratingComment}
+                    onChangeText={setRatingComment}
+                    style={{ width: "100%", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, padding: 10, fontFamily: "Inter_400Regular", fontSize: 13, color: "#374151", marginTop: 4 }}
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        await rateRide(rideId, { stars: rating, comment: ratingComment || undefined });
+                        setRatingDone(true);
+                      } catch {
+                        showToast("Could not submit rating. Please try again.", "error");
+                      }
+                    }}
+                    style={{ backgroundColor: "#059669", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24, width: "100%", alignItems: "center", marginTop: 4 }}>
+                    <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" }}>Submit Rating</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           ) : (
             <View style={{ backgroundColor: "#D1FAE5", borderRadius: 16, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -1637,7 +1709,7 @@ function RideScreenInner() {
                     <Text style={rs.histFare}>Rs. {ride.fare}</Text>
                     <View style={[rs.histStatus, { backgroundColor: ride.status === "completed" ? "#D1FAE5" : ride.status === "cancelled" ? "#FEE2E2" : "#FEF3C7" }]}>
                       <Text style={[rs.histStatusTxt, { color: ride.status === "completed" ? "#059669" : ride.status === "cancelled" ? "#DC2626" : "#D97706" }]}>
-                        {{ searching: "Finding Rider", bargaining: "Negotiating", accepted: "Accepted", arrived: "Arrived", in_transit: "In Transit", completed: "Completed", cancelled: "Cancelled", ongoing: "In Transit" }[ride.status as string] ?? ride.status}
+                        {{ searching: "Finding Rider", bargaining: "Negotiating", accepted: "Accepted", arrived: "Arrived", in_transit: "In Transit", completed: "Completed", cancelled: "Cancelled", ongoing: "In Transit", no_riders: "No Riders" }[ride.status as string] ?? ride.status}
                       </Text>
                     </View>
                   </View>

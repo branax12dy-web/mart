@@ -418,6 +418,10 @@ async function handleCancelPenalty(riderId: string): Promise<{ dailyCancels: num
     reference: `cancel:${Date.now()}`,
   });
 
+  await db.update(usersTable)
+    .set({ cancelCount: sql`cancel_count + 1`, updatedAt: new Date() })
+    .where(eq(usersTable.id, riderId));
+
   if (dailyCancels > limit) {
     penaltyApplied = penaltyAmt;
     await db.transaction(async (tx) => {
@@ -429,6 +433,11 @@ async function handleCancelPenalty(riderId: string): Promise<{ dailyCancels: num
         amount: penaltyAmt.toFixed(2),
         description: `Excessive cancellation penalty (${dailyCancels}/${limit} today) — Rs. ${penaltyAmt} deducted`,
         reference: `cancel_penalty:${Date.now()}`,
+      });
+      await tx.insert(riderPenaltiesTable).values({
+        id: generateId(), riderId, type: "cancel",
+        amount: penaltyAmt.toFixed(2),
+        reason: `Excessive cancellation (${dailyCancels}/${limit} today)`,
       });
     });
 
@@ -1207,10 +1216,10 @@ router.patch("/notifications/:id/read", async (req, res) => {
     if (rowCount === 0) {
       return res.status(404).json({ error: "Notification not found" });
     }
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     console.error("Failed to mark notification read:", err);
-    res.status(500).json({ error: "Failed to mark notification as read" });
+    return res.status(500).json({ error: "Failed to mark notification as read" });
   }
 });
 
@@ -1341,6 +1350,76 @@ router.patch("/location", async (req, res) => {
   });
 
   res.json({ success: true, updatedAt: new Date().toISOString() });
+});
+
+/* ── POST /rider/rides/:id/ignore — Rider ignores a dispatched ride request ── */
+router.post("/rides/:id/ignore", async (req, res) => {
+  const riderId = req.riderId!;
+  const rideId  = req.params["id"]!;
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  if (ride.dispatchedRiderId !== riderId) {
+    res.status(400).json({ error: "This ride is not dispatched to you" }); return;
+  }
+
+  const s = await getPlatformSettings();
+  const ignoreThreshold = parseInt(s["dispatch_ignore_threshold"] ?? "10", 10);
+  const ignorePenaltyAmt = parseFloat(s["dispatch_ignore_penalty"] ?? "25");
+
+  await db.update(usersTable)
+    .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
+    .where(eq(usersTable.id, riderId));
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [countRow] = await db.select({ c: count() })
+    .from(riderPenaltiesTable)
+    .where(and(
+      eq(riderPenaltiesTable.riderId, riderId),
+      eq(riderPenaltiesTable.type, "ignore"),
+      gte(riderPenaltiesTable.createdAt, today),
+    ));
+  const dailyIgnores = (countRow?.c ?? 0) + 1;
+
+  let penaltyApplied = 0;
+  if (dailyIgnores > ignoreThreshold) {
+    penaltyApplied = ignorePenaltyAmt;
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance - ${ignorePenaltyAmt}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, riderId));
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: riderId, type: "ignore_penalty",
+        amount: ignorePenaltyAmt.toFixed(2),
+        description: `Ignore penalty (${dailyIgnores}/${ignoreThreshold} today) — Rs. ${ignorePenaltyAmt}`,
+        reference: `ignore_penalty:${Date.now()}`,
+      });
+    });
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: riderId,
+      title: "Ignore Penalty ⚠️",
+      body: `You ignored ${dailyIgnores} rides today (limit: ${ignoreThreshold}). Rs. ${ignorePenaltyAmt} penalty applied.`,
+      type: "system", icon: "alert-circle-outline",
+    }).catch(() => {});
+  }
+
+  await db.insert(riderPenaltiesTable).values({
+    id: generateId(), riderId, type: "ignore",
+    amount: penaltyApplied > 0 ? ignorePenaltyAmt.toFixed(2) : "0",
+    reason: `Ignored ride ${rideId.slice(-6).toUpperCase()} (${dailyIgnores} today)`,
+  });
+
+  const currentAttempts = ride.dispatchAttempts ? JSON.parse(ride.dispatchAttempts) : [];
+  if (!currentAttempts.includes(riderId)) currentAttempts.push(riderId);
+  await db.update(ridesTable).set({
+    dispatchedRiderId: null,
+    dispatchAttempts: JSON.stringify(currentAttempts),
+    expiresAt: null,
+    updatedAt: new Date(),
+  }).where(eq(ridesTable.id, rideId));
+
+  res.json({ success: true, dailyIgnores, threshold: ignoreThreshold, penaltyApplied });
 });
 
 /* ── GET /rider/wallet/deposits — Deposit history ── */

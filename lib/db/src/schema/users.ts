@@ -73,6 +73,10 @@ export const usersTable = pgTable("users", {
   /* ── Social login fields ── */
   googleId:          text("google_id").unique(),
   facebookId:        text("facebook_id").unique(),
+  /* ── Dispatch tracking ── */
+  cancelCount:     integer("cancel_count").notNull().default(0),
+  ignoreCount:     integer("ignore_count").notNull().default(0),
+  isRestricted:    boolean("is_restricted").notNull().default(false),
   /* ── Token version — incremented on logout/ban/role change to invalidate access JWTs ── */
   tokenVersion:    integer("token_version").notNull().default(0),
   lastLoginAt:       timestamp("last_login_at"),

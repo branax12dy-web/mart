@@ -381,6 +381,36 @@ export const useRiderBonus = () => {
   });
 };
 
+export const useRiderPenalties = (riderId: string | null) =>
+  useQuery({
+    queryKey: ["admin-rider-penalties", riderId],
+    queryFn: () => fetcher(`/riders/${riderId}/penalties`),
+    enabled: !!riderId,
+  });
+
+export const useRiderRatings = (riderId: string | null) =>
+  useQuery({
+    queryKey: ["admin-rider-ratings", riderId],
+    queryFn: () => fetcher(`/riders/${riderId}/ratings`),
+    enabled: !!riderId,
+  });
+
+export const useRestrictRider = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/riders/${id}/restrict`, { method: "POST", body: "{}" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-riders"] }),
+  });
+};
+
+export const useUnrestrictRider = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/riders/${id}/unrestrict`, { method: "POST", body: "{}" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-riders"] }),
+  });
+};
+
 /* ── Promo Codes ── */
 export const usePromoCodes = () =>
   useQuery({ queryKey: ["admin-promo-codes"], queryFn: () => fetcher("/promo-codes"), refetchInterval: REFETCH_INTERVAL });

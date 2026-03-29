@@ -436,6 +436,8 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "dispatch_ride_start_proximity_m",   value: "200",  label: "Ride Start Proximity (meters from pickup)",         category: "rides" },
   { key: "dispatch_avg_speed_kmh",            value: "25",   label: "Average Rider Speed for ETA (km/h)",                category: "rides" },
   /* ═══════════════════  Rider Ignore Penalty  ═══════════════════ */
+  { key: "dispatch_ignore_threshold",         value: "10",   label: "Ignore Threshold (per day)",                        category: "rides" },
+  { key: "dispatch_ignore_penalty",           value: "25",   label: "Ignore Penalty Amount (Rs.)",                       category: "rides" },
   { key: "rider_ignore_limit_daily",          value: "5",    label: "Max Ignores Per Day Before Penalty",                category: "rider" },
   { key: "rider_ignore_penalty_amount",       value: "30",   label: "Ignore Penalty Amount (Rs.)",                       category: "rider" },
   { key: "rider_ignore_restrict_enabled",     value: "off",  label: "Auto-Restrict Rider on Excessive Ignores",          category: "rider" },
@@ -1848,12 +1850,36 @@ router.get("/riders", async (_req, res) => {
     or(ilike(usersTable.roles, "%rider%"), eq(usersTable.role, "rider"))
   ).orderBy(desc(usersTable.createdAt));
 
+  const riderIds = riders.map(r => r.id);
+  const [penaltyRows, ratingRows] = await Promise.all([
+    riderIds.length > 0
+      ? db.select({ riderId: riderPenaltiesTable.riderId, total: sum(riderPenaltiesTable.amount) })
+          .from(riderPenaltiesTable)
+          .where(sql`${riderPenaltiesTable.riderId} IN ${riderIds}`)
+          .groupBy(riderPenaltiesTable.riderId)
+      : Promise.resolve([]),
+    riderIds.length > 0
+      ? db.select({ riderId: rideRatingsTable.riderId, avgRating: sql<string>`ROUND(AVG(${rideRatingsTable.stars})::numeric, 1)`, ratingCount: count() })
+          .from(rideRatingsTable)
+          .where(sql`${rideRatingsTable.riderId} IN ${riderIds}`)
+          .groupBy(rideRatingsTable.riderId)
+      : Promise.resolve([]),
+  ]);
+  const penaltyMap = new Map(penaltyRows.map((r: any) => [r.riderId, parseFloat(r.total ?? "0")]));
+  const ratingMap = new Map(ratingRows.map((r: any) => [r.riderId, { avg: parseFloat(r.avgRating ?? "0"), count: r.ratingCount }]));
+
   res.json({
     riders: riders.map(r => ({
       id: r.id, phone: r.phone, name: r.name, email: r.email,
       avatar: r.avatar,
       walletBalance: parseFloat(r.walletBalance ?? "0"),
       isActive: r.isActive, isBanned: r.isBanned,
+      isRestricted: r.isRestricted ?? false,
+      cancelCount: r.cancelCount ?? 0,
+      ignoreCount: r.ignoreCount ?? 0,
+      penaltyTotal: penaltyMap.get(r.id) ?? 0,
+      avgRating: ratingMap.get(r.id)?.avg ?? 0,
+      ratingCount: ratingMap.get(r.id)?.count ?? 0,
       roles: r.roles, role: r.role,
       isOnline: (r as any).isOnline ?? false,
       createdAt: r.createdAt.toISOString(),
@@ -1918,6 +1944,46 @@ router.post("/riders/:id/bonus", async (req, res) => {
   });
   await sendUserNotification(rider.id, "Bonus Received! 🎉", `Rs. ${amt} bonus has been added to your wallet.`, "system", "gift-outline");
   res.json({ success: true, amount: amt, newBalance: newBal, rider: { ...updated, walletBalance: newBal } });
+});
+
+router.get("/riders/:id/penalties", async (req, res) => {
+  const riderId = req.params["id"]!;
+  const penalties = await db.select().from(riderPenaltiesTable)
+    .where(eq(riderPenaltiesTable.riderId, riderId))
+    .orderBy(desc(riderPenaltiesTable.createdAt))
+    .limit(100);
+  res.json({ penalties: penalties.map(p => ({ ...p, amount: parseFloat(String(p.amount)) })) });
+});
+
+router.get("/riders/:id/ratings", async (req, res) => {
+  const riderId = req.params["id"]!;
+  const ratings = await db.select().from(rideRatingsTable)
+    .where(eq(rideRatingsTable.riderId, riderId))
+    .orderBy(desc(rideRatingsTable.createdAt))
+    .limit(100);
+  res.json({ ratings });
+});
+
+router.post("/riders/:id/restrict", async (req, res) => {
+  const riderId = req.params["id"]!;
+  const [user] = await db.update(usersTable)
+    .set({ isRestricted: true, updatedAt: new Date() })
+    .where(eq(usersTable.id, riderId))
+    .returning();
+  if (!user) { res.status(404).json({ error: "Rider not found" }); return; }
+  await sendUserNotification(riderId, "Account Restricted ⚠️", "Your account has been restricted by admin. Contact support for more details.", "system", "alert-circle-outline");
+  res.json({ success: true, isRestricted: true });
+});
+
+router.post("/riders/:id/unrestrict", async (req, res) => {
+  const riderId = req.params["id"]!;
+  const [user] = await db.update(usersTable)
+    .set({ isRestricted: false, updatedAt: new Date() })
+    .where(eq(usersTable.id, riderId))
+    .returning();
+  if (!user) { res.status(404).json({ error: "Rider not found" }); return; }
+  await sendUserNotification(riderId, "Account Unrestricted ✅", "Your account has been unrestricted. You can now accept rides again.", "system", "checkmark-circle-outline");
+  res.json({ success: true, isRestricted: false });
 });
 
 /* ── GET /admin/withdrawal-requests ─────────── */

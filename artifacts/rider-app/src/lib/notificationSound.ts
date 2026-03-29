@@ -1,6 +1,21 @@
 let audioCtx: AudioContext | null = null;
 let unlocked = false;
 let silencedUntil: number = 0;
+let silenceMode = false;
+
+const SILENCE_KEY = "ajkmart_rider_silence_mode";
+
+export function getSilenceMode(): boolean {
+  if (typeof window === "undefined") return false;
+  const stored = localStorage.getItem(SILENCE_KEY);
+  if (stored !== null) silenceMode = stored === "on";
+  return silenceMode;
+}
+
+export function setSilenceMode(enabled: boolean) {
+  silenceMode = enabled;
+  localStorage.setItem(SILENCE_KEY, enabled ? "on" : "off");
+}
 
 function getCtx(): AudioContext | null {
   if (!audioCtx) {
@@ -49,7 +64,7 @@ export function getSilenceRemaining(): number {
 }
 
 export function playRequestSound() {
-  if (isSilenced()) return;
+  if (isSilenced() || getSilenceMode()) return;
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
@@ -63,20 +78,21 @@ export function playRequestSound() {
     osc.frequency.setValueAtTime(freq, now + start);
     gain.gain.setValueAtTime(0, now + start);
     gain.gain.linearRampToValueAtTime(vol, now + start + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+    gain.gain.setValueAtTime(vol, now + start + dur * 0.7);
+    gain.gain.linearRampToValueAtTime(0, now + start + dur);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now + start);
     osc.stop(now + start + dur);
   };
 
-  playTone(880, 0, 0.1, 0.25, "sine");
-  playTone(1047, 0.1, 0.1, 0.25, "sine");
-  playTone(1319, 0.2, 0.1, 0.25, "sine");
-  playTone(1568, 0.3, 0.15, 0.2, "sine");
+  playTone(880, 0, 0.1, 0.35, "square");
+  playTone(1100, 0.12, 0.1, 0.35, "square");
+  playTone(1320, 0.24, 0.15, 0.3, "sine");
 
-  playTone(880, 0.55, 0.1, 0.25, "sine");
-  playTone(1047, 0.65, 0.1, 0.25, "sine");
-  playTone(1319, 0.75, 0.1, 0.25, "sine");
-  playTone(1568, 0.85, 0.18, 0.2, "sine");
+  playTone(880, 0.5, 0.1, 0.35, "square");
+  playTone(1100, 0.62, 0.1, 0.35, "square");
+  playTone(1320, 0.74, 0.15, 0.3, "sine");
+
+  playTone(1400, 0.95, 0.2, 0.25, "sine");
 }

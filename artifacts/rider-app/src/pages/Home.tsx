@@ -6,13 +6,13 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { playRequestSound, unlockAudio, silenceFor, isSilenced, unsilence, getSilenceRemaining } from "../lib/notificationSound";
+import { playRequestSound, unlockAudio, silenceFor, isSilenced, unsilence, getSilenceRemaining, getSilenceMode, setSilenceMode } from "../lib/notificationSound";
 import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
   ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
   X, Timer, CheckCircle, MessageSquare, ChevronRight,
   TrendingUp, Calendar, Trophy, Radio, Zap, Clock,
-  ArrowUpRight, Eye, VolumeX, Volume2, XCircle,
+  ArrowUpRight, Eye, VolumeX, Volume2, XCircle, Ban, SkipForward,
 } from "lucide-react";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
@@ -106,6 +106,7 @@ export default function Home() {
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [newFlash, setNewFlash] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [silenceOn, setSilenceOn] = useState(getSilenceMode());
   const prevIdsRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const soundIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -324,16 +325,22 @@ export default function Home() {
     mutationFn: (id: string) => apiFetch(`/rider/rides/${id}/ignore`, { method: "POST" }),
     onSuccess: (data: any, id) => {
       dismiss(id);
-      const p = data?.ignorePenalty;
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      const p = data?.ignorePenalty ?? data;
       if (p?.penaltyApplied > 0) {
         showToast(`Ignored — Rs. ${p.penaltyApplied} penalty deducted!${p.restricted ? " Account restricted." : ""}`, "error");
       } else {
         showToast(`Ride ignored (${p?.dailyIgnores || "?"} today).`, "success");
       }
-      qc.invalidateQueries({ queryKey: ["rider-requests"] });
     },
     onError: (e: any) => showToast(e.message || "Ignore failed", "error"),
   });
+
+  const toggleSilence = () => {
+    const next = !getSilenceMode();
+    setSilenceMode(next);
+    showToast(next ? "Silence mode ON — no alert sounds" : "Silence mode OFF — sounds enabled", "success");
+  };
 
   const getDeliveryEarn = (type: string) => {
     const fee = (config.deliveryFee as Record<string, unknown>)[type] as number ?? config.deliveryFee.mart;
@@ -404,10 +411,17 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-              <button onClick={toggleOnline} disabled={toggling}
-                className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-500 shadow-green-500/30" : "bg-white/20"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
-                <div className={`w-[24px] h-[24px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[29px]" : "left-[3px]"}`} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={toggleSilence}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${silenceOn ? "bg-red-500/20 text-red-400" : "bg-white/10 text-white/40"}`}
+                  title={silenceOn ? "Unmute sounds" : "Mute sounds"}>
+                  {silenceOn ? <VolumeX size={16}/> : <Volume2 size={16}/>}
+                </button>
+                <button onClick={toggleOnline} disabled={toggling}
+                  className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-500 shadow-green-500/30" : "bg-white/20"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
+                  <div className={`w-[24px] h-[24px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[29px]" : "left-[3px]"}`} />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -469,6 +483,20 @@ export default function Home() {
             </div>
             <p className="text-xs font-bold text-amber-700 flex-1 leading-relaxed pt-1">{gpsWarning}</p>
             <button onClick={() => setGpsWarning(null)} className="text-amber-400 hover:text-amber-600 p-1 rounded-lg hover:bg-amber-100 transition-colors"><X size={14}/></button>
+          </div>
+        )}
+
+        {user?.isRestricted && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-3xl px-4 py-3.5 flex items-start gap-3 shadow-sm animate-[slideUp_0.2s_ease-out]">
+            <div className="w-10 h-10 bg-red-100 rounded-2xl flex items-center justify-center flex-shrink-0">
+              <Ban size={18} className="text-red-500"/>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-extrabold text-red-800">Account Restricted</p>
+              <p className="text-xs text-red-600 mt-0.5 leading-relaxed">
+                Your account has been restricted due to excessive cancellations or ignores. You cannot accept new rides. Contact support to resolve.
+              </p>
+            </div>
           </div>
         )}
 
@@ -645,6 +673,7 @@ export default function Home() {
 
                   {rides.map((r: any) => {
                     const isBargain    = r.status === "bargaining" && r.offeredFare != null;
+                    const isDispatched = r.dispatchedRiderId === user?.id;
                     const offeredFare  = r.offeredFare  ?? r.fare;
                     const effectiveFare = isBargain ? offeredFare : r.fare;
                     const earnings     = effectiveFare * (config.finance.riderEarningPct / 100);
@@ -652,16 +681,23 @@ export default function Home() {
                       ? `https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`
                       : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`;
                     const svcName = SVC_NAMES[r.type] ?? r.type?.replace(/_/g, " ") ?? "Ride";
+                    const rideDistKm = r.distance ? parseFloat(r.distance) : null;
+                    const etaMin = rideDistKm ? Math.max(1, Math.round((rideDistKm / 30) * 60)) : null;
 
                     return (
-                      <div key={r.id} className={`p-4 animate-[slideUp_0.3s_ease-out] ${isBargain ? "border-l-4 border-orange-400 bg-gradient-to-r from-orange-50/50 to-white" : "hover:bg-gray-50/50"} transition-colors`}>
+                      <div key={r.id} className={`p-4 animate-[slideUp_0.3s_ease-out] ${isDispatched ? "border-l-4 border-blue-500 bg-gradient-to-r from-blue-50/50 to-white" : isBargain ? "border-l-4 border-orange-400 bg-gradient-to-r from-orange-50/50 to-white" : "hover:bg-gray-50/50"} transition-colors`}>
                         <div className="flex items-start gap-3">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm border ${isBargain ? "bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200" : "bg-gradient-to-br from-green-50 to-emerald-50 border-green-100"}`}>
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm border ${isDispatched ? "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200" : isBargain ? "bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200" : "bg-gradient-to-br from-green-50 to-emerald-50 border-green-100"}`}>
                             {isBargain ? <MessageSquare size={20} className="text-orange-500"/> : <RideTypeIcon type={r.type}/>}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <p className="font-extrabold text-gray-900 text-[15px] tracking-tight">{svcName} Ride</p>
+                              {isDispatched && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 animate-pulse flex items-center gap-1 border border-blue-200">
+                                  <Zap size={8}/> DISPATCHED
+                                </span>
+                              )}
                               {isBargain && (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 text-orange-700 animate-pulse flex items-center gap-1 border border-orange-200">
                                   <MessageSquare size={8}/> BARGAIN
@@ -711,10 +747,16 @@ export default function Home() {
                                   <p className="text-[9px] text-gray-400 font-medium">{T("customerOffer")}</p>
                                 </div>
                               )}
-                              {r.distance && (
+                              {rideDistKm && (
                                 <div>
-                                  <p className="text-sm font-bold text-gray-700">{r.distance} km</p>
+                                  <p className="text-sm font-bold text-gray-700">{rideDistKm.toFixed(1)} km</p>
                                   <p className="text-[9px] text-gray-400 font-medium">{T("distance")}</p>
+                                </div>
+                              )}
+                              {etaMin && (
+                                <div>
+                                  <p className="text-sm font-bold text-blue-600">{etaMin} min</p>
+                                  <p className="text-[9px] text-gray-400 font-medium">ETA</p>
                                 </div>
                               )}
                               <div>
@@ -738,13 +780,20 @@ export default function Home() {
                               className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-blue-100 transition-colors">
                               <MapPin size={14}/>
                             </a>
-                            <button onClick={() => ignoreRideMut.mutate(r.id)}
-                              disabled={ignoreRideMut.isPending}
-                              className="bg-red-50 border border-red-200 text-red-500 font-bold px-3 py-2.5 rounded-xl text-xs hover:bg-red-100 transition-colors flex items-center gap-1">
-                              <XCircle size={14}/> Ignore
-                            </button>
+                            {isDispatched ? (
+                              <button onClick={() => ignoreRideMut.mutate(r.id)}
+                                disabled={ignoreRideMut.isPending}
+                                className="bg-amber-50 border border-amber-200 text-amber-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-amber-100 transition-colors flex items-center gap-1">
+                                <SkipForward size={14}/> Ignore
+                              </button>
+                            ) : (
+                              <button onClick={() => dismiss(r.id)}
+                                className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                                <X size={16}/>
+                              </button>
+                            )}
                             <button onClick={() => acceptRideMut.mutate(r.id)}
-                              disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
+                              disabled={acceptRideMut.isPending || acceptOrderMut.isPending || !!user?.isRestricted}
                               className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
                               <CheckCircle size={15}/>
                               {acceptRideMut.isPending ? T("accepting") : T("acceptRide")}
