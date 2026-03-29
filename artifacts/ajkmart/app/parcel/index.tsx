@@ -19,6 +19,7 @@ import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { withServiceGuard } from "@/components/ServiceGuard";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getPaymentMethods, estimateParcel, createParcelBooking } from "@workspace/api-client-react";
@@ -72,7 +73,7 @@ function Steps({ current, labels }: { current: number; labels: string[] }) {
 }
 
 /* ════════════════════ MAIN SCREEN ════════════════════ */
-export default function ParcelScreen() {
+function ParcelScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user, updateUser, token } = useAuth();
@@ -554,6 +555,8 @@ export default function ParcelScreen() {
     </View>
   );
 }
+
+export default withServiceGuard("parcel", ParcelScreenInner);
 
 /* ─── Styles ─── */
 const ss = StyleSheet.create({

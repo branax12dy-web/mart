@@ -24,6 +24,7 @@ import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { withServiceGuard } from "@/components/ServiceGuard";
 import {
   estimateFare, bookRide,
   getRide as getRideApi,
@@ -892,7 +893,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 }
 
 /* ════════════════════ MAIN RIDE SCREEN ════════════════════ */
-export default function RideScreen() {
+function RideScreenInner() {
   const insets = useSafeAreaInsets();
   const { user, updateUser, token } = useAuth();
   const { showToast } = useToast();
@@ -1731,6 +1732,8 @@ export default function RideScreen() {
     </View>
   );
 }
+
+export default withServiceGuard("rides", RideScreenInner);
 
 /* ── Main Screen Styles ── */
 const rs = StyleSheet.create({

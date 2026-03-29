@@ -130,23 +130,7 @@ function Tap({ children, onPress, style, delay = 0 }: {
 }
 
 /* ─────────────────────────── HERO card ─────────────────────────── */
-function HeroCard({ onPress, appName = "AJKMart", disabled = false }: { onPress: () => void; appName?: string; disabled?: boolean }) {
-  if (disabled) {
-    return (
-      <View style={styles.heroWrap}>
-        <View style={[styles.heroCard, { backgroundColor: "#F3F4F6" }]}>
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 24 }}>
-            <Ionicons name="storefront-outline" size={40} color="#9CA3AF" />
-            <Text style={{ fontSize: 16, fontWeight: "700", color: "#9CA3AF" }}>Grocery Mart</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#E5E7EB", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
-              <Ionicons name="close-circle-outline" size={12} color="#6B7280" />
-              <Text style={{ fontSize: 11, color: "#6B7280", fontWeight: "600" }}>Unavailable</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  }
+function HeroCard({ onPress, appName = "AJKMart" }: { onPress: () => void; appName?: string }) {
   return (
     <Tap onPress={onPress} style={styles.heroWrap} delay={80}>
       <LinearGradient colors={["#0D47C0","#1A56DB","#2563EB"]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={styles.heroCard}>
@@ -187,23 +171,9 @@ function HeroCard({ onPress, appName = "AJKMart", disabled = false }: { onPress:
 }
 
 /* ─────────────────────────── SERVICE card (Food / Ride) ─────────────────────────── */
-function SvcCard({ onPress, delay, g1, g2, ig1, ig2, icon, title, sub, tag, tagIcon, textC, tagC, tagBg, disabled }: any) {
-  if (disabled) {
-    return (
-      <View style={[styles.svcWrap, { width: HALF_W }]}>
-        <View style={[styles.svcCard, { backgroundColor: "#F3F4F6", opacity: 0.6 }]}>
-          <Ionicons name={icon} size={26} color="#9CA3AF" style={{ marginBottom: 6 }} />
-          <Text style={[styles.svcTitle, { color: "#9CA3AF" }]}>{title}</Text>
-          <View style={[styles.svcTag, { backgroundColor: "#E5E7EB" }]}>
-            <Ionicons name="close-circle-outline" size={11} color="#6B7280" />
-            <Text style={[styles.svcTagTxt, { color: "#6B7280" }]}>Unavailable</Text>
-          </View>
-        </View>
-      </View>
-    );
-  }
+function SvcCard({ onPress, delay, g1, g2, ig1, ig2, icon, title, sub, tag, tagIcon, textC, tagC, tagBg, fullWidth }: any) {
   return (
-    <Tap onPress={onPress} style={[styles.svcWrap,{ width: HALF_W }]} delay={delay}>
+    <Tap onPress={onPress} style={[styles.svcWrap, fullWidth ? { width: "100%" } : { width: HALF_W }]} delay={delay}>
       <LinearGradient colors={[g1,g2]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={styles.svcCard}>
         <View style={[styles.blob,{ width:110,height:110,top:-30,right:-30,opacity:0.13,backgroundColor:"#fff" }]} />
         <LinearGradient colors={[ig1,ig2]} style={styles.svcIcon}>
@@ -217,6 +187,21 @@ function SvcCard({ onPress, delay, g1, g2, ig1, ig2, icon, title, sub, tag, tagI
         </View>
       </LinearGradient>
     </Tap>
+  );
+}
+
+/* ─────────────────────────── NO SERVICES EMPTY STATE ─────────────────────────── */
+function NoServicesState() {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Ionicons name="storefront-outline" size={48} color="#94A3B8" />
+      </View>
+      <Text style={styles.emptyTitle}>No Services Available</Text>
+      <Text style={styles.emptySub}>
+        Abhi koi service available nahi hai.{"\n"}Please check back later!
+      </Text>
+    </View>
   );
 }
 
@@ -269,7 +254,7 @@ function Pill({ icon, label, color, bg, onPress, delay }: {
 }
 
 /* ─────────────────────────── AUTO-SLIDING BANNER CAROUSEL ─────────────────────────── */
-const BANNERS = [
+const ALL_BANNERS = [
   {
     title: "Free Delivery",
     desc:  "Pehle order pe delivery free — ajj hi try karein!",
@@ -278,6 +263,7 @@ const BANNERS = [
     icon: "cart-outline" as const,
     route: "/mart",
     cta: "Shop Karo",
+    service: "mart" as const,
   },
   {
     title: "Bike Ride 10% Off",
@@ -287,6 +273,7 @@ const BANNERS = [
     icon: "bicycle-outline" as const,
     route: "/ride",
     cta: "Ride Book Karo",
+    service: "rides" as const,
   },
   {
     title: "Desi Khana Deal",
@@ -296,6 +283,7 @@ const BANNERS = [
     icon: "restaurant-outline" as const,
     route: "/food",
     cta: "Order Karo",
+    service: "food" as const,
   },
   {
     title: "⚡ Flash Deals",
@@ -305,6 +293,7 @@ const BANNERS = [
     icon: "flash-outline" as const,
     route: "/mart",
     cta: "Deals Dekho",
+    service: "mart" as const,
   },
   {
     title: "💊 Pharmacy",
@@ -314,6 +303,7 @@ const BANNERS = [
     icon: "medkit-outline" as const,
     route: "/pharmacy",
     cta: "Order Karo",
+    service: "pharmacy" as const,
   },
   {
     title: "📦 Parcel Delivery",
@@ -323,30 +313,34 @@ const BANNERS = [
     icon: "cube-outline" as const,
     route: "/parcel",
     cta: "Book Karo",
+    service: "parcel" as const,
   },
 ];
 
-function BannerCarousel() {
+function BannerCarousel({ features }: { features: { mart: boolean; food: boolean; rides: boolean; pharmacy: boolean; parcel: boolean } }) {
+  const banners = ALL_BANNERS.filter(b => features[b.service]);
   const scrollRef = useRef<ScrollView>(null);
   const [active, setActive] = useState(0);
   const BANNER_W = W - H_PAD * 2;
 
-  // Auto-slide every 3.2 seconds
   useEffect(() => {
+    if (banners.length <= 1) return;
     const timer = setInterval(() => {
       setActive(prev => {
-        const next = (prev + 1) % BANNERS.length;
+        const next = (prev + 1) % banners.length;
         scrollRef.current?.scrollTo({ x: next * BANNER_W, animated: true });
         return next;
       });
     }, 3200);
     return () => clearInterval(timer);
-  }, [BANNER_W]);
+  }, [BANNER_W, banners.length]);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
     setActive(idx);
   }, [BANNER_W]);
+
+  if (banners.length === 0) return null;
 
   return (
     <View>
@@ -363,7 +357,7 @@ function BannerCarousel() {
         contentContainerStyle={{ paddingHorizontal: 0 }}
         style={{ width: W - H_PAD * 2 }}
       >
-        {BANNERS.map((b, i) => (
+        {banners.map((b, i) => (
           <Pressable
             key={i}
             onPress={() => router.push(b.route as any)}
@@ -397,19 +391,20 @@ function BannerCarousel() {
         ))}
       </ScrollView>
 
-      {/* Dot indicators */}
-      <View style={styles.dotsRow}>
-        {BANNERS.map((_, i) => (
-          <Pressable
-            key={i}
-            onPress={() => {
-              setActive(i);
-              scrollRef.current?.scrollTo({ x: i * BANNER_W, animated: true });
-            }}
-            style={[styles.dot, active === i && styles.dotActive]}
-          />
-        ))}
-      </View>
+      {banners.length > 1 && (
+        <View style={styles.dotsRow}>
+          {banners.map((_, i) => (
+            <Pressable
+              key={i}
+              onPress={() => {
+                setActive(i);
+                scrollRef.current?.scrollTo({ x: i * BANNER_W, animated: true });
+              }}
+              style={[styles.dot, active === i && styles.dotActive]}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -437,16 +432,68 @@ export default function HomeScreen() {
     Animated.timing(hdOp, { toValue:1, duration:480, useNativeDriver:true }).start();
   }, []);
 
-  const quickActions = [
-    { icon: "leaf-outline"    as const, label: "Fruits",    color: C.mart,    bg: C.martLight,  route: "/mart" },
-    { icon: "medkit-outline"  as const, label: "Pharmacy",  color: "#7C3AED", bg: "#F5F3FF",    route: "/pharmacy" },
-    { icon: "pizza-outline"   as const, label: "Pizza",     color: C.food,    bg: C.foodLight,  route: "/food" },
-    { icon: "bicycle-outline" as const, label: "Bike",      color: "#8B5CF6", bg: "#EDE9FE",    route: "/ride" },
-    { icon: "cube-outline"    as const, label: "Parcel",    color: "#D97706", bg: "#FFFBEB",    route: "/parcel" },
-    { icon: "flash-outline"   as const, label: "Deals",     color: "#DC2626", bg: "#FEE2E2",    route: "/mart" },
-    { icon: "car-outline"     as const, label: "Car",       color: "#059669", bg: "#D1FAE5",    route: "/ride" },
-    { icon: "time-outline"    as const, label: "Track",     color: C.primary, bg: C.rideLight,  route: "/(tabs)/orders" },
+  const allQuickActions = [
+    { icon: "leaf-outline"    as const, label: "Fruits",    color: C.mart,    bg: C.martLight,  route: "/mart",            service: "mart" as const },
+    { icon: "medkit-outline"  as const, label: "Pharmacy",  color: "#7C3AED", bg: "#F5F3FF",    route: "/pharmacy",        service: "pharmacy" as const },
+    { icon: "pizza-outline"   as const, label: "Pizza",     color: C.food,    bg: C.foodLight,  route: "/food",            service: "food" as const },
+    { icon: "bicycle-outline" as const, label: "Bike",      color: "#8B5CF6", bg: "#EDE9FE",    route: "/ride",            service: "rides" as const },
+    { icon: "cube-outline"    as const, label: "Parcel",    color: "#D97706", bg: "#FFFBEB",    route: "/parcel",          service: "parcel" as const },
+    { icon: "flash-outline"   as const, label: "Deals",     color: "#DC2626", bg: "#FEE2E2",    route: "/mart",            service: "mart" as const },
+    { icon: "car-outline"     as const, label: "Car",       color: "#059669", bg: "#D1FAE5",    route: "/ride",            service: "rides" as const },
+    { icon: "time-outline"    as const, label: "Track",     color: C.primary, bg: C.rideLight,  route: "/(tabs)/orders",   service: null },
   ];
+  const quickActions = allQuickActions.filter(q => q.service === null || features[q.service]);
+
+  const allServices: Array<{
+    key: string;
+    featureKey: "mart" | "food" | "rides" | "pharmacy" | "parcel";
+    type: "hero" | "card";
+    props: any;
+  }> = [
+    {
+      key: "mart", featureKey: "mart", type: "hero",
+      props: { onPress: () => router.push("/mart"), appName },
+    },
+    {
+      key: "food", featureKey: "food", type: "card",
+      props: {
+        onPress: () => router.push("/food"), delay: 160,
+        g1: "#FFFBEB", g2: "#FEF3C7", ig1: "#F59E0B", ig2: "#FBBF24",
+        icon: "restaurant", title: T("foodDelivery"), sub: T("restaurantsNearYou"),
+        tag: "30 min", tagIcon: "time-outline", textC: "#92400E", tagC: "#92400E", tagBg: "#FDE68A",
+      },
+    },
+    {
+      key: "rides", featureKey: "rides", type: "card",
+      props: {
+        onPress: () => router.push("/ride"), delay: 240,
+        g1: "#F0FDF4", g2: "#DCFCE7", ig1: "#10B981", ig2: "#34D399",
+        icon: "car", title: T("bikeCarRide"), sub: T("safeBooking"),
+        tag: T("instantLabel"), tagIcon: "flash-outline", textC: "#065F46", tagC: "#065F46", tagBg: "#A7F3D0",
+      },
+    },
+    {
+      key: "pharmacy", featureKey: "pharmacy", type: "card",
+      props: {
+        onPress: () => router.push("/pharmacy"), delay: 340,
+        g1: "#F5F3FF", g2: "#EDE9FE", ig1: "#7C3AED", ig2: "#A78BFA",
+        icon: "medkit", title: `💊 ${T("pharmacy")}`, sub: T("medicinesDelivered"),
+        tag: "25-40 min", tagIcon: "medkit-outline", textC: "#4C1D95", tagC: "#4C1D95", tagBg: "#DDD6FE",
+      },
+    },
+    {
+      key: "parcel", featureKey: "parcel", type: "card",
+      props: {
+        onPress: () => router.push("/parcel"), delay: 420,
+        g1: "#FFFBEB", g2: "#FEF3C7", ig1: "#D97706", ig2: "#F59E0B",
+        icon: "cube", title: `📦 ${T("parcel")}`, sub: T("parcelsAnywhere"),
+        tag: "Rs. 150+", tagIcon: "cube-outline", textC: "#78350F", tagC: "#78350F", tagBg: "#FDE68A",
+      },
+    },
+  ];
+
+  const activeServices = allServices.filter(s => features[s.featureKey]);
+  const noServicesActive = activeServices.length === 0;
 
   return (
     <View style={[styles.root,{ backgroundColor: C.background }]}>
@@ -520,98 +567,80 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        <View style={styles.grid}>
-          <HeroCard onPress={() => router.push("/mart")} appName={appName} disabled={!features.mart} />
+        {noServicesActive ? (
+          <NoServicesState />
+        ) : (
+          <>
+            <View style={styles.grid}>
+              {(() => {
+                const cards = activeServices.filter(s => s.type === "card");
+                const heroService = activeServices.find(s => s.type === "hero");
+                const elements: React.ReactNode[] = [];
 
-          <View style={styles.halfRow}>
-            <SvcCard
-              onPress={() => router.push("/food")}
-              disabled={!features.food}
-              delay={160}
-              g1="#FFFBEB" g2="#FEF3C7"
-              ig1="#F59E0B" ig2="#FBBF24"
-              icon="restaurant"
-              title={T("foodDelivery")}
-              sub={T("restaurantsNearYou")}
-              tag="30 min"
-              tagIcon="time-outline"
-              textC="#92400E" tagC="#92400E" tagBg="#FDE68A"
-            />
-            <SvcCard
-              onPress={() => router.push("/ride")}
-              disabled={!features.rides}
-              delay={240}
-              g1="#F0FDF4" g2="#DCFCE7"
-              ig1="#10B981" ig2="#34D399"
-              icon="car"
-              title={T("bikeCarRide")}
-              sub={T("safeBooking")}
-              tag={T("instantLabel")}
-              tagIcon="flash-outline"
-              textC="#065F46" tagC="#065F46" tagBg="#A7F3D0"
-            />
-          </View>
+                if (heroService) {
+                  elements.push(<HeroCard key="hero" {...heroService.props} />);
+                }
 
-          {/* On-Demand Services Row */}
-          <View style={styles.halfRow}>
-            <SvcCard
-              onPress={() => router.push("/pharmacy")}
-              disabled={!features.pharmacy}
-              delay={340}
-              g1="#F5F3FF" g2="#EDE9FE"
-              ig1="#7C3AED" ig2="#A78BFA"
-              icon="medkit"
-              title={`💊 ${T("pharmacy")}`}
-              sub={T("medicinesDelivered")}
-              tag="25-40 min"
-              tagIcon="medkit-outline"
-              textC="#4C1D95" tagC="#4C1D95" tagBg="#DDD6FE"
-            />
-            <SvcCard
-              onPress={() => router.push("/parcel")}
-              disabled={!features.parcel}
-              delay={420}
-              g1="#FFFBEB" g2="#FEF3C7"
-              ig1="#D97706" ig2="#F59E0B"
-              icon="cube"
-              title={`📦 ${T("parcel")}`}
-              sub={T("parcelsAnywhere")}
-              tag="Rs. 150+"
-              tagIcon="cube-outline"
-              textC="#78350F" tagC="#78350F" tagBg="#FDE68A"
-            />
-          </View>
+                for (let i = 0; i < cards.length; i += 2) {
+                  const pair = cards.slice(i, i + 2);
+                  if (pair.length === 2) {
+                    elements.push(
+                      <View key={`row-${i}`} style={styles.halfRow}>
+                        <SvcCard {...pair[0].props} />
+                        <SvcCard {...pair[1].props} />
+                      </View>
+                    );
+                  } else {
+                    elements.push(
+                      <SvcCard key={`single-${i}`} {...pair[0].props} fullWidth />
+                    );
+                  }
+                }
 
-          {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
-        </View>
+                if (!heroService && cards.length === 1) {
+                  /* nothing extra needed */
+                }
 
-        {/* ──── QUICK PILLS ──── */}
-        <View style={styles.secRow}>
-          <Text style={styles.secTitle}>{T("quickAccess")}</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
-          {quickActions.map((q, i) => (
-            <Pill
-              key={q.label}
-              icon={q.icon}
-              label={q.label}
-              color={q.color}
-              bg={q.bg}
-              onPress={() => router.push(q.route as any)}
-              delay={70 + i * 50}
-            />
-          ))}
-        </ScrollView>
+                return elements;
+              })()}
 
-        {/* ──── SLIDING BANNERS ──── */}
-        <View style={styles.secRow}>
-          <Text style={styles.secTitle}>{T("todaysDeals")}</Text>
-          <Text style={styles.secSub}>{T("autoSlidesLabel")}</Text>
-        </View>
+              {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
+            </View>
 
-        <View style={styles.carouselWrap}>
-          {platformConfig.content.showBanner && <BannerCarousel />}
-        </View>
+            {quickActions.length > 0 && (
+              <>
+                <View style={styles.secRow}>
+                  <Text style={styles.secTitle}>{T("quickAccess")}</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
+                  {quickActions.map((q, i) => (
+                    <Pill
+                      key={q.label}
+                      icon={q.icon}
+                      label={q.label}
+                      color={q.color}
+                      bg={q.bg}
+                      onPress={() => router.push(q.route as any)}
+                      delay={70 + i * 50}
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {platformConfig.content.showBanner && (
+              <>
+                <View style={styles.secRow}>
+                  <Text style={styles.secTitle}>{T("todaysDeals")}</Text>
+                  <Text style={styles.secSub}>{T("autoSlidesLabel")}</Text>
+                </View>
+                <View style={styles.carouselWrap}>
+                  <BannerCarousel features={features} />
+                </View>
+              </>
+            )}
+          </>
+        )}
 
         <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
@@ -722,6 +751,12 @@ const styles = StyleSheet.create({
   dotsRow: { flexDirection:"row", justifyContent:"center", gap:6, marginTop:12 },
   dot: { width:6, height:6, borderRadius:3, backgroundColor:C.border },
   dotActive: { width:20, borderRadius:3, backgroundColor:C.primary },
+
+  /* empty state */
+  emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 32 },
+  emptyIcon: { width: 96, height: 96, borderRadius: 48, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  emptyTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#0F172A", marginBottom: 10, textAlign: "center" },
+  emptySub: { fontFamily: "Inter_400Regular", fontSize: 14, color: "#64748B", textAlign: "center", lineHeight: 21 },
 
   /* shared */
   blob: { position:"absolute", borderRadius:999, backgroundColor:"#fff" },

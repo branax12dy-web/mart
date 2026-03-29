@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { withServiceGuard } from "@/components/ServiceGuard";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -108,7 +109,7 @@ function ProductCard({ product }: { product: any }) {
   );
 }
 
-export default function MartScreen() {
+function MartScreenInner() {
   const insets = useSafeAreaInsets();
   const { itemCount } = useCart();
   const [search, setSearch] = useState("");
@@ -257,6 +258,8 @@ export default function MartScreen() {
     </View>
   );
 }
+
+export default withServiceGuard("mart", MartScreenInner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

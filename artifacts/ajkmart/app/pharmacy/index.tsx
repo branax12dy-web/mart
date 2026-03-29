@@ -23,6 +23,7 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getProducts, createPharmacyOrder } from "@workspace/api-client-react";
 import type { GetProductsParams, GetProductsType } from "@workspace/api-client-react";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { withServiceGuard } from "@/components/ServiceGuard";
 
 const C = Colors.light;
 const W = Dimensions.get("window").width;
@@ -81,7 +82,7 @@ function MedCard({ med, qty, onAdd, onRemove }: {
 }
 
 /* ════════════════════ MAIN SCREEN ════════════════════ */
-export default function PharmacyScreen() {
+function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user, updateUser, token } = useAuth();
@@ -464,6 +465,8 @@ export default function PharmacyScreen() {
     </View>
   );
 }
+
+export default withServiceGuard("pharmacy", PharmacyScreenInner);
 
 /* ─── Styles ─── */
 const s = StyleSheet.create({

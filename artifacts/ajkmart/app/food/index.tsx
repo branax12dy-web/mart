@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
+import { withServiceGuard } from "@/components/ServiceGuard";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -59,7 +60,7 @@ function FoodCard({ item }: { item: any }) {
   );
 }
 
-export default function FoodScreen() {
+function FoodScreenInner() {
   const insets = useSafeAreaInsets();
   const { itemCount } = useCart();
   const [search, setSearch] = useState("");
@@ -149,6 +150,8 @@ export default function FoodScreen() {
     </View>
   );
 }
+
+export default withServiceGuard("food", FoodScreenInner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
