@@ -7,7 +7,8 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { usePlatformConfig, getRiderModules } from "../lib/useConfig";
 
 import type { LucideProps } from "lucide-react";
-interface NavItem { href: string; labelKey: TranslationKey; Icon: React.ComponentType<LucideProps>; moduleKey?: string; }
+import type { RiderModules } from "../lib/useConfig";
+interface NavItem { href: string; labelKey: TranslationKey; Icon: React.ComponentType<LucideProps>; moduleKey?: keyof RiderModules; }
 
 const navItems: NavItem[] = [
   { href: "/",               labelKey: "home",              Icon: Home    },
@@ -41,22 +42,22 @@ export function BottomNav() {
   const hasActive = !!(activeData?.order || activeData?.ride);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-lg"
-      style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom, 8px))" }}>
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-gray-200/60 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
+      style={{ paddingBottom: "max(6px, env(safe-area-inset-bottom, 6px))" }}>
       <div className="flex max-w-md mx-auto">
-        {navItems.filter(item => !item.moduleKey || (modules as Record<string, boolean>)[item.moduleKey] !== false).map(item => {
+        {navItems.filter(item => !item.moduleKey || modules[item.moduleKey] !== false).map(item => {
           const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
           const { Icon } = item;
           return (
             <Link key={item.href} href={item.href}
-              className="flex-1 flex flex-col items-center pt-2.5 pb-1 gap-0.5 relative android-press min-h-0">
-              {active && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-green-600 rounded-full"/>}
+              className="flex-1 flex flex-col items-center pt-2 pb-1 gap-0.5 relative android-press min-h-0">
               <div className="relative">
-                <span className={`flex items-center justify-center w-10 h-7 rounded-xl ${active ? "bg-green-50" : ""}`}>
-                  <Icon size={20} strokeWidth={active ? 2.5 : 1.8} className={active ? "text-green-600" : "text-gray-400"} />
+                <span className={`flex items-center justify-center w-11 h-8 rounded-2xl transition-all duration-200 ${active ? "bg-green-100" : ""}`}>
+                  <Icon size={21} strokeWidth={active ? 2.5 : 1.8} className={`transition-colors duration-200 ${active ? "text-green-600" : "text-gray-400"}`} />
                 </span>
+                {active && <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-5 h-[3px] bg-green-600 rounded-full"/>}
                 {item.href === "/notifications" && unread > 0 && (
-                  <span className="absolute -top-1 -right-0.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full w-4 h-4 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-0.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full w-4 h-4 flex items-center justify-center shadow-sm">
                     {unread > 9 ? "9+" : unread}
                   </span>
                 )}
@@ -69,7 +70,7 @@ export function BottomNav() {
                   </span>
                 )}
               </div>
-              <span className={`text-[10px] font-bold leading-none ${active ? "text-green-600" : "text-gray-400"}`}>{T(item.labelKey)}</span>
+              <span className={`text-[10px] font-semibold leading-none transition-colors duration-200 ${active ? "text-green-700 font-bold" : "text-gray-400"}`}>{T(item.labelKey)}</span>
             </Link>
           );
         })}

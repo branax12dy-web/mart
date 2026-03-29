@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ClipboardList, Package, Bike, Car, UtensilsCrossed,
-  ShoppingCart, CreditCard,
+  ShoppingCart, CreditCard, Calendar,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
@@ -78,35 +78,42 @@ export default function History() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-br from-green-600 to-emerald-700 px-5 pt-12 pb-6">
-        <h1 className="text-2xl font-bold text-white">{T("history")}</h1>
-        <p className="text-green-200 text-sm">{raw.length} {T("totalRecords")}</p>
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.07]">
+          <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+        </div>
+        <div className="relative">
+          <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("history")}</h1>
+          <p className="text-green-200 text-sm mt-0.5 flex items-center gap-1.5">
+            <Calendar size={13}/> {raw.length} {T("totalRecords")}
+          </p>
+        </div>
       </div>
 
       {!isLoading && (
-        <div className="px-4 -mt-2 mb-0">
-          <div className="bg-white rounded-2xl shadow-sm p-4 grid grid-cols-3 gap-3">
+        <div className="px-4 -mt-3 mb-0">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 grid grid-cols-3 gap-3">
             <div className="text-center">
               <p className="text-lg font-extrabold text-green-600">{formatCurrency(totalEarnings)}</p>
-              <p className="text-[10px] text-gray-400 font-medium mt-0.5">{T("earnings")}</p>
+              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{T("earnings")}</p>
             </div>
             <div className="text-center border-x border-gray-100">
               <p className="text-lg font-extrabold text-blue-600">{completedItems.length}</p>
-              <p className="text-[10px] text-gray-400 font-medium mt-0.5">{T("completed")}</p>
+              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{T("completed")}</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-extrabold text-red-500">{cancelledItems.length}</p>
-              <p className="text-[10px] text-gray-400 font-medium mt-0.5">{T("cancelled")}</p>
+              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{T("cancelled")}</p>
             </div>
           </div>
         </div>
       )}
 
       <div className="px-4 pt-4 space-y-3 sticky top-0 bg-gray-50 pb-2 z-10">
-        <div className="flex bg-white rounded-xl p-1 shadow-sm gap-1">
+        <div className="flex bg-white rounded-xl p-1 shadow-sm gap-1 border border-gray-100">
           {PERIOD_TABS.map(tab => (
             <button key={tab.key} onClick={() => setPeriod(tab.key)}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${period === tab.key ? "bg-green-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all ${period === tab.key ? "bg-green-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
               {tab.label}
             </button>
           ))}
@@ -114,7 +121,7 @@ export default function History() {
         <div className="flex gap-2">
           {KIND_TABS.map(tab => (
             <button key={tab.key} onClick={() => setKind(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${kind === tab.key ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-500 border-gray-200"}`}>
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${kind === tab.key ? "bg-green-600 text-white border-green-600 shadow-sm" : "bg-white text-gray-500 border-gray-200"}`}>
               {tab.icon} {tab.label}
             </button>
           ))}
@@ -123,11 +130,13 @@ export default function History() {
 
       <div className="px-4 py-3 space-y-3 pb-24">
         {isLoading ? (
-          [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-2xl animate-pulse"/>)
+          [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-2xl animate-pulse border border-gray-100"/>)
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
-            <ClipboardList size={56} className="text-gray-200 mx-auto mb-3"/>
-            <p className="font-bold text-gray-700">{T("noRecordsFound")}</p>
+            <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <ClipboardList size={32} className="text-gray-300"/>
+            </div>
+            <p className="font-bold text-gray-700 text-base">{T("noRecordsFound")}</p>
             <p className="text-gray-400 text-sm mt-1">
               {period !== "all" ? T("widerTimePeriod") : T("deliveriesAppearHere")}
             </p>
@@ -137,25 +146,25 @@ export default function History() {
             const completed = item.status === "delivered" || item.status === "completed";
             const cancelled = item.status === "cancelled";
             return (
-              <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                <div className="p-4 flex items-center gap-3">
+              <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+                <div className="p-4 flex items-center gap-3.5">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
                     <ItemIcon kind={item.kind} type={item.type}/>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-800 capitalize">
+                    <p className="font-bold text-gray-800 capitalize text-[15px]">
                       {item.kind === "ride" ? `${item.type} ${T("ride")}` : `${item.type} ${T("deliveryLabel")}`}
                     </p>
                     <p className="text-xs text-gray-500 truncate mt-0.5">{item.address || "—"}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{formatDate(item.createdAt)}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{formatDate(item.createdAt)}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     {completed ? (
-                      <p className="font-bold text-green-600">+{formatCurrency(item.earnings || 0)}</p>
+                      <p className="font-extrabold text-green-600 text-[15px]">+{formatCurrency(item.earnings || 0)}</p>
                     ) : (
                       <p className="font-bold text-gray-400">{formatCurrency(item.amount || 0)}</p>
                     )}
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${
+                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full mt-1 inline-block ${
                       completed  ? "bg-green-100 text-green-700" :
                       cancelled  ? "bg-red-100 text-red-600"     :
                                    "bg-gray-100 text-gray-600"
@@ -166,8 +175,8 @@ export default function History() {
                 </div>
                 {completed && item.earnings > 0 && (
                   <div className="px-4 pb-3">
-                    <div className="bg-green-50 rounded-lg px-3 py-1.5 flex items-center justify-between">
-                      <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CreditCard size={11}/> {T("earningsCredited")}</span>
+                    <div className="bg-green-50 rounded-xl px-3.5 py-2 flex items-center justify-between border border-green-100">
+                      <span className="text-xs text-green-600 font-medium flex items-center gap-1.5"><CreditCard size={12}/> {T("earningsCredited")}</span>
                       <span className="text-xs font-extrabold text-green-700">{formatCurrency(item.earnings)}</span>
                     </div>
                   </div>

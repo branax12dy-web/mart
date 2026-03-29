@@ -8,6 +8,7 @@ import {
   CreditCard, Phone, Mail, Facebook, Instagram, MessageCircle,
   FileText, Lock, HelpCircle, Info, LogOut, RefreshCcw,
   ChevronRight, Award, TrendingUp, Target, Eye, EyeOff, X,
+  Languages,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
@@ -66,8 +67,8 @@ function SectionCard({
 
 function InfoRow({ label, value, empty = "Not set", icon }: { label: string; value?: string | null; empty?: string; icon?: React.ReactElement }) {
   return (
-    <div className="flex justify-between items-center py-3 border-b border-gray-50 last:border-0 gap-3 px-5">
-      <span className="text-xs text-gray-400 font-semibold flex items-center gap-1.5 flex-shrink-0">
+    <div className="flex justify-between items-center py-3.5 border-b border-gray-50 last:border-0 gap-3 px-5">
+      <span className="text-xs text-gray-500 font-semibold flex items-center gap-2 flex-shrink-0">
         {icon}{label}
       </span>
       <span className={`text-sm font-semibold text-right ${value ? "text-gray-800" : "text-gray-300 italic text-xs"}`}>
@@ -99,7 +100,7 @@ function CircularProgress({ pct }: { pct: number }) {
   );
 }
 
-type QuickLink = { href: string; icon: React.ReactElement; label: string; badge?: number; desc?: string };
+type QuickLink = { href: string; icon: React.ReactElement; label: string; badge?: number; desc?: string; bg: string };
 
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
@@ -117,6 +118,7 @@ export default function Profile() {
   const [editing, setEditing]   = useState<EditSection>(null);
   const [saving, setSaving]     = useState(false);
   const [toast, setToast]       = useState("");
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
 
   const [twoFaStep, setTwoFaStep] = useState<"idle" | "setup" | "verify" | "done" | "disable">("idle");
   const [twoFaQr, setTwoFaQr] = useState("");
@@ -126,7 +128,7 @@ export default function Profile() {
   const [twoFaLoading, setTwoFaLoading] = useState(false);
   const [twoFaError, setTwoFaError] = useState("");
 
-  const { language } = useLanguage();
+  const { language, setLanguage } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
 
   const [name, setName]             = useState(user?.name || "");
@@ -227,20 +229,29 @@ export default function Profile() {
     setTwoFaLoading(false);
   }, [twoFaCode, refreshUser]);
 
-  const completionFields = [user?.name, user?.cnic, user?.city, user?.vehicleType, user?.vehiclePlate, user?.bankName];
-  const completionPct    = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100);
+  const completionFieldMap: { key: string; label: string; val: unknown }[] = [
+    { key: "name",         label: T("fullName"),       val: user?.name },
+    { key: "cnic",         label: T("cnicNationalId"), val: user?.cnic },
+    { key: "city",         label: T("cityLabel"),      val: user?.city },
+    { key: "vehicleType",  label: T("vehicleType"),    val: user?.vehicleType },
+    { key: "vehiclePlate", label: T("vehiclePlate"),   val: user?.vehiclePlate },
+    { key: "bankName",     label: T("bankDetails"),    val: user?.bankName },
+  ];
+  const completionFilled = completionFieldMap.filter(f => Boolean(f.val));
+  const completionPct    = Math.round((completionFilled.length / completionFieldMap.length) * 100);
+  const missingFields    = completionFieldMap.filter(f => !f.val).map(f => f.label);
 
   const totalDeliveries = user?.stats?.totalDeliveries || 0;
   const totalEarnings = user?.stats?.totalEarnings || 0;
   const rating = user?.stats?.rating || 5.0;
 
   const quickLinks: QuickLink[] = [
-    { href: "/",              icon: <Home size={18} className="text-green-600"/>,          label: T("dashboard"),     desc: T("trackActivity")     },
-    { href: "/wallet",        icon: <Wallet size={18} className="text-emerald-600"/>,      label: T("wallet"),        desc: T("transactions")      },
-    { href: "/notifications", icon: <Bell size={18} className="text-blue-600"/>,           label: T("notifications"), badge: unread },
-    { href: "/history",       icon: <ClipboardList size={18} className="text-purple-600"/>,label: T("myOrders"),      desc: T("pastOrders")        },
-    { href: "/earnings",      icon: <BarChart2 size={18} className="text-amber-600"/>,     label: T("yourEarnings"),  desc: T("transactionHistory") },
-    { href: "/settings/security", icon: <Shield size={18} className="text-red-600"/>,      label: T("securitySettings"), desc: T("twoFactorAuth") },
+    { href: "/wallet",        icon: <Wallet size={18}/>,       label: T("wallet"),        desc: T("transactions"),       bg: "bg-emerald-50 text-emerald-600" },
+    { href: "/earnings",      icon: <BarChart2 size={18}/>,    label: T("yourEarnings"),  desc: T("transactionHistory"), bg: "bg-amber-50 text-amber-600"     },
+    { href: "/",              icon: <Home size={18}/>,         label: T("dashboard"),     desc: T("trackActivity"),      bg: "bg-blue-50 text-blue-600"       },
+    { href: "/notifications", icon: <Bell size={18}/>,         label: T("notifications"), badge: unread,                 bg: "bg-indigo-50 text-indigo-600"   },
+    { href: "/history",       icon: <ClipboardList size={18}/>,label: T("myOrders"),      desc: T("pastOrders"),         bg: "bg-purple-50 text-purple-600"   },
+    { href: "/settings/security", icon: <Shield size={18}/>,   label: T("securitySettings"), desc: T("twoFactorAuth"),  bg: "bg-red-50 text-red-600"         },
   ];
 
   const achievements = [
@@ -251,11 +262,20 @@ export default function Profile() {
     rating >= 4.8          && { icon: <Star size={12}/>,   label: T("topRatedBadge"),        bg: "bg-yellow-100", text: "text-yellow-700" },
   ].filter(Boolean) as { icon: React.ReactElement; label: string; bg: string; text: string }[];
 
+  const handleLogout = () => {
+    if (!logoutConfirm) {
+      setLogoutConfirm(true);
+      setTimeout(() => setLogoutConfirm(false), 4000);
+      return;
+    }
+    logout();
+  };
+
   return (
     <div className="bg-gray-50 pb-24 min-h-screen">
 
       {/* ══ HEADER ══ */}
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-28 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-20 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07]">
           <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
           <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
@@ -274,20 +294,17 @@ export default function Profile() {
                 </span>
               )}
             </Link>
-            <button onClick={logout} className="h-10 px-4 bg-white/15 backdrop-blur-sm text-white text-sm font-bold rounded-xl border border-white/10 active:bg-white/25 transition-colors">
-              {T("logout")}
-            </button>
           </div>
         </div>
       </div>
 
-      <div className="px-4 -mt-20 space-y-4">
+      <div className="px-4 -mt-14 space-y-4">
 
         {/* ══ RIDER IDENTITY CARD ══ */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 relative overflow-hidden">
           <div className="absolute -top-8 -right-8 w-24 h-24 bg-green-50 rounded-full opacity-50"/>
           <div className="relative flex items-start gap-4">
-            <div className="w-[68px] h-[68px] rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-3xl font-extrabold text-white flex-shrink-0 shadow-md">
+            <div className="w-[72px] h-[72px] rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-3xl font-extrabold text-white flex-shrink-0 shadow-lg ring-4 ring-green-100">
               {(user?.name || user?.phone || "R")[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
@@ -300,7 +317,7 @@ export default function Profile() {
                   <MapPin size={11}/> {user.city}
                 </p>
               )}
-              <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
                 <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${
                   user?.isOnline ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
                 }`}>
@@ -316,66 +333,117 @@ export default function Profile() {
                   </span>
                 )}
               </div>
+              {user?.createdAt && (
+                <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+                  <Clock size={10}/> {T("memberSince")} {new Date(user.createdAt).toLocaleDateString("en-PK", { month: "short", year: "numeric" })}
+                </p>
+              )}
             </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex items-center gap-0.5">
+              {[1,2,3,4,5].map(s => (
+                <Star key={s} size={13} className={s <= Math.round(rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200 fill-gray-200"}/>
+              ))}
+            </div>
+            <span className="text-xs text-gray-500 font-semibold">{rating.toFixed(1)} rating</span>
           </div>
         </div>
 
-        {/* ══ STATS + COMPLETION ══ */}
+        {/* ══ STATS GRID ══ */}
         <div className="flex gap-3">
-          <div className="flex-1 grid grid-cols-2 gap-2">
+          <div className="flex-1 grid grid-cols-2 gap-2.5">
             {[
-              { label: T("deliveriesLabel"), value: String(totalDeliveries), icon: <ClipboardList size={16} className="text-blue-500"/>, bg: "bg-blue-50" },
-              { label: T("earnedStat"),      value: fc(totalEarnings),       icon: <TrendingUp size={16} className="text-green-500"/>,   bg: "bg-green-50" },
-              { label: T("walletStat"),      value: fc(Number(user?.walletBalance || 0)), icon: <Wallet size={16} className="text-amber-500"/>, bg: "bg-amber-50" },
-              { label: T("ratingStat"),      value: rating.toFixed(1),       icon: <Star size={16} className="text-yellow-500"/>,        bg: "bg-yellow-50" },
+              { label: T("deliveriesLabel"), value: String(totalDeliveries), icon: <ClipboardList size={17} className="text-blue-500"/>, bg: "bg-blue-50", border: "border-blue-100" },
+              { label: T("earnedStat"),      value: fc(totalEarnings),       icon: <TrendingUp size={17} className="text-green-500"/>,   bg: "bg-green-50", border: "border-green-100" },
+              { label: T("walletStat"),      value: fc(Number(user?.walletBalance || 0)), icon: <Wallet size={17} className="text-amber-500"/>, bg: "bg-amber-50", border: "border-amber-100" },
+              { label: T("ratingStat"),      value: rating.toFixed(1),       icon: <Star size={17} className="text-yellow-500"/>,        bg: "bg-yellow-50", border: "border-yellow-100" },
             ].map(s => (
-              <div key={s.label} className={`${s.bg} rounded-xl p-3 border border-white`}>
-                <div className="flex items-center gap-1.5 mb-1">{s.icon}</div>
-                <p className="text-[15px] font-extrabold text-gray-800 leading-tight">{s.value}</p>
-                <p className="text-[10px] text-gray-500 mt-0.5 font-medium">{s.label}</p>
+              <div key={s.label} className={`${s.bg} rounded-2xl p-3.5 border ${s.border}`}>
+                <div className="flex items-center gap-1.5 mb-1.5">{s.icon}</div>
+                <p className="text-[17px] font-extrabold text-gray-800 leading-tight">{s.value}</p>
+                <p className="text-[10px] text-gray-500 mt-1 font-semibold">{s.label}</p>
               </div>
             ))}
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 flex flex-col items-center justify-center min-w-[96px]">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex flex-col items-center justify-center min-w-[100px]">
             <CircularProgress pct={completionPct}/>
-            <p className="text-[10px] text-gray-400 font-bold mt-1 text-center leading-tight">{T("profileComplete")}</p>
+            <p className="text-[10px] text-gray-400 font-bold mt-1.5 text-center leading-tight">{T("profileComplete")}</p>
           </div>
         </div>
 
         {completionPct < 100 && (
-          <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5 flex items-center gap-2">
-            <Target size={14} className="text-amber-500 flex-shrink-0"/>
-            <p className="text-xs text-amber-700 font-medium">{T("profileCompleteMsg")}</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
+            <Target size={16} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+            <div>
+              <p className="text-xs text-amber-800 font-bold">{T("completeProfileLabel")}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">
+                {missingFields.join(", ")}
+              </p>
+            </div>
           </div>
         )}
 
-        {/* ══ RATING & ACHIEVEMENTS ══ */}
-        {totalDeliveries > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[15px] font-bold text-gray-900 flex items-center gap-2">
-                <Award size={16} className="text-yellow-500"/> {T("achievementsLabel")}
-              </p>
+        {/* ══ ACHIEVEMENTS ══ */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[15px] font-bold text-gray-900 flex items-center gap-2">
+              <Award size={16} className="text-yellow-500"/> {T("achievementsLabel")}
+            </p>
+            {totalDeliveries > 0 && (
               <div className="flex items-center gap-0.5">
                 {[1,2,3,4,5].map(s => (
                   <Star key={s} size={14} className={s <= Math.round(rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200 fill-gray-200"}/>
                 ))}
                 <span className="text-xs text-gray-500 ml-1 font-semibold">{rating.toFixed(1)}</span>
               </div>
-            </div>
-            {achievements.length > 0 ? (
-              <div className="flex gap-2 flex-wrap">
-                {achievements.map((a, i) => (
-                  <span key={i} className={`text-[11px] font-bold ${a.bg} ${a.text} px-2.5 py-1.5 rounded-full flex items-center gap-1`}>
-                    {a.icon} {a.label}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400">Complete more deliveries to earn achievement badges!</p>
             )}
           </div>
-        )}
+          {achievements.length > 0 ? (
+            <div className="flex gap-2 flex-wrap">
+              {achievements.map((a, i) => (
+                <span key={i} className={`text-[11px] font-bold ${a.bg} ${a.text} px-2.5 py-1.5 rounded-full flex items-center gap-1`}>
+                  {a.icon} {a.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 py-2">
+              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center">
+                <Rocket size={20} className="text-gray-300"/>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-500">Complete first delivery to earn badges</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">Badges unlock as you hit milestones</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ══ QUICK LINKS ══ */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-5 py-3.5">
+            <p className="font-bold text-gray-900 text-[15px] flex items-center gap-2"><Zap size={15} className="text-amber-500"/> {T("quickNavigation")}</p>
+          </div>
+          <div className="border-t border-gray-50">
+            {quickLinks.map(item => (
+              <Link key={item.href} href={item.href}
+                className="flex items-center gap-3.5 px-5 py-3.5 border-b border-gray-50 last:border-0 active:bg-gray-50 transition-colors">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${item.bg}`}>{item.icon}</div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-gray-800 block">{item.label}</span>
+                  {item.desc && <span className="text-[11px] text-gray-400">{item.desc}</span>}
+                </div>
+                {(item.badge ?? 0) > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] font-extrabold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                    {item.badge}
+                  </span>
+                )}
+                <ChevronRight size={16} className="text-gray-300"/>
+              </Link>
+            ))}
+          </div>
+        </div>
 
         {/* ══ PERSONAL INFORMATION ══ */}
         <SectionCard
@@ -422,13 +490,13 @@ export default function Profile() {
             </div>
           ) : (
             <div className="py-1">
-              <InfoRow label={T("fullName")}            value={user?.name}             icon={<User size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("phoneNumber")}         value={user?.phone}            icon={<Phone size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("emailAddress")}        value={user?.email}            icon={<Mail size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("cnicNationalId")}      value={user?.cnic}             icon={<FileText size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("cityLabel")}           value={user?.city}             icon={<MapPin size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("homeAddress")}         value={user?.address}          icon={<Home size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("emergencyContactLabel")} value={user?.emergencyContact} icon={<Phone size={11} className="text-gray-300"/>}/>
+              <InfoRow label={T("fullName")}            value={user?.name}             icon={<User size={12} className="text-green-500"/>}/>
+              <InfoRow label={T("phoneNumber")}         value={user?.phone}            icon={<Phone size={12} className="text-blue-500"/>}/>
+              <InfoRow label={T("emailAddress")}        value={user?.email}            icon={<Mail size={12} className="text-purple-500"/>}/>
+              <InfoRow label={T("cnicNationalId")}      value={user?.cnic}             icon={<FileText size={12} className="text-amber-500"/>}/>
+              <InfoRow label={T("cityLabel")}           value={user?.city}             icon={<MapPin size={12} className="text-red-500"/>}/>
+              <InfoRow label={T("homeAddress")}         value={user?.address}          icon={<Home size={12} className="text-teal-500"/>}/>
+              <InfoRow label={T("emergencyContactLabel")} value={user?.emergencyContact} icon={<Phone size={12} className="text-orange-500"/>}/>
             </div>
           )}
         </SectionCard>
@@ -451,8 +519,8 @@ export default function Profile() {
                 </select>
               </div>
               <div>
-                <label className={LABEL}>{T("registrationNumber")}</label>
-                <input value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value.toUpperCase())} placeholder="e.g. AJK 1234" className={`${INPUT} uppercase`}/>
+                <label className={LABEL}>{T("vehiclePlateRequired")}</label>
+                <input value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} placeholder="ABC-1234" className={INPUT}/>
               </div>
               <button onClick={() => saveSection("vehicle")} disabled={saving}
                 className="w-full h-12 bg-green-600 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-green-700 transition-colors shadow-sm">
@@ -461,8 +529,8 @@ export default function Profile() {
             </div>
           ) : user?.vehicleType ? (
             <div className="py-1">
-              <InfoRow label={T("vehicleSection")} value={user.vehicleType}  icon={<Bike size={11} className="text-gray-300"/>}/>
-              <InfoRow label={T("vehiclePlateRequired")} value={user.vehiclePlate} icon={<FileText size={11} className="text-gray-300"/>}/>
+              <InfoRow label={T("vehicleType")} value={user.vehicleType} icon={<Bike size={12} className="text-green-500"/>}/>
+              <InfoRow label={T("vehiclePlate")} value={user.vehiclePlate} icon={<FileText size={12} className="text-blue-500"/>}/>
             </div>
           ) : (
             <div className="py-8 text-center">
@@ -479,18 +547,18 @@ export default function Profile() {
           )}
         </SectionCard>
 
-        {/* ══ WITHDRAWAL ACCOUNT ══ */}
+        {/* ══ BANK / PAYMENT DETAILS ══ */}
         <SectionCard
           icon={<Landmark size={16} className="text-green-600"/>}
-          title={T("withdrawalAccount")}
-          subtitle={T("bankMobileWallet")}
+          title={T("bankDetails")}
+          subtitle={T("withdrawalAccount")}
           isEditing={editing === "bank"}
           onToggleEdit={() => editing === "bank" ? setEditing(null) : startEdit("bank")}
         >
           {editing === "bank" ? (
             <div className="p-5 space-y-3.5">
               <div>
-                <label className={LABEL}>{T("bankNameLabel")} *</label>
+                <label className={LABEL}>{T("selectBank")}</label>
                 <select value={bankName} onChange={e => setBankName(e.target.value)} className={SELECT}>
                   <option value="">{T("selectBank")}</option>
                   {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
@@ -528,7 +596,7 @@ export default function Profile() {
                 </span>
               </div>
               <div className="py-1">
-                <InfoRow label={T("accountTitle")} value={user.bankAccountTitle} icon={<User size={11} className="text-gray-300"/>}/>
+                <InfoRow label={T("accountTitle")} value={user.bankAccountTitle} icon={<User size={12} className="text-green-500"/>}/>
               </div>
             </div>
           ) : (
@@ -546,151 +614,126 @@ export default function Profile() {
           )}
         </SectionCard>
 
-        {/* ══ QUICK LINKS ══ */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-5 py-3.5">
-            <p className="font-bold text-gray-900 text-[15px] flex items-center gap-2"><Zap size={15} className="text-amber-500"/> {T("quickNavigation")}</p>
-          </div>
-          <div className="border-t border-gray-50">
-            {quickLinks.map(item => (
-              <Link key={item.href} href={item.href}
-                className="flex items-center gap-3.5 px-5 py-3.5 border-b border-gray-50 last:border-0 active:bg-gray-50 transition-colors">
-                <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center flex-shrink-0">{item.icon}</div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-semibold text-gray-800 block">{item.label}</span>
-                  {item.desc && <span className="text-[11px] text-gray-400">{item.desc}</span>}
-                </div>
-                {(item.badge ?? 0) > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] font-extrabold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
-                    {item.badge}
-                  </span>
-                )}
-                <ChevronRight size={16} className="text-gray-300"/>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        {/* ══ SECURITY ══ */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-5 py-3.5">
-            <p className="font-bold text-gray-900 text-[15px] flex items-center gap-2"><Shield size={15} className="text-blue-500"/> {T("securitySession")}</p>
-          </div>
-          <div className="border-t border-gray-50 py-1">
-            <InfoRow label={T("memberSince")} value={user?.createdAt ? fd(user.createdAt) : "—"} icon={<Clock size={11} className="text-gray-300"/>}/>
-            <InfoRow label={T("lastLogin")}   value={user?.lastLoginAt ? fd(user.lastLoginAt) : "Now"} icon={<Clock size={11} className="text-gray-300"/>}/>
-            <InfoRow label={T("statusLabel")} value={T("activeVerified")} icon={<CheckCircle size={11} className="text-green-400"/>}/>
-          </div>
-          <div className="px-5 pb-4">
-            <div className="bg-blue-50 rounded-xl p-3 flex gap-2 border border-blue-100">
-              <Lock size={14} className="text-blue-500 flex-shrink-0 mt-0.5"/>
-              <p className="text-xs text-blue-700 font-medium">Your account is secured with encrypted OTP authentication. All session data is protected.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* ══ TWO-FACTOR AUTHENTICATION ══ */}
+        {/* ══ ACCOUNT SECURITY (merged Security + 2FA) ══ */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-5 py-3.5 flex items-center justify-between">
-            <p className="font-bold text-gray-900 text-[15px] flex items-center gap-2">
-              <Shield size={15} className="text-green-500"/> Two-Factor Authentication
-            </p>
-            {user?.totpEnabled && twoFaStep === "idle" && (
-              <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">ENABLED</span>
+            <p className="font-bold text-gray-900 text-[15px] flex items-center gap-2"><Shield size={15} className="text-blue-500"/> {T("securitySession")}</p>
+            {user?.twoFactorEnabled && twoFaStep === "idle" && (
+              <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded-full flex items-center gap-1"><Lock size={9}/> 2FA ON</span>
             )}
           </div>
-          <div className="border-t border-gray-50 px-5 py-4">
-            {twoFaStep === "idle" && !user?.totpEnabled && (
-              <div>
-                <p className="text-xs text-gray-500 mb-3">Add an extra layer of security by enabling 2FA with an authenticator app (Google Authenticator, Authy, etc.)</p>
-                <button onClick={start2faSetup} disabled={twoFaLoading}
-                  className="w-full h-10 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                  {twoFaLoading ? <RefreshCcw size={14} className="animate-spin"/> : <Shield size={14}/>} Set Up 2FA
-                </button>
-                {twoFaError && <p className="text-xs text-red-500 mt-2">{twoFaError}</p>}
-              </div>
-            )}
 
-            {twoFaStep === "idle" && user?.totpEnabled && (
-              <div>
-                <p className="text-xs text-gray-500 mb-3">2FA is active. You'll need your authenticator code when logging in.</p>
-                <button onClick={() => { setTwoFaStep("disable"); setTwoFaCode(""); setTwoFaError(""); }}
-                  className="w-full h-10 border-2 border-red-200 text-red-500 text-sm font-bold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
-                  <X size={14}/> Disable 2FA
-                </button>
-              </div>
-            )}
+          <div className="border-t border-gray-100">
+            <div className="py-1">
+              <InfoRow label={T("memberSince")} value={user?.createdAt ? fd(user.createdAt) : "—"} icon={<Clock size={12} className="text-blue-500"/>}/>
+              <InfoRow label={T("lastLogin")}   value={user?.lastLoginAt ? fd(user.lastLoginAt) : "Now"} icon={<Clock size={12} className="text-purple-500"/>}/>
+              <InfoRow label={T("statusLabel")} value={T("activeVerified")} icon={<CheckCircle size={12} className="text-green-500"/>}/>
+            </div>
 
-            {twoFaStep === "setup" && (
-              <div className="space-y-3">
-                <p className="text-xs text-gray-600 font-semibold">Scan this QR code with your authenticator app:</p>
-                {twoFaQr && (
-                  <div className="flex justify-center bg-gray-50 rounded-xl p-4">
-                    <img src={twoFaQr} alt="2FA QR Code" className="w-44 h-44"/>
-                  </div>
-                )}
-                {twoFaSecret && (
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Manual Entry Key</p>
-                    <p className="text-xs font-mono font-bold text-gray-700 break-all select-all">{twoFaSecret}</p>
-                  </div>
-                )}
+            <div className="mx-5 mb-4">
+              <div className="bg-blue-50 rounded-xl p-3 flex gap-2 border border-blue-100">
+                <Lock size={14} className="text-blue-500 flex-shrink-0 mt-0.5"/>
+                <p className="text-xs text-blue-700 font-medium">Your account is secured with encrypted OTP authentication. All session data is protected.</p>
+              </div>
+            </div>
+
+            <div className="mx-5 mb-4 pt-3 border-t border-gray-100">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Shield size={12}/> Two-Factor Authentication
+              </p>
+
+              {twoFaStep === "idle" && !user?.twoFactorEnabled && (
                 <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Enter 6-digit code from app</label>
+                  <p className="text-xs text-gray-500 mb-3">Add an extra layer of security by enabling 2FA with an authenticator app (Google Authenticator, Authy, etc.)</p>
+                  <button onClick={start2faSetup} disabled={twoFaLoading}
+                    className="w-full h-10 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                    {twoFaLoading ? <RefreshCcw size={14} className="animate-spin"/> : <Shield size={14}/>} Set Up 2FA
+                  </button>
+                  {twoFaError && <p className="text-xs text-red-500 mt-2">{twoFaError}</p>}
+                </div>
+              )}
+
+              {twoFaStep === "idle" && user?.twoFactorEnabled && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-3">2FA is active. You'll need your authenticator code when logging in.</p>
+                  <button onClick={() => { setTwoFaStep("disable"); setTwoFaCode(""); setTwoFaError(""); }}
+                    className="w-full h-10 border-2 border-red-200 text-red-500 text-sm font-bold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
+                    <X size={14}/> Disable 2FA
+                  </button>
+                </div>
+              )}
+
+              {twoFaStep === "setup" && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-600 font-semibold">Scan this QR code with your authenticator app:</p>
+                  {twoFaQr && (
+                    <div className="flex justify-center bg-gray-50 rounded-xl p-4">
+                      <img src={twoFaQr} alt="2FA QR Code" className="w-44 h-44"/>
+                    </div>
+                  )}
+                  {twoFaSecret && (
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Manual Entry Key</p>
+                      <p className="text-xs font-mono font-bold text-gray-700 break-all select-all">{twoFaSecret}</p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Enter 6-digit code from app</label>
+                    <input type="text" value={twoFaCode} onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000" maxLength={6} inputMode="numeric"
+                      className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-green-500"/>
+                  </div>
+                  {twoFaError && <p className="text-xs text-red-500">{twoFaError}</p>}
+                  <div className="flex gap-2">
+                    <button onClick={() => { setTwoFaStep("idle"); setTwoFaCode(""); setTwoFaError(""); }}
+                      className="flex-1 h-10 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                    <button onClick={verify2faSetup} disabled={twoFaLoading || twoFaCode.length < 6}
+                      className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                      {twoFaLoading ? <RefreshCcw size={14} className="animate-spin"/> : null} Verify & Enable
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {twoFaStep === "done" && twoFaBackupCodes.length > 0 && (
+                <div className="space-y-3">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
+                    <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+                    <p className="text-xs text-amber-700 font-medium">Save these backup codes somewhere safe. Each can be used once if you lose access to your authenticator app.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {twoFaBackupCodes.map((code, i) => (
+                      <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 text-xs font-mono font-bold text-gray-700 text-center select-all">{code}</div>
+                    ))}
+                  </div>
+                  <button onClick={() => {
+                    navigator.clipboard?.writeText(twoFaBackupCodes.join("\n")).then(() => showToast("Backup codes copied!")).catch(() => {});
+                  }} className="w-full h-9 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
+                    Copy All Codes
+                  </button>
+                  <button onClick={() => { setTwoFaStep("idle"); setTwoFaBackupCodes([]); setTwoFaCode(""); }}
+                    className="w-full h-10 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors">Done</button>
+                </div>
+              )}
+
+              {twoFaStep === "disable" && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-600">Enter your authenticator code to disable 2FA:</p>
                   <input type="text" value={twoFaCode} onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     placeholder="000000" maxLength={6} inputMode="numeric"
-                    className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-green-500"/>
+                    className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-red-400"/>
+                  {twoFaError && <p className="text-xs text-red-500">{twoFaError}</p>}
+                  <div className="flex gap-2">
+                    <button onClick={() => { setTwoFaStep("idle"); setTwoFaCode(""); setTwoFaError(""); }}
+                      className="flex-1 h-10 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                    <button onClick={disable2fa} disabled={twoFaLoading || twoFaCode.length < 6}
+                      className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                      {twoFaLoading ? <RefreshCcw size={14} className="animate-spin"/> : null} Disable 2FA
+                    </button>
+                  </div>
                 </div>
-                {twoFaError && <p className="text-xs text-red-500">{twoFaError}</p>}
-                <div className="flex gap-2">
-                  <button onClick={() => { setTwoFaStep("idle"); setTwoFaCode(""); setTwoFaError(""); }}
-                    className="flex-1 h-10 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
-                  <button onClick={verify2faSetup} disabled={twoFaLoading || twoFaCode.length < 6}
-                    className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                    {twoFaLoading ? <RefreshCcw size={14} className="animate-spin"/> : null} Verify & Enable
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {twoFaStep === "done" && twoFaBackupCodes.length > 0 && (
-              <div className="space-y-3">
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
-                  <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-                  <p className="text-xs text-amber-700 font-medium">Save these backup codes somewhere safe. Each can be used once if you lose access to your authenticator app.</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {twoFaBackupCodes.map((code, i) => (
-                    <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 text-xs font-mono font-bold text-gray-700 text-center select-all">{code}</div>
-                  ))}
-                </div>
-                <button onClick={() => {
-                  navigator.clipboard?.writeText(twoFaBackupCodes.join("\n")).then(() => showToast("Backup codes copied!")).catch(() => {});
-                }} className="w-full h-9 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
-                  Copy All Codes
-                </button>
-                <button onClick={() => { setTwoFaStep("idle"); setTwoFaBackupCodes([]); setTwoFaCode(""); }}
-                  className="w-full h-10 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors">Done</button>
-              </div>
-            )}
-
-            {twoFaStep === "disable" && (
-              <div className="space-y-3">
-                <p className="text-xs text-gray-600">Enter your authenticator code to disable 2FA:</p>
-                <input type="text" value={twoFaCode} onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000" maxLength={6} inputMode="numeric"
-                  className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-red-400"/>
-                {twoFaError && <p className="text-xs text-red-500">{twoFaError}</p>}
-                <div className="flex gap-2">
-                  <button onClick={() => { setTwoFaStep("idle"); setTwoFaCode(""); setTwoFaError(""); }}
-                    className="flex-1 h-10 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
-                  <button onClick={disable2fa} disabled={twoFaLoading || twoFaCode.length < 6}
-                    className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                    {twoFaLoading ? <RefreshCcw size={14} className="animate-spin"/> : null} Disable 2FA
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
@@ -716,18 +759,38 @@ export default function Profile() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="w-full flex items-center justify-between px-5 py-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-xl">🌐</div>
+              <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                <Languages size={20} className="text-indigo-500"/>
+              </div>
               <div className="text-left">
                 <div className="text-sm font-bold text-gray-800">Language</div>
-                <div className="text-xs text-gray-400">English</div>
+                <div className="text-xs text-gray-400">{language === "ur" ? "اردو selected" : "English selected"}</div>
               </div>
+            </div>
+            <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
+              <button
+                onClick={() => setLanguage("en")}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${language === "en" ? "bg-white text-green-700 shadow-sm" : "text-gray-500"}`}>
+                EN
+              </button>
+              <button
+                onClick={() => setLanguage("ur")}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${language === "ur" ? "bg-white text-green-700 shadow-sm" : "text-gray-500"}`}>
+                اردو
+              </button>
             </div>
           </div>
         </div>
 
         {/* ══ LOGOUT ══ */}
-        <button onClick={logout} className="w-full h-12 border-2 border-red-200 text-red-500 font-bold rounded-xl active:bg-red-50 transition-colors text-sm flex items-center justify-center gap-2">
-          <LogOut size={16}/> Logout from This Device
+        <button onClick={handleLogout}
+          className={`w-full h-12 font-bold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
+            logoutConfirm
+              ? "bg-red-600 text-white shadow-md active:bg-red-700"
+              : "border-2 border-red-200 text-red-500 active:bg-red-50"
+          }`}>
+          <LogOut size={16}/>
+          {logoutConfirm ? "Tap again to confirm logout" : "Logout from This Device"}
         </button>
 
         {/* ══ FOOTER ══ */}

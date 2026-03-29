@@ -128,7 +128,6 @@ export default function Home() {
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
 
-  /* ── GPS location tracking — sends position every 30s when online with no active task ── */
   useEffect(() => {
     if (!user?.isOnline || hasActiveTask || !user?.id) return;
     if (!navigator?.geolocation) return;
@@ -248,7 +247,6 @@ export default function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 pb-24">
 
-      {/* ── New request flash overlay ── */}
       {newFlash && (
         <div className="fixed inset-0 z-50 pointer-events-none">
           <div className="absolute inset-0 border-8 border-green-400 rounded-none animate-ping opacity-60"/>
@@ -259,9 +257,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Header ── */}
-      <div className="bg-gradient-to-br from-green-600 to-emerald-700 text-white px-5 pt-12 pb-20">
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 text-white px-5 pt-12 pb-20 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.07]">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+        </div>
+        <div className="relative flex items-center justify-between mb-5">
           <div>
             <p className="text-green-200 text-xs font-medium flex items-center gap-1.5">
               <LiveClock/> · AJKMart Rider
@@ -276,30 +277,27 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Online/Offline Toggle */}
-        <div className={`rounded-2xl p-4 transition-all ${user?.isOnline ? "bg-green-500/30 border border-green-400/40" : "bg-white/10 border border-white/10"}`}>
+        <div className={`rounded-2xl p-4 transition-all border backdrop-blur-sm ${user?.isOnline ? "bg-white/15 border-green-400/40" : "bg-white/10 border-white/10"}`}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${user?.isOnline ? "bg-green-300 animate-pulse" : "bg-gray-400"}`} />
+              <div className="flex items-center gap-2.5">
+                <div className={`w-3.5 h-3.5 rounded-full ring-4 ${user?.isOnline ? "bg-green-300 ring-green-400/30 animate-pulse" : "bg-gray-400 ring-gray-500/20"}`} />
                 <p className="font-extrabold text-lg">{user?.isOnline ? T("online") : T("offline")}</p>
               </div>
-              <p className="text-green-100 text-sm mt-0.5">
+              <p className="text-green-100/80 text-sm mt-0.5">
                 {user?.isOnline ? T("acceptingOrders") : T("tapToStart")}
               </p>
             </div>
             <button onClick={toggleOnline} disabled={toggling}
-              className={`w-16 h-9 rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-400" : "bg-white/30"} ${toggling ? "opacity-60" : ""}`}>
-              <div className={`w-7 h-7 bg-white rounded-full absolute top-1 shadow-md transition-all duration-300 ${user?.isOnline ? "left-8" : "left-1"}`} />
+              className={`w-[60px] h-[32px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-400" : "bg-white/30"} ${toggling ? "opacity-60" : ""}`}>
+              <div className={`w-[26px] h-[26px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[31px]" : "left-[3px]"}`} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── Stats Pull Cards ── */}
       <div className="px-4 -mt-10 space-y-3">
 
-        {/* GPS Warning Banner */}
         {gpsWarning && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
             <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5"/>
@@ -308,7 +306,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Notice Banner */}
         {config.content.riderNotice && (
           <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-start gap-3">
             <Pin size={16} className="text-blue-500 flex-shrink-0 mt-0.5"/>
@@ -316,7 +313,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Minimum Balance Warning */}
         {(() => {
           const minBal  = config.rider?.minBalance ?? 0;
           const curBal  = Number(user?.walletBalance) || 0;
@@ -342,26 +338,23 @@ export default function Home() {
           );
         })()}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-2.5">
           {[
-            { icon: <Package size={16} className="text-indigo-500"/>,    label: "Today",  value: String(user?.stats?.deliveriesToday || 0),         sub: "deliveries" },
-            { icon: <TrendingUp size={16} className="text-green-600"/>,  label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0),   sub: "today"      },
-            { icon: <Calendar size={16} className="text-blue-500"/>,     label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0),  sub: "earnings"   },
-            { icon: <Trophy size={16} className="text-amber-500"/>,      label: "Total",  value: String(user?.stats?.totalDeliveries || 0),          sub: "lifetime"   },
+            { icon: <Package size={17} className="text-indigo-500"/>,    label: "Today",  value: String(user?.stats?.deliveriesToday || 0),         sub: "deliveries", bg: "bg-indigo-50", border: "border-indigo-100" },
+            { icon: <TrendingUp size={17} className="text-green-600"/>,  label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0),   sub: "today",      bg: "bg-green-50",  border: "border-green-100"  },
+            { icon: <Calendar size={17} className="text-blue-500"/>,     label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0),  sub: "earnings",   bg: "bg-blue-50",   border: "border-blue-100"   },
+            { icon: <Trophy size={17} className="text-amber-500"/>,      label: "Total",  value: String(user?.stats?.totalDeliveries || 0),          sub: "lifetime",   bg: "bg-amber-50",  border: "border-amber-100"  },
           ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl p-3 shadow-sm text-center">
-              <div className="flex justify-center mb-0.5">{s.icon}</div>
-              <p className="text-xs font-extrabold text-gray-800 leading-tight">{s.value}</p>
-              <p className="text-[9px] text-gray-400 mt-0.5 font-medium">{s.sub}</p>
+            <div key={s.label} className={`${s.bg} rounded-2xl p-3 shadow-sm text-center border ${s.border}`}>
+              <div className="flex justify-center mb-1">{s.icon}</div>
+              <p className="text-sm font-extrabold text-gray-800 leading-tight">{s.value}</p>
+              <p className="text-[9px] text-gray-500 mt-0.5 font-semibold">{s.sub}</p>
             </div>
           ))}
         </div>
 
-        {/* ── REQUEST ALERTS ── */}
         {user?.isOnline ? (
           <>
-            {/* Active task warning */}
             {hasActiveTask && (
               <Link href="/active"
                 className="block bg-amber-50 border-2 border-amber-400 rounded-2xl px-4 py-3">
@@ -377,16 +370,15 @@ export default function Home() {
                         : `Ride → ${activeData?.ride?.dropAddress || "Drop location"}`}
                     </p>
                   </div>
-                  <span className="text-amber-500 font-bold text-xs bg-amber-100 px-2 py-1 rounded-full flex-shrink-0 flex items-center gap-1">
+                  <span className="text-amber-500 font-bold text-xs bg-amber-100 px-2.5 py-1.5 rounded-full flex-shrink-0 flex items-center gap-1">
                     Go <ChevronRight size={12}/>
                   </span>
                 </div>
               </Link>
             )}
 
-            {/* Requests Panel */}
             <div className={`rounded-2xl shadow-sm overflow-hidden transition-all ${newFlash ? "ring-4 ring-green-400 ring-offset-2" : ""}`}>
-              <div className={`px-4 py-3 flex items-center justify-between ${totalRequests > 0 ? "bg-orange-500" : "bg-gray-700"}`}>
+              <div className={`px-4 py-3.5 flex items-center justify-between ${totalRequests > 0 ? "bg-gradient-to-r from-orange-500 to-orange-600" : "bg-gray-700"}`}>
                 <div className="flex items-center gap-2">
                   {totalRequests > 0 ? (
                     <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse inline-block" />
@@ -400,7 +392,7 @@ export default function Home() {
                   </p>
                 </div>
                 {totalRequests > 0 && (
-                  <span className="text-orange-100 text-xs font-bold bg-orange-600 px-2 py-0.5 rounded-full">LIVE</span>
+                  <span className="text-orange-100 text-[10px] font-extrabold bg-orange-700/50 px-2.5 py-1 rounded-full tracking-wider">LIVE</span>
                 )}
               </div>
 
@@ -419,7 +411,6 @@ export default function Home() {
               ) : (
                 <div className="bg-white divide-y divide-gray-100">
 
-                  {/* ─ ORDER Requests ─ */}
                   {orders.map((o: any) => (
                     <div key={o.id} className="p-4">
                       <div className="flex items-start gap-3">
@@ -481,7 +472,6 @@ export default function Home() {
                     </div>
                   ))}
 
-                  {/* ─ RIDE Requests ─ */}
                   {rides.map((r: any) => {
                     const isBargain    = r.status === "bargaining" && r.offeredFare != null;
                     const offeredFare  = r.offeredFare  ?? r.fare;
@@ -553,7 +543,6 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Standard actions */}
                         {!isBargain && (
                           <div className="flex gap-2 mt-3">
                             <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
@@ -573,7 +562,6 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* Bargaining actions */}
                         {isBargain && (
                           <div className="mt-3 space-y-2">
                             {r.myBid ? (
@@ -667,19 +655,19 @@ export default function Home() {
             </div>
           </>
         ) : (
-          /* Offline state */
-          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
+          <div className="bg-white rounded-2xl shadow-sm p-8 text-center border border-gray-100">
             <div className="flex justify-center mb-3">
-              <Wifi size={40} className="text-gray-300"/>
+              <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center">
+                <Wifi size={32} className="text-gray-300"/>
+              </div>
             </div>
-            <p className="text-gray-500 font-semibold">You are Offline</p>
-            <p className="text-gray-400 text-xs mt-1">Toggle switch to start accepting orders</p>
+            <p className="text-gray-600 font-bold text-base">You are Offline</p>
+            <p className="text-gray-400 text-sm mt-1">Toggle switch to start accepting orders</p>
           </div>
         )}
 
       </div>
 
-      {/* ── TOAST ── */}
       {toastMsg && (
         <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none">
           <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl text-center">{toastMsg}</div>

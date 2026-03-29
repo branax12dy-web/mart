@@ -2,7 +2,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { usePlatformConfig, getRiderModules } from "./lib/useConfig";
-import { useLanguage } from "./lib/useLanguage";
+import { useLanguage, LanguageProvider } from "./lib/useLanguage";
 import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
 import { MaintenanceScreen } from "./components/MaintenanceScreen";
@@ -24,7 +24,7 @@ function AppRoutes() {
   const { user, loading } = useAuth();
   const { config } = usePlatformConfig();
   const modules = getRiderModules(config);
-  useLanguage(); /* initialises RTL + language from API on mount */
+  useLanguage();
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center">
@@ -74,11 +74,13 @@ function AppRoutes() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppRoutes />
-        </WouterRouter>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AppRoutes />
+          </WouterRouter>
+        </AuthProvider>
+      </LanguageProvider>
     </QueryClientProvider>
   );
 }
