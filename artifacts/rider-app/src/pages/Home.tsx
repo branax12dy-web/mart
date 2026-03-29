@@ -10,7 +10,8 @@ import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
   ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
   X, Timer, CheckCircle, MessageSquare, ChevronRight,
-  TrendingUp, Calendar, Trophy, Radio,
+  TrendingUp, Calendar, Trophy, Radio, Zap, Clock,
+  ArrowUpRight, Eye,
 } from "lucide-react";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
@@ -44,40 +45,76 @@ function RequestAge({ createdAt }: { createdAt: string }) {
 }
 
 function OrderTypeIcon({ type }: { type: string }) {
-  if (type === "food")     return <ShoppingBag size={22} className="text-orange-500"/>;
-  if (type === "mart")     return <ShoppingCart size={22} className="text-blue-500"/>;
-  if (type === "pharmacy") return <Pill size={22} className="text-green-600"/>;
-  if (type === "grocery")  return <Banana size={22} className="text-yellow-500"/>;
-  return <Package size={22} className="text-indigo-500"/>;
+  if (type === "food")     return <ShoppingBag size={20} className="text-orange-500"/>;
+  if (type === "mart")     return <ShoppingCart size={20} className="text-blue-500"/>;
+  if (type === "pharmacy") return <Pill size={20} className="text-purple-600"/>;
+  if (type === "grocery")  return <Banana size={20} className="text-yellow-500"/>;
+  return <Package size={20} className="text-indigo-500"/>;
 }
 
 function RideTypeIcon({ type }: { type: string }) {
-  if (type === "car")          return <Car  size={22} className="text-blue-600"/>;
-  if (type === "rickshaw")     return <Bike size={22} className="text-yellow-600"/>;
-  if (type === "daba")         return <Bus  size={22} className="text-gray-600"/>;
-  if (type === "school_shift") return <Bus  size={22} className="text-green-600"/>;
-  return <Bike size={22} className="text-green-600"/>;
+  if (type === "car")          return <Car  size={20} className="text-blue-600"/>;
+  if (type === "rickshaw")     return <Bike size={20} className="text-yellow-600"/>;
+  if (type === "daba")         return <Bus  size={20} className="text-gray-600"/>;
+  if (type === "school_shift") return <Bus  size={20} className="text-green-600"/>;
+  return <Bike size={20} className="text-green-600"/>;
 }
 
 const SVC_NAMES: Record<string, string> = {
   bike: "Bike", car: "Car", rickshaw: "Rickshaw", daba: "Daba / Van", school_shift: "School Shift",
 };
 
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-gray-200 rounded-xl ${className || ""}`} />;
+}
+
+function SkeletonHome() {
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50 pb-24">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-24 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.07]">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+        </div>
+        <div className="relative flex items-center justify-between mb-6">
+          <div className="space-y-2">
+            <SkeletonBlock className="h-3 w-28 !bg-white/20" />
+            <SkeletonBlock className="h-6 w-36 !bg-white/20" />
+          </div>
+          <SkeletonBlock className="h-10 w-24 rounded-2xl !bg-white/20" />
+        </div>
+        <SkeletonBlock className="h-20 w-full rounded-2xl !bg-white/15" />
+      </div>
+      <div className="px-4 -mt-12 space-y-3">
+        <div className="grid grid-cols-4 gap-2">
+          {[1,2,3,4].map(i => <SkeletonBlock key={i} className="h-[88px] rounded-2xl" />)}
+        </div>
+        <SkeletonBlock className="h-14 rounded-2xl" />
+        <SkeletonBlock className="h-48 rounded-2xl" />
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, loading: authLoading } = useAuth();
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const qc = useQueryClient();
   const [toggling, setToggling] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [toastType, setToastType] = useState<"success" | "error">("success");
   const [newFlash, setNewFlash] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const prevIdsRef = useRef<Set<string>>(new Set());
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(""), 3000);
+    setToastType(type);
+    toastTimerRef.current = setTimeout(() => setToastMsg(""), 3000);
   };
 
   const toggleOnline = async () => {
@@ -87,8 +124,8 @@ export default function Home() {
       const newStatus = !user?.isOnline;
       await api.setOnline(newStatus);
       await refreshUser();
-      showToast(newStatus ? T("youAreNowOnline") : T("youAreNowOffline"));
-    } catch (e: any) { showToast(e.message); }
+      showToast(newStatus ? T("youAreNowOnline") : T("youAreNowOffline"), "success");
+    } catch (e: any) { showToast(e.message, "error"); }
     setToggling(false);
   };
 
@@ -114,8 +151,9 @@ export default function Home() {
   const allOrders: any[] = requestsData?.orders || [];
   const allRides:  any[] = requestsData?.rides  || [];
 
+  const currentIdsSig = [...allOrders.map((o: any) => o.id), ...allRides.map((r: any) => r.id)].sort().join(",");
   useEffect(() => {
-    const currentIds = new Set<string>([...allOrders.map((o: any) => o.id), ...allRides.map((r: any) => r.id)]);
+    const currentIds = new Set<string>(currentIdsSig.split(",").filter(Boolean));
     const prevIds = prevIdsRef.current;
     let hasNew = false;
     currentIds.forEach(id => { if (!prevIds.has(id)) hasNew = true; });
@@ -124,7 +162,7 @@ export default function Home() {
       setTimeout(() => setNewFlash(false), 2500);
     }
     prevIdsRef.current = currentIds;
-  }, [allOrders.length, allRides.length]);
+  }, [currentIdsSig]);
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
 
@@ -173,7 +211,7 @@ export default function Home() {
         method: "POST",
         body: JSON.stringify({ event, lat, lng }),
       }).catch((err: Error) => {
-        showToast(`GPS event log failed: ${err.message}`);
+        showToast(`GPS event log failed: ${err.message}`, "error");
       });
     };
     if (navigator?.geolocation) {
@@ -193,11 +231,11 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       logRideEvent(id, "accepted");
-      showToast("Order accepted! Active tab mein dekho.");
+      showToast("Order accepted! Check Active tab.", "success");
     },
     onError: (e: any) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      showToast(e.message || "Order accept nahi hua — shayad kisi ne pehle le liya");
+      showToast(e.message || "Could not accept — may already be taken", "error");
     },
   });
 
@@ -207,11 +245,11 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       logRideEvent(id, "accepted");
-      showToast("Ride accepted! Active tab mein dekho.");
+      showToast("Ride accepted! Check Active tab.", "success");
     },
     onError: (e: any) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      showToast(e.message || "Ride accept nahi hua — shayad kisi ne pehle le li");
+      showToast(e.message || "Could not accept — may already be taken", "error");
     },
   });
 
@@ -225,18 +263,18 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       setCounterInputs(prev => ({ ...prev, [vars.id]: "" }));
       setShowCounter(prev => ({ ...prev, [vars.id]: false }));
-      showToast("Counter offer bhej diya gaya!");
+      showToast("Counter offer submitted!", "success");
     },
-    onError: (e: any) => showToast(e.message || "Counter offer nahi gaya"),
+    onError: (e: any) => showToast(e.message || "Counter offer failed", "error"),
   });
 
   const rejectOfferMut = useMutation({
     mutationFn: (id: string) => api.rejectOffer(id),
     onSuccess: (_, id) => {
       dismiss(id);
-      showToast("Ride skip kar diya gaya.");
+      showToast("Ride skipped.", "success");
     },
-    onError: (e: any) => showToast(e.message),
+    onError: (e: any) => showToast(e.message, "error"),
   });
 
   const getDeliveryEarn = (type: string) => {
@@ -244,72 +282,119 @@ export default function Home() {
     return fee * (config.finance.riderEarningPct / 100);
   };
 
+  if (authLoading) return <SkeletonHome />;
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good Morning";
+    if (h < 17) return "Good Afternoon";
+    return "Good Evening";
+  })();
+
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 pb-24">
+    <div className="flex flex-col min-h-screen bg-gray-50 pb-24 animate-[fadeIn_0.3s_ease-out]">
 
       {newFlash && (
         <div className="fixed inset-0 z-50 pointer-events-none">
-          <div className="absolute inset-0 border-8 border-green-400 rounded-none animate-ping opacity-60"/>
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-green-600 text-white font-extrabold text-base px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce">
-            <span className="w-2.5 h-2.5 bg-white rounded-full"/>
+          <div className="absolute inset-0 border-[6px] border-green-400 rounded-none animate-ping opacity-50"/>
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-extrabold text-sm px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-bounce">
+            <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse"/>
             New Request Available!
           </div>
         </div>
       )}
 
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 text-white px-5 pt-12 pb-20 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 text-white px-5 pt-11 pb-28 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-        </div>
-        <div className="relative flex items-center justify-between mb-5">
-          <div>
-            <p className="text-green-200 text-xs font-medium flex items-center gap-1.5">
-              <LiveClock/> · AJKMart Rider
-            </p>
-            <h1 className="text-2xl font-extrabold mt-0.5 flex items-center gap-2">
-              <Bike size={22}/> {user?.name || "Rider"}
-            </h1>
-          </div>
-          <div className="text-right">
-            <p className="text-green-200 text-xs">{T("wallet")}</p>
-            <p className="font-extrabold text-xl">{formatCurrency(Number(user?.walletBalance) || 0)}</p>
-          </div>
+          <div className="absolute -top-10 -right-10 w-56 h-56 bg-white rounded-full"/>
+          <div className="absolute bottom-4 -left-8 w-36 h-36 bg-white rounded-full"/>
+          <div className="absolute top-1/2 right-1/3 w-20 h-20 bg-white rounded-full"/>
         </div>
 
-        <div className={`rounded-2xl p-4 transition-all border backdrop-blur-sm ${user?.isOnline ? "bg-white/15 border-green-400/40" : "bg-white/10 border-white/10"}`}>
-          <div className="flex items-center justify-between">
+        <div className="relative">
+          <div className="flex items-start justify-between mb-5">
             <div>
-              <div className="flex items-center gap-2.5">
-                <div className={`w-3.5 h-3.5 rounded-full ring-4 ${user?.isOnline ? "bg-green-300 ring-green-400/30 animate-pulse" : "bg-gray-400 ring-gray-500/20"}`} />
-                <p className="font-extrabold text-lg">{user?.isOnline ? T("online") : T("offline")}</p>
-              </div>
-              <p className="text-green-100/80 text-sm mt-0.5">
-                {user?.isOnline ? T("acceptingOrders") : T("tapToStart")}
+              <p className="text-green-200/80 text-[11px] font-semibold tracking-wide flex items-center gap-1.5 mb-1">
+                <Clock size={11}/> <LiveClock/> · AJKMart Rider
               </p>
+              <h1 className="text-[22px] font-extrabold tracking-tight leading-tight">
+                {greeting}, {user?.name?.split(" ")[0] || "Rider"} 👋
+              </h1>
             </div>
-            <button onClick={toggleOnline} disabled={toggling}
-              className={`w-[60px] h-[32px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-400" : "bg-white/30"} ${toggling ? "opacity-60" : ""}`}>
-              <div className={`w-[26px] h-[26px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[31px]" : "left-[3px]"}`} />
-            </button>
+            <Link href="/wallet" className="flex flex-col items-end">
+              <div className="bg-white/15 backdrop-blur-sm border border-white/20 rounded-2xl px-3.5 py-2 text-right">
+                <p className="text-green-200/70 text-[9px] font-bold uppercase tracking-wider">{T("wallet")}</p>
+                <p className="font-extrabold text-lg leading-tight">{formatCurrency(Number(user?.walletBalance) || 0)}</p>
+              </div>
+            </Link>
+          </div>
+
+          <div className={`rounded-2xl p-4 transition-all duration-300 border backdrop-blur-sm ${user?.isOnline ? "bg-white/15 border-green-300/40 shadow-lg shadow-green-900/20" : "bg-white/10 border-white/10"}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${user?.isOnline ? "bg-green-400/20" : "bg-white/10"}`}>
+                  {user?.isOnline
+                    ? <Zap size={22} className="text-green-300"/>
+                    : <Wifi size={22} className="text-white/50"/>
+                  }
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2.5 h-2.5 rounded-full ${user?.isOnline ? "bg-green-300 animate-pulse shadow-lg shadow-green-400/50" : "bg-gray-400"}`} />
+                    <p className="font-extrabold text-lg tracking-tight">{user?.isOnline ? T("online") : T("offline")}</p>
+                  </div>
+                  <p className="text-green-100/70 text-xs mt-0.5">
+                    {user?.isOnline ? T("acceptingOrders") : T("tapToStart")}
+                  </p>
+                </div>
+              </div>
+              <button onClick={toggleOnline} disabled={toggling}
+                className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-400 shadow-green-500/30" : "bg-white/25"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
+                <div className={`w-[24px] h-[24px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[29px]" : "left-[3px]"}`} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="px-4 -mt-10 space-y-3">
+      <div className="px-4 -mt-14 space-y-3 relative z-10">
+
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { icon: <Package size={16} className="text-indigo-500"/>, label: "Today",  value: String(user?.stats?.deliveriesToday || 0), sub: "deliveries", bg: "bg-indigo-50", border: "border-indigo-200/60", accent: "text-indigo-600" },
+            { icon: <TrendingUp size={16} className="text-green-600"/>, label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0), sub: "today", bg: "bg-green-50", border: "border-green-200/60", accent: "text-green-700" },
+            { icon: <Calendar size={16} className="text-blue-500"/>, label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0), sub: "earnings", bg: "bg-blue-50", border: "border-blue-200/60", accent: "text-blue-600" },
+            { icon: <Trophy size={16} className="text-amber-500"/>, label: "Total",  value: String(user?.stats?.totalDeliveries || 0), sub: "lifetime", bg: "bg-amber-50", border: "border-amber-200/60", accent: "text-amber-600" },
+          ].map((s, i) => (
+            <div key={s.label} className={`${s.bg} rounded-2xl p-2.5 text-center border ${s.border} shadow-sm animate-[slideUp_0.3s_ease-out] hover:shadow-md transition-shadow`}
+              style={{ animationDelay: `${i * 60}ms`, animationFillMode: "both" }}>
+              <div className="flex justify-center mb-1.5">
+                <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center`}>
+                  {s.icon}
+                </div>
+              </div>
+              <p className={`text-[13px] font-extrabold leading-tight ${s.accent}`}>{s.value}</p>
+              <p className="text-[9px] text-gray-400 mt-0.5 font-semibold uppercase tracking-wider">{s.sub}</p>
+            </div>
+          ))}
+        </div>
 
         {gpsWarning && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
-            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-            <p className="text-xs font-bold text-amber-700 flex-1">{gpsWarning}</p>
-            <button onClick={() => setGpsWarning(null)} className="text-amber-400 hover:text-amber-600"><X size={14}/></button>
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-sm animate-[slideUp_0.2s_ease-out]">
+            <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={16} className="text-amber-500"/>
+            </div>
+            <p className="text-xs font-bold text-amber-700 flex-1 leading-relaxed pt-1">{gpsWarning}</p>
+            <button onClick={() => setGpsWarning(null)} className="text-amber-400 hover:text-amber-600 p-1 rounded-lg hover:bg-amber-100 transition-colors"><X size={14}/></button>
           </div>
         )}
 
         {config.content.riderNotice && (
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-start gap-3">
-            <Pin size={16} className="text-blue-500 flex-shrink-0 mt-0.5"/>
-            <p className="text-sm text-blue-700 font-medium leading-snug flex-1">{config.content.riderNotice}</p>
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-sm">
+            <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Pin size={14} className="text-blue-500"/>
+            </div>
+            <p className="text-sm text-blue-700 font-medium leading-relaxed flex-1 pt-0.5">{config.content.riderNotice}</p>
           </div>
         )}
 
@@ -320,17 +405,19 @@ export default function Home() {
           const shortfall = minBal - curBal;
           return (
             <Link href="/wallet">
-              <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-start gap-3 cursor-pointer active:opacity-80">
-                <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-2xl px-4 py-3.5 flex items-start gap-3 cursor-pointer active:scale-[0.98] transition-transform shadow-sm">
+                <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle size={18} className="text-amber-500" />
+                </div>
                 <div className="flex-1">
-                  <p className="text-sm font-bold text-amber-800">Wallet Balance Kam Hai</p>
-                  <p className="text-xs text-amber-700 mt-0.5">
-                    Cash orders accept karne ke liye minimum <strong>Rs. {Math.round(minBal)}</strong> chahiye.
-                    Aapka balance: <strong>Rs. {Math.round(curBal)}</strong>.
-                    {shortfall > 0 && <> Rs. {Math.round(shortfall)} aur chahiye.</>}
+                  <p className="text-sm font-extrabold text-amber-800">Low Wallet Balance</p>
+                  <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                    Minimum <strong>Rs. {Math.round(minBal)}</strong> required for cash orders.
+                    Your balance: <strong>Rs. {Math.round(curBal)}</strong>.
+                    {shortfall > 0 && <> Need Rs. {Math.round(shortfall)} more.</>}
                   </p>
-                  <p className="text-[10px] text-amber-600 mt-1 font-semibold flex items-center gap-1">
-                    Wallet tab mein tap karke deposit karein <ChevronRight size={10}/>
+                  <p className="text-[10px] text-amber-600 mt-1.5 font-bold flex items-center gap-1">
+                    Tap to deposit <ArrowUpRight size={10}/>
                   </p>
                 </div>
               </div>
@@ -338,73 +425,74 @@ export default function Home() {
           );
         })()}
 
-        <div className="grid grid-cols-4 gap-2.5">
-          {[
-            { icon: <Package size={17} className="text-indigo-500"/>,    label: "Today",  value: String(user?.stats?.deliveriesToday || 0),         sub: "deliveries", bg: "bg-indigo-50", border: "border-indigo-100" },
-            { icon: <TrendingUp size={17} className="text-green-600"/>,  label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0),   sub: "today",      bg: "bg-green-50",  border: "border-green-100"  },
-            { icon: <Calendar size={17} className="text-blue-500"/>,     label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0),  sub: "earnings",   bg: "bg-blue-50",   border: "border-blue-100"   },
-            { icon: <Trophy size={17} className="text-amber-500"/>,      label: "Total",  value: String(user?.stats?.totalDeliveries || 0),          sub: "lifetime",   bg: "bg-amber-50",  border: "border-amber-100"  },
-          ].map(s => (
-            <div key={s.label} className={`${s.bg} rounded-2xl p-3 shadow-sm text-center border ${s.border}`}>
-              <div className="flex justify-center mb-1">{s.icon}</div>
-              <p className="text-sm font-extrabold text-gray-800 leading-tight">{s.value}</p>
-              <p className="text-[9px] text-gray-500 mt-0.5 font-semibold">{s.sub}</p>
-            </div>
-          ))}
-        </div>
-
         {user?.isOnline ? (
           <>
             {hasActiveTask && (
               <Link href="/active"
-                className="block bg-amber-50 border-2 border-amber-400 rounded-2xl px-4 py-3">
+                className="block bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-400 rounded-2xl px-4 py-3.5 shadow-sm active:scale-[0.98] transition-transform animate-[slideUp_0.3s_ease-out]">
                 <div className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-extrabold text-amber-800">
+                  <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center flex-shrink-0">
+                    <div className="w-3 h-3 bg-amber-500 rounded-full animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-extrabold text-amber-800 tracking-tight">
                       {activeData?.order ? "Active Delivery in Progress" : "Active Ride in Progress"}
                     </p>
-                    <p className="text-xs text-amber-600 mt-0.5">
+                    <p className="text-xs text-amber-600 mt-0.5 truncate">
                       {activeData?.order
                         ? `Order #${activeData.order.id?.slice(-6).toUpperCase()} — ${activeData.order.deliveryAddress || "Customer"}`
                         : `Ride → ${activeData?.ride?.dropAddress || "Drop location"}`}
                     </p>
                   </div>
-                  <span className="text-amber-500 font-bold text-xs bg-amber-100 px-2.5 py-1.5 rounded-full flex-shrink-0 flex items-center gap-1">
+                  <div className="bg-amber-200/60 text-amber-700 font-extrabold text-xs px-3 py-2 rounded-xl flex-shrink-0 flex items-center gap-1">
                     Go <ChevronRight size={12}/>
-                  </span>
+                  </div>
                 </div>
               </Link>
             )}
 
             <div className={`rounded-2xl shadow-sm overflow-hidden transition-all ${newFlash ? "ring-4 ring-green-400 ring-offset-2" : ""}`}>
-              <div className={`px-4 py-3.5 flex items-center justify-between ${totalRequests > 0 ? "bg-gradient-to-r from-orange-500 to-orange-600" : "bg-gray-700"}`}>
-                <div className="flex items-center gap-2">
+              <div className={`px-4 py-3.5 flex items-center justify-between ${totalRequests > 0 ? "bg-gradient-to-r from-orange-500 via-orange-500 to-amber-500" : "bg-gradient-to-r from-gray-700 to-gray-600"}`}>
+                <div className="flex items-center gap-2.5">
                   {totalRequests > 0 ? (
-                    <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse inline-block" />
+                    <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
+                      <Zap size={14} className="text-white"/>
+                    </div>
                   ) : (
-                    <Radio size={16} className="text-white"/>
+                    <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center">
+                      <Radio size={14} className="text-white/70"/>
+                    </div>
                   )}
-                  <p className="font-extrabold text-white text-sm">
-                    {totalRequests > 0
-                      ? `${totalRequests} Request${totalRequests > 1 ? "s" : ""} — Accept Karo!`
-                      : T("listeningForRequests")}
-                  </p>
+                  <div>
+                    <p className="font-extrabold text-white text-sm tracking-tight">
+                      {totalRequests > 0
+                        ? `${totalRequests} Request${totalRequests > 1 ? "s" : ""} Available`
+                        : T("listeningForRequests")}
+                    </p>
+                    {totalRequests > 0 && (
+                      <p className="text-white/60 text-[10px] font-medium">Tap to accept</p>
+                    )}
+                  </div>
                 </div>
                 {totalRequests > 0 && (
-                  <span className="text-orange-100 text-[10px] font-extrabold bg-orange-700/50 px-2.5 py-1 rounded-full tracking-wider">LIVE</span>
+                  <span className="text-white/90 text-[10px] font-extrabold bg-white/15 backdrop-blur-sm px-3 py-1.5 rounded-full tracking-widest flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"/>
+                    LIVE
+                  </span>
                 )}
               </div>
 
               {totalRequests === 0 ? (
-                <div className="bg-white p-8 text-center">
-                  <div className="flex justify-center mb-2"><Bike size={40} className="text-gray-300"/></div>
-                  <p className="text-gray-500 font-semibold">{T("noRequestsNow")}</p>
-                  <p className="text-gray-400 text-xs mt-1">{T("autoRefreshes")}</p>
+                <div className="bg-white p-10 text-center">
+                  <div className="w-16 h-16 bg-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                    <Bike size={32} className="text-gray-300"/>
+                  </div>
+                  <p className="text-gray-600 font-bold text-base">{T("noRequestsNow")}</p>
+                  <p className="text-gray-400 text-xs mt-1.5">{T("autoRefreshes")}</p>
                   {dismissed.size > 0 && (
                     <button onClick={() => setDismissed(new Set())}
-                      className="mt-3 text-xs text-green-600 font-bold bg-green-50 px-3 py-1.5 rounded-xl">
-                      Show {dismissed.size} hidden request{dismissed.size > 1 ? "s" : ""}
+                      className="mt-4 text-xs text-green-600 font-bold bg-green-50 border border-green-200 px-4 py-2 rounded-xl inline-flex items-center gap-1.5 hover:bg-green-100 transition-colors">
+                      <Eye size={12}/> Show {dismissed.size} hidden request{dismissed.size > 1 ? "s" : ""}
                     </button>
                   )}
                 </div>
@@ -412,14 +500,14 @@ export default function Home() {
                 <div className="bg-white divide-y divide-gray-100">
 
                   {orders.map((o: any) => (
-                    <div key={o.id} className="p-4">
+                    <div key={o.id} className="p-4 hover:bg-gray-50/50 transition-colors animate-[slideUp_0.3s_ease-out]">
                       <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-center flex-shrink-0 shadow-sm">
                           <OrderTypeIcon type={o.type}/>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                            <p className="font-extrabold text-gray-900 capitalize">{o.type} Delivery</p>
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <p className="font-extrabold text-gray-900 text-[15px] capitalize tracking-tight">{o.type} Delivery</p>
                             <RequestAge createdAt={o.createdAt} />
                           </div>
                           {o.vendorStoreName && (
@@ -427,24 +515,24 @@ export default function Home() {
                               <MapPin size={10}/> {o.vendorStoreName}
                             </p>
                           )}
-                          <p className="text-xs text-gray-500 truncate mt-0.5 flex items-center gap-1">
-                            <Navigation size={10}/> {o.deliveryAddress || "Destination"}
+                          <p className="text-xs text-gray-400 truncate mt-0.5 flex items-center gap-1">
+                            <Navigation size={10} className="text-gray-300"/> {o.deliveryAddress || "Destination"}
                           </p>
-                          <div className="flex items-center gap-3 mt-2">
-                            <div>
-                              <p className="text-lg font-extrabold text-green-600">+{formatCurrency(getDeliveryEarn(o.type))}</p>
-                              <p className="text-[10px] text-gray-400">{T("yourEarnings")}</p>
+                          <div className="flex items-center gap-4 mt-2.5">
+                            <div className="bg-green-50 border border-green-100 rounded-xl px-3 py-1.5">
+                              <p className="text-base font-extrabold text-green-600 leading-tight">+{formatCurrency(getDeliveryEarn(o.type))}</p>
+                              <p className="text-[9px] text-green-500 font-semibold">{T("yourEarnings")}</p>
                             </div>
                             {o.total && (
                               <div>
                                 <p className="text-sm font-bold text-gray-700">{formatCurrency(o.total)}</p>
-                                <p className="text-[10px] text-gray-400">{T("orderTotal")}</p>
+                                <p className="text-[9px] text-gray-400 font-medium">{T("orderTotal")}</p>
                               </div>
                             )}
                             {o.itemCount && (
                               <div>
                                 <p className="text-sm font-bold text-gray-700">{o.itemCount} items</p>
-                                <p className="text-[10px] text-gray-400">{T("toCollect")}</p>
+                                <p className="text-[9px] text-gray-400 font-medium">{T("toCollect")}</p>
                               </div>
                             )}
                           </div>
@@ -454,17 +542,17 @@ export default function Home() {
                         {o.deliveryAddress && (
                           <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.deliveryAddress)}`}
                             target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
+                            className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-blue-100 transition-colors">
                             <MapPin size={14}/>
                           </a>
                         )}
                         <button onClick={() => dismiss(o.id)}
-                          className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                          className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
                           <X size={16}/>
                         </button>
                         <button onClick={() => acceptOrderMut.mutate(o.id)}
                           disabled={acceptOrderMut.isPending || acceptRideMut.isPending}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors flex items-center justify-center gap-1.5">
+                          className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm shadow-green-600/20">
                           <CheckCircle size={15}/>
                           {acceptOrderMut.isPending ? T("accepting") : T("acceptOrder")}
                         </button>
@@ -483,62 +571,66 @@ export default function Home() {
                     const svcName = SVC_NAMES[r.type] ?? r.type?.replace(/_/g, " ") ?? "Ride";
 
                     return (
-                      <div key={r.id} className={`p-4 ${isBargain ? "border-l-4 border-orange-400 bg-orange-50/30" : ""}`}>
+                      <div key={r.id} className={`p-4 animate-[slideUp_0.3s_ease-out] ${isBargain ? "border-l-4 border-orange-400 bg-gradient-to-r from-orange-50/50 to-white" : "hover:bg-gray-50/50"} transition-colors`}>
                         <div className="flex items-start gap-3">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${isBargain ? "bg-orange-100" : "bg-green-50"}`}>
-                            {isBargain ? <MessageSquare size={22} className="text-orange-500"/> : <RideTypeIcon type={r.type}/>}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm border ${isBargain ? "bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200" : "bg-gradient-to-br from-green-50 to-emerald-50 border-green-100"}`}>
+                            {isBargain ? <MessageSquare size={20} className="text-orange-500"/> : <RideTypeIcon type={r.type}/>}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                              <p className="font-extrabold text-gray-900">{svcName} Ride</p>
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <p className="font-extrabold text-gray-900 text-[15px] tracking-tight">{svcName} Ride</p>
                               {isBargain && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 animate-pulse flex items-center gap-1">
-                                  <MessageSquare size={8}/> BARGAIN OFFER
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 text-orange-700 animate-pulse flex items-center gap-1 border border-orange-200">
+                                  <MessageSquare size={8}/> BARGAIN
                                 </span>
                               )}
                               {isBargain && r.myBid && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
-                                  <CheckCircle size={8}/> Bid Submitted
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1 border border-blue-200">
+                                  <CheckCircle size={8}/> Bid Sent
                                 </span>
                               )}
                               <RequestAge createdAt={r.createdAt} />
                             </div>
-                            <p className="text-xs text-gray-500 truncate flex items-center gap-1">
-                              <span className="w-2 h-2 bg-green-500 rounded-full inline-block flex-shrink-0"/>
-                              {r.pickupAddress}
-                            </p>
-                            <p className="text-xs text-gray-400 truncate flex items-center gap-1">
-                              <span className="w-2 h-2 bg-red-500 rounded-full inline-block flex-shrink-0"/>
-                              {r.dropAddress}
-                            </p>
-                            <div className="flex items-center gap-4 mt-2 flex-wrap">
-                              <div>
-                                <p className={`text-lg font-extrabold ${isBargain ? "text-orange-600" : "text-green-600"}`}>
+                            <div className="space-y-1 mt-1">
+                              <p className="text-xs text-gray-600 truncate flex items-center gap-1.5">
+                                <span className="w-2 h-2 bg-green-500 rounded-full inline-block flex-shrink-0 shadow-sm shadow-green-500/30"/>
+                                {r.pickupAddress}
+                              </p>
+                              <p className="text-xs text-gray-400 truncate flex items-center gap-1.5">
+                                <span className="w-2 h-2 bg-red-500 rounded-full inline-block flex-shrink-0 shadow-sm shadow-red-500/30"/>
+                                {r.dropAddress}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-3 mt-2.5 flex-wrap">
+                              <div className={`rounded-xl px-3 py-1.5 border ${isBargain ? "bg-orange-50 border-orange-100" : "bg-green-50 border-green-100"}`}>
+                                <p className={`text-base font-extrabold leading-tight ${isBargain ? "text-orange-600" : "text-green-600"}`}>
                                   +{formatCurrency(earnings)}
                                 </p>
-                                <p className="text-[10px] text-gray-400">{T("yourEarnings")}</p>
+                                <p className="text-[9px] text-gray-400 font-semibold">{T("yourEarnings")}</p>
                               </div>
                               {isBargain && (
                                 <div>
                                   <p className="text-sm font-bold text-orange-700">{formatCurrency(offeredFare)}</p>
-                                  <p className="text-[10px] text-gray-400">{T("customerOffer")}</p>
+                                  <p className="text-[9px] text-gray-400 font-medium">{T("customerOffer")}</p>
                                 </div>
                               )}
                               {r.distance && (
                                 <div>
                                   <p className="text-sm font-bold text-gray-700">{r.distance} km</p>
-                                  <p className="text-[10px] text-gray-400">{T("distance")}</p>
+                                  <p className="text-[9px] text-gray-400 font-medium">{T("distance")}</p>
                                 </div>
                               )}
                               <div>
-                                <p className="text-sm font-bold text-gray-400 line-through">{formatCurrency(r.fare)}</p>
-                                <p className="text-[10px] text-gray-400">{T("platformFare")}</p>
+                                <p className="text-sm font-bold text-gray-300 line-through">{formatCurrency(r.fare)}</p>
+                                <p className="text-[9px] text-gray-400 font-medium">{T("platformFare")}</p>
                               </div>
                             </div>
                             {r.bargainNote && (
-                              <p className="text-xs text-orange-700 mt-1.5 italic flex items-center gap-1">
-                                <MessageSquare size={11}/> "{r.bargainNote}"
-                              </p>
+                              <div className="mt-2 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2">
+                                <p className="text-xs text-orange-700 italic flex items-center gap-1.5">
+                                  <MessageSquare size={11} className="flex-shrink-0"/> "{r.bargainNote}"
+                                </p>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -546,16 +638,16 @@ export default function Home() {
                         {!isBargain && (
                           <div className="flex gap-2 mt-3">
                             <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
+                              className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-blue-100 transition-colors">
                               <MapPin size={14}/>
                             </a>
                             <button onClick={() => dismiss(r.id)}
-                              className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                              className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
                               <X size={16}/>
                             </button>
                             <button onClick={() => acceptRideMut.mutate(r.id)}
                               disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors flex items-center justify-center gap-1.5">
+                              className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm shadow-green-600/20">
                               <CheckCircle size={15}/>
                               {acceptRideMut.isPending ? T("accepting") : T("acceptRide")}
                             </button>
@@ -565,14 +657,14 @@ export default function Home() {
                         {isBargain && (
                           <div className="mt-3 space-y-2">
                             {r.myBid ? (
-                              <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-3 space-y-2">
+                              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-200 rounded-xl p-3.5 space-y-2.5">
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <p className="text-xs font-bold text-orange-700 flex items-center gap-1"><MessageSquare size={11}/> Aapka Bid Pending</p>
+                                    <p className="text-xs font-bold text-orange-700 flex items-center gap-1"><MessageSquare size={11}/> Your Bid Pending</p>
                                     <p className="text-lg font-extrabold text-orange-600">Rs. {Math.round(r.myBid.fare)}</p>
                                   </div>
-                                  <span className="text-[10px] font-bold px-2 py-1 bg-orange-100 text-orange-600 rounded-full animate-pulse">
-                                    WAITING FOR CUSTOMER
+                                  <span className="text-[10px] font-bold px-2.5 py-1 bg-orange-100 text-orange-600 rounded-full animate-pulse border border-orange-200">
+                                    WAITING
                                   </span>
                                 </div>
                                 <div className="flex gap-2">
@@ -581,7 +673,7 @@ export default function Home() {
                                     value={counterInputs[r.id] || ""}
                                     onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
                                     placeholder="Update bid..."
-                                    className="flex-1 h-9 px-3 bg-white border border-orange-200 rounded-xl text-sm focus:outline-none focus:border-orange-400"
+                                    className="flex-1 h-10 px-3 bg-white border border-orange-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                                   />
                                   <button
                                     onClick={() => {
@@ -589,12 +681,12 @@ export default function Home() {
                                       if (v > 0) counterRideMut.mutate({ id: r.id, counterFare: v });
                                     }}
                                     disabled={counterRideMut.isPending}
-                                    className="bg-orange-500 text-white font-bold px-3 py-2 rounded-xl text-sm disabled:opacity-60">
+                                    className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-3.5 py-2 rounded-xl text-sm disabled:opacity-60 transition-colors">
                                     Update
                                   </button>
                                   <button onClick={() => acceptRideMut.mutate(r.id)}
                                     disabled={acceptRideMut.isPending}
-                                    className="bg-green-600 text-white font-bold px-3 py-2 rounded-xl text-sm disabled:opacity-60 flex items-center gap-1">
+                                    className="bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-2 rounded-xl text-sm disabled:opacity-60 flex items-center gap-1 transition-colors">
                                     <CheckCircle size={13}/> Accept
                                   </button>
                                 </div>
@@ -606,7 +698,7 @@ export default function Home() {
                                   value={counterInputs[r.id] || ""}
                                   onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
                                   placeholder="Your counter fare..."
-                                  className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400"
+                                  className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                                 />
                                 <button
                                   onClick={() => {
@@ -614,31 +706,31 @@ export default function Home() {
                                     if (v > 0) counterRideMut.mutate({ id: r.id, counterFare: v });
                                   }}
                                   disabled={counterRideMut.isPending}
-                                  className="bg-orange-500 text-white font-extrabold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60">
+                                  className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
                                   {counterRideMut.isPending ? "..." : "Submit"}
                                 </button>
                                 <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))}
-                                  className="bg-gray-100 text-gray-500 px-3 py-2.5 rounded-xl flex items-center">
+                                  className="bg-gray-100 text-gray-400 px-3 py-2.5 rounded-xl flex items-center hover:bg-gray-200 transition-colors">
                                   <X size={15}/>
                                 </button>
                               </div>
                             ) : (
                               <div className="flex gap-2">
                                 <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                                  className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl">
+                                  className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-blue-100 transition-colors">
                                   <MapPin size={14}/>
                                 </a>
                                 <button onClick={() => rejectOfferMut.mutate(r.id)}
-                                  className="bg-gray-100 text-gray-500 font-bold px-3 py-2.5 rounded-xl text-sm flex items-center">
+                                  className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm flex items-center hover:bg-gray-200 transition-colors">
                                   <X size={16}/>
                                 </button>
                                 <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: true }))}
-                                  className="flex-1 bg-orange-100 text-orange-700 font-extrabold py-2.5 rounded-xl text-sm flex items-center justify-center gap-1.5">
+                                  className="flex-1 bg-gradient-to-r from-orange-100 to-amber-100 text-orange-700 font-extrabold py-2.5 rounded-xl text-sm flex items-center justify-center gap-1.5 border border-orange-200 hover:from-orange-200 hover:to-amber-200 transition-all active:scale-[0.98]">
                                   <MessageSquare size={14}/> Counter Offer
                                 </button>
                                 <button onClick={() => acceptRideMut.mutate(r.id)}
                                   disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
-                                  className="flex-1 bg-green-600 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5">
+                                  className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-sm shadow-green-600/20 active:scale-[0.98] transition-all">
                                   <CheckCircle size={14}/>
                                   Accept
                                 </button>
@@ -655,22 +747,27 @@ export default function Home() {
             </div>
           </>
         ) : (
-          <div className="bg-white rounded-2xl shadow-sm p-8 text-center border border-gray-100">
-            <div className="flex justify-center mb-3">
-              <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center">
-                <Wifi size={32} className="text-gray-300"/>
-              </div>
+          <div className="bg-white rounded-2xl shadow-sm p-10 text-center border border-gray-100 animate-[slideUp_0.3s_ease-out]">
+            <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-4">
+              <Wifi size={36} className="text-gray-300"/>
             </div>
-            <p className="text-gray-600 font-bold text-base">You are Offline</p>
-            <p className="text-gray-400 text-sm mt-1">Toggle switch to start accepting orders</p>
+            <p className="text-gray-700 font-extrabold text-lg tracking-tight">You are Offline</p>
+            <p className="text-gray-400 text-sm mt-1.5">Toggle the switch above to start accepting orders</p>
+            <button onClick={toggleOnline} disabled={toggling}
+              className="mt-5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-sm shadow-green-600/20 hover:from-green-700 hover:to-emerald-700 transition-all active:scale-[0.98] disabled:opacity-60 inline-flex items-center gap-2">
+              <Zap size={16}/> Go Online
+            </button>
           </div>
         )}
 
       </div>
 
       {toastMsg && (
-        <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none">
-          <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl text-center">{toastMsg}</div>
+        <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none animate-[slideDown_0.3s_ease-out]">
+          <div className={`${toastType === "success" ? "bg-green-600" : "bg-red-600"} text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-center gap-2 max-w-md mx-auto`}>
+            {toastType === "success" ? <CheckCircle size={16}/> : <AlertTriangle size={16}/>}
+            {toastMsg}
+          </div>
         </div>
       )}
     </div>
