@@ -11,7 +11,7 @@ import DepositModal from "../components/wallet/DepositModal";
 import {
   TrendingUp, Gift, Star, Heart, Building2, ArrowDownToLine,
   Banknote, ArrowUpFromLine, Lock, Wallet2, CreditCard,
-  RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle,
+  AlertTriangle, CheckCircle, Clock, XCircle,
   Landmark, Smartphone, ChevronDown, ChevronUp, ShieldCheck,
   Eye, EyeOff, Sparkles, BarChart3, ChevronRight,
 } from "lucide-react";
@@ -303,38 +303,29 @@ export default function Wallet() {
 
   if (isLoading) {
     return (
-      <div className="bg-[#FAFBFC] pb-24 min-h-screen">
-        <div className="bg-white px-5 pt-14 pb-6 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-8">
-            <div className="space-y-2 animate-pulse">
-              <div className="h-3 w-16 bg-gray-200 rounded"/>
-              <div className="h-7 w-32 bg-gray-200 rounded-xl"/>
+      <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+        <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.03] rounded-full -translate-y-1/2 translate-x-1/3"/>
+          <div className="absolute bottom-0 left-0 w-44 h-44 bg-white/[0.02] rounded-full translate-y-1/2 -translate-x-1/4"/>
+          <div className="relative">
+            <div className="flex items-center justify-between mb-6 animate-pulse">
+              <div className="h-3 w-24 bg-white/10 rounded"/>
+              <div className="w-8 h-8 bg-white/5 rounded-full"/>
             </div>
-            <div className="w-10 h-10 bg-gray-100 rounded-2xl animate-pulse"/>
-          </div>
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 animate-pulse">
-            <div className="h-3 w-24 bg-white/10 rounded mb-4"/>
-            <div className="h-10 w-48 bg-white/10 rounded-xl mb-4"/>
-            <div className="flex gap-3">
-              <div className="flex-1 h-14 bg-white/5 rounded-xl"/>
-              <div className="flex-1 h-14 bg-white/5 rounded-xl"/>
+            <div className="h-12 w-52 bg-white/10 rounded-xl mb-6 animate-pulse"/>
+            <div className="flex gap-3 mb-5 animate-pulse">
+              <div className="flex-1 h-16 bg-white/5 rounded-2xl"/>
+              <div className="flex-1 h-16 bg-white/5 rounded-2xl"/>
+              <div className="flex-1 h-16 bg-white/5 rounded-2xl"/>
             </div>
-            <div className="flex gap-2.5 mt-5">
-              <div className="flex-1 h-12 bg-white/15 rounded-2xl"/>
-              <div className="flex-1 h-12 bg-white/10 rounded-2xl"/>
+            <div className="flex gap-3 animate-pulse">
+              <div className="flex-1 h-13 bg-white/15 rounded-2xl"/>
+              <div className="flex-1 h-13 bg-white/10 rounded-2xl"/>
             </div>
           </div>
         </div>
-        <div className="px-5 py-5 space-y-4">
-          <div className="flex gap-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="flex-1 bg-white rounded-2xl p-3.5 border border-gray-100 animate-pulse">
-                <div className="h-5 w-20 bg-gray-200 rounded mb-1"/>
-                <div className="h-3 w-12 bg-gray-100 rounded"/>
-              </div>
-            ))}
-          </div>
-          <div className="bg-white rounded-3xl border border-gray-100 p-5 animate-pulse">
+        <div className="px-5 py-5 space-y-4 -mt-4">
+          <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm animate-pulse">
             <div className="h-4 w-32 bg-gray-200 rounded mb-4"/>
             <div className="flex items-end gap-3 h-20">
               {[20, 35, 15, 45, 30, 50, 25].map((h, i) => (
@@ -352,13 +343,12 @@ export default function Wallet() {
 
   if (!config.features.wallet) {
     return (
-      <div className="bg-[#FAFBFC] pb-24 min-h-screen">
-        <div className="bg-white px-5 pt-14 pb-6 border-b border-gray-100">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">{T("wallet")}</p>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight mt-0.5">{T("wallet")}</h1>
+      <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+        <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-10 rounded-b-[2rem]">
+          <p className="text-white/40 text-xs font-semibold tracking-widest uppercase">{T("wallet")}</p>
         </div>
-        <div className="px-5 py-8 text-center">
-          <div className="bg-white rounded-3xl p-10 shadow-sm border border-gray-100">
+        <div className="px-5 -mt-4">
+          <div className="bg-white rounded-3xl p-10 shadow-sm border border-gray-100 text-center">
             <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Lock size={32} className="text-gray-300"/>
             </div>
@@ -371,125 +361,112 @@ export default function Wallet() {
   }
 
   return (
-    <div className="bg-[#FAFBFC] pb-28 min-h-screen">
+    <div className="bg-[#F5F6F8] pb-28 min-h-screen">
 
-      <div className="bg-white px-5 pt-14 pb-6 border-b border-gray-100">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">{T("wallet")}</p>
-            <h1 className="text-2xl font-black text-gray-900 tracking-tight mt-0.5">{T("availableBalance")}</h1>
-          </div>
-          <button onClick={() => refetch()} className="w-10 h-10 bg-gray-50 rounded-2xl flex items-center justify-center border border-gray-100 active:bg-gray-100 transition-colors">
-            <RefreshCw size={16} className="text-gray-400"/>
-          </button>
-        </div>
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-green-500/[0.04] rounded-full -translate-y-1/2 translate-x-1/3"/>
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/[0.02] rounded-full translate-y-1/2 -translate-x-1/4"/>
+        <div className="absolute top-1/2 right-8 w-24 h-24 bg-emerald-500/[0.03] rounded-full"/>
 
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3"/>
-          <div className="absolute bottom-0 left-0 w-28 h-28 bg-white/[0.03] rounded-full translate-y-1/3 -translate-x-1/4"/>
-
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-gray-400 font-semibold">{T("availableBalance")}</p>
-                <button onClick={() => setBalanceHidden(v => !v)} className="text-gray-500 active:text-gray-300 transition-colors">
-                  {balanceHidden ? <EyeOff size={12}/> : <Eye size={12}/>}
-                </button>
-              </div>
-              <div className="flex items-center gap-1 bg-green-500/15 px-2.5 py-1 rounded-full">
-                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"/>
-                <span className="text-[10px] text-green-400 font-bold">{T("online" as TranslationKey)}</span>
-              </div>
+        <div className="relative">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <p className="text-white/40 text-xs font-semibold tracking-widest uppercase">{T("availableBalance")}</p>
             </div>
+            <button onClick={() => setBalanceHidden(v => !v)} className="w-8 h-8 bg-white/5 rounded-full flex items-center justify-center active:bg-white/10 transition-colors">
+              {balanceHidden ? <EyeOff size={13} className="text-white/40"/> : <Eye size={13} className="text-white/40"/>}
+            </button>
+          </div>
 
-            <p className="text-4xl font-black text-white tracking-tight">
-              {balanceHidden ? "Rs. ••••••" : fc(balance)}
+          <div className="flex items-end gap-3 mb-1">
+            <p className="text-[42px] font-black text-white tracking-tight leading-none">
+              {balanceHidden ? "••••••" : fc(balance)}
             </p>
+          </div>
 
-            <div className="flex items-center gap-3 mt-4">
-              {pendingAmt > 0 && (
-                <div className="flex-1 bg-white/5 rounded-xl px-3 py-2">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wider font-bold">{T("pending")}</p>
-                  <p className="text-sm font-bold text-amber-400">{fc(pendingAmt)}</p>
-                </div>
-              )}
-              <div className="flex-1 bg-white/5 rounded-xl px-3 py-2">
-                <p className="text-[9px] text-gray-500 uppercase tracking-wider font-bold">{T("yourShare" as TranslationKey)}</p>
-                <p className="text-sm font-bold text-white">{riderKeepPct}%</p>
-              </div>
-              {pendingAmt === 0 && (
-                <div className="flex-1 bg-white/5 rounded-xl px-3 py-2">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-wider font-bold">{T("earnedToday")}</p>
-                  <p className="text-sm font-bold text-green-400">{fc(todayEarned)}</p>
-                </div>
-              )}
+          <div className="flex items-center gap-2 mb-5">
+            <div className="flex items-center gap-1 bg-green-500/15 px-2 py-0.5 rounded-full">
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"/>
+              <span className="text-[9px] text-green-400 font-bold">{T("online" as TranslationKey)}</span>
             </div>
-
-            {minBalance > 0 && balance < minBalance && (
-              <div className="mt-3 bg-amber-500/15 rounded-xl px-3 py-2.5 flex items-center gap-2 border border-amber-500/20">
-                <AlertTriangle size={14} className="text-amber-400 flex-shrink-0"/>
-                <div>
-                  <p className="text-xs text-amber-300 font-bold">{T("cashMinBalance")}: {fc(minBalance)}</p>
-                  <p className="text-[10px] text-amber-400/70">Rs. {Math.round(minBalance - balance)} {T("moreNeeded")}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-2.5 mt-5">
-              {withdrawalEnabled ? (
-                <button onClick={() => setShowWithdraw(true)}
-                  className="flex-1 bg-white text-gray-900 font-black rounded-2xl py-3.5 text-sm flex items-center justify-center gap-2 active:bg-gray-100 transition-colors">
-                  <ArrowUpFromLine size={15}/> {T("withdraw")}
-                </button>
-              ) : (
-                <button disabled className="flex-1 bg-white/10 text-white/40 font-bold rounded-2xl py-3.5 text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-white/10">
-                  <Lock size={14}/> {T("withdrawalsPaused")}
-                </button>
-              )}
-              {depositEnabled && (
-                <button onClick={() => setShowDeposit(true)}
-                  className="flex-1 bg-white/10 text-white font-bold rounded-2xl py-3.5 text-sm flex items-center justify-center gap-2 border border-white/10 active:bg-white/15 transition-colors">
-                  <ArrowDownToLine size={15}/> {T("deposit")}
-                </button>
-              )}
-            </div>
-
-            {!withdrawalEnabled && (
-              <div className="mt-3 bg-red-500/15 rounded-xl px-3 py-2 flex items-center gap-2 border border-red-500/20">
-                <XCircle size={12} className="text-red-400 flex-shrink-0"/>
-                <p className="text-[10px] text-red-300 font-medium">{T("withdrawalsDisabled")}</p>
+            {pendingAmt > 0 && (
+              <div className="flex items-center gap-1 bg-amber-500/15 px-2 py-0.5 rounded-full">
+                <Clock size={9} className="text-amber-400"/>
+                <span className="text-[9px] text-amber-400 font-bold">{fc(pendingAmt)} {T("pending")}</span>
               </div>
             )}
           </div>
+
+          <div className="grid grid-cols-3 gap-2.5 mb-5">
+            <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
+              <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("earnedToday")}</p>
+              <p className="text-sm font-black text-green-400 mt-0.5">{fc(todayEarned)}</p>
+            </div>
+            <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
+              <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("yourShare" as TranslationKey)}</p>
+              <p className="text-sm font-black text-white mt-0.5">{riderKeepPct}%</p>
+            </div>
+            <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
+              <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("totalWithdrawn")}</p>
+              <p className="text-sm font-black text-red-400 mt-0.5">{fc(totalWithdrawn)}</p>
+            </div>
+          </div>
+
+          {minBalance > 0 && balance < minBalance && (
+            <div className="mb-4 bg-amber-500/15 rounded-2xl px-3.5 py-2.5 flex items-center gap-2.5 border border-amber-500/15">
+              <AlertTriangle size={14} className="text-amber-400 flex-shrink-0"/>
+              <div>
+                <p className="text-xs text-amber-300 font-bold">{T("cashMinBalance")}: {fc(minBalance)}</p>
+                <p className="text-[10px] text-amber-400/60">Rs. {Math.round(minBalance - balance)} {T("moreNeeded")}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2.5">
+            {withdrawalEnabled ? (
+              <button onClick={() => setShowWithdraw(true)}
+                className="flex-1 bg-white text-gray-900 font-black rounded-2xl py-3.5 text-sm flex items-center justify-center gap-2 active:bg-gray-100 transition-all shadow-lg shadow-white/10">
+                <ArrowUpFromLine size={15}/> {T("withdraw")}
+              </button>
+            ) : (
+              <button disabled className="flex-1 bg-white/10 text-white/40 font-bold rounded-2xl py-3.5 text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-white/10">
+                <Lock size={14}/> {T("withdrawalsPaused")}
+              </button>
+            )}
+            {depositEnabled && (
+              <button onClick={() => setShowDeposit(true)}
+                className="flex-1 bg-white/10 text-white font-bold rounded-2xl py-3.5 text-sm flex items-center justify-center gap-2 border border-white/[0.08] active:bg-white/15 transition-all backdrop-blur-sm">
+                <ArrowDownToLine size={15}/> {T("deposit")}
+              </button>
+            )}
+          </div>
+
+          {!withdrawalEnabled && (
+            <div className="mt-3 bg-red-500/15 rounded-2xl px-3 py-2 flex items-center gap-2 border border-red-500/15">
+              <XCircle size={12} className="text-red-400 flex-shrink-0"/>
+              <p className="text-[10px] text-red-300 font-medium">{T("withdrawalsDisabled")}</p>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="px-5 py-5 space-y-5">
+      <div className="px-5 py-5 space-y-4 -mt-3">
 
-        <div className="flex gap-3">
-          {[
-            { label: T("earnedToday"),    value: fc(todayEarned),    color: "text-green-600" },
-            { label: T("earnedThisWeek"), value: fc(weekEarned),     color: "text-blue-600"  },
-            { label: T("totalEarned"),     value: fc(totalEarned),    color: "text-purple-600" },
-          ].map(s => (
-            <div key={s.label} className="flex-1 bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm">
-              <p className={`text-base font-black ${s.color}`}>{s.value}</p>
-              <p className="text-[10px] text-gray-400 mt-1 font-semibold">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {totalWithdrawn > 0 && (
-          <div className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center">
-                <ArrowUpFromLine size={14} className="text-red-500"/>
+        <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
+          <div className="grid grid-cols-3 divide-x divide-gray-100">
+            {[
+              { label: T("earnedToday"),    value: fc(todayEarned),  color: "text-emerald-600", icon: <TrendingUp size={13} className="text-emerald-500"/> },
+              { label: T("earnedThisWeek"), value: fc(weekEarned),   color: "text-blue-600",    icon: <BarChart3 size={13} className="text-blue-500"/>    },
+              { label: T("totalEarned"),     value: fc(totalEarned),  color: "text-violet-600",  icon: <Wallet2 size={13} className="text-violet-500"/>    },
+            ].map((s, i) => (
+              <div key={s.label} className={`text-center ${i === 0 ? "pr-3" : i === 2 ? "pl-3" : "px-3"}`}>
+                <div className="flex items-center justify-center gap-1 mb-1">{s.icon}</div>
+                <p className={`text-sm font-black ${s.color}`}>{s.value}</p>
+                <p className="text-[9px] text-gray-400 mt-0.5 font-semibold leading-tight">{s.label}</p>
               </div>
-              <p className="text-[10px] text-gray-400 font-semibold">{T("totalWithdrawn")}</p>
-            </div>
-            <p className="text-base font-black text-red-500">{fc(totalWithdrawn)}</p>
+            ))}
           </div>
-        )}
+        </div>
 
         <EarningsChart transactions={transactions}/>
 
