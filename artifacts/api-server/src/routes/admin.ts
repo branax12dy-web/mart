@@ -21,6 +21,8 @@ import {
   liveLocationsTable,
   authAuditLogTable,
   refreshTokensTable,
+  rideRatingsTable,
+  riderPenaltiesTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -427,6 +429,21 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "auth_social_google",            value: "off",  label: "Google Social Login (legacy toggle)",  category: "auth" },
   { key: "auth_social_facebook",          value: "off",  label: "Facebook Social Login (legacy toggle)",category: "auth" },
   { key: "auth_trusted_device_days",      value: "30",   label: "Trusted Device Expiry (days)",         category: "auth" },
+  /* ═══════════════════  Ride Dispatch Engine  ═══════════════════ */
+  { key: "dispatch_request_timeout_sec",      value: "30",   label: "Rider Accept Timeout (seconds)",                    category: "rides" },
+  { key: "dispatch_max_loops",                value: "2",    label: "Max Dispatch Loops Before Expiry",                  category: "rides" },
+  { key: "dispatch_min_radius_km",            value: "5",    label: "Min Request Radius (KM)",                           category: "rides" },
+  { key: "dispatch_ride_start_proximity_m",   value: "200",  label: "Ride Start Proximity (meters from pickup)",         category: "rides" },
+  { key: "dispatch_avg_speed_kmh",            value: "25",   label: "Average Rider Speed for ETA (km/h)",                category: "rides" },
+  /* ═══════════════════  Rider Ignore Penalty  ═══════════════════ */
+  { key: "rider_ignore_limit_daily",          value: "5",    label: "Max Ignores Per Day Before Penalty",                category: "rider" },
+  { key: "rider_ignore_penalty_amount",       value: "30",   label: "Ignore Penalty Amount (Rs.)",                       category: "rider" },
+  { key: "rider_ignore_restrict_enabled",     value: "off",  label: "Auto-Restrict Rider on Excessive Ignores",          category: "rider" },
+  /* ═══════════════════  Ride Payment Method Toggles  ═══════════════════ */
+  { key: "ride_payment_cash",                 value: "on",   label: "Cash Payment for Rides",                            category: "rides" },
+  { key: "ride_payment_wallet",               value: "on",   label: "Wallet Payment for Rides",                          category: "rides" },
+  { key: "ride_payment_jazzcash",             value: "off",  label: "JazzCash Direct Payment for Rides",                 category: "rides" },
+  { key: "ride_payment_easypaisa",            value: "off",  label: "EasyPaisa Direct Payment for Rides",                category: "rides" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {

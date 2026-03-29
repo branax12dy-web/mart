@@ -410,9 +410,9 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
     return (
       <View style={{ flex: 1 }}>
-        <LinearGradient colors={["#0D47C0", "#1565C0", "#1E88E5"]} style={StyleSheet.absoluteFillObject} />
-        <View style={{ position: "absolute", top: -70, right: -70, width: 240, height: 240, borderRadius: 120, backgroundColor: "rgba(255,255,255,0.05)" }} />
-        <View style={{ position: "absolute", bottom: 100, left: -50, width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.04)" }} />
+        <LinearGradient colors={["#111827", "#1F2937", "#111827"]} style={StyleSheet.absoluteFillObject} />
+        <View style={{ position: "absolute", top: -70, right: -70, width: 240, height: 240, borderRadius: 120, backgroundColor: "rgba(34,197,94,0.04)" }} />
+        <View style={{ position: "absolute", bottom: 100, left: -50, width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.02)" }} />
 
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
           {/* Ride badge */}
@@ -563,7 +563,15 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
               <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#065F46" }}>Rate Your Driver</Text>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 {[1,2,3,4,5].map(s => (
-                  <Pressable key={s} onPress={() => { setRating(s); setTimeout(() => setRatingDone(true), 500); }}>
+                  <Pressable key={s} onPress={() => {
+                    setRating(s);
+                    const apiUrl = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+                    fetch(`${apiUrl}/rides/${rideId}/rate`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                      body: JSON.stringify({ stars: s }),
+                    }).then(r => { if (r.ok) setRatingDone(true); }).catch(() => {});
+                  }}>
                     <Ionicons name={s <= rating ? "star" : "star-outline"} size={36} color={s <= rating ? "#F59E0B" : "#D1D5DB"} />
                   </Pressable>
                 ))}
@@ -902,6 +910,7 @@ function RideScreenInner() {
   const inMaintenance = config.appStatus === "maintenance";
   const ridesEnabled = config.features.rides;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
   type LocObj = { lat: number; lng: number; address: string };
 
@@ -967,18 +976,25 @@ function RideScreenInner() {
       .catch(() => {});
   }, [rideType]);
 
-  /* ── Fetch enabled payment methods (via api-client-react) ── */
+  /* ── Fetch enabled payment methods (filtered by admin settings) ── */
   useEffect(() => {
-    getPaymentMethods()
-      .then(data => {
-        if (!data?.methods) return;
-        const rideCompatible = data.methods.filter(m => m.id === "cash" || m.id === "wallet");
-        if (rideCompatible.length > 0) {
-          setPayMethods(rideCompatible);
-          setPayMethod(rideCompatible[0]!.id as "cash" | "wallet");
+    Promise.all([
+      getPaymentMethods(),
+      fetch(`${apiBase}/rides/payment-methods`).then(r => r.json()).catch(() => null),
+    ]).then(([legacyData, rideData]) => {
+      const rideKeys = new Set((rideData?.methods || []).map((m: any) => m.key));
+      if (legacyData?.methods?.length) {
+        const filtered = legacyData.methods.filter((m: any) => rideKeys.has(m.id));
+        if (filtered.length > 0) {
+          setPayMethods(filtered);
+          setPayMethod(filtered[0]!.id as "cash" | "wallet");
         }
-      })
-      .catch(() => {});
+      } else if (rideData?.methods?.length) {
+        const mapped = rideData.methods.map((m: any) => ({ id: m.key, name: m.label }));
+        setPayMethods(mapped);
+        setPayMethod(mapped[0]!.id as "cash" | "wallet");
+      }
+    }).catch(() => {});
   }, []);
 
   /* ── Fetch enabled ride service types (via api-client-react) ── */

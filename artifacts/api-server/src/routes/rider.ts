@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable } from "@workspace/db/schema";
 import { eq, desc, and, or, sql, count, sum, avg, gte, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -204,44 +204,65 @@ router.patch("/profile", async (req, res) => {
   });
 });
 
-/* ── GET /rider/requests — Available orders + rides (incl. bargaining, with own bid info) ── */
+/* ── Haversine distance (km) ── */
+function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/* ── GET /rider/requests — Available orders + rides (incl. bargaining, with own bid info + distance/ETA) ── */
 router.get("/requests", async (req, res) => {
   const riderId = req.riderId!;
-  const [orders, rides, myBids] = await Promise.all([
+  const s = await getPlatformSettings();
+  const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
+
+  const [orders, rides, myBids, riderLoc] = await Promise.all([
     db.select().from(ordersTable)
       .where(or(eq(ordersTable.status, "confirmed"), eq(ordersTable.status, "preparing")))
       .orderBy(desc(ordersTable.createdAt)).limit(20),
-    /* Show searching rides + bargaining rides (unassigned, open to all) */
     db.select().from(ridesTable)
       .where(and(
         or(eq(ridesTable.status, "searching"), eq(ridesTable.status, "bargaining")),
         isNull(ridesTable.riderId),
       ))
       .orderBy(desc(ridesTable.createdAt)).limit(30),
-    /* Fetch this rider's own bids on bargaining rides */
     db.select().from(rideBidsTable)
       .where(and(eq(rideBidsTable.riderId, riderId), eq(rideBidsTable.status, "pending"))),
+    db.select().from(liveLocationsTable)
+      .where(eq(liveLocationsTable.userId, riderId)).limit(1),
   ]);
 
-  /* Map each bid by rideId for quick lookup */
   const myBidMap = new Map<string, (typeof myBids)[0]>(myBids.map(b => [b.rideId, b]));
+  const rLoc = riderLoc[0] ? { lat: parseFloat(String(riderLoc[0].latitude)), lng: parseFloat(String(riderLoc[0].longitude)) } : null;
 
   res.json({
     orders: orders.map(o => ({ ...o, total: safeNum(o.total) })),
-    rides:  rides.map(r => ({
-      ...r,
-      fare:          safeNum(r.fare),
-      distance:      safeNum(r.distance),
-      offeredFare:   r.offeredFare ? safeNum(r.offeredFare) : null,
-      counterFare:   r.counterFare ? safeNum(r.counterFare) : null,
-      bargainRounds: r.bargainRounds ?? 0,
-      /* InDrive: include this rider's pending bid (if any) so UI can show "Bid Submitted" */
-      myBid: myBidMap.has(r.id) ? {
-        id:   myBidMap.get(r.id)!.id,
-        fare: safeNum(myBidMap.get(r.id)!.fare),
-        note: myBidMap.get(r.id)!.note,
-      } : null,
-    })),
+    rides:  rides.map(r => {
+      let riderDistanceKm: number | null = null;
+      let riderEtaMin: number | null = null;
+      if (rLoc && r.pickupLat && r.pickupLng) {
+        riderDistanceKm = Math.round(calcDistance(rLoc.lat, rLoc.lng, parseFloat(r.pickupLat), parseFloat(r.pickupLng)) * 10) / 10;
+        riderEtaMin = Math.max(1, Math.round((riderDistanceKm / avgSpeed) * 60));
+      }
+      return {
+        ...r,
+        fare:          safeNum(r.fare),
+        distance:      safeNum(r.distance),
+        offeredFare:   r.offeredFare ? safeNum(r.offeredFare) : null,
+        counterFare:   r.counterFare ? safeNum(r.counterFare) : null,
+        bargainRounds: r.bargainRounds ?? 0,
+        riderDistanceKm,
+        riderEtaMin,
+        myBid: myBidMap.has(r.id) ? {
+          id:   myBidMap.get(r.id)!.id,
+          fare: safeNum(myBidMap.get(r.id)!.fare),
+          note: myBidMap.get(r.id)!.note,
+        } : null,
+      };
+    }),
   });
 });
 
@@ -1330,6 +1351,133 @@ router.get("/wallet/deposits", async (req, res) => {
     .orderBy(desc(walletTransactionsTable.createdAt))
     .limit(20);
   res.json({ deposits: deposits.map(d => ({ ...d, amount: safeNum(d.amount) })) });
+});
+
+/* ── Ignore penalty helper ── */
+async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: number; penaltyApplied: number; restricted: boolean }> {
+  const s = await getPlatformSettings();
+  const limit = parseInt(s["rider_ignore_limit_daily"] ?? "5", 10);
+  const penaltyAmt = parseFloat(s["rider_ignore_penalty_amount"] ?? "30");
+  const restrictEnabled = (s["rider_ignore_restrict_enabled"] ?? "off") === "on";
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const [countRow] = await db.select({ c: count() })
+    .from(riderPenaltiesTable)
+    .where(and(
+      eq(riderPenaltiesTable.riderId, riderId),
+      eq(riderPenaltiesTable.type, "ignore"),
+      gte(riderPenaltiesTable.createdAt, today),
+    ));
+  const dailyIgnores = (countRow?.c ?? 0) + 1;
+
+  let penaltyApplied = 0;
+  let restricted = false;
+
+  await db.insert(riderPenaltiesTable).values({
+    id: generateId(), riderId, type: "ignore",
+    amount: "0",
+    reason: `Ignore #${dailyIgnores} today`,
+  });
+
+  if (dailyIgnores > limit) {
+    penaltyApplied = penaltyAmt;
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance - ${penaltyAmt}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, riderId));
+      await tx.insert(riderPenaltiesTable).values({
+        id: generateId(), riderId, type: "ignore_penalty",
+        amount: penaltyAmt.toFixed(2),
+        reason: `Excessive ignore penalty (${dailyIgnores}/${limit} today) — Rs. ${penaltyAmt} deducted`,
+      });
+    });
+
+    if (restrictEnabled) {
+      await db.update(usersTable)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(usersTable.id, riderId));
+      restricted = true;
+    }
+
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: riderId,
+      title: restricted ? "Account Restricted ⚠️" : "Ignore Penalty ⚠️",
+      body: restricted
+        ? `Aapne aaj ${dailyIgnores} requests ignore ki (limit: ${limit}). Rs. ${penaltyAmt} penalty aur account restrict ho gaya. Support se contact karein.`
+        : `Aapne aaj ${dailyIgnores} requests ignore ki (limit: ${limit}). Rs. ${penaltyAmt} penalty lagai gayi.`,
+      type: "system", icon: "alert-circle-outline",
+    }).catch(() => {});
+  } else if (dailyIgnores === limit) {
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: riderId,
+      title: "Ignore Warning ⚠️",
+      body: `Aapne aaj ${dailyIgnores}/${limit} requests ignore ki. Agla ignore Rs. ${penaltyAmt} penalty aur account restriction ka sabab ban sakta hai.`,
+      type: "system", icon: "alert-circle-outline",
+    }).catch(() => {});
+  }
+
+  return { dailyIgnores, penaltyApplied, restricted };
+}
+
+/* ── POST /rider/rides/:id/ignore — Rider ignores a ride request ── */
+router.post("/rides/:id/ignore", async (req, res) => {
+  const riderId = req.riderId!;
+  const rideId = req.params["id"]!;
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (!["searching", "bargaining"].includes(ride.status)) {
+    res.status(400).json({ error: "Ride is no longer available" }); return;
+  }
+
+  const penalty = await handleIgnorePenalty(riderId);
+
+  res.json({
+    success: true,
+    rideId,
+    ignorePenalty: penalty,
+  });
+});
+
+/* ── GET /rider/ignore-stats — Rider's ignore stats for today ── */
+router.get("/ignore-stats", async (req, res) => {
+  const riderId = req.riderId!;
+  const s = await getPlatformSettings();
+  const limit = parseInt(s["rider_ignore_limit_daily"] ?? "5", 10);
+  const penaltyAmt = parseFloat(s["rider_ignore_penalty_amount"] ?? "30");
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [countRow] = await db.select({ c: count() })
+    .from(riderPenaltiesTable)
+    .where(and(
+      eq(riderPenaltiesTable.riderId, riderId),
+      eq(riderPenaltiesTable.type, "ignore"),
+      gte(riderPenaltiesTable.createdAt, today),
+    ));
+
+  res.json({
+    dailyIgnores: countRow?.c ?? 0,
+    dailyLimit: limit,
+    penaltyAmount: penaltyAmt,
+    remaining: Math.max(0, limit - (countRow?.c ?? 0)),
+  });
+});
+
+/* ── GET /rider/penalty-history — Rider's penalty history ── */
+router.get("/penalty-history", async (req, res) => {
+  const riderId = req.riderId!;
+  const penalties = await db.select().from(riderPenaltiesTable)
+    .where(eq(riderPenaltiesTable.riderId, riderId))
+    .orderBy(desc(riderPenaltiesTable.createdAt))
+    .limit(50);
+  res.json({
+    penalties: penalties.map(p => ({
+      ...p,
+      amount: safeNum(p.amount),
+      createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+    })),
+  });
 });
 
 export default router;

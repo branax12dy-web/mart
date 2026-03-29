@@ -92,6 +92,8 @@ const TOGGLE_KEYS = new Set([
   "delivery_free_enabled",
   "ride_surge_enabled",
   "ride_bargaining_enabled",
+  "ride_payment_cash","ride_payment_wallet","ride_payment_jazzcash","ride_payment_easypaisa",
+  "rider_ignore_restrict_enabled",
   /* email alert toggles */
   "email_alert_new_vendor","email_alert_high_value_order","email_alert_fraud",
   "email_alert_low_balance","email_alert_daily_summary","email_alert_weekly_report",

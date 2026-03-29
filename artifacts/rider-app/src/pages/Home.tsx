@@ -6,13 +6,13 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { playRequestSound, unlockAudio } from "../lib/notificationSound";
+import { playRequestSound, unlockAudio, silenceFor, isSilenced, unsilence, getSilenceRemaining } from "../lib/notificationSound";
 import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
   ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
   X, Timer, CheckCircle, MessageSquare, ChevronRight,
   TrendingUp, Calendar, Trophy, Radio, Zap, Clock,
-  ArrowUpRight, Eye,
+  ArrowUpRight, Eye, VolumeX, Volume2, XCircle,
 } from "lucide-react";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
@@ -110,6 +110,9 @@ export default function Home() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const soundIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasUnseenRequestsRef = useRef(false);
+  const [silenced, setSilenced] = useState(isSilenced());
+  const [silenceRemaining, setSilenceRemaining] = useState(getSilenceRemaining());
+  const [showSilenceMenu, setShowSilenceMenu] = useState(false);
 
   useEffect(() => {
     const handler = () => unlockAudio();
@@ -122,6 +125,16 @@ export default function Home() {
       document.removeEventListener("touchstart", handler);
     };
   }, []);
+
+  useEffect(() => {
+    if (!silenced) return;
+    const t = setInterval(() => {
+      const rem = getSilenceRemaining();
+      setSilenceRemaining(rem);
+      if (rem <= 0) { setSilenced(false); setShowSilenceMenu(false); }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [silenced]);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -307,6 +320,21 @@ export default function Home() {
     onError: (e: any) => showToast(e.message, "error"),
   });
 
+  const ignoreRideMut = useMutation({
+    mutationFn: (id: string) => apiFetch(`/rider/rides/${id}/ignore`, { method: "POST" }),
+    onSuccess: (data: any, id) => {
+      dismiss(id);
+      const p = data?.ignorePenalty;
+      if (p?.penaltyApplied > 0) {
+        showToast(`Ignored — Rs. ${p.penaltyApplied} penalty deducted!${p.restricted ? " Account restricted." : ""}`, "error");
+      } else {
+        showToast(`Ride ignored (${p?.dailyIgnores || "?"} today).`, "success");
+      }
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
+    },
+    onError: (e: any) => showToast(e.message || "Ignore failed", "error"),
+  });
+
   const getDeliveryEarn = (type: string) => {
     const fee = (config.deliveryFee as Record<string, unknown>)[type] as number ?? config.deliveryFee.mart;
     return fee * (config.finance.riderEarningPct / 100);
@@ -383,7 +411,34 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 mt-4">
+          <div className="flex items-center gap-2 mt-3">
+            <button onClick={() => setShowSilenceMenu(!showSilenceMenu)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${silenced ? "bg-red-500/15 border-red-500/30 text-red-400" : "bg-white/[0.06] border-white/[0.06] text-white/50 hover:text-white/70"}`}>
+              {silenced ? <VolumeX size={13}/> : <Volume2 size={13}/>}
+              {silenced ? `Muted ${Math.ceil(silenceRemaining / 60)}m` : "Sound"}
+            </button>
+            {showSilenceMenu && (
+              <div className="flex items-center gap-1.5 animate-[slideUp_0.2s_ease-out]">
+                {silenced ? (
+                  <button onClick={() => { unsilence(); setSilenced(false); setShowSilenceMenu(false); showToast("Sound unmuted", "success"); }}
+                    className="bg-green-500/20 border border-green-500/30 text-green-400 text-[10px] font-bold px-2.5 py-1.5 rounded-lg">
+                    Unmute
+                  </button>
+                ) : (
+                  <>
+                    {[15, 30, 60].map(m => (
+                      <button key={m} onClick={() => { silenceFor(m); setSilenced(true); setSilenceRemaining(m * 60); setShowSilenceMenu(false); showToast(`Sound muted for ${m}min`, "success"); }}
+                        className="bg-white/[0.08] border border-white/[0.08] text-white/60 text-[10px] font-bold px-2.5 py-1.5 rounded-lg hover:bg-white/[0.12] transition-colors">
+                        {m}m
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-4 gap-2 mt-3">
             {[
               { icon: <Package size={15} className="text-indigo-300"/>, label: "Today",  value: String(user?.stats?.deliveriesToday || 0), sub: "deliveries" },
               { icon: <TrendingUp size={15} className="text-green-300"/>, label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0), sub: "today" },
@@ -619,6 +674,20 @@ export default function Home() {
                               )}
                               <RequestAge createdAt={r.createdAt} />
                             </div>
+                            {(r.riderDistanceKm != null || r.riderEtaMin != null) && (
+                              <div className="flex items-center gap-2 mt-1 mb-1">
+                                {r.riderDistanceKm != null && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-1">
+                                    <Navigation size={9}/> {r.riderDistanceKm < 1 ? `${Math.round(r.riderDistanceKm * 1000)}m` : `${r.riderDistanceKm} km`} away
+                                  </span>
+                                )}
+                                {r.riderEtaMin != null && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-1">
+                                    <Clock size={9}/> {r.riderEtaMin} min ETA
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="space-y-1 mt-1">
                               <p className="text-xs text-gray-600 truncate flex items-center gap-1.5">
                                 <span className="w-2 h-2 bg-green-500 rounded-full inline-block flex-shrink-0 shadow-sm shadow-green-500/30"/>
@@ -669,9 +738,10 @@ export default function Home() {
                               className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-blue-100 transition-colors">
                               <MapPin size={14}/>
                             </a>
-                            <button onClick={() => dismiss(r.id)}
-                              className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
-                              <X size={16}/>
+                            <button onClick={() => ignoreRideMut.mutate(r.id)}
+                              disabled={ignoreRideMut.isPending}
+                              className="bg-red-50 border border-red-200 text-red-500 font-bold px-3 py-2.5 rounded-xl text-xs hover:bg-red-100 transition-colors flex items-center gap-1">
+                              <XCircle size={14}/> Ignore
                             </button>
                             <button onClick={() => acceptRideMut.mutate(r.id)}
                               disabled={acceptRideMut.isPending || acceptOrderMut.isPending}

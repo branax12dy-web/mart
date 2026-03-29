@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { liveLocationsTable, notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, usersTable, walletTransactionsTable, popularLocationsTable, rideEventLogsTable } from "@workspace/db/schema";
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { liveLocationsTable, notificationsTable, rideBidsTable, rideServiceTypesTable, ridesTable, rideRatingsTable, riderPenaltiesTable, usersTable, walletTransactionsTable, popularLocationsTable, rideEventLogsTable } from "@workspace/db/schema";
+import { and, asc, eq, ne, sql, or, isNull, gte, desc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { ensureDefaultRideServices, ensureDefaultLocations, getPlatformSettings } from "./admin.js";
 import { customerAuth, riderAuth, verifyUserJwt } from "../middleware/security.js";
@@ -700,5 +700,215 @@ router.get("/:id/event-logs", async (req, res) => {
 
   res.json({ logs: formatted, total: formatted.length });
 });
+
+/* ══════════════════════════════════════════════════════
+   GET /rides/payment-methods — Active ride payment methods
+══════════════════════════════════════════════════════ */
+router.get("/payment-methods", async (_req, res) => {
+  const s = await getPlatformSettings();
+  const methods: { key: string; label: string; enabled: boolean }[] = [
+    { key: "cash",      label: "Cash",      enabled: (s["ride_payment_cash"] ?? "on") === "on" && (s["rider_cash_allowed"] ?? "on") === "on" },
+    { key: "wallet",    label: "Wallet",     enabled: (s["ride_payment_wallet"] ?? "on") === "on" && (s["feature_wallet"] ?? "on") === "on" },
+    { key: "jazzcash",  label: "JazzCash",   enabled: (s["ride_payment_jazzcash"] ?? "off") === "on" && (s["jazzcash_enabled"] ?? "off") === "on" },
+    { key: "easypaisa", label: "EasyPaisa",  enabled: (s["ride_payment_easypaisa"] ?? "off") === "on" && (s["easypaisa_enabled"] ?? "off") === "on" },
+  ];
+  res.json({ methods: methods.filter(m => m.enabled) });
+});
+
+/* ══════════════════════════════════════════════════════
+   POST /rides/:id/rate — Customer rates rider after ride
+══════════════════════════════════════════════════════ */
+router.post("/:id/rate", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const rideId = String(req.params["id"]);
+  const { stars, comment } = req.body;
+
+  if (!stars || stars < 1 || stars > 5) {
+    res.status(400).json({ error: "stars must be between 1 and 5" }); return;
+  }
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (ride.userId !== userId) { res.status(403).json({ error: "Not your ride" }); return; }
+  if (ride.status !== "completed") { res.status(400).json({ error: "Can only rate completed rides" }); return; }
+  if (!ride.riderId) { res.status(400).json({ error: "No rider assigned" }); return; }
+
+  const existing = await db.select({ id: rideRatingsTable.id }).from(rideRatingsTable).where(eq(rideRatingsTable.rideId, rideId)).limit(1);
+  if (existing.length > 0) { res.status(409).json({ error: "Already rated" }); return; }
+
+  const [rating] = await db.insert(rideRatingsTable).values({
+    id: generateId(),
+    rideId,
+    customerId: userId,
+    riderId: ride.riderId,
+    stars: parseInt(String(stars), 10),
+    comment: comment || null,
+  }).returning();
+
+  res.json(rating);
+});
+
+/* ══════════════════════════════════════════════════════
+   GET /rides/:id/status — Customer polls dispatch status
+══════════════════════════════════════════════════════ */
+router.get("/:id/status", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const rideId = String(req.params["id"]);
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (ride.userId !== userId) { res.status(403).json({ error: "Not your ride" }); return; }
+
+  const attempts = (ride.dispatchAttempts as string[] | null) || [];
+  const hasRating = await db.select({ id: rideRatingsTable.id }).from(rideRatingsTable).where(eq(rideRatingsTable.rideId, rideId)).limit(1);
+
+  res.json({
+    id: ride.id,
+    status: ride.status,
+    riderId: ride.riderId,
+    riderName: ride.riderName,
+    riderPhone: ride.riderPhone,
+    dispatchedRiderId: ride.dispatchedRiderId,
+    dispatchLoopCount: ride.dispatchLoopCount ?? 0,
+    dispatchAttempts: attempts.length,
+    expiresAt: ride.expiresAt ? (ride.expiresAt instanceof Date ? ride.expiresAt.toISOString() : ride.expiresAt) : null,
+    fare: parseFloat(ride.fare),
+    distance: parseFloat(ride.distance),
+    hasRating: hasRating.length > 0,
+  });
+});
+
+/* ══════════════════════════════════════════════════════
+   Dispatch Engine — runs every 10 seconds
+   Finds rides in "searching" status and dispatches to
+   nearest available online rider within configured radius.
+   Handles timeouts and re-dispatch loops.
+══════════════════════════════════════════════════════ */
+let dispatchCycleRunning = false;
+async function runDispatchCycle() {
+  if (dispatchCycleRunning) return;
+  dispatchCycleRunning = true;
+  try {
+    const s = await getPlatformSettings();
+    const timeoutSec = parseInt(s["dispatch_request_timeout_sec"] ?? "30", 10);
+    const maxLoops = parseInt(s["dispatch_max_loops"] ?? "2", 10);
+    const minRadius = parseFloat(s["dispatch_min_radius_km"] ?? "5");
+    const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
+
+    const pendingRides = await db.select().from(ridesTable)
+      .where(and(
+        or(eq(ridesTable.status, "searching"), eq(ridesTable.status, "bargaining")),
+        isNull(ridesTable.riderId),
+      ))
+      .orderBy(asc(ridesTable.createdAt))
+      .limit(50);
+
+    if (pendingRides.length === 0) return;
+
+    const onlineRiders = await db.select({
+      id: usersTable.id,
+      name: usersTable.name,
+      phone: usersTable.phone,
+    }).from(usersTable)
+      .where(and(
+        sql`(${usersTable.roles} LIKE '%rider%' OR ${usersTable.role} LIKE '%rider%')`,
+        eq(usersTable.isOnline, true),
+        eq(usersTable.isActive, true),
+      ));
+
+    if (onlineRiders.length === 0) return;
+
+    const riderLocations = await db.select().from(liveLocationsTable);
+    const riderLocMap = new Map(riderLocations.map(l => [l.userId, { lat: parseFloat(String(l.latitude)), lng: parseFloat(String(l.longitude)) }]));
+
+    for (const ride of pendingRides) {
+      const attempts = (ride.dispatchAttempts as string[] | null) || [];
+      const loopCount = ride.dispatchLoopCount ?? 0;
+      const pickupLat = parseFloat(ride.pickupLat ?? "0");
+      const pickupLng = parseFloat(ride.pickupLng ?? "0");
+
+      if (ride.dispatchedRiderId && ride.dispatchedAt) {
+        const dispatchedAtMs = new Date(ride.dispatchedAt).getTime();
+        const elapsed = (Date.now() - dispatchedAtMs) / 1000;
+        if (elapsed < timeoutSec) continue;
+      }
+
+      if (loopCount >= maxLoops && ride.dispatchedRiderId) {
+        await db.update(ridesTable)
+          .set({ status: "expired", updatedAt: new Date() })
+          .where(eq(ridesTable.id, ride.id));
+
+        await db.insert(notificationsTable).values({
+          id: generateId(),
+          userId: ride.userId,
+          title: "No Rider Found",
+          body: "Koi rider available nahi mila. Please dubara try karein.",
+          type: "ride",
+          icon: "close-circle-outline",
+        }).catch(() => {});
+        continue;
+      }
+
+      const riderDistances: { id: string; name: string; phone: string; dist: number; eta: number }[] = [];
+      for (const rider of onlineRiders) {
+        if (attempts.includes(rider.id)) continue;
+        const loc = riderLocMap.get(rider.id);
+        if (!loc) continue;
+        const dist = calcDistance(loc.lat, loc.lng, pickupLat, pickupLng);
+        if (dist > minRadius) continue;
+        const etaMin = Math.round((dist / avgSpeed) * 60);
+        riderDistances.push({ id: rider.id, name: rider.name || "Rider", phone: rider.phone || "", dist, eta: etaMin });
+      }
+
+      riderDistances.sort((a, b) => a.dist - b.dist);
+
+      if (riderDistances.length === 0) {
+        const newLoopCount = loopCount + 1;
+        if (newLoopCount >= maxLoops) {
+          await db.update(ridesTable)
+            .set({ status: "expired", dispatchLoopCount: newLoopCount, updatedAt: new Date() })
+            .where(eq(ridesTable.id, ride.id));
+          await db.insert(notificationsTable).values({
+            id: generateId(),
+            userId: ride.userId,
+            title: "No Rider Found",
+            body: "Koi rider available nahi mila. Please dubara try karein.",
+            type: "ride",
+            icon: "close-circle-outline",
+          }).catch(() => {});
+        } else {
+          await db.update(ridesTable)
+            .set({ dispatchLoopCount: newLoopCount, dispatchAttempts: [], dispatchedRiderId: null, dispatchedAt: null, updatedAt: new Date() })
+            .where(eq(ridesTable.id, ride.id));
+        }
+        continue;
+      }
+
+      const nearest = riderDistances[0]!;
+      const newAttempts = [...attempts, nearest.id];
+
+      await db.update(ridesTable)
+        .set({
+          dispatchedRiderId: nearest.id,
+          dispatchAttempts: newAttempts,
+          dispatchedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(ridesTable.id, ride.id));
+    }
+  } catch (err) {
+    console.error("[dispatch-engine] cycle error:", err);
+  } finally {
+    dispatchCycleRunning = false;
+  }
+}
+
+let dispatchInterval: ReturnType<typeof setInterval> | null = null;
+export function startDispatchEngine() {
+  if (dispatchInterval) return;
+  dispatchInterval = setInterval(runDispatchCycle, 10_000);
+  console.log("[dispatch-engine] started (every 10s)");
+  runDispatchCycle();
+}
 
 export default router;

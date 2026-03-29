@@ -44,7 +44,9 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - `magicLinkTokensTable`: Stores magic link tokens for passwordless login (id, userId, tokenHash unique, expiresAt, usedAt, createdAt).
 - `productsTable`, `ordersTable`: Core commerce data.
 - `walletTransactionsTable`: Records all financial movements within the digital wallet.
-- `ridesTable`, `rideBidsTable`, `liveLocationsTable`: For ride-hailing and tracking.
+- `ridesTable`, `rideBidsTable`, `liveLocationsTable`: For ride-hailing and tracking. Rides table includes dispatch fields: `dispatched_rider_id`, `dispatch_attempts` (JSON), `dispatch_loop_count`, `dispatched_at`, `expires_at`.
+- `rideRatingsTable`: Post-ride customer ratings (1-5 stars + comment). Unique index on ride_id prevents duplicates.
+- `riderPenaltiesTable`: Tracks rider ignore/cancel penalties with daily limits and wallet deductions.
 - `popularLocationsTable`: Admin-managed points of interest for quick selection.
 - `schoolRoutesTable`, `schoolSubscriptionsTable`: For managing school transport services.
 
@@ -81,6 +83,18 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 5. **Admin Settings Enforcement:** Maintenance mode overlay in `_layout.tsx`. Service toggles on home screen already enforced. Cart uses `PlatformConfigContext` for delivery fees instead of redundant API fetch. Pharmacy checkout enforces COD limit from `orderRules.maxCodAmount` and auto-switches to wallet when exceeded. Wallet feature toggle controls wallet payment option visibility.
 6. **Audit & Bug Fixes:** Eliminated redundant platform-config API fetch in cart checkout (now uses context). Consistent error handling across screens.
 7. **Dynamic Service Visibility:** Disabled services are completely hidden (not greyed out) from the home screen. Service grid dynamically reflows with 2-up rows or full-width single cards. Quick pills and banners filtered by service flags. Empty state shown when all 5 core services are disabled. Deep-link protection via `withServiceGuard` HOC (`components/ServiceGuard.tsx`) — wraps each service screen's default export so the inner component never mounts (no hooks/effects fire) when the service is disabled, showing a "Service Unavailable" screen with back button and home link. Applied to all 5 service screens: mart, food, ride, pharmacy, parcel.
+### InDrive-Style Ride Dispatch Framework
+- **Auto-Dispatch Engine:** `setInterval` loop (10s) in `rides.ts` finds nearest online rider within configurable radius, assigns with timeout. On timeout, moves to next nearest rider not already attempted. After configurable max loops, marks ride as `expired` and notifies customer. Cycle-lock prevents overlapping runs.
+- **Dispatch Settings (Admin-configurable):** `dispatch_request_timeout_sec` (30), `dispatch_max_loops` (2), `dispatch_min_radius_km` (5), `dispatch_avg_speed_kmh` (25), `dispatch_ride_start_proximity_m` (200).
+- **Rider Distance/ETA:** `GET /rider/requests` now includes `riderDistanceKm` and `riderEtaMin` for each ride, calculated via Haversine from rider's live location.
+- **Ignore Penalty System:** `POST /rider/rides/:id/ignore` tracks daily ignores via `rider_penalties` table. Exceeding `rider_ignore_limit_daily` triggers wallet penalty (`rider_ignore_penalty_amount`). Optional account restriction via `rider_ignore_restrict_enabled`. Warning notification at limit, penalty notification above.
+- **Cancel Penalty System:** Pre-existing `handleCancelPenalty()` in `rider.ts` uses `rider_cancel_limit_daily`, `rider_cancel_penalty_amount`, `rider_cancel_restrict_enabled`.
+- **Post-Ride Rating:** `POST /rides/:id/rate` (customer auth). 1-5 stars + optional comment. Unique DB constraint prevents duplicates. Customer app submits rating on tap with response.ok validation.
+- **Payment Method Filtering:** `GET /rides/payment-methods` returns only admin-enabled payment methods (cash, wallet, jazzcash, easypaisa). Customer app filters displayed options by these settings.
+- **Notification Sound:** Professional 8-tone double-burst in `notificationSound.ts`. Silence mode API: `silenceFor(minutes)`, `isSilenced()`, `unsilence()`, `getSilenceRemaining()` using localStorage. Rider App Home shows mute button with 15/30/60min duration picker.
+- **Customer App Theme:** Ride tracker searching screen uses rider app dark theme (gray-900 gradient, green accents) for consistent brand experience.
+- **Dispatch Status:** `GET /rides/:id/status` returns dispatch metadata (loop count, attempts, expiry) for customer polling.
+
 - **Mapping APIs:** Google Maps Platform (or similar) for autocomplete, geocoding, and distance calculations (gated by `maps_places_autocomplete`, `maps_geocoding`, `maps_distance_matrix` settings).
 - **Sentry:** For error tracking and performance monitoring (configured via `sentry_dsn`, `sentry_env`, etc.).
 - **Analytics Platform:** For tracking user behavior (configured via `analytics_platform`, `tracking_id`).
