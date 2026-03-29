@@ -24,7 +24,17 @@ function getTransporter(): Transporter | null {
   return transporter;
 }
 
+export function resetTransporter(): void {
+  transporter = null;
+}
+
 const FROM_ADDRESS = process.env["SMTP_FROM"] || "AJKMart <noreply@ajkmart.com>";
+
+export interface EmailResult {
+  sent: boolean;
+  reason?: string;
+  error?: string;
+}
 
 export async function sendVerificationEmail(
   to: string,
@@ -88,5 +98,54 @@ export async function sendPasswordResetEmail(
   } catch (err: any) {
     console.error(`[EMAIL] Failed to send reset email to ${to}:`, err?.message);
     return { sent: false, reason: err?.message };
+  }
+}
+
+export async function sendMagicLinkEmail(
+  email: string,
+  token: string,
+  settings: Record<string, string>,
+): Promise<EmailResult> {
+  const appName = settings["app_name"] ?? "AJKMart";
+
+  const baseUrl = process.env["APP_BASE_URL"]
+    ?? (process.env["REPLIT_DEV_DOMAIN"]
+      ? `https://${process.env["REPLIT_DEV_DOMAIN"]}`
+      : "http://localhost:3000");
+  const magicUrl = `${baseUrl}/auth/magic-link?token=${encodeURIComponent(token)}`;
+
+  const subject = `${appName} — Your Login Link`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2 style="color: #2563eb;">${appName}</h2>
+      <p>Click the button below to sign in to your account. This link expires in 15 minutes.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <a href="${magicUrl}" style="background: #2563eb; color: #fff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+          Sign In
+        </a>
+      </div>
+      <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can safely ignore this email.</p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+      <p style="color: #9ca3af; font-size: 12px;">— ${appName} Team</p>
+    </div>
+  `;
+
+  const t = getTransporter();
+  if (!t) {
+    console.log(`[EMAIL] Magic link for ${email}: ${magicUrl}`);
+    return { sent: false, error: "SMTP not configured — logged to console" };
+  }
+
+  try {
+    await t.sendMail({
+      from: FROM_ADDRESS,
+      to: email,
+      subject,
+      html,
+    });
+    return { sent: true };
+  } catch (err: any) {
+    console.error(`[EMAIL] Failed to send magic link to ${email}:`, err.message);
+    return { sent: false, error: err.message };
   }
 }

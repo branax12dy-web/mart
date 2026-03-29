@@ -62,13 +62,15 @@ export const usersTable = pgTable("users", {
   nationalId:        text("national_id"),
   vehicleRegNo:      text("vehicle_reg_no"),
   drivingLicense:    text("driving_license"),
-  googleId:          text("google_id"),
-  facebookId:        text("facebook_id"),
   biometricEnabled:  boolean("biometric_enabled").notNull().default(false),
+  /* ── 2FA / TOTP fields ── */
   totpSecret:        text("totp_secret"),
   totpEnabled:       boolean("totp_enabled").notNull().default(false),
   backupCodes:       text("backup_codes"),
   trustedDevices:    text("trusted_devices"),
+  /* ── Social login fields ── */
+  googleId:          text("google_id").unique(),
+  facebookId:        text("facebook_id").unique(),
   /* ── Token version — incremented on logout/ban/role change to invalidate access JWTs ── */
   tokenVersion:    integer("token_version").notNull().default(0),
   lastLoginAt:       timestamp("last_login_at"),

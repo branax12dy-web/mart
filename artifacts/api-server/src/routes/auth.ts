@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
+import crypto from "crypto";
 import { db } from "@workspace/db";
-import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable } from "@workspace/db/schema";
-import { eq, and, sql, lt } from "drizzle-orm";
+import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable } from "@workspace/db/schema";
+import { eq, and, sql, lt, or } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import {
@@ -27,8 +28,9 @@ import {
 import { sendOtpSMS } from "../services/sms.js";
 import { sendWhatsAppOTP } from "../services/whatsapp.js";
 import { randomBytes, createHash } from "crypto";
-import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp, encryptTotpSecret, decryptTotpSecret } from "../services/password.js";
-import { sendVerificationEmail, sendPasswordResetEmail } from "../services/email.js";
+import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
+import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri, encryptTotpSecret, decryptTotpSecret } from "../services/totp.js";
+import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail } from "../services/email.js";
 
 function generateVerificationToken(): string {
   return randomBytes(32).toString("hex");
@@ -1476,6 +1478,554 @@ router.get("/verify-email", async (req, res) => {
   writeAuthAuditLog("email_verified", { userId: user.id, ip });
 
   res.json({ message: "Email verified successfully. You can now log in." });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   HELPER: Extract authenticated user from JWT (Authorization header)
+══════════════════════════════════════════════════════════════ */
+function extractAuthUser(req: any): { userId: string; phone: string; role: string } | null {
+  const authHeader = req.headers["authorization"] as string | undefined;
+  const raw = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : (req.body?.token ?? null);
+  if (!raw) return null;
+  const payload = verifyUserJwt(raw);
+  if (!payload) return null;
+  return { userId: payload.userId, phone: payload.phone, role: payload.role };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HELPER: Issue tokens & build response for a given user
+══════════════════════════════════════════════════════════════ */
+async function issueTokensForUser(user: any, ip: string, method: string, userAgent?: string) {
+  const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? user.role ?? "customer", user.tokenVersion ?? 0);
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
+  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  await db.insert(refreshTokensTable).values({ id: generateId(), userId: user.id, tokenHash: refreshHash, expiresAt: refreshExpiresAt });
+  db.delete(refreshTokensTable).where(and(eq(refreshTokensTable.userId, user.id), lt(refreshTokensTable.expiresAt, new Date()))).catch(() => {});
+  await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
+  writeAuthAuditLog("login_success", { userId: user.id, ip, userAgent, metadata: { method } });
+
+  return {
+    token: accessToken,
+    refreshToken: refreshRaw,
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    sessionDays: REFRESH_TOKEN_TTL_DAYS,
+    user: {
+      id: user.id, phone: user.phone, name: user.name, email: user.email,
+      role: user.role, roles: user.roles, avatar: user.avatar,
+      walletBalance: parseFloat(user.walletBalance ?? "0"),
+      isActive: user.isActive, cnic: user.cnic, city: user.city,
+      emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false,
+      totpEnabled: user.totpEnabled ?? false,
+      needsProfileCompletion: !user.cnic || !user.name,
+    },
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HELPER: Check trusted device
+══════════════════════════════════════════════════════════════ */
+function isDeviceTrusted(user: any, deviceFingerprint: string, trustedDays: number): boolean {
+  if (!user.trustedDevices || !deviceFingerprint) return false;
+  try {
+    const devices: Array<{ fp: string; expiresAt: number }> = JSON.parse(user.trustedDevices);
+    const now = Date.now();
+    return devices.some(d => d.fp === deviceFingerprint && d.expiresAt > now);
+  } catch {
+    return false;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/social/google
+   Verify Google ID token, match or create user, return JWT.
+   Body: { idToken, deviceFingerprint? }
+══════════════════════════════════════════════════════════════ */
+router.post("/social/google", async (req, res) => {
+  const { idToken, deviceFingerprint } = req.body;
+  if (!idToken) { res.status(400).json({ error: "idToken required" }); return; }
+
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  if (settings["auth_social_google"] !== "on") {
+    res.status(403).json({ error: "Google login is currently disabled" }); return;
+  }
+
+  let googlePayload: any;
+  try {
+    const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, { signal: AbortSignal.timeout(10_000) });
+    if (!resp.ok) throw new Error("Invalid token");
+    googlePayload = await resp.json();
+  } catch {
+    addSecurityEvent({ type: "social_google_invalid_token", ip, details: "Invalid Google ID token", severity: "medium" });
+    res.status(401).json({ error: "Invalid Google token" }); return;
+  }
+
+  const googleId = googlePayload.sub;
+  const email = googlePayload.email?.toLowerCase?.() ?? null;
+  const name = googlePayload.name ?? null;
+  const avatar = googlePayload.picture ?? null;
+
+  if (!googleId) { res.status(401).json({ error: "Google token missing sub" }); return; }
+
+  let [user] = await db.select().from(usersTable).where(eq(usersTable.googleId, googleId)).limit(1);
+
+  if (!user && email) {
+    [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+    if (user) {
+      await db.update(usersTable).set({ googleId, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+      user.googleId = googleId;
+    }
+  }
+
+  const isNewUser = !user;
+
+  if (!user) {
+    if (settings["feature_new_users"] === "off") {
+      res.status(403).json({ error: "New user registration is currently disabled" }); return;
+    }
+    const requireApproval = settings["user_require_approval"] === "on";
+    const id = generateId();
+    const phone = `google_${googleId}`;
+    [user] = await db.insert(usersTable).values({
+      id, phone, name, email, avatar, googleId,
+      role: "customer", roles: "customer", walletBalance: "0",
+      emailVerified: !!email,
+      isActive: !requireApproval, approvalStatus: requireApproval ? "pending" : "approved",
+    }).returning();
+  }
+
+  if (user!.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
+  if (!user!.isActive && user!.approvalStatus !== "pending") { res.status(403).json({ error: "Account inactive" }); return; }
+
+  if (user!.totpEnabled && settings["auth_2fa_enabled"] === "on") {
+    const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
+    if (!isDeviceTrusted(user!, deviceFingerprint, trustedDays)) {
+      const tempToken = signAccessToken(user!.id, user!.phone ?? "", user!.role ?? "customer", user!.roles ?? "customer", user!.tokenVersion ?? 0);
+      res.json({ requires2FA: true, tempToken, userId: user!.id }); return;
+    }
+  }
+
+  addAuditEntry({ action: "social_google_login", ip, details: `Google login: ${email ?? googleId}`, result: "success" });
+  const result = await issueTokensForUser(user!, ip, "social_google", req.headers["user-agent"] as string);
+  res.json({ ...result, isNewUser, needsProfileCompletion: isNewUser || !user!.cnic || !user!.name });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/social/facebook
+   Verify Facebook access token, match or create user, return JWT.
+   Body: { accessToken, deviceFingerprint? }
+══════════════════════════════════════════════════════════════ */
+router.post("/social/facebook", async (req, res) => {
+  const { accessToken: fbToken, deviceFingerprint } = req.body;
+  if (!fbToken) { res.status(400).json({ error: "accessToken required" }); return; }
+
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  if (settings["auth_social_facebook"] !== "on") {
+    res.status(403).json({ error: "Facebook login is currently disabled" }); return;
+  }
+
+  let fbPayload: any;
+  try {
+    const resp = await fetch(`https://graph.facebook.com/me?fields=id,name,email,picture&access_token=${encodeURIComponent(fbToken)}`, { signal: AbortSignal.timeout(10_000) });
+    if (!resp.ok) throw new Error("Invalid token");
+    fbPayload = await resp.json();
+  } catch {
+    addSecurityEvent({ type: "social_facebook_invalid_token", ip, details: "Invalid Facebook access token", severity: "medium" });
+    res.status(401).json({ error: "Invalid Facebook token" }); return;
+  }
+
+  const facebookId = fbPayload.id;
+  const email = fbPayload.email?.toLowerCase?.() ?? null;
+  const name = fbPayload.name ?? null;
+  const avatar = fbPayload.picture?.data?.url ?? null;
+
+  if (!facebookId) { res.status(401).json({ error: "Facebook token missing id" }); return; }
+
+  let [user] = await db.select().from(usersTable).where(eq(usersTable.facebookId, facebookId)).limit(1);
+
+  if (!user && email) {
+    [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+    if (user) {
+      await db.update(usersTable).set({ facebookId, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+      user.facebookId = facebookId;
+    }
+  }
+
+  const isNewUser = !user;
+
+  if (!user) {
+    if (settings["feature_new_users"] === "off") {
+      res.status(403).json({ error: "New user registration is currently disabled" }); return;
+    }
+    const requireApproval = settings["user_require_approval"] === "on";
+    const id = generateId();
+    const phone = `facebook_${facebookId}`;
+    [user] = await db.insert(usersTable).values({
+      id, phone, name, email, avatar, facebookId,
+      role: "customer", roles: "customer", walletBalance: "0",
+      emailVerified: !!email,
+      isActive: !requireApproval, approvalStatus: requireApproval ? "pending" : "approved",
+    }).returning();
+  }
+
+  if (user!.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
+  if (!user!.isActive && user!.approvalStatus !== "pending") { res.status(403).json({ error: "Account inactive" }); return; }
+
+  if (user!.totpEnabled && settings["auth_2fa_enabled"] === "on") {
+    const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
+    if (!isDeviceTrusted(user!, deviceFingerprint, trustedDays)) {
+      const tempToken = signAccessToken(user!.id, user!.phone ?? "", user!.role ?? "customer", user!.roles ?? "customer", user!.tokenVersion ?? 0);
+      res.json({ requires2FA: true, tempToken, userId: user!.id }); return;
+    }
+  }
+
+  addAuditEntry({ action: "social_facebook_login", ip, details: `Facebook login: ${email ?? facebookId}`, result: "success" });
+  const result = await issueTokensForUser(user!, ip, "social_facebook", req.headers["user-agent"] as string);
+  res.json({ ...result, isNewUser, needsProfileCompletion: isNewUser || !user!.cnic || !user!.name });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   GET /auth/2fa/setup
+   Generate TOTP secret + QR code URI. Requires valid JWT.
+══════════════════════════════════════════════════════════════ */
+router.get("/2fa/setup", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const settings = await getCachedSettings();
+  if (settings["auth_2fa_enabled"] !== "on") {
+    res.status(403).json({ error: "Two-factor authentication is currently disabled" }); return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
+
+  const secret = generateTotpSecret();
+  const label = user.email ?? user.phone ?? user.name ?? auth.userId;
+  const uri = getTotpUri(secret, label);
+
+  const encryptedSecret = encryptTotpSecret(secret);
+  await db.update(usersTable).set({ totpSecret: encryptedSecret, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
+
+  let qrDataUrl: string | null = null;
+  try { qrDataUrl = await generateQRCodeDataURL(secret, label); } catch {}
+
+  res.json({ secret, uri, qrDataUrl });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/2fa/verify-setup
+   Confirm first TOTP code, activate 2FA, return backup codes.
+   Body: { code }
+══════════════════════════════════════════════════════════════ */
+router.post("/2fa/verify-setup", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const { code } = req.body;
+  if (!code) { res.status(400).json({ error: "TOTP code required" }); return; }
+
+  const settings = await getCachedSettings();
+  if (settings["auth_2fa_enabled"] !== "on") {
+    res.status(403).json({ error: "Two-factor authentication is currently disabled" }); return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
+  if (!user.totpSecret) { res.status(400).json({ error: "Please call /auth/2fa/setup first" }); return; }
+
+  const secret = decryptTotpSecret(user.totpSecret);
+  if (!verifyTotpToken(code, secret)) {
+    res.status(401).json({ error: "Invalid TOTP code. Please try again." }); return;
+  }
+
+  const backupCodes: string[] = [];
+  const hashedCodes: string[] = [];
+  for (let i = 0; i < 8; i++) {
+    const raw = crypto.randomBytes(4).toString("hex");
+    backupCodes.push(raw);
+    hashedCodes.push(hashPassword(raw));
+  }
+
+  await db.update(usersTable).set({
+    totpEnabled: true,
+    backupCodes: JSON.stringify(hashedCodes),
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, auth.userId));
+
+  const ip = getClientIp(req);
+  writeAuthAuditLog("2fa_enabled", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
+  addAuditEntry({ action: "2fa_enabled", ip, details: `2FA enabled for user ${auth.userId}`, result: "success" });
+
+  res.json({ success: true, backupCodes, message: "2FA activated. Save your backup codes securely — they cannot be shown again." });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/2fa/verify
+   Verify TOTP code during login flow.
+   Body: { tempToken, code, deviceFingerprint? }
+══════════════════════════════════════════════════════════════ */
+router.post("/2fa/verify", async (req, res) => {
+  const { tempToken, code, deviceFingerprint } = req.body;
+  if (!tempToken || !code) { res.status(400).json({ error: "tempToken and code required" }); return; }
+
+  const payload = verifyUserJwt(tempToken);
+  if (!payload) { res.status(401).json({ error: "Invalid or expired token" }); return; }
+
+  const settings = await getCachedSettings();
+  const ip = getClientIp(req);
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (!user.totpEnabled || !user.totpSecret) { res.status(400).json({ error: "2FA is not enabled" }); return; }
+
+  const secret = decryptTotpSecret(user.totpSecret);
+  if (!verifyTotpToken(code, secret)) {
+    addSecurityEvent({ type: "2fa_verify_failed", ip, userId: user.id, details: "Invalid 2FA code on login", severity: "medium" });
+    res.status(401).json({ error: "Invalid 2FA code" }); return;
+  }
+
+  writeAuthAuditLog("2fa_verified", { userId: user.id, ip, userAgent: req.headers["user-agent"] as string });
+  const result = await issueTokensForUser(user, ip, "2fa_login", req.headers["user-agent"] as string);
+  res.json(result);
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/2fa/disable
+   Disable 2FA for the authenticated user. Body: { code }
+══════════════════════════════════════════════════════════════ */
+router.post("/2fa/disable", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const { code } = req.body;
+  if (!code) { res.status(400).json({ error: "TOTP code required to disable 2FA" }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (!user.totpEnabled || !user.totpSecret) { res.status(400).json({ error: "2FA is not enabled" }); return; }
+
+  const secret = decryptTotpSecret(user.totpSecret);
+  if (!verifyTotpToken(code, secret)) {
+    res.status(401).json({ error: "Invalid TOTP code" }); return;
+  }
+
+  await db.update(usersTable).set({
+    totpEnabled: false, totpSecret: null, backupCodes: null, trustedDevices: null, updatedAt: new Date(),
+  }).where(eq(usersTable.id, auth.userId));
+
+  const ip = getClientIp(req);
+  writeAuthAuditLog("2fa_disabled", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
+  addAuditEntry({ action: "2fa_disabled", ip, details: `2FA disabled by user ${auth.userId}`, result: "success" });
+
+  res.json({ success: true, message: "Two-factor authentication has been disabled" });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/2fa/recovery
+   Use a single-use backup code. Body: { tempToken, backupCode }
+══════════════════════════════════════════════════════════════ */
+router.post("/2fa/recovery", async (req, res) => {
+  const { tempToken, backupCode } = req.body;
+  if (!tempToken || !backupCode) { res.status(400).json({ error: "tempToken and backupCode required" }); return; }
+
+  const payload = verifyUserJwt(tempToken);
+  if (!payload) { res.status(401).json({ error: "Invalid or expired token" }); return; }
+
+  const ip = getClientIp(req);
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (!user.totpEnabled || !user.backupCodes) { res.status(400).json({ error: "2FA is not enabled or no backup codes available" }); return; }
+
+  let storedCodes: string[];
+  try { storedCodes = JSON.parse(user.backupCodes); } catch { res.status(500).json({ error: "Internal error" }); return; }
+
+  let matchIdx = -1;
+  for (let i = 0; i < storedCodes.length; i++) {
+    if (verifyPassword(backupCode, storedCodes[i]!)) { matchIdx = i; break; }
+  }
+
+  if (matchIdx === -1) {
+    addSecurityEvent({ type: "2fa_recovery_failed", ip, userId: user.id, details: "Invalid backup code attempt", severity: "high" });
+    res.status(401).json({ error: "Invalid backup code" }); return;
+  }
+
+  storedCodes.splice(matchIdx, 1);
+  await db.update(usersTable).set({ backupCodes: JSON.stringify(storedCodes), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+
+  writeAuthAuditLog("2fa_recovery_used", { userId: user.id, ip, userAgent: req.headers["user-agent"] as string, metadata: { codesRemaining: storedCodes.length } });
+  addAuditEntry({ action: "2fa_recovery_used", ip, details: `Backup code used for user ${user.id}, ${storedCodes.length} codes remaining`, result: "success" });
+
+  const result = await issueTokensForUser(user, ip, "2fa_recovery", req.headers["user-agent"] as string);
+  res.json({ ...result, codesRemaining: storedCodes.length });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/2fa/trust-device
+   Store device fingerprint for trusted device bypass.
+   Body: { deviceFingerprint }
+══════════════════════════════════════════════════════════════ */
+router.post("/2fa/trust-device", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const { deviceFingerprint } = req.body;
+  if (!deviceFingerprint || typeof deviceFingerprint !== "string" || deviceFingerprint.length < 8) {
+    res.status(400).json({ error: "Valid deviceFingerprint required (min 8 chars)" }); return;
+  }
+
+  const settings = await getCachedSettings();
+  const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (!user.totpEnabled) { res.status(400).json({ error: "2FA is not enabled" }); return; }
+
+  let devices: Array<{ fp: string; expiresAt: number }> = [];
+  try { if (user.trustedDevices) devices = JSON.parse(user.trustedDevices); } catch {}
+
+  const now = Date.now();
+  devices = devices.filter(d => d.expiresAt > now && d.fp !== deviceFingerprint);
+  devices.push({ fp: deviceFingerprint, expiresAt: now + trustedDays * 24 * 60 * 60 * 1000 });
+
+  if (devices.length > 10) devices = devices.slice(-10);
+
+  await db.update(usersTable).set({ trustedDevices: JSON.stringify(devices), updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
+
+  const ip = getClientIp(req);
+  writeAuthAuditLog("device_trusted", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
+
+  res.json({ success: true, message: `Device trusted for ${trustedDays} days`, trustedDevices: devices.length });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/magic-link/send
+   Send a magic link to the user's email. Rate limited: 3 per email per 10 min.
+   Body: { email }
+══════════════════════════════════════════════════════════════ */
+const magicLinkRateMap = new Map<string, { count: number; windowStart: number }>();
+
+router.post("/magic-link/send", async (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.includes("@")) { res.status(400).json({ error: "Valid email address required" }); return; }
+
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  if (settings["auth_magic_link"] !== "on") {
+    res.status(403).json({ error: "Magic link login is currently disabled" }); return;
+  }
+
+  const normalized = email.toLowerCase().trim();
+
+  const now = Date.now();
+  const windowMs = 10 * 60 * 1000;
+  const rlKey = `ml:${normalized}`;
+  const rl = magicLinkRateMap.get(rlKey);
+  if (rl && now - rl.windowStart < windowMs) {
+    if (rl.count >= 3) {
+      const waitMin = Math.ceil((rl.windowStart + windowMs - now) / 60000);
+      res.status(429).json({ error: `Too many magic link requests. Try again in ${waitMin} minute(s).` }); return;
+    }
+    rl.count++;
+  } else {
+    magicLinkRateMap.set(rlKey, { count: 1, windowStart: now });
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
+  if (!user) {
+    res.json({ message: "If an account exists with this email, a magic link has been sent." }); return;
+  }
+
+  if (user.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
+  if (!user.isActive) { res.status(403).json({ error: "Account inactive" }); return; }
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashPassword(rawToken);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+  await db.insert(magicLinkTokensTable).values({
+    id: generateId(),
+    userId: user.id,
+    tokenHash,
+    expiresAt,
+  });
+
+  await sendMagicLinkEmail(normalized, rawToken, settings);
+
+  addAuditEntry({ action: "magic_link_sent", ip, details: `Magic link sent to: ${normalized}`, result: "success" });
+  writeAuthAuditLog("magic_link_sent", { ip, metadata: { email: normalized } });
+
+  const isDev = process.env.NODE_ENV !== "production";
+  res.json({
+    message: "If an account exists with this email, a magic link has been sent.",
+    ...(isDev ? { token: rawToken } : {}),
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/magic-link/verify
+   Validate magic link token, handle 2FA guard.
+   Body: { token, totpCode?, deviceFingerprint? }
+══════════════════════════════════════════════════════════════ */
+router.post("/magic-link/verify", async (req, res) => {
+  const { token, totpCode, deviceFingerprint } = req.body;
+  if (!token) { res.status(400).json({ error: "Token required" }); return; }
+
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  if (settings["auth_magic_link"] !== "on") {
+    res.status(403).json({ error: "Magic link login is currently disabled" }); return;
+  }
+
+  const allTokens = await db.select().from(magicLinkTokensTable)
+    .where(sql`${magicLinkTokensTable.usedAt} IS NULL AND ${magicLinkTokensTable.expiresAt} > now()`)
+    .limit(50);
+
+  let matchedRow: typeof allTokens[0] | null = null;
+  for (const row of allTokens) {
+    if (verifyPassword(token, row.tokenHash)) { matchedRow = row; break; }
+  }
+
+  if (!matchedRow) {
+    addSecurityEvent({ type: "magic_link_invalid", ip, details: "Invalid or expired magic link token", severity: "medium" });
+    res.status(401).json({ error: "Invalid or expired magic link. Please request a new one." }); return;
+  }
+
+  await db.update(magicLinkTokensTable).set({ usedAt: new Date() }).where(eq(magicLinkTokensTable.id, matchedRow.id));
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, matchedRow.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (user.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
+  if (!user.isActive) { res.status(403).json({ error: "Account inactive" }); return; }
+
+  if (user.totpEnabled && settings["auth_2fa_enabled"] === "on") {
+    const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
+    if (!isDeviceTrusted(user, deviceFingerprint ?? "", trustedDays)) {
+      if (!totpCode) {
+        const tempToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
+        res.json({ requires2FA: true, tempToken, userId: user.id }); return;
+      }
+      const secret = decryptTotpSecret(user.totpSecret!);
+      if (!verifyTotpToken(totpCode, secret)) {
+        res.status(401).json({ error: "Invalid 2FA code" }); return;
+      }
+    }
+  }
+
+  await db.update(usersTable).set({ emailVerified: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+
+  addAuditEntry({ action: "magic_link_login", ip, details: `Magic link login: ${user.email ?? matchedRow.userId}`, result: "success" });
+  const result = await issueTokensForUser(user, ip, "magic_link", req.headers["user-agent"] as string);
+  res.json(result);
 });
 
 export default router;

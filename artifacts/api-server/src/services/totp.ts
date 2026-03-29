@@ -8,7 +8,36 @@
 
 import crypto from "crypto";
 
-const APP_NAME = "AJKMart Admin";
+const APP_NAME = "AJKMart";
+
+const ENCRYPTION_ALGO = "aes-256-gcm";
+
+function getEncryptionKey(): Buffer {
+  const raw = process.env["TOTP_ENCRYPTION_KEY"] ?? process.env["JWT_SECRET"] ?? "";
+  return crypto.createHash("sha256").update(raw).digest();
+}
+
+export function encryptTotpSecret(plaintext: string): string {
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(ENCRYPTION_ALGO, key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const tag = cipher.getAuthTag().toString("hex");
+  return `${iv.toString("hex")}:${tag}:${encrypted}`;
+}
+
+export function decryptTotpSecret(ciphertext: string): string {
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) return ciphertext;
+  const [ivHex, tagHex, encrypted] = parts;
+  const key = getEncryptionKey();
+  const decipher = crypto.createDecipheriv(ENCRYPTION_ALGO, key, Buffer.from(ivHex!, "hex"));
+  decipher.setAuthTag(Buffer.from(tagHex!, "hex"));
+  let decrypted = decipher.update(encrypted!, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
 
 /* ── Base32 alphabet (RFC 4648) ── */
 const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";

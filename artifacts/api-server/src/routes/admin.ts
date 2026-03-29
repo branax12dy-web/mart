@@ -45,7 +45,8 @@ import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri 
 /* ── Sensitive field stripper — never leak hashes or OTP codes to API responses ── */
 function stripUser(u: Record<string, any>) {
   const { passwordHash: _ph, otpCode: _otp, otpExpiry: _exp,
-          emailOtpCode: _eotp, emailOtpExpiry: _eexp, ...safe } = u;
+          emailOtpCode: _eotp, emailOtpExpiry: _eexp,
+          totpSecret: _ts, backupCodes: _bc, trustedDevices: _td, ...safe } = u;
   return safe;
 }
 
@@ -405,6 +406,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "sentry_capture_unhandled", value: "on",  label: "Sentry: Capture Unhandled Rejections",category: "integrations" },
   { key: "sentry_capture_perf",      value: "on",  label: "Sentry: Performance Monitoring",      category: "integrations" },
 
+
   { key: "auth_phone_otp_enabled",         value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Phone OTP Login Enabled",              category: "auth" },
   { key: "auth_email_otp_enabled",         value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Email OTP Login Enabled",              category: "auth" },
   { key: "auth_username_password_enabled", value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Username/Password Login Enabled",     category: "auth" },
@@ -419,6 +421,9 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "recaptcha_secret_key",          value: "",    label: "reCAPTCHA v3 Secret Key",              category: "auth" },
   { key: "recaptcha_min_score",           value: "0.5", label: "reCAPTCHA Minimum Score Threshold",    category: "auth" },
   { key: "security_otp_cooldown_sec",     value: "60",  label: "OTP Resend Cooldown (seconds)",        category: "auth" },
+  { key: "auth_social_google",            value: "off",  label: "Google Social Login (legacy toggle)",  category: "auth" },
+  { key: "auth_social_facebook",          value: "off",  label: "Facebook Social Login (legacy toggle)",category: "auth" },
+  { key: "auth_trusted_device_days",      value: "30",   label: "Trusted Device Expiry (days)",         category: "auth" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {
@@ -764,8 +769,13 @@ router.get("/stats", async (_req, res) => {
 });
 
 /* ── Users ── */
-router.get("/users", async (_req, res) => {
-  const users = await db.select().from(usersTable).orderBy(desc(usersTable.createdAt));
+router.get("/users", async (req, res) => {
+  const filter = (req.query?.filter as string) ?? "";
+  let query = db.select().from(usersTable);
+  if (filter === "2fa_enabled") {
+    query = query.where(eq(usersTable.totpEnabled, true)) as any;
+  }
+  const users = await query.orderBy(desc(usersTable.createdAt));
   res.json({
     users: users.map((u) => ({
       ...stripUser(u),
@@ -818,6 +828,22 @@ router.get("/users/pending", async (_req, res) => {
   res.json({
     users: users.map(({ otpCode: _otp, otpExpiry: _exp, passwordHash: _ph, emailOtpCode: _eotp, emailOtpExpiry: _eexp, ...u }) => ({
       ...u,
+      walletBalance: parseFloat(u.walletBalance ?? "0"),
+      createdAt: u.createdAt.toISOString(),
+      updatedAt: u.updatedAt.toISOString(),
+    })),
+    total: users.length,
+  });
+});
+
+/* ── List users with 2FA enabled ── */
+router.get("/users/2fa-enabled", async (_req, res) => {
+  const users = await db.select().from(usersTable)
+    .where(eq(usersTable.totpEnabled, true))
+    .orderBy(desc(usersTable.createdAt));
+  res.json({
+    users: users.map(u => ({
+      ...stripUser(u),
       walletBalance: parseFloat(u.walletBalance ?? "0"),
       createdAt: u.createdAt.toISOString(),
       updatedAt: u.updatedAt.toISOString(),
@@ -1437,6 +1463,25 @@ router.patch("/users/:id/security", async (req, res) => {
 router.post("/users/:id/reset-otp", async (req, res) => {
   await db.update(usersTable).set({ otpCode: null, otpExpiry: null, updatedAt: new Date() }).where(eq(usersTable.id, req.params["id"]!));
   res.json({ success: true, message: "OTP cleared — user must re-authenticate" });
+});
+
+/* ── Force-disable 2FA for a user (admin action) ── */
+router.post("/users/:id/2fa/disable", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (!user.totpEnabled) { res.status(400).json({ error: "2FA is not enabled for this user" }); return; }
+
+  await db.update(usersTable).set({
+    totpEnabled: false, totpSecret: null, backupCodes: null, trustedDevices: null, updatedAt: new Date(),
+  }).where(eq(usersTable.id, userId));
+
+  const ip = getClientIp(req);
+  addAuditEntry({ action: "admin_2fa_disable", ip, details: `Admin force-disabled 2FA for user ${userId} (${user.phone})`, result: "success" });
+  writeAuthAuditLog("admin_2fa_disabled", { userId, ip, userAgent: req.headers["user-agent"] as string, metadata: { adminAction: true } });
+
+  res.json({ success: true, message: `2FA disabled for user ${user.name ?? user.phone}` });
 });
 
 /* ── Admin Accounts (Sub-Admins) ── */
