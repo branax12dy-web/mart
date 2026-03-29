@@ -119,6 +119,27 @@ export interface PlatformConfig {
     sessionDays: number;
     riderTokenDays: number;
   };
+  auth?: {
+    phoneOtp?: boolean;
+    emailOtp?: boolean;
+    usernamePassword?: boolean;
+    google?: boolean;
+    facebook?: boolean;
+    magicLink?: boolean;
+    captchaEnabled?: boolean;
+    lockoutEnabled?: boolean;
+    lockoutMaxAttempts?: number;
+    lockoutDurationSec?: number;
+    phoneOtpEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    emailOtpEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    usernamePasswordEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    googleEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    facebookEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    magicLinkEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    captchaSiteKey?: string;
+    googleClientId?: string;
+    facebookAppId?: string;
+  };
   integrations?: {
     pushNotif: boolean;
     analytics: boolean;
@@ -162,8 +183,52 @@ const DEFAULT_CONFIG: PlatformConfig = {
   deliveryFee: { mart: 80, food: 60, pharmacy: 50, parcel: 100, parcelPerKg: 40, freeEnabled: true, freeDeliveryAbove: 1000 },
   rides: { bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50, carBaseFare: 25, carPerKm: 12, carMinFare: 80, surgeEnabled: false, surgeMultiplier: 1.5, cancellationFee: 30, riderEarningPct: 80 },
   finance: { gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100, invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80, minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100 },
+  auth: { phoneOtp: true, emailOtp: true, usernamePassword: true, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 },
   security: { gpsTracking: true, gpsInterval: 30, sessionDays: 30, riderTokenDays: 7 },
 };
+
+export interface RiderAuthConfig {
+  phoneOtp: boolean;
+  emailOtp: boolean;
+  usernamePassword: boolean;
+  google: boolean;
+  facebook: boolean;
+  magicLink: boolean;
+  captchaEnabled: boolean;
+  lockoutEnabled: boolean;
+  lockoutMaxAttempts: number;
+  lockoutDurationSec: number;
+}
+
+function resolveRoleFlag(
+  simple: boolean | undefined,
+  perRole: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean } | undefined,
+  fallback: boolean,
+): boolean {
+  if (typeof simple === "boolean") return simple;
+  if (typeof perRole === "boolean") return perRole;
+  if (perRole && typeof perRole === "object" && "rider" in perRole) {
+    return typeof perRole.rider === "boolean" ? perRole.rider : fallback;
+  }
+  return fallback;
+}
+
+export function getRiderAuthConfig(config: PlatformConfig): RiderAuthConfig {
+  const a = config.auth;
+  if (!a) return { phoneOtp: true, emailOtp: true, usernamePassword: true, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 };
+  return {
+    phoneOtp: resolveRoleFlag(a.phoneOtp, a.phoneOtpEnabled, true),
+    emailOtp: resolveRoleFlag(a.emailOtp, a.emailOtpEnabled, true),
+    usernamePassword: resolveRoleFlag(a.usernamePassword, a.usernamePasswordEnabled, true),
+    google: resolveRoleFlag(a.google, a.googleEnabled, false),
+    facebook: resolveRoleFlag(a.facebook, a.facebookEnabled, false),
+    magicLink: resolveRoleFlag(a.magicLink, a.magicLinkEnabled, false),
+    captchaEnabled: a.captchaEnabled ?? false,
+    lockoutEnabled: a.lockoutEnabled ?? true,
+    lockoutMaxAttempts: a.lockoutMaxAttempts ?? 5,
+    lockoutDurationSec: a.lockoutDurationSec ?? 300,
+  };
+}
 
 export function usePlatformConfig() {
   const { data, isLoading } = useQuery<PlatformConfig>({

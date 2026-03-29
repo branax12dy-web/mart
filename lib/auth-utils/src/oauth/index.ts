@@ -92,6 +92,63 @@ export function useGoogleLogin(): {
   return { login: wrappedLogin, loading, error, result };
 }
 
+export function loadGoogleGSIToken(clientId: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const gw = window as unknown as { google?: { accounts: { id: { initialize: (c: Record<string, unknown>) => void; prompt: (cb: (n: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean }) => void) => void } } } };
+    if (!gw.google?.accounts?.id) {
+      loadScript("https://accounts.google.com/gsi/client", "google-gsi").then(init).catch(reject);
+    } else {
+      init();
+    }
+    function init() {
+      const g = (window as unknown as { google?: { accounts: { id: { initialize: (c: Record<string, unknown>) => void; prompt: (cb: (n: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean }) => void) => void } } } }).google;
+      if (!g?.accounts?.id) { reject(new Error("Google SDK not available")); return; }
+      g.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response: { credential?: string }) => {
+          if (response.credential) resolve(response.credential);
+          else reject(new Error("Google sign-in cancelled"));
+        },
+      });
+      g.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          reject(new Error("Google sign-in was dismissed"));
+        }
+      });
+    }
+  });
+}
+
+export function loadFacebookAccessToken(appId: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!window.FB) {
+      window.fbAsyncInit = () => {
+        window.FB!.init({ appId, cookie: true, xfbml: false, version: "v19.0" });
+        doLogin();
+      };
+      loadScript("https://connect.facebook.net/en_US/sdk.js", "facebook-jssdk").catch(reject);
+    } else {
+      doLogin();
+    }
+    function doLogin() {
+      window.FB!.login((response) => {
+        if (response.authResponse?.accessToken) resolve(response.authResponse.accessToken);
+        else reject(new Error("Facebook sign-in cancelled"));
+      }, { scope: "email,public_profile" });
+    }
+  });
+}
+
+export function decodeGoogleJwtPayload(idToken: string): Record<string, string> {
+  const b64url = idToken.split(".")[1];
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  return JSON.parse(
+    decodeURIComponent(
+      atob(b64).split("").map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
+    )
+  );
+}
+
 let fbInitialized = false;
 
 export function initFacebookSDK(appId: string): Promise<void> {

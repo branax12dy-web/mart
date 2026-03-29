@@ -211,6 +211,37 @@ export function signAccessToken(userId: string, phone: string, role: string, rol
   );
 }
 
+export function sign2faChallengeToken(userId: string, phone: string, role: string, roles: string): string {
+  return jwt.sign(
+    { sub: userId, phone, role, roles, type: "2fa_challenge" },
+    JWT_SECRET,
+    { algorithm: "HS256", expiresIn: 300 },
+  );
+}
+
+export interface TwoFaChallengePayload {
+  userId: string;
+  phone: string;
+  role: string;
+  roles: string;
+}
+
+export function verify2faChallengeToken(token: string): TwoFaChallengePayload | null {
+  try {
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as jwt.JwtPayload;
+    if ((payload as Record<string, unknown>)["type"] !== "2fa_challenge") return null;
+    if (!payload.sub) return null;
+    return {
+      userId: payload["sub"] as string,
+      phone: payload["phone"] as string ?? "",
+      role: payload["role"] as string ?? "customer",
+      roles: payload["roles"] as string ?? "customer",
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Sign a refresh token (opaque random value). Returns the raw token and its hash. */
 export function generateRefreshToken(): { raw: string; hash: string } {
   const raw = crypto.randomBytes(40).toString("hex");
@@ -227,7 +258,8 @@ export function verifyUserJwt(token: string): JwtUserPayload | null {
     const payload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as jwt.JwtPayload;
     if (!payload.sub) return null;
 
-    /* Reject tokens with future iat (clock skew > 60 seconds) */
+    if ((payload as Record<string, unknown>)["type"] === "2fa_challenge") return null;
+
     const nowSec = Math.floor(Date.now() / 1000);
     if (typeof payload.iat === "number" && payload.iat > nowSec + 60) {
       return null;

@@ -7,6 +7,8 @@ import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
 import { MaintenanceScreen } from "./components/MaintenanceScreen";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import Home from "./pages/Home";
 import Active from "./pages/Active";
 import History from "./pages/History";
@@ -14,6 +16,7 @@ import Earnings from "./pages/Earnings";
 import Profile from "./pages/Profile";
 import Wallet from "./pages/Wallet";
 import Notifications from "./pages/Notifications";
+import SecuritySettings from "./pages/SecuritySettings";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1 } } });
 
@@ -32,7 +35,13 @@ function AppRoutes() {
     </div>
   );
 
-  if (!user) return <Login />;
+  if (!user) return (
+    <Switch>
+      <Route path="/register" component={Register} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route><Login /></Route>
+    </Switch>
+  );
 
   return (
     <div className="max-w-md mx-auto relative flex flex-col min-h-screen">
@@ -53,6 +62,7 @@ function AppRoutes() {
           <Route path="/wallet" component={Wallet} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/profile" component={Profile} />
+          <Route path="/settings/security" component={SecuritySettings} />
         </Switch>
       </div>
       <BottomNav />

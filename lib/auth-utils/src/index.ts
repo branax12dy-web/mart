@@ -4,6 +4,9 @@ export {
   useGoogleLogin,
   useFacebookLogin,
   initFacebookSDK,
+  loadGoogleGSIToken,
+  loadFacebookAccessToken,
+  decodeGoogleJwtPayload,
   type OAuthResult,
   type OAuthError,
 } from "./oauth/index";

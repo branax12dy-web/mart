@@ -76,21 +76,50 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
       }
       throw Object.assign(new Error(msg || "Access denied"), { status: 403 });
     }
-    throw new Error(err.error || "Request failed");
+    const error = new Error(err.error || "Request failed");
+    Object.assign(error, { responseData: err, status: res.status });
+    throw error;
   }
   return res.json();
 }
 
 export const api = {
   /* Auth */
-  sendOtp:      (phone: string) => apiFetch("/auth/send-otp", { method: "POST", body: JSON.stringify({ phone }) }),
-  verifyOtp:    (phone: string, otp: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp }) }),
-  sendEmailOtp: (email: string) => apiFetch("/auth/send-email-otp", { method: "POST", body: JSON.stringify({ email }) }),
-  verifyEmailOtp:(email: string, otp: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp }) }),
-  loginUsername:(username: string, password: string) => apiFetch("/auth/login/username", { method: "POST", body: JSON.stringify({ username, password }) }),
+  sendOtp:      (phone: string, captchaToken?: string) => apiFetch("/auth/send-otp", { method: "POST", body: JSON.stringify({ phone, captchaToken }) }),
+  verifyOtp:    (phone: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp, deviceFingerprint, captchaToken }) }),
+  sendEmailOtp: (email: string, captchaToken?: string) => apiFetch("/auth/send-email-otp", { method: "POST", body: JSON.stringify({ email, captchaToken }) }),
+  verifyEmailOtp:(email: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp, deviceFingerprint, captchaToken }) }),
+  loginUsername:(username: string, password: string, captchaToken?: string, deviceFingerprint?: string) => apiFetch("/auth/login/username", { method: "POST", body: JSON.stringify({ username, password, captchaToken, deviceFingerprint }) }),
   checkAvailable:(data: { phone?: string; email?: string; username?: string }) => apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
   refreshToken: () => attemptTokenRefresh(),
+
+  registerRider: (data: { name: string; phone: string; email: string; cnic: string; vehicleType: string; vehicleRegistration: string; drivingLicense: string; password: string; captchaToken?: string }) =>
+    apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ ...data, role: "rider", vehicleRegNo: data.vehicleRegistration }) }),
+  emailRegisterRider: (data: { name: string; phone: string; email: string; cnic: string; vehicleType: string; vehicleRegistration: string; drivingLicense: string; password: string; captchaToken?: string }) =>
+    apiFetch("/auth/email-register", { method: "POST", body: JSON.stringify({ ...data, role: "rider" }) }),
+  forgotPassword: (data: { method: "phone" | "email"; phone?: string; email?: string; captchaToken?: string }) =>
+    apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify(data) }),
+  resetPassword: (data: { phone?: string; email?: string; otp: string; newPassword: string; totpCode?: string; captchaToken?: string }) =>
+    apiFetch("/auth/reset-password", { method: "POST", body: JSON.stringify(data) }),
+  socialGoogle: (data: { idToken: string }) =>
+    apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify(data) }),
+  socialFacebook: (data: { accessToken: string }) =>
+    apiFetch("/auth/social/facebook", { method: "POST", body: JSON.stringify(data) }),
+  magicLinkVerify: (data: { token: string }) =>
+    apiFetch("/auth/magic-link/verify", { method: "POST", body: JSON.stringify(data) }),
+  twoFactorSetup: () =>
+    apiFetch("/auth/2fa/setup"),
+  twoFactorEnable: (data: { code: string }) =>
+    apiFetch("/auth/2fa/verify-setup", { method: "POST", body: JSON.stringify(data) }),
+  twoFactorVerify: (data: { code: string; tempToken?: string; deviceFingerprint?: string; trustDevice?: boolean }) =>
+    apiFetch("/auth/2fa/verify", { method: "POST", body: JSON.stringify(data) }),
+  twoFactorRecovery: (data: { backupCode: string; tempToken?: string; deviceFingerprint?: string }) =>
+    apiFetch("/auth/2fa/recovery", { method: "POST", body: JSON.stringify(data) }),
+  twoFactorDisable: (data: { code: string }) =>
+    apiFetch("/auth/2fa/disable", { method: "POST", body: JSON.stringify(data) }),
+  sendMagicLink: (email: string) =>
+    apiFetch("/auth/magic-link/send", { method: "POST", body: JSON.stringify({ email }) }),
 
   /* Token helpers */
   storeTokens: (token: string, refreshToken?: string) => {

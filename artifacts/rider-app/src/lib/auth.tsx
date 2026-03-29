@@ -9,12 +9,15 @@ interface AuthUser {
   cnic?: string; city?: string; address?: string; emergencyContact?: string;
   vehicleType?: string; vehiclePlate?: string;
   bankName?: string; bankAccount?: string; bankAccountTitle?: string;
+  twoFactorEnabled?: boolean;
 }
 
 interface AuthCtx {
   user: AuthUser | null;
   token: string | null;
   loading: boolean;
+  twoFactorPending: boolean;
+  setTwoFactorPending: (v: boolean) => void;
   login: (token: string, user: AuthUser, refreshToken?: string) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -27,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]   = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [twoFactorPending, setTwoFactorPending] = useState(false);
 
   useEffect(() => {
     /* Try new namespaced key first, fall back to legacy key */
@@ -69,5 +73,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = async () => { const u = await api.getMe(); setUser(u); };
 
-  return <Ctx.Provider value={{ user, token, loading, login, logout, refreshUser }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, token, loading, twoFactorPending, setTwoFactorPending, login, logout, refreshUser }}>{children}</Ctx.Provider>;
 }

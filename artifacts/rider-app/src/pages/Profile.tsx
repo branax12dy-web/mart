@@ -191,6 +191,7 @@ export default function Profile() {
     { href: "/notifications", icon: <Bell size={18} className="text-blue-600"/>,           label: T("notifications"), badge: unread },
     { href: "/history",       icon: <ClipboardList size={18} className="text-purple-600"/>,label: T("myOrders"),      desc: T("pastOrders")        },
     { href: "/earnings",      icon: <BarChart2 size={18} className="text-amber-600"/>,     label: T("yourEarnings"),  desc: T("transactionHistory") },
+    { href: "/settings/security", icon: <Shield size={18} className="text-red-600"/>,      label: T("securitySettings"), desc: T("twoFactorAuth") },
   ];
 
   const achievements = [

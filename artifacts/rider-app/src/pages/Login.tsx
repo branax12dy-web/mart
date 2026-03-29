@@ -1,48 +1,126 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "../lib/auth";
 import { api, apiFetch } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { TwoFactorVerify, MagicLinkSender, executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken } from "@workspace/auth-utils";
 import {
   Phone, Mail, User, Bike, Clock, Lightbulb, Eye, EyeOff,
-  ArrowLeft, Loader2,
+  ArrowLeft, Loader2, Shield,
 } from "lucide-react";
 
-type LoginMethod = "phone" | "email" | "username";
-type Step = "input" | "otp" | "pending";
+type LoginMethod = "phone" | "email" | "username" | "google" | "facebook" | "magicLink";
+type Step = "input" | "otp" | "pending" | "2fa";
 
 type AuthResponse = {
   token: string; refreshToken?: string;
   pendingApproval?: boolean;
-  user?: { roles?: string; role?: string };
+  requires2fa?: boolean; requires2FA?: boolean;
+  twoFactorRequired?: boolean;
+  tempToken?: string; userId?: string;
+  user?: { roles?: string; role?: string; name?: string; email?: string };
+  isNewUser?: boolean; needsProfileCompletion?: boolean;
 };
 
+function getDeviceFingerprint(): string {
+  const nav = window.navigator;
+  const raw = [nav.userAgent, nav.language, screen.width, screen.height, screen.colorDepth, new Date().getTimezoneOffset()].join("|");
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) { hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0; }
+  return Math.abs(hash).toString(36);
+}
+
+function formatPhoneForApi(localDigits: string): string {
+  const digits = localDigits.replace(/\D/g, "");
+  if (digits.startsWith("0")) return digits;
+  return `0${digits}`;
+}
+
+async function getCaptchaToken(enabled: boolean, siteKey: string | undefined, action: string): Promise<string | undefined> {
+  if (!enabled) return undefined;
+  try {
+    return await executeCaptcha(action, siteKey);
+  } catch {
+    return undefined;
+  }
+}
+
 export default function Login() {
-  const { login } = useAuth();
+  const { login, setTwoFactorPending: setGlobalTwoFaPending } = useAuth();
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const appName = config.platform.appName;
+  const auth = getRiderAuthConfig(config);
+  const captchaSiteKey = config.auth?.captchaSiteKey;
+  const googleClientId = config.auth?.googleClientId;
+  const facebookAppId = config.auth?.facebookAppId;
+  const [, navigate] = useLocation();
 
-  const [method, setMethod] = useState<LoginMethod>("phone");
-  const [step, setStep]     = useState<Step>("input");
+  const enabledMethods: LoginMethod[] = [];
+  if (auth.phoneOtp) enabledMethods.push("phone");
+  if (auth.emailOtp) enabledMethods.push("email");
+  if (auth.usernamePassword) enabledMethods.push("username");
+
+  const defaultMethod = enabledMethods[0] ?? (auth.google ? "google" : auth.facebook ? "facebook" : auth.magicLink ? "magicLink" : "phone");
+  const [method, setMethod] = useState<LoginMethod>(defaultMethod);
+  const [step, setStep] = useState<Step>("input");
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState("");
+  const [error, setError] = useState("");
 
-  const [phone, setPhone]   = useState("");
-  const [otp, setOtp]       = useState("");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
   const [devOtp, setDevOtp] = useState("");
 
-  const [email, setEmail]     = useState("");
+  const [email, setEmail] = useState("");
   const [emailOtp, setEmailOtp] = useState("");
   const [emailDevOtp, setEmailDevOtp] = useState("");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPwd, setShowPwd]   = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  const [twoFaPending, setTwoFaPending] = useState<AuthResponse | null>(null);
+  const [twoFaError, setTwoFaError] = useState("");
+  const [twoFaLoading, setTwoFaLoading] = useState(false);
 
   const clearError = () => setError("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const magicToken = params.get("magic_token");
+    if (magicToken) {
+      setLoading(true);
+      api.magicLinkVerify({ token: magicToken })
+        .then(async (res: AuthResponse) => {
+          await doLogin(res);
+        })
+        .catch((e: unknown) => setError(e instanceof Error ? e.message : T("loginFailed")))
+        .finally(() => setLoading(false));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [login, navigate, setGlobalTwoFaPending]);
+
+  useEffect(() => {
+    if (!lockoutUntil) return;
+    const interval = setInterval(() => {
+      const rem = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
+      setLockoutRemaining(rem);
+      if (rem <= 0) {
+        setLockoutUntil(null);
+        setFailedAttempts(0);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
+  const isLockedOut = lockoutUntil !== null && lockoutRemaining > 0;
 
   const checkRiderRole = (res: AuthResponse): boolean => {
     const roles = (res.user?.roles || res.user?.role || "").split(",").map((r: string) => r.trim());
@@ -57,6 +135,12 @@ export default function Login() {
   };
 
   const doLogin = async (res: AuthResponse) => {
+    if (res.requires2fa || res.requires2FA || res.twoFactorRequired) {
+      setTwoFaPending(res);
+      setStep("2fa");
+      setGlobalTwoFaPending(true);
+      return;
+    }
     if (!checkRiderRole(res)) return;
     if (res.pendingApproval) { setStep("pending"); return; }
     api.storeTokens(res.token, res.refreshToken);
@@ -64,14 +148,38 @@ export default function Login() {
     login(res.token, profile, res.refreshToken);
   };
 
+  const handleAuthError = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : T("loginFailed");
+    if (auth.lockoutEnabled) {
+      const isLockError = msg.toLowerCase().includes("locked") || msg.toLowerCase().includes("too many");
+      if (isLockError) {
+        setLockoutUntil(Date.now() + auth.lockoutDurationSec * 1000);
+        setLockoutRemaining(auth.lockoutDurationSec);
+        setError(T("accountLockedMsg"));
+        return;
+      }
+      setFailedAttempts(prev => {
+        const next = prev + 1;
+        if (next >= auth.lockoutMaxAttempts) {
+          setLockoutUntil(Date.now() + auth.lockoutDurationSec * 1000);
+          setLockoutRemaining(auth.lockoutDurationSec);
+        }
+        return next;
+      });
+    }
+    setError(msg);
+  };
+
   const sendPhoneOtp = async () => {
     if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.sendOtp(phone);
+      const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
+      if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
+      const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken);
       setDevOtp(res.otp || "");
       setStep("otp");
-    } catch(e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
     setLoading(false);
   };
 
@@ -79,9 +187,11 @@ export default function Login() {
     if (!otp || otp.length < 6) { setError(T("enterOtpDigits")); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.verifyOtp(phone, otp);
+      const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "verify_phone_otp");
+      if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
+      const res = await api.verifyOtp(formatPhoneForApi(phone), otp, getDeviceFingerprint(), captchaToken);
       await doLogin(res);
-    } catch(e: unknown) { setError(e instanceof Error ? e.message : T("verificationFailed")); }
+    } catch (e: unknown) { handleAuthError(e); }
     setLoading(false);
   };
 
@@ -89,10 +199,12 @@ export default function Login() {
     if (!email || !email.includes("@")) { setError(T("enterValidEmail")); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.sendEmailOtp(email);
+      const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_email_otp");
+      if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
+      const res = await api.sendEmailOtp(email, captchaToken);
       setEmailDevOtp(res.otp || "");
       setStep("otp");
-    } catch(e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
     setLoading(false);
   };
 
@@ -100,9 +212,11 @@ export default function Login() {
     if (!emailOtp || emailOtp.length < 6) { setError(T("enterOtpDigits")); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.verifyEmailOtp(email, emailOtp);
+      const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "verify_email_otp");
+      if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
+      const res = await api.verifyEmailOtp(email, emailOtp, getDeviceFingerprint(), captchaToken);
       await doLogin(res);
-    } catch(e: unknown) { setError(e instanceof Error ? e.message : T("verificationFailed")); }
+    } catch (e: unknown) { handleAuthError(e); }
     setLoading(false);
   };
 
@@ -111,16 +225,19 @@ export default function Login() {
     if (!password || password.length < 6) { setError(T("enterPassword")); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.loginUsername(username, password);
+      const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_password");
+      if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
+      const res = await api.loginUsername(username, password, captchaToken, getDeviceFingerprint());
       await doLogin(res);
-    } catch(e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); }
+    } catch (e: unknown) { handleAuthError(e); }
     setLoading(false);
   };
 
   const handleSubmit = () => {
+    if (isLockedOut) return;
     if (method === "phone") { step === "input" ? sendPhoneOtp() : verifyPhoneOtp(); }
     else if (method === "email") { step === "input" ? sendEmailOtpFn() : verifyEmailOtpFn(); }
-    else loginUsername();
+    else if (method === "username") loginUsername();
   };
 
   const selectMethod = (m: LoginMethod) => {
@@ -128,52 +245,136 @@ export default function Login() {
     setOtp(""); setEmailOtp(""); setDevOtp(""); setEmailDevOtp("");
   };
 
+  const handleMagicLinkSend = useCallback(async (emailAddr: string) => {
+    await api.sendMagicLink(emailAddr);
+  }, []);
+
+  const finalize2fa = useCallback(async (res: Record<string, unknown>, tempToken: string) => {
+    const finalToken = (res.token as string) || tempToken;
+    const refreshTk = (res.refreshToken as string) || twoFaPending?.refreshToken;
+    const postRes: AuthResponse = { ...res, token: finalToken, refreshToken: refreshTk };
+    if (!checkRiderRole(postRes)) { setGlobalTwoFaPending(false); return; }
+    if (postRes.pendingApproval) { setStep("pending"); setGlobalTwoFaPending(false); return; }
+    api.storeTokens(finalToken, refreshTk);
+    const profile = await api.getMe();
+    login(finalToken, profile, refreshTk);
+    setGlobalTwoFaPending(false);
+  }, [twoFaPending, login, setGlobalTwoFaPending]);
+
+  const handle2faVerify = useCallback(async (code: string) => {
+    if (!twoFaPending) return;
+    setTwoFaLoading(true);
+    setTwoFaError("");
+    try {
+      const tempToken = twoFaPending.tempToken || twoFaPending.token;
+      const res = await api.twoFactorVerify({ code, tempToken, deviceFingerprint: getDeviceFingerprint() });
+      await finalize2fa(res, tempToken);
+    } catch (e: unknown) {
+      setTwoFaError(e instanceof Error ? e.message : T("verificationFailed"));
+    }
+    setTwoFaLoading(false);
+  }, [twoFaPending, finalize2fa, T]);
+
+  const handle2faBackup = useCallback(async (code: string) => {
+    if (!twoFaPending) return;
+    setTwoFaLoading(true);
+    setTwoFaError("");
+    try {
+      const tempToken = twoFaPending.tempToken || twoFaPending.token;
+      const res = await api.twoFactorRecovery({ backupCode: code, tempToken, deviceFingerprint: getDeviceFingerprint() });
+      await finalize2fa(res, tempToken);
+    } catch (e: unknown) {
+      setTwoFaError(e instanceof Error ? e.message : T("verificationFailed"));
+    }
+    setTwoFaLoading(false);
+  }, [twoFaPending, finalize2fa, T]);
+
+  const formatLockoutTime = (sec: number) => {
+    if (sec >= 60) return `${Math.ceil(sec / 60)} ${T("minutes")}`;
+    return `${sec} ${T("seconds")}`;
+  };
+
+  if (step === "2fa") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+          <button onClick={() => { setStep("input"); setTwoFaPending(null); setGlobalTwoFaPending(false); }}
+            className="text-green-600 text-sm font-semibold mb-4 flex items-center gap-1">
+            <ArrowLeft size={14} /> {T("back")}
+          </button>
+          <TwoFactorVerify
+            onVerify={handle2faVerify}
+            onBackupCode={handle2faBackup}
+            verifyLoading={twoFaLoading}
+            verifyError={twoFaError}
+            showTrustDevice={false}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (step === "pending") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
           <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-5">
-            <Clock size={40} className="text-amber-500"/>
+            <Clock size={40} className="text-amber-500" />
           </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-3">{T("approvalPending")}</h2>
           <p className="text-gray-500 text-sm leading-relaxed mb-5">
             {T("approvalMsg")} {T("approvalTakes")}
           </p>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 text-left flex gap-2">
-            <Lightbulb size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+            <Lightbulb size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-amber-700 text-xs font-medium">{T("alreadyApproved")}</p>
           </div>
           <button onClick={() => setStep("input")} className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
-            <ArrowLeft size={15}/> {T("backToLogin")}
+            <ArrowLeft size={15} /> {T("backToLogin")}
           </button>
         </div>
       </div>
     );
   }
 
+  const hasSocial = auth.google || auth.facebook;
+  const hasMagicLink = auth.magicLink;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl">
-            <Bike size={40} className="text-green-600"/>
+            <Bike size={40} className="text-green-600" />
           </div>
           <h1 className="text-3xl font-bold text-white">{T("riderPortal")}</h1>
           <p className="text-green-200 mt-1">{appName} {T("deliveryPartner")}</p>
         </div>
 
         <div className="bg-white rounded-3xl p-6 shadow-2xl">
-          {step === "input" && (
+          {isLockedOut && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-center">
+              <Shield size={24} className="text-red-500 mx-auto mb-2" />
+              <p className="text-sm font-bold text-red-700 mb-1">{T("accountLocked")}</p>
+              <p className="text-xs text-red-600">
+                {T("accountLockedMsg")} {formatLockoutTime(lockoutRemaining)}
+              </p>
+              <div className="mt-2 text-2xl font-mono font-bold text-red-700">
+                {Math.floor(lockoutRemaining / 60).toString().padStart(2, "0")}:{(lockoutRemaining % 60).toString().padStart(2, "0")}
+              </div>
+            </div>
+          )}
+
+          {step === "input" && enabledMethods.length > 1 && (
             <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-5">
-              {(["phone", "email", "username"] as LoginMethod[]).map(m => (
+              {enabledMethods.map(m => (
                 <button
                   key={m}
                   onClick={() => selectMethod(m)}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${
-                    method === m ? "bg-white text-green-700 shadow-sm" : "text-gray-400"
-                  }`}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${method === m ? "bg-white text-green-700 shadow-sm" : "text-gray-400"
+                    }`}
                 >
-                  {m === "phone" ? <><Phone size={11}/> {T("phoneLabel")}</> : m === "email" ? <><Mail size={11}/> {T("email")}</> : <><User size={11}/> {T("username")}</>}
+                  {m === "phone" ? <><Phone size={11} /> {T("phoneLabel")}</> : m === "email" ? <><Mail size={11} /> {T("email")}</> : <><User size={11} /> {T("username")}</>}
                 </button>
               ))}
             </div>
@@ -182,7 +383,7 @@ export default function Login() {
           {step === "otp" && (
             <button onClick={() => { setStep("input"); clearError(); setDevOtp(""); setEmailDevOtp(""); }}
               className="text-green-600 text-sm font-semibold mb-4 flex items-center gap-1">
-              <ArrowLeft size={14}/> {T("back")}
+              <ArrowLeft size={14} /> {T("back")}
             </button>
           )}
 
@@ -237,27 +438,117 @@ export default function Login() {
                 <input type={showPwd ? "text" : "password"} placeholder={T("password")} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                   className="w-full h-12 px-4 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 <button onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600">
-                  {showPwd ? <EyeOff size={18}/> : <Eye size={18}/>}
+                  {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </>
           )}
 
+          {auth.lockoutEnabled && failedAttempts > 0 && !isLockedOut && step === "input" && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 text-xs text-amber-700 font-medium">
+              {failedAttempts} {T("failedAttempts")} ({auth.lockoutMaxAttempts - failedAttempts} remaining)
+            </div>
+          )}
+
           {error && <p className="text-red-500 text-sm mb-3 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
-          <button onClick={handleSubmit} disabled={loading}
-            className="w-full h-12 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-            {loading ? <Loader2 size={18} className="animate-spin"/> : null}
-            {loading ? T("pleaseWait") :
-              method === "phone" ? (step === "input" ? T("sendOtp") : T("verifyAndLogin")) :
-              method === "email" ? (step === "input" ? T("sendEmailOtp") : T("verifyAndLogin")) :
-              T("login")
-            }
-          </button>
+          {step === "input" && enabledMethods.includes(method as "phone" | "email" | "username") && (
+            <button onClick={handleSubmit} disabled={loading || isLockedOut}
+              className="w-full h-12 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading ? <Loader2 size={18} className="animate-spin" /> : null}
+              {loading ? T("pleaseWait") :
+                method === "phone" ? T("sendOtp") :
+                  method === "email" ? T("sendEmailOtp") :
+                    T("login")
+              }
+            </button>
+          )}
+
+          {step === "otp" && (
+            <button onClick={handleSubmit} disabled={loading || isLockedOut}
+              className="w-full h-12 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading ? <Loader2 size={18} className="animate-spin" /> : null}
+              {loading ? T("pleaseWait") : T("verifyAndLogin")}
+            </button>
+          )}
+
+          {step === "input" && (hasSocial || hasMagicLink) && (
+            <div className="mt-5">
+              {enabledMethods.length > 0 && (
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-1 h-px bg-gray-200" />
+                  <span className="text-xs text-gray-400 font-medium">{T("orContinueWith")}</span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+              )}
+              <div className="space-y-2">
+                {auth.google && (
+                  <button
+                    onClick={async () => {
+                      if (!googleClientId) { setError(T("socialLoginComingSoon")); return; }
+                      setLoading(true); clearError();
+                      try {
+                        const idToken = await loadGoogleGSIToken(googleClientId);
+                        const res = await api.socialGoogle({ idToken });
+                        await doLogin(res);
+                      } catch (e: unknown) { handleAuthError(e); }
+                      setLoading(false);
+                    }}
+                    disabled={loading || isLockedOut}
+                    className="w-full h-11 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
+                    {T("signInWithGoogle")}
+                  </button>
+                )}
+                {auth.facebook && (
+                  <button
+                    onClick={async () => {
+                      if (!facebookAppId) { setError(T("socialLoginComingSoon")); return; }
+                      setLoading(true); clearError();
+                      try {
+                        const accessToken = await loadFacebookAccessToken(facebookAppId);
+                        const res = await api.socialFacebook({ accessToken });
+                        await doLogin(res);
+                      } catch (e: unknown) { handleAuthError(e); }
+                      setLoading(false);
+                    }}
+                    disabled={loading || isLockedOut}
+                    className="w-full h-11 bg-[#1877F2] rounded-xl text-sm font-semibold text-white hover:bg-[#166FE5] transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" /></svg>
+                    {T("signInWithFacebook")}
+                  </button>
+                )}
+                {auth.magicLink && (
+                  <div className="mt-2">
+                    <MagicLinkSender
+                      onSend={handleMagicLinkSend}
+                      title={T("magicLinkLogin")}
+                      subtitle={T("enterRegisteredEmail")}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {step === "input" && (
+            <div className="mt-5 flex flex-col items-center gap-2">
+              <Link href="/register" className="text-sm text-green-600 font-semibold hover:text-green-700">
+                {T("dontHaveAccount")} {T("register")}
+              </Link>
+              {(auth.phoneOtp || auth.emailOtp || auth.usernamePassword) && (
+                <Link href="/forgot-password" className="text-sm text-gray-500 hover:text-gray-700">
+                  {T("forgotPassword")}
+                </Link>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="text-center text-green-200 text-xs mt-6">{T("onlyVerifiedRiders")}</p>
       </div>
     </div>
-  );
+  );   
 }

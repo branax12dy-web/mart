@@ -144,6 +144,7 @@ router.get("/me", async (req, res) => {
     emergencyContact: user.emergencyContact,
     vehicleType: user.vehicleType, vehiclePlate: user.vehiclePlate,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
+    twoFactorEnabled: !!user.totpEnabled,
     lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
     stats: {
       deliveriesToday,

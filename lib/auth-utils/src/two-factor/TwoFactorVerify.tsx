@@ -63,7 +63,7 @@ export function TwoFactorVerify({
   const handleBackupSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (backupCode.trim()) {
+      if (backupCode.trim() && onBackupCode) {
         onBackupCode(backupCode.trim());
       }
     },
@@ -214,26 +214,28 @@ export function TwoFactorVerify({
         </label>
       )}
 
-      <button
-        onClick={() => {
-          setUseBackup(!useBackup);
-          setBackupCode("");
-          setDigits(["", "", "", "", "", ""]);
-        }}
-        style={{
-          width: "100%",
-          padding: "10px 14px",
-          fontSize: 13,
-          borderRadius: 8,
-          border: "none",
-          backgroundColor: "transparent",
-          color: "#1A56DB",
-          cursor: "pointer",
-          fontWeight: 500,
-        }}
-      >
-        {useBackup ? "Use authenticator app instead" : "Use a backup code"}
-      </button>
+      {onBackupCode && (
+        <button
+          onClick={() => {
+            setUseBackup(!useBackup);
+            setBackupCode("");
+            setDigits(["", "", "", "", "", ""]);
+          }}
+          style={{
+            width: "100%",
+            padding: "10px 14px",
+            fontSize: 13,
+            borderRadius: 8,
+            border: "none",
+            backgroundColor: "transparent",
+            color: "#1A56DB",
+            cursor: "pointer",
+            fontWeight: 500,
+          }}
+        >
+          {useBackup ? "Use authenticator app instead" : "Use a backup code"}
+        </button>
+      )}
     </div>
   );
 }

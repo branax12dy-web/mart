@@ -255,6 +255,11 @@ router.get("/", async (req, res) => {
         twoFactorEnabled:       parseAuthToggle(s["auth_2fa_enabled"], "off"),
         magicLinkEnabled:       parseAuthToggle(s["auth_magic_link_enabled"], "off"),
         captchaSiteKey:         s["recaptcha_site_key"] ?? "",
+        lockoutEnabled:         (s["security_lockout_enabled"] ?? "on") === "on",
+        lockoutMaxAttempts:     parseInt(s["security_login_max_attempts"] ?? "5", 10),
+        lockoutDurationSec:     parseInt(s["security_lockout_minutes"] ?? "30", 10) * 60,
+        googleClientId:         s["google_client_id"] ?? "",
+        facebookAppId:          s["facebook_app_id"] ?? "",
       };
     })(),
     payment: {

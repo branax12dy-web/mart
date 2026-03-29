@@ -10,7 +10,7 @@ export interface TwoFactorSetupProps {
 
 export interface TwoFactorVerifyProps {
   onVerify: (code: string) => void | Promise<void>;
-  onBackupCode: (code: string) => void | Promise<void>;
+  onBackupCode?: (code: string) => void | Promise<void>;
   verifyLoading?: boolean;
   verifyError?: string | null;
   showTrustDevice?: boolean;

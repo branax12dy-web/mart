@@ -1,0 +1,517 @@
+import { useState, useEffect, useRef } from "react";
+import { Link } from "wouter";
+import { api } from "../lib/api";
+import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
+import { useLanguage } from "../lib/useLanguage";
+import { tDual, type TranslationKey } from "@workspace/i18n";
+import { executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken, decodeGoogleJwtPayload } from "@workspace/auth-utils";
+import {
+  Bike, ArrowLeft, ArrowRight, Loader2, Eye, EyeOff,
+  Clock, User, Phone, Mail, FileText, Car, Shield, Lightbulb,
+} from "lucide-react";
+
+function formatPhoneForApi(localDigits: string): string {
+  const digits = localDigits.replace(/\D/g, "");
+  if (digits.startsWith("0")) return digits;
+  return `0${digits}`;
+}
+
+function formatPhoneForRegister(localDigits: string): string {
+  const digits = localDigits.replace(/\D/g, "");
+  const raw = digits.startsWith("0") ? digits : `0${digits}`;
+  if (raw.length === 11) return `${raw.slice(0, 4)}-${raw.slice(4)}`;
+  return raw;
+}
+
+function getPasswordStrength(pw: string): { level: number; label: TranslationKey; color: string; width: string } {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  if (score <= 1) return { level: 1, label: "passwordWeak", color: "bg-red-500", width: "w-1/4" };
+  if (score <= 2) return { level: 2, label: "passwordFair", color: "bg-orange-500", width: "w-2/4" };
+  if (score <= 3) return { level: 3, label: "passwordGood", color: "bg-yellow-500", width: "w-3/4" };
+  return { level: 4, label: "passwordStrong", color: "bg-green-500", width: "w-full" };
+}
+
+function formatCnic(val: string): string {
+  const digits = val.replace(/\D/g, "").slice(0, 13);
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
+const VEHICLE_TYPES = [
+  { value: "Bike / Motorcycle", labelKey: "bikeMotorcycle" as TranslationKey },
+  { value: "Car", labelKey: "carVehicle" as TranslationKey },
+  { value: "Rickshaw / QingQi", labelKey: "rickshawVan" as TranslationKey },
+  { value: "Van", labelKey: "vanVehicle" as TranslationKey },
+];
+
+const INPUT = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:bg-white transition-all";
+const SELECT = "w-full h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 appearance-none transition-all";
+
+export default function Register() {
+  const { config } = usePlatformConfig();
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
+
+  const auth = getRiderAuthConfig(config);
+  const captchaSiteKey = config.auth?.captchaSiteKey;
+
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+
+  const [cnic, setCnic] = useState("");
+  const [vehicleType, setVehicleType] = useState("");
+  const [vehicleReg, setVehicleReg] = useState("");
+  const [drivingLicense, setDrivingLicense] = useState("");
+
+  const [password, setPassword] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  const [otp, setOtp] = useState("");
+  const [devOtp, setDevOtp] = useState("");
+  const [verifyChannel, setVerifyChannel] = useState<"phone" | "email">("phone");
+
+  const [completed, setCompleted] = useState(false);
+
+  const availabilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [availabilityStatus, setAvailabilityStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+
+  const clearError = () => setError("");
+
+  useEffect(() => {
+    if (!phone || phone.length < 10 || !email || !email.includes("@")) {
+      setAvailabilityStatus("idle");
+      return;
+    }
+    if (availabilityTimer.current) clearTimeout(availabilityTimer.current);
+    availabilityTimer.current = setTimeout(async () => {
+      setAvailabilityStatus("checking");
+      try {
+        await api.checkAvailable({ phone: formatPhoneForApi(phone), email });
+        setAvailabilityStatus("available");
+      } catch {
+        setAvailabilityStatus("taken");
+      }
+    }, 800);
+    return () => { if (availabilityTimer.current) clearTimeout(availabilityTimer.current); };
+  }, [phone, email]);
+
+  const handleSocialAutofill = async (provider: "google" | "facebook") => {
+    const googleClientId = config.auth?.googleClientId;
+    const facebookAppId = config.auth?.facebookAppId;
+    if (provider === "google" && !googleClientId) { setError(T("socialLoginComingSoon")); return; }
+    if (provider === "facebook" && !facebookAppId) { setError(T("socialLoginComingSoon")); return; }
+    setLoading(true); clearError();
+    try {
+      if (provider === "google") {
+        const idToken = await loadGoogleGSIToken(googleClientId!);
+        const payload = decodeGoogleJwtPayload(idToken);
+        if (payload.name) setName(payload.name);
+        if (payload.email) setEmail(payload.email);
+      } else {
+        const accessToken = await loadFacebookAccessToken(facebookAppId!);
+        const fbRes = await fetch(`https://graph.facebook.com/me?fields=name,email&access_token=${accessToken}`);
+        if (!fbRes.ok) throw new Error("Failed to fetch Facebook profile");
+        const fbData = await fbRes.json();
+        if (fbData.error) throw new Error(fbData.error.message || "Facebook profile error");
+        if (fbData.name) setName(fbData.name);
+        if (fbData.email) setEmail(fbData.email);
+      }
+      setStep(2);
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); }
+    setLoading(false);
+  };
+
+  const validateStep1 = (): boolean => {
+    if (!name.trim()) { setError(T("nameRequired")); return false; }
+    if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return false; }
+    if (!email || !email.includes("@")) { setError(T("enterValidEmail")); return false; }
+    if (availabilityStatus === "taken") { setError(T("loginFailed")); return false; }
+    return true;
+  };
+
+  const validateStep2 = (): boolean => {
+    const cnicDigits = cnic.replace(/\D/g, "");
+    if (cnicDigits.length !== 13) { setError(T("cnicRequired")); return false; }
+    if (!vehicleType) { setError(T("vehicleTypeRequired")); return false; }
+    if (!vehicleReg.trim()) { setError(T("vehicleRegRequired")); return false; }
+    if (!drivingLicense.trim()) { setError(T("drivingLicenseRequired")); return false; }
+    return true;
+  };
+
+  const validateStep3 = (): boolean => {
+    if (password.length < 8) { setError(T("passwordMinLength")); return false; }
+    if (password !== confirmPw) { setError(T("passwordsDoNotMatch")); return false; }
+    if (!acceptedTerms) { setError(T("termsRequired")); return false; }
+    return true;
+  };
+
+  const checkAvailability = async (): Promise<boolean> => {
+    try {
+      await api.checkAvailable({ phone: formatPhoneForApi(phone), email });
+      return true;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : T("loginFailed"));
+      return false;
+    }
+  };
+
+  const goNextStep = async () => {
+    clearError();
+    if (step === 1) {
+      if (!validateStep1()) return;
+      setLoading(true);
+      const available = await checkAvailability();
+      setLoading(false);
+      if (!available) return;
+      setStep(2);
+    } else if (step === 2) {
+      if (!validateStep2()) return;
+      setStep(3);
+    } else if (step === 3) {
+      if (!validateStep3()) return;
+      setLoading(true);
+      try {
+        let captchaToken: string | undefined;
+        if (auth.captchaEnabled) {
+          try { captchaToken = await executeCaptcha("register", captchaSiteKey); } catch { /* noop */ }
+          if (!captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
+        }
+        const selectedChannel = (() => {
+          if (!auth.phoneOtp && auth.emailOtp) return "email" as const;
+          if (auth.phoneOtp && !auth.emailOtp) return "phone" as const;
+          return verifyChannel;
+        })();
+        setVerifyChannel(selectedChannel);
+        const regData = {
+          name: name.trim(),
+          phone: formatPhoneForRegister(phone),
+          email: email.trim(),
+          cnic: cnic.trim(),
+          vehicleType,
+          vehicleRegistration: vehicleReg.trim(),
+          drivingLicense: drivingLicense.trim(),
+          password,
+          captchaToken,
+        };
+        if (auth.phoneOtp) {
+          const res = await api.registerRider(regData);
+          if (selectedChannel === "email") {
+            const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
+            if (emailRes.otp) setDevOtp(emailRes.otp);
+          } else {
+            if (res.otp) setDevOtp(res.otp);
+          }
+        } else {
+          await api.emailRegisterRider(regData);
+          const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
+          if (emailRes.otp) setDevOtp(emailRes.otp);
+        }
+        setStep(4);
+      } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); }
+      setLoading(false);
+    } else if (step === 4) {
+      if (!otp || otp.length < 6) { setError(T("enterOtpDigits")); return; }
+      setLoading(true);
+      try {
+        let captchaToken: string | undefined;
+        if (auth.captchaEnabled) {
+          captchaToken = await executeCaptcha("register_verify_otp", config.auth?.captchaSiteKey || "");
+        }
+        if (verifyChannel === "phone") {
+          await api.verifyOtp(formatPhoneForApi(phone), otp, undefined, captchaToken);
+        } else {
+          await api.verifyEmailOtp(email, otp, undefined, captchaToken);
+        }
+        setCompleted(true);
+      } catch (e: unknown) { setError(e instanceof Error ? e.message : T("verificationFailed")); }
+      setLoading(false);
+    }
+  };
+
+  const stepLabels: TranslationKey[] = ["step1PersonalInfo", "step2VehicleInfo", "step3Security", "step4Verification"];
+
+  if (completed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+          <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-5">
+            <Clock size={40} className="text-amber-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-3">{T("pendingAdminApproval")}</h2>
+          <p className="text-gray-500 text-sm leading-relaxed mb-5">{T("pendingApprovalMsg")}</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 text-left flex gap-2">
+            <Lightbulb size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-amber-700 text-xs font-medium">{T("approvalTakes")}</p>
+          </div>
+          <Link href="/" className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+            <ArrowLeft size={15} /> {T("goToLogin")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-xl">
+            <Bike size={32} className="text-green-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">{T("registerAsRider")}</h1>
+          <p className="text-green-200 mt-1 text-sm">{T("joinAsDeliveryPartner")}</p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 shadow-2xl">
+          <div className="flex items-center gap-1 mb-6">
+            {[1, 2, 3, 4].map(s => (
+              <div key={s} className="flex-1 flex flex-col items-center gap-1">
+                <div className={`w-full h-1.5 rounded-full transition-all ${s <= step ? "bg-green-500" : "bg-gray-200"}`} />
+                <span className={`text-[10px] font-semibold ${s <= step ? "text-green-600" : "text-gray-400"}`}>
+                  {T(stepLabels[s - 1])}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {step === 1 && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <User size={11} /> {T("nameRequired")}
+                </label>
+                <input value={name} onChange={e => setName(e.target.value)} placeholder={T("fullName")} className={INPUT} autoFocus />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <Phone size={11} /> {T("phoneRequired")}
+                </label>
+                <div className="flex gap-2">
+                  <div className="h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-sm font-medium text-gray-600">+92</div>
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3XX XXXXXXX" className={`flex-1 ${INPUT}`} />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <Mail size={11} /> {T("emailRequired")}
+                </label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" className={INPUT} />
+              </div>
+
+              {availabilityStatus !== "idle" && (
+                <div className={`text-xs font-medium px-3 py-1.5 rounded-lg ${
+                  availabilityStatus === "checking" ? "bg-gray-50 text-gray-500" :
+                  availabilityStatus === "available" ? "bg-green-50 text-green-700" :
+                  "bg-red-50 text-red-600"
+                }`}>
+                  {availabilityStatus === "checking" ? T("checkingAvailability") :
+                   availabilityStatus === "available" ? T("phoneEmailAvailable") :
+                   T("alreadyRegistered")}
+                </div>
+              )}
+
+              {(auth.google || auth.facebook) && (
+                <div className="pt-2">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400 font-medium">{T("orContinueWith")}</span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
+                  <div className="space-y-2">
+                    {auth.google && (
+                      <button onClick={() => handleSocialAutofill("google")} disabled={loading}
+                        className="w-full h-11 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+                        {T("signInWithGoogle")}
+                      </button>
+                    )}
+                    {auth.facebook && (
+                      <button onClick={() => handleSocialAutofill("facebook")} disabled={loading}
+                        className="w-full h-11 bg-[#1877F2] rounded-xl text-sm font-semibold text-white hover:bg-[#166FE5] transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+                        {T("signInWithFacebook")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <FileText size={11} /> {T("cnicRequired")}
+                </label>
+                <input value={cnic} onChange={e => setCnic(formatCnic(e.target.value))} placeholder="00000-0000000-0"
+                  className={INPUT} inputMode="numeric" autoFocus />
+                <p className="text-[10px] text-gray-400 mt-1">{T("cnicFormat")}</p>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <Car size={11} /> {T("vehicleTypeRequired")}
+                </label>
+                <select value={vehicleType} onChange={e => setVehicleType(e.target.value)} className={SELECT}>
+                  <option value="">{T("selectVehicleType")}</option>
+                  {VEHICLE_TYPES.map(v => (
+                    <option key={v.value} value={v.value}>{T(v.labelKey)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {T("vehicleRegRequired")}
+                </label>
+                <input value={vehicleReg} onChange={e => setVehicleReg(e.target.value.toUpperCase())} placeholder="e.g. AJK 1234"
+                  className={`${INPUT} uppercase`} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {T("drivingLicenseRequired")}
+                </label>
+                <input value={drivingLicense} onChange={e => setDrivingLicense(e.target.value)} placeholder="License number"
+                  className={INPUT} />
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <Shield size={11} /> {T("passwordRequired")}
+                </label>
+                <div className="relative">
+                  <input type={showPwd ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder={T("passwordRequired")} className={`${INPUT} pr-12`} autoFocus />
+                  <button onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600">
+                    {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {password && (
+                  <div className="mt-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${getPasswordStrength(password).color} ${getPasswordStrength(password).width}`} />
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-500">{T(getPasswordStrength(password).label)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {T("confirmPassword")}
+                </label>
+                <input type={showPwd ? "text" : "password"} value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
+                  placeholder={T("confirmPassword")} className={INPUT} />
+                {confirmPw && password !== confirmPw && (
+                  <p className="text-[10px] text-red-500 mt-1">{T("passwordsDoNotMatch")}</p>
+                )}
+              </div>
+              <label className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl cursor-pointer">
+                <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-green-600" />
+                <span className="text-xs text-gray-600 leading-relaxed">
+                  {T("acceptTerms")}
+                  {config.content.tncUrl && (
+                    <> — <a href={config.content.tncUrl} target="_blank" rel="noopener noreferrer" className="text-green-600 underline">Terms</a></>
+                  )}
+                  {config.content.privacyUrl && (
+                    <> | <a href={config.content.privacyUrl} target="_blank" rel="noopener noreferrer" className="text-green-600 underline">Privacy</a></>
+                  )}
+                </span>
+              </label>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-3">
+              <div className="text-center mb-2">
+                <h3 className="text-lg font-bold text-gray-800">{T("enterOtp")}</h3>
+                <p className="text-sm text-gray-500">
+                  {verifyChannel === "phone" ? `+92${phone}` : email}
+                </p>
+              </div>
+              {auth.phoneOtp && auth.emailOtp && (
+                <div className="flex gap-2 justify-center mb-2">
+                  <button type="button" onClick={async () => {
+                    if (verifyChannel === "phone") return;
+                    setVerifyChannel("phone"); setOtp(""); setDevOtp("");
+                    try {
+                      const res = await api.sendOtp(formatPhoneForApi(phone));
+                      if (res.otp) setDevOtp(res.otp);
+                    } catch {}
+                  }}
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${verifyChannel === "phone" ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                    {T("verifyViaPhone")}
+                  </button>
+                  <button type="button" onClick={async () => {
+                    if (verifyChannel === "email") return;
+                    setVerifyChannel("email"); setOtp(""); setDevOtp("");
+                    try {
+                      const res = await api.sendEmailOtp(email.trim());
+                      if (res.otp) setDevOtp(res.otp);
+                    } catch {}
+                  }}
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${verifyChannel === "email" ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                    {T("verifyViaEmail")}
+                  </button>
+                </div>
+              )}
+              {devOtp && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700">
+                  <strong>{T("devOtp")}:</strong> {devOtp}
+                </div>
+              )}
+              <input type="number" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && goNextStep()}
+                className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-green-500"
+                maxLength={6} autoFocus />
+            </div>
+          )}
+
+          {error && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+          <div className="flex gap-2 mt-5">
+            {step > 1 && (
+              <button onClick={() => { setStep(step - 1); clearError(); }}
+                className="h-12 px-5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1">
+                <ArrowLeft size={14} /> {T("previousStep")}
+              </button>
+            )}
+            <button onClick={goNextStep} disabled={loading}
+              className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading ? <Loader2 size={18} className="animate-spin" /> : null}
+              {loading ? T("pleaseWait") :
+                step === 4 ? T("verifyAndLogin") :
+                  step === 3 ? T("submitRegistration") :
+                    <>{T("nextStep")} <ArrowRight size={14} /></>
+              }
+            </button>
+          </div>
+
+          {step === 1 && (
+            <div className="mt-4 text-center">
+              <Link href="/" className="text-sm text-green-600 font-semibold hover:text-green-700">
+                {T("alreadyHaveAccount")} {T("login")}
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
