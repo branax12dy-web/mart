@@ -27,7 +27,6 @@ import type { CreateParcelBookingRequest } from "@workspace/api-client-react";
 
 const C = Colors.light;
 
-/* ─── Parcel Types ─── */
 interface ParcelType {
   id: string;
   label: string;
@@ -44,12 +43,8 @@ const PARCEL_TYPES: ParcelType[] = [
   { id: "other",       label: "Other",        emoji: "📦", desc: "Any other parcel",            baseFare: 250 },
 ];
 
-const AJK_LOCATIONS = [
-  "Muzaffarabad City", "Mirpur City", "Rawalakot", "Bhimber", "Kotli",
-  "Bagh", "Poonch", "Neelum Valley", "Hattian Bala", "Sudhnoti",
-];
+const steps = ["Sender", "Receiver", "Parcel", "Payment"];
 
-/* ─── Step Indicator ─── */
 function Steps({ current, labels }: { current: number; labels: string[] }) {
   return (
     <View style={ss.steps}>
@@ -63,7 +58,7 @@ function Steps({ current, labels }: { current: number; labels: string[] }) {
                 <Text style={[ss.stepNum, i === current && { color: "#fff" }]}>{i + 1}</Text>
               )}
             </View>
-            <Text style={[ss.stepLbl, i === current && { color: "#D97706" }]}>{lbl}</Text>
+            <Text style={[ss.stepLbl, i === current && { color: "#FBBF24" }]}>{lbl}</Text>
           </View>
           {i < steps.length - 1 && <View style={[ss.stepLine, i < current && ss.stepLineActive]} />}
         </React.Fragment>
@@ -72,7 +67,6 @@ function Steps({ current, labels }: { current: number; labels: string[] }) {
   );
 }
 
-/* ════════════════════ MAIN SCREEN ════════════════════ */
 function ParcelScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -111,13 +105,11 @@ function ParcelScreenInner() {
     { id: "cash", label: "Cash on Pickup", logo: "💵", description: "" },
   ]);
 
-  /* ── Server-calculated fare (replaces hardcoded per-type fares) ── */
   const [estimatedFare, setEstimatedFare] = useState(0);
   const [fareLoading, setFareLoading] = useState(false);
 
   const selectedType = PARCEL_TYPES.find(t => t.id === parcelType);
 
-  /* ── Fetch enabled payment methods (via api-client-react) ── */
   useEffect(() => {
     getPaymentMethods()
       .then(data => {
@@ -126,10 +118,9 @@ function ParcelScreenInner() {
           setPayMethod(data.methods[0]!.id);
         }
       })
-      .catch(() => { /* payment methods fallback to default cash */ });
+      .catch(() => {});
   }, []);
 
-  /* ── Fetch server fare estimate (via api-client-react) ── */
   useEffect(() => {
     if (!parcelType) { setEstimatedFare(0); return; }
     setFareLoading(true);
@@ -187,7 +178,6 @@ function ParcelScreenInner() {
     }
   };
 
-  /* ── Service Unavailable ── */
   if (!parcelEnabled) {
     return (
       <View style={[ss.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
@@ -206,7 +196,6 @@ function ParcelScreenInner() {
     );
   }
 
-  /* ── Maintenance blocks ALL states including confirmed booking ── */
   if (inMaintenance) {
     return (
       <View style={[ss.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
@@ -222,12 +211,13 @@ function ParcelScreenInner() {
     );
   }
 
-  /* ── Confirmation ── */
   if (confirmed) {
     return (
       <View style={[ss.root, { justifyContent: "center", alignItems: "center", paddingHorizontal: 28 }]}>
         <View style={ss.confirmCard}>
-          <Text style={{ fontSize: 56 }}>🚀</Text>
+          <LinearGradient colors={["#D97706", "#F59E0B"]} style={ss.confirmIconCircle}>
+            <Ionicons name="checkmark" size={36} color="#fff" />
+          </LinearGradient>
           <Text style={ss.confirmTitle}>{T("parcelBooked")}</Text>
           <Text style={ss.confirmSub}>
             Booking #{confirmedId.slice(-6).toUpperCase()}{"\n"}
@@ -264,8 +254,7 @@ function ParcelScreenInner() {
 
   return (
     <View style={ss.root}>
-      {/* Header */}
-      <LinearGradient colors={["#B45309", "#D97706", "#F59E0B"]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={[ss.header, { paddingTop: topPad + 14 }]}>
+      <LinearGradient colors={["#92400E", "#B45309", "#D97706"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[ss.header, { paddingTop: topPad + 14 }]}>
         <View style={ss.hdrRow}>
           <Pressable onPress={() => router.back()} style={ss.backBtn}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
@@ -279,7 +268,6 @@ function ParcelScreenInner() {
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ss.scroll}>
-        {/* ─── Step 0: Sender ─── */}
         {step === 0 && (
           <View style={ss.card}>
             <Text style={ss.cardTitle}>📍 {T("senderDetails")}</Text>
@@ -307,7 +295,6 @@ function ParcelScreenInner() {
           </View>
         )}
 
-        {/* ─── Step 1: Receiver ─── */}
         {step === 1 && (
           <View style={ss.card}>
             <Text style={ss.cardTitle}>📬 {T("receiverDetails")}</Text>
@@ -335,7 +322,6 @@ function ParcelScreenInner() {
           </View>
         )}
 
-        {/* ─── Step 2: Parcel ─── */}
         {step === 2 && (
           <View>
             <View style={ss.card}>
@@ -391,7 +377,6 @@ function ParcelScreenInner() {
           </View>
         )}
 
-        {/* ─── Step 3: Payment ─── */}
         {step === 3 && (
           <View>
             <View style={ss.card}>
@@ -426,32 +411,31 @@ function ParcelScreenInner() {
                       </Text>
                       <Text style={ss.paySub}>{subLabel}</Text>
                     </View>
-                    {active && <Ionicons name="checkmark-circle" size={20} color="#D97706" />}
+                    {active && <Ionicons name="checkmark-circle" size={22} color="#D97706" />}
                   </Pressable>
                 );
               })}
             </View>
 
-            {/* Summary */}
             <View style={ss.summaryCard}>
               <Text style={ss.summaryTitle}>{T("bookingSummary")}</Text>
               <View style={ss.summaryRow}>
-                <Ionicons name="location" size={14} color={C.primary} />
+                <View style={[ss.summaryDot, { backgroundColor: "#10B981" }]} />
                 <Text style={ss.summaryTxt}><Text style={{ fontFamily: "Inter_600SemiBold" }}>{T("pickup")}:</Text> {pickupAddress}</Text>
               </View>
               <View style={ss.summaryRow}>
-                <Ionicons name="location" size={14} color="#EF4444" />
+                <View style={[ss.summaryDot, { backgroundColor: "#EF4444" }]} />
                 <Text style={ss.summaryTxt}><Text style={{ fontFamily: "Inter_600SemiBold" }}>{T("dropOff")}:</Text> {dropAddress}</Text>
               </View>
               <View style={ss.summaryRow}>
-                <Ionicons name="person" size={14} color={C.textMuted} />
+                <Ionicons name="person-outline" size={14} color={C.textMuted} />
                 <Text style={ss.summaryTxt}>{receiverName} • {receiverPhone}</Text>
               </View>
               <View style={ss.summaryRow}>
                 <Ionicons name="cube-outline" size={14} color={C.textMuted} />
                 <Text style={ss.summaryTxt}>{selectedType?.emoji} {selectedType?.label}{weight ? ` • ${weight} kg` : ""}</Text>
               </View>
-              <View style={[ss.summaryRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border }]}>
+              <View style={[ss.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
                 <Text style={ss.summaryTotal}>{T("totalFare")}</Text>
                 <Text style={ss.summaryFare}>Rs. {estimatedFare}</Text>
               </View>
@@ -462,7 +446,6 @@ function ParcelScreenInner() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Navigation Buttons */}
       <View style={[ss.navBar, { paddingBottom: insets.bottom + 12 }]}>
         {step > 0 && (
           <Pressable style={ss.prevBtn} onPress={prev}>
@@ -487,7 +470,6 @@ function ParcelScreenInner() {
         )}
       </View>
 
-      {/* Location Picker Modal */}
       <Modal visible={!!showLocPicker} animationType="slide" presentationStyle="pageSheet"
         onRequestClose={() => { setShowLocPicker(null); setLocSearch(""); }}>
         <View style={ss.locModal}>
@@ -495,12 +477,11 @@ function ParcelScreenInner() {
             <Text style={ss.locModalTitle}>
               {showLocPicker === "pickup" ? "📍 Pickup" : "🏁 Drop"} Location
             </Text>
-            <Pressable onPress={() => { setShowLocPicker(null); setLocSearch(""); }}>
-              <Ionicons name="close" size={22} color={C.text} />
+            <Pressable onPress={() => { setShowLocPicker(null); setLocSearch(""); }} style={ss.locCloseBtn}>
+              <Ionicons name="close" size={20} color={C.text} />
             </Pressable>
           </View>
 
-          {/* Search bar */}
           <View style={ss.locSearchRow}>
             <Ionicons name="search-outline" size={16} color={C.textMuted} />
             <TextInput
@@ -533,11 +514,13 @@ function ParcelScreenInner() {
                   setLocSearch("");
                 }}
               >
-                <Ionicons name="location-outline" size={18} color={C.primary} />
+                <View style={ss.locIconWrap}>
+                  <Ionicons name="location-outline" size={18} color={C.primary} />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={ss.locOptionTxt}>{pred.mainText}</Text>
                   {pred.secondaryText ? (
-                    <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }} numberOfLines={1}>{pred.secondaryText}</Text>
+                    <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }} numberOfLines={1}>{pred.secondaryText}</Text>
                   ) : null}
                 </View>
                 <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
@@ -551,14 +534,12 @@ function ParcelScreenInner() {
           </ScrollView>
         </View>
       </Modal>
-
     </View>
   );
 }
 
 export default withServiceGuard("parcel", ParcelScreenInner);
 
-/* ─── Styles ─── */
 const ss = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.background },
 
@@ -566,11 +547,11 @@ const ss = StyleSheet.create({
   hdrRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   hdrTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
-  hdrSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.85)" },
+  hdrSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 },
 
   steps: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4 },
   stepItem: { alignItems: "center", gap: 4 },
-  stepDot: { width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.3)", alignItems: "center", justifyContent: "center" },
+  stepDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.3)", alignItems: "center", justifyContent: "center" },
   stepDotActive: { backgroundColor: "#D97706" },
   stepNum: { fontFamily: "Inter_700Bold", fontSize: 11, color: "rgba(255,255,255,0.7)" },
   stepLbl: { fontFamily: "Inter_500Medium", fontSize: 9, color: "rgba(255,255,255,0.8)" },
@@ -578,64 +559,68 @@ const ss = StyleSheet.create({
   stepLineActive: { backgroundColor: "#D97706" },
 
   scroll: { padding: 16, paddingBottom: 24 },
-  card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.border },
-  cardTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 14 },
+  card: { backgroundColor: "#fff", borderRadius: 18, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  cardTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text, marginBottom: 14 },
 
-  label: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, marginBottom: 6, marginTop: 10 },
-  input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text },
-  locInput: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  label: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, marginBottom: 6, marginTop: 12 },
+  input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text, backgroundColor: C.surfaceSecondary },
+  locInput: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.surfaceSecondary },
   locInputTxt: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text },
 
-  typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
-  typeCard: { width: "46%", padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, alignItems: "center", gap: 4, backgroundColor: "#F8FAFC" },
+  typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 4 },
+  typeCard: { width: "46%", padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, alignItems: "center", gap: 6, backgroundColor: C.surfaceSecondary },
   typeCardActive: { borderColor: "#D97706", backgroundColor: "#FFFBEB" },
   typeLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.text },
   typeDesc: { fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted, textAlign: "center" },
   typeFare: { fontFamily: "Inter_700Bold", fontSize: 12, color: C.primary },
-  weightNote: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#D97706", marginTop: 4 },
+  weightNote: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#D97706", marginTop: 6 },
 
-  fareCard: { backgroundColor: "#FFFBEB", borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: "#FDE68A" },
+  fareCard: { backgroundColor: "#FFFBEB", borderRadius: 16, padding: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: "#FDE68A", marginHorizontal: 0, marginBottom: 12 },
   fareLbl2: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#92400E" },
-  fareNote: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#B45309" },
-  fareAmt: { fontFamily: "Inter_700Bold", fontSize: 22, color: "#D97706" },
+  fareNote: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#B45309", marginTop: 2 },
+  fareAmt: { fontFamily: "Inter_700Bold", fontSize: 24, color: "#D97706" },
 
-  payOpt: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, marginBottom: 10 },
+  payOpt: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: C.border, marginBottom: 10 },
   payOptActive: { borderColor: "#D97706", backgroundColor: "#FFFBEB" },
-  payIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  payIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   payLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text },
   paySub: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginTop: 2 },
 
-  summaryCard: { backgroundColor: "#fff", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: C.border },
-  summaryTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, marginBottom: 12 },
-  summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 8 },
-  summaryTxt: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: C.textSecondary, lineHeight: 17 },
-  summaryTotal: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 15, color: C.text },
-  summaryFare: { fontFamily: "Inter_700Bold", fontSize: 18, color: "#D97706" },
+  summaryCard: { backgroundColor: "#fff", borderRadius: 18, padding: 18, borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  summaryTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 14 },
+  summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 10 },
+  summaryDot: { width: 10, height: 10, borderRadius: 5, marginTop: 3 },
+  summaryTxt: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, lineHeight: 18 },
+  summaryTotal: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 16, color: C.text },
+  summaryFare: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#D97706" },
 
-  navBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
-  prevBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 14, backgroundColor: "#F1F5F9" },
+  navBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 5 },
+  prevBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 18, paddingVertical: 14, borderRadius: 14, backgroundColor: C.surfaceSecondary },
   prevBtnTxt: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text },
-  nextBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14, backgroundColor: "#D97706" },
+  nextBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15, borderRadius: 16, backgroundColor: "#D97706", shadowColor: "#D97706", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
   nextBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 
   locModal: { flex: 1, backgroundColor: "#fff" },
   locModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: C.border },
-  locModalTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text },
-  locSearchRow: { flexDirection: "row", alignItems: "center", gap: 10, margin: 12, backgroundColor: "#F8FAFC", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: C.borderLight },
+  locModalTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
+  locCloseBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" },
+  locSearchRow: { flexDirection: "row", alignItems: "center", gap: 10, margin: 12, backgroundColor: C.surfaceSecondary, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: C.borderLight },
   locSearchInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text, paddingVertical: 0 },
-  locOption: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
-  locOptionTxt: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 14, color: C.text },
+  locOption: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  locOptionTxt: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.text },
+  locIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center" },
 
-  confirmCard: { backgroundColor: "#fff", borderRadius: 20, padding: 24, alignItems: "center", width: "100%", borderWidth: 1, borderColor: C.border, gap: 12 },
+  confirmCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, alignItems: "center", width: "100%", borderWidth: 1, borderColor: C.border, gap: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 5 },
+  confirmIconCircle: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   confirmTitle: { fontFamily: "Inter_700Bold", fontSize: 24, color: C.text },
   confirmSub: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 21 },
   confirmRow: { flexDirection: "row", alignItems: "center", gap: 8, width: "100%" },
-  confirmInfoBox: { flex: 1, backgroundColor: "#F8FAFC", borderRadius: 12, padding: 10 },
-  confirmInfoLbl: { fontFamily: "Inter_500Medium", fontSize: 10, color: C.textMuted, marginBottom: 3 },
+  confirmInfoBox: { flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 14, padding: 12 },
+  confirmInfoLbl: { fontFamily: "Inter_500Medium", fontSize: 10, color: C.textMuted, marginBottom: 4 },
   confirmInfoVal: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.text },
-  fareBox: { width: "100%", backgroundColor: "#FFFBEB", borderRadius: 12, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  fareBox: { width: "100%", backgroundColor: "#FFFBEB", borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   fareLbl: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#92400E" },
-  fareVal: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#D97706" },
-  doneBtn: { backgroundColor: "#D97706", borderRadius: 13, paddingVertical: 13, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", flexDirection: "row" },
+  fareVal: { fontFamily: "Inter_700Bold", fontSize: 22, color: "#D97706" },
+  doneBtn: { backgroundColor: "#D97706", borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", flexDirection: "row" },
   doneBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 });

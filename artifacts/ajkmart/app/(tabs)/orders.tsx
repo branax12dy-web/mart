@@ -28,8 +28,6 @@ import { useGetOrders } from "@workspace/api-client-react";
 
 const C = Colors.light;
 
-/* ─────────────────────────── Status config ─────────────────────────── */
-
 const ORDER_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
   pending:          { color: "#D97706", bg: "#FEF3C7", icon: "time-outline",            labelKey: "pending" },
   confirmed:        { color: "#2563EB", bg: "#DBEAFE", icon: "checkmark-circle-outline", labelKey: "confirmed" },
@@ -57,7 +55,6 @@ const PARCEL_STATUS: Record<string, { color: string; bg: string; icon: string; l
   cancelled:  { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",      labelKey: "cancelled" },
 };
 
-/* ─────────────────────────── Tab config ─────────────────────────── */
 const TABS = [
   { key: "all",      labelKey: "all" as TranslationKey,       icon: "layers-outline" },
   { key: "mart",     labelKey: "mart" as TranslationKey,      icon: "storefront-outline" },
@@ -69,7 +66,6 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
-/* ─────────────────────────── Grocery/Food Card ─────────────────────────── */
 function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, ratingWindowHours, onRate, onCancel, onReorder }: {
   order: any;
   liveTracking: boolean;
@@ -89,14 +85,12 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   const isCancelled = order.status === "cancelled";
   const isActive = !["delivered", "cancelled"].includes(order.status);
 
-  // Cancel window calculation
   const minutesSincePlaced = order.createdAt
     ? (Date.now() - new Date(order.createdAt).getTime()) / 60000
     : 999;
   const canCancel = order.status === "pending" && minutesSincePlaced <= cancelWindowMin;
   const cancelMinsLeft = Math.max(0, Math.ceil(cancelWindowMin - minutesSincePlaced));
 
-  // Rating window: only show rate button if within ratingWindowHours after delivery
   const hourssinceDelivery = order.updatedAt
     ? (Date.now() - new Date(order.updatedAt).getTime()) / 3600000
     : 0;
@@ -105,13 +99,13 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: isFood ? "#FFF3E0" : "#E3F2FD" }]}>
+        <View style={[styles.chip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
           <Ionicons
             name={isFood ? "restaurant-outline" : "storefront-outline"}
             size={13}
-            color={isFood ? "#E65100" : "#0D47A1"}
+            color={isFood ? "#D97706" : "#1A56DB"}
           />
-          <Text style={[styles.chipText, { color: isFood ? "#E65100" : "#0D47A1" }]}>
+          <Text style={[styles.chipText, { color: isFood ? "#D97706" : "#1A56DB" }]}>
             {isFood ? T("food") : T("mart")}
           </Text>
         </View>
@@ -157,13 +151,12 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       )}
 
       {!liveTracking && isActive && (
-        <View style={[styles.etaBar, { backgroundColor: "#FFF8E1", borderRadius: 8, paddingHorizontal: 10 }]}>
+        <View style={[styles.etaBar, { backgroundColor: "#FEF3C7", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0, marginTop: 12 }]}>
           <Ionicons name="navigate-circle-outline" size={13} color="#D97706" />
           <Text style={[styles.etaText, { color: "#92400E" }]}>{T("liveTrackingUnavailable")}</Text>
         </View>
       )}
 
-      {/* Cancel button — only within cancel window on pending orders */}
       {canCancel && (
         <Pressable style={styles.cancelBtn} onPress={() => onCancel(order)}>
           <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
@@ -171,7 +164,6 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
         </Pressable>
       )}
 
-      {/* Rate button — only within rating window */}
       {canRate && (
         <Pressable style={styles.rateBtn} onPress={() => onRate(order)}>
           <Ionicons name="star-outline" size={14} color="#F59E0B" />
@@ -193,7 +185,6 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
         </Pressable>
       )}
 
-      {/* Refund info on cancelled orders */}
       {isCancelled && order.paymentMethod !== "cash" && refundDays > 0 && (
         <View style={styles.refundBar}>
           <Ionicons name="return-down-back-outline" size={12} color="#059669" />
@@ -204,7 +195,6 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   );
 }
 
-/* ─────────────────────────── Ride Card ─────────────────────────── */
 function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   ride: any;
   liveTracking: boolean;
@@ -223,12 +213,12 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: "#E8F5E9" }]}>
+        <View style={[styles.chip, { backgroundColor: "#ECFDF5" }]}>
           <Ionicons
             name={ride.type === "bike" ? "bicycle-outline" : "car-outline"}
-            size={13} color="#1B5E20"
+            size={13} color="#059669"
           />
-          <Text style={[styles.chipText, { color: "#1B5E20" }]}>
+          <Text style={[styles.chipText, { color: "#059669" }]}>
             {ride.type === "bike" ? T("bikeRide") : T("carRide")}
           </Text>
         </View>
@@ -258,22 +248,23 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
         </View>
       </View>
 
-      {/* Rider info — show name & phone once a rider accepts */}
       {hasRider && ride.riderName && (
-        <View style={styles.etaBar}>
-          <Ionicons name="person-outline" size={12} color="#2563EB" />
-          <Text style={[styles.etaText, { flex: 1 }]}>
-            Driver: {ride.riderName}{ride.riderPhone ? ` · ${ride.riderPhone}` : ""}
-          </Text>
+        <View style={styles.riderBar}>
+          <View style={styles.riderIconWrap}>
+            <Ionicons name="person-outline" size={14} color="#2563EB" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.riderName}>{ride.riderName}</Text>
+            {ride.riderPhone && <Text style={styles.riderPhone}>{ride.riderPhone}</Text>}
+          </View>
           {ride.riderPhone && (
-            <Pressable onPress={() => Linking.openURL(`tel:${ride.riderPhone}`)}>
-              <Ionicons name="call-outline" size={14} color="#2563EB" />
+            <Pressable onPress={() => Linking.openURL(`tel:${ride.riderPhone}`)} style={styles.callBtn}>
+              <Ionicons name="call-outline" size={16} color="#fff" />
             </Pressable>
           )}
         </View>
       )}
 
-      {/* Payment info bar */}
       {isActive && (
         <View style={styles.etaBar}>
           <Ionicons name={ride.paymentMethod === "wallet" ? "wallet-outline" : "cash-outline"} size={12} color={C.primary} />
@@ -283,7 +274,6 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
         </View>
       )}
 
-      {/* Cancel button for searching/accepted rides */}
       {canCancel && (
         <Pressable style={styles.cancelBtn} onPress={() => onCancel(ride)}>
           <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
@@ -310,7 +300,6 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   );
 }
 
-/* ─────────────────────────── Pharmacy Card ─────────────────────────── */
 function PharmacyCard({ order, reviews, onRate }: {
   order: any;
   reviews: boolean;
@@ -324,16 +313,16 @@ function PharmacyCard({ order, reviews, onRate }: {
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: "#FCE4EC" }]}>
-          <Ionicons name="medical-outline" size={13} color="#880E4F" />
-          <Text style={[styles.chipText, { color: "#880E4F" }]}>{T("pharmacy")}</Text>
+        <View style={[styles.chip, { backgroundColor: "#F3E8FF" }]}>
+          <Ionicons name="medical-outline" size={13} color="#7C3AED" />
+          <Text style={[styles.chipText, { color: "#7C3AED" }]}>{T("pharmacy")}</Text>
         </View>
         <Text style={styles.cardId}>#{order.id.slice(-8).toUpperCase()}</Text>
       </View>
 
       {order.prescriptionNote && (
         <View style={styles.noteRow}>
-          <Ionicons name="document-text-outline" size={14} color={C.textMuted} />
+          <Ionicons name="document-text-outline" size={14} color="#7C3AED" />
           <Text style={styles.noteText} numberOfLines={2}>{order.prescriptionNote}</Text>
         </View>
       )}
@@ -379,7 +368,6 @@ function PharmacyCard({ order, reviews, onRate }: {
   );
 }
 
-/* ─────────────────────────── Parcel Card ─────────────────────────── */
 function ParcelCard({ booking }: { booking: any }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -392,9 +380,9 @@ function ParcelCard({ booking }: { booking: any }) {
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: "#FFF8E1" }]}>
-          <Ionicons name="cube-outline" size={13} color="#E65100" />
-          <Text style={[styles.chipText, { color: "#E65100" }]}>{T("parcel")} · {parcelLabel}</Text>
+        <View style={[styles.chip, { backgroundColor: "#FEF3C7" }]}>
+          <Ionicons name="cube-outline" size={13} color="#D97706" />
+          <Text style={[styles.chipText, { color: "#D97706" }]}>{T("parcel")} · {parcelLabel}</Text>
         </View>
         <Text style={styles.cardId}>#{booking.id.slice(-8).toUpperCase()}</Text>
       </View>
@@ -448,7 +436,6 @@ function ParcelCard({ booking }: { booking: any }) {
   );
 }
 
-/* ─────────────────────────── Review Modal ─────────────────────────── */
 function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
   target: any;
   userId: string;
@@ -490,11 +477,20 @@ function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
     }
   };
 
+  const ratingLabels = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={rm.backdrop} onPress={onClose}>
         <Pressable style={rm.sheet} onPress={() => {}}>
           <View style={rm.handle} />
+
+          <View style={rm.headerIconWrap}>
+            <LinearGradient colors={["#F59E0B", "#FBBF24"]} style={rm.headerIcon}>
+              <Ionicons name="star" size={24} color="#fff" />
+            </LinearGradient>
+          </View>
+
           <Text style={rm.title}>Rate your experience</Text>
           <Text style={rm.sub}>
             {target._type === "ride"
@@ -509,16 +505,19 @@ function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
               <Pressable key={s} onPress={() => setRating(s)} hitSlop={10}>
                 <Ionicons
                   name={s <= rating ? "star" : "star-outline"}
-                  size={36}
-                  color={s <= rating ? "#F59E0B" : "#CBD5E1"}
+                  size={38}
+                  color={s <= rating ? "#F59E0B" : "#E2E8F0"}
                 />
               </Pressable>
             ))}
           </View>
+          {rating > 0 && (
+            <Text style={rm.ratingLabel}>{ratingLabels[rating]}</Text>
+          )}
 
           <TextInput
             style={rm.input}
-            placeholder="Optional comment..."
+            placeholder="Share your experience (optional)..."
             placeholderTextColor="#94A3B8"
             value={comment}
             onChangeText={setComment}
@@ -547,38 +546,39 @@ function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
 
 const rm = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet:    { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
-  handle:   { width: 40, height: 4, backgroundColor: "#CBD5E1", borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  title:    { fontFamily: "Inter_700Bold", fontSize: 20, color: "#0F172A", textAlign: "center", marginBottom: 4 },
-  sub:      { fontFamily: "Inter_400Regular", fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 20 },
-  stars:    { flexDirection: "row", justifyContent: "center", gap: 12, marginBottom: 20 },
+  sheet:    { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 },
+  handle:   { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
+  headerIconWrap: { alignItems: "center", marginBottom: 14 },
+  headerIcon: { width: 52, height: 52, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  title:    { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, textAlign: "center", marginBottom: 4 },
+  sub:      { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center", marginBottom: 20 },
+  stars:    { flexDirection: "row", justifyContent: "center", gap: 14, marginBottom: 8 },
+  ratingLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#B45309", textAlign: "center", marginBottom: 16 },
   input: {
-    borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12,
-    padding: 14, fontFamily: "Inter_400Regular", fontSize: 14, color: "#0F172A",
-    minHeight: 80, textAlignVertical: "top", marginBottom: 8,
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 16,
+    padding: 14, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text,
+    minHeight: 80, textAlignVertical: "top", marginBottom: 8, backgroundColor: C.surfaceSecondary,
   },
   error:    { fontFamily: "Inter_400Regular", fontSize: 13, color: "#EF4444", textAlign: "center", marginBottom: 8 },
   btns:     { flexDirection: "row", gap: 12, marginTop: 8 },
-  cancelBtn: { flex: 1, borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, paddingVertical: 14, alignItems: "center" },
-  cancelText:{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#64748B" },
-  submitBtn: { flex: 2, backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
-  submitText:{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" },
+  cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, paddingVertical: 15, alignItems: "center" },
+  cancelText:{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary },
+  submitBtn: { flex: 2, backgroundColor: C.primary, borderRadius: 16, paddingVertical: 15, alignItems: "center", justifyContent: "center", shadowColor: C.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  submitText:{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 });
 
-/* ─────────────────────────── Section header ─────────────────────────── */
 function SectionHeader({ title, count, active }: { title: string; count: number; active?: boolean }) {
   return (
     <View style={styles.secRow}>
       {active && <View style={styles.activeDot} />}
       <Text style={[styles.secTitle, !active && { color: C.textSecondary }]}>{title}</Text>
-      <View style={[styles.countBadge, !active && { backgroundColor: C.textMuted }]}>
+      <View style={[styles.countBadge, active ? { backgroundColor: C.primary } : { backgroundColor: C.textMuted }]}>
         <Text style={styles.countText}>{count}</Text>
       </View>
     </View>
   );
 }
 
-/* ─────────────────────────── Main Screen ─────────────────────────── */
 export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
@@ -633,21 +633,17 @@ export default function OrdersScreen() {
 
   const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
-  /* ── Grocery/Food orders ── */
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
     { userId: user?.id || "" },
     { query: { enabled: !!user?.id, refetchInterval: 30000 } }
   );
 
-  /* ── Rides ── */
   const [ridesData, setRidesData] = useState<any>(null);
   const [ridesLoading, setRidesLoading] = useState(false);
 
-  /* ── Pharmacy ── */
   const [pharmData, setPharmData] = useState<any>(null);
   const [pharmLoading, setPharmLoading] = useState(false);
 
-  /* ── Parcel ── */
   const [parcelData, setParcelData] = useState<any>(null);
   const [parcelLoading, setParcelLoading] = useState(false);
 
@@ -716,7 +712,6 @@ export default function OrdersScreen() {
     }
   }, [user?.id]);
 
-  // Auto-refresh rides, pharmacy, parcel every 30s (same as orders)
   React.useEffect(() => {
     if (!user?.id) return;
     const interval = setInterval(() => {
@@ -758,7 +753,7 @@ export default function OrdersScreen() {
       return (
         <View style={styles.center}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="bag-outline" size={52} color={C.primary} />
+            <Ionicons name="bag-outline" size={48} color={C.primary} />
           </View>
           <Text style={styles.emptyTitle}>{T("noRecordsFound")}</Text>
           <Text style={styles.emptyText}>
@@ -769,11 +764,11 @@ export default function OrdersScreen() {
               <Ionicons name="storefront-outline" size={15} color="#fff" />
               <Text style={styles.emptyBtnText}>Mart</Text>
             </Pressable>
-            <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: "#E65100" }]}>
+            <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: "#D97706" }]}>
               <Ionicons name="restaurant-outline" size={15} color="#fff" />
               <Text style={styles.emptyBtnText}>Food</Text>
             </Pressable>
-            <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: "#10B981" }]}>
+            <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: "#059669" }]}>
               <Ionicons name="car-outline" size={15} color="#fff" />
               <Text style={styles.emptyBtnText}>Ride</Text>
             </Pressable>
@@ -782,7 +777,6 @@ export default function OrdersScreen() {
       );
     }
 
-    /* ── Filter logic ── */
     let showOrders: any[] = [];
     let showMart: any[] = [];
     let showFood: any[] = [];
@@ -839,7 +833,9 @@ export default function OrdersScreen() {
     if (anyActive + anyPast === 0) {
       return (
         <View style={styles.center}>
-          <Ionicons name="search-outline" size={44} color={C.textMuted} />
+          <View style={styles.emptyFilterIcon}>
+            <Ionicons name="search-outline" size={36} color={C.textMuted} />
+          </View>
           <Text style={styles.emptyTitle}>{T("noRecordsFound")}</Text>
           <Text style={styles.emptyText}>{T("noActivitySection")}</Text>
         </View>
@@ -878,9 +874,8 @@ export default function OrdersScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
-      {/* Header */}
       <LinearGradient
-        colors={["#0F3BA8", C.primary]}
+        colors={["#0D3B93", "#1A56DB", "#3B82F6"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: topPad + 12 }]}
@@ -891,7 +886,6 @@ export default function OrdersScreen() {
         </Text>
       </LinearGradient>
 
-      {/* Tabs */}
       <View style={styles.tabsWrap}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
           {TABS.map(tab => {
@@ -917,7 +911,7 @@ export default function OrdersScreen() {
                 />
                 <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{T(tab.labelKey)}</Text>
                 {count > 0 && (
-                  <View style={[styles.tabBadge, isActive && { backgroundColor: "rgba(255,255,255,0.35)" }]}>
+                  <View style={[styles.tabBadge, isActive && { backgroundColor: "rgba(255,255,255,0.3)" }]}>
                     <Text style={[styles.tabBadgeText, isActive && { color: "#fff" }]}>{count}</Text>
                   </View>
                 )}
@@ -946,107 +940,115 @@ export default function OrdersScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingBottom: 16 },
-  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 26, color: "#fff", marginBottom: 4 },
+  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 24, color: "#fff", marginBottom: 4 },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.8)" },
 
   tabsWrap: { backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border },
-  tabs: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  tabs: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   tab: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: C.surfaceSecondary,
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22,
+    backgroundColor: C.surfaceSecondary, borderWidth: 1, borderColor: C.border,
   },
-  tabActive: { backgroundColor: C.primary },
-  tabLabel: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.textSecondary },
+  tabActive: { backgroundColor: C.primary, borderColor: C.primary },
+  tabLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.textSecondary },
   tabLabelActive: { color: "#fff" },
   tabBadge: {
-    backgroundColor: C.border, borderRadius: 8,
-    minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 4,
+    backgroundColor: C.border, borderRadius: 9,
+    minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4,
   },
-  tabBadgeText: { fontFamily: "Inter_700Bold", fontSize: 9, color: C.textMuted },
+  tabBadgeText: { fontFamily: "Inter_700Bold", fontSize: 10, color: C.textMuted },
 
   scroll: { paddingBottom: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
   loadingText: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted },
 
-  emptyIcon: { width: 100, height: 100, borderRadius: 28, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center" },
+  emptyIcon: { width: 96, height: 96, borderRadius: 28, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  emptyFilterIcon: { width: 72, height: 72, borderRadius: 22, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   emptyTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center" },
   emptyText: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center" },
-  emptyBtns: { flexDirection: "row", gap: 10, marginTop: 6 },
-  emptyBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  emptyBtns: { flexDirection: "row", gap: 10, marginTop: 8 },
+  emptyBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 14 },
   emptyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
 
-  secRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 10 },
+  secRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12 },
   activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" },
-  secTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, flex: 1 },
-  countBadge: { backgroundColor: C.primary, borderRadius: 10, minWidth: 22, height: 22, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  secTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, flex: 1 },
+  countBadge: { borderRadius: 10, minWidth: 24, height: 24, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   countText: { fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff" },
 
   card: {
-    backgroundColor: C.surface, borderRadius: 18,
+    backgroundColor: C.surface, borderRadius: 20,
     marginHorizontal: 16, marginBottom: 12, padding: 16,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
+    borderWidth: 1, borderColor: C.borderLight,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  chip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 22 },
   chipText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  cardId: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
+  cardId: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.textMuted },
 
-  cardItems: { marginBottom: 12, gap: 5 },
+  cardItems: { marginBottom: 12, gap: 6 },
   itemRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  itemDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.border },
+  itemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.border },
   itemText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary },
-  itemPrice: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text },
-  moreItems: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginLeft: 13 },
+  itemPrice: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text },
+  moreItems: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginLeft: 14 },
 
-  noteRow: { flexDirection: "row", gap: 8, alignItems: "flex-start", marginBottom: 10, padding: 8, backgroundColor: "#FFF8E1", borderRadius: 10 },
-  noteText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: "#5D4037" },
+  noteRow: { flexDirection: "row", gap: 8, alignItems: "flex-start", marginBottom: 12, padding: 10, backgroundColor: "#F5F3FF", borderRadius: 12, borderWidth: 1, borderColor: "#EDE9FE" },
+  noteText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: "#5B21B6" },
 
   rideRoute: { marginBottom: 12, gap: 4 },
   ridePoint: { flexDirection: "row", alignItems: "center", gap: 10 },
-  routeDot: { width: 9, height: 9, borderRadius: 5 },
-  routeLine: { width: 2, height: 14, backgroundColor: C.border, marginLeft: 3.5 },
+  routeDot: { width: 10, height: 10, borderRadius: 5 },
+  routeLine: { width: 2, height: 16, backgroundColor: C.border, marginLeft: 4 },
   rideAddr: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, color: C.text },
 
   cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  statusChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  statusChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 22 },
   statusText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   totalWrap: { alignItems: "flex-end" },
   totalLabel: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
-  totalAmount: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
+  totalAmount: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text },
 
-  etaBar: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight },
+  etaBar: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight },
   etaText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   payBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   payText: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
 
+  riderBar: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight },
+  riderIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" },
+  riderName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text },
+  riderPhone: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 1 },
+  callBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center" },
+
   cancelBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    marginTop: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: "#FEF2F2",
-    borderWidth: 1, borderColor: "#FECACA",
+    marginTop: 12, paddingVertical: 10, borderRadius: 14, backgroundColor: "#FEF2F2",
+    borderWidth: 1.5, borderColor: "#FECACA",
   },
   cancelBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#DC2626" },
   rateBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight,
-    paddingVertical: 8, borderRadius: 10, backgroundColor: "#FFFBEB",
+    marginTop: 12, paddingVertical: 10, borderRadius: 14, backgroundColor: "#FFFBEB",
+    borderWidth: 1.5, borderColor: "#FDE68A",
   },
   rateBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#B45309" },
   reviewedBadge: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight,
   },
   reviewedText: { fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E" },
   refundBar: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    marginTop: 8, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
-    backgroundColor: "#ECFDF5",
+    flexDirection: "row", alignItems: "center", gap: 6,
+    marginTop: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12,
+    backgroundColor: "#ECFDF5", borderWidth: 1, borderColor: "#A7F3D0",
   },
   refundText: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#047857" },
   reorderBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    marginTop: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: "#EFF6FF",
-    borderWidth: 1, borderColor: "#BFDBFE",
+    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: "#EFF6FF",
+    borderWidth: 1.5, borderColor: "#BFDBFE",
   },
   reorderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
 });

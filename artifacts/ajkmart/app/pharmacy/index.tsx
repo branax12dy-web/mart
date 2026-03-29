@@ -28,7 +28,6 @@ import { withServiceGuard } from "@/components/ServiceGuard";
 const C = Colors.light;
 const W = Dimensions.get("window").width;
 
-/* ─── Types ─── */
 interface Med {
   id: string;
   name: string;
@@ -42,7 +41,6 @@ interface Med {
 
 interface CartItem extends Med { qty: number }
 
-/* ─── Medicine Card ─── */
 function MedCard({ med, qty, onAdd, onRemove }: {
   med: Med; qty: number; onAdd: () => void; onRemove: () => void;
 }) {
@@ -50,7 +48,7 @@ function MedCard({ med, qty, onAdd, onRemove }: {
     <View style={s.medCard}>
       <View style={s.medEmoji}><Text style={{ fontSize: 26 }}>{med.emoji || "💊"}</Text></View>
       <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Text style={s.medName} numberOfLines={1}>{med.name}</Text>
           {med.requires_prescription && (
             <View style={s.rxBadge}><Text style={s.rxTxt}>Rx</Text></View>
@@ -64,11 +62,11 @@ function MedCard({ med, qty, onAdd, onRemove }: {
         {qty > 0 ? (
           <>
             <Pressable onPress={onRemove} style={s.qtyBtn}>
-              <Ionicons name="remove" size={16} color={C.primary} />
+              <Ionicons name="remove" size={16} color="#7C3AED" />
             </Pressable>
             <Text style={s.qtyTxt}>{qty}</Text>
             <Pressable onPress={onAdd} style={s.qtyBtn}>
-              <Ionicons name="add" size={16} color={C.primary} />
+              <Ionicons name="add" size={16} color="#7C3AED" />
             </Pressable>
           </>
         ) : (
@@ -81,7 +79,6 @@ function MedCard({ med, qty, onAdd, onRemove }: {
   );
 }
 
-/* ════════════════════ MAIN SCREEN ════════════════════ */
 function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -111,7 +108,6 @@ function PharmacyScreenInner() {
   const [prescription, setPrescription] = useState("");
   const [payMethod, setPayMethod] = useState<"wallet" | "cash">("cash");
 
-  /* ── Fetch medicines from real API (typed, via api-client-react) ── */
   useEffect(() => {
     if (!pharmacyEnabled) return;
     setLoadingMeds(true);
@@ -138,6 +134,26 @@ function PharmacyScreenInner() {
       .catch(() => { setMedsError(true); })
       .finally(() => setLoadingMeds(false));
   }, [pharmacyEnabled]);
+
+  const fetchMeds = () => {
+    setLoadingMeds(true);
+    setMedsError(false);
+    getProducts({ type: "pharmacy" as GetProductsType })
+      .then(data => {
+        if (data?.products?.length) {
+          const meds: Med[] = data.products.map(p => ({
+            id: p.id, name: p.name, brand: p.vendorName ?? "Various",
+            category: p.category, price: p.price,
+            unit: p.unit ?? p.description ?? "1 unit", emoji: "💊",
+            requires_prescription: false,
+          }));
+          setMedicines(meds);
+          setCategories(["All", ...new Set(meds.map(m => m.category))]);
+        }
+      })
+      .catch(() => setMedsError(true))
+      .finally(() => setLoadingMeds(false));
+  };
 
   const filtered = medicines.filter(m => {
     const matchCat = activeTab === "All" || m.category === activeTab;
@@ -196,7 +212,6 @@ function PharmacyScreenInner() {
     }
   };
 
-  /* ── Service Unavailable ── */
   if (!pharmacyEnabled) {
     return (
       <View style={[s.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
@@ -215,7 +230,6 @@ function PharmacyScreenInner() {
     );
   }
 
-  /* ── Maintenance blocks ALL states including order confirmation ── */
   if (inMaintenance) {
     return (
       <View style={[s.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
@@ -235,7 +249,11 @@ function PharmacyScreenInner() {
     return (
       <View style={[s.root, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
         <View style={s.successCard}>
-          <View style={s.successIcon}><Text style={{ fontSize: 48 }}>✅</Text></View>
+          <View style={s.successIconWrap}>
+            <LinearGradient colors={["#7C3AED", "#A78BFA"]} style={s.successIconCircle}>
+              <Ionicons name="checkmark" size={36} color="#fff" />
+            </LinearGradient>
+          </View>
           <Text style={s.successTitle}>{T("orderPlaced")}</Text>
           <Text style={s.successSub}>
             #{confirmedOrderId.slice(-6).toUpperCase()}{"\n"}
@@ -248,8 +266,8 @@ function PharmacyScreenInner() {
           <Pressable style={s.successBtn} onPress={() => { setConfirmed(false); router.push("/(tabs)"); }}>
             <Text style={s.successBtnTxt}>{T("backToHome")}</Text>
           </Pressable>
-          <Pressable style={[s.successBtn, { backgroundColor: "#EFF6FF", marginTop: 8 }]} onPress={() => { setConfirmed(false); }}>
-            <Text style={[s.successBtnTxt, { color: C.primary }]}>{T("orderMore")}</Text>
+          <Pressable style={[s.successBtn, { backgroundColor: "#F5F3FF", marginTop: 8 }]} onPress={() => { setConfirmed(false); }}>
+            <Text style={[s.successBtnTxt, { color: "#7C3AED" }]}>{T("orderMore")}</Text>
           </Pressable>
         </View>
       </View>
@@ -258,8 +276,7 @@ function PharmacyScreenInner() {
 
   return (
     <View style={s.root}>
-      {/* Header */}
-      <LinearGradient colors={["#7C3AED", "#8B5CF6", "#A78BFA"]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
+      <LinearGradient colors={["#6D28D9", "#7C3AED", "#A78BFA"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
         <View style={s.hdrRow}>
           <Pressable onPress={() => router.back()} style={s.backBtn}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
@@ -275,7 +292,6 @@ function PharmacyScreenInner() {
             </Pressable>
           )}
         </View>
-        {/* Search */}
         <View style={s.searchBar}>
           <Ionicons name="search-outline" size={16} color={C.textMuted} />
           <TextInput
@@ -293,7 +309,6 @@ function PharmacyScreenInner() {
         </View>
       </LinearGradient>
 
-      {/* Category Tabs */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsScroll} contentContainerStyle={s.tabsRow}>
         {categories.map(cat => (
           <Pressable key={cat} onPress={() => setActiveTab(cat)} style={[s.tab, activeTab === cat && s.tabActive]}>
@@ -302,30 +317,31 @@ function PharmacyScreenInner() {
         ))}
       </ScrollView>
 
-      {/* Notice */}
       <View style={s.rxNotice}>
         <Ionicons name="information-circle-outline" size={14} color="#7C3AED" />
         <Text style={s.rxNoticeTxt}><Text style={{ fontFamily: "Inter_600SemiBold" }}>Rx</Text> {T("rxNotice")}</Text>
       </View>
 
-      {/* Medicines Grid */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}>
         {loadingMeds ? (
-          <View style={{ alignItems: "center", paddingTop: 60 }}>
+          <View style={s.centerState}>
             <ActivityIndicator size="large" color="#7C3AED" />
-            <Text style={[s.emptyTxt, { marginTop: 12 }]}>{T("loadingMedicines")}</Text>
+            <Text style={s.emptyTxt}>{T("loadingMedicines")}</Text>
           </View>
         ) : medsError ? (
-          <View style={{ alignItems: "center", paddingTop: 60, gap: 8 }}>
-            <Ionicons name="cloud-offline-outline" size={48} color="#9CA3AF" />
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: "#374151" }}>{T("cannotLoad")}</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280" }}>{T("checkInternet")}</Text>
-            <Pressable onPress={() => { setLoadingMeds(true); setMedsError(false); getProducts({ type: "pharmacy" as GetProductsType }).then(data => { if (data?.products?.length) { const meds: Med[] = data.products.map(p => ({ id: p.id, name: p.name, brand: p.vendorName ?? "Various", category: p.category, price: p.price, unit: p.unit ?? p.description ?? "1 unit", emoji: "💊", requires_prescription: false })); setMedicines(meds); setCategories(["All", ...new Set(meds.map(m => m.category))]); } }).catch(() => setMedsError(true)).finally(() => setLoadingMeds(false)); }} style={{ backgroundColor: "#7C3AED", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8 }}>
-              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>{T("retry")}</Text>
+          <View style={s.centerState}>
+            <View style={s.errorIconWrap}>
+              <Ionicons name="cloud-offline-outline" size={48} color="#9CA3AF" />
+            </View>
+            <Text style={s.errorTitle}>{T("cannotLoad")}</Text>
+            <Text style={s.errorSub}>{T("checkInternet")}</Text>
+            <Pressable onPress={fetchMeds} style={s.retryBtn}>
+              <Ionicons name="refresh-outline" size={16} color="#fff" />
+              <Text style={s.retryBtnTxt}>{T("retry")}</Text>
             </Pressable>
           </View>
         ) : filtered.length === 0 ? (
-          <View style={{ alignItems: "center", paddingTop: 60 }}>
+          <View style={s.centerState}>
             <Text style={{ fontSize: 40, marginBottom: 12 }}>🔍</Text>
             <Text style={s.emptyTxt}>{T("noMedicineFound")}</Text>
           </View>
@@ -343,7 +359,6 @@ function PharmacyScreenInner() {
         <View style={{ height: cartCount > 0 ? 100 : 24 }} />
       </ScrollView>
 
-      {/* Bottom Cart Bar */}
       {cartCount > 0 && (
         <View style={[s.cartBar, { paddingBottom: insets.bottom + 12 }]}>
           <View>
@@ -357,17 +372,15 @@ function PharmacyScreenInner() {
         </View>
       )}
 
-      {/* Checkout Modal */}
       <Modal visible={showCheckout} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCheckout(false)}>
         <ScrollView style={s.modal} contentContainerStyle={{ paddingBottom: 40 }}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{T("orderSummary")}</Text>
-            <Pressable onPress={() => setShowCheckout(false)}>
-              <Ionicons name="close" size={22} color={C.text} />
+            <Pressable onPress={() => setShowCheckout(false)} style={s.modalCloseBtn}>
+              <Ionicons name="close" size={20} color={C.text} />
             </Pressable>
           </View>
 
-          {/* Cart Items */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>{T("medicines")} ({cartCount})</Text>
             {cartItems.map(item => (
@@ -384,11 +397,10 @@ function PharmacyScreenInner() {
             </View>
             <View style={s.orderItem}>
               <Text style={[s.orderItemName, { fontFamily: "Inter_700Bold", fontSize: 15 }]}>{T("totalLabel")}</Text>
-              <Text style={[s.orderItemPrice, { fontFamily: "Inter_700Bold", fontSize: 15, color: C.primary }]}>Rs. {cartTotal.toLocaleString()}</Text>
+              <Text style={[s.orderItemPrice, { fontFamily: "Inter_700Bold", fontSize: 15, color: "#7C3AED" }]}>Rs. {cartTotal.toLocaleString()}</Text>
             </View>
           </View>
 
-          {/* Delivery Info */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>{T("deliveryDetails")}</Text>
             <Text style={s.label}>{T("deliveryAddress")} *</Text>
@@ -422,24 +434,29 @@ function PharmacyScreenInner() {
             />
           </View>
 
-          {/* Payment */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>{T("paymentMethods")}</Text>
             <View style={s.payRow}>
               {cartTotal <= config.orderRules.maxCodAmount ? (
                 <Pressable onPress={() => setPayMethod("cash")} style={[s.payOpt, payMethod === "cash" && s.payOptActive]}>
-                  <Ionicons name="cash-outline" size={20} color={payMethod === "cash" ? C.primary : C.textMuted} />
-                  <Text style={[s.payOptTxt, payMethod === "cash" && { color: C.primary }]}>{T("cashOnDelivery")}</Text>
+                  <View style={[s.payOptIconWrap, { backgroundColor: payMethod === "cash" ? "#D1FAE5" : C.surfaceSecondary }]}>
+                    <Ionicons name="cash-outline" size={20} color={payMethod === "cash" ? "#059669" : C.textMuted} />
+                  </View>
+                  <Text style={[s.payOptTxt, payMethod === "cash" && { color: "#059669" }]}>{T("cashOnDelivery")}</Text>
                 </Pressable>
               ) : (
                 <View style={[s.payOpt, { opacity: 0.4 }]}>
-                  <Ionicons name="cash-outline" size={20} color={C.textMuted} />
+                  <View style={[s.payOptIconWrap, { backgroundColor: C.surfaceSecondary }]}>
+                    <Ionicons name="cash-outline" size={20} color={C.textMuted} />
+                  </View>
                   <Text style={s.payOptTxt}>{T("codLimit")}: Rs. {config.orderRules.maxCodAmount.toLocaleString()}</Text>
                 </View>
               )}
               {config.features.wallet && (
                 <Pressable onPress={() => setPayMethod("wallet")} style={[s.payOpt, payMethod === "wallet" && s.payOptActive]}>
-                  <Ionicons name="wallet-outline" size={20} color={payMethod === "wallet" ? C.primary : C.textMuted} />
+                  <View style={[s.payOptIconWrap, { backgroundColor: payMethod === "wallet" ? "#EFF6FF" : C.surfaceSecondary }]}>
+                    <Ionicons name="wallet-outline" size={20} color={payMethod === "wallet" ? C.primary : C.textMuted} />
+                  </View>
                   <View>
                     <Text style={[s.payOptTxt, payMethod === "wallet" && { color: C.primary }]}>{T("wallet")}</Text>
                     <Text style={s.walletBal}>Rs. {(user?.walletBalance ?? 0).toLocaleString()} {T("availableBalance")}</Text>
@@ -461,91 +478,98 @@ function PharmacyScreenInner() {
           </Pressable>
         </ScrollView>
       </Modal>
-
     </View>
   );
 }
 
 export default withServiceGuard("pharmacy", PharmacyScreenInner);
 
-/* ─── Styles ─── */
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.background },
 
   header: { paddingHorizontal: 16, paddingBottom: 16 },
-  hdrRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  hdrRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   hdrTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
-  hdrSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)" },
-  cartPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
+  hdrSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+  cartPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22 },
   cartPillTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#fff" },
-  searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
   searchInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text, padding: 0 },
 
-  tabsScroll: { maxHeight: 50, backgroundColor: "#fff" },
+  tabsScroll: { maxHeight: 52, backgroundColor: "#fff" },
   tabsRow: { paddingHorizontal: 12, gap: 8, alignItems: "center", paddingVertical: 8 },
-  tab: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: "#F1F5F9" },
+  tab: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 22, backgroundColor: "#F5F3FF" },
   tabActive: { backgroundColor: "#7C3AED" },
-  tabTxt: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.textMuted },
+  tabTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#7C3AED" },
   tabTxtActive: { color: "#fff" },
 
-  rxNotice: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#F5F3FF", paddingHorizontal: 16, paddingVertical: 8 },
+  rxNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#F5F3FF", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#EDE9FE" },
   rxNoticeTxt: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#7C3AED", flex: 1 },
 
   grid: { paddingHorizontal: 12, paddingTop: 12, gap: 10 },
+  centerState: { alignItems: "center", paddingTop: 60, gap: 10 },
   emptyTxt: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.textMuted },
+  errorIconWrap: { width: 80, height: 80, borderRadius: 24, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  errorTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#374151" },
+  errorSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280" },
+  retryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#7C3AED", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 4 },
+  retryBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 
-  medCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, padding: 12, gap: 10, borderWidth: 1, borderColor: C.border },
-  medEmoji: { width: 48, height: 48, borderRadius: 13, backgroundColor: "#F5F3FF", alignItems: "center", justifyContent: "center" },
-  medName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text, flex: 1 },
-  medBrand: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
+  medCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 16, padding: 14, gap: 12, borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  medEmoji: { width: 50, height: 50, borderRadius: 14, backgroundColor: "#F5F3FF", alignItems: "center", justifyContent: "center" },
+  medName: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text, flex: 1 },
+  medBrand: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginTop: 2 },
   medUnit: { fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted },
-  medPrice: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#7C3AED", marginTop: 3 },
+  medPrice: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#7C3AED", marginTop: 4 },
   rxBadge: { backgroundColor: "#FEE2E2", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   rxTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#EF4444" },
 
   qtyCtrl: { flexDirection: "row", alignItems: "center", gap: 8 },
-  qtyBtn: { width: 30, height: 30, borderRadius: 9, borderWidth: 1.5, borderColor: C.primary, alignItems: "center", justifyContent: "center" },
-  qtyTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, minWidth: 18, textAlign: "center" },
-  addBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center" },
+  qtyBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: "#7C3AED", alignItems: "center", justifyContent: "center" },
+  qtyTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, minWidth: 20, textAlign: "center" },
+  addBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center", shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
 
-  cartBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
-  cartBarCount: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
-  cartBarTotal: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text },
-  checkoutBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#7C3AED", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
+  cartBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 5 },
+  cartBarCount: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
+  cartBarTotal: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text },
+  checkoutBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#7C3AED", paddingHorizontal: 22, paddingVertical: 13, borderRadius: 14, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
   checkoutBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 
   modal: { backgroundColor: "#fff", flex: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: C.border },
-  modalTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
+  modalTitle: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text },
+  modalCloseBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" },
 
-  section: { paddingHorizontal: 16, paddingTop: 16 },
-  sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, marginBottom: 10 },
+  section: { paddingHorizontal: 16, paddingTop: 18 },
+  sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 12 },
 
   orderItem: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   orderItemName: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text },
   orderItemQty: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.textMuted, width: 28 },
   orderItemPrice: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text },
-  divider: { height: 1, backgroundColor: C.border, marginVertical: 8 },
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 10 },
 
-  label: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, marginBottom: 6, marginTop: 10 },
-  input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text },
+  label: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, marginBottom: 6, marginTop: 12 },
+  input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text, backgroundColor: C.surfaceSecondary },
 
-  payRow: { flexDirection: "row", gap: 10 },
-  payOpt: { flex: 1, flexDirection: "column", alignItems: "center", gap: 5, padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: C.border },
-  payOptActive: { borderColor: C.primary, backgroundColor: "#EFF6FF" },
-  payOptTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.textMuted, textAlign: "center" },
-  walletBal: { fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted, textAlign: "center" },
+  payRow: { gap: 10 },
+  payOpt: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.border },
+  payOptActive: { borderColor: "#7C3AED", backgroundColor: "#F5F3FF" },
+  payOptIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  payOptTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.textMuted },
+  walletBal: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginTop: 2 },
 
-  placeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, margin: 16, backgroundColor: "#7C3AED", borderRadius: 14, paddingVertical: 15 },
+  placeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, margin: 16, backgroundColor: "#7C3AED", borderRadius: 16, paddingVertical: 16, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
   placeBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" },
 
-  successCard: { backgroundColor: "#fff", borderRadius: 20, padding: 28, alignItems: "center", width: "100%", borderWidth: 1, borderColor: C.border },
-  successIcon: { marginBottom: 12 },
+  successCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, alignItems: "center", width: "100%", borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 5 },
+  successIconWrap: { marginBottom: 16 },
+  successIconCircle: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
   successTitle: { fontFamily: "Inter_700Bold", fontSize: 24, color: C.text, marginBottom: 8 },
   successSub: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 20, marginBottom: 16 },
   successMeta: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginBottom: 20, width: "100%" },
   successMetaTxt: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, flex: 1 },
-  successBtn: { width: "100%", alignItems: "center", backgroundColor: "#7C3AED", borderRadius: 14, paddingVertical: 14 },
+  successBtn: { width: "100%", alignItems: "center", backgroundColor: "#7C3AED", borderRadius: 16, paddingVertical: 15 },
   successBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" },
 });
