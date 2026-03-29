@@ -233,6 +233,30 @@ router.get("/", async (req, res) => {
       mapsGeocoding:        (s["maps_geocoding"]           ?? "on") === "on",
       mapsDistanceMatrix:   (s["maps_distance_matrix"]     ?? "on") === "on",
     },
+    auth: (() => {
+      function parseAuthToggle(val: string | undefined, fallback: string): Record<string, boolean> | boolean {
+        if (!val) return fallback === "on";
+        try {
+          const parsed = JSON.parse(val) as Record<string, string>;
+          return { customer: parsed.customer === "on", rider: parsed.rider === "on", vendor: parsed.vendor === "on" };
+        } catch {
+          return val === "on";
+        }
+      }
+      return {
+        phoneOtpEnabled:        parseAuthToggle(s["auth_phone_otp_enabled"], "on"),
+        emailOtpEnabled:        parseAuthToggle(s["auth_email_otp_enabled"], "on"),
+        usernamePasswordEnabled: parseAuthToggle(s["auth_username_password_enabled"], "on"),
+        googleEnabled:          parseAuthToggle(s["auth_google_enabled"], "off"),
+        facebookEnabled:        parseAuthToggle(s["auth_facebook_enabled"], "off"),
+        emailRegisterEnabled:   parseAuthToggle(s["auth_email_register_enabled"], "on"),
+        biometricEnabled:       parseAuthToggle(s["auth_biometric_enabled"], "off"),
+        captchaEnabled:         (s["auth_captcha_enabled"] ?? "off") === "on",
+        twoFactorEnabled:       parseAuthToggle(s["auth_2fa_enabled"], "off"),
+        magicLinkEnabled:       parseAuthToggle(s["auth_magic_link_enabled"], "off"),
+        captchaSiteKey:         s["recaptcha_site_key"] ?? "",
+      };
+    })(),
     payment: {
       methods:              paymentMethods,
       currency:             "PKR",

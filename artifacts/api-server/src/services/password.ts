@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "crypto";
 
 const SALT_LENGTH = 16;
 const KEY_LENGTH  = 64;
@@ -39,4 +39,93 @@ export function generateSecureOtp(): string {
 export function makeTokenHash(value: string): string {
   const secret = process.env["JWT_SECRET"] || "ajkmart-secret-2024";
   return createHash("sha256").update(value + secret).digest("hex").slice(0, 32);
+}
+
+const TOTP_ALGO = "aes-256-gcm" as const;
+const TOTP_IV_LEN = 12;
+const TOTP_TAG_LEN = 16;
+
+function getTotpEncryptionKey(): Buffer {
+  const raw = process.env["TOTP_ENCRYPTION_KEY"] || process.env["JWT_SECRET"] || "ajkmart-totp-default-key-2024";
+  return scryptSync(raw, "totp-salt", 32);
+}
+
+export function encryptTotpSecret(plainSecret: string): string {
+  const key = getTotpEncryptionKey();
+  const iv = randomBytes(TOTP_IV_LEN);
+  const cipher = createCipheriv(TOTP_ALGO, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plainSecret, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+}
+
+export function decryptTotpSecret(encryptedSecret: string): string {
+  const parts = encryptedSecret.split(":");
+  if (parts.length !== 3) {
+    return encryptedSecret;
+  }
+  try {
+    const key = getTotpEncryptionKey();
+    const iv = Buffer.from(parts[0]!, "hex");
+    const tag = Buffer.from(parts[1]!, "hex");
+    const encrypted = Buffer.from(parts[2]!, "hex");
+    const decipher = createDecipheriv(TOTP_ALGO, key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+  } catch {
+    return encryptedSecret;
+  }
+}
+
+function base32Decode(encoded: string): Buffer {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const cleaned = encoded.replace(/[=\s]/g, "").toUpperCase();
+  let bits = "";
+  for (const char of cleaned) {
+    const val = alphabet.indexOf(char);
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+export function verifyTotpCode(secret: string, code: string): boolean {
+  try {
+    const { createHmac } = require("crypto");
+    const timeStep = 30;
+    const now = Math.floor(Date.now() / 1000);
+    const window = 1;
+
+    const decodedSecret = base32Decode(secret);
+
+    for (let i = -window; i <= window; i++) {
+      const counter = Math.floor(now / timeStep) + i;
+      const counterBuf = Buffer.alloc(8);
+      counterBuf.writeUInt32BE(0, 0);
+      counterBuf.writeUInt32BE(counter, 4);
+
+      const hmac = createHmac("sha1", decodedSecret);
+      hmac.update(counterBuf);
+      const hmacResult: Buffer = hmac.digest();
+
+      const offset = hmacResult[hmacResult.length - 1]! & 0x0f;
+      const truncated =
+        ((hmacResult[offset]! & 0x7f) << 24) |
+        ((hmacResult[offset + 1]! & 0xff) << 16) |
+        ((hmacResult[offset + 2]! & 0xff) << 8) |
+        (hmacResult[offset + 3]! & 0xff);
+      const otp = (truncated % 1_000_000).toString().padStart(6, "0");
+
+      if (timingSafeEqual(Buffer.from(otp), Buffer.from(code))) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }

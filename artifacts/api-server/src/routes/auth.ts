@@ -22,10 +22,21 @@ import {
   verifyUserJwt,
   writeAuthAuditLog,
   REFRESH_TOKEN_TTL_DAYS,
+  verifyCaptcha,
 } from "../middleware/security.js";
 import { sendOtpSMS } from "../services/sms.js";
 import { sendWhatsAppOTP } from "../services/whatsapp.js";
-import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
+import { randomBytes, createHash } from "crypto";
+import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp, encryptTotpSecret, decryptTotpSecret } from "../services/password.js";
+import { sendVerificationEmail, sendPasswordResetEmail } from "../services/email.js";
+
+function generateVerificationToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+function hashVerificationToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 const router: IRouter = Router();
 
@@ -33,15 +44,21 @@ const router: IRouter = Router();
    POST /auth/send-otp
    Atomically upsert user by phone — one account per number.
 ───────────────────────────────────────────────────────────── */
-router.post("/send-otp", async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) {
+router.post("/send-otp", verifyCaptcha, async (req, res) => {
+  const rawPhone = req.body?.phone;
+  if (!rawPhone) {
     res.status(400).json({ error: "Phone number is required" });
     return;
   }
+  const phone = rawPhone.replace(/-/g, "");
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
+
+  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled")) {
+    res.status(403).json({ error: "Phone OTP login is currently disabled." });
+    return;
+  }
 
   /* ── Check if new-user registration is allowed ── */
   const existingUser = await db
@@ -153,15 +170,22 @@ router.post("/send-otp", async (req, res) => {
    POST /auth/verify-otp
    Validates the OTP, checks security settings, returns token.
 ───────────────────────────────────────────────────────────── */
-router.post("/verify-otp", async (req, res) => {
-  const { phone, otp } = req.body;
-  if (!phone || !otp) {
+router.post("/verify-otp", verifyCaptcha, async (req, res) => {
+  const rawPhone = req.body?.phone;
+  const { otp } = req.body;
+  if (!rawPhone || !otp) {
     res.status(400).json({ error: "Phone and OTP are required" });
     return;
   }
+  const phone = rawPhone.replace(/-/g, "");
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
+
+  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled")) {
+    res.status(403).json({ error: "Phone OTP login is currently disabled." });
+    return;
+  }
 
   const maxAttempts    = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
   const lockoutMinutes = parseInt(settings["security_lockout_minutes"]    ?? "30", 10);
@@ -186,6 +210,11 @@ router.post("/verify-otp", async (req, res) => {
 
   if (!user) {
     res.status(404).json({ error: "User not found. Please request a new OTP." });
+    return;
+  }
+
+  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled", user.role ?? undefined)) {
+    res.status(403).json({ error: "Phone OTP login is currently disabled for your account type." });
     return;
   }
 
@@ -547,7 +576,7 @@ router.post("/check-available", async (req, res) => {
    Send OTP to email address (only for existing accounts with that email)
    Body: { email }
 ══════════════════════════════════════════════════════════════ */
-router.post("/send-email-otp", async (req, res) => {
+router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   const { email } = req.body;
   if (!email || !email.includes("@")) {
     res.status(400).json({ error: "Valid email address required" }); return;
@@ -555,13 +584,22 @@ router.post("/send-email-otp", async (req, res) => {
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
+
+  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled")) {
+    res.status(403).json({ error: "Email OTP login is currently disabled." });
+    return;
+  }
   const normalized = email.toLowerCase().trim();
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
   if (!user) {
-    /* Security: don't reveal if email exists. Use same message. */
     const isDev = process.env.NODE_ENV !== "production";
     res.json({ message: "If an account exists with this email, an OTP has been sent.", ...(isDev ? { hint: "No account found" } : {}) });
+    return;
+  }
+
+  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled", user.role ?? "customer")) {
+    res.status(403).json({ error: "Email OTP login is currently disabled for your account type." });
     return;
   }
 
@@ -615,12 +653,17 @@ router.post("/send-email-otp", async (req, res) => {
    POST /auth/verify-email-otp
    Login via email OTP. Body: { email, otp }
 ══════════════════════════════════════════════════════════════ */
-router.post("/verify-email-otp", async (req, res) => {
+router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp) { res.status(400).json({ error: "Email and OTP are required" }); return; }
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
+
+  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled")) {
+    res.status(403).json({ error: "Email OTP login is currently disabled." });
+    return;
+  }
   const normalized = email.toLowerCase().trim();
 
   const maxAttempts = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
@@ -633,6 +676,11 @@ router.post("/verify-email-otp", async (req, res) => {
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
   if (!user) { res.status(404).json({ error: "Is email se koi account nahi mila." }); return; }
+
+  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled", user.role ?? "customer")) {
+    res.status(403).json({ error: "Email OTP login is currently disabled for your account type." });
+    return;
+  }
 
   if (user.isBanned) { res.status(403).json({ error: "Account suspended. Contact support." }); return; }
   if (!user.isActive) { res.status(403).json({ error: "Account inactive. Contact support." }); return; }
@@ -710,12 +758,18 @@ router.post("/verify-email-otp", async (req, res) => {
    POST /auth/login/username
    Login with username + password. Body: { username, password }
 ══════════════════════════════════════════════════════════════ */
-router.post("/login/username", async (req, res) => {
+router.post("/login/username", verifyCaptcha, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
+
+  if (!isAuthMethodEnabled(settings, "auth_username_password_enabled")) {
+    res.status(403).json({ error: "Username/password login is currently disabled." });
+    return;
+  }
+
   const clean = username.toLowerCase().trim();
 
   /* Lockout check */
@@ -726,12 +780,16 @@ router.post("/login/username", async (req, res) => {
     res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
   }
 
-  /* Find user by username */
   const [user] = await db.select().from(usersTable).where(eq(usersTable.username, clean)).limit(1);
   if (!user || !user.passwordHash) {
     recordFailedAttempt(clean, maxAttempts, lockoutMinutes);
     addAuditEntry({ action: "username_login_failed", ip, details: `Username not found or no password: ${clean}`, result: "fail" });
     res.status(401).json({ error: "Invalid username or password" }); return;
+  }
+
+  if (!isAuthMethodEnabled(settings, "auth_username_password_enabled", user.role ?? "customer")) {
+    res.status(403).json({ error: "Username/password login is currently disabled for your account type." });
+    return;
   }
 
   if (user.isBanned) { res.status(403).json({ error: "Account suspended." }); return; }
@@ -924,6 +982,500 @@ router.post("/set-password", async (req, res) => {
 
   await db.update(usersTable).set({ passwordHash: hashPassword(password), updatedAt: new Date() }).where(eq(usersTable.id, userId));
   res.json({ success: true, message: "Password set ho gaya" });
+});
+
+function isAuthMethodEnabled(settings: Record<string, string>, key: string, role?: string): boolean {
+  const val = settings[key];
+  if (!val) return true;
+  if (val === "on") return true;
+  if (val === "off") return false;
+  try {
+    const parsed = JSON.parse(val) as Record<string, string>;
+    if (role && parsed[role]) return parsed[role] === "on";
+    return Object.values(parsed).some(v => v === "on");
+  } catch {
+    return val === "on";
+  }
+}
+
+const CNIC_REGEX = /^\d{5}-\d{7}-\d{1}$/;
+const PHONE_REGEX = /^03\d{2}-\d{7}$/;
+const PASSWORD_RULES = {
+  validate(pw: string): { ok: boolean; message: string } {
+    if (pw.length < 8) return { ok: false, message: "Password must be at least 8 characters" };
+    if (!/[A-Z]/.test(pw)) return { ok: false, message: "Password must contain at least 1 uppercase letter" };
+    if (!/[0-9]/.test(pw)) return { ok: false, message: "Password must contain at least 1 number" };
+    return { ok: true, message: "ok" };
+  },
+};
+
+router.post("/register", verifyCaptcha, async (req, res) => {
+  const { phone, password, name, role, cnic, nationalId, email,
+          vehicleType, vehicleRegNo, drivingLicense,
+          businessName, businessType, storeAddress, ntn, storeName } = req.body;
+
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+  const userRole = (role === "rider" || role === "vendor") ? role : "customer";
+
+  if (settings["feature_new_users"] === "off") {
+    res.status(403).json({ error: "New user registration is currently disabled." });
+    return;
+  }
+
+  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled", userRole)) {
+    res.status(403).json({ error: "Phone registration is currently disabled for this role." });
+    return;
+  }
+
+  if (!phone) {
+    res.status(400).json({ error: "Phone number is required" });
+    return;
+  }
+  if (!PHONE_REGEX.test(phone)) {
+    res.status(400).json({ error: "Phone format must be 03XX-XXXXXXX" });
+    return;
+  }
+
+  if (!password) {
+    res.status(400).json({ error: "Password is required" });
+    return;
+  }
+  const pwCheck = PASSWORD_RULES.validate(password);
+  if (!pwCheck.ok) {
+    res.status(400).json({ error: pwCheck.message });
+    return;
+  }
+
+  const cnicValue = cnic || nationalId;
+  if (cnicValue && !CNIC_REGEX.test(cnicValue)) {
+    res.status(400).json({ error: "CNIC format must be XXXXX-XXXXXXX-X" });
+    return;
+  }
+
+  if (userRole === "rider") {
+    if (!cnicValue) { res.status(400).json({ error: "CNIC is required for rider registration" }); return; }
+    if (!vehicleType) { res.status(400).json({ error: "Vehicle type is required for rider registration" }); return; }
+  }
+
+  if (userRole === "vendor") {
+    if (!businessName && !storeName) { res.status(400).json({ error: "Business/store name is required for vendor registration" }); return; }
+  }
+
+  const normalizedPhone = phone.replace(/-/g, "");
+  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
+  if (existing) {
+    res.status(409).json({ error: "An account with this phone number already exists" });
+    return;
+  }
+
+  if (email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const [existingEmail] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
+    if (existingEmail) {
+      res.status(409).json({ error: "An account with this email already exists" });
+      return;
+    }
+  }
+
+  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
+  const autoApproveRider = userRole === "rider" && settings["rider_auto_approve"] === "on";
+  const autoApproveVendor = userRole === "vendor" && settings["vendor_auto_approve"] === "on";
+  const needsApproval = requireApproval && !autoApproveRider && !autoApproveVendor;
+
+  const otp = generateSecureOtp();
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  const userId = generateId();
+
+  await db.insert(usersTable).values({
+    id: userId,
+    phone: normalizedPhone,
+    name: name?.trim() || null,
+    email: email ? email.toLowerCase().trim() : null,
+    role: userRole,
+    roles: userRole,
+    passwordHash: hashPassword(password),
+    otpCode: otp,
+    otpExpiry,
+    otpUsed: false,
+    walletBalance: "0",
+    isActive: !needsApproval,
+    approvalStatus: needsApproval ? "pending" : "approved",
+    cnic: cnicValue || null,
+    nationalId: cnicValue || null,
+    vehicleType: vehicleType || null,
+    vehicleRegNo: vehicleRegNo || null,
+    drivingLicense: drivingLicense || null,
+    businessName: businessName || storeName || null,
+    storeName: storeName || businessName || null,
+    businessType: businessType || null,
+    storeAddress: storeAddress || null,
+    ntn: ntn || null,
+  });
+
+  const smsResult = await sendOtpSMS(normalizedPhone, otp, settings);
+  if (settings["integration_whatsapp"] === "on") {
+    sendWhatsAppOTP(normalizedPhone, otp, settings).catch(err =>
+      req.log.warn({ err: err.message }, "WhatsApp OTP send failed (non-fatal)")
+    );
+  }
+
+  writeAuthAuditLog("register", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone: normalizedPhone, role: userRole } });
+
+  const isDev = process.env.NODE_ENV !== "production";
+  res.status(201).json({
+    message: "Registration successful. Please verify your phone with the OTP sent.",
+    userId,
+    role: userRole,
+    pendingApproval: needsApproval,
+    channel: smsResult.sent ? smsResult.provider : "console",
+    ...(isDev ? { otp } : {}),
+  });
+});
+
+router.post("/forgot-password", verifyCaptcha, async (req, res) => {
+  const { phone, email } = req.body;
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  if (!phone && !email) {
+    res.status(400).json({ error: "Phone or email is required" });
+    return;
+  }
+
+  if (phone && !isAuthMethodEnabled(settings, "auth_phone_otp_enabled")) {
+    res.status(403).json({ error: "Phone-based password reset is currently disabled" });
+    return;
+  }
+  if (email && !phone && !isAuthMethodEnabled(settings, "auth_email_otp_enabled")) {
+    res.status(403).json({ error: "Email-based password reset is currently disabled" });
+    return;
+  }
+
+  let user;
+  if (phone) {
+    const rawPhone = phone.replace(/-/g, "");
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, rawPhone)).limit(1);
+    user = found;
+  } else {
+    const normalized = email.toLowerCase().trim();
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
+    user = found;
+  }
+
+  const isDev = process.env.NODE_ENV !== "production";
+  if (!user) {
+    res.json({ message: "If an account exists, a reset code has been sent.", ...(isDev ? { hint: "No account found" } : {}) });
+    return;
+  }
+
+  const forgotRole = user.role ?? "customer";
+  if (phone && !isAuthMethodEnabled(settings, "auth_phone_otp_enabled", forgotRole)) {
+    res.status(403).json({ error: "Phone-based password reset is currently disabled for your account type." });
+    return;
+  }
+  if (email && !phone && !isAuthMethodEnabled(settings, "auth_email_otp_enabled", forgotRole)) {
+    res.status(403).json({ error: "Email-based password reset is currently disabled for your account type." });
+    return;
+  }
+
+  if (user.isBanned) { res.status(403).json({ error: "Account suspended." }); return; }
+  if (!user.isActive) { res.status(403).json({ error: "Account inactive." }); return; }
+
+  const maxAttempts = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
+  const lockoutMinutes = parseInt(settings["security_lockout_minutes"] ?? "30", 10);
+  const lockoutKey = `reset:${user.id}`;
+  const lockout = checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
+  if (lockout.locked) {
+    res.status(429).json({ error: `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    return;
+  }
+
+  const otp = generateSecureOtp();
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  if (phone) {
+    await db.update(usersTable)
+      .set({ otpCode: otp, otpExpiry, otpUsed: false, updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+
+    const targetPhone = phone.replace(/-/g, "");
+    await sendOtpSMS(targetPhone, otp, settings);
+    if (settings["integration_whatsapp"] === "on") {
+      sendWhatsAppOTP(targetPhone, otp, settings).catch(() => {});
+    }
+  } else {
+    await db.update(usersTable)
+      .set({ emailOtpCode: otp, emailOtpExpiry: otpExpiry, updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+
+    await sendPasswordResetEmail(email, otp, user.name ?? undefined);
+  }
+
+  writeAuthAuditLog("forgot_password", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
+
+  res.json({
+    message: "If an account exists, a reset code has been sent.",
+    ...(isDev ? { otp } : {}),
+  });
+});
+
+router.post("/reset-password", verifyCaptcha, async (req, res) => {
+  const { phone, email, otp, newPassword, totpCode } = req.body;
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  if (!otp || !newPassword) {
+    res.status(400).json({ error: "OTP and new password are required" });
+    return;
+  }
+  if (!phone && !email) {
+    res.status(400).json({ error: "Phone or email is required" });
+    return;
+  }
+
+  const pwCheck = PASSWORD_RULES.validate(newPassword);
+  if (!pwCheck.ok) {
+    res.status(400).json({ error: pwCheck.message });
+    return;
+  }
+
+  let user;
+  if (phone) {
+    const rawPhone = phone.replace(/-/g, "");
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, rawPhone)).limit(1);
+    user = found;
+  } else {
+    const normalized = email.toLowerCase().trim();
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
+    user = found;
+  }
+
+  if (!user) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+
+  const userRole = user.role ?? "customer";
+
+  if (phone && !isAuthMethodEnabled(settings, "auth_phone_otp_enabled", userRole)) {
+    res.status(403).json({ error: "Phone-based password reset is currently disabled for your account type." });
+    return;
+  }
+  if (email && !phone && !isAuthMethodEnabled(settings, "auth_email_otp_enabled", userRole)) {
+    res.status(403).json({ error: "Email-based password reset is currently disabled for your account type." });
+    return;
+  }
+
+  if (user.isBanned) { res.status(403).json({ error: "Account suspended." }); return; }
+
+  const maxAttempts = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
+  const lockoutMinutes = parseInt(settings["security_lockout_minutes"] ?? "30", 10);
+  const lockoutKey = `reset:${user.id}`;
+  const lockout = checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
+  if (lockout.locked) {
+    res.status(429).json({ error: `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    return;
+  }
+
+  let otpValid = false;
+  if (phone) {
+    otpValid = user.otpCode === otp && !user.otpUsed && user.otpExpiry != null && new Date() < user.otpExpiry;
+  } else {
+    otpValid = user.emailOtpCode === otp && user.emailOtpExpiry != null && new Date() < user.emailOtpExpiry;
+  }
+
+  if (!otpValid) {
+    recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
+    addAuditEntry({ action: "reset_password_failed", ip, details: `Invalid OTP for password reset: ${user.id}`, result: "fail" });
+    res.status(401).json({ error: "Invalid or expired OTP" });
+    return;
+  }
+
+  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", userRole)) {
+    if (!totpCode) {
+      res.status(400).json({ error: "Two-factor authentication code required", requires2FA: true });
+      return;
+    }
+    if (!/^\d{6}$/.test(totpCode)) {
+      res.status(400).json({ error: "TOTP code must be 6 digits" });
+      return;
+    }
+    if (!user.totpSecret) {
+      res.status(400).json({ error: "2FA is not properly configured for this account. Please contact support." });
+      return;
+    }
+    const { verifyTotpCode } = await import("../services/password.js");
+    const decryptedSecret = decryptTotpSecret(user.totpSecret);
+    if (!verifyTotpCode(decryptedSecret, totpCode)) {
+      recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
+      addAuditEntry({ action: "reset_password_2fa_failed", ip, details: `Invalid TOTP for password reset: ${user.id}`, result: "fail" });
+      res.status(401).json({ error: "Invalid two-factor authentication code" });
+      return;
+    }
+  }
+
+  await db.update(usersTable).set({
+    passwordHash: hashPassword(newPassword),
+    otpCode: null,
+    otpExpiry: null,
+    otpUsed: true,
+    emailOtpCode: null,
+    emailOtpExpiry: null,
+    tokenVersion: sql`token_version + 1`,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, user.id));
+
+  resetAttempts(lockoutKey);
+
+  writeAuthAuditLog("password_reset", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
+
+  res.json({ success: true, message: "Password has been reset successfully. Please login with your new password." });
+});
+
+router.post("/email-register", verifyCaptcha, async (req, res) => {
+  const { email, password, name, role } = req.body;
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+  const userRole = (role === "rider" || role === "vendor") ? role : "customer";
+
+  if (!isAuthMethodEnabled(settings, "auth_email_register_enabled", userRole)) {
+    res.status(403).json({ error: "Email registration is currently disabled" });
+    return;
+  }
+
+  if (settings["feature_new_users"] === "off") {
+    res.status(403).json({ error: "New user registration is currently disabled." });
+    return;
+  }
+
+  if (!email || !email.includes("@")) {
+    res.status(400).json({ error: "Valid email address is required" });
+    return;
+  }
+  if (!password) {
+    res.status(400).json({ error: "Password is required" });
+    return;
+  }
+
+  const pwCheck = PASSWORD_RULES.validate(password);
+  if (!pwCheck.ok) {
+    res.status(400).json({ error: pwCheck.message });
+    return;
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
+  if (existing) {
+    res.status(409).json({ error: "An account with this email already exists" });
+    return;
+  }
+
+  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
+  const userId = generateId();
+  const tempPhone = `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  const rawToken = generateVerificationToken();
+  const tokenHash = hashVerificationToken(rawToken);
+  const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await db.insert(usersTable).values({
+    id: userId,
+    phone: tempPhone,
+    name: name?.trim() || null,
+    email: normalizedEmail,
+    role: userRole,
+    roles: userRole,
+    passwordHash: hashPassword(password),
+    walletBalance: "0",
+    isActive: !requireApproval,
+    approvalStatus: requireApproval ? "pending" : "approved",
+    emailVerified: false,
+    emailOtpCode: tokenHash,
+    emailOtpExpiry: verificationExpiry,
+  });
+
+  const domain = process.env["REPLIT_DEV_DOMAIN"] || process.env["APP_DOMAIN"] || "localhost";
+  const verificationLink = `https://${domain}/api/auth/verify-email?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(normalizedEmail)}`;
+
+  const emailResult = await sendVerificationEmail(normalizedEmail, verificationLink, name);
+
+  writeAuthAuditLog("email_register", { userId, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { email: normalizedEmail, role: userRole, emailSent: emailResult.sent } });
+
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev) {
+    req.log.info({ email: normalizedEmail, emailSent: emailResult.sent }, "Email verification token generated");
+  }
+
+  res.status(201).json({
+    message: emailResult.sent
+      ? "Registration successful. Please check your email to verify your account."
+      : "Registration successful. Please check your email to verify your account. (Email delivery pending — contact support if not received.)",
+    userId,
+    role: userRole,
+    pendingApproval: requireApproval,
+    emailSent: emailResult.sent,
+    verificationLink: isDev ? verificationLink : undefined,
+    ...(isDev ? { verificationToken: rawToken } : {}),
+  });
+});
+
+router.get("/verify-email", async (req, res) => {
+  const { token, email } = req.query as { token?: string; email?: string };
+  const ip = getClientIp(req);
+
+  if (!token || !email) {
+    res.status(400).json({ error: "Invalid verification link" });
+    return;
+  }
+
+  const normalizedEmail = decodeURIComponent(email).toLowerCase().trim();
+  const verifyKey = `email_verify:${normalizedEmail}`;
+
+  const lockout = checkLockout(verifyKey, 5, 15);
+  if (lockout.locked) {
+    res.status(429).json({ error: `Too many verification attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
+
+  if (!user) {
+    recordFailedAttempt(verifyKey, 5, 15);
+    res.status(400).json({ error: "Invalid or expired verification link" });
+    return;
+  }
+
+  if (user.emailVerified) {
+    res.json({ message: "Email already verified. You can log in." });
+    return;
+  }
+
+  if (user.emailOtpExpiry && new Date() > user.emailOtpExpiry) {
+    res.status(401).json({ error: "Verification link has expired. Please register again." });
+    return;
+  }
+
+  const incomingHash = hashVerificationToken(decodeURIComponent(token));
+  if (!user.emailOtpCode || user.emailOtpCode !== incomingHash) {
+    recordFailedAttempt(verifyKey, 5, 15);
+    addAuditEntry({ action: "email_verify_failed", ip, details: `Invalid verification token for ${normalizedEmail}`, result: "fail" });
+    res.status(401).json({ error: "Invalid or expired verification link" });
+    return;
+  }
+
+  await db.update(usersTable).set({
+    emailVerified: true,
+    emailOtpCode: null,
+    emailOtpExpiry: null,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, user.id));
+
+  resetAttempts(verifyKey);
+  writeAuthAuditLog("email_verified", { userId: user.id, ip });
+
+  res.json({ message: "Email verified successfully. You can now log in." });
 });
 
 export default router;

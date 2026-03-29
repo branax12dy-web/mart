@@ -404,6 +404,21 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "sentry_capture_rider",     value: "off", label: "Sentry: Capture Rider App Errors",    category: "integrations" },
   { key: "sentry_capture_unhandled", value: "on",  label: "Sentry: Capture Unhandled Rejections",category: "integrations" },
   { key: "sentry_capture_perf",      value: "on",  label: "Sentry: Performance Monitoring",      category: "integrations" },
+
+  { key: "auth_phone_otp_enabled",         value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Phone OTP Login Enabled",              category: "auth" },
+  { key: "auth_email_otp_enabled",         value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Email OTP Login Enabled",              category: "auth" },
+  { key: "auth_username_password_enabled", value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Username/Password Login Enabled",     category: "auth" },
+  { key: "auth_google_enabled",            value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Google Social Login Enabled",           category: "auth" },
+  { key: "auth_facebook_enabled",          value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Facebook Social Login Enabled",         category: "auth" },
+  { key: "auth_email_register_enabled",    value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Email Registration (no OTP) Enabled",  category: "auth" },
+  { key: "auth_biometric_enabled",         value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Biometric Login Enabled",              category: "auth" },
+  { key: "auth_captcha_enabled",           value: "off", label: "reCAPTCHA v3 Verification Enabled",    category: "auth" },
+  { key: "auth_2fa_enabled",              value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Two-Factor Authentication Enabled",    category: "auth" },
+  { key: "auth_magic_link_enabled",       value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Magic Link Login Enabled",             category: "auth" },
+  { key: "recaptcha_site_key",            value: "",    label: "reCAPTCHA v3 Site Key",                category: "auth" },
+  { key: "recaptcha_secret_key",          value: "",    label: "reCAPTCHA v3 Secret Key",              category: "auth" },
+  { key: "recaptcha_min_score",           value: "0.5", label: "reCAPTCHA Minimum Score Threshold",    category: "auth" },
+  { key: "security_otp_cooldown_sec",     value: "60",  label: "OTP Resend Cooldown (seconds)",        category: "auth" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {

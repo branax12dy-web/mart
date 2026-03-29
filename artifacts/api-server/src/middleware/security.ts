@@ -642,3 +642,61 @@ export async function riderAuth(req: Request, res: Response, next: NextFunction)
 export async function requireUserAuth(req: Request, res: Response, next: NextFunction) {
   return customerAuth(req, res, next);
 }
+
+export async function verifyCaptcha(req: Request, res: Response, next: NextFunction) {
+  const settings = await getCachedSettings();
+  if (settings["auth_captcha_enabled"] !== "on") {
+    next();
+    return;
+  }
+
+  const captchaToken = req.body?.captchaToken || req.headers["x-captcha-token"];
+  if (!captchaToken) {
+    res.status(400).json({ error: "CAPTCHA verification required" });
+    return;
+  }
+
+  const secretKey = process.env["RECAPTCHA_SECRET_KEY"] || settings["recaptcha_secret_key"] || "";
+  if (!secretKey) {
+    console.error("[CAPTCHA] CAPTCHA enabled but no RECAPTCHA_SECRET_KEY configured — blocking request");
+    res.status(500).json({ error: "CAPTCHA verification is misconfigured. Please contact support." });
+    return;
+  }
+
+  try {
+    const verifyUrl = "https://www.google.com/recaptcha/api/siteverify";
+    const resp = await fetch(verifyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(captchaToken as string)}`,
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    if (!resp.ok) {
+      console.error("[CAPTCHA] Google API returned non-OK status:", resp.status);
+      res.status(502).json({ error: "CAPTCHA verification service unavailable. Please try again." });
+      return;
+    }
+
+    const data = await resp.json() as { success: boolean; score?: number; "error-codes"?: string[] };
+    if (!data.success) {
+      const ip = getClientIp(req);
+      addSecurityEvent({ type: "captcha_failed", ip, details: `CAPTCHA failed: ${(data["error-codes"] ?? []).join(", ")}`, severity: "medium" });
+      res.status(403).json({ error: "CAPTCHA verification failed. Please try again." });
+      return;
+    }
+
+    const minScore = parseFloat(settings["recaptcha_min_score"] ?? "0.5");
+    if (typeof data.score === "number" && data.score < minScore) {
+      const ip = getClientIp(req);
+      addSecurityEvent({ type: "captcha_low_score", ip, details: `CAPTCHA score ${data.score} below threshold ${minScore}`, severity: "medium" });
+      res.status(403).json({ error: "Suspicious activity detected. Please try again." });
+      return;
+    }
+
+    next();
+  } catch (err: any) {
+    console.error("[CAPTCHA] Verification error:", err.message);
+    res.status(502).json({ error: "CAPTCHA verification failed. Please try again later." });
+  }
+}

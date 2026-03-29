@@ -22,3 +22,4 @@ export * from "./school_routes";
 export * from "./ride_event_logs";
 export * from "./refresh_tokens";
 export * from "./auth_audit_log";
+export * from "./magic_link_tokens";
