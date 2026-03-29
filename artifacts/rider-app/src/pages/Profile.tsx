@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell, MapPin, Circle, Bike, User, Landmark, Home, Wallet,
-  ClipboardList, BarChart2, Pencil, Star,
+  ClipboardList, BarChart2, Pencil, Star, Camera,
   Shield, Clock, CheckCircle, AlertTriangle,
   CreditCard, Phone, Mail, Facebook, Instagram, MessageCircle,
   FileText, Lock, HelpCircle, Info, LogOut, RefreshCcw,
@@ -109,9 +109,17 @@ export default function Profile() {
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [savedSection, setSavedSection] = useState<EditSection>(null);
   const [fadeIn, setFadeIn] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: reviewsData } = useQuery({
+    queryKey: ["rider-my-reviews"],
+    queryFn: () => api.getMyReviews(),
+    staleTime: 60000,
+  });
 
   const { language, setLanguage } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -143,6 +151,30 @@ export default function Profile() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(m);
     toastTimerRef.current = setTimeout(() => setToast(""), 3500);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { showToast("Image too large (max 5MB)"); return; }
+    setAvatarUploading(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const uploadRes = await api.uploadFile({ file: base64, filename: file.name, mimeType: file.type });
+      if (!uploadRes?.url) { showToast("Upload failed — no URL returned"); setAvatarUploading(false); return; }
+      await api.updateProfile({ avatar: uploadRes.url });
+      await refreshUser();
+      showToast("Profile photo updated");
+    } catch {
+      showToast("Failed to upload photo");
+    }
+    setAvatarUploading(false);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
   };
 
   const startEdit = (section: EditSection) => {
@@ -202,7 +234,7 @@ export default function Profile() {
 
   const totalDeliveries = user?.stats?.totalDeliveries || 0;
   const totalEarnings = user?.stats?.totalEarnings || 0;
-  const rating = user?.stats?.rating || 5.0;
+  const rating = reviewsData?.avgRating ?? user?.stats?.rating ?? 5.0;
 
   const quickActions = [
     { href: "/wallet",        icon: <Wallet size={20}/>,       label: T("wallet"),            bg: "bg-emerald-50 text-emerald-600" },
@@ -263,9 +295,29 @@ export default function Profile() {
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-5 relative overflow-hidden animate-[slideUp_0.4s_ease-out]">
           <div className="absolute -top-8 -right-8 w-24 h-24 bg-gray-50 rounded-full opacity-50"/>
           <div className="relative flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gray-900 flex items-center justify-center text-2xl font-extrabold text-white flex-shrink-0 shadow-lg ring-4 ring-gray-200">
-              {(user?.name || user?.phone || "R")[0].toUpperCase()}
-            </div>
+            <input type="file" accept="image/*" ref={avatarInputRef} onChange={handleAvatarUpload} className="hidden" />
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              className="relative w-16 h-16 rounded-2xl flex-shrink-0 shadow-lg ring-4 ring-gray-200 overflow-hidden group"
+            >
+              {user?.avatar ? (
+                <img src={user.avatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gray-900 flex items-center justify-center text-2xl font-extrabold text-white">
+                  {(user?.name || user?.phone || "R")[0].toUpperCase()}
+                </div>
+              )}
+              {avatarUploading ? (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="absolute bottom-0 right-0 w-6 h-6 bg-gray-900 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                  <Camera size={10} className="text-white" />
+                </div>
+              )}
+            </button>
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-extrabold text-gray-900 leading-tight">{user?.name || "Rider"}</h2>
               <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
@@ -698,6 +750,53 @@ export default function Profile() {
             </div>
           </div>
         </div>
+
+        {(reviewsData?.reviews?.length ?? 0) > 0 && (
+          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.7s_ease-out]">
+            <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-yellow-50 flex items-center justify-center">
+                  <Star size={16} className="text-yellow-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Customer Reviews</p>
+                  <p className="text-[11px] text-gray-400">{reviewsData.total} review{reviewsData.total !== 1 ? "s" : ""} · {reviewsData.avgRating?.toFixed(1)} avg</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5">
+                {[1,2,3,4,5].map(s => (
+                  <Star key={s} size={12} className={s <= Math.round(reviewsData.avgRating || 0) ? "fill-yellow-400 text-yellow-400" : "text-gray-200 fill-gray-200"} />
+                ))}
+              </div>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {reviewsData.reviews.slice(0, 5).map((r: any) => (
+                <div key={r.id} className="px-5 py-3.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-[11px] font-bold text-gray-500">
+                        {(r.customerName || "C")[0].toUpperCase()}
+                      </div>
+                      <span className="text-xs font-semibold text-gray-700">{r.customerName || "Customer"}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {[1,2,3,4,5].map(s => (
+                        <Star key={s} size={10} className={s <= r.rating ? "fill-yellow-400 text-yellow-400" : "text-gray-200 fill-gray-200"} />
+                      ))}
+                    </div>
+                  </div>
+                  {r.comment && (
+                    <p className="text-xs text-gray-600 leading-relaxed pl-9">{r.comment}</p>
+                  )}
+                  <p className="text-[10px] text-gray-300 mt-1 pl-9">
+                    {new Date(r.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })}
+                    {r.orderType && <span className="ml-1.5 text-gray-400">· {r.orderType === "delivery" ? "Delivery" : "Ride"}</span>}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <button onClick={handleLogout}
           className={`w-full h-12 font-bold rounded-3xl text-sm flex items-center justify-center gap-2 transition-all duration-300 ${

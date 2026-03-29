@@ -159,6 +159,7 @@ export const api = {
   rejectOffer:  (id: string) => apiFetch(`/rider/rides/${id}/reject-offer`, { method: "POST", body: "{}" }),
   getHistory:   () => apiFetch("/rider/history"),
   getEarnings:  () => apiFetch("/rider/earnings"),
+  getMyReviews: () => apiFetch("/rider/reviews"),
 
   /* Location */
   updateLocation: (data: { latitude: number; longitude: number; accuracy?: number }) => apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) }),

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable, liveLocationsTable } from "@workspace/db/schema";
-import { eq, desc, and, or, sql, count, sum, gte, isNull } from "drizzle-orm";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable } from "@workspace/db/schema";
+import { eq, desc, and, or, sql, count, sum, avg, gte, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
@@ -25,6 +25,7 @@ const profileSchema = z.object({
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   bankAccountTitle: z.string().optional(),
+  avatar: z.string().optional(),
 });
 
 const MAX_PROOF_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -170,7 +171,7 @@ router.patch("/profile", async (req, res) => {
   const parsed = profileSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
-  const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, bankName, bankAccount, bankAccountTitle } = parsed.data;
+  const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, bankName, bankAccount, bankAccountTitle, avatar } = parsed.data;
   const updates: any = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
   if (email            !== undefined) updates.email            = email;
@@ -183,9 +184,17 @@ router.patch("/profile", async (req, res) => {
   if (bankName         !== undefined) updates.bankName         = bankName;
   if (bankAccount      !== undefined) updates.bankAccount      = bankAccount;
   if (bankAccountTitle !== undefined) updates.bankAccountTitle = bankAccountTitle;
+  if (avatar           !== undefined) {
+    if (avatar && !avatar.startsWith("/api/uploads/")) {
+      res.status(400).json({ error: "Avatar must be an uploaded file URL" });
+      return;
+    }
+    updates.avatar = avatar;
+  }
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, riderId)).returning();
   res.json({
     id: user.id, name: user.name, phone: user.phone, email: user.email,
+    avatar: user.avatar,
     role: user.role, isOnline: user.isOnline, walletBalance: safeNum(user.walletBalance),
     cnic: user.cnic, address: user.address, city: user.city,
     emergencyContact: user.emergencyContact,
@@ -853,6 +862,37 @@ router.get("/history", async (req, res) => {
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   res.json({ history: combined });
+});
+
+/* ── GET /rider/reviews — Reviews received by this rider ── */
+router.get("/reviews", async (req, res) => {
+  const riderId = req.riderId!;
+
+  const [statsRow] = await db
+    .select({ total: count(), avgRating: avg(reviewsTable.rating) })
+    .from(reviewsTable)
+    .where(eq(reviewsTable.riderId, riderId));
+
+  const total = statsRow?.total ?? 0;
+  const avgRating = statsRow?.avgRating ? parseFloat(parseFloat(statsRow.avgRating).toFixed(1)) : null;
+
+  const rows = await db
+    .select({
+      id: reviewsTable.id,
+      orderId: reviewsTable.orderId,
+      rating: reviewsTable.rating,
+      comment: reviewsTable.comment,
+      orderType: reviewsTable.orderType,
+      createdAt: reviewsTable.createdAt,
+      customerName: usersTable.name,
+    })
+    .from(reviewsTable)
+    .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+    .where(eq(reviewsTable.riderId, riderId))
+    .orderBy(desc(reviewsTable.createdAt))
+    .limit(20);
+
+  res.json({ reviews: rows, avgRating, total });
 });
 
 /* ── GET /rider/earnings — Earnings summary ── */
