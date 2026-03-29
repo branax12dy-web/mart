@@ -314,18 +314,76 @@ export default function Wallet() {
     return groups;
   }, [filtered]);
 
+  if (isLoading) {
+    return (
+      <div className="bg-gray-50 pb-24 min-h-screen">
+        <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-28 relative overflow-hidden">
+          <div className="absolute inset-0 opacity-[0.07]">
+            <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+          </div>
+          <div className="relative flex items-center justify-between">
+            <div className="space-y-2">
+              <div className="h-7 w-28 bg-white/20 rounded-xl animate-pulse"/>
+              <div className="h-4 w-40 bg-white/10 rounded-xl animate-pulse"/>
+            </div>
+            <div className="w-10 h-10 bg-white/15 rounded-xl animate-pulse"/>
+          </div>
+        </div>
+        <div className="px-4 -mt-20 space-y-4">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5">
+            <div className="space-y-3 animate-pulse">
+              <div className="h-3 w-28 bg-gray-200 rounded"/>
+              <div className="h-10 w-48 bg-gray-200 rounded-xl"/>
+              <div className="h-3 w-36 bg-gray-100 rounded"/>
+              <div className="flex gap-2 mt-4">
+                <div className="flex-1 h-14 bg-gray-200 rounded-xl"/>
+                <div className="flex-1 h-14 bg-gray-200 rounded-xl"/>
+                <div className="w-14 h-14 bg-gray-100 rounded-xl"/>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-gray-100 animate-pulse">
+                <div className="h-5 w-5 bg-gray-200 rounded mb-2"/>
+                <div className="h-5 w-20 bg-gray-200 rounded mb-1"/>
+                <div className="h-3 w-16 bg-gray-100 rounded"/>
+              </div>
+            ))}
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 animate-pulse">
+            <div className="h-4 w-32 bg-gray-200 rounded mb-4"/>
+            <div className="flex items-end gap-2 h-24">
+              {[20, 35, 15, 45, 30, 50, 25].map((h, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+                  <div className="w-full max-w-[28px] bg-gray-100 rounded-lg" style={{ height: `${h}px` }}/>
+                  <div className="h-2 w-6 bg-gray-100 rounded"/>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!config.features.wallet) {
     return (
       <div className="bg-gray-50 pb-24 min-h-screen">
-        <div className="bg-gradient-to-br from-green-600 to-emerald-700 px-5 pt-12 pb-8">
-          <h1 className="text-2xl font-bold text-white">Wallet</h1>
+        <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
+          <div className="absolute inset-0 opacity-[0.07]">
+            <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+          </div>
+          <h1 className="relative text-2xl font-extrabold text-white tracking-tight">Wallet</h1>
         </div>
         <div className="px-4 py-8 text-center">
           <div className="bg-white rounded-3xl p-10 shadow-sm border border-gray-100">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Lock size={32} className="text-gray-400"/>
             </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">{T("walletDisabled")}</h3>
+            <h3 className="text-lg font-extrabold text-gray-900 mb-2">{T("walletDisabled")}</h3>
             <p className="text-sm text-gray-500">{T("withdrawalsDisabled")}</p>
           </div>
         </div>
@@ -604,9 +662,7 @@ export default function Wallet() {
             </div>
           </div>
 
-          {isLoading ? (
-            <div className="p-5 space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-gray-50 rounded-xl animate-pulse"/>)}</div>
-          ) : filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <div className="px-5 py-12 text-center border-t border-gray-50">
               <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <CreditCard size={28} className="text-gray-200"/>
@@ -734,8 +790,8 @@ export default function Wallet() {
 
       {/* ══ TOAST ══ */}
       {toast && (
-        <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none">
-          <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl text-center">{toast}</div>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw]">
+          <CheckCircle size={15} className="text-green-400 flex-shrink-0"/> {toast}
         </div>
       )}
     </div>

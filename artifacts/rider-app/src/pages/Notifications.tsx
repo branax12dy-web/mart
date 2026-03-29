@@ -10,6 +10,57 @@ import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-gray-200 rounded-xl ${className || ""}`} />;
+}
+
+function SkeletonNotifications() {
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.07]">
+          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+        </div>
+        <div className="relative flex items-center justify-between mb-3">
+          <div className="space-y-2">
+            <SkeletonBlock className="h-7 w-36 !bg-white/20" />
+            <SkeletonBlock className="h-4 w-24 !bg-white/10" />
+          </div>
+          <SkeletonBlock className="w-10 h-10 rounded-xl !bg-white/15" />
+        </div>
+        <div className="relative grid grid-cols-4 gap-2 mt-2">
+          {[1,2,3,4].map(i => (
+            <SkeletonBlock key={i} className="h-16 rounded-xl !bg-white/10" />
+          ))}
+        </div>
+      </div>
+      <div className="px-4 py-4 space-y-3">
+        <div className="flex gap-1.5">
+          {[1,2,3,4,5].map(i => (
+            <SkeletonBlock key={i} className="h-9 w-20 flex-shrink-0" />
+          ))}
+        </div>
+        {[1,2,3,4,5].map(i => (
+          <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 animate-pulse">
+            <div className="flex gap-3">
+              <div className="w-12 h-12 bg-gray-100 rounded-xl flex-shrink-0"/>
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-gray-100 rounded w-3/4"/>
+                <div className="h-3 bg-gray-50 rounded w-full"/>
+                <div className="flex gap-2">
+                  <div className="h-3 bg-gray-50 rounded w-16"/>
+                  <div className="h-3 bg-gray-50 rounded w-12"/>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const fd = (d: string | Date) => {
   const diff = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
   if (diff < 60)    return `${diff}s ago`;
@@ -132,10 +183,11 @@ export default function Notifications() {
     system: notifs.filter(n => !["order","wallet","ride"].includes(n.type) && !n.isRead).length,
   }), [notifs]);
 
+  if (isLoading) return <SkeletonNotifications />;
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
 
-      {/* ══ HEADER ══ */}
       <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07]">
           <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
@@ -166,7 +218,6 @@ export default function Notifications() {
           </div>
         </div>
 
-        {/* ── Stats Summary ── */}
         {notifs.length > 0 && (
           <div className="relative grid grid-cols-4 gap-2 mt-2">
             {[
@@ -186,13 +237,12 @@ export default function Notifications() {
 
       <div className="px-4 py-4 space-y-3">
 
-        {/* ── Filter Tabs ── */}
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
           {FILTER_TABS.map(tab => (
             <button key={tab.key} onClick={() => setFilter(tab.key)}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 border ${
                 filter === tab.key
-                  ? "bg-green-600 text-white border-green-600 shadow-sm"
+                  ? "bg-green-600 text-white border-green-600 shadow-md shadow-green-200"
                   : "bg-white text-gray-500 border-gray-100 active:bg-gray-50"
               }`}>
               {tab.icon} {tab.label}
@@ -207,30 +257,15 @@ export default function Notifications() {
           ))}
         </div>
 
-        {/* ── Content ── */}
-        {isLoading ? (
-          <div className="space-y-3">
-            {[1,2,3,4,5].map(i => (
-              <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 animate-pulse">
-                <div className="flex gap-3">
-                  <div className="w-12 h-12 bg-gray-100 rounded-xl"/>
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-gray-100 rounded w-3/4"/>
-                    <div className="h-3 bg-gray-50 rounded w-full"/>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-16 text-center">
-            <div className="w-20 h-20 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
               <Inbox size={40} className="text-gray-200"/>
             </div>
-            <p className="font-bold text-gray-700 text-lg">
+            <p className="font-extrabold text-gray-700 text-lg">
               {filter === "all" ? T("noNotificationsYet") : `${T("noNotifications")}`}
             </p>
-            <p className="text-sm text-gray-400 mt-1.5 max-w-[260px] mx-auto leading-relaxed">
+            <p className="text-sm text-gray-400 mt-2 max-w-[260px] mx-auto leading-relaxed">
               {filter === "all" ? T("orderAlertsAppearHere") : T("tryDifferentFilter")}
             </p>
           </div>
@@ -238,8 +273,8 @@ export default function Notifications() {
           <div className="space-y-4">
             {grouped.map(group => (
               <div key={group.label}>
-                <div className="flex items-center gap-2 mb-2 px-1">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{group.label}</p>
+                <div className="flex items-center gap-2 mb-2.5 px-1">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">{group.label}</p>
                   <div className="flex-1 h-px bg-gray-200"/>
                   <span className="text-[10px] text-gray-400 font-medium">{group.items.length}</span>
                 </div>
@@ -249,16 +284,16 @@ export default function Notifications() {
                     const dest = navTarget(n.type);
                     return (
                       <div key={n.id}
-                        className={`px-4 py-4 flex gap-3 transition-colors ${!n.isRead ? "bg-green-50/40" : ""}`}>
+                        className={`px-4 py-4 flex gap-3 transition-all duration-200 ${!n.isRead ? "bg-green-50/40 border-l-[3px] border-l-green-500" : "border-l-[3px] border-l-transparent"}`}>
                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${!n.isRead ? info.iconBg : "bg-gray-50"}`}>
                           {info.icon}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm font-bold leading-snug ${!n.isRead ? "text-gray-900" : "text-gray-600"}`}>
+                            <p className={`text-sm leading-snug ${!n.isRead ? "font-extrabold text-gray-900" : "font-semibold text-gray-600"}`}>
                               {n.title}
                             </p>
-                            <div className="flex items-center gap-1 flex-shrink-0">
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
                               {!n.isRead && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); markOneMut.mutate(n.id); }}
@@ -268,10 +303,10 @@ export default function Notifications() {
                                   <Check size={14}/>
                                 </button>
                               )}
-                              {!n.isRead && <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0"/>}
+                              {!n.isRead && <div className="w-2.5 h-2.5 bg-green-500 rounded-full flex-shrink-0 shadow-sm shadow-green-200"/>}
                             </div>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{n.body}</p>
+                          <p className={`text-xs mt-1 leading-relaxed line-clamp-2 ${!n.isRead ? "text-gray-600" : "text-gray-400"}`}>{n.body}</p>
                           <div className="flex items-center gap-2 mt-2 flex-wrap">
                             <span className="text-[10px] text-gray-400 font-medium flex items-center gap-0.5">
                               <Clock size={10}/> {fd(n.createdAt)}
@@ -300,8 +335,8 @@ export default function Notifications() {
       </div>
 
       {toast && (
-        <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none">
-          <div className="bg-red-600 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-2xl text-center">{toast}</div>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw]">
+          <AlertTriangle size={15} className="text-red-200 flex-shrink-0"/> {toast}
         </div>
       )}
     </div>
