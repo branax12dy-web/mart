@@ -18,22 +18,20 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonActive() {
   return (
-    <div className="bg-gray-50 pb-24 min-h-screen">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-        </div>
+    <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative flex items-center justify-between">
           <div className="space-y-2">
-            <SkeletonBlock className="h-7 w-40 !bg-white/20" />
+            <SkeletonBlock className="h-7 w-40 !bg-white/10" />
             <SkeletonBlock className="h-4 w-56 !bg-white/10" />
           </div>
-          <SkeletonBlock className="w-20 h-16 rounded-2xl !bg-white/15" />
+          <SkeletonBlock className="w-20 h-16 rounded-2xl !bg-white/[0.06]" />
         </div>
       </div>
       <div className="px-4 py-4 space-y-4">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
           <SkeletonBlock className="h-16 !rounded-none" />
           <div className="p-4 space-y-3">
             <div className="flex items-center justify-between px-4">
@@ -47,7 +45,7 @@ function SkeletonActive() {
             <SkeletonBlock className="h-2 mx-6" />
           </div>
         </div>
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
           <SkeletonBlock className="h-12 !rounded-none" />
           <div className="p-4 space-y-3">
             <SkeletonBlock className="h-20" />
@@ -89,14 +87,14 @@ function ElapsedBadge({ startIso }: { startIso?: string | null }) {
   if (!startIso) return null;
   const progress = Math.min(elapsed / 3600, 1);
   return (
-    <div className={`relative flex flex-col items-center px-4 py-2.5 rounded-2xl backdrop-blur-md border ${urgent ? "bg-red-500/90 border-red-400/30 shadow-lg shadow-red-500/20" : "bg-white/15 border-white/20"}`}>
+    <div className={`relative flex flex-col items-center px-4 py-2.5 rounded-2xl backdrop-blur-sm border ${urgent ? "bg-red-500/90 border-red-400/30 shadow-lg shadow-red-500/20" : "bg-white/[0.06] border-white/[0.06]"}`}>
       <div className="flex items-center gap-1.5 mb-1">
-        <Clock size={10} className={urgent ? "text-red-200" : "text-green-200"}/>
-        <span className={`text-[9px] font-bold uppercase tracking-widest ${urgent ? "text-red-200" : "text-green-200"}`}>Elapsed</span>
+        <Clock size={10} className={urgent ? "text-red-200" : "text-white/40"}/>
+        <span className={`text-[9px] font-bold uppercase tracking-widest ${urgent ? "text-red-200" : "text-white/40"}`}>Elapsed</span>
       </div>
       <span className={`text-white font-black text-lg leading-none tabular-nums ${urgent ? "animate-pulse" : ""}`}>{label}</span>
       <div className="w-full h-1 bg-white/10 rounded-full mt-1.5 overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-1000 ${urgent ? "bg-red-300" : "bg-green-300"}`}
+        <div className={`h-full rounded-full transition-all duration-1000 ${urgent ? "bg-red-300" : "bg-green-400"}`}
           style={{ width: `${progress * 100}%` }}/>
       </div>
     </div>
@@ -171,6 +169,10 @@ export default function Active() {
   const photoInputRef                              = useRef<HTMLInputElement>(null);
   const toastTimerRef                              = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pressedBtn, setPressedBtn]                = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
 
   const showToast = (msg: string, isError = false) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -299,18 +301,16 @@ export default function Active() {
   const ride  = data?.ride;
 
   if (!order && !ride) return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-10 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-        </div>
+    <div className="min-h-screen bg-[#F5F6F8] flex flex-col">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-10 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative">
           <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("activeTask")}</h1>
-          <p className="text-green-200 text-sm mt-0.5">{T("noCurrentAssignment")}</p>
+          <p className="text-white/40 text-sm mt-0.5">{T("noCurrentAssignment")}</p>
         </div>
       </div>
-      <div className="flex-1 flex items-center justify-center p-6 -mt-4">
+      <div className="flex-1 flex items-center justify-center p-6">
         <div className="text-center">
           <div className="w-28 h-28 bg-gradient-to-br from-gray-50 to-gray-100 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner border border-gray-200/50">
             <Bike size={52} className="text-gray-300"/>
@@ -318,7 +318,7 @@ export default function Active() {
           <h2 className="text-xl font-extrabold text-gray-700">{T("noActiveTask")}</h2>
           <p className="text-gray-400 mt-2 text-sm max-w-[260px] mx-auto leading-relaxed">{T("acceptFromHome")}</p>
           <button onClick={() => refetch()}
-            className="mt-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-7 py-3.5 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto active:scale-[0.97] transition-transform shadow-lg shadow-green-200">
+            className="mt-6 bg-gray-900 text-white px-7 py-3.5 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto active:scale-[0.97] transition-transform shadow-sm">
             <RefreshCw size={15}/> {T("refresh")}
           </button>
         </div>
@@ -343,21 +343,19 @@ export default function Active() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-7 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-          <div className="absolute top-1/2 left-1/2 w-32 h-32 bg-white rounded-full -translate-x-1/2 -translate-y-1/2"/>
-        </div>
+    <div className="min-h-screen bg-[#F5F6F8] pb-24">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-7 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
+        <div className="absolute top-1/2 left-1/2 w-32 h-32 rounded-full bg-white/[0.015] -translate-x-1/2 -translate-y-1/2"/>
         <div className="relative flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-2.5 h-2.5 bg-green-300 rounded-full animate-pulse shadow-sm shadow-green-300"/>
-              <span className="text-green-200 text-[10px] font-bold uppercase tracking-widest">Live</span>
+              <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-sm shadow-green-400"/>
+              <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Live</span>
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight">{order ? T("activeDelivery") : T("activeRide")}</h1>
-            <p className="text-green-200 text-sm mt-1 font-medium">
+            <p className="text-white/40 text-sm mt-1 font-medium">
               {order ? `${order.type} order — ${orderPickedUp ? "Delivering to customer" : "Pick up from store"}` : `${ride?.type} ride in progress`}
             </p>
           </div>
@@ -366,7 +364,7 @@ export default function Active() {
       </div>
 
       {gpsWarning && (
-        <div className="mx-4 mt-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3 shadow-sm animate-[slideDown_0.3s_ease-out]">
+        <div className="mx-4 mt-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-3.5 flex items-start gap-3 shadow-sm animate-[slideDown_0.3s_ease-out]">
           <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
             <AlertTriangle size={18} className="text-amber-600"/>
           </div>
@@ -384,7 +382,7 @@ export default function Active() {
 
         {order && (
           <>
-            <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
+            <div className="bg-white rounded-3xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
               <div className={`bg-gradient-to-r ${orderTypeGradient(order.type)} px-4 py-4 flex items-center gap-3 relative overflow-hidden`}>
                 <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full"/>
                 <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/5 rounded-full"/>
@@ -409,24 +407,24 @@ export default function Active() {
                     <div key={i} className="flex flex-col items-center gap-2 z-10" style={{ flex: 1 }}>
                       <div className={`w-11 h-11 rounded-2xl border-2 flex items-center justify-center transition-all duration-500
                         ${i < orderStep ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-200" :
-                          i === orderStep ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 ring-4 ring-blue-100" :
+                          i === orderStep ? "bg-gray-900 border-gray-900 text-white shadow-lg shadow-gray-300 ring-4 ring-gray-200" :
                           "bg-white border-gray-200 text-gray-300"}`}>
                         {i < orderStep ? <CheckCircle size={16}/> : ORDER_STEP_ICONS[i]}
                       </div>
                       <p className={`text-[10px] font-bold text-center leading-tight max-w-[70px] ${
-                        i <= orderStep ? "text-blue-600" : "text-gray-400"}`}>{label}</p>
+                        i <= orderStep ? "text-gray-900" : "text-gray-400"}`}>{label}</p>
                     </div>
                   ))}
                 </div>
                 <div className="relative mx-10 h-1 bg-gray-100 rounded-full -mt-8 mb-6">
-                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-700 ease-out"
+                  <div className="absolute top-0 left-0 h-full bg-gray-900 rounded-full transition-all duration-700 ease-out"
                     style={{ width: `${orderStep === 0 ? 0 : orderStep === 1 ? 50 : 100}%` }} />
                 </div>
               </div>
             </div>
 
             {!orderPickedUp && (
-              <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
+              <div className="bg-white rounded-3xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
                 <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 flex items-center gap-2">
                   <div className="w-7 h-7 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <ShoppingCart size={14} className="text-white"/>
@@ -468,6 +466,20 @@ export default function Active() {
                     </div>
                   )}
 
+                  {order.vendorAddress && (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
+                          <MapPin size={18} className="text-white"/>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Store Location</p>
+                          <p className="text-sm font-bold text-gray-900 mt-0.5">{order.vendorAddress}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-2">
                     <NavButton label={T("goToStore")} address={order.vendorStoreName} color="orange" />
                     {order.vendorPhone && <CallButton phone={order.vendorPhone} label="Call Store" name={order.vendorStoreName} />}
@@ -476,7 +488,7 @@ export default function Active() {
                   <button
                     onClick={() => setOrderPickedUp(true)}
                     onTouchStart={() => setPressedBtn("pickup")} onTouchEnd={() => setPressedBtn(null)}
-                    className={`w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-2xl py-4 text-base flex items-center justify-center gap-2.5 shadow-lg shadow-blue-200 transition-transform ${pressedBtn === "pickup" ? "scale-[0.97]" : ""}`}>
+                    className={`w-full bg-gray-900 text-white font-black rounded-2xl py-4 text-base flex items-center justify-center gap-2.5 shadow-lg transition-transform ${pressedBtn === "pickup" ? "scale-[0.97]" : ""}`}>
                     <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center">
                       <Package size={18}/>
                     </div>
@@ -494,7 +506,7 @@ export default function Active() {
             )}
 
             {orderPickedUp && (
-              <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
+              <div className="bg-white rounded-3xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
                 <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3 flex items-center gap-2">
                   <div className="w-7 h-7 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Truck size={14} className="text-white"/>
@@ -608,7 +620,7 @@ export default function Active() {
         )}
 
         {ride && (
-          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
+          <div className="bg-white rounded-3xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
             <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-700 px-4 py-4 flex items-center gap-3 relative overflow-hidden">
               <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full"/>
               <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/5 rounded-full"/>
@@ -635,16 +647,16 @@ export default function Active() {
                       <div key={i} className="flex flex-col items-center gap-2 z-10" style={{ flex: 1 }}>
                         <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all duration-500
                           ${i < rideStep ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-200" :
-                            i === rideStep ? "bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-200 ring-4 ring-purple-100" :
+                            i === rideStep ? "bg-gray-900 border-gray-900 text-white shadow-lg shadow-gray-300 ring-4 ring-gray-200" :
                             "bg-white border-gray-200 text-gray-300"}`}>
                           {i < rideStep ? <CheckCircle size={14}/> : RIDE_STEP_ICONS[i]}
                         </div>
-                        <p className={`text-[9px] font-bold text-center max-w-[60px] ${i <= rideStep ? "text-purple-600" : "text-gray-400"}`}>{label}</p>
+                        <p className={`text-[9px] font-bold text-center max-w-[60px] ${i <= rideStep ? "text-gray-900" : "text-gray-400"}`}>{label}</p>
                       </div>
                     ))}
                   </div>
                   <div className="relative h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-700 ease-out"
+                    <div className="absolute top-0 left-0 h-full bg-gray-900 rounded-full transition-all duration-700 ease-out"
                       style={{ width: `${rideStep < 0 ? 0 : (rideStep / (RIDE_STEPS.length - 1)) * 100}%` }} />
                   </div>
                 </div>
@@ -708,7 +720,7 @@ export default function Active() {
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "arrived" })}
                     disabled={updateRideMut.isPending}
                     onTouchStart={() => setPressedBtn("arrived")} onTouchEnd={() => setPressedBtn(null)}
-                    className={`flex-1 bg-gradient-to-r from-purple-600 to-violet-600 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-purple-200 transition-transform ${pressedBtn === "arrived" ? "scale-[0.97]" : ""}`}>
+                    className={`flex-1 bg-gray-900 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg transition-transform ${pressedBtn === "arrived" ? "scale-[0.97]" : ""}`}>
                     <MapPin size={16}/> {T("arrivedAtPickup")}
                   </button>
                 )}
@@ -717,7 +729,7 @@ export default function Active() {
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "in_transit" })}
                     disabled={updateRideMut.isPending}
                     onTouchStart={() => setPressedBtn("start")} onTouchEnd={() => setPressedBtn(null)}
-                    className={`flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-transform ${pressedBtn === "start" ? "scale-[0.97]" : ""}`}>
+                    className={`flex-1 bg-gray-900 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg transition-transform ${pressedBtn === "start" ? "scale-[0.97]" : ""}`}>
                     <Car size={16}/> {T("startRide")}
                   </button>
                 )}

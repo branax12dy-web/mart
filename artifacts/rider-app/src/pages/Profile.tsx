@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -22,8 +22,8 @@ const CITIES   = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","
 const BANKS    = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Other"];
 const VEHICLES = ["Bike / Motorcycle","Car","Rickshaw / QingQi","Bicycle","On Foot"];
 
-const INPUT  = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 focus:bg-white transition-all";
-const SELECT = "w-full h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 appearance-none transition-all";
+const INPUT  = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all";
+const SELECT = "w-full h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-200 appearance-none transition-all";
 const LABEL  = "text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block";
 
 type EditSection = "personal" | "vehicle" | "bank" | null;
@@ -41,10 +41,10 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonProfile() {
   return (
-    <div className="bg-gray-50 pb-24 min-h-screen">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-24" />
+    <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-24 rounded-b-[2rem]" />
       <div className="px-4 -mt-20 space-y-4">
-        <div className="bg-white rounded-2xl shadow-lg p-5">
+        <div className="bg-white rounded-3xl shadow-lg p-5">
           <div className="flex items-start gap-4">
             <SkeletonBlock className="w-16 h-16 rounded-2xl" />
             <div className="flex-1 space-y-2">
@@ -60,7 +60,7 @@ function SkeletonProfile() {
         <div className="grid grid-cols-3 gap-2">
           {[1,2,3,4,5,6].map(i => <SkeletonBlock key={i} className="h-20 rounded-2xl" />)}
         </div>
-        <SkeletonBlock className="h-48 rounded-2xl" />
+        <SkeletonBlock className="h-48 rounded-3xl" />
       </div>
     </div>
   );
@@ -109,6 +109,9 @@ export default function Profile() {
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [savedSection, setSavedSection] = useState<EditSection>(null);
   const [fadeIn, setFadeIn] = useState(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { language, setLanguage } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -129,9 +132,18 @@ export default function Profile() {
 
   useEffect(() => {
     requestAnimationFrame(() => setFadeIn(true));
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
   }, []);
 
-  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
+  const showToast = (m: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(m);
+    toastTimerRef.current = setTimeout(() => setToast(""), 3500);
+  };
 
   const startEdit = (section: EditSection) => {
     if (section === "personal") {
@@ -166,7 +178,8 @@ export default function Profile() {
       await refreshUser();
       setEditing(null);
       setSavedSection(section);
-      setTimeout(() => setSavedSection(null), 3000);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSavedSection(null), 3000);
       showToast(T("changesSaved"));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : T("saveFailedMsg");
@@ -203,7 +216,8 @@ export default function Profile() {
   const handleLogout = () => {
     if (!logoutConfirm) {
       setLogoutConfirm(true);
-      setTimeout(() => setLogoutConfirm(false), 4000);
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = setTimeout(() => setLogoutConfirm(false), 4000);
       return;
     }
     logout();
@@ -217,7 +231,7 @@ export default function Profile() {
   if (authLoading) return <SkeletonProfile />;
 
   return (
-    <div className={`bg-gray-50 pb-24 min-h-screen transition-opacity duration-500 ${fadeIn ? "opacity-100" : "opacity-0"}`}>
+    <div className={`bg-[#F5F6F8] pb-24 min-h-screen transition-opacity duration-500 ${fadeIn ? "opacity-100" : "opacity-0"}`}>
 
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw]">
@@ -225,18 +239,15 @@ export default function Profile() {
         </div>
       )}
 
-      {/* ══ HEADER ══ */}
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-24 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-        </div>
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-24 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative flex items-center justify-between mb-2">
           <div>
+            <p className="text-white/40 text-xs font-semibold tracking-widest uppercase mb-1">{T("riderProfileSettings")}</p>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("myAccountTitle")}</h1>
-            <p className="text-green-200 text-sm mt-0.5">{T("riderProfileSettings")}</p>
           </div>
-          <Link href="/notifications" className="relative h-10 w-10 flex items-center justify-center bg-white/15 backdrop-blur-sm text-white rounded-xl border border-white/10">
+          <Link href="/notifications" className="relative h-10 w-10 flex items-center justify-center bg-white/[0.06] backdrop-blur-sm text-white rounded-xl border border-white/[0.06]">
             <Bell size={18}/>
             {unread > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full w-[18px] h-[18px] flex items-center justify-center shadow-sm">
@@ -249,11 +260,10 @@ export default function Profile() {
 
       <div className="px-4 -mt-20 space-y-4">
 
-        {/* ══ RIDER IDENTITY CARD ══ */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 relative overflow-hidden animate-[slideUp_0.4s_ease-out]">
-          <div className="absolute -top-8 -right-8 w-24 h-24 bg-green-50 rounded-full opacity-50"/>
+        <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-5 relative overflow-hidden animate-[slideUp_0.4s_ease-out]">
+          <div className="absolute -top-8 -right-8 w-24 h-24 bg-gray-50 rounded-full opacity-50"/>
           <div className="relative flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-2xl font-extrabold text-white flex-shrink-0 shadow-lg ring-4 ring-green-100">
+            <div className="w-16 h-16 rounded-2xl bg-gray-900 flex items-center justify-center text-2xl font-extrabold text-white flex-shrink-0 shadow-lg ring-4 ring-gray-200">
               {(user?.name || user?.phone || "R")[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
@@ -273,11 +283,11 @@ export default function Profile() {
                   <Circle size={7} className={user?.isOnline ? "fill-green-500 text-green-500" : "fill-gray-400 text-gray-400"}/>
                   {user?.isOnline ? T("onlineLabel") : T("offlineLabel")}
                 </span>
-                <span className="text-[11px] bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
+                <span className="text-[11px] bg-gray-900 text-white px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
                   <Bike size={11}/> {T("riderBadge")}
                 </span>
                 {user?.vehicleType && (
-                  <span className="text-[11px] bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-bold">
+                  <span className="text-[11px] bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-bold">
                     {user.vehicleType.split("/")[0].trim()}
                   </span>
                 )}
@@ -301,7 +311,6 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* ══ COMPACT HORIZONTAL STATS STRIP ══ */}
         <div className="flex gap-2 animate-[slideUp_0.5s_ease-out]">
           {[
             { label: T("deliveriesLabel"), value: String(totalDeliveries), icon: <ClipboardList size={15} className="text-blue-500"/>,   bg: "bg-blue-50",   border: "border-blue-100" },
@@ -317,9 +326,8 @@ export default function Profile() {
           ))}
         </div>
 
-        {/* ══ PROFILE COMPLETION BANNER ══ */}
         {completionPct < 100 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 animate-[slideUp_0.55s_ease-out]">
+          <div className="bg-amber-50 border border-amber-200 rounded-3xl px-4 py-3 animate-[slideUp_0.55s_ease-out]">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs text-amber-800 font-bold">{T("completeProfileLabel")}</p>
               <span className="text-[11px] text-amber-600 font-semibold">{missingCount} {T("itemsRemaining")}</span>
@@ -333,13 +341,12 @@ export default function Profile() {
           </div>
         )}
 
-        {/* ══ QUICK ACTIONS 2x3 GRID ══ */}
         <div className="animate-[slideUp_0.6s_ease-out]">
           <p className="text-[13px] font-bold text-gray-700 mb-2 px-1">{T("quickActionsLabel")}</p>
           <div className="grid grid-cols-3 gap-2">
             {quickActions.map(item => (
               <Link key={item.href} href={item.href}
-                className="bg-white rounded-2xl border border-gray-100 p-3.5 flex flex-col items-center gap-2 active:bg-gray-50 transition-all relative shadow-sm">
+                className="bg-white rounded-3xl border border-gray-100 p-3.5 flex flex-col items-center gap-2 active:bg-gray-50 transition-all relative shadow-sm">
                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${item.bg}`}>
                   {item.icon}
                 </div>
@@ -354,20 +361,19 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* ══ TABBED PROFILE SECTIONS ══ */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.65s_ease-out]">
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.65s_ease-out]">
           <div className="flex border-b border-gray-100">
             {(["personal", "vehicle", "bank"] as const).map(tab => (
               <button key={tab}
                 onClick={() => { setActiveTab(tab); if (editing && editing !== tab) setEditing(null); }}
                 className={`flex-1 py-3.5 text-sm font-bold transition-all relative ${
                   activeTab === tab
-                    ? "text-green-600"
+                    ? "text-gray-900"
                     : "text-gray-400"
                 }`}>
                 {tab === "personal" ? T("personalTab") : tab === "vehicle" ? T("vehicleTab") : T("bankTab")}
                 {activeTab === tab && (
-                  <div className="absolute bottom-0 left-1/4 right-1/4 h-[3px] bg-green-500 rounded-t-full" />
+                  <div className="absolute bottom-0 left-1/4 right-1/4 h-[3px] bg-gray-900 rounded-t-full" />
                 )}
                 {savedSection === tab && (
                   <span className="absolute top-1 right-2">
@@ -379,12 +385,11 @@ export default function Profile() {
           </div>
 
           <div className="transition-all duration-300">
-            {/* ── PERSONAL TAB ── */}
             {activeTab === "personal" && (
               <div className="animate-[fadeIn_0.25s_ease-out]">
                 <div className="px-5 py-3 flex items-center justify-between border-b border-gray-50">
                   <div className="flex items-center gap-2">
-                    <User size={15} className="text-green-600"/>
+                    <User size={15} className="text-gray-900"/>
                     <div>
                       <p className="font-bold text-gray-900 text-[14px]">{T("personalInformation")}</p>
                       <p className="text-[10px] text-gray-400">{T("identityContact")}</p>
@@ -394,7 +399,7 @@ export default function Profile() {
                     <SavedCheckmark show={savedSection === "personal"} label={T("savedFeedback")} />
                     <button onClick={() => editing === "personal" ? setEditing(null) : startEdit("personal")}
                       className={`text-sm font-bold py-1.5 px-3 rounded-xl transition-all flex items-center gap-1.5 ${
-                        editing === "personal" ? "bg-gray-100 text-gray-600" : "bg-green-50 text-green-600 active:bg-green-100"
+                        editing === "personal" ? "bg-gray-100 text-gray-600" : "bg-gray-100 text-gray-900 active:bg-gray-200"
                       }`}>
                       {editing === "personal" ? <><span className="text-xs">✕</span> {T("cancel")}</> : <><Pencil size={12}/> {T("edit")}</>}
                     </button>
@@ -431,13 +436,13 @@ export default function Profile() {
                       <input value={emergency} onChange={e => setEmergency(e.target.value)} inputMode="tel" placeholder={T("emergencyPlaceholder")} className={INPUT}/>
                     </div>
                     <button onClick={() => saveSection("personal")} disabled={saving}
-                      className="w-full h-12 bg-green-600 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-green-700 transition-colors shadow-sm">
+                      className="w-full h-12 bg-gray-900 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-gray-800 transition-colors shadow-sm">
                       {saving ? <><RefreshCcw size={15} className="animate-spin"/> {T("saving")}</> : <><CheckCircle size={15}/> {T("saveChangesBtn")}</>}
                     </button>
                   </div>
                 ) : (
                   <div className="py-1">
-                    <InfoRow label={T("fullName")}            value={user?.name}             empty={T("notSet")} icon={<User size={12} className="text-green-500"/>}/>
+                    <InfoRow label={T("fullName")}            value={user?.name}             empty={T("notSet")} icon={<User size={12} className="text-gray-500"/>}/>
                     <InfoRow label={T("phoneNumber")}         value={user?.phone}            empty={T("notSet")} icon={<Phone size={12} className="text-blue-500"/>}/>
                     <InfoRow label={T("emailAddress")}        value={user?.email}            empty={T("notSet")} icon={<Mail size={12} className="text-purple-500"/>}/>
                     <InfoRow label={T("cnicNationalId")}      value={user?.cnic}             empty={T("notSet")} icon={<FileText size={12} className="text-amber-500"/>}/>
@@ -449,12 +454,11 @@ export default function Profile() {
               </div>
             )}
 
-            {/* ── VEHICLE TAB ── */}
             {activeTab === "vehicle" && (
               <div className="animate-[fadeIn_0.25s_ease-out]">
                 <div className="px-5 py-3 flex items-center justify-between border-b border-gray-50">
                   <div className="flex items-center gap-2">
-                    <Bike size={15} className="text-green-600"/>
+                    <Bike size={15} className="text-gray-900"/>
                     <div>
                       <p className="font-bold text-gray-900 text-[14px]">{T("vehicleDetails")}</p>
                       <p className="text-[10px] text-gray-400">{T("yourDeliveryVehicle")}</p>
@@ -464,7 +468,7 @@ export default function Profile() {
                     <SavedCheckmark show={savedSection === "vehicle"} label={T("savedFeedback")} />
                     <button onClick={() => editing === "vehicle" ? setEditing(null) : startEdit("vehicle")}
                       className={`text-sm font-bold py-1.5 px-3 rounded-xl transition-all flex items-center gap-1.5 ${
-                        editing === "vehicle" ? "bg-gray-100 text-gray-600" : "bg-green-50 text-green-600 active:bg-green-100"
+                        editing === "vehicle" ? "bg-gray-100 text-gray-600" : "bg-gray-100 text-gray-900 active:bg-gray-200"
                       }`}>
                       {editing === "vehicle" ? <><span className="text-xs">✕</span> {T("cancel")}</> : <><Pencil size={12}/> {T("edit")}</>}
                     </button>
@@ -484,7 +488,7 @@ export default function Profile() {
                       <input value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} placeholder="ABC-1234" className={INPUT}/>
                     </div>
                     <button onClick={() => saveSection("vehicle")} disabled={saving}
-                      className="w-full h-12 bg-green-600 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-green-700 transition-colors shadow-sm">
+                      className="w-full h-12 bg-gray-900 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-gray-800 transition-colors shadow-sm">
                       {saving ? <><RefreshCcw size={15} className="animate-spin"/> {T("saving")}</> : <><CheckCircle size={15}/> {T("saveChangesBtn")}</>}
                     </button>
                   </div>
@@ -514,7 +518,7 @@ export default function Profile() {
                     <p className="text-sm font-bold text-gray-600">{T("noVehicle")}</p>
                     <p className="text-xs text-gray-400 mt-1">{T("addVehicleInfo")}</p>
                     <button onClick={() => startEdit("vehicle")}
-                      className="mt-3 px-5 py-2 bg-green-50 text-green-600 font-bold rounded-xl text-sm active:bg-green-100 transition-colors">
+                      className="mt-3 px-5 py-2 bg-gray-100 text-gray-900 font-bold rounded-xl text-sm active:bg-gray-200 transition-colors">
                       + {T("addVehicle")}
                     </button>
                   </div>
@@ -522,12 +526,11 @@ export default function Profile() {
               </div>
             )}
 
-            {/* ── BANK TAB ── */}
             {activeTab === "bank" && (
               <div className="animate-[fadeIn_0.25s_ease-out]">
                 <div className="px-5 py-3 flex items-center justify-between border-b border-gray-50">
                   <div className="flex items-center gap-2">
-                    <Landmark size={15} className="text-green-600"/>
+                    <Landmark size={15} className="text-gray-900"/>
                     <div>
                       <p className="font-bold text-gray-900 text-[14px]">{T("bankDetails")}</p>
                       <p className="text-[10px] text-gray-400">{T("withdrawalAccount")}</p>
@@ -537,7 +540,7 @@ export default function Profile() {
                     <SavedCheckmark show={savedSection === "bank"} label={T("savedFeedback")} />
                     <button onClick={() => editing === "bank" ? setEditing(null) : startEdit("bank")}
                       className={`text-sm font-bold py-1.5 px-3 rounded-xl transition-all flex items-center gap-1.5 ${
-                        editing === "bank" ? "bg-gray-100 text-gray-600" : "bg-green-50 text-green-600 active:bg-green-100"
+                        editing === "bank" ? "bg-gray-100 text-gray-600" : "bg-gray-100 text-gray-900 active:bg-gray-200"
                       }`}>
                       {editing === "bank" ? <><span className="text-xs">✕</span> {T("cancel")}</> : <><Pencil size={12}/> {T("edit")}</>}
                     </button>
@@ -565,26 +568,26 @@ export default function Profile() {
                       <p className="text-xs text-amber-700 font-medium">{T("bankMobileWallet")}</p>
                     </div>
                     <button onClick={() => saveSection("bank")} disabled={saving}
-                      className="w-full h-12 bg-green-600 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-green-700 transition-colors shadow-sm">
+                      className="w-full h-12 bg-gray-900 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-gray-800 transition-colors shadow-sm">
                       {saving ? <><RefreshCcw size={15} className="animate-spin"/> {T("saving")}</> : <><CheckCircle size={15}/> {T("saveChangesBtn")}</>}
                     </button>
                   </div>
                 ) : user?.bankName ? (
                   <div className="p-4">
-                    <div className="bg-gradient-to-br from-green-600 to-emerald-700 rounded-2xl p-4 text-white relative overflow-hidden">
+                    <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-4 text-white relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2"/>
                       <div className="absolute bottom-0 left-0 w-16 h-16 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"/>
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-[10px] uppercase tracking-wider text-green-200 font-bold">{T("paymentAccount")}</span>
-                        <CreditCard size={18} className="text-green-200"/>
+                        <span className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">{T("paymentAccount")}</span>
+                        <CreditCard size={18} className="text-green-300"/>
                       </div>
                       <p className="text-lg font-mono font-bold tracking-wider mb-1">{maskAccount(user.bankAccount || "")}</p>
-                      <p className="text-sm text-green-200 font-medium">{user.bankName}</p>
+                      <p className="text-sm text-gray-300 font-medium">{user.bankName}</p>
                       {user.bankAccountTitle && (
-                        <p className="text-xs text-green-300 mt-1">{user.bankAccountTitle}</p>
+                        <p className="text-xs text-gray-400 mt-1">{user.bankAccountTitle}</p>
                       )}
                       <div className="mt-3 pt-3 border-t border-white/15 flex items-center justify-between">
-                        <span className="text-[10px] text-green-300">{T("accountTitle")}</span>
+                        <span className="text-[10px] text-gray-400">{T("accountTitle")}</span>
                         <span className="text-[10px] bg-white/15 text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
                           <CheckCircle size={9}/> {T("activeVerified")}
                         </span>
@@ -599,7 +602,7 @@ export default function Profile() {
                     <p className="text-sm font-bold text-gray-600">{T("noWithdrawalAccount")}</p>
                     <p className="text-xs text-gray-400 mt-1">{T("addVehicleInfo")}</p>
                     <button onClick={() => startEdit("bank")}
-                      className="mt-3 px-5 py-2 bg-green-50 text-green-600 font-bold rounded-xl text-sm active:bg-green-100 transition-colors">
+                      className="mt-3 px-5 py-2 bg-gray-100 text-gray-900 font-bold rounded-xl text-sm active:bg-gray-200 transition-colors">
                       + {T("addAccount")}
                     </button>
                   </div>
@@ -609,8 +612,7 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* ══ SETTINGS GROUP ══ */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.7s_ease-out]">
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.7s_ease-out]">
           <div className="px-5 py-3.5">
             <p className="font-bold text-gray-900 text-[15px] flex items-center gap-2"><Settings size={15} className="text-gray-500"/> {T("settingsLabel")}</p>
           </div>
@@ -625,12 +627,12 @@ export default function Profile() {
               <div className="flex bg-gray-100 rounded-xl p-0.5 gap-0.5">
                 <button
                   onClick={() => setLanguage("en")}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${language === "en" ? "bg-white text-green-700 shadow-sm" : "text-gray-500"}`}>
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${language === "en" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}>
                   EN
                 </button>
                 <button
                   onClick={() => setLanguage("ur")}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${language === "ur" ? "bg-white text-green-700 shadow-sm" : "text-gray-500"}`}>
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${language === "ur" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}>
                   اردو
                 </button>
               </div>
@@ -671,15 +673,14 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* ══ PAYOUT POLICY (COLLAPSIBLE) ══ */}
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl overflow-hidden animate-[slideUp_0.75s_ease-out]">
+        <div className="bg-gray-900 rounded-3xl overflow-hidden animate-[slideUp_0.75s_ease-out]">
           <button
             onClick={() => setPayoutOpen(!payoutOpen)}
-            className="w-full px-5 py-4 flex items-center justify-between active:bg-green-100/30 transition-colors">
-            <p className="font-bold text-green-800 text-[15px] flex items-center gap-2">
-              <Info size={15}/> {T("payoutPolicyLabel")}
+            className="w-full px-5 py-4 flex items-center justify-between active:bg-gray-800 transition-colors">
+            <p className="font-bold text-white text-[15px] flex items-center gap-2">
+              <Info size={15} className="text-white/50"/> {T("payoutPolicyLabel")}
             </p>
-            <ChevronDown size={18} className={`text-green-600 transition-transform duration-300 ${payoutOpen ? "rotate-180" : ""}`}/>
+            <ChevronDown size={18} className={`text-white/50 transition-transform duration-300 ${payoutOpen ? "rotate-180" : ""}`}/>
           </button>
           <div className={`overflow-hidden transition-all duration-300 ${payoutOpen ? "max-h-60 opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="px-5 pb-4 space-y-2.5">
@@ -689,8 +690,8 @@ export default function Profile() {
                 { icon: <Clock size={13}/>,       text: T("payoutProcessingTime") },
                 { icon: <Lock size={13}/>,        text: T("payoutVerificationReq") },
               ].map((p, i) => (
-                <div key={i} className="flex gap-2.5 items-start text-xs text-green-700">
-                  <span className="text-green-500 mt-0.5">{p.icon}</span>
+                <div key={i} className="flex gap-2.5 items-start text-xs text-white/60">
+                  <span className="text-green-400 mt-0.5">{p.icon}</span>
                   <span className="font-medium">{p.text}</span>
                 </div>
               ))}
@@ -698,9 +699,8 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* ══ LOGOUT ══ */}
         <button onClick={handleLogout}
-          className={`w-full h-12 font-bold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
+          className={`w-full h-12 font-bold rounded-3xl text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
             logoutConfirm
               ? "bg-red-600 text-white shadow-md active:bg-red-700"
               : "border-2 border-red-200 text-red-500 active:bg-red-50"
@@ -709,11 +709,10 @@ export default function Profile() {
           {logoutConfirm ? T("tapAgainLogout") : T("logoutFromDevice")}
         </button>
 
-        {/* ══ FOOTER ══ */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <div className="bg-white rounded-3xl border border-gray-100 p-5 space-y-3">
           <p className="text-center text-xs text-gray-500 leading-relaxed font-medium">
             {config.platform.appName} {T("riderPortal")} · {T("contactSupport")}:{" "}
-            <a href={`tel:${config.platform.supportPhone}`} className="text-green-600 font-semibold">{config.platform.supportPhone}</a>
+            <a href={`tel:${config.platform.supportPhone}`} className="text-gray-900 font-semibold">{config.platform.supportPhone}</a>
           </p>
           {config.platform.supportHours && (
             <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1"><Clock size={11}/> {config.platform.supportHours}</p>
@@ -721,7 +720,7 @@ export default function Profile() {
           {config.platform.supportEmail && (
             <p className="text-xs text-gray-500 text-center flex items-center justify-center gap-1">
               <Mail size={11}/>
-              <a href={`mailto:${config.platform.supportEmail}`} className="text-green-600 hover:text-green-800">{config.platform.supportEmail}</a>
+              <a href={`mailto:${config.platform.supportEmail}`} className="text-gray-900 hover:text-gray-700">{config.platform.supportEmail}</a>
             </p>
           )}
           {(config.platform.socialFacebook || config.platform.socialInstagram) && (
@@ -742,48 +741,33 @@ export default function Profile() {
             <div className="flex flex-wrap gap-x-3 gap-y-1.5 justify-center pt-1">
               {config.content.tncUrl && (
                 <a href={config.content.tncUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-green-600 underline underline-offset-2 flex items-center gap-0.5"><FileText size={10}/> {T("termsConditions")}</a>
+                  className="text-[11px] text-gray-600 underline underline-offset-2 flex items-center gap-0.5"><FileText size={10}/> {T("termsConditions")}</a>
               )}
               {config.content.privacyUrl && (
                 <a href={config.content.privacyUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-green-600 underline underline-offset-2 flex items-center gap-0.5"><Lock size={10}/> {T("privacyPolicy")}</a>
+                  className="text-[11px] text-gray-600 underline underline-offset-2 flex items-center gap-0.5"><Lock size={10}/> {T("privacyPolicy")}</a>
               )}
               {config.content.refundPolicyUrl && (
                 <a href={config.content.refundPolicyUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-green-600 underline underline-offset-2 flex items-center gap-0.5"><RefreshCcw size={10}/> {T("refundPolicy")}</a>
+                  className="text-[11px] text-gray-600 underline underline-offset-2 flex items-center gap-0.5"><RefreshCcw size={10}/> {T("refundPolicy")}</a>
               )}
               {config.content.faqUrl && (
                 <a href={config.content.faqUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-green-600 underline underline-offset-2 flex items-center gap-0.5"><HelpCircle size={10}/> {T("faqLabel")}</a>
+                  className="text-[11px] text-gray-600 underline underline-offset-2 flex items-center gap-0.5"><HelpCircle size={10}/> {T("faqLabel")}</a>
               )}
               {config.content.aboutUrl && (
                 <a href={config.content.aboutUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-green-600 underline underline-offset-2 flex items-center gap-0.5"><Info size={10}/> {T("aboutLabel")}</a>
+                  className="text-[11px] text-gray-600 underline underline-offset-2 flex items-center gap-0.5"><Info size={10}/> {T("aboutLabel")}</a>
               )}
               {config.features.chat && (
                 <a href={`https://wa.me/${config.platform.supportPhone.replace(/^0/, "92")}`} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-green-600 underline underline-offset-2 flex items-center gap-0.5"><MessageCircle size={10}/> {T("liveChatLabel")}</a>
+                  className="text-[11px] text-gray-600 underline underline-offset-2 flex items-center gap-0.5"><MessageCircle size={10}/> {T("liveChatLabel")}</a>
               )}
             </div>
           )}
         </div>
 
       </div>
-
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

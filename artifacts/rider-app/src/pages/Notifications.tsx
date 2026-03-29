@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -17,36 +17,34 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonNotifications() {
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-        </div>
+    <div className="min-h-screen bg-[#F5F6F8] pb-24">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative flex items-center justify-between mb-4">
           <div className="space-y-2">
-            <SkeletonBlock className="h-7 w-36 !bg-white/20" />
+            <SkeletonBlock className="h-7 w-36 !bg-white/10" />
             <SkeletonBlock className="h-4 w-28 !bg-white/10" />
           </div>
           <div className="flex gap-2">
-            <SkeletonBlock className="w-10 h-10 rounded-xl !bg-white/15" />
-            <SkeletonBlock className="w-24 h-10 rounded-xl !bg-white/15" />
+            <SkeletonBlock className="w-10 h-10 rounded-xl !bg-white/[0.06]" />
+            <SkeletonBlock className="w-24 h-10 rounded-xl !bg-white/[0.06]" />
           </div>
         </div>
         <div className="relative grid grid-cols-4 gap-2.5 mt-3">
           {[1,2,3,4].map(i => (
-            <SkeletonBlock key={i} className="h-20 rounded-2xl !bg-white/10" />
+            <SkeletonBlock key={i} className="h-20 rounded-2xl !bg-white/[0.06]" />
           ))}
         </div>
       </div>
       <div className="px-4 py-4 space-y-3">
         <div className="flex gap-2">
           {[1,2,3,4,5].map(i => (
-            <SkeletonBlock key={i} className="h-10 w-24 flex-shrink-0 rounded-xl" />
+            <SkeletonBlock key={i} className="h-10 w-24 flex-shrink-0 rounded-full" />
           ))}
         </div>
         {[1,2,3,4,5].map(i => (
-          <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 animate-pulse">
+          <div key={i} className="bg-white rounded-3xl border border-gray-100 p-4 animate-pulse">
             <div className="flex gap-3">
               <div className="w-12 h-12 bg-gray-100 rounded-xl flex-shrink-0"/>
               <div className="flex-1 space-y-2">
@@ -127,10 +125,10 @@ const FILTER_TABS: FilterTab[] = [
 ];
 
 const STAT_CONFIGS = [
-  { label: "Total",  key: "total",  color: "text-white",      icon: <Bell size={14} className="text-white/70"/> },
-  { label: "Orders", key: "order",  color: "text-blue-200",   icon: <Package size={14} className="text-blue-300"/> },
-  { label: "Wallet", key: "wallet", color: "text-green-200",  icon: <Wallet size={14} className="text-green-300"/> },
-  { label: "Rides",  key: "ride",   color: "text-purple-200", icon: <Bike size={14} className="text-purple-300"/> },
+  { label: "Total",  key: "total",  icon: <Bell size={14} className="text-white/50"/> },
+  { label: "Orders", key: "order",  icon: <Package size={14} className="text-blue-300"/> },
+  { label: "Wallet", key: "wallet", icon: <Wallet size={14} className="text-green-300"/> },
+  { label: "Rides",  key: "ride",   icon: <Bike size={14} className="text-purple-300"/> },
 ];
 
 export default function Notifications() {
@@ -140,6 +138,10 @@ export default function Notifications() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["rider-notifications"],
@@ -211,24 +213,22 @@ export default function Notifications() {
   if (isLoading) return <SkeletonNotifications />;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-[#F5F6F8] pb-24">
 
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-          <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-white rounded-full -translate-y-1/2"/>
-        </div>
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
+        <div className="absolute top-1/2 left-1/3 w-24 h-24 rounded-full bg-white/[0.015]"/>
 
         <div className="relative flex items-start justify-between mb-5">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-8 h-8 bg-white/15 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/10">
+              <div className="w-8 h-8 bg-white/[0.06] backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/[0.06]">
                 <Bell size={16} className="text-white"/>
               </div>
               <h1 className="text-2xl font-black text-white tracking-tight">{T("notificationsTitle")}</h1>
             </div>
-            <p className="text-green-200 text-sm font-medium flex items-center gap-2">
+            <p className="text-white/40 text-sm font-medium flex items-center gap-2">
               {unread > 0 ? (
                 <>
                   <span className="relative flex h-2.5 w-2.5">
@@ -244,12 +244,12 @@ export default function Notifications() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => refetch()}
-              className="h-10 w-10 bg-white/15 backdrop-blur-md text-white rounded-xl flex items-center justify-center border border-white/20 active:bg-white/25 transition-colors shadow-sm">
+              className="h-10 w-10 bg-white/[0.06] backdrop-blur-sm text-white rounded-xl flex items-center justify-center border border-white/[0.06] active:bg-white/10 transition-colors">
               <RefreshCw size={16}/>
             </button>
             {unread > 0 && (
               <button onClick={() => markAllMut.mutate()} disabled={markAllMut.isPending}
-                className="h-10 px-4 bg-white/15 backdrop-blur-md text-white text-sm font-bold rounded-xl flex items-center gap-1.5 border border-white/20 active:bg-white/25 transition-colors disabled:opacity-60 shadow-sm">
+                className="h-10 px-4 bg-white/[0.06] backdrop-blur-sm text-white text-sm font-bold rounded-xl flex items-center gap-1.5 border border-white/[0.06] active:bg-white/10 transition-colors disabled:opacity-60">
                 <CheckCheck size={15}/> {T("readAll")}
               </button>
             )}
@@ -260,11 +260,11 @@ export default function Notifications() {
           <div className="relative grid grid-cols-4 gap-2.5">
             {STAT_CONFIGS.map((s, i) => (
               <div key={s.key}
-                className="bg-white/10 backdrop-blur-md rounded-2xl p-3 text-center border border-white/10 shadow-sm"
+                className="bg-white/[0.06] backdrop-blur-sm rounded-2xl p-3 text-center border border-white/[0.06]"
                 style={{ animationDelay: `${i * 80}ms`, animation: "slideUp 0.4s ease-out both" }}>
                 <div className="flex justify-center mb-1.5">{s.icon}</div>
-                <p className={`text-xl font-black ${s.color}`}>{statValues[s.key]}</p>
-                <p className="text-[9px] text-green-200/80 mt-0.5 font-bold uppercase tracking-wider">{s.label}</p>
+                <p className="text-xl font-black text-white">{statValues[s.key]}</p>
+                <p className="text-[9px] text-white/30 mt-0.5 font-bold uppercase tracking-wider">{s.label}</p>
               </div>
             ))}
           </div>
@@ -276,15 +276,15 @@ export default function Notifications() {
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
           {FILTER_TABS.map(tab => (
             <button key={tab.key} onClick={() => setFilter(tab.key)}
-              className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 border-2 ${
+              className={`flex-shrink-0 px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-200 flex items-center gap-2 ${
                 filter === tab.key
-                  ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white border-green-600 shadow-lg shadow-green-200"
-                  : "bg-white text-gray-500 border-gray-100 active:bg-gray-50 hover:border-gray-200"
+                  ? "bg-gray-900 text-white shadow-sm"
+                  : "bg-white text-gray-500 border border-gray-200 active:bg-gray-50"
               }`}>
               {tab.icon} {tab.label}
               {filterCounts[tab.key] > 0 && (
                 <span className={`text-[9px] font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${
-                  filter === tab.key ? "bg-white/25 text-white" : "bg-red-500 text-white shadow-sm"
+                  filter === tab.key ? "bg-white/20 text-white" : "bg-red-500 text-white shadow-sm"
                 }`}>
                   {filterCounts[tab.key]}
                 </span>
@@ -294,7 +294,7 @@ export default function Notifications() {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 px-4 py-20 text-center animate-[fadeIn_0.4s_ease-out]">
+          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 px-4 py-20 text-center animate-[fadeIn_0.4s_ease-out]">
             <div className="w-24 h-24 bg-gradient-to-br from-gray-50 to-gray-100 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner border border-gray-200/50">
               <Inbox size={44} className="text-gray-300"/>
             </div>
@@ -306,7 +306,7 @@ export default function Notifications() {
             </p>
             {filter !== "all" && (
               <button onClick={() => setFilter("all")}
-                className="mt-5 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto active:scale-[0.97] transition-transform shadow-md shadow-green-200">
+                className="mt-5 bg-gray-900 text-white px-6 py-3 rounded-full text-sm font-bold flex items-center gap-2 mx-auto active:scale-[0.97] transition-transform shadow-sm">
                 <Eye size={14}/> View All Notifications
               </button>
             )}
@@ -329,7 +329,7 @@ export default function Notifications() {
                     const dest = navTarget(n.type);
                     return (
                       <div key={n.id}
-                        className={`bg-white rounded-2xl border overflow-hidden transition-all duration-300 ${
+                        className={`bg-white rounded-3xl border overflow-hidden transition-all duration-300 ${
                           !n.isRead
                             ? "border-l-4 border-l-green-500 border-r border-t border-b border-r-gray-100 border-t-gray-100 border-b-gray-100 shadow-lg shadow-green-100/50"
                             : "border-gray-100 shadow-sm"
@@ -374,7 +374,7 @@ export default function Notifications() {
                               {dest && (
                                 <button
                                   onClick={() => navigate(dest)}
-                                  className="text-[10px] text-green-600 font-bold flex items-center gap-0.5 bg-green-50 px-2.5 py-1 rounded-full active:bg-green-100 transition-colors border border-green-100"
+                                  className="text-[10px] text-gray-900 font-bold flex items-center gap-0.5 bg-gray-100 px-2.5 py-1 rounded-full active:bg-gray-200 transition-colors border border-gray-200"
                                 >
                                   View <ChevronRight size={10}/>
                                 </button>

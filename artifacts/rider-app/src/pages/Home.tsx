@@ -70,27 +70,25 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonHome() {
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-24 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
-        </div>
+    <div className="flex flex-col min-h-screen bg-[#F5F6F8] pb-24">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative flex items-center justify-between mb-6">
           <div className="space-y-2">
-            <SkeletonBlock className="h-3 w-28 !bg-white/20" />
-            <SkeletonBlock className="h-6 w-36 !bg-white/20" />
+            <SkeletonBlock className="h-3 w-28 !bg-white/10" />
+            <SkeletonBlock className="h-6 w-36 !bg-white/10" />
           </div>
-          <SkeletonBlock className="h-10 w-24 rounded-2xl !bg-white/20" />
+          <SkeletonBlock className="h-10 w-24 rounded-2xl !bg-white/10" />
         </div>
-        <SkeletonBlock className="h-20 w-full rounded-2xl !bg-white/15" />
+        <SkeletonBlock className="h-20 w-full rounded-2xl !bg-white/[0.06]" />
+        <div className="grid grid-cols-4 gap-2 mt-4">
+          {[1,2,3,4].map(i => <SkeletonBlock key={i} className="h-[72px] rounded-2xl !bg-white/[0.06]" />)}
+        </div>
       </div>
-      <div className="px-4 -mt-12 space-y-3">
-        <div className="grid grid-cols-4 gap-2">
-          {[1,2,3,4].map(i => <SkeletonBlock key={i} className="h-[88px] rounded-2xl" />)}
-        </div>
-        <SkeletonBlock className="h-14 rounded-2xl" />
-        <SkeletonBlock className="h-48 rounded-2xl" />
+      <div className="px-4 pt-4 space-y-3">
+        <SkeletonBlock className="h-14 rounded-3xl" />
+        <SkeletonBlock className="h-48 rounded-3xl" />
       </div>
     </div>
   );
@@ -109,6 +107,10 @@ export default function Home() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const prevIdsRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -292,29 +294,27 @@ export default function Home() {
   })();
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 pb-24 animate-[fadeIn_0.3s_ease-out]">
+    <div className="flex flex-col min-h-screen bg-[#F5F6F8] pb-24 animate-[fadeIn_0.3s_ease-out]">
 
       {newFlash && (
         <div className="fixed inset-0 z-50 pointer-events-none">
           <div className="absolute inset-0 border-[6px] border-green-400 rounded-none animate-ping opacity-50"/>
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-extrabold text-sm px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-bounce">
-            <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse"/>
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white font-extrabold text-sm px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-bounce">
+            <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"/>
             New Request Available!
           </div>
         </div>
       )}
 
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 text-white px-5 pt-11 pb-28 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute -top-10 -right-10 w-56 h-56 bg-white rounded-full"/>
-          <div className="absolute bottom-4 -left-8 w-36 h-36 bg-white rounded-full"/>
-          <div className="absolute top-1/2 right-1/3 w-20 h-20 bg-white rounded-full"/>
-        </div>
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 text-white px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
+        <div className="absolute top-1/2 right-1/4 w-32 h-32 rounded-full bg-white/[0.015]"/>
 
         <div className="relative">
           <div className="flex items-start justify-between mb-5">
             <div>
-              <p className="text-green-200/80 text-[11px] font-semibold tracking-wide flex items-center gap-1.5 mb-1">
+              <p className="text-white/40 text-[11px] font-semibold tracking-widest uppercase flex items-center gap-1.5 mb-1">
                 <Clock size={11}/> <LiveClock/> · AJKMart Rider
               </p>
               <h1 className="text-[22px] font-extrabold tracking-tight leading-tight">
@@ -322,65 +322,65 @@ export default function Home() {
               </h1>
             </div>
             <Link href="/wallet" className="flex flex-col items-end">
-              <div className="bg-white/15 backdrop-blur-sm border border-white/20 rounded-2xl px-3.5 py-2 text-right">
-                <p className="text-green-200/70 text-[9px] font-bold uppercase tracking-wider">{T("wallet")}</p>
+              <div className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-2xl px-3.5 py-2 text-right">
+                <p className="text-white/40 text-[9px] font-bold uppercase tracking-wider">{T("wallet")}</p>
                 <p className="font-extrabold text-lg leading-tight">{formatCurrency(Number(user?.walletBalance) || 0)}</p>
               </div>
             </Link>
           </div>
 
-          <div className={`rounded-2xl p-4 transition-all duration-300 border backdrop-blur-sm ${user?.isOnline ? "bg-white/15 border-green-300/40 shadow-lg shadow-green-900/20" : "bg-white/10 border-white/10"}`}>
+          <div className={`rounded-2xl p-4 transition-all duration-300 border backdrop-blur-sm ${user?.isOnline ? "bg-white/[0.08] border-green-500/20" : "bg-white/[0.04] border-white/[0.06]"}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${user?.isOnline ? "bg-green-400/20" : "bg-white/10"}`}>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${user?.isOnline ? "bg-green-500/15" : "bg-white/[0.06]"}`}>
                   {user?.isOnline
-                    ? <Zap size={22} className="text-green-300"/>
-                    : <Wifi size={22} className="text-white/50"/>
+                    ? <Zap size={22} className="text-green-400"/>
+                    : <Wifi size={22} className="text-white/40"/>
                   }
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2.5 h-2.5 rounded-full ${user?.isOnline ? "bg-green-300 animate-pulse shadow-lg shadow-green-400/50" : "bg-gray-400"}`} />
+                    <div className={`w-2.5 h-2.5 rounded-full ${user?.isOnline ? "bg-green-400 animate-pulse shadow-lg shadow-green-400/50" : "bg-gray-500"}`} />
                     <p className="font-extrabold text-lg tracking-tight">{user?.isOnline ? T("online") : T("offline")}</p>
                   </div>
-                  <p className="text-green-100/70 text-xs mt-0.5">
+                  <p className="text-white/40 text-xs mt-0.5">
                     {user?.isOnline ? T("acceptingOrders") : T("tapToStart")}
                   </p>
                 </div>
               </div>
               <button onClick={toggleOnline} disabled={toggling}
-                className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-400 shadow-green-500/30" : "bg-white/25"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
+                className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-500 shadow-green-500/30" : "bg-white/20"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
                 <div className={`w-[24px] h-[24px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[29px]" : "left-[3px]"}`} />
               </button>
             </div>
           </div>
+
+          <div className="grid grid-cols-4 gap-2 mt-4">
+            {[
+              { icon: <Package size={15} className="text-indigo-300"/>, label: "Today",  value: String(user?.stats?.deliveriesToday || 0), sub: "deliveries" },
+              { icon: <TrendingUp size={15} className="text-green-300"/>, label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0), sub: "today" },
+              { icon: <Calendar size={15} className="text-blue-300"/>, label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0), sub: "earnings" },
+              { icon: <Trophy size={15} className="text-amber-300"/>, label: "Total",  value: String(user?.stats?.totalDeliveries || 0), sub: "lifetime" },
+            ].map((s, i) => (
+              <div key={s.label} className="bg-white/[0.06] backdrop-blur-sm rounded-2xl p-2.5 text-center border border-white/[0.06] animate-[slideUp_0.3s_ease-out]"
+                style={{ animationDelay: `${i * 60}ms`, animationFillMode: "both" }}>
+                <div className="flex justify-center mb-1.5">
+                  <div className="w-7 h-7 rounded-xl bg-white/[0.06] flex items-center justify-center">
+                    {s.icon}
+                  </div>
+                </div>
+                <p className="text-[13px] font-extrabold leading-tight text-white">{s.value}</p>
+                <p className="text-[9px] text-white/30 mt-0.5 font-semibold uppercase tracking-wider">{s.sub}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="px-4 -mt-14 space-y-3 relative z-10">
-
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            { icon: <Package size={16} className="text-indigo-500"/>, label: "Today",  value: String(user?.stats?.deliveriesToday || 0), sub: "deliveries", bg: "bg-indigo-50", border: "border-indigo-200/60", accent: "text-indigo-600" },
-            { icon: <TrendingUp size={16} className="text-green-600"/>, label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0), sub: "today", bg: "bg-green-50", border: "border-green-200/60", accent: "text-green-700" },
-            { icon: <Calendar size={16} className="text-blue-500"/>, label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0), sub: "earnings", bg: "bg-blue-50", border: "border-blue-200/60", accent: "text-blue-600" },
-            { icon: <Trophy size={16} className="text-amber-500"/>, label: "Total",  value: String(user?.stats?.totalDeliveries || 0), sub: "lifetime", bg: "bg-amber-50", border: "border-amber-200/60", accent: "text-amber-600" },
-          ].map((s, i) => (
-            <div key={s.label} className={`${s.bg} rounded-2xl p-2.5 text-center border ${s.border} shadow-sm animate-[slideUp_0.3s_ease-out] hover:shadow-md transition-shadow`}
-              style={{ animationDelay: `${i * 60}ms`, animationFillMode: "both" }}>
-              <div className="flex justify-center mb-1.5">
-                <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center`}>
-                  {s.icon}
-                </div>
-              </div>
-              <p className={`text-[13px] font-extrabold leading-tight ${s.accent}`}>{s.value}</p>
-              <p className="text-[9px] text-gray-400 mt-0.5 font-semibold uppercase tracking-wider">{s.sub}</p>
-            </div>
-          ))}
-        </div>
+      <div className="px-4 pt-4 space-y-3 relative z-10">
 
         {gpsWarning && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-sm animate-[slideUp_0.2s_ease-out]">
+          <div className="bg-amber-50 border border-amber-200 rounded-3xl px-4 py-3 flex items-start gap-3 shadow-sm animate-[slideUp_0.2s_ease-out]">
             <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
               <AlertTriangle size={16} className="text-amber-500"/>
             </div>
@@ -390,7 +390,7 @@ export default function Home() {
         )}
 
         {config.content.riderNotice && (
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-sm">
+          <div className="bg-blue-50 border border-blue-200 rounded-3xl px-4 py-3 flex items-start gap-3 shadow-sm">
             <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
               <Pin size={14} className="text-blue-500"/>
             </div>
@@ -405,7 +405,7 @@ export default function Home() {
           const shortfall = minBal - curBal;
           return (
             <Link href="/wallet">
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-2xl px-4 py-3.5 flex items-start gap-3 cursor-pointer active:scale-[0.98] transition-transform shadow-sm">
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-3xl px-4 py-3.5 flex items-start gap-3 cursor-pointer active:scale-[0.98] transition-transform shadow-sm">
                 <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center flex-shrink-0">
                   <AlertTriangle size={18} className="text-amber-500" />
                 </div>
@@ -429,7 +429,7 @@ export default function Home() {
           <>
             {hasActiveTask && (
               <Link href="/active"
-                className="block bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-400 rounded-2xl px-4 py-3.5 shadow-sm active:scale-[0.98] transition-transform animate-[slideUp_0.3s_ease-out]">
+                className="block bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-400 rounded-3xl px-4 py-3.5 shadow-sm active:scale-[0.98] transition-transform animate-[slideUp_0.3s_ease-out]">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center flex-shrink-0">
                     <div className="w-3 h-3 bg-amber-500 rounded-full animate-pulse" />
@@ -451,8 +451,8 @@ export default function Home() {
               </Link>
             )}
 
-            <div className={`rounded-2xl shadow-sm overflow-hidden transition-all ${newFlash ? "ring-4 ring-green-400 ring-offset-2" : ""}`}>
-              <div className={`px-4 py-3.5 flex items-center justify-between ${totalRequests > 0 ? "bg-gradient-to-r from-orange-500 via-orange-500 to-amber-500" : "bg-gradient-to-r from-gray-700 to-gray-600"}`}>
+            <div className={`rounded-3xl shadow-sm overflow-hidden transition-all ${newFlash ? "ring-4 ring-green-400 ring-offset-2" : ""}`}>
+              <div className={`px-4 py-3.5 flex items-center justify-between ${totalRequests > 0 ? "bg-gradient-to-r from-orange-500 via-orange-500 to-amber-500" : "bg-gray-900"}`}>
                 <div className="flex items-center gap-2.5">
                   {totalRequests > 0 ? (
                     <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
@@ -491,7 +491,7 @@ export default function Home() {
                   <p className="text-gray-400 text-xs mt-1.5">{T("autoRefreshes")}</p>
                   {dismissed.size > 0 && (
                     <button onClick={() => setDismissed(new Set())}
-                      className="mt-4 text-xs text-green-600 font-bold bg-green-50 border border-green-200 px-4 py-2 rounded-xl inline-flex items-center gap-1.5 hover:bg-green-100 transition-colors">
+                      className="mt-4 text-xs text-gray-900 font-bold bg-gray-100 border border-gray-200 px-4 py-2 rounded-full inline-flex items-center gap-1.5 hover:bg-gray-200 transition-colors">
                       <Eye size={12}/> Show {dismissed.size} hidden request{dismissed.size > 1 ? "s" : ""}
                     </button>
                   )}
@@ -552,7 +552,7 @@ export default function Home() {
                         </button>
                         <button onClick={() => acceptOrderMut.mutate(o.id)}
                           disabled={acceptOrderMut.isPending || acceptRideMut.isPending}
-                          className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm shadow-green-600/20">
+                          className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
                           <CheckCircle size={15}/>
                           {acceptOrderMut.isPending ? T("accepting") : T("acceptOrder")}
                         </button>
@@ -647,7 +647,7 @@ export default function Home() {
                             </button>
                             <button onClick={() => acceptRideMut.mutate(r.id)}
                               disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
-                              className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm shadow-green-600/20">
+                              className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
                               <CheckCircle size={15}/>
                               {acceptRideMut.isPending ? T("accepting") : T("acceptRide")}
                             </button>
@@ -686,7 +686,7 @@ export default function Home() {
                                   </button>
                                   <button onClick={() => acceptRideMut.mutate(r.id)}
                                     disabled={acceptRideMut.isPending}
-                                    className="bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-2 rounded-xl text-sm disabled:opacity-60 flex items-center gap-1 transition-colors">
+                                    className="bg-gray-900 hover:bg-gray-800 text-white font-bold px-3.5 py-2 rounded-xl text-sm disabled:opacity-60 flex items-center gap-1 transition-colors">
                                     <CheckCircle size={13}/> Accept
                                   </button>
                                 </div>
@@ -730,7 +730,7 @@ export default function Home() {
                                 </button>
                                 <button onClick={() => acceptRideMut.mutate(r.id)}
                                   disabled={acceptRideMut.isPending || acceptOrderMut.isPending}
-                                  className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-sm shadow-green-600/20 active:scale-[0.98] transition-all">
+                                  className="flex-1 bg-gray-900 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] transition-all">
                                   <CheckCircle size={14}/>
                                   Accept
                                 </button>
@@ -747,14 +747,14 @@ export default function Home() {
             </div>
           </>
         ) : (
-          <div className="bg-white rounded-2xl shadow-sm p-10 text-center border border-gray-100 animate-[slideUp_0.3s_ease-out]">
+          <div className="bg-white rounded-3xl shadow-sm p-10 text-center border border-gray-100 animate-[slideUp_0.3s_ease-out]">
             <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-4">
               <Wifi size={36} className="text-gray-300"/>
             </div>
             <p className="text-gray-700 font-extrabold text-lg tracking-tight">You are Offline</p>
             <p className="text-gray-400 text-sm mt-1.5">Toggle the switch above to start accepting orders</p>
             <button onClick={toggleOnline} disabled={toggling}
-              className="mt-5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-sm shadow-green-600/20 hover:from-green-700 hover:to-emerald-700 transition-all active:scale-[0.98] disabled:opacity-60 inline-flex items-center gap-2">
+              className="mt-5 bg-gray-900 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-sm hover:bg-gray-800 transition-all active:scale-[0.98] disabled:opacity-60 inline-flex items-center gap-2">
               <Zap size={16}/> Go Online
             </button>
           </div>

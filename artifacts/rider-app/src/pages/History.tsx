@@ -77,43 +77,40 @@ export default function History() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
-        </div>
+    <div className="min-h-screen bg-[#F5F6F8]">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
+        <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative">
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("history")}</h1>
-          <p className="text-green-200 text-sm mt-0.5 flex items-center gap-1.5">
-            <Calendar size={13}/> {raw.length} {T("totalRecords")}
+          <p className="text-white/40 text-xs font-semibold tracking-widest uppercase mb-1">
+            <Calendar size={11} className="inline mr-1"/> {raw.length} {T("totalRecords")}
           </p>
+          <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("history")}</h1>
+
+          {!isLoading && (
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl p-3 text-center border border-white/[0.06]">
+                <p className="text-lg font-extrabold text-white">{formatCurrency(totalEarnings)}</p>
+                <p className="text-[9px] text-white/30 font-semibold mt-0.5 uppercase tracking-wider">{T("earnings")}</p>
+              </div>
+              <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl p-3 text-center border border-white/[0.06]">
+                <p className="text-lg font-extrabold text-white">{completedItems.length}</p>
+                <p className="text-[9px] text-white/30 font-semibold mt-0.5 uppercase tracking-wider">{T("completed")}</p>
+              </div>
+              <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl p-3 text-center border border-white/[0.06]">
+                <p className="text-lg font-extrabold text-red-400">{cancelledItems.length}</p>
+                <p className="text-[9px] text-white/30 font-semibold mt-0.5 uppercase tracking-wider">{T("cancelled")}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {!isLoading && (
-        <div className="px-4 -mt-3 mb-0">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 grid grid-cols-3 gap-3">
-            <div className="text-center">
-              <p className="text-lg font-extrabold text-green-600">{formatCurrency(totalEarnings)}</p>
-              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{T("earnings")}</p>
-            </div>
-            <div className="text-center border-x border-gray-100">
-              <p className="text-lg font-extrabold text-blue-600">{completedItems.length}</p>
-              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{T("completed")}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-extrabold text-red-500">{cancelledItems.length}</p>
-              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{T("cancelled")}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="px-4 pt-4 space-y-3 sticky top-0 bg-gray-50 pb-2 z-10">
-        <div className="flex bg-white rounded-xl p-1 shadow-sm gap-1 border border-gray-100">
+      <div className="px-4 pt-4 space-y-3 sticky top-0 bg-[#F5F6F8] pb-2 z-10">
+        <div className="flex bg-white rounded-full p-1 shadow-sm gap-1 border border-gray-100">
           {PERIOD_TABS.map(tab => (
             <button key={tab.key} onClick={() => setPeriod(tab.key)}
-              className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all ${period === tab.key ? "bg-green-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex-1 py-2.5 text-xs font-bold rounded-full transition-all ${period === tab.key ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
               {tab.label}
             </button>
           ))}
@@ -121,7 +118,7 @@ export default function History() {
         <div className="flex gap-2">
           {KIND_TABS.map(tab => (
             <button key={tab.key} onClick={() => setKind(tab.key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${kind === tab.key ? "bg-green-600 text-white border-green-600 shadow-sm" : "bg-white text-gray-500 border-gray-200"}`}>
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all ${kind === tab.key ? "bg-gray-900 text-white shadow-sm" : "bg-white text-gray-500 border border-gray-200"}`}>
               {tab.icon} {tab.label}
             </button>
           ))}
@@ -130,10 +127,10 @@ export default function History() {
 
       <div className="px-4 py-3 space-y-3 pb-24">
         {isLoading ? (
-          [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-2xl animate-pulse border border-gray-100"/>)
+          [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-3xl animate-pulse border border-gray-100"/>)
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
-            <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <div className="w-16 h-16 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-3">
               <ClipboardList size={32} className="text-gray-300"/>
             </div>
             <p className="font-bold text-gray-700 text-base">{T("noRecordsFound")}</p>
@@ -146,7 +143,7 @@ export default function History() {
             const completed = item.status === "delivered" || item.status === "completed";
             const cancelled = item.status === "cancelled";
             return (
-              <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+              <div key={item.id} className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
                 <div className="p-4 flex items-center gap-3.5">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
                     <ItemIcon kind={item.kind} type={item.type}/>
