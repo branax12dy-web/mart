@@ -47,7 +47,6 @@ type PayMethod = {
 
 type DepositStep = "method" | "details" | "amount" | "confirm" | "done";
 
-/* ─── Transaction Item ─── */
 function TxItem({ tx }: { tx: any }) {
   const isPending  = tx.type === "deposit" && (!tx.reference || tx.reference === "pending");
   const isApproved = tx.type === "deposit" && tx.reference?.startsWith("approved:");
@@ -77,7 +76,7 @@ function TxItem({ tx }: { tx: any }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={ws.txDesc} numberOfLines={1}>{tx.description}</Text>
-        <Text style={ws.txDate}>{date} • {time}</Text>
+        <Text style={ws.txDate}>{date} · {time}</Text>
       </View>
       <View style={{ alignItems: "flex-end" }}>
         <Text style={[ws.txAmt, { color: amtColor }]}>
@@ -89,14 +88,12 @@ function TxItem({ tx }: { tx: any }) {
   );
 }
 
-/* ─── Method Icon ─── */
 function MethodIcon({ id, size = 24 }: { id: string; size?: number }) {
   const name = id === "jazzcash" ? "phone-portrait" : id === "easypaisa" ? "phone-portrait" : "business";
   const color = id === "jazzcash" ? "#E53E3E" : id === "easypaisa" ? "#38A169" : "#2B6CB0";
   return <Ionicons name={name as any} size={size} color={color} />;
 }
 
-/* ═══════════════════════════ DEPOSIT FLOW ═══════════════════════════════════ */
 function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSuccess: () => void; token: string | null }) {
   const [step, setStep]               = useState<DepositStep>("method");
   const [methods, setMethods]         = useState<PayMethod[]>([]);
@@ -186,72 +183,70 @@ function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSu
         <Pressable style={[ws.sheet, { maxHeight: "90%" }]} onPress={e => e.stopPropagation()}>
           <View style={ws.handle} />
 
-          {/* Step bar (hidden on done) */}
           {step !== "done" && stepIdx >= 0 && (
-            <View style={{ marginBottom: 16 }}>
+            <View style={{ marginBottom: 18 }}>
               <View style={{ flexDirection: "row", gap: 6 }}>
                 {STEPS.map((_, i) => (
-                  <View key={i} style={[ds.stepBar, i <= stepIdx && { backgroundColor: C.primary }]} />
+                  <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i <= stepIdx ? C.primary : "#E2E8F0" }} />
                 ))}
               </View>
-              <Text style={ds.stepTxt}>Step {stepIdx + 1}/{STEPS.length}</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, textAlign: "right", marginTop: 6 }}>Step {stepIdx + 1} of {STEPS.length}</Text>
             </View>
           )}
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {/* ── DONE ── */}
             {step === "done" && (
-              <View style={{ alignItems: "center", paddingVertical: 16 }}>
-                <View style={ds.doneIcon}>
-                  <Ionicons name="checkmark-circle" size={64} color={C.primary} />
+              <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#D1FAE5", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                  <Ionicons name="checkmark-circle" size={40} color={C.success} />
                 </View>
-                <Text style={ds.doneTitle}>Request Submitted!</Text>
-                <Text style={ds.doneSub}>Will be approved within 1-2 hours. Your wallet will be credited automatically.</Text>
-                <View style={ds.doneSummary}>
-                  <View style={ds.summaryRow}>
-                    <Text style={ds.summaryLbl}>Method</Text>
-                    <Text style={ds.summaryVal}>{selectedMethod?.label}</Text>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>Your wallet will be credited within 1-2 hours after verification.</Text>
+                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, width: "100%", marginTop: 20, gap: 10, borderWidth: 1, borderColor: C.border }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Method</Text>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: C.text }}>{selectedMethod?.label}</Text>
                   </View>
-                  <View style={ds.summaryRow}>
-                    <Text style={ds.summaryLbl}>Transaction ID</Text>
-                    <Text style={[ds.summaryVal, { fontFamily: "Inter_700Bold" }]}>{txId}</Text>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: C.text }}>{txId}</Text>
                   </View>
-                  <View style={[ds.summaryRow, { borderTopWidth: 1, borderTopColor: "#E2E8F0", paddingTop: 10, marginTop: 4 }]}>
-                    <Text style={ds.summaryLbl}>Amount</Text>
-                    <Text style={[ds.summaryVal, { fontSize: 22, color: C.primary }]}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                  <View style={{ height: 1, backgroundColor: C.border }} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Amount</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
                   </View>
                 </View>
-                <Pressable onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 8 }]}>
+                <Pressable onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]}>
                   <Text style={ws.actionBtnTxt}>Done</Text>
                 </Pressable>
               </View>
             )}
 
-            {/* ── METHOD STEP ── */}
             {step === "method" && (
               <View>
-                <Text style={ws.sheetTitle}>💳 Add Money</Text>
-                <Text style={ds.subLbl}>Choose your deposit method</Text>
+                <Text style={ws.sheetTitle}>Add Money</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, marginBottom: 18 }}>Choose your deposit method</Text>
                 {loadingMethods ? (
                   <ActivityIndicator color={C.primary} style={{ marginTop: 24 }} />
                 ) : methodsError ? (
-                  <View style={ds.errorBox}>
+                  <View style={{ backgroundColor: "#FEF2F2", borderRadius: 16, padding: 24, alignItems: "center", gap: 10, borderWidth: 1, borderColor: "#FEE2E2" }}>
                     <Ionicons name="alert-circle-outline" size={28} color={C.danger} />
-                    <Text style={ds.errorTitle}>Payment methods unavailable</Text>
-                    <Text style={ds.errorSub}>No manual payment methods are enabled by admin. Please contact support.</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.text }}>Methods Unavailable</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, textAlign: "center" }}>No payment methods are enabled. Contact support.</Text>
                   </View>
                 ) : (
-                  <View style={{ gap: 12 }}>
+                  <View style={{ gap: 10 }}>
                     {methods.map(m => (
-                      <Pressable key={m.id} onPress={() => selectMethod(m)} style={ds.methodCard}>
-                        <View style={ds.methodIcon}>
-                          <MethodIcon id={m.id} size={28} />
+                      <Pressable key={m.id} onPress={() => selectMethod(m)} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: "#fff" }}>
+                        <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+                          <MethodIcon id={m.id} size={26} />
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={ds.methodName}>{m.label}</Text>
-                          <Text style={ds.methodDesc}>{m.description || `Deposit via ${m.label}`}</Text>
-                          {m.manualNumber && <Text style={ds.methodNum}>{m.manualNumber}</Text>}
+                          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.text }}>{m.label}</Text>
+                          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 }}>{m.description || `Deposit via ${m.label}`}</Text>
+                          {m.manualNumber && <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.primary, marginTop: 3 }}>{m.manualNumber}</Text>}
                         </View>
                         <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
                       </Pressable>
@@ -261,75 +256,70 @@ function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSu
               </View>
             )}
 
-            {/* ── DETAILS STEP ── */}
             {step === "details" && selectedMethod && (
               <View>
-                <Text style={ws.sheetTitle}>{selectedMethod.label} Details</Text>
-                <Text style={ds.subLbl}>Make payment to the account below:</Text>
+                <Text style={ws.sheetTitle}>{selectedMethod.label}</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, marginBottom: 18 }}>Send payment to the account below</Text>
 
-                <View style={ds.detailBox}>
+                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 4, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
                   {selectedMethod.manualNumber && (
-                    <Pressable onPress={() => copyToClipboard(selectedMethod.manualNumber!)} style={ds.detailRow}>
+                    <Pressable onPress={() => copyToClipboard(selectedMethod.manualNumber!)} style={{ flexDirection: "row", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }}>
                       <View style={{ flex: 1 }}>
-                        <Text style={ds.detailLbl}>Account Number</Text>
-                        <Text style={ds.detailVal}>{selectedMethod.manualNumber}</Text>
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Account Number</Text>
+                        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, marginTop: 2 }}>{selectedMethod.manualNumber}</Text>
                       </View>
                       <Ionicons name="copy-outline" size={18} color={C.primary} />
                     </Pressable>
                   )}
                   {selectedMethod.manualName && (
-                    <View style={ds.detailRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={ds.detailLbl}>Account Title</Text>
-                        <Text style={ds.detailVal}>{selectedMethod.manualName}</Text>
-                      </View>
+                    <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Account Title</Text>
+                      <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: C.text, marginTop: 2 }}>{selectedMethod.manualName}</Text>
                     </View>
                   )}
                   {selectedMethod.iban && (
-                    <Pressable onPress={() => copyToClipboard(selectedMethod.iban!)} style={ds.detailRow}>
+                    <Pressable onPress={() => copyToClipboard(selectedMethod.iban!)} style={{ flexDirection: "row", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }}>
                       <View style={{ flex: 1 }}>
-                        <Text style={ds.detailLbl}>IBAN</Text>
-                        <Text style={[ds.detailVal, { fontSize: 12 }]}>{selectedMethod.iban}</Text>
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>IBAN</Text>
+                        <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: C.text, marginTop: 2 }}>{selectedMethod.iban}</Text>
                       </View>
                       <Ionicons name="copy-outline" size={18} color={C.primary} />
                     </Pressable>
                   )}
                   {selectedMethod.bankName && (
-                    <View style={ds.detailRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={ds.detailLbl}>Bank</Text>
-                        <Text style={ds.detailVal}>{selectedMethod.bankName}</Text>
-                      </View>
+                    <View style={{ padding: 14, borderBottomWidth: selectedMethod.manualInstructions ? 1 : 0, borderBottomColor: C.border }}>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Bank</Text>
+                      <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: C.text, marginTop: 2 }}>{selectedMethod.bankName}</Text>
                     </View>
                   )}
                   {selectedMethod.manualInstructions && (
-                    <View style={[ds.detailRow, { borderBottomWidth: 0 }]}>
-                      <Text style={[ds.detailLbl, { color: C.textSecondary }]}>{selectedMethod.manualInstructions}</Text>
+                    <View style={{ padding: 14 }}>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textSecondary }}>{selectedMethod.manualInstructions}</Text>
                     </View>
                   )}
                 </View>
 
-                <View style={ds.noteBox}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EFF6FF", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "#DBEAFE" }}>
                   <Ionicons name="information-circle-outline" size={16} color={C.primary} />
-                  <Text style={ds.noteTxt}>After making the payment, enter the Transaction ID in the next step</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textSecondary, flex: 1 }}>After payment, enter the Transaction ID in the next step</Text>
                 </View>
 
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
-                  <Pressable onPress={() => setStep("method")} style={[ws.actionBtn, { flex: 1, backgroundColor: "#F1F5F9" }]}>
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <Pressable onPress={() => setStep("method")} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]}>
                     <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
                   </Pressable>
                   <Pressable onPress={goToAmount} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]}>
-                    <Text style={ws.actionBtnTxt}>Payment Done ✓</Text>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                    <Text style={ws.actionBtnTxt}>Payment Done</Text>
                   </Pressable>
                 </View>
               </View>
             )}
 
-            {/* ── AMOUNT STEP ── */}
             {step === "amount" && selectedMethod && (
               <View>
                 <Text style={ws.sheetTitle}>Transaction Details</Text>
-                <Text style={ds.subLbl}>Enter payment details</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, marginBottom: 18 }}>Enter your payment details</Text>
 
                 <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
                 <View style={ws.amtWrap}>
@@ -351,7 +341,7 @@ function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSu
                   ))}
                 </View>
 
-                <Text style={[ws.sheetLbl, { marginTop: 8 }]}>Transaction ID *</Text>
+                <Text style={ws.sheetLbl}>Transaction ID *</Text>
                 <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
                   <TextInput
                     value={txId}
@@ -385,70 +375,70 @@ function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSu
                 </View>
 
                 {err ? (
-                  <View style={ds.errBox}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10 }}>
                     <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
-                    <Text style={ds.errTxt}>{err}</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.danger, flex: 1 }}>{err}</Text>
                   </View>
                 ) : null}
 
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
-                  <Pressable onPress={() => setStep("details")} style={[ws.actionBtn, { flex: 1, backgroundColor: "#F1F5F9" }]}>
+                <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+                  <Pressable onPress={() => setStep("details")} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]}>
                     <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
                   </Pressable>
                   <Pressable onPress={goToConfirm} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]}>
-                    <Text style={ws.actionBtnTxt}>Review →</Text>
+                    <Text style={ws.actionBtnTxt}>Review</Text>
                   </Pressable>
                 </View>
               </View>
             )}
 
-            {/* ── CONFIRM STEP ── */}
             {step === "confirm" && selectedMethod && (
               <View>
                 <Text style={ws.sheetTitle}>Confirm Request</Text>
-                <Text style={ds.subLbl}>Review details before submitting</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, marginBottom: 18 }}>Review before submitting</Text>
 
-                <View style={ds.confirmBox}>
-                  <View style={ds.summaryRow}>
-                    <Text style={ds.summaryLbl}>Method</Text>
-                    <Text style={ds.summaryVal}>{selectedMethod.label}</Text>
+                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, gap: 10, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Method</Text>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: C.text }}>{selectedMethod.label}</Text>
                   </View>
-                  <View style={ds.summaryRow}>
-                    <Text style={ds.summaryLbl}>Transaction ID</Text>
-                    <Text style={[ds.summaryVal, { fontFamily: "Inter_700Bold", fontVariant: ["tabular-nums"] as any }]}>{txId}</Text>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: C.text, fontVariant: ["tabular-nums"] as any }}>{txId}</Text>
                   </View>
                   {senderAcNo ? (
-                    <View style={ds.summaryRow}>
-                      <Text style={ds.summaryLbl}>Sender</Text>
-                      <Text style={ds.summaryVal}>{senderAcNo}</Text>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Sender</Text>
+                      <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: C.text }}>{senderAcNo}</Text>
                     </View>
                   ) : null}
                   {note ? (
-                    <View style={ds.summaryRow}>
-                      <Text style={ds.summaryLbl}>Note</Text>
-                      <Text style={ds.summaryVal}>{note}</Text>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Note</Text>
+                      <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: C.text }}>{note}</Text>
                     </View>
                   ) : null}
-                  <View style={[ds.summaryRow, { borderTopWidth: 1, borderTopColor: "#E2E8F0", paddingTop: 12, marginTop: 4 }]}>
-                    <Text style={[ds.summaryLbl, { fontFamily: "Inter_600SemiBold" }]}>Amount</Text>
-                    <Text style={[ds.summaryVal, { fontSize: 24, color: C.primary }]}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                  <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.textMuted }}>Amount</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
                   </View>
                 </View>
 
-                <View style={ds.noteBox}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "#FDE68A" }}>
                   <Ionicons name="alert-circle-outline" size={16} color="#D97706" />
-                  <Text style={[ds.noteTxt, { color: "#92400E" }]}>An incorrect TxID may cause your deposit to be rejected. Enter the real transaction ID.</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>An incorrect TxID may cause rejection. Enter the real transaction ID.</Text>
                 </View>
 
                 {err ? (
-                  <View style={ds.errBox}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10 }}>
                     <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
-                    <Text style={ds.errTxt}>{err}</Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.danger, flex: 1 }}>{err}</Text>
                   </View>
                 ) : null}
 
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
-                  <Pressable onPress={() => { setStep("amount"); setErr(""); }} style={[ws.actionBtn, { flex: 1, backgroundColor: "#F1F5F9" }]}>
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <Pressable onPress={() => { setStep("amount"); setErr(""); }} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]}>
                     <Text style={[ws.actionBtnTxt, { color: C.text }]}>Edit</Text>
                   </Pressable>
                   <Pressable onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary, opacity: submitting ? 0.6 : 1 }]}>
@@ -472,7 +462,6 @@ function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSu
   );
 }
 
-/* ═══════════════════════════ MAIN WALLET SCREEN ═══════════════════════════ */
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser, token } = useAuth();
@@ -490,13 +479,11 @@ export default function WalletScreen() {
   const [refreshing,  setRefreshing]  = useState(false);
   const [txFilter,    setTxFilter]    = useState<TxFilter>("all");
 
-  /* Send money state */
   const [sendPhone,   setSendPhone]   = useState("");
   const [sendAmount,  setSendAmount]  = useState("");
   const [sendNote,    setSendNote]    = useState("");
   const [sendLoading, setSendLoading] = useState(false);
 
-  /* P2P topup state */
   const [p2pSenderPhone, setP2pSenderPhone] = useState("");
   const [p2pAmount,      setP2pAmount]      = useState("");
   const [p2pNote,        setP2pNote]        = useState("");
@@ -592,93 +579,86 @@ export default function WalletScreen() {
   const totalOut     = transactions.filter(t => t.type === "debit").reduce((s, t)  => s + Number(t.amount), 0);
 
   return (
-    <View style={[ws.root, { backgroundColor: C.background }]}>
+    <View style={{ flex: 1, backgroundColor: C.background }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
       >
-        {/* Balance Card */}
-        <LinearGradient colors={["#0F3BA8", C.primary, "#2563EB"]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={[ws.balCard, { paddingTop: topPad + 20 }]}>
-          <View style={[ws.blob, { width:220, height:220, top:-70, right:-60 }]} />
-          <View style={[ws.blob, { width:100, height:100, bottom:-20, left:30 }]} />
-
-          <Text style={ws.balLbl}>{appName} {T("wallet")}</Text>
-          <Text style={ws.balAmt}>
+        <View style={{ backgroundColor: "#fff", paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
             {isLoading ? "Rs. ···" : `Rs. ${balance.toLocaleString()}`}
           </Text>
-          <Text style={ws.balSub}>{T("availableBalance")}</Text>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 24 }}>{T("availableBalance")}</Text>
 
-          {/* Action Buttons */}
-          <View style={ws.actionsRow}>
-            <Pressable onPress={() => setShowDeposit(true)} style={ws.action}>
-              <View style={ws.actionIcon}>
-                <Ionicons name="add" size={22} color={C.primary} />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable onPress={() => setShowDeposit(true)} style={ws.actionCard}>
+              <View style={[ws.actionCardIcon, { backgroundColor: "#D1FAE5" }]}>
+                <Ionicons name="add" size={20} color={C.success} />
               </View>
-              <Text style={ws.actionTxt}>{T("topUp")}</Text>
+              <Text style={ws.actionCardTxt}>{T("topUp")}</Text>
             </Pressable>
             {p2pEnabled && (
-              <Pressable onPress={() => setShowSend(true)} style={ws.action}>
-                <View style={ws.actionIcon}>
-                  <Ionicons name="send-outline" size={20} color={C.primary} />
+              <Pressable onPress={() => setShowSend(true)} style={ws.actionCard}>
+                <View style={[ws.actionCardIcon, { backgroundColor: "#EDE9FE" }]}>
+                  <Ionicons name="send-outline" size={18} color="#7C3AED" />
                 </View>
-                <Text style={ws.actionTxt}>{T("send")}</Text>
+                <Text style={ws.actionCardTxt}>{T("send")}</Text>
               </Pressable>
             )}
-            <Pressable onPress={() => setShowQR(true)} style={ws.action}>
-              <View style={ws.actionIcon}>
-                <Ionicons name="qr-code-outline" size={20} color={C.primary} />
+            <Pressable onPress={() => setShowQR(true)} style={ws.actionCard}>
+              <View style={[ws.actionCardIcon, { backgroundColor: "#DBEAFE" }]}>
+                <Ionicons name="qr-code-outline" size={18} color={C.primary} />
               </View>
-              <Text style={ws.actionTxt}>{T("receive")}</Text>
+              <Text style={ws.actionCardTxt}>{T("receive")}</Text>
             </Pressable>
-            <Pressable onPress={() => setShowP2PTopup(true)} style={ws.action}>
-              <View style={ws.actionIcon}>
-                <Ionicons name="people-outline" size={20} color={C.primary} />
+            <Pressable onPress={() => setShowP2PTopup(true)} style={ws.actionCard}>
+              <View style={[ws.actionCardIcon, { backgroundColor: "#FEF3C7" }]}>
+                <Ionicons name="people-outline" size={18} color="#D97706" />
               </View>
-              <Text style={ws.actionTxt}>P2P Topup</Text>
+              <Text style={ws.actionCardTxt}>P2P</Text>
             </Pressable>
           </View>
 
           {pendingTopups.count > 0 && (
-            <View style={ws.pendingBanner}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, marginTop: 16, padding: 12, borderWidth: 1, borderColor: "#FDE68A" }}>
               <Ionicons name="time-outline" size={14} color="#D97706" />
-              <Text style={ws.pendingBannerTxt}>
-                {pendingTopups.count} pending topup ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting admin approval
+              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>
+                {pendingTopups.count} pending ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
               </Text>
             </View>
           )}
-        </LinearGradient>
+        </View>
 
-        {/* Stats */}
-        <View style={ws.statsRow}>
+        <View style={{ flexDirection: "row", paddingHorizontal: 20, gap: 10, marginTop: 16 }}>
           <View style={ws.statCard}>
             <View style={[ws.statIcon, { backgroundColor: "#D1FAE5" }]}>
-              <Ionicons name="arrow-down-outline" size={17} color={C.success} />
+              <Ionicons name="arrow-down-outline" size={16} color={C.success} />
             </View>
             <Text style={ws.statLbl}>{T("moneyIn")}</Text>
             <Text style={[ws.statAmt, { color: C.success }]}>Rs. {totalIn.toLocaleString()}</Text>
           </View>
           <View style={ws.statCard}>
             <View style={[ws.statIcon, { backgroundColor: "#FEE2E2" }]}>
-              <Ionicons name="arrow-up-outline" size={17} color={C.danger} />
+              <Ionicons name="arrow-up-outline" size={16} color={C.danger} />
             </View>
             <Text style={ws.statLbl}>{T("moneyOut")}</Text>
             <Text style={[ws.statAmt, { color: C.danger }]}>Rs. {totalOut.toLocaleString()}</Text>
           </View>
           <View style={ws.statCard}>
             <View style={[ws.statIcon, { backgroundColor: "#DBEAFE" }]}>
-              <Ionicons name="receipt-outline" size={17} color={C.primary} />
+              <Ionicons name="receipt-outline" size={16} color={C.primary} />
             </View>
             <Text style={ws.statLbl}>{T("transactions")}</Text>
             <Text style={[ws.statAmt, { color: C.primary }]}>{transactions.length}</Text>
           </View>
         </View>
 
-        {/* Transaction History */}
-        <View style={ws.txSection}>
-          <View style={ws.txHeader}>
-            <Text style={ws.txTitle}>{T("transactionHistory")}</Text>
+        <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 17, color: C.text }}>{T("transactionHistory")}</Text>
             {transactions.length > 0 && (
-              <View style={ws.filterRow}>
+              <View style={{ flexDirection: "row", gap: 6 }}>
                 {(["all", "credit", "debit"] as TxFilter[]).map(f => (
                   <Pressable key={f} onPress={() => setTxFilter(f)} style={[ws.filterChip, txFilter === f && ws.filterChipActive]}>
                     <Text style={[ws.filterTxt, txFilter === f && ws.filterTxtActive]}>
@@ -693,13 +673,15 @@ export default function WalletScreen() {
           {isLoading ? (
             <ActivityIndicator color={C.primary} style={{ marginTop: 24 }} />
           ) : filtered.length === 0 ? (
-            <View style={ws.emptyTx}>
-              <Ionicons name="receipt-outline" size={52} color={C.border} />
-              <Text style={ws.emptyTitle}>{transactions.length === 0 ? T("noTransactionLabel") : T("filterNoResultsLabel")}</Text>
-              <Text style={ws.emptySubtitle}>{transactions.length === 0 ? T("noTransactionSub") : T("changeFilterLabel")}</Text>
+            <View style={{ alignItems: "center", gap: 10, paddingVertical: 48 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="receipt-outline" size={26} color={C.textMuted} />
+              </View>
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text }}>{transactions.length === 0 ? T("noTransactionLabel") : T("filterNoResultsLabel")}</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>{transactions.length === 0 ? T("noTransactionSub") : T("changeFilterLabel")}</Text>
             </View>
           ) : (
-            <View style={ws.txList}>
+            <View>
               {[...filtered].reverse().map(tx => <TxItem key={tx.id} tx={tx} />)}
             </View>
           )}
@@ -708,7 +690,6 @@ export default function WalletScreen() {
         <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
 
-      {/* ─── Deposit Modal (multi-step) ─── */}
       {showDeposit && (
         <DepositModal
           token={token}
@@ -717,12 +698,11 @@ export default function WalletScreen() {
         />
       )}
 
-      {/* ─── Send Money Modal ─── */}
       <Modal visible={showSend} transparent animationType="slide" onRequestClose={() => setShowSend(false)}>
         <Pressable style={ws.overlay} onPress={() => setShowSend(false)}>
           <Pressable style={ws.sheet} onPress={e => e.stopPropagation()}>
             <View style={ws.handle} />
-            <Text style={ws.sheetTitle}>📤 Send Money</Text>
+            <Text style={ws.sheetTitle}>Send Money</Text>
 
             <Text style={ws.sheetLbl}>Receiver's Phone Number</Text>
             <View style={ws.inputWrap}>
@@ -750,9 +730,9 @@ export default function WalletScreen() {
               <TextInput value={sendNote} onChangeText={setSendNote} placeholder="e.g. Lunch bill" placeholderTextColor={C.textMuted} style={[ws.sendInput, { paddingVertical: 0 }]} />
             </View>
 
-            <View style={[ws.sheetNote, { marginTop: 8 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16, marginTop: 4 }}>
               <Ionicons name="wallet-outline" size={14} color={C.primary} />
-              <Text style={ws.sheetNoteTxt}>Available: Rs. {balance.toLocaleString()} • Min: Rs. {minTransfer.toLocaleString()}</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, flex: 1 }}>Available: Rs. {balance.toLocaleString()} · Min: Rs. {minTransfer.toLocaleString()}</Text>
             </View>
 
             <Pressable onPress={handleSend} disabled={sendLoading || !sendPhone || !sendAmount} style={[ws.actionBtn, { backgroundColor: "#7C3AED" }, (!sendPhone || !sendAmount || sendLoading) && { opacity: 0.5 }]}>
@@ -767,7 +747,6 @@ export default function WalletScreen() {
         </Pressable>
       </Modal>
 
-      {/* ─── QR Code Modal (Real QR) ─── */}
       <Modal visible={showQR} transparent animationType="fade" onRequestClose={() => setShowQR(false)}>
         <Pressable style={[ws.overlay, { justifyContent: "center", paddingHorizontal: 32 }]} onPress={() => setShowQR(false)}>
           <Pressable style={[ws.sheet, { borderRadius: 24, paddingVertical: 28 }]} onPress={e => e.stopPropagation()}>
@@ -776,8 +755,8 @@ export default function WalletScreen() {
               Scan this QR code or share your phone number
             </Text>
 
-            <View style={ws.qrBox}>
-              <View style={ws.qrInner}>
+            <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 20, padding: 24, alignItems: "center", marginBottom: 16, gap: 12, borderWidth: 1, borderColor: C.border }}>
+              <View style={{ width: 140, height: 140, borderRadius: 16, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border }}>
                 <QRCode
                   value={JSON.stringify({ type: "ajkmart_pay", phone: user?.phone, id: user?.id, name: user?.name })}
                   size={120}
@@ -785,30 +764,29 @@ export default function WalletScreen() {
                   backgroundColor="#fff"
                 />
               </View>
-              <Text style={ws.qrName}>{user?.name || "AJKMart User"}</Text>
-              <Text style={ws.qrPhone}>+92 {user?.phone}</Text>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 17, color: C.text }}>{user?.name || "AJKMart User"}</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted }}>+92 {user?.phone}</Text>
             </View>
 
-            <View style={ws.sheetNote}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16 }}>
               <Ionicons name="shield-checkmark-outline" size={14} color={C.success} />
-              <Text style={ws.sheetNoteTxt}>{appName} users can send directly to your wallet</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, flex: 1 }}>{appName} users can send directly to your wallet</Text>
             </View>
 
-            <Pressable onPress={() => setShowQR(false)} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 8 }]}>
+            <Pressable onPress={() => setShowQR(false)} style={[ws.actionBtn, { backgroundColor: C.primary }]}>
               <Text style={ws.actionBtnTxt}>Close</Text>
             </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* ─── P2P Topup Modal ─── */}
       <Modal visible={showP2PTopup} transparent animationType="slide" onRequestClose={() => setShowP2PTopup(false)}>
         <Pressable style={ws.overlay} onPress={() => setShowP2PTopup(false)}>
           <Pressable style={ws.sheet} onPress={e => e.stopPropagation()}>
             <View style={ws.handle} />
             <Text style={ws.sheetTitle}>P2P Topup Request</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 16 }}>
-              Receive money from someone and get your wallet credited by admin
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 18 }}>
+              Receive money from someone and get your wallet credited
             </Text>
 
             <Text style={ws.sheetLbl}>Sender's Phone Number</Text>
@@ -837,12 +815,12 @@ export default function WalletScreen() {
               <TextInput value={p2pNote} onChangeText={setP2pNote} placeholder="e.g. Payment for goods" placeholderTextColor={C.textMuted} style={[ws.sendInput, { paddingVertical: 0 }]} />
             </View>
 
-            <View style={[ws.sheetNote, { marginTop: 8, backgroundColor: "#FEF3C7", borderRadius: 10, padding: 10 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, padding: 12, marginTop: 4, marginBottom: 16, borderWidth: 1, borderColor: "#FDE68A" }}>
               <Ionicons name="alert-circle-outline" size={14} color="#D97706" />
-              <Text style={[ws.sheetNoteTxt, { color: "#92400E" }]}>Admin will verify and credit your wallet. This may take 1-2 hours.</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>Admin will verify and credit your wallet. This may take 1-2 hours.</Text>
             </View>
 
-            <Pressable onPress={handleP2PTopup} disabled={p2pLoading || !p2pSenderPhone || !p2pAmount} style={[ws.actionBtn, { backgroundColor: "#059669" }, (!p2pSenderPhone || !p2pAmount || p2pLoading) && { opacity: 0.5 }]}>
+            <Pressable onPress={handleP2PTopup} disabled={p2pLoading || !p2pSenderPhone || !p2pAmount} style={[ws.actionBtn, { backgroundColor: C.success }, (!p2pSenderPhone || !p2pAmount || p2pLoading) && { opacity: 0.5 }]}>
               {p2pLoading ? <ActivityIndicator color="#fff" /> : (
                 <>
                   <Ionicons name="checkmark-circle" size={17} color="#fff" />
@@ -858,115 +836,47 @@ export default function WalletScreen() {
 }
 
 const ws = StyleSheet.create({
-  root: { flex: 1 },
-  blob: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.08)" },
+  actionCard: { flex: 1, alignItems: "center", gap: 8 },
+  actionCardIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  actionCardTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary, textAlign: "center" },
 
-  balCard: { paddingHorizontal: 20, paddingBottom: 24, overflow: "hidden" },
-  balLbl: { fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 6 },
-  balAmt: { fontFamily: "Inter_700Bold", fontSize: 42, color: "#fff", marginBottom: 2 },
-  balSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 24 },
-
-  actionsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 18, padding: 14, gap: 4 },
-  action: { flex: 1, alignItems: "center", gap: 8 },
-  actionIcon: { width: 48, height: 48, borderRadius: 15, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  actionTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: "#fff", textAlign: "center" },
-
-  pendingBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(254,243,199,0.2)", borderRadius: 10, marginHorizontal: 20, marginTop: 12, padding: 10 },
-  pendingBannerTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: "#FEF3C7", flex: 1 },
-
-  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 10, marginTop: 16 },
-  statCard: { flex: 1, backgroundColor: "#fff", borderRadius: 14, padding: 12, alignItems: "center", gap: 5, borderWidth: 1, borderColor: C.border },
+  statCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14, alignItems: "center", gap: 6, borderWidth: 1, borderColor: C.border },
   statIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   statLbl: { fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted },
   statAmt: { fontFamily: "Inter_700Bold", fontSize: 13 },
 
-  txSection: { paddingHorizontal: 16, marginTop: 22 },
-  txHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  txTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
-  filterRow: { flexDirection: "row", gap: 6 },
-  filterChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: "#F1F5F9" },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: C.surfaceSecondary },
   filterChipActive: { backgroundColor: C.primary },
   filterTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textMuted },
   filterTxtActive: { color: "#fff" },
 
-  txList: {},
-  txRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.borderLight },
-  txIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  txRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  txIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   txDesc: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text },
   txDate: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginTop: 2 },
   txAmt: { fontFamily: "Inter_700Bold", fontSize: 14 },
 
-  emptyTx: { alignItems: "center", gap: 10, paddingVertical: 48 },
-  emptyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text },
-  emptySubtitle: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
-
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingBottom: Platform.OS === "web" ? 40 : 48, paddingTop: 12 },
   handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, marginBottom: 20 },
+  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, marginBottom: 4 },
   sheetLbl: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.textSecondary, marginBottom: 8 },
 
   amtWrap: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, marginBottom: 18 },
   rupee: { fontFamily: "Inter_600SemiBold", fontSize: 22, color: C.textSecondary, marginRight: 8 },
   amtInput: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 28, color: C.text, paddingVertical: 14 },
 
-  quickRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
+  quickRow: { flexDirection: "row", gap: 8, marginBottom: 18 },
   quickBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 11, alignItems: "center" },
   quickBtnActive: { borderColor: C.primary, backgroundColor: "#EFF6FF" },
   quickTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary },
   quickTxtActive: { color: C.primary, fontFamily: "Inter_700Bold" },
 
   inputWrap: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: C.border, borderRadius: 14, marginBottom: 14, overflow: "hidden" },
-  phonePrefix: { backgroundColor: "#F1F5F9", paddingHorizontal: 14, paddingVertical: 14, borderRightWidth: 1, borderRightColor: C.border },
+  phonePrefix: { backgroundColor: C.surfaceSecondary, paddingHorizontal: 14, paddingVertical: 14, borderRightWidth: 1, borderRightColor: C.border },
   phonePrefixTxt: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text },
   sendInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 15, color: C.text, paddingHorizontal: 14, paddingVertical: 13 },
 
-  sheetNote: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16 },
-  sheetNoteTxt: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, flex: 1 },
-
-  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 15, marginTop: 4 },
+  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4 },
   actionBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },
-
-  qrBox: { backgroundColor: "#EFF6FF", borderRadius: 20, padding: 24, alignItems: "center", marginBottom: 16, gap: 10 },
-  qrInner: { width: 140, height: 140, borderRadius: 16, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.border },
-  qrName: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
-  qrPhone: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted },
-});
-
-const ds = StyleSheet.create({
-  stepBar: { flex: 1, height: 4, borderRadius: 2, backgroundColor: "#E2E8F0" },
-  stepTxt: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, textAlign: "right", marginTop: 4 },
-
-  subLbl: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, marginBottom: 16 },
-
-  methodCard: { flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: "#FAFAFA" },
-  methodIcon: { width: 52, height: 52, borderRadius: 14, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.borderLight },
-  methodName: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text },
-  methodDesc: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 },
-  methodNum:  { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.primary, marginTop: 3 },
-
-  detailBox: { backgroundColor: "#EFF6FF", borderRadius: 16, padding: 4, marginBottom: 12 },
-  detailRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#DBEAFE", gap: 8 },
-  detailLbl: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#3B82F6" },
-  detailVal: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#1E3A5F" },
-
-  noteBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EFF6FF", borderRadius: 12, padding: 12, marginBottom: 16 },
-  noteTxt: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#1E40AF", flex: 1 },
-
-  errBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF2F2", borderRadius: 12, padding: 12, marginBottom: 12 },
-  errTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.danger, flex: 1 },
-
-  confirmBox: { backgroundColor: "#F8FAFC", borderRadius: 16, padding: 16, marginBottom: 12, gap: 4 },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
-  summaryLbl: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
-  summaryVal: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text },
-
-  doneIcon: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  doneTitle: { fontFamily: "Inter_700Bold", fontSize: 24, color: C.text, marginBottom: 8 },
-  doneSub:   { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center", marginBottom: 20 },
-  doneSummary: { width: "100%", backgroundColor: "#F0FDF4", borderRadius: 16, padding: 16, gap: 4 },
-
-  errorBox: { alignItems: "center", paddingVertical: 32, gap: 10 },
-  errorTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text },
-  errorSub:   { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, textAlign: "center" },
 });
