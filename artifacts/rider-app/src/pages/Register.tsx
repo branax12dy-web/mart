@@ -68,6 +68,9 @@ export default function Register() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [cnic, setCnic] = useState("");
   const [vehicleType, setVehicleType] = useState("");
@@ -89,6 +92,27 @@ export default function Register() {
   const [availabilityStatus, setAvailabilityStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
 
   const clearError = () => setError("");
+
+  useEffect(() => {
+    if (!username || username.length < 3) { setUsernameStatus("idle"); return; }
+    if (usernameTimer.current) clearTimeout(usernameTimer.current);
+    usernameTimer.current = setTimeout(async () => {
+      setUsernameStatus("checking");
+      try {
+        const res = await api.checkAvailable({ username });
+        if (res.username && !res.username.available) setUsernameStatus("taken");
+        else setUsernameStatus("available");
+      } catch { setUsernameStatus("taken"); }
+    }, 600);
+    return () => { if (usernameTimer.current) clearTimeout(usernameTimer.current); };
+  }, [username]);
+
+  useEffect(() => {
+    if (name && !username) {
+      const suggested = name.trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+      if (suggested.length >= 3) setUsername(suggested);
+    }
+  }, [name]);
 
   useEffect(() => {
     if (!phone || phone.length < 10 || !email || !email.includes("@")) {
@@ -139,6 +163,7 @@ export default function Register() {
     if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return false; }
     if (!email || !email.includes("@")) { setError(T("enterValidEmail")); return false; }
     if (availabilityStatus === "taken") { setError(T("loginFailed")); return false; }
+    if (username && usernameStatus === "taken") { setError("Username is already taken. Please choose another."); return false; }
     return true;
   };
 
@@ -160,7 +185,7 @@ export default function Register() {
 
   const checkAvailability = async (): Promise<boolean> => {
     try {
-      await api.checkAvailable({ phone: formatPhoneForApi(phone), email });
+      await api.checkAvailable({ phone: formatPhoneForApi(phone), email, ...(username ? { username } : {}) });
       return true;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : T("loginFailed"));
@@ -205,6 +230,7 @@ export default function Register() {
           drivingLicense: drivingLicense.trim(),
           password,
           captchaToken,
+          ...(username ? { username: username.trim() } : {}),
         };
         if (auth.phoneOtp) {
           const res = await api.registerRider(regData);
@@ -309,6 +335,23 @@ export default function Register() {
                   <Mail size={11} /> {T("emailRequired")}
                 </label>
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" className={INPUT} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
+                  <User size={11} /> Username (Optional)
+                </label>
+                <input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="e.g. rider_ali" className={INPUT} maxLength={20} />
+                {usernameStatus !== "idle" && (
+                  <p className={`text-[10px] mt-1 font-medium ${
+                    usernameStatus === "checking" ? "text-gray-400" :
+                    usernameStatus === "available" ? "text-green-600" : "text-red-500"
+                  }`}>
+                    {usernameStatus === "checking" ? "Checking..." :
+                     usernameStatus === "available" ? "Username available" : "Username already taken"}
+                  </p>
+                )}
+                <p className="text-[10px] text-gray-400 mt-0.5">You can use this to log in with username + password later</p>
               </div>
 
               {availabilityStatus !== "idle" && (
@@ -503,13 +546,11 @@ export default function Register() {
             </button>
           </div>
 
-          {step === 1 && (
-            <div className="mt-4 text-center">
-              <Link href="/" className="text-sm text-green-600 font-semibold hover:text-green-700">
-                {T("alreadyHaveAccount")} {T("login")}
-              </Link>
-            </div>
-          )}
+          <div className="mt-4 text-center">
+            <Link href="/" className="text-sm text-green-600 font-semibold hover:text-green-700">
+              {T("alreadyHaveAccount")} {T("login")}
+            </Link>
+          </div>
         </div>
       </div>
     </div>

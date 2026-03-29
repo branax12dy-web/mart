@@ -186,6 +186,15 @@ router.get("/", async (req, res) => {
       minBalance:         parseFloat(s["rider_min_balance"]         ?? "500"),
       depositEnabled:     (s["rider_deposit_enabled"]               ?? "on")  === "on",
       dailyGoal:          parseFloat(s["rider_daily_goal"]            ?? "5000"),
+      modules: {
+        wallet:       (s["rider_module_wallet"]         ?? "on")  === "on",
+        earnings:     (s["rider_module_earnings"]        ?? "on")  === "on",
+        history:      (s["rider_module_history"]         ?? "on")  === "on",
+        twoFaRequired:(s["rider_module_2fa_required"]    ?? "off") === "on",
+        gpsTracking:  (s["rider_module_gps_tracking"]    ?? "on")  === "on",
+        profileEdit:  (s["rider_module_profile_edit"]    ?? "on")  === "on",
+        supportChat:  (s["rider_module_support_chat"]    ?? "on")  === "on",
+      },
     },
     vendor: {
       commissionPct:      parseFloat(s["vendor_commission_pct"]     ?? "15"),

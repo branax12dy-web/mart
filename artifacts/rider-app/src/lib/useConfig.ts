@@ -14,6 +14,15 @@ export interface PlatformConfig {
     minBalance: number;
     depositEnabled: boolean;
     dailyGoal: number;
+    modules?: {
+      wallet: boolean;
+      earnings: boolean;
+      history: boolean;
+      twoFaRequired: boolean;
+      gpsTracking: boolean;
+      profileEdit: boolean;
+      supportChat: boolean;
+    };
   };
   platform: {
     appName: string;
@@ -228,6 +237,30 @@ export function getRiderAuthConfig(config: PlatformConfig): RiderAuthConfig {
     lockoutMaxAttempts: a.lockoutMaxAttempts ?? 5,
     lockoutDurationSec: a.lockoutDurationSec ?? 300,
   };
+}
+
+export interface RiderModules {
+  wallet: boolean;
+  earnings: boolean;
+  history: boolean;
+  twoFaRequired: boolean;
+  gpsTracking: boolean;
+  profileEdit: boolean;
+  supportChat: boolean;
+}
+
+const DEFAULT_MODULES: RiderModules = {
+  wallet: true,
+  earnings: true,
+  history: true,
+  twoFaRequired: false,
+  gpsTracking: true,
+  profileEdit: true,
+  supportChat: true,
+};
+
+export function getRiderModules(config: PlatformConfig): RiderModules {
+  return { ...DEFAULT_MODULES, ...config.rider?.modules };
 }
 
 export function usePlatformConfig() {

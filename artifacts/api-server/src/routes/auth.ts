@@ -1058,7 +1058,7 @@ const PASSWORD_RULES = {
 };
 
 router.post("/register", verifyCaptcha, async (req, res) => {
-  const { phone, password, name, role, cnic, nationalId, email,
+  const { phone, password, name, role, cnic, nationalId, email, username,
           vehicleType, vehicleRegNo, drivingLicense,
           businessName, businessType, storeAddress, ntn, storeName } = req.body;
 
@@ -1126,6 +1126,20 @@ router.post("/register", verifyCaptcha, async (req, res) => {
     }
   }
 
+  let cleanUsername: string | null = null;
+  if (username) {
+    cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+    if (cleanUsername.length >= 3) {
+      const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, cleanUsername)).limit(1);
+      if (existingUsername) {
+        res.status(409).json({ error: "This username is already taken" });
+        return;
+      }
+    } else {
+      cleanUsername = null;
+    }
+  }
+
   const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
   const autoApproveRider = userRole === "rider" && settings["rider_auto_approve"] === "on";
   const autoApproveVendor = userRole === "vendor" && settings["vendor_auto_approve"] === "on";
@@ -1140,6 +1154,7 @@ router.post("/register", verifyCaptcha, async (req, res) => {
     phone: normalizedPhone,
     name: name?.trim() || null,
     email: email ? email.toLowerCase().trim() : null,
+    username: cleanUsername,
     role: userRole,
     roles: userRole,
     passwordHash: hashPassword(password),
@@ -1382,7 +1397,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
 });
 
 router.post("/email-register", verifyCaptcha, async (req, res) => {
-  const { email, password, name, role, phone, cnic, vehicleType, vehicleRegNo, vehicleRegistration, drivingLicense } = req.body;
+  const { email, password, name, role, phone, username, cnic, vehicleType, vehicleRegNo, vehicleRegistration, drivingLicense } = req.body;
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
   const userRole = (role === "rider" || role === "vendor") ? role : "customer";
@@ -1420,6 +1435,20 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     return;
   }
 
+  let cleanUsername: string | null = null;
+  if (username) {
+    cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+    if (cleanUsername.length >= 3) {
+      const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, cleanUsername)).limit(1);
+      if (existingUsername) {
+        res.status(409).json({ error: "This username is already taken" });
+        return;
+      }
+    } else {
+      cleanUsername = null;
+    }
+  }
+
   const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
   const userId = generateId();
   const tempPhone = `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -1436,6 +1465,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     phone: resolvedPhone,
     name: name?.trim() || null,
     email: normalizedEmail,
+    username: cleanUsername,
     role: userRole,
     roles: userRole,
     passwordHash: hashPassword(password),

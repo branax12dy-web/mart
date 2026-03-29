@@ -94,9 +94,9 @@ export const api = {
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
   refreshToken: () => attemptTokenRefresh(),
 
-  registerRider: (data: { name: string; phone: string; email: string; cnic: string; vehicleType: string; vehicleRegistration: string; drivingLicense: string; password: string; captchaToken?: string }) =>
+  registerRider: (data: { name: string; phone: string; email: string; cnic: string; vehicleType: string; vehicleRegistration: string; drivingLicense: string; password: string; captchaToken?: string; username?: string }) =>
     apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ ...data, role: "rider", vehicleRegNo: data.vehicleRegistration }) }),
-  emailRegisterRider: (data: { name: string; phone: string; email: string; cnic: string; vehicleType: string; vehicleRegistration: string; drivingLicense: string; password: string; captchaToken?: string }) =>
+  emailRegisterRider: (data: { name: string; phone: string; email: string; cnic: string; vehicleType: string; vehicleRegistration: string; drivingLicense: string; password: string; captchaToken?: string; username?: string }) =>
     apiFetch("/auth/email-register", { method: "POST", body: JSON.stringify({ ...data, role: "rider" }) }),
   forgotPassword: (data: { method: "phone" | "email"; phone?: string; email?: string; captchaToken?: string }) =>
     apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify(data) }),

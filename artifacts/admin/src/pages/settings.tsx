@@ -64,6 +64,8 @@ const TOGGLE_KEYS = new Set([
   "user_require_approval",
   "customer_referral_enabled","customer_loyalty_enabled",
   "rider_cash_allowed","rider_auto_approve","rider_withdrawal_enabled","rider_deposit_enabled",
+  "rider_module_wallet","rider_module_earnings","rider_module_history","rider_module_2fa_required",
+  "rider_module_gps_tracking","rider_module_profile_edit","rider_module_support_chat",
   "vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
   "feature_chat","feature_live_tracking","feature_reviews",
   "security_otp_bypass","security_mfa_required","security_multi_device","security_gps_tracking",
@@ -4084,6 +4086,56 @@ function renderSection(
               </p>
             </div>
           )}
+        </div>
+
+        {/* ── Group 6: Rider App Modules ── */}
+        <div className="space-y-3 border-t border-border/40 pt-5">
+          <SLabel icon={ToggleRight}>Rider App Modules</SLabel>
+          <p className="text-xs text-muted-foreground -mt-1">Toggle individual features visible in the rider app. Disabled modules are hidden from all riders.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Toggle
+              checked={v("rider_module_wallet") !== "off"} isDirty={d("rider_module_wallet")}
+              onChange={val => handleToggle("rider_module_wallet", val)}
+              label="Wallet"
+              sub="Wallet page with balance, deposits, withdrawals and transactions"
+            />
+            <Toggle
+              checked={v("rider_module_earnings") !== "off"} isDirty={d("rider_module_earnings")}
+              onChange={val => handleToggle("rider_module_earnings", val)}
+              label="Earnings Dashboard"
+              sub="Charts and statistics about daily/weekly earnings"
+            />
+            <Toggle
+              checked={v("rider_module_history") !== "off"} isDirty={d("rider_module_history")}
+              onChange={val => handleToggle("rider_module_history", val)}
+              label="Delivery History"
+              sub="Past orders and rides history list"
+            />
+            <Toggle
+              checked={v("rider_module_2fa_required") === "on"} isDirty={d("rider_module_2fa_required")}
+              onChange={val => handleToggle("rider_module_2fa_required", val)}
+              label="Require 2FA for Riders"
+              sub="Force all riders to set up two-factor authentication"
+            />
+            <Toggle
+              checked={v("rider_module_gps_tracking") !== "off"} isDirty={d("rider_module_gps_tracking")}
+              onChange={val => handleToggle("rider_module_gps_tracking", val)}
+              label="GPS Tracking"
+              sub="Live location tracking during active deliveries"
+            />
+            <Toggle
+              checked={v("rider_module_profile_edit") !== "off"} isDirty={d("rider_module_profile_edit")}
+              onChange={val => handleToggle("rider_module_profile_edit", val)}
+              label="Profile Editing"
+              sub="Allow riders to edit their profile information"
+            />
+            <Toggle
+              checked={v("rider_module_support_chat") !== "off"} isDirty={d("rider_module_support_chat")}
+              onChange={val => handleToggle("rider_module_support_chat", val)}
+              label="Support Chat"
+              sub="In-app support/help chat feature"
+            />
+          </div>
         </div>
 
         {/* ── Earnings Simulation Table ── */}

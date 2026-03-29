@@ -170,14 +170,35 @@ export default function Login() {
     setError(msg);
   };
 
+  const [phoneFallbackEmail, setPhoneFallbackEmail] = useState("");
+  const [showEmailFallback, setShowEmailFallback] = useState(false);
+
   const sendPhoneOtp = async () => {
     if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return; }
-    setLoading(true); clearError();
+    setLoading(true); clearError(); setShowEmailFallback(false);
     try {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
       const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken);
       setDevOtp(res.otp || "");
+      setStep("otp");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : T("sendOtpFailed");
+      setError(msg);
+      if (auth.emailOtp) setShowEmailFallback(true);
+    }
+    setLoading(false);
+  };
+
+  const switchToEmailFallback = async () => {
+    if (!phoneFallbackEmail || !phoneFallbackEmail.includes("@")) { setError(T("enterValidEmail")); return; }
+    setLoading(true); clearError(); setShowEmailFallback(false);
+    try {
+      const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_email_otp");
+      const res = await api.sendEmailOtp(phoneFallbackEmail, captchaToken);
+      setEmailDevOtp(res.otp || "");
+      setEmail(phoneFallbackEmail);
+      setMethod("email");
       setStep("otp");
     } catch (e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
     setLoading(false);
@@ -396,6 +417,20 @@ export default function Login() {
                 <input type="tel" placeholder="3XX XXXXXXX" value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                   className="flex-1 h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500" autoFocus />
               </div>
+              {showEmailFallback && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
+                  <p className="text-xs text-amber-700 font-semibold mb-2">SMS not working? Use email OTP instead:</p>
+                  <div className="flex gap-2">
+                    <input type="email" placeholder="your@email.com" value={phoneFallbackEmail} onChange={e => setPhoneFallbackEmail(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && switchToEmailFallback()}
+                      className="flex-1 h-10 px-3 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+                    <button onClick={switchToEmailFallback} disabled={loading}
+                      className="h-10 px-3 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60 flex items-center gap-1">
+                      <Mail size={12}/> Send
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
           {method === "phone" && step === "otp" && (
@@ -406,6 +441,25 @@ export default function Login() {
               <input type="number" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-green-500 mb-3" maxLength={6} autoFocus />
               <button onClick={sendPhoneOtp} className="w-full text-sm text-gray-400 hover:text-green-600 mb-3 py-1">{T("resendOtp")}</button>
+              {auth.emailOtp && !showEmailFallback && (
+                <button onClick={() => setShowEmailFallback(true)} className="w-full text-xs text-amber-600 hover:text-amber-700 py-1 font-semibold">
+                  Not receiving SMS? Use email OTP instead
+                </button>
+              )}
+              {showEmailFallback && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-1">
+                  <p className="text-xs text-amber-700 font-semibold mb-2">Enter your email to receive OTP:</p>
+                  <div className="flex gap-2">
+                    <input type="email" placeholder="your@email.com" value={phoneFallbackEmail} onChange={e => setPhoneFallbackEmail(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && switchToEmailFallback()}
+                      className="flex-1 h-10 px-3 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+                    <button onClick={switchToEmailFallback} disabled={loading}
+                      className="h-10 px-3 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60 flex items-center gap-1">
+                      <Mail size={12}/> Send
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

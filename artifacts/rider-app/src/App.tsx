@@ -1,7 +1,7 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { usePlatformConfig } from "./lib/useConfig";
+import { usePlatformConfig, getRiderModules } from "./lib/useConfig";
 import { useLanguage } from "./lib/useLanguage";
 import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
@@ -23,6 +23,7 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1 } } 
 function AppRoutes() {
   const { user, loading } = useAuth();
   const { config } = usePlatformConfig();
+  const modules = getRiderModules(config);
   useLanguage(); /* initialises RTL + language from API on mount */
 
   if (loading) return (
@@ -57,9 +58,9 @@ function AppRoutes() {
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/active" component={Active} />
-          <Route path="/history" component={History} />
-          <Route path="/earnings" component={Earnings} />
-          <Route path="/wallet" component={Wallet} />
+          {modules.history && <Route path="/history" component={History} />}
+          {modules.earnings && <Route path="/earnings" component={Earnings} />}
+          {modules.wallet && <Route path="/wallet" component={Wallet} />}
           <Route path="/notifications" component={Notifications} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings/security" component={SecuritySettings} />

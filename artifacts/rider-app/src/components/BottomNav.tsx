@@ -4,14 +4,15 @@ import { api } from "../lib/api";
 import { Home, MapPin, Wallet, Bell, User } from "lucide-react";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { usePlatformConfig, getRiderModules } from "../lib/useConfig";
 
 import type { LucideProps } from "lucide-react";
-interface NavItem { href: string; labelKey: TranslationKey; Icon: React.ComponentType<LucideProps>; }
+interface NavItem { href: string; labelKey: TranslationKey; Icon: React.ComponentType<LucideProps>; moduleKey?: string; }
 
 const navItems: NavItem[] = [
   { href: "/",               labelKey: "home",              Icon: Home    },
   { href: "/active",         labelKey: "active",            Icon: MapPin  },
-  { href: "/wallet",         labelKey: "wallet",            Icon: Wallet  },
+  { href: "/wallet",         labelKey: "wallet",            Icon: Wallet, moduleKey: "wallet" },
   { href: "/notifications",  labelKey: "alerts",            Icon: Bell    },
   { href: "/profile",        labelKey: "profile",           Icon: User    },
 ];
@@ -20,6 +21,8 @@ export function BottomNav() {
   const [location] = useLocation();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const { config } = usePlatformConfig();
+  const modules = getRiderModules(config);
 
   const { data: notifData } = useQuery({
     queryKey: ["rider-notifs-count"],
@@ -41,7 +44,7 @@ export function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-lg"
       style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom, 8px))" }}>
       <div className="flex max-w-md mx-auto">
-        {navItems.map(item => {
+        {navItems.filter(item => !item.moduleKey || (modules as Record<string, boolean>)[item.moduleKey] !== false).map(item => {
           const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
           const { Icon } = item;
           return (
