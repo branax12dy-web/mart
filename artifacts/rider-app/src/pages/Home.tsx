@@ -108,7 +108,7 @@ export default function Home() {
   const [newFlash, setNewFlash] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const prevIdsRef = useRef<Set<string>>(new Set());
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);

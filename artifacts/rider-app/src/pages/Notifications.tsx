@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Bell, Package, Wallet, Bike, Settings, AlertTriangle,
   RefreshCw, CheckCheck, ChevronRight, Check, Inbox,
-  Clock, Sparkles,
+  Clock, Sparkles, Eye, Filter, Zap, Shield,
+  TrendingUp, X,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
@@ -22,23 +23,26 @@ function SkeletonNotifications() {
           <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
         </div>
-        <div className="relative flex items-center justify-between mb-3">
+        <div className="relative flex items-center justify-between mb-4">
           <div className="space-y-2">
             <SkeletonBlock className="h-7 w-36 !bg-white/20" />
-            <SkeletonBlock className="h-4 w-24 !bg-white/10" />
+            <SkeletonBlock className="h-4 w-28 !bg-white/10" />
           </div>
-          <SkeletonBlock className="w-10 h-10 rounded-xl !bg-white/15" />
+          <div className="flex gap-2">
+            <SkeletonBlock className="w-10 h-10 rounded-xl !bg-white/15" />
+            <SkeletonBlock className="w-24 h-10 rounded-xl !bg-white/15" />
+          </div>
         </div>
-        <div className="relative grid grid-cols-4 gap-2 mt-2">
+        <div className="relative grid grid-cols-4 gap-2.5 mt-3">
           {[1,2,3,4].map(i => (
-            <SkeletonBlock key={i} className="h-16 rounded-xl !bg-white/10" />
+            <SkeletonBlock key={i} className="h-20 rounded-2xl !bg-white/10" />
           ))}
         </div>
       </div>
       <div className="px-4 py-4 space-y-3">
-        <div className="flex gap-1.5">
+        <div className="flex gap-2">
           {[1,2,3,4,5].map(i => (
-            <SkeletonBlock key={i} className="h-9 w-20 flex-shrink-0" />
+            <SkeletonBlock key={i} className="h-10 w-24 flex-shrink-0 rounded-xl" />
           ))}
         </div>
         {[1,2,3,4,5].map(i => (
@@ -91,19 +95,19 @@ type NotifRecord = {
 type TypeInfo = {
   icon: React.ReactElement;
   label: string;
-  bg: string;
-  text: string;
+  gradient: string;
   badge: string;
   iconBg: string;
+  dotColor: string;
 };
 
 function typeInfo(type: string): TypeInfo {
-  if (type === "order")  return { icon: <Package  size={20} className="text-blue-600"/>,   label: "Order",  bg: "bg-blue-50",    text: "text-blue-700",   badge: "bg-blue-100 text-blue-700",   iconBg: "bg-blue-100"   };
-  if (type === "wallet") return { icon: <Wallet   size={20} className="text-green-600"/>,  label: "Wallet", bg: "bg-green-50",   text: "text-green-700",  badge: "bg-green-100 text-green-700",  iconBg: "bg-green-100"  };
-  if (type === "ride")   return { icon: <Bike     size={20} className="text-purple-600"/>, label: "Ride",   bg: "bg-purple-50",  text: "text-purple-700", badge: "bg-purple-100 text-purple-700", iconBg: "bg-purple-100" };
-  if (type === "system") return { icon: <Settings size={20} className="text-gray-500"/>,   label: "System", bg: "bg-gray-50",    text: "text-gray-600",   badge: "bg-gray-100 text-gray-600",    iconBg: "bg-gray-100"   };
-  if (type === "alert")  return { icon: <AlertTriangle size={20} className="text-amber-500"/>, label: "Alert", bg: "bg-amber-50", text: "text-amber-700", badge: "bg-amber-100 text-amber-700", iconBg: "bg-amber-100" };
-  return                        { icon: <Bell     size={20} className="text-gray-500"/>,   label: "Other",  bg: "bg-gray-50",    text: "text-gray-600",   badge: "bg-gray-100 text-gray-600",    iconBg: "bg-gray-100"   };
+  if (type === "order")  return { icon: <Package  size={20} className="text-white"/>,   label: "Order",  gradient: "from-blue-500 to-indigo-600",   badge: "bg-blue-100 text-blue-700",   iconBg: "bg-gradient-to-br from-blue-500 to-indigo-600",   dotColor: "bg-blue-500"  };
+  if (type === "wallet") return { icon: <Wallet   size={20} className="text-white"/>,  label: "Wallet", gradient: "from-green-500 to-emerald-600",  badge: "bg-green-100 text-green-700",  iconBg: "bg-gradient-to-br from-green-500 to-emerald-600",  dotColor: "bg-green-500" };
+  if (type === "ride")   return { icon: <Bike     size={20} className="text-white"/>, label: "Ride",   gradient: "from-purple-500 to-violet-600", badge: "bg-purple-100 text-purple-700", iconBg: "bg-gradient-to-br from-purple-500 to-violet-600", dotColor: "bg-purple-500"};
+  if (type === "system") return { icon: <Settings size={20} className="text-white"/>,   label: "System", gradient: "from-gray-500 to-slate-600",    badge: "bg-gray-100 text-gray-600",    iconBg: "bg-gradient-to-br from-gray-500 to-slate-600",    dotColor: "bg-gray-500"  };
+  if (type === "alert")  return { icon: <AlertTriangle size={20} className="text-white"/>, label: "Alert", gradient: "from-amber-500 to-orange-600", badge: "bg-amber-100 text-amber-700", iconBg: "bg-gradient-to-br from-amber-500 to-orange-600", dotColor: "bg-amber-500" };
+  return                        { icon: <Bell     size={20} className="text-white"/>,   label: "Other",  gradient: "from-gray-500 to-slate-600",    badge: "bg-gray-100 text-gray-600",    iconBg: "bg-gradient-to-br from-gray-500 to-slate-600",    dotColor: "bg-gray-500"  };
 }
 
 function navTarget(type: string): string | null {
@@ -115,11 +119,18 @@ function navTarget(type: string): string | null {
 
 type FilterTab = { key: NFilter; label: string; icon: React.ReactElement };
 const FILTER_TABS: FilterTab[] = [
-  { key: "all",    label: "All",    icon: <Bell size={13}/>     },
-  { key: "order",  label: "Orders", icon: <Package size={13}/>  },
-  { key: "wallet", label: "Wallet", icon: <Wallet size={13}/>   },
-  { key: "ride",   label: "Rides",  icon: <Bike size={13}/>     },
-  { key: "system", label: "System", icon: <Settings size={13}/> },
+  { key: "all",    label: "All",    icon: <Bell size={14}/>     },
+  { key: "order",  label: "Orders", icon: <Package size={14}/>  },
+  { key: "wallet", label: "Wallet", icon: <Wallet size={14}/>   },
+  { key: "ride",   label: "Rides",  icon: <Bike size={14}/>     },
+  { key: "system", label: "System", icon: <Settings size={14}/> },
+];
+
+const STAT_CONFIGS = [
+  { label: "Total",  key: "total",  color: "text-white",      icon: <Bell size={14} className="text-white/70"/> },
+  { label: "Orders", key: "order",  color: "text-blue-200",   icon: <Package size={14} className="text-blue-300"/> },
+  { label: "Wallet", key: "wallet", color: "text-green-200",  icon: <Wallet size={14} className="text-green-300"/> },
+  { label: "Rides",  key: "ride",   color: "text-purple-200", icon: <Bike size={14} className="text-purple-300"/> },
 ];
 
 export default function Notifications() {
@@ -128,6 +139,7 @@ export default function Notifications() {
   const [filter, setFilter] = useState<NFilter>("all");
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["rider-notifications"],
@@ -139,15 +151,21 @@ export default function Notifications() {
   const unread: number = data?.unread || 0;
 
   const [toast, setToast] = useState("");
-  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
+  const [toastIsError, setToastIsError] = useState(false);
+  const showToast = (m: string, isError = false) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(m); setToastIsError(isError);
+    toastTimerRef.current = setTimeout(() => setToast(""), 3000);
+  };
 
   const markAllMut = useMutation({
     mutationFn: () => api.markAllRead(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rider-notifications"] });
       qc.invalidateQueries({ queryKey: ["rider-notifs-count"] });
+      showToast("All notifications marked as read");
     },
-    onError: (err: Error) => showToast(err.message || "Failed to mark all as read"),
+    onError: (err: Error) => showToast(err.message || "Failed to mark all as read", true),
   });
 
   const markOneMut = useMutation({
@@ -156,7 +174,7 @@ export default function Notifications() {
       qc.invalidateQueries({ queryKey: ["rider-notifications"] });
       qc.invalidateQueries({ queryKey: ["rider-notifs-count"] });
     },
-    onError: (err: Error) => showToast(err.message || "Failed to mark as read"),
+    onError: (err: Error) => showToast(err.message || "Failed to mark as read", true),
   });
 
   const filtered = filter === "all" ? notifs : notifs.filter(n => n.type === filter || (filter === "system" && !["order","wallet","ride"].includes(n.type)));
@@ -183,6 +201,13 @@ export default function Notifications() {
     system: notifs.filter(n => !["order","wallet","ride"].includes(n.type) && !n.isRead).length,
   }), [notifs]);
 
+  const statValues: Record<string, number> = {
+    total:  notifs.length,
+    order:  notifs.filter(n => n.type === "order").length,
+    wallet: notifs.filter(n => n.type === "wallet").length,
+    ride:   notifs.filter(n => n.type === "ride").length,
+  };
+
   if (isLoading) return <SkeletonNotifications />;
 
   return (
@@ -192,26 +217,39 @@ export default function Notifications() {
         <div className="absolute inset-0 opacity-[0.07]">
           <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+          <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-white rounded-full -translate-y-1/2"/>
         </div>
-        <div className="relative flex items-center justify-between mb-3">
+
+        <div className="relative flex items-start justify-between mb-5">
           <div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("notificationsTitle")}</h1>
-            <p className="text-green-200 text-sm mt-0.5 flex items-center gap-1.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-8 h-8 bg-white/15 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/10">
+                <Bell size={16} className="text-white"/>
+              </div>
+              <h1 className="text-2xl font-black text-white tracking-tight">{T("notificationsTitle")}</h1>
+            </div>
+            <p className="text-green-200 text-sm font-medium flex items-center gap-2">
               {unread > 0 ? (
-                <><span className="w-2 h-2 bg-red-400 rounded-full animate-pulse"/>{unread} {T("unread")}</>
+                <>
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"/>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"/>
+                  </span>
+                  {unread} unread notification{unread !== 1 ? "s" : ""}
+                </>
               ) : (
-                <><Sparkles size={13}/> {T("allCaughtUp")}</>
+                <><Sparkles size={14} className="text-green-300"/> {T("allCaughtUp")}</>
               )}
             </p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => refetch()}
-              className="h-10 w-10 bg-white/15 backdrop-blur-sm text-white rounded-xl flex items-center justify-center border border-white/10 active:bg-white/25 transition-colors">
+              className="h-10 w-10 bg-white/15 backdrop-blur-md text-white rounded-xl flex items-center justify-center border border-white/20 active:bg-white/25 transition-colors shadow-sm">
               <RefreshCw size={16}/>
             </button>
             {unread > 0 && (
               <button onClick={() => markAllMut.mutate()} disabled={markAllMut.isPending}
-                className="h-10 px-4 bg-white/15 backdrop-blur-sm text-white text-sm font-bold rounded-xl flex items-center gap-1.5 border border-white/10 active:bg-white/25 transition-colors disabled:opacity-60">
+                className="h-10 px-4 bg-white/15 backdrop-blur-md text-white text-sm font-bold rounded-xl flex items-center gap-1.5 border border-white/20 active:bg-white/25 transition-colors disabled:opacity-60 shadow-sm">
                 <CheckCheck size={15}/> {T("readAll")}
               </button>
             )}
@@ -219,36 +257,34 @@ export default function Notifications() {
         </div>
 
         {notifs.length > 0 && (
-          <div className="relative grid grid-cols-4 gap-2 mt-2">
-            {[
-              { label: "Total",  value: notifs.length,                                      color: "text-white"     },
-              { label: "Orders", value: notifs.filter(n => n.type === "order").length,       color: "text-blue-200"  },
-              { label: "Wallet", value: notifs.filter(n => n.type === "wallet").length,      color: "text-green-200" },
-              { label: "Rides",  value: notifs.filter(n => n.type === "ride").length,        color: "text-purple-200"},
-            ].map(s => (
-              <div key={s.label} className="bg-white/10 backdrop-blur-sm rounded-xl p-2.5 text-center border border-white/5">
-                <p className={`text-lg font-extrabold ${s.color}`}>{s.value}</p>
-                <p className="text-[10px] text-green-200 mt-0.5 font-medium">{s.label}</p>
+          <div className="relative grid grid-cols-4 gap-2.5">
+            {STAT_CONFIGS.map((s, i) => (
+              <div key={s.key}
+                className="bg-white/10 backdrop-blur-md rounded-2xl p-3 text-center border border-white/10 shadow-sm"
+                style={{ animationDelay: `${i * 80}ms`, animation: "slideUp 0.4s ease-out both" }}>
+                <div className="flex justify-center mb-1.5">{s.icon}</div>
+                <p className={`text-xl font-black ${s.color}`}>{statValues[s.key]}</p>
+                <p className="text-[9px] text-green-200/80 mt-0.5 font-bold uppercase tracking-wider">{s.label}</p>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="px-4 py-4 space-y-3">
+      <div className="px-4 py-4 space-y-4">
 
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
           {FILTER_TABS.map(tab => (
             <button key={tab.key} onClick={() => setFilter(tab.key)}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 border ${
+              className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 border-2 ${
                 filter === tab.key
-                  ? "bg-green-600 text-white border-green-600 shadow-md shadow-green-200"
-                  : "bg-white text-gray-500 border-gray-100 active:bg-gray-50"
+                  ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white border-green-600 shadow-lg shadow-green-200"
+                  : "bg-white text-gray-500 border-gray-100 active:bg-gray-50 hover:border-gray-200"
               }`}>
               {tab.icon} {tab.label}
               {filterCounts[tab.key] > 0 && (
-                <span className={`text-[9px] font-extrabold rounded-full px-1.5 py-0.5 ${
-                  filter === tab.key ? "bg-white/20 text-white" : "bg-red-500 text-white"
+                <span className={`text-[9px] font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${
+                  filter === tab.key ? "bg-white/25 text-white" : "bg-red-500 text-white shadow-sm"
                 }`}>
                   {filterCounts[tab.key]}
                 </span>
@@ -258,70 +294,92 @@ export default function Notifications() {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-16 text-center">
-            <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
-              <Inbox size={40} className="text-gray-200"/>
+          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 px-4 py-20 text-center animate-[fadeIn_0.4s_ease-out]">
+            <div className="w-24 h-24 bg-gradient-to-br from-gray-50 to-gray-100 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner border border-gray-200/50">
+              <Inbox size={44} className="text-gray-300"/>
             </div>
-            <p className="font-extrabold text-gray-700 text-lg">
+            <p className="font-black text-gray-700 text-xl">
               {filter === "all" ? T("noNotificationsYet") : `${T("noNotifications")}`}
             </p>
-            <p className="text-sm text-gray-400 mt-2 max-w-[260px] mx-auto leading-relaxed">
+            <p className="text-sm text-gray-400 mt-2.5 max-w-[260px] mx-auto leading-relaxed">
               {filter === "all" ? T("orderAlertsAppearHere") : T("tryDifferentFilter")}
             </p>
+            {filter !== "all" && (
+              <button onClick={() => setFilter("all")}
+                className="mt-5 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto active:scale-[0.97] transition-transform shadow-md shadow-green-200">
+                <Eye size={14}/> View All Notifications
+              </button>
+            )}
           </div>
         ) : (
-          <div className="space-y-4">
-            {grouped.map(group => (
-              <div key={group.label}>
-                <div className="flex items-center gap-2 mb-2.5 px-1">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">{group.label}</p>
-                  <div className="flex-1 h-px bg-gray-200"/>
-                  <span className="text-[10px] text-gray-400 font-medium">{group.items.length}</span>
+          <div className="space-y-5">
+            {grouped.map((group, gi) => (
+              <div key={group.label} style={{ animationDelay: `${gi * 100}ms`, animation: "slideUp 0.4s ease-out both" }}>
+                <div className="flex items-center gap-3 mb-3 px-1">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={11} className="text-gray-400"/>
+                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">{group.label}</p>
+                  </div>
+                  <div className="flex-1 h-px bg-gradient-to-r from-gray-200 to-transparent"/>
+                  <span className="text-[10px] text-gray-400 font-bold bg-gray-100 px-2 py-0.5 rounded-full">{group.items.length}</span>
                 </div>
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
-                  {group.items.map((n: NotifRecord) => {
+                <div className="space-y-2.5">
+                  {group.items.map((n: NotifRecord, ni: number) => {
                     const info = typeInfo(n.type);
                     const dest = navTarget(n.type);
                     return (
                       <div key={n.id}
-                        className={`px-4 py-4 flex gap-3 transition-all duration-200 ${!n.isRead ? "bg-green-50/40 border-l-[3px] border-l-green-500" : "border-l-[3px] border-l-transparent"}`}>
-                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${!n.isRead ? info.iconBg : "bg-gray-50"}`}>
-                          {info.icon}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm leading-snug ${!n.isRead ? "font-extrabold text-gray-900" : "font-semibold text-gray-600"}`}>
-                              {n.title}
-                            </p>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                        className={`bg-white rounded-2xl border overflow-hidden transition-all duration-300 ${
+                          !n.isRead
+                            ? "border-l-4 border-l-green-500 border-r border-t border-b border-r-gray-100 border-t-gray-100 border-b-gray-100 shadow-lg shadow-green-100/50"
+                            : "border-gray-100 shadow-sm"
+                        }`}
+                        style={{ animationDelay: `${(gi * 100) + (ni * 50)}ms`, animation: "slideUp 0.4s ease-out both" }}>
+                        <div className="px-4 py-4 flex gap-3.5">
+                          <div className="relative flex-shrink-0">
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${
+                              !n.isRead ? info.iconBg : "bg-gray-100"
+                            }`}>
+                              {!n.isRead ? info.icon : <Bell size={20} className="text-gray-400"/>}
+                            </div>
+                            {!n.isRead && (
+                              <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-sm">
+                                <div className="w-1.5 h-1.5 bg-white rounded-full"/>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className={`text-sm leading-snug ${!n.isRead ? "font-black text-gray-900" : "font-semibold text-gray-500"}`}>
+                                {n.title}
+                              </p>
                               {!n.isRead && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); markOneMut.mutate(n.id); }}
-                                  className="w-7 h-7 rounded-lg bg-green-100 text-green-600 flex items-center justify-center active:bg-green-200 transition-colors"
+                                  className="w-8 h-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center active:bg-green-100 transition-all flex-shrink-0 border border-green-100 hover:shadow-sm"
                                   title="Mark as read"
                                 >
                                   <Check size={14}/>
                                 </button>
                               )}
-                              {!n.isRead && <div className="w-2.5 h-2.5 bg-green-500 rounded-full flex-shrink-0 shadow-sm shadow-green-200"/>}
                             </div>
-                          </div>
-                          <p className={`text-xs mt-1 leading-relaxed line-clamp-2 ${!n.isRead ? "text-gray-600" : "text-gray-400"}`}>{n.body}</p>
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            <span className="text-[10px] text-gray-400 font-medium flex items-center gap-0.5">
-                              <Clock size={10}/> {fd(n.createdAt)}
-                            </span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${info.badge}`}>
-                              {info.label}
-                            </span>
-                            {dest && (
-                              <button
-                                onClick={() => navigate(dest)}
-                                className="text-[10px] text-green-600 font-bold flex items-center gap-0.5 bg-green-50 px-2 py-0.5 rounded-full active:bg-green-100 transition-colors"
-                              >
-                                View <ChevronRight size={10}/>
-                              </button>
-                            )}
+                            <p className={`text-xs mt-1.5 leading-relaxed line-clamp-2 ${!n.isRead ? "text-gray-600" : "text-gray-400"}`}>{n.body}</p>
+                            <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                              <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded-full">
+                                <Clock size={9}/> {fd(n.createdAt)}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${info.badge}`}>
+                                {info.label}
+                              </span>
+                              {dest && (
+                                <button
+                                  onClick={() => navigate(dest)}
+                                  className="text-[10px] text-green-600 font-bold flex items-center gap-0.5 bg-green-50 px-2.5 py-1 rounded-full active:bg-green-100 transition-colors border border-green-100"
+                                >
+                                  View <ChevronRight size={10}/>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -335,8 +393,14 @@ export default function Notifications() {
       </div>
 
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw]">
-          <AlertTriangle size={15} className="text-red-200 flex-shrink-0"/> {toast}
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3.5 rounded-2xl shadow-2xl text-sm font-bold flex items-center gap-2.5 animate-[slideDown_0.3s_ease-out] max-w-[90vw] backdrop-blur-md ${toastIsError ? "bg-red-600/95 text-white" : "bg-gray-900/95 text-white"}`}>
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${toastIsError ? "bg-red-500" : "bg-green-500"}`}>
+            {toastIsError
+              ? <AlertTriangle size={14} className="text-white"/>
+              : <CheckCheck size={14} className="text-white"/>
+            }
+          </div>
+          {toast}
         </div>
       )}
     </div>

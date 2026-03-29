@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, Camera, MapPin, Phone, Package, ShoppingCart,
   UtensilsCrossed, Bike, Car, User, CheckCircle, X, RefreshCw,
-  MapPinned, ArrowDown,
+  MapPinned, ArrowDown, Shield, Navigation, Clock, Zap,
+  ChevronRight, Eye, Truck,
 } from "lucide-react";
 import { api, apiFetch } from "../lib/api";
 import { useState, useRef, useEffect } from "react";
@@ -28,31 +29,32 @@ function SkeletonActive() {
             <SkeletonBlock className="h-7 w-40 !bg-white/20" />
             <SkeletonBlock className="h-4 w-56 !bg-white/10" />
           </div>
-          <SkeletonBlock className="w-16 h-14 rounded-2xl !bg-white/15" />
+          <SkeletonBlock className="w-20 h-16 rounded-2xl !bg-white/15" />
         </div>
       </div>
       <div className="px-4 py-4 space-y-4">
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <SkeletonBlock className="h-16 !rounded-none !bg-gradient-to-r !from-blue-100 !to-indigo-100" />
+          <SkeletonBlock className="h-16 !rounded-none" />
           <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between px-4">
               {[1,2,3].map(i => (
-                <div key={i} className="flex flex-col items-center gap-2 flex-1">
-                  <SkeletonBlock className="w-8 h-8 !rounded-full" />
-                  <SkeletonBlock className="h-2 w-12" />
+                <div key={i} className="flex flex-col items-center gap-2">
+                  <SkeletonBlock className="w-10 h-10 !rounded-full" />
+                  <SkeletonBlock className="h-2 w-14" />
                 </div>
               ))}
             </div>
+            <SkeletonBlock className="h-2 mx-6" />
           </div>
         </div>
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <SkeletonBlock className="h-10 !rounded-none" />
+          <SkeletonBlock className="h-12 !rounded-none" />
           <div className="p-4 space-y-3">
             <SkeletonBlock className="h-20" />
             <SkeletonBlock className="h-16" />
             <div className="grid grid-cols-2 gap-2">
-              <SkeletonBlock className="h-11" />
-              <SkeletonBlock className="h-11" />
+              <SkeletonBlock className="h-12" />
+              <SkeletonBlock className="h-12" />
             </div>
             <SkeletonBlock className="h-14" />
           </div>
@@ -83,12 +85,20 @@ function useElapsedTimer(startIso?: string | null) {
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
 function ElapsedBadge({ startIso }: { startIso?: string | null }) {
-  const { label, urgent } = useElapsedTimer(startIso);
+  const { label, urgent, elapsed } = useElapsedTimer(startIso);
   if (!startIso) return null;
+  const progress = Math.min(elapsed / 3600, 1);
   return (
-    <div className={`flex flex-col items-center px-3 py-2 rounded-2xl ${urgent ? "bg-red-500/80" : "bg-white/20"} backdrop-blur-sm border border-white/10`}>
-      <span className="text-white text-[10px] font-bold uppercase tracking-wider">Time</span>
-      <span className={`text-white font-extrabold text-base leading-tight ${urgent ? "animate-pulse" : ""}`}>{label}</span>
+    <div className={`relative flex flex-col items-center px-4 py-2.5 rounded-2xl backdrop-blur-md border ${urgent ? "bg-red-500/90 border-red-400/30 shadow-lg shadow-red-500/20" : "bg-white/15 border-white/20"}`}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <Clock size={10} className={urgent ? "text-red-200" : "text-green-200"}/>
+        <span className={`text-[9px] font-bold uppercase tracking-widest ${urgent ? "text-red-200" : "text-green-200"}`}>Elapsed</span>
+      </div>
+      <span className={`text-white font-black text-lg leading-none tabular-nums ${urgent ? "animate-pulse" : ""}`}>{label}</span>
+      <div className="w-full h-1 bg-white/10 rounded-full mt-1.5 overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-1000 ${urgent ? "bg-red-300" : "bg-green-300"}`}
+          style={{ width: `${progress * 100}%` }}/>
+      </div>
     </div>
   );
 }
@@ -102,15 +112,15 @@ function NavButton({ label, lat, lng, address, color = "blue" }: {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : null;
   if (!href) return null;
-  const colors = {
-    blue:   "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100",
-    green:  "bg-green-50 border-green-200 text-green-700 hover:bg-green-100",
-    orange: "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100",
+  const styles = {
+    blue:   "from-blue-500 to-indigo-600 shadow-blue-200",
+    green:  "from-green-500 to-emerald-600 shadow-green-200",
+    orange: "from-orange-500 to-amber-600 shadow-amber-200",
   };
   return (
     <a href={href} target="_blank" rel="noopener noreferrer"
-      className={`flex items-center justify-center gap-1.5 border text-sm font-bold px-4 py-2.5 rounded-xl transition-all active:scale-[0.98] ${colors[color]}`}>
-      <MapPin size={15}/> {label}
+      className={`flex items-center justify-center gap-2 bg-gradient-to-r ${styles[color]} text-white text-sm font-bold px-4 py-3 rounded-xl transition-all active:scale-[0.97] shadow-md`}>
+      <Navigation size={14}/> {label}
     </a>
   );
 }
@@ -119,8 +129,8 @@ function CallButton({ name, phone, label }: { name?: string | null; phone?: stri
   if (!phone) return null;
   return (
     <a href={`tel:${phone}`}
-      className="flex items-center justify-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-green-100 transition-all active:scale-[0.98]">
-      <Phone size={15}/> {label || `Call ${name || "Customer"}`}
+      className="flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-bold px-4 py-3 rounded-xl shadow-md shadow-green-200 transition-all active:scale-[0.97]">
+      <Phone size={14}/> {label || `Call ${name || "Customer"}`}
     </a>
   );
 }
@@ -129,12 +139,18 @@ type OrderItem = { name: string; quantity: number; price: number };
 
 const ORDER_STEPS  = ["store",    "picked_up",  "delivered"];
 const ORDER_STEP_ICONS = [
-  <ShoppingCart key="store" size={14}/>,
-  <Package      key="picked" size={14}/>,
-  <CheckCircle  key="done"  size={14}/>,
+  <ShoppingCart key="store" size={16}/>,
+  <Package      key="picked" size={16}/>,
+  <CheckCircle  key="done"  size={16}/>,
 ];
 
 const RIDE_STEPS  = ["accepted", "arrived", "in_transit", "completed"];
+const RIDE_STEP_ICONS = [
+  <Zap key="accept" size={14}/>,
+  <MapPin key="arrive" size={14}/>,
+  <Car key="transit" size={14}/>,
+  <CheckCircle key="done" size={14}/>,
+];
 
 export default function Active() {
   const qc = useQueryClient();
@@ -153,8 +169,14 @@ export default function Active() {
   const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
   const [proofFileName, setProofFileName]          = useState<string>("");
   const photoInputRef                              = useRef<HTMLInputElement>(null);
+  const toastTimerRef                              = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pressedBtn, setPressedBtn]                = useState<string | null>(null);
 
-  const showToast = (msg: string, isError = false) => { setToastMsg(msg); setToastIsError(isError); setTimeout(() => setToastMsg(""), 3000); };
+  const showToast = (msg: string, isError = false) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMsg(msg); setToastIsError(isError);
+    toastTimerRef.current = setTimeout(() => setToastMsg(""), 3000);
+  };
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["rider-active"],
@@ -210,7 +232,7 @@ export default function Active() {
         }).catch((err: Error) => {
           const msg = err.message || "Location update failed";
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
-          setGpsWarning(isSpoofError ? `⚠️ GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
+          setGpsWarning(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
       },
       (geoErr) => {
@@ -278,7 +300,7 @@ export default function Active() {
 
   if (!order && !ride) return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-8 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-10 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07]">
           <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
           <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
@@ -288,16 +310,16 @@ export default function Active() {
           <p className="text-green-200 text-sm mt-0.5">{T("noCurrentAssignment")}</p>
         </div>
       </div>
-      <div className="flex-1 flex items-center justify-center p-6">
+      <div className="flex-1 flex items-center justify-center p-6 -mt-4">
         <div className="text-center">
-          <div className="w-24 h-24 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-5">
-            <Bike size={48} className="text-gray-300"/>
+          <div className="w-28 h-28 bg-gradient-to-br from-gray-50 to-gray-100 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner border border-gray-200/50">
+            <Bike size={52} className="text-gray-300"/>
           </div>
           <h2 className="text-xl font-extrabold text-gray-700">{T("noActiveTask")}</h2>
           <p className="text-gray-400 mt-2 text-sm max-w-[260px] mx-auto leading-relaxed">{T("acceptFromHome")}</p>
           <button onClick={() => refetch()}
-            className="mt-5 bg-green-600 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto active:bg-green-700 transition-colors shadow-sm">
-            <RefreshCw size={14}/> {T("refresh")}
+            className="mt-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-7 py-3.5 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto active:scale-[0.97] transition-transform shadow-lg shadow-green-200">
+            <RefreshCw size={15}/> {T("refresh")}
           </button>
         </div>
       </div>
@@ -309,22 +331,33 @@ export default function Active() {
   const startedAt = order?.acceptedAt || order?.updatedAt || ride?.acceptedAt || ride?.updatedAt || null;
 
   function OrderTypeIcon({ type }: { type: string }) {
-    if (type === "food") return <UtensilsCrossed size={20} className="text-white"/>;
-    if (type === "mart") return <ShoppingCart size={20} className="text-white"/>;
-    return <Package size={20} className="text-white"/>;
+    if (type === "food") return <UtensilsCrossed size={22} className="text-white"/>;
+    if (type === "mart") return <ShoppingCart size={22} className="text-white"/>;
+    return <Package size={22} className="text-white"/>;
   }
+
+  const orderTypeGradient = (type: string) => {
+    if (type === "food") return "from-orange-500 via-red-500 to-pink-600";
+    if (type === "mart") return "from-blue-500 via-indigo-500 to-violet-600";
+    return "from-teal-500 via-cyan-500 to-blue-600";
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-6 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-700 px-5 pt-12 pb-7 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07]">
           <div className="absolute top-0 right-0 w-56 h-56 bg-white rounded-full -translate-y-1/3 translate-x-1/4"/>
           <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full translate-y-1/3 -translate-x-1/4"/>
+          <div className="absolute top-1/2 left-1/2 w-32 h-32 bg-white rounded-full -translate-x-1/2 -translate-y-1/2"/>
         </div>
-        <div className="relative flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">{order ? T("activeDelivery") : T("activeRide")}</h1>
-            <p className="text-green-200 text-sm mt-0.5">
+        <div className="relative flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-2.5 h-2.5 bg-green-300 rounded-full animate-pulse shadow-sm shadow-green-300"/>
+              <span className="text-green-200 text-[10px] font-bold uppercase tracking-widest">Live</span>
+            </div>
+            <h1 className="text-2xl font-black text-white tracking-tight">{order ? T("activeDelivery") : T("activeRide")}</h1>
+            <p className="text-green-200 text-sm mt-1 font-medium">
               {order ? `${order.type} order — ${orderPickedUp ? "Delivering to customer" : "Pick up from store"}` : `${ride?.type} ride in progress`}
             </p>
           </div>
@@ -333,12 +366,17 @@ export default function Active() {
       </div>
 
       {gpsWarning && (
-        <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
-          <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-          <div className="flex-1">
-            <p className="text-xs font-bold text-amber-700">{gpsWarning}</p>
+        <div className="mx-4 mt-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3 shadow-sm animate-[slideDown_0.3s_ease-out]">
+          <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle size={18} className="text-amber-600"/>
           </div>
-          <button onClick={() => setGpsWarning(null)} className="text-amber-400 hover:text-amber-600"><X size={14}/></button>
+          <div className="flex-1">
+            <p className="text-xs font-extrabold text-amber-800">GPS Warning</p>
+            <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">{gpsWarning}</p>
+          </div>
+          <button onClick={() => setGpsWarning(null)} className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-500 active:bg-amber-200 transition-colors">
+            <X size={13}/>
+          </button>
         </div>
       )}
 
@@ -346,69 +384,85 @@ export default function Active() {
 
         {order && (
           <>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 flex items-center gap-3 relative overflow-hidden">
-                <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full"/>
-                <div className="relative w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0 border border-white/10">
+            <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
+              <div className={`bg-gradient-to-r ${orderTypeGradient(order.type)} px-4 py-4 flex items-center gap-3 relative overflow-hidden`}>
+                <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full"/>
+                <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/5 rounded-full"/>
+                <div className="relative w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center flex-shrink-0 border border-white/20 shadow-inner">
                   <OrderTypeIcon type={order.type}/>
                 </div>
-                <div className="relative flex-1">
-                  <p className="font-extrabold text-white capitalize">{order.type} Order</p>
-                  <p className="text-blue-200 text-xs font-mono">#{order.id.slice(-6).toUpperCase()}</p>
+                <div className="relative flex-1 min-w-0">
+                  <p className="font-black text-white capitalize text-lg">{order.type} Order</p>
+                  <p className="text-white/70 text-xs font-mono mt-0.5">#{order.id.slice(-6).toUpperCase()}</p>
                 </div>
                 <div className="relative text-right">
-                  <p className="font-extrabold text-white text-lg">{formatCurrency(order.total)}</p>
-                  <p className="text-blue-200 text-xs">Your cut: {formatCurrency(order.total * (config.finance.riderEarningPct / 100))}</p>
+                  <p className="font-black text-white text-xl tracking-tight">{formatCurrency(order.total)}</p>
+                  <div className="mt-1 bg-white/15 backdrop-blur-sm rounded-lg px-2.5 py-1 border border-white/10">
+                    <p className="text-white text-[10px] font-bold">You earn {formatCurrency(order.total * (config.finance.riderEarningPct / 100))}</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="px-4 pt-5 pb-3">
-                <div className="flex items-center justify-between">
+              <div className="px-5 pt-5 pb-4">
+                <div className="flex items-center justify-between relative">
                   {ORDER_LABELS.map((label, i) => (
-                    <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
-                      <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all duration-300
-                        ${i <= orderStep ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200" : "bg-white border-gray-200 text-gray-300"}`}>
-                        {i < orderStep ? <CheckCircle size={14}/> : ORDER_STEP_ICONS[i]}
+                    <div key={i} className="flex flex-col items-center gap-2 z-10" style={{ flex: 1 }}>
+                      <div className={`w-11 h-11 rounded-2xl border-2 flex items-center justify-center transition-all duration-500
+                        ${i < orderStep ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-200" :
+                          i === orderStep ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 ring-4 ring-blue-100" :
+                          "bg-white border-gray-200 text-gray-300"}`}>
+                        {i < orderStep ? <CheckCircle size={16}/> : ORDER_STEP_ICONS[i]}
                       </div>
-                      <p className={`text-[9px] font-bold text-center leading-tight ${i <= orderStep ? "text-blue-600" : "text-gray-400"}`}>{label}</p>
+                      <p className={`text-[10px] font-bold text-center leading-tight max-w-[70px] ${
+                        i <= orderStep ? "text-blue-600" : "text-gray-400"}`}>{label}</p>
                     </div>
                   ))}
                 </div>
-                <div className="relative -mt-7 mb-5 mx-8 h-0.5 bg-gray-100 rounded-full" style={{marginTop: "-2.4rem"}}>
-                  <div className="absolute top-0 left-0 h-full bg-blue-500 rounded-full transition-all duration-500"
+                <div className="relative mx-10 h-1 bg-gray-100 rounded-full -mt-8 mb-6">
+                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-700 ease-out"
                     style={{ width: `${orderStep === 0 ? 0 : orderStep === 1 ? 50 : 100}%` }} />
                 </div>
               </div>
             </div>
 
             {!orderPickedUp && (
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
-                <div className="bg-orange-50 px-4 py-3 border-b border-orange-100">
-                  <p className="text-xs font-bold text-orange-600 uppercase tracking-wider flex items-center gap-1.5">
-                    <MapPin size={12}/> {T("step")} 1 — {T("goToStore")}
-                  </p>
+              <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
+                <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 flex items-center gap-2">
+                  <div className="w-7 h-7 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <ShoppingCart size={14} className="text-white"/>
+                  </div>
+                  <p className="text-sm font-black text-white uppercase tracking-wide">Step 1 — Go to Store</p>
                 </div>
                 <div className="p-4 space-y-3">
-                  <div className="bg-orange-50 border border-orange-100 rounded-xl p-3.5">
-                    <p className="text-xs text-orange-500 font-bold mb-1 flex items-center gap-1"><ShoppingCart size={11}/> Vendor / Store</p>
-                    <p className="text-base font-extrabold text-gray-900">{order.vendorStoreName || "Store"}</p>
-                    {order.vendorPhone && (
-                      <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Phone size={10}/> {order.vendorPhone}</p>
-                    )}
+                  <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-2xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center flex-shrink-0 shadow-md shadow-orange-200">
+                        <ShoppingCart size={18} className="text-white"/>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[10px] text-orange-500 font-bold uppercase tracking-wider">Vendor / Store</p>
+                        <p className="text-base font-black text-gray-900 mt-0.5">{order.vendorStoreName || "Store"}</p>
+                        {order.vendorPhone && (
+                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><Phone size={10}/> {order.vendorPhone}</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {order.items && Array.isArray(order.items) && order.items.length > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
-                      <p className="text-xs text-gray-500 font-bold mb-2">{T("itemsToCollect")} ({order.items.length})</p>
-                      <div className="space-y-1.5">
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <Package size={11}/> Items to Collect ({order.items.length})
+                      </p>
+                      <div className="space-y-2">
                         {(order.items as OrderItem[]).slice(0, 5).map((item: OrderItem, i: number) => (
-                          <div key={i} className="flex justify-between text-sm">
-                            <span className="text-gray-700">{item.name} × {item.quantity}</span>
-                            <span className="font-semibold text-gray-800">{formatCurrency(item.price * item.quantity)}</span>
+                          <div key={i} className="flex justify-between text-sm bg-white rounded-xl px-3 py-2.5 border border-gray-100">
+                            <span className="text-gray-700 font-medium">{item.name} <span className="text-gray-400">×{item.quantity}</span></span>
+                            <span className="font-bold text-gray-800">{formatCurrency(item.price * item.quantity)}</span>
                           </div>
                         ))}
                         {order.items.length > 5 && (
-                          <p className="text-xs text-gray-400 mt-1">+{order.items.length - 5} {T("moreItems")}</p>
+                          <p className="text-xs text-gray-400 text-center mt-1 font-medium">+{order.items.length - 5} {T("moreItems")}</p>
                         )}
                       </div>
                     </div>
@@ -421,13 +475,18 @@ export default function Active() {
 
                   <button
                     onClick={() => setOrderPickedUp(true)}
-                    className="w-full bg-blue-600 text-white font-extrabold rounded-xl py-3.5 text-base flex items-center justify-center gap-2 active:bg-blue-700 transition-colors shadow-sm">
-                    <Package size={18}/> {T("pickUpOrder")}
+                    onTouchStart={() => setPressedBtn("pickup")} onTouchEnd={() => setPressedBtn(null)}
+                    className={`w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-2xl py-4 text-base flex items-center justify-center gap-2.5 shadow-lg shadow-blue-200 transition-transform ${pressedBtn === "pickup" ? "scale-[0.97]" : ""}`}>
+                    <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center">
+                      <Package size={18}/>
+                    </div>
+                    {T("pickUpOrder")}
+                    <ChevronRight size={16} className="ml-1"/>
                   </button>
 
                   <button
                     onClick={() => { setCancelTarget("order"); setShowCancelConfirm(true); }}
-                    className="w-full border border-red-200 text-red-500 text-sm font-bold rounded-xl py-2.5 bg-red-50 flex items-center justify-center gap-1.5 active:bg-red-100 transition-colors">
+                    className="w-full border-2 border-red-200 text-red-500 text-sm font-bold rounded-xl py-3 bg-red-50/50 flex items-center justify-center gap-1.5 active:bg-red-100 transition-colors">
                     <X size={14}/> {T("cantPickUp")}
                   </button>
                 </div>
@@ -435,29 +494,37 @@ export default function Active() {
             )}
 
             {orderPickedUp && (
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
-                <div className="bg-green-50 px-4 py-3 border-b border-green-100">
-                  <p className="text-xs font-bold text-green-600 uppercase tracking-wider flex items-center gap-1.5">
-                    <Car size={12}/> {T("step")} 2 — {T("deliverToCustomer")}
-                  </p>
+              <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3 flex items-center gap-2">
+                  <div className="w-7 h-7 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Truck size={14} className="text-white"/>
+                  </div>
+                  <p className="text-sm font-black text-white uppercase tracking-wide">Step 2 — Deliver</p>
                 </div>
                 <div className="p-4 space-y-3">
                   {order.customerName && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-3 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <User size={20} className="text-blue-500"/>
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
+                        <User size={22} className="text-white"/>
                       </div>
                       <div>
-                        <p className="text-xs text-blue-500 font-bold">{T("customer")}</p>
-                        <p className="text-sm font-extrabold text-gray-800">{order.customerName}</p>
-                        {order.customerPhone && <p className="text-xs text-gray-500">{order.customerPhone}</p>}
+                        <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Customer</p>
+                        <p className="text-base font-black text-gray-900">{order.customerName}</p>
+                        {order.customerPhone && <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Phone size={10}/> {order.customerPhone}</p>}
                       </div>
                     </div>
                   )}
 
-                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5">
-                    <p className="text-xs text-red-500 font-bold mb-1 flex items-center gap-1"><MapPinned size={11}/> {T("deliveryAddress")}</p>
-                    <p className="text-sm font-bold text-gray-900">{order.deliveryAddress || "Address not provided"}</p>
+                  <div className="bg-gradient-to-br from-red-50 to-pink-50 border border-red-100 rounded-2xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-red-200">
+                        <MapPinned size={18} className="text-white"/>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-red-500 font-bold uppercase tracking-wider">Delivery Address</p>
+                        <p className="text-sm font-bold text-gray-900 mt-0.5">{order.deliveryAddress || "Address not provided"}</p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -465,22 +532,26 @@ export default function Active() {
                     <CallButton name={order.customerName} phone={order.customerPhone} />
                   </div>
 
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5">
-                    <p className="text-xs font-bold text-blue-700 mb-2 flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5" /> {T("proofOfDelivery")} ({T("recommended")})
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4">
+                    <p className="text-xs font-extrabold text-blue-700 mb-3 flex items-center gap-2">
+                      <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Camera className="w-3.5 h-3.5 text-blue-600" />
+                      </div>
+                      {T("proofOfDelivery")} ({T("recommended")})
                     </p>
                     {proofPhoto ? (
-                      <div className="space-y-2">
-                        <div className="relative rounded-xl overflow-hidden h-40 bg-gray-100">
+                      <div className="space-y-2.5">
+                        <div className="relative rounded-2xl overflow-hidden h-44 bg-gray-100 shadow-inner">
                           <img src={proofPhoto} alt="Delivery proof" className="w-full h-full object-cover" />
-                          <div className="absolute top-2 right-2">
-                            <span className="bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                              <CheckCircle size={9}/> {T("photoReady")}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"/>
+                          <div className="absolute top-3 right-3">
+                            <span className="bg-green-500 text-white text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                              <CheckCircle size={10}/> {T("photoReady")}
                             </span>
                           </div>
                         </div>
                         <button onClick={() => { setProofPhoto(null); setProofFileName(""); }}
-                          className="w-full text-xs text-blue-600 font-bold py-1.5 border border-blue-200 rounded-lg bg-white flex items-center justify-center gap-1.5 active:bg-blue-50 transition-colors">
+                          className="w-full text-xs text-blue-600 font-bold py-2.5 border-2 border-blue-200 rounded-xl bg-white flex items-center justify-center gap-1.5 active:bg-blue-50 transition-colors">
                           <Camera size={12}/> {T("retakePhoto")}
                         </button>
                       </div>
@@ -496,9 +567,11 @@ export default function Active() {
                         />
                         <button
                           onClick={() => photoInputRef.current?.click()}
-                          className="w-full border-2 border-dashed border-blue-200 rounded-xl py-4 flex flex-col items-center gap-2 bg-white text-blue-500 hover:bg-blue-50 transition-colors active:scale-[0.98]">
-                          <Camera className="w-6 h-6" />
-                          <span className="text-xs font-bold">{T("takePhoto")}</span>
+                          className="w-full border-2 border-dashed border-blue-300 rounded-2xl py-5 flex flex-col items-center gap-2.5 bg-white text-blue-500 hover:bg-blue-50 transition-all active:scale-[0.98]">
+                          <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center">
+                            <Camera className="w-6 h-6 text-blue-500" />
+                          </div>
+                          <span className="text-sm font-bold">{T("takePhoto")}</span>
                           <span className="text-[10px] text-blue-400">{T("opensCamera")}</span>
                         </button>
                       </div>
@@ -508,21 +581,24 @@ export default function Active() {
                   <button
                     onClick={() => { updateOrderMut.mutate({ id: order.id, status: "delivered" }); }}
                     disabled={updateOrderMut.isPending}
-                    className="w-full font-extrabold rounded-xl py-3.5 text-lg disabled:opacity-60 transition-colors bg-green-600 text-white flex items-center justify-center gap-2 active:bg-green-700 shadow-sm">
-                    <CheckCircle size={20}/>
+                    onTouchStart={() => setPressedBtn("deliver")} onTouchEnd={() => setPressedBtn(null)}
+                    className={`w-full font-black rounded-2xl py-4 text-lg disabled:opacity-60 transition-transform bg-gradient-to-r from-green-500 to-emerald-600 text-white flex items-center justify-center gap-2.5 shadow-lg shadow-green-200 ${pressedBtn === "deliver" ? "scale-[0.97]" : ""}`}>
+                    <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center">
+                      <CheckCircle size={20}/>
+                    </div>
                     {updateOrderMut.isPending ? T("updating") : proofPhoto ? T("confirmDeliveryWithProof") : T("markDelivered")}
                   </button>
 
                   <button
                     onClick={() => setOrderPickedUp(false)}
-                    className="w-full border border-gray-200 text-gray-500 text-sm font-bold rounded-xl py-2.5 bg-white active:bg-gray-50 transition-colors">
-                    ← {T("backToStoreStep")}
+                    className="w-full border-2 border-gray-200 text-gray-600 text-sm font-bold rounded-xl py-3 bg-white active:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
+                    <ChevronRight size={14} className="rotate-180"/> {T("backToStoreStep")}
                   </button>
 
                   <button
                     onClick={() => { setCancelTarget("order"); setShowCancelConfirm(true); }}
                     disabled={updateOrderMut.isPending}
-                    className="w-full border border-red-200 text-red-500 text-sm font-bold rounded-xl py-2.5 bg-red-50 flex items-center justify-center gap-1.5 active:bg-red-100 transition-colors disabled:opacity-60">
+                    className="w-full border-2 border-red-200 text-red-500 text-sm font-bold rounded-xl py-3 bg-red-50/50 flex items-center justify-center gap-1.5 active:bg-red-100 transition-colors disabled:opacity-60">
                     <X size={14}/> {T("cannotDeliverCancel")}
                   </button>
                 </div>
@@ -532,62 +608,87 @@ export default function Active() {
         )}
 
         {ride && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
-            <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3.5 flex items-center gap-3 relative overflow-hidden">
-              <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full"/>
-              <div className="relative w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0 border border-white/10">
-                {ride.type === "bike" ? <Bike size={20} className="text-white"/> : <Car size={20} className="text-white"/>}
+          <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.4s_ease-out]">
+            <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-700 px-4 py-4 flex items-center gap-3 relative overflow-hidden">
+              <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full"/>
+              <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/5 rounded-full"/>
+              <div className="relative w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center flex-shrink-0 border border-white/20 shadow-inner">
+                {ride.type === "bike" ? <Bike size={22} className="text-white"/> : <Car size={22} className="text-white"/>}
               </div>
-              <div className="relative flex-1">
-                <p className="font-extrabold text-white capitalize">{ride.type} Ride</p>
-                <p className="text-green-200 text-xs font-mono">#{ride.id.slice(-6).toUpperCase()} · {ride.distance}km</p>
+              <div className="relative flex-1 min-w-0">
+                <p className="font-black text-white capitalize text-lg">{ride.type} Ride</p>
+                <p className="text-purple-200 text-xs font-mono mt-0.5">#{ride.id.slice(-6).toUpperCase()} · {ride.distance}km</p>
               </div>
               <div className="relative text-right">
-                <p className="font-extrabold text-white text-lg">{formatCurrency(ride.fare)}</p>
-                <p className="text-green-200 text-xs">Your cut: {formatCurrency(ride.fare * (config.finance.riderEarningPct / 100))}</p>
+                <p className="font-black text-white text-xl tracking-tight">{formatCurrency(ride.fare)}</p>
+                <div className="mt-1 bg-white/15 backdrop-blur-sm rounded-lg px-2.5 py-1 border border-white/10">
+                  <p className="text-white text-[10px] font-bold">You earn {formatCurrency(ride.fare * (config.finance.riderEarningPct / 100))}</p>
+                </div>
               </div>
             </div>
 
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-4">
               {rideStep >= 0 && (
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <div className="flex justify-between mb-4">
+                <div className="bg-gradient-to-br from-gray-50 to-purple-50/30 rounded-2xl p-5 border border-gray-100">
+                  <div className="flex justify-between mb-5 relative">
                     {RIDE_LABELS.map((label, i) => (
-                      <div key={i} className="flex flex-col items-center gap-1.5">
-                        <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-[11px] font-bold transition-all duration-300
-                          ${i <= rideStep ? "bg-green-600 border-green-600 text-white shadow-md shadow-green-200" : "bg-white border-gray-200 text-gray-300"}`}>
-                          {i < rideStep ? <CheckCircle size={12}/> : <span>{i + 1}</span>}
+                      <div key={i} className="flex flex-col items-center gap-2 z-10" style={{ flex: 1 }}>
+                        <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all duration-500
+                          ${i < rideStep ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-200" :
+                            i === rideStep ? "bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-200 ring-4 ring-purple-100" :
+                            "bg-white border-gray-200 text-gray-300"}`}>
+                          {i < rideStep ? <CheckCircle size={14}/> : RIDE_STEP_ICONS[i]}
                         </div>
-                        <p className={`text-[9px] font-bold text-center ${i <= rideStep ? "text-green-600" : "text-gray-400"}`}>{label}</p>
+                        <p className={`text-[9px] font-bold text-center max-w-[60px] ${i <= rideStep ? "text-purple-600" : "text-gray-400"}`}>{label}</p>
                       </div>
                     ))}
                   </div>
-                  <div className="relative h-1.5 bg-gray-200 rounded-full">
-                    <div className="absolute top-0 left-0 h-full bg-green-500 rounded-full transition-all duration-500"
+                  <div className="relative h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-700 ease-out"
                       style={{ width: `${rideStep < 0 ? 0 : (rideStep / (RIDE_STEPS.length - 1)) * 100}%` }} />
                   </div>
                 </div>
               )}
 
-              <div className="bg-green-50 rounded-xl p-3.5 border border-green-100">
-                <p className="text-xs text-green-600 font-bold mb-1 flex items-center gap-1"><MapPin size={10} className="fill-green-500"/> PICKUP</p>
-                <p className="text-sm font-semibold text-gray-800">{ride.pickupAddress}</p>
-              </div>
-              <div className="text-center text-gray-300"><ArrowDown size={20} className="mx-auto"/></div>
-              <div className="bg-red-50 rounded-xl p-3.5 border border-red-100">
-                <p className="text-xs text-red-600 font-bold mb-1 flex items-center gap-1"><MapPin size={10} className="fill-red-500"/> DROP</p>
-                <p className="text-sm font-semibold text-gray-800">{ride.dropAddress}</p>
+              <div className="relative">
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-green-200">
+                      <MapPin size={18} className="text-white"/>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-green-600 font-bold uppercase tracking-wider">Pickup</p>
+                      <p className="text-sm font-bold text-gray-800 mt-0.5">{ride.pickupAddress}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-center -my-1.5 relative z-10">
+                  <div className="w-8 h-8 bg-white rounded-xl border-2 border-gray-200 flex items-center justify-center shadow-sm">
+                    <ArrowDown size={14} className="text-gray-400"/>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-2xl p-4 border border-red-100">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-red-200">
+                      <MapPin size={18} className="text-white"/>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider">Drop-off</p>
+                      <p className="text-sm font-bold text-gray-800 mt-0.5">{ride.dropAddress}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {ride.customerName && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-3 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <User size={20} className="text-blue-500"/>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
+                    <User size={22} className="text-white"/>
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs text-blue-500 font-bold">Passenger</p>
-                    <p className="text-sm font-extrabold text-gray-800">{ride.customerName}</p>
-                    {ride.customerPhone && <p className="text-xs text-gray-500">{ride.customerPhone}</p>}
+                    <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Passenger</p>
+                    <p className="text-base font-black text-gray-900">{ride.customerName}</p>
+                    {ride.customerPhone && <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Phone size={10}/> {ride.customerPhone}</p>}
                   </div>
                 </div>
               )}
@@ -606,7 +707,8 @@ export default function Active() {
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "arrived" })}
                     disabled={updateRideMut.isPending}
-                    className="flex-1 bg-purple-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60 flex items-center justify-center gap-2 active:bg-purple-700 transition-colors shadow-sm">
+                    onTouchStart={() => setPressedBtn("arrived")} onTouchEnd={() => setPressedBtn(null)}
+                    className={`flex-1 bg-gradient-to-r from-purple-600 to-violet-600 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-purple-200 transition-transform ${pressedBtn === "arrived" ? "scale-[0.97]" : ""}`}>
                     <MapPin size={16}/> {T("arrivedAtPickup")}
                   </button>
                 )}
@@ -614,7 +716,8 @@ export default function Active() {
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "in_transit" })}
                     disabled={updateRideMut.isPending}
-                    className="flex-1 bg-blue-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60 flex items-center justify-center gap-2 active:bg-blue-700 transition-colors shadow-sm">
+                    onTouchStart={() => setPressedBtn("start")} onTouchEnd={() => setPressedBtn(null)}
+                    className={`flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-transform ${pressedBtn === "start" ? "scale-[0.97]" : ""}`}>
                     <Car size={16}/> {T("startRide")}
                   </button>
                 )}
@@ -622,7 +725,8 @@ export default function Active() {
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "completed" })}
                     disabled={updateRideMut.isPending}
-                    className="flex-1 bg-green-600 text-white font-extrabold rounded-xl py-3.5 disabled:opacity-60 flex items-center justify-center gap-2 active:bg-green-700 transition-colors shadow-sm">
+                    onTouchStart={() => setPressedBtn("complete")} onTouchEnd={() => setPressedBtn(null)}
+                    className={`flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-green-200 transition-transform ${pressedBtn === "complete" ? "scale-[0.97]" : ""}`}>
                     <CheckCircle size={16}/> {T("completeRide")}
                   </button>
                 )}
@@ -630,7 +734,7 @@ export default function Active() {
                   <button
                     onClick={() => { setCancelTarget("ride"); setShowCancelConfirm(true); }}
                     disabled={updateRideMut.isPending}
-                    className="px-4 bg-red-50 text-red-600 font-bold rounded-xl py-3.5 text-sm border border-red-200 active:bg-red-100 transition-colors">
+                    className="px-5 bg-red-50 text-red-600 font-bold rounded-2xl py-4 text-sm border-2 border-red-200 active:bg-red-100 transition-colors">
                     <X size={16}/>
                   </button>
                 )}
@@ -641,25 +745,27 @@ export default function Active() {
       </div>
 
       {showCancelConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-[slideUp_0.3s_ease-out]">
-            <div className="bg-red-50 px-6 py-5 flex flex-col items-center gap-3 border-b border-red-100">
-              <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center">
-                <AlertTriangle className="w-7 h-7 text-red-600" />
+            <div className="bg-gradient-to-br from-red-50 to-pink-50 px-6 py-6 flex flex-col items-center gap-3 border-b border-red-100">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center shadow-lg shadow-red-200">
+                <AlertTriangle className="w-8 h-8 text-white" />
               </div>
               <div className="text-center">
-                <p className="font-extrabold text-gray-900 text-lg">{T("cancelConfirm")} {cancelTarget === "order" ? T("deliveryLabel") : T("ride")}?</p>
-                <p className="text-sm text-gray-500 mt-1">{T("actionNotReversible")}</p>
+                <p className="font-black text-gray-900 text-xl">{T("cancelConfirm")} {cancelTarget === "order" ? T("deliveryLabel") : T("ride")}?</p>
+                <p className="text-sm text-gray-500 mt-1.5">{T("actionNotReversible")}</p>
               </div>
             </div>
-            <div className="p-5 space-y-3">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-2">
-                <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-                <p className="text-xs text-amber-800 font-medium">{T("cancelWarning")}</p>
+            <div className="p-5 space-y-4">
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl px-4 py-3.5 flex gap-3">
+                <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Shield size={16} className="text-amber-600"/>
+                </div>
+                <p className="text-xs text-amber-800 font-medium leading-relaxed">{T("cancelWarning")}</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={() => setShowCancelConfirm(false)}
-                  className="flex-1 h-12 bg-gray-100 text-gray-700 font-bold rounded-xl active:bg-gray-200 transition-colors">
+                  className="flex-1 h-13 bg-gray-100 text-gray-700 font-bold rounded-xl active:bg-gray-200 transition-colors py-3">
                   {T("goBack")}
                 </button>
                 <button
@@ -672,7 +778,7 @@ export default function Active() {
                     }
                   }}
                   disabled={updateOrderMut.isPending || updateRideMut.isPending}
-                  className="flex-1 h-12 bg-red-600 text-white font-bold rounded-xl disabled:opacity-60 active:bg-red-700 transition-colors">
+                  className="flex-1 h-13 bg-gradient-to-r from-red-600 to-pink-600 text-white font-bold rounded-xl disabled:opacity-60 active:scale-[0.97] transition-transform shadow-md shadow-red-200 py-3">
                   {(updateOrderMut.isPending || updateRideMut.isPending) ? T("cancelling") : T("yesCancel")}
                 </button>
               </div>
@@ -682,11 +788,14 @@ export default function Active() {
       )}
 
       {toastMsg && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw] ${toastIsError ? "bg-red-600 text-white" : "bg-gray-900 text-white"}`}>
-          {toastIsError
-            ? <AlertTriangle size={15} className="text-red-200 flex-shrink-0"/>
-            : <CheckCircle size={15} className="text-green-400 flex-shrink-0"/>
-          } {toastMsg}
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3.5 rounded-2xl shadow-2xl text-sm font-bold flex items-center gap-2.5 animate-[slideDown_0.3s_ease-out] max-w-[90vw] backdrop-blur-md ${toastIsError ? "bg-red-600/95 text-white" : "bg-gray-900/95 text-white"}`}>
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${toastIsError ? "bg-red-500" : "bg-green-500"}`}>
+            {toastIsError
+              ? <AlertTriangle size={14} className="text-white"/>
+              : <CheckCircle size={14} className="text-white"/>
+            }
+          </div>
+          {toastMsg}
         </div>
       )}
     </div>
