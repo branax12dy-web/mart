@@ -45,6 +45,14 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - `popularLocationsTable`: Admin-managed points of interest for quick selection.
 - `schoolRoutesTable`, `schoolSubscriptionsTable`: For managing school transport services.
 
+### Shared Auth Utilities (`@workspace/auth-utils`)
+- **Location:** `lib/auth-utils/`
+- **CAPTCHA:** `executeCaptcha(action, siteKey?)` for web (reCAPTCHA v3 invisible); `CaptchaModal` WebView component for Expo mobile (import from `@workspace/auth-utils/captcha/native`)
+- **OAuth:** `useGoogleLogin()` and `useFacebookLogin()` hooks for web; `useGoogleLoginNative()` and `useFacebookLoginNative()` hooks for Expo (import from `@workspace/auth-utils/oauth/native`)
+- **2FA Components:** `TwoFactorSetup` (QR code, manual key copy, 6-digit TOTP input with auto-submit, backup codes with download/copy); `TwoFactorVerify` (TOTP input, backup code toggle, trust device checkbox)
+- **Magic Link:** `MagicLinkSender` component with email input, rate-limit-aware countdown, and status feedback
+- **Environment secrets needed:** `RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`
+
 ### External Dependencies
 
 - **PostgreSQL:** Primary database.
