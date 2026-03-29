@@ -369,6 +369,99 @@ router.post("/orders/:id/accept", async (req, res) => {
   res.json({ ...updated, total: safeNum(updated.total) });
 });
 
+/* ── Cancellation penalty helper ── */
+async function handleCancelPenalty(riderId: string): Promise<{ dailyCancels: number; penaltyApplied: number; restricted: boolean }> {
+  const s = await getPlatformSettings();
+  const limit = parseInt(s["rider_cancel_limit_daily"] ?? "3", 10);
+  const penaltyAmt = parseFloat(s["rider_cancel_penalty_amount"] ?? "50");
+  const restrictEnabled = (s["rider_cancel_restrict_enabled"] ?? "on") === "on";
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const [countRow] = await db.select({ c: count() })
+    .from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.userId, riderId),
+      eq(walletTransactionsTable.type, "cancel_penalty"),
+      gte(walletTransactionsTable.createdAt, today),
+    ));
+  const dailyCancels = (countRow?.c ?? 0) + 1;
+
+  let penaltyApplied = 0;
+  let restricted = false;
+
+  await db.insert(walletTransactionsTable).values({
+    id: generateId(), userId: riderId, type: "cancel_penalty",
+    amount: "0",
+    description: `Cancellation #${dailyCancels} today`,
+    reference: `cancel:${Date.now()}`,
+  });
+
+  if (dailyCancels > limit) {
+    penaltyApplied = penaltyAmt;
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance - ${penaltyAmt}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, riderId));
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: riderId, type: "cancel_penalty",
+        amount: penaltyAmt.toFixed(2),
+        description: `Excessive cancellation penalty (${dailyCancels}/${limit} today) — Rs. ${penaltyAmt} deducted`,
+        reference: `cancel_penalty:${Date.now()}`,
+      });
+    });
+
+    if (restrictEnabled) {
+      await db.update(usersTable)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(usersTable.id, riderId));
+      restricted = true;
+    }
+
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: riderId,
+      title: restricted ? "Account Restricted ⚠️" : "Cancellation Penalty ⚠️",
+      body: restricted
+        ? `You cancelled ${dailyCancels} times today (limit: ${limit}). Rs. ${penaltyAmt} penalty applied and your account has been restricted. Contact support to re-activate.`
+        : `You cancelled ${dailyCancels} times today (limit: ${limit}). Rs. ${penaltyAmt} penalty applied.`,
+      type: "system", icon: "alert-circle-outline",
+    }).catch(() => {});
+  } else if (dailyCancels === limit) {
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: riderId,
+      title: "Cancellation Warning ⚠️",
+      body: `You have cancelled ${dailyCancels}/${limit} times today. Next cancellation will incur a Rs. ${penaltyAmt} penalty and possible account restriction.`,
+      type: "system", icon: "alert-circle-outline",
+    }).catch(() => {});
+  }
+
+  return { dailyCancels, penaltyApplied, restricted };
+}
+
+/* ── GET /rider/cancel-stats — Rider's cancellation stats for today ── */
+router.get("/cancel-stats", async (req, res) => {
+  const riderId = req.riderId!;
+  const s = await getPlatformSettings();
+  const limit = parseInt(s["rider_cancel_limit_daily"] ?? "3", 10);
+  const penaltyAmt = parseFloat(s["rider_cancel_penalty_amount"] ?? "50");
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [countRow] = await db.select({ c: count() })
+    .from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.userId, riderId),
+      eq(walletTransactionsTable.type, "cancel_penalty"),
+      gte(walletTransactionsTable.createdAt, today),
+    ));
+
+  res.json({
+    dailyCancels: countRow?.c ?? 0,
+    dailyLimit: limit,
+    penaltyAmount: penaltyAmt,
+    remaining: Math.max(0, limit - (countRow?.c ?? 0)),
+  });
+});
+
 /* ── PATCH /rider/orders/:id/status — Update order status (delivered) ── */
 router.patch("/orders/:id/status", async (req, res) => {
   const parsed = orderStatusSchema.safeParse(req.body);
@@ -381,7 +474,8 @@ router.patch("/orders/:id/status", async (req, res) => {
 
   /* ── Rider Cancel: clear riderId + reset to preparing so another rider can pick it up ── */
   if (status === "cancelled") {
-    /* Include riderId in WHERE to close TOCTOU window — only this rider can release their own assignment */
+    const penalty = await handleCancelPenalty(riderId);
+
     const [cancelled] = await db.update(ordersTable)
       .set({ riderId: null, status: "preparing", updatedAt: new Date() })
       .where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId)))
@@ -391,7 +485,10 @@ router.patch("/orders/:id/status", async (req, res) => {
       title: "Rider Change 🔄", body: "Your rider had to cancel. We're finding a new rider for you.",
       type: "order", icon: "refresh-outline",
     }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
-    res.json({ ...cancelled, total: safeNum(cancelled?.total || 0), status: "cancelled_by_rider" }); return;
+    res.json({
+      ...cancelled, total: safeNum(cancelled?.total || 0), status: "cancelled_by_rider",
+      cancelPenalty: penalty,
+    }); return;
   }
 
   /* Include riderId in WHERE to close the TOCTOU window — only the assigned rider can advance status */

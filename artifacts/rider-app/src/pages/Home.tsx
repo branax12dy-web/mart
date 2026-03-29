@@ -6,6 +6,7 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { playRequestSound, unlockAudio } from "../lib/notificationSound";
 import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
   ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
@@ -107,9 +108,19 @@ export default function Home() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const prevIdsRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const soundIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasUnseenRequestsRef = useRef(false);
 
   useEffect(() => {
-    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+    const handler = () => unlockAudio();
+    document.addEventListener("click", handler, { once: true });
+    document.addEventListener("touchstart", handler, { once: true });
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
+      document.removeEventListener("click", handler);
+      document.removeEventListener("touchstart", handler);
+    };
   }, []);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
@@ -162,6 +173,16 @@ export default function Home() {
     if (hasNew && currentIds.size > 0) {
       setNewFlash(true);
       setTimeout(() => setNewFlash(false), 2500);
+      playRequestSound();
+      hasUnseenRequestsRef.current = true;
+      if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
+      soundIntervalRef.current = setInterval(() => {
+        if (hasUnseenRequestsRef.current) playRequestSound();
+      }, 8000);
+    }
+    if (currentIds.size === 0) {
+      hasUnseenRequestsRef.current = false;
+      if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
     }
     prevIdsRef.current = currentIds;
   }, [currentIdsSig]);
@@ -227,9 +248,15 @@ export default function Home() {
     }
   };
 
+  const stopRequestSound = () => {
+    hasUnseenRequestsRef.current = false;
+    if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
+  };
+
   const acceptOrderMut = useMutation({
     mutationFn: (id: string) => api.acceptOrder(id),
     onSuccess: (_, id) => {
+      stopRequestSound();
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       logRideEvent(id, "accepted");
@@ -244,6 +271,7 @@ export default function Home() {
   const acceptRideMut = useMutation({
     mutationFn: (id: string) => api.acceptRide(id),
     onSuccess: (_, id) => {
+      stopRequestSound();
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       logRideEvent(id, "accepted");

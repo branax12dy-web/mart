@@ -129,6 +129,9 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "rider_min_balance",      value: "500",   label: "Minimum Wallet Balance for Cash Orders (Rs.)",  category: "rider" },
   { key: "rider_deposit_enabled",  value: "on",    label: "Riders Can Submit Wallet Deposit Requests",     category: "rider" },
   { key: "rider_daily_goal",       value: "5000",  label: "Rider Daily Earnings Goal (Rs.)",               category: "rider" },
+  { key: "rider_cancel_limit_daily",      value: "3",    label: "Max Cancellations Per Day Before Penalty",     category: "rider" },
+  { key: "rider_cancel_penalty_amount",   value: "50",   label: "Cancellation Penalty Amount (Rs.)",            category: "rider" },
+  { key: "rider_cancel_restrict_enabled", value: "on",   label: "Auto-Restrict Rider on Excessive Cancels",    category: "rider" },
   /* Vendor Role Settings */
   { key: "vendor_commission_pct",      value: "15",     label: "Vendor Platform Commission (%)",         category: "vendor" },
   { key: "vendor_min_order",           value: "100",    label: "Platform Default Min Order (Rs.)",       category: "vendor" },
