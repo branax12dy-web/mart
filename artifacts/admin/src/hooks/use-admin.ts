@@ -783,6 +783,74 @@ export const useRevenueTrend = () =>
 export const useLeaderboard = () =>
   useQuery({ queryKey: ["admin-leaderboard"], queryFn: () => fetcher("/leaderboard"), refetchInterval: 60_000 });
 
+export const useAdminCancelRide = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      fetcher(`/rides/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      qc.invalidateQueries({ queryKey: ["admin-rides"] });
+      qc.invalidateQueries({ queryKey: ["admin-stats"] });
+      qc.invalidateQueries({ queryKey: ["admin-dispatch-monitor"] });
+      qc.invalidateQueries({ queryKey: ["admin-ride-detail"] });
+      qc.invalidateQueries({ queryKey: ["admin-ride-audit"] });
+    },
+  });
+};
+
+export const useAdminRefundRide = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, amount, reason }: { id: string; amount?: number; reason?: string }) =>
+      fetcher(`/rides/${id}/refund`, { method: "POST", body: JSON.stringify({ amount, reason }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      qc.invalidateQueries({ queryKey: ["admin-transactions"] });
+      qc.invalidateQueries({ queryKey: ["admin-stats"] });
+      qc.invalidateQueries({ queryKey: ["admin-ride-detail"] });
+      qc.invalidateQueries({ queryKey: ["admin-ride-audit"] });
+    },
+  });
+};
+
+export const useAdminReassignRide = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, riderId, riderName, riderPhone }: { id: string; riderId?: string; riderName?: string; riderPhone?: string }) =>
+      fetcher(`/rides/${id}/reassign`, { method: "POST", body: JSON.stringify({ riderId, riderName, riderPhone }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      qc.invalidateQueries({ queryKey: ["admin-rides"] });
+      qc.invalidateQueries({ queryKey: ["admin-stats"] });
+      qc.invalidateQueries({ queryKey: ["admin-ride-detail"] });
+      qc.invalidateQueries({ queryKey: ["admin-ride-audit"] });
+    },
+  });
+};
+
+export const useRideDetail = (rideId: string | null) =>
+  useQuery({
+    queryKey: ["admin-ride-detail", rideId],
+    queryFn: () => fetcher(`/rides/${rideId}/detail`),
+    enabled: !!rideId,
+  });
+
+export const useRideAuditTrail = (rideId: string | null) =>
+  useQuery({
+    queryKey: ["admin-ride-audit", rideId],
+    queryFn: () => fetcher(`/rides/${rideId}/audit-trail`),
+    enabled: !!rideId,
+    refetchInterval: 15_000,
+  });
+
+export const useDispatchMonitor = () =>
+  useQuery({
+    queryKey: ["admin-dispatch-monitor"],
+    queryFn: () => fetcher("/dispatch-monitor"),
+    refetchInterval: 10_000,
+  });
+
 export const useAuditLog = (params?: { page?: number; action?: string; from?: string; to?: string }) => {
   const qs = new URLSearchParams();
   if (params?.page)   qs.set("page",   String(params.page));

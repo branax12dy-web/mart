@@ -25,6 +25,7 @@ export const ridesTable = pgTable("rides", {
   bargainStatus:  text("bargain_status"),
   bargainRounds:  integer("bargain_rounds").default(0),
   bargainNote:    text("bargain_note"),
+  cancellationReason: text("cancellation_reason"),
   /* ── Dispatch engine fields ── */
   dispatchedRiderId: text("dispatched_rider_id"),
   dispatchAttempts:  jsonb("dispatch_attempts").default([]),

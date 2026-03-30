@@ -23,6 +23,8 @@ import {
   refreshTokensTable,
   rideRatingsTable,
   riderPenaltiesTable,
+  rideEventLogsTable,
+  rideNotifiedRidersTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -1330,20 +1332,24 @@ router.put("/platform-settings", async (req, res) => {
   }
   /* Bust the security settings cache so new values apply immediately */
   invalidateSettingsCache();
+  const changedKeys = settings.map((s: any) => s.key).join(", ");
+  addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as any).adminId, details: `Updated ${settings.length} setting(s): ${changedKeys}`, result: "success" });
   const rows = await db.select().from(platformSettingsTable);
   res.json({ success: true, settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })) });
 });
 
 router.patch("/platform-settings/:key", async (req, res) => {
   const { value } = req.body;
+  const settingKey = req.params["key"]!;
   const [row] = await db
     .update(platformSettingsTable)
     .set({ value: String(value), updatedAt: new Date() })
-    .where(eq(platformSettingsTable.key, req.params["key"]!))
+    .where(eq(platformSettingsTable.key, settingKey))
     .returning();
   if (!row) { res.status(404).json({ error: "Setting not found" }); return; }
   /* Bust the security settings cache so new values apply immediately */
   invalidateSettingsCache();
+  addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as any).adminId, details: `Updated setting "${settingKey}" = "${value}"`, result: "success" });
   res.json({ ...row, updatedAt: row.updatedAt.toISOString() });
 });
 
@@ -3460,6 +3466,257 @@ router.get("/dashboard-export", async (_req, res) => {
   };
   res.setHeader("Content-Disposition", `attachment; filename="dashboard-${new Date().toISOString().slice(0,10)}.json"`);
   res.json(snapshot);
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   RIDE MANAGEMENT MODULE — Admin ride actions with full audit logging
+══════════════════════════════════════════════════════════════════════════════ */
+
+router.post("/rides/:id/cancel", async (req, res) => {
+  const rideId = req.params["id"]!;
+  const { reason } = req.body as { reason?: string };
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (["completed", "cancelled"].includes(ride.status)) {
+    res.status(400).json({ error: `Cannot cancel a ride that is already ${ride.status}` }); return;
+  }
+
+  const isWallet = ride.paymentMethod === "wallet";
+  const refundAmt = parseFloat(ride.fare);
+  let refunded = false;
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(ridesTable)
+        .set({ status: "cancelled", cancellationReason: reason || null, updatedAt: new Date() })
+        .where(eq(ridesTable.id, rideId));
+
+      await tx.update(rideBidsTable)
+        .set({ status: "rejected", updatedAt: new Date() })
+        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
+
+      if (isWallet) {
+        await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+          .where(eq(usersTable.id, ride.userId));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: ride.userId, type: "credit",
+          amount: refundAmt.toFixed(2),
+          description: `Refund — Ride #${rideId.slice(-6).toUpperCase()} cancelled by admin`,
+        });
+        refunded = true;
+      }
+    });
+  } catch (txErr: any) {
+    addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as any).adminId, details: `Ride ${rideId} cancel failed — transaction error: ${txErr.message}`, result: "error" });
+    res.status(500).json({ error: "Cancellation failed: could not complete transaction", detail: txErr.message });
+    return;
+  }
+
+  if (refunded) {
+    await sendUserNotification(ride.userId, "Ride Cancelled & Refunded 💰", `Rs. ${refundAmt.toFixed(0)} refund ho gaya. ${reason ? `Reason: ${reason}` : ""}`, "ride", "wallet-outline");
+  } else {
+    await sendUserNotification(ride.userId, "Ride Cancelled ❌", `Your ride has been cancelled by admin. ${reason ? `Reason: ${reason}` : ""}`, "ride", "close-circle-outline");
+  }
+
+  if (ride.riderId) {
+    await sendUserNotification(ride.riderId, "Ride Cancelled ❌", `Ride #${rideId.slice(-6).toUpperCase()} admin ne cancel ki.`, "ride", "close-circle-outline");
+  }
+
+  addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as any).adminId, details: `Admin cancelled ride ${rideId}${reason ? ` — ${reason}` : ""}${refunded ? " (wallet refunded)" : ""}`, result: "success" });
+  res.json({ success: true, rideId, refunded });
+});
+
+router.post("/rides/:id/refund", async (req, res) => {
+  const rideId = req.params["id"]!;
+  const { amount, reason } = req.body as { amount?: number; reason?: string };
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  const refundAmt = amount ?? parseFloat(ride.fare);
+  if (refundAmt <= 0) { res.status(400).json({ error: "Invalid refund amount" }); return; }
+
+  await db.transaction(async (tx) => {
+    await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() }).where(eq(usersTable.id, ride.userId));
+    await tx.insert(walletTransactionsTable).values({
+      id: generateId(), userId: ride.userId, type: "credit",
+      amount: refundAmt.toFixed(2),
+      description: `Admin refund — Ride #${rideId.slice(-6).toUpperCase()}${reason ? ` (${reason})` : ""}`,
+    });
+  });
+
+  await sendUserNotification(ride.userId, "Ride Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya.`, "ride", "wallet-outline");
+  addAuditEntry({ action: "ride_refund", ip: getClientIp(req), adminId: (req as any).adminId, details: `Admin refunded Rs. ${refundAmt} for ride ${rideId}${reason ? ` — ${reason}` : ""}`, result: "success" });
+  res.json({ success: true, rideId, refundedAmount: refundAmt });
+});
+
+router.post("/rides/:id/reassign", async (req, res) => {
+  const rideId = req.params["id"]!;
+  const { riderId, riderName, riderPhone } = req.body as { riderId?: string; riderName?: string; riderPhone?: string };
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+  if (["completed", "cancelled"].includes(ride.status)) {
+    res.status(400).json({ error: `Cannot reassign a ride that is ${ride.status}` }); return;
+  }
+
+  if (!riderId) { res.status(400).json({ error: "riderId is required to reassign" }); return; }
+
+  const [riderUser] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+    .from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
+  if (!riderUser) { res.status(404).json({ error: "Rider not found" }); return; }
+  if (riderUser.role !== "rider") { res.status(400).json({ error: "Selected user is not a rider" }); return; }
+
+  const oldRiderId = ride.riderId;
+  const resolvedName = riderName || riderUser.name;
+  const resolvedPhone = riderPhone || riderUser.phone;
+  const updateData: Record<string, any> = {
+    riderId,
+    riderName: resolvedName,
+    riderPhone: resolvedPhone,
+    updatedAt: new Date(),
+  };
+  if (!ride.riderId) updateData.status = "accepted";
+
+  const [updated] = await db.update(ridesTable).set(updateData).where(eq(ridesTable.id, rideId)).returning();
+
+  if (oldRiderId && oldRiderId !== riderId) {
+    await sendUserNotification(oldRiderId, "Ride Reassigned", `Ride #${rideId.slice(-6).toUpperCase()} doosre rider ko assign ho gayi.`, "ride", "swap-horizontal-outline");
+  }
+  if (riderId) {
+    await sendUserNotification(riderId, "New Ride Assigned 🚗", `Ride #${rideId.slice(-6).toUpperCase()} aapko assign ho gayi!`, "ride", "car-outline");
+  }
+  await sendUserNotification(ride.userId, "Rider Changed", `Aapki ride ka rider change ho gaya hai${resolvedName ? ` — ${resolvedName}` : ""}.`, "ride", "swap-horizontal-outline");
+
+  addAuditEntry({ action: "ride_reassign", ip: getClientIp(req), adminId: (req as any).adminId, details: `Admin reassigned ride ${rideId} from ${oldRiderId ?? "none"} to ${riderId} (${resolvedName})`, result: "success" });
+  res.json({ success: true, ride: { ...updated, fare: parseFloat(updated!.fare), distance: parseFloat(updated!.distance) } });
+});
+
+router.get("/rides/:id/audit-trail", async (req, res) => {
+  const rideId = req.params["id"]!;
+  const shortId = rideId.slice(-6).toUpperCase();
+  const trail = auditLog.filter(e => e.details?.includes(rideId) || e.details?.includes(shortId)).map(e => ({
+    action: e.action,
+    details: e.details,
+    ip: e.ip,
+    adminId: e.adminId,
+    result: e.result,
+    timestamp: e.timestamp,
+  }));
+  trail.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  res.json({ trail, rideId });
+});
+
+router.get("/rides/:id/detail", async (req, res) => {
+  const rideId = req.params["id"]!;
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
+
+  const [customer] = await db.select({ name: usersTable.name, phone: usersTable.phone, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, ride.userId)).limit(1);
+  let rider = null;
+  if (ride.riderId) {
+    const [r] = await db.select({ name: usersTable.name, phone: usersTable.phone, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, ride.riderId)).limit(1);
+    rider = r ?? null;
+  }
+
+  const eventLogs = await db.select().from(rideEventLogsTable).where(eq(rideEventLogsTable.rideId, rideId)).orderBy(asc(rideEventLogsTable.createdAt));
+
+  const bidRows = await db.select().from(rideBidsTable).where(eq(rideBidsTable.rideId, rideId)).orderBy(desc(rideBidsTable.createdAt));
+
+  const notifiedCount = await db.select({ cnt: count() }).from(rideNotifiedRidersTable).where(eq(rideNotifiedRidersTable.rideId, rideId));
+
+  const s = await getPlatformSettings();
+  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
+  const gstPct = parseFloat(s["finance_gst_pct"] ?? "17");
+  const surgeEnabled = (s["ride_surge_enabled"] ?? "off") === "on";
+  const surgeMultiplier = surgeEnabled ? parseFloat(s["ride_surge_multiplier"] ?? "1.5") : 1;
+  const fare = parseFloat(ride.fare);
+  const gstAmount = gstEnabled ? parseFloat(((fare * gstPct) / (100 + gstPct)).toFixed(2)) : 0;
+  const baseFare = fare - gstAmount;
+
+  res.json({
+    ride: {
+      ...ride,
+      fare,
+      distance: parseFloat(ride.distance),
+      offeredFare: ride.offeredFare ? parseFloat(ride.offeredFare) : null,
+      counterFare: ride.counterFare ? parseFloat(ride.counterFare) : null,
+      createdAt: ride.createdAt.toISOString(),
+      updatedAt: ride.updatedAt.toISOString(),
+      acceptedAt: ride.acceptedAt ? ride.acceptedAt.toISOString() : null,
+      dispatchedAt: ride.dispatchedAt ? ride.dispatchedAt.toISOString() : null,
+    },
+    customer: customer ?? null,
+    rider: rider ?? null,
+    fareBreakdown: { baseFare, gstAmount, gstPct: gstEnabled ? gstPct : 0, surgeMultiplier, total: fare },
+    eventLogs: eventLogs.map(e => ({
+      ...e,
+      lat: e.lat ? parseFloat(e.lat) : null,
+      lng: e.lng ? parseFloat(e.lng) : null,
+      createdAt: e.createdAt.toISOString(),
+    })),
+    bids: bidRows.map(b => ({
+      ...b,
+      amount: parseFloat(b.amount),
+      createdAt: b.createdAt.toISOString(),
+      updatedAt: b.updatedAt.toISOString(),
+    })),
+    notifiedRiderCount: Number(notifiedCount[0]?.cnt ?? 0),
+  });
+});
+
+router.get("/dispatch-monitor", async (_req, res) => {
+  const activeRides = await db.select().from(ridesTable)
+    .where(or(eq(ridesTable.status, "searching"), eq(ridesTable.status, "bargaining")))
+    .orderBy(desc(ridesTable.createdAt));
+
+  const rideIds = activeRides.map(r => r.id);
+  let notifiedCounts: Record<string, number> = {};
+  if (rideIds.length > 0) {
+    const counts = await db.select({ rideId: rideNotifiedRidersTable.rideId, cnt: count() })
+      .from(rideNotifiedRidersTable)
+      .where(sql`${rideNotifiedRidersTable.rideId} IN (${sql.join(rideIds.map(id => sql`${id}`), sql`, `)})`)
+      .groupBy(rideNotifiedRidersTable.rideId);
+    notifiedCounts = Object.fromEntries(counts.map(c => [c.rideId, Number(c.cnt)]));
+  }
+
+  const userIds = [...new Set(activeRides.map(r => r.userId))];
+  let userMap: Record<string, { name: string | null; phone: string | null }> = {};
+  if (userIds.length > 0) {
+    const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone })
+      .from(usersTable)
+      .where(sql`${usersTable.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+    userMap = Object.fromEntries(users.map(u => [u.id, { name: u.name, phone: u.phone }]));
+  }
+
+  const bidCounts = rideIds.length > 0
+    ? await db.select({ rideId: rideBidsTable.rideId, total: count(rideBidsTable.id) })
+        .from(rideBidsTable)
+        .where(sql`${rideBidsTable.rideId} IN (${sql.join(rideIds.map(id => sql`${id}`), sql`, `)})`)
+        .groupBy(rideBidsTable.rideId)
+    : [];
+  const bidCountMap = Object.fromEntries(bidCounts.map(b => [b.rideId, Number(b.total)]));
+
+  res.json({
+    rides: activeRides.map(r => ({
+      id: r.id,
+      type: r.type,
+      status: r.status,
+      pickupAddress: r.pickupAddress,
+      dropAddress: r.dropAddress,
+      pickupLat: r.pickupLat ? parseFloat(r.pickupLat) : null,
+      pickupLng: r.pickupLng ? parseFloat(r.pickupLng) : null,
+      fare: parseFloat(r.fare),
+      offeredFare: r.offeredFare ? parseFloat(r.offeredFare) : null,
+      customerName: userMap[r.userId]?.name ?? "Unknown",
+      customerPhone: userMap[r.userId]?.phone ?? null,
+      notifiedRiders: notifiedCounts[r.id] ?? 0,
+      totalBids: bidCountMap[r.id] ?? 0,
+      elapsedSeconds: Math.floor((Date.now() - r.createdAt.getTime()) / 1000),
+      createdAt: r.createdAt.toISOString(),
+      bargainStatus: r.bargainStatus,
+    })),
+    total: activeRides.length,
+  });
 });
 
 export default router;
