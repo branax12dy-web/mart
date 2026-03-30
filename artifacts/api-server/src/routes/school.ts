@@ -80,6 +80,11 @@ router.post("/subscribe", customerAuth, async (req, res) => {
   /* Wallet deduction for first month (only if wallet payment) */
   const monthlyAmt = safeNum(route.monthlyPrice);
   if (paymentMethod === "wallet" && monthlyAmt > 0) {
+    const [wUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (wUser && (wUser.blockedServices || "").split(",").map(sv => sv.trim()).includes("wallet")) {
+      res.status(403).json({ error: "wallet_frozen", message: "Your wallet has been temporarily frozen. Contact support." }); return;
+    }
+
     const [user] = await db.select({ walletBalance: usersTable.walletBalance })
       .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!user) { res.status(404).json({ error: "User not found" }); return; }

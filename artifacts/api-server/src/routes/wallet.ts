@@ -19,12 +19,20 @@ function mapTx(t: typeof walletTransactionsTable.$inferSelect) {
   };
 }
 
+function isWalletFrozen(user: { blockedServices: string }): boolean {
+  return (user.blockedServices || "").split(",").map(s => s.trim()).filter(Boolean).includes("wallet");
+}
+
+const WALLET_FROZEN_RESPONSE = { error: "wallet_frozen", message: "Your wallet has been temporarily frozen. Contact support." } as const;
+
 /* ── GET /wallet ─────────────────────────────────────────────────────────── */
 router.get("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (isWalletFrozen(user)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
 
   const transactions = await db
     .select()
@@ -104,6 +112,10 @@ router.post("/topup", adminAuth, async (req, res) => {
 /* ── POST /wallet/deposit — Submit a manual deposit request (customer) ───── */
 router.post("/deposit", customerAuth, async (req, res) => {
   const userId = req.customerId!;
+
+  const [depositUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (depositUser && isWalletFrozen(depositUser)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
+
   const { amount, paymentMethod, transactionId, accountNumber, note } = req.body;
 
   if (!amount)          { res.status(400).json({ error: "amount required" }); return; }
@@ -242,6 +254,10 @@ router.post("/resolve-phone", customerAuth, async (req, res) => {
 /* ── POST /wallet/send ───────────────────────────────────────────────────── */
 router.post("/send", customerAuth, async (req, res) => {
   const senderUserId = req.customerId!;
+
+  const [sendUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1);
+  if (sendUser && isWalletFrozen(sendUser)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
+
   const { receiverPhone, amount, note } = req.body;
   if (!receiverPhone || !amount) {
     res.status(400).json({ error: "receiverPhone and amount are required" }); return;
@@ -307,6 +323,7 @@ router.post("/send", customerAuth, async (req, res) => {
       const [receiver] = await tx.select().from(usersTable).where(eq(usersTable.phone, receiverPhone)).limit(1);
       if (!receiver) throw new Error("Receiver not found. Phone number check karein.");
       if (receiver.id === senderUserId) throw new Error("Apne aap ko transfer nahi kar sakte");
+      if (isWalletFrozen(receiver)) throw Object.assign(new Error("Receiver's wallet is currently frozen. Transfer cannot be completed."), { walletFrozen: true });
 
       const [deducted] = await tx.update(usersTable)
         .set({ walletBalance: sql`wallet_balance - ${totalDebit.toFixed(2)}` })
@@ -354,6 +371,9 @@ router.post("/send", customerAuth, async (req, res) => {
     const { receiverId: _rid, senderName: _sn, ...responseData } = result;
     res.json({ success: true, ...responseData });
   } catch (e: any) {
+    if ((e as any).walletFrozen) {
+      res.status(403).json({ error: "wallet_frozen", message: e.message }); return;
+    }
     res.status(400).json({ error: e.message });
   }
 });
@@ -361,6 +381,10 @@ router.post("/send", customerAuth, async (req, res) => {
 /* ── POST /wallet/p2p-topup — Customer requests P2P topup (pending admin approval) ── */
 router.post("/p2p-topup", customerAuth, async (req, res) => {
   const userId = req.customerId!;
+
+  const [p2pUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (p2pUser && isWalletFrozen(p2pUser)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
+
   const { senderPhone, amount, note } = req.body;
 
   if (!senderPhone) { res.status(400).json({ error: "senderPhone required" }); return; }

@@ -94,7 +94,7 @@ function MethodIcon({ id, size = 24 }: { id: string; size?: number }) {
   return <Ionicons name={name as any} size={size} color={color} />;
 }
 
-function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSuccess: () => void; token: string | null }) {
+function DepositModal({ onClose, onSuccess, onFrozen, token }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null }) {
   const [step, setStep]               = useState<DepositStep>("method");
   const [methods, setMethods]         = useState<PayMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
@@ -163,7 +163,11 @@ function DepositModal({ onClose, onSuccess, token }: { onClose: () => void; onSu
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setErr(data.error || "Request failed"); setSubmitting(false); return; }
+      if (!res.ok) {
+        if (data.error === "wallet_frozen") { onFrozen?.(); }
+        setErr(data.error === "wallet_frozen" ? data.message : (data.error || "Request failed"));
+        setSubmitting(false); return;
+      }
       setStep("done");
       onSuccess();
     } catch {
@@ -498,17 +502,43 @@ export default function WalletScreen() {
   const minTransfer = platformConfig.customer.minTransfer;
   const p2pEnabled  = platformConfig.customer.p2pEnabled;
 
+  const [walletFrozen, setWalletFrozen] = useState(false);
+
   const { data, isLoading, refetch } = useGetWallet(
     { userId: user?.id || "" },
     { query: { enabled: !!user?.id } }
   );
 
+  useEffect(() => {
+    if (token) {
+      fetch(`${API}/wallet`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(async r => {
+          if (r.status === 403) {
+            const d = await r.json().catch(() => ({}));
+            if (d.error === "wallet_frozen") setWalletFrozen(true);
+          } else {
+            setWalletFrozen(false);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    if (token) {
+      try {
+        const r = await fetch(`${API}/wallet`, { headers: { Authorization: `Bearer ${token}` } });
+        if (r.status === 403) {
+          const d = await r.json().catch(() => ({}));
+          if (d.error === "wallet_frozen") { setWalletFrozen(true); setRefreshing(false); return; }
+        } else { setWalletFrozen(false); }
+      } catch {}
+    }
     const res = await refetch();
     if (res.data?.balance !== undefined) updateUser({ walletBalance: res.data.balance });
     setRefreshing(false);
-  }, [refetch, updateUser]);
+  }, [refetch, updateUser, token]);
 
   useEffect(() => {
     if (token) {
@@ -536,7 +566,11 @@ export default function WalletScreen() {
         body: JSON.stringify({ senderPhone: p2pSenderPhone.trim(), amount: amt, note: p2pNote || null }),
       });
       const d = await res.json();
-      if (!res.ok) { showToast(d.error || "Request failed", "error"); setP2pLoading(false); return; }
+      if (!res.ok) {
+        if (d.error === "wallet_frozen") { setWalletFrozen(true); setShowP2PTopup(false); setP2pLoading(false); return; }
+        showToast(d.error || "Request failed", "error");
+        setP2pLoading(false); return;
+      }
       qc.invalidateQueries({ queryKey: ["getWallet"] });
       setPendingTopups(prev => ({ count: prev.count + 1, total: prev.total + amt }));
       setShowP2PTopup(false);
@@ -601,7 +635,11 @@ export default function WalletScreen() {
         body: JSON.stringify({ receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
       });
       const data = await res.json();
-      if (!res.ok) { showToast(data.error || "Transfer failed", "error"); setSendLoading(false); return; }
+      if (!res.ok) {
+        if (data.error === "wallet_frozen") { setWalletFrozen(true); setShowSend(false); setSendLoading(false); return; }
+        showToast(data.error || "Transfer failed", "error");
+        setSendLoading(false); return;
+      }
       updateUser({ walletBalance: data.newBalance });
       qc.invalidateQueries({ queryKey: ["getWallet"] });
       closeSendModal();
@@ -623,6 +661,15 @@ export default function WalletScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
       >
         <View style={{ backgroundColor: "#fff", paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
+          {walletFrozen && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEF3C7", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "#FDE68A" }}>
+              <Ionicons name="lock-closed" size={20} color="#D97706" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#92400E" }}>Wallet Frozen</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", marginTop: 2 }}>Your wallet has been temporarily frozen. Contact support.</Text>
+              </View>
+            </View>
+          )}
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
           <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
             {isLoading ? "Rs. ···" : `Rs. ${balance.toLocaleString()}`}
@@ -733,6 +780,7 @@ export default function WalletScreen() {
           token={token}
           onClose={() => setShowDeposit(false)}
           onSuccess={handleDepositSuccess}
+          onFrozen={() => setWalletFrozen(true)}
         />
       )}
 

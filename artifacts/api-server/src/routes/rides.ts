@@ -296,6 +296,13 @@ router.post("/", customerAuth, async (req, res) => {
     res.status(400).json({ error: `Wallet payment must be between Rs. ${minOnline} and Rs. ${maxOnline}` }); return;
   }
 
+  if (paymentMethod === "wallet") {
+    const [wUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (wUser && (wUser.blockedServices || "").split(",").map(sv => sv.trim()).includes("wallet")) {
+      res.status(403).json({ error: "wallet_frozen", message: "Your wallet has been temporarily frozen. Contact support." }); return;
+    }
+  }
+
   if (paymentMethod === "cash") {
     const riderCashAllowed = (s["rider_cash_allowed"] ?? "on") === "on";
     if (!riderCashAllowed) {

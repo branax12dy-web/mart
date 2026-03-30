@@ -369,6 +369,25 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
 
           <div className="space-y-2">
             <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-amber-600"/> Freeze Wallet
+            </h3>
+            <div
+              onClick={() => toggleService("wallet")}
+              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${blockedServices.includes("wallet") ? "bg-amber-50 border-amber-400 shadow-sm" : "bg-muted/30 border-border hover:border-amber-300"}`}
+            >
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${blockedServices.includes("wallet") ? "bg-amber-500 border-amber-500" : "border-gray-300"}`}>
+                {blockedServices.includes("wallet") && <span className="text-white text-xs font-bold">✕</span>}
+              </div>
+              <div className="flex-1">
+                <span className="text-sm font-semibold">🔒 Freeze Wallet</span>
+                <p className="text-xs text-muted-foreground">Blocks all wallet operations (send, receive, topup, pay)</p>
+              </div>
+              {blockedServices.includes("wallet") && <Badge variant="outline" className="ml-auto text-[10px] bg-amber-50 text-amber-600 border-amber-200">FROZEN</Badge>}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
               Service Restrictions
               <span className="text-xs font-normal text-muted-foreground">Checked = blocked for this user</span>
             </h3>
@@ -1058,6 +1077,7 @@ export default function Users() {
                                 <p className="font-semibold text-foreground truncate">{user.name || user.phone}</p>
                                 {isBanned && <Badge variant="outline" className="text-[9px] bg-red-50 text-red-600 border-red-200 px-1">BANNED</Badge>}
                                 {isBlocked && <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-600 border-amber-200 px-1">BLOCKED</Badge>}
+                                {(user.blockedServices || "").split(",").map((s: string) => s.trim()).includes("wallet") && <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-600 border-amber-200 px-1">🔒 Wallet</Badge>}
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="text-xs text-muted-foreground font-mono">{user.id.slice(-8).toUpperCase()}</p>

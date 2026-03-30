@@ -155,6 +155,11 @@ router.post("/", customerAuth, async (req, res) => {
       res.status(400).json({ error: "Wallet payments are currently disabled" }); return;
     }
 
+    const [wUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (wUser && (wUser.blockedServices || "").split(",").map(sv => sv.trim()).includes("wallet")) {
+      res.status(403).json({ error: "wallet_frozen", message: "Your wallet has been temporarily frozen. Contact support." }); return;
+    }
+
     try {
       const booking = await db.transaction(async (tx) => {
         const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
