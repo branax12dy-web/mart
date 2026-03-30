@@ -142,6 +142,8 @@ export default function Register() {
   const [otp, setOtp] = useState("");
   const [devOtp, setDevOtp] = useState("");
   const [verifyChannel, setVerifyChannel] = useState<"phone" | "email">("phone");
+  const [otpSendFailed, setOtpSendFailed] = useState(false);
+  const [resendingOtp, setResendingOtp] = useState(false);
 
   const [completed, setCompleted] = useState(false);
 
@@ -245,6 +247,9 @@ export default function Register() {
     }
     if (availabilityStatus === "taken") { setError("This phone number or email is already registered. Please log in instead."); return false; }
     if (username && usernameStatus === "taken") { setError("Username is already taken. Please choose another."); return false; }
+    if (username && (usernameStatus === "checking" || usernameStatus === "idle")) {
+      setError("Please wait — checking username availability..."); return false;
+    }
     return true;
   };
 
@@ -332,12 +337,22 @@ export default function Register() {
           ...(username ? { username: username.trim() } : {}),
         };
         if (selectedChannel === "email") {
-          await api.emailRegisterRider(regData);
-          const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
-          if (import.meta.env.DEV && emailRes.otp) setDevOtp(emailRes.otp);
+          try {
+            await api.emailRegisterRider(regData);
+          } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); setLoading(false); return; }
+          try {
+            const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
+            if (import.meta.env.DEV && emailRes.otp) setDevOtp(emailRes.otp);
+            setOtpSendFailed(false);
+          } catch {
+            setOtpSendFailed(true);
+          }
+          setVerifyChannel("email");
         } else {
-          const res = await api.registerRider(regData);
-          if (import.meta.env.DEV && res.otp) setDevOtp(res.otp);
+          try {
+            const res = await api.registerRider(regData);
+            if (import.meta.env.DEV && res.otp) setDevOtp(res.otp);
+          } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); setLoading(false); return; }
         }
         setStep(4);
       } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); }
@@ -708,6 +723,30 @@ export default function Register() {
                   }}
                     className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors ${verifyChannel === "email" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                     {T("verifyViaEmail")}
+                  </button>
+                </div>
+              )}
+              {otpSendFailed && verifyChannel === "email" && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  <p className="text-xs text-amber-800 font-semibold mb-2">OTP sending failed. Your account was registered — please resend the OTP to verify your email.</p>
+                  <button type="button" disabled={resendingOtp}
+                    onClick={async () => {
+                      setResendingOtp(true); setError("");
+                      try {
+                        let captchaToken: string | undefined;
+                        if (auth.captchaEnabled) {
+                          captchaToken = await executeCaptcha("resend_email_otp", config.auth?.captchaSiteKey || "");
+                        }
+                        const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
+                        if (import.meta.env.DEV && emailRes.otp) setDevOtp(emailRes.otp);
+                        setOtpSendFailed(false);
+                      } catch (e: unknown) {
+                        setError(e instanceof Error ? e.message : "Failed to resend OTP");
+                      }
+                      setResendingOtp(false);
+                    }}
+                    className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-60">
+                    {resendingOtp ? "Sending..." : "Resend OTP"}
                   </button>
                 </div>
               )}

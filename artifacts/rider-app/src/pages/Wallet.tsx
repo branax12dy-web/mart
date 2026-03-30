@@ -255,6 +255,14 @@ export default function Wallet() {
     enabled: config.features.wallet,
   });
 
+  const [showDeposits, setShowDeposits] = useState(false);
+  const { data: depositsData, refetch: refetchDeposits } = useQuery({
+    queryKey: ["rider-deposits"],
+    queryFn: () => api.getDeposits(),
+    enabled: showDeposits && config.features.wallet,
+    staleTime: 30000,
+  });
+
   const transactions: WalletTx[] = data?.transactions || [];
   const balance = data?.balance ?? (user?.walletBalance ? Number(user.walletBalance) : 0);
 
@@ -283,7 +291,7 @@ export default function Wallet() {
     if (filter === "all") return transactions;
     if (filter === "bonus") return transactions.filter(t => t.type === "bonus" || t.type === "loyalty" || t.type === "cashback");
     if (filter === "fees") return transactions.filter(t => t.type === "platform_fee");
-    if (filter === "debit") return transactions.filter(t => t.type === "debit" || t.type === "platform_fee");
+    if (filter === "debit") return transactions.filter(t => t.type === "debit");
     return transactions.filter(t => t.type === filter);
   }, [filter, transactions]);
 
@@ -388,10 +396,12 @@ export default function Wallet() {
           </div>
 
           <div className="flex items-center gap-2 mb-5">
-            <div className="flex items-center gap-1 bg-green-500/15 px-2 py-0.5 rounded-full">
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"/>
-              <span className="text-[9px] text-green-400 font-bold">{T("online" as TranslationKey)}</span>
-            </div>
+            {user?.isOnline && (
+              <div className="flex items-center gap-1 bg-green-500/15 px-2 py-0.5 rounded-full">
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"/>
+                <span className="text-[9px] text-green-400 font-bold">{T("online" as TranslationKey)}</span>
+              </div>
+            )}
             {pendingAmt > 0 && (
               <div className="flex items-center gap-1 bg-amber-500/15 px-2 py-0.5 rounded-full">
                 <Clock size={9} className="text-amber-400"/>
@@ -557,6 +567,60 @@ export default function Wallet() {
             )}
           </div>
         )}
+
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between px-5 py-4"
+            onClick={() => { setShowDeposits(v => !v); if (!showDeposits) refetchDeposits(); }}
+          >
+            <div className="flex items-center gap-2.5">
+              <ArrowDownToLine size={16} className="text-green-600"/>
+              <span className="font-bold text-gray-800 text-sm">Deposit History</span>
+            </div>
+            {showDeposits ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
+          </button>
+          {showDeposits && (
+            <div className="border-t border-gray-50">
+              {!depositsData ? (
+                <div className="px-5 py-8 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/>
+                </div>
+              ) : (() => {
+                const depositList: any[] = depositsData?.deposits ?? depositsData ?? [];
+                if (depositList.length === 0) return (
+                  <div className="px-5 py-8 text-center">
+                    <p className="text-sm text-gray-400 font-medium">No deposits yet</p>
+                  </div>
+                );
+                return (
+                <div className="divide-y divide-gray-50">
+                  {depositList.map((dep: any) => {
+                    const st = dep.status === "verified" ? "verified" : dep.status === "rejected" ? "rejected" : "pending";
+                    const stBadge = st === "pending" ? "bg-amber-100 text-amber-700" : st === "verified" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600";
+                    const stIcon = st === "pending" ? <Clock size={10}/> : st === "verified" ? <CheckCircle size={10}/> : <XCircle size={10}/>;
+                    return (
+                      <div key={dep.id} className="px-5 py-3.5 flex items-center gap-3">
+                        <div className="w-9 h-9 bg-green-50 rounded-2xl flex items-center justify-center flex-shrink-0">
+                          <ArrowDownToLine size={16} className="text-green-600"/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">{dep.method || "Deposit"}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-[10px] text-gray-400">{new Date(dep.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })}</p>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 ${stBadge}`}>{stIcon} {st}</span>
+                          </div>
+                          {dep.note && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{dep.note}</p>}
+                        </div>
+                        <p className="text-sm font-black text-green-600 flex-shrink-0">{fc(Number(dep.amount))}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
 
         {withdrawalRequests.length > 0 && (
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">

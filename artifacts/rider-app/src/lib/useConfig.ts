@@ -99,6 +99,7 @@ export interface PlatformConfig {
     surgeMultiplier: number;
     cancellationFee: number;
     riderEarningPct: number;
+    counterMaxMultiplier?: number;
   };
   finance: {
     gstEnabled: boolean;

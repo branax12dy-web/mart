@@ -5,7 +5,8 @@ import {
   MapPinned, ArrowDown, Shield, Navigation, Clock, Zap,
   ChevronRight, Eye, Truck, WifiOff,
 } from "lucide-react";
-import { api, apiFetch } from "../lib/api";
+import { api } from "../lib/api";
+import { logRideEvent } from "../lib/rideUtils";
 import { useState, useRef, useEffect } from "react";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useAuth } from "../lib/auth";
@@ -168,7 +169,11 @@ function EstimatedArrivalBadge({ riderPos, pickupLat, pickupLng, vehicleType }: 
 }) {
   if (!riderPos || pickupLat == null || pickupLng == null) return null;
   const distKm = haversineDistance(riderPos.lat, riderPos.lng, pickupLat, pickupLng);
-  const speedKmh = vehicleType === "car" ? 30 : 25;
+  const speedKmh = vehicleType === "car" ? 30
+    : vehicleType === "bike" ? 25
+    : vehicleType === "rickshaw" ? 20
+    : vehicleType === "daba" ? 20
+    : 22;
   const etaMin = Math.max(1, Math.round((distKm / speedKmh) * 60));
   return (
     <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-4 py-3">
@@ -272,29 +277,15 @@ export default function Active() {
   }, [tabVisible]);
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
+  const gpsWarningRef = useRef<string | null>(null);
 
-  const logRideEvent = (rideId: string, event: string) => {
-    const doLog = (lat?: number, lng?: number) => {
-      apiFetch(`/rider/rides/${rideId}/event-log`, {
-        method:  "POST",
-        body: JSON.stringify({ event, lat, lng }),
-      }).catch((err: Error) => {
-        setGpsWarning(`GPS event log failed: ${err.message}`);
-      });
-    };
-    if (navigator?.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => doLog(pos.coords.latitude, pos.coords.longitude),
-        ()    => doLog(),
-        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 15_000 },
-      );
-    } else {
-      doLog();
-    }
+  const setGpsWarningWithRef = (val: string | null) => {
+    gpsWarningRef.current = val;
+    setGpsWarning(val);
   };
 
   useEffect(() => {
-    if (data?.order?.status === "picked_up") _setOrderPickedUp(true);
+    if (data?.order?.status === "picked_up") setOrderPickedUp(true);
   }, [data?.order?.status]);
 
   useEffect(() => {
@@ -316,11 +307,11 @@ export default function Active() {
           longitude: pos.coords.longitude,
           accuracy:  pos.coords.accuracy,
         }).then(() => {
-          if (gpsWarning) setGpsWarning(null);
+          if (gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
           const msg = err.message || "Location update failed";
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
-          setGpsWarning(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
+          setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
         if (!navigator.onLine) {
           pendingUpdatesRef.current.push({ kind: "location", run: doUpdate });
@@ -329,7 +320,7 @@ export default function Active() {
         }
       },
       (geoErr) => {
-        setGpsWarning(`GPS unavailable: ${geoErr.message}`);
+        setGpsWarningWithRef(`GPS unavailable: ${geoErr.message}`);
       },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },
     );
@@ -353,6 +344,10 @@ export default function Active() {
       return;
     }
     setShowNoPhotoWarning(false);
+    if (proofPhoto && !navigator.onLine) {
+      showToast("Cannot upload photo while offline — please reconnect and try again.", true);
+      return;
+    }
     let photoUrl: string | undefined;
     if (proofPhoto) {
       setProofUploading(true);
@@ -421,7 +416,7 @@ export default function Active() {
       qc.invalidateQueries({ queryKey: ["rider-history"] });
       qc.invalidateQueries({ queryKey: ["rider-earnings"] });
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      logRideEvent(vars.id, vars.status);
+      logRideEvent(vars.id, vars.status, (msg, isErr) => showToast(msg, isErr));
       if (vars.status === "completed") showToast(T("rideCompletedEarnings"));
       else if (vars.status === "cancelled") { setShowCancelConfirm(false); showToast(T("rideCancelledMsg")); }
       else showToast(T("statusUpdated"));

@@ -158,9 +158,9 @@ export default function History() {
             const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
             const getGroup = (d: Date) => {
               if (d >= todayStart) return T("today");
-              if (d >= yesterdayStart) return "Yesterday";
+              if (d >= yesterdayStart) return T("yesterday");
               if (d >= weekStart) return T("thisWeek");
-              return "Earlier";
+              return T("earlier");
             };
             let lastGroup = "";
             return visibleItems.map((item: HistoryItem) => {

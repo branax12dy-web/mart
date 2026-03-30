@@ -64,7 +64,8 @@ export default function RemittanceModal({ netOwed, onClose, onSuccess }: {
 
   const goToConfirm = () => {
     const amt = Number(amount);
-    if (!amount || isNaN(amt) || amt <= 0) { setErr("Valid amount likhein"); return; }
+    if (!amount || isNaN(amt) || amt < 1) { setErr("Amount kam az kam Rs. 1 hona chahiye"); return; }
+    if (amt > netOwed) { setErr(`Amount ${fc(amt)} owed amount ${fc(netOwed)} se zyada nahi ho sakta`); return; }
     if (!acNo.trim()) { setErr("Account / phone number required"); return; }
     if (!txId.trim()) { setErr("Transaction reference ID required hai"); return; }
     setErr(""); setStep("confirm");
@@ -184,7 +185,7 @@ export default function RemittanceModal({ netOwed, onClose, onSuccess }: {
               <div className="space-y-3">
                 <div>
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount (Rs.) *</p>
-                  <input type="number" inputMode="numeric" value={amount}
+                  <input type="number" inputMode="numeric" value={amount} min={1} max={Math.ceil(netOwed)}
                     onChange={e => { setAmount(e.target.value); setErr(""); }} className={INPUT} placeholder="0"/>
                 </div>
                 <div>

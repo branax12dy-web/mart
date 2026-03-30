@@ -210,7 +210,24 @@ export default function Profile() {
         Object.assign(payload, { name, email, cnic: cnic.trim(), city, address, emergencyContact: emergency });
       }
       if (section === "vehicle")  Object.assign(payload, { vehicleType, vehiclePlate, vehicleRegNo, drivingLicense });
-      if (section === "bank")     Object.assign(payload, { bankName, bankAccount, bankAccountTitle });
+      if (section === "bank") {
+        if (!bankAccount || bankAccount.trim().length < 8) {
+          showToast(T("bankAccountRequired"));
+          setSaving(false);
+          return;
+        }
+        if (!bankAccountTitle || !bankAccountTitle.trim()) {
+          showToast(T("bankAccountTitleRequired"));
+          setSaving(false);
+          return;
+        }
+        if (!bankName) {
+          showToast(T("bankNameRequired"));
+          setSaving(false);
+          return;
+        }
+        Object.assign(payload, { bankName, bankAccount: bankAccount.trim(), bankAccountTitle: bankAccountTitle.trim() });
+      }
       await api.updateProfile(payload);
       await refreshUser();
       setEditing(null);
@@ -257,6 +274,8 @@ export default function Profile() {
       logoutTimerRef.current = setTimeout(() => setLogoutConfirm(false), 4000);
       return;
     }
+    sessionStorage.removeItem("orderPickedUp");
+    sessionStorage.removeItem("rider_dismissed");
     logout();
   };
 
@@ -797,8 +816,8 @@ export default function Profile() {
                 ))}
               </div>
             </div>
-            <div className="divide-y divide-gray-50">
-              {reviewsData.reviews.slice(0, 5).map((r: any) => (
+            <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+              {reviewsData.reviews.map((r: any) => (
                 <div key={r.id} className="px-5 py-3.5">
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">

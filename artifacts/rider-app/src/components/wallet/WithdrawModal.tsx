@@ -262,7 +262,7 @@ export default function WithdrawModal({
                     {selectedMethod.id === "bank" ? "Account Number / IBAN *" : "Registered Phone Number *"}
                   </p>
                   <input value={acNo} onChange={e => { setAcNo(e.target.value); setErr(""); }}
-                    inputMode="numeric"
+                    inputMode={selectedMethod.id === "bank" ? "text" : "numeric"}
                     placeholder={selectedMethod.id === "bank" ? "PK36SCBL0000001234567801" : "03XX-XXXXXXX"}
                     className={INPUT}/>
                 </div>

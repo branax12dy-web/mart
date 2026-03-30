@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { useAuth } from "../lib/auth";
-import { api, apiFetch } from "../lib/api";
+import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { playRequestSound, unlockAudio, silenceFor, isSilenced, unsilence, getSilenceRemaining, getSilenceMode, setSilenceMode } from "../lib/notificationSound";
+import { logRideEvent } from "../lib/rideUtils";
 import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
   ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
@@ -182,8 +183,29 @@ export default function Home() {
     refetchInterval: tabVisible ? (user?.isOnline ? 12000 : 60000) : false,
   });
 
+  const { data: cancelStatsData } = useQuery({
+    queryKey: ["rider-cancel-stats"],
+    queryFn: () => api.getCancelStats(),
+    refetchInterval: tabVisible ? 120000 : false,
+    staleTime: 60000,
+  });
+
   const allOrders: any[] = requestsData?.orders || [];
   const allRides:  any[] = requestsData?.rides  || [];
+
+  useEffect(() => {
+    if (!requestsData) return;
+    const serverIds = new Set<string>([
+      ...allOrders.map((o: any) => o.id),
+      ...allRides.map((r: any) => r.id),
+    ]);
+    setDismissed(prev => {
+      const next = new Set([...prev].filter(id => serverIds.has(id)));
+      if (next.size === prev.size) return prev;
+      try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [requestsData]);
 
   const currentIdsSig = [...allOrders.map((o: any) => o.id), ...allRides.map((r: any) => r.id)].sort().join(",");
   useEffect(() => {
@@ -198,7 +220,7 @@ export default function Home() {
       hasUnseenRequestsRef.current = true;
       if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
       soundIntervalRef.current = setInterval(() => {
-        if (hasUnseenRequestsRef.current) playRequestSound();
+        if (hasUnseenRequestsRef.current && !getSilenceMode() && !isSilenced() && !document.hidden) playRequestSound();
       }, 8000);
     }
     if (currentIds.size === 0) {
@@ -222,6 +244,12 @@ export default function Home() {
   }, [tabVisible]);
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
+  const gpsWarningRef = useRef<string | null>(null);
+
+  const setGpsWarningWithRef = (val: string | null) => {
+    gpsWarningRef.current = val;
+    setGpsWarning(val);
+  };
 
   useEffect(() => {
     if (!user?.isOnline || hasActiveTask || !user?.id) return;
@@ -240,15 +268,15 @@ export default function Home() {
           longitude: pos.coords.longitude,
           accuracy:  pos.coords.accuracy,
         }).then(() => {
-          if (gpsWarning) setGpsWarning(null);
+          if (gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
           const msg = err.message || "Location update failed";
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
-          setGpsWarning(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
+          setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
       },
       (geoErr) => {
-        setGpsWarning(`GPS unavailable: ${geoErr.message}`);
+        setGpsWarningWithRef(`GPS unavailable: ${geoErr.message}`);
       },
       { enableHighAccuracy: false, maximumAge: 20_000, timeout: 30_000 },
     );
@@ -265,26 +293,6 @@ export default function Home() {
     try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
     return next;
   });
-
-  const logRideEvent = (rideId: string, event: string) => {
-    const doLog = (lat?: number, lng?: number) => {
-      apiFetch(`/rider/rides/${rideId}/event-log`, {
-        method: "POST",
-        body: JSON.stringify({ event, lat, lng }),
-      }).catch((err: Error) => {
-        showToast(`GPS event log failed: ${err.message}`, "error");
-      });
-    };
-    if (navigator?.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => doLog(pos.coords.latitude, pos.coords.longitude),
-        ()    => doLog(),
-        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 15_000 },
-      );
-    } else {
-      doLog();
-    }
-  };
 
   const stopRequestSound = () => {
     hasUnseenRequestsRef.current = false;
@@ -311,7 +319,7 @@ export default function Home() {
       stopRequestSound();
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       qc.invalidateQueries({ queryKey: ["rider-active"] });
-      logRideEvent(id, "accepted");
+      logRideEvent(id, "accepted", (msg, isErr) => showToast(msg, isErr ? "error" : "success"));
       showToast("Ride accepted! Check Active tab.", "success");
     },
     onError: (e: any) => {
@@ -363,6 +371,7 @@ export default function Home() {
   const toggleSilence = () => {
     const next = !getSilenceMode();
     setSilenceMode(next);
+    setSilenceOn(next);
     showToast(next ? "Silence mode ON — no alert sounds" : "Silence mode OFF — sounds enabled", "success");
   };
 
@@ -542,6 +551,29 @@ export default function Home() {
             <p className="text-sm text-blue-700 font-medium leading-relaxed flex-1 pt-0.5">{config.content.riderNotice}</p>
           </div>
         )}
+
+        {cancelStatsData && cancelStatsData.dailyCancels > 0 && (() => {
+          const atRisk = cancelStatsData.remaining === 0;
+          return (
+            <div className={`rounded-3xl px-4 py-3 flex items-center gap-3 shadow-sm border ${atRisk ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${atRisk ? "bg-red-100" : "bg-amber-100"}`}>
+                <XCircle size={18} className={atRisk ? "text-red-500" : "text-amber-500"}/>
+              </div>
+              <div className="flex-1">
+                <p className={`text-xs font-extrabold ${atRisk ? "text-red-800" : "text-amber-800"}`}>
+                  {cancelStatsData.dailyCancels} cancellation{cancelStatsData.dailyCancels !== 1 ? "s" : ""} today
+                  {atRisk ? " — Limit Reached!" : ""}
+                </p>
+                {cancelStatsData.dailyLimit != null && (
+                  <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
+                    Limit: {cancelStatsData.dailyLimit} per day · {cancelStatsData.remaining} remaining
+                    {cancelStatsData.penaltyAmount > 0 && ` · Rs. ${Math.round(cancelStatsData.penaltyAmount)} penalty per excess`}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {(() => {
           const minBal  = config.rider?.minBalance ?? 0;
@@ -886,13 +918,15 @@ export default function Home() {
                                   <button
                                     onClick={() => {
                                       const v = Number(counterInputs[r.id] || 0);
-                                      const maxFare = (r.offeredFare ?? r.fare) * 3;
-                                      if (!v || v <= 0) {
-                                        setCounterErrors(prev => ({ ...prev, [r.id]: "Fare must be greater than Rs. 0" }));
+                                      const vt = r.vehicleType as string | undefined;
+                                      const minFare = vt === "car" ? (config.rides.carMinFare ?? 80) : (config.rides.bikeMinFare ?? 50);
+                                      const maxFare = (r.offeredFare ?? r.fare) * (config.rides.counterMaxMultiplier ?? 3);
+                                      if (!v || v < minFare) {
+                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Minimum fare is ${formatCurrency(minFare)}` }));
                                         return;
                                       }
                                       if (v > maxFare) {
-                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)} (3× offered price)` }));
+                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)}` }));
                                         return;
                                       }
                                       setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
@@ -925,13 +959,15 @@ export default function Home() {
                                 <button
                                   onClick={() => {
                                     const v = Number(counterInputs[r.id] || 0);
-                                    const maxFare = (r.offeredFare ?? r.fare) * 3;
-                                    if (!v || v <= 0) {
-                                      setCounterErrors(prev => ({ ...prev, [r.id]: "Fare must be greater than Rs. 0" }));
+                                    const vt = r.vehicleType as string | undefined;
+                                    const minFare = vt === "car" ? (config.rides.carMinFare ?? 80) : (config.rides.bikeMinFare ?? 50);
+                                    const maxFare = (r.offeredFare ?? r.fare) * (config.rides.counterMaxMultiplier ?? 3);
+                                    if (!v || v < minFare) {
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Minimum fare is ${formatCurrency(minFare)}` }));
                                       return;
                                     }
                                     if (v > maxFare) {
-                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)} (3× offered price)` }));
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)}` }));
                                       return;
                                     }
                                     setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
