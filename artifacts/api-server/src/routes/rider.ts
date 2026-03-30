@@ -214,10 +214,13 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
 }
 
 /* ── GET /rider/requests — Available orders + rides (incl. bargaining, with own bid info + distance/ETA) ── */
+/* InDrive-style broadcast: ALL nearby riders within admin radius see every open ride.
+   First to accept wins via atomic WHERE riderId IS NULL. */
 router.get("/requests", async (req, res) => {
   const riderId = req.riderId!;
   const s = await getPlatformSettings();
   const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
+  const radiusKm = parseFloat(s["dispatch_min_radius_km"] ?? "5");
 
   const [orders, rides, myBids, riderLoc] = await Promise.all([
     db.select().from(ordersTable)
@@ -238,9 +241,8 @@ router.get("/requests", async (req, res) => {
   const myBidMap = new Map<string, (typeof myBids)[0]>(myBids.map(b => [b.rideId, b]));
   const rLoc = riderLoc[0] ? { lat: parseFloat(String(riderLoc[0].latitude)), lng: parseFloat(String(riderLoc[0].longitude)) } : null;
 
-  res.json({
-    orders: orders.map(o => ({ ...o, total: safeNum(o.total) })),
-    rides:  rides.map(r => {
+  const filteredRides = rides
+    .map(r => {
       let riderDistanceKm: number | null = null;
       let riderEtaMin: number | null = null;
       if (rLoc && r.pickupLat && r.pickupLng) {
@@ -262,7 +264,16 @@ router.get("/requests", async (req, res) => {
           note: myBidMap.get(r.id)!.note,
         } : null,
       };
-    }),
+    })
+    .filter(r => {
+      if (r.riderDistanceKm === null) return true;
+      return r.riderDistanceKm <= radiusKm;
+    })
+    .sort((a, b) => (a.riderDistanceKm ?? 999) - (b.riderDistanceKm ?? 999));
+
+  res.json({
+    orders: orders.map(o => ({ ...o, total: safeNum(o.total) })),
+    rides: filteredRides,
   });
 });
 
@@ -1352,7 +1363,8 @@ router.patch("/location", async (req, res) => {
   res.json({ success: true, updatedAt: new Date().toISOString() });
 });
 
-/* ── POST /rider/rides/:id/ignore — Rider ignores a dispatched ride request ── */
+/* ── POST /rider/rides/:id/ignore — Rider ignores a ride request (broadcast model) ──
+   Any nearby rider can ignore a ride. Tracks ignore count and applies penalty if threshold exceeded. */
 router.post("/rides/:id/ignore", async (req, res) => {
   const riderId = req.riderId!;
   const rideId  = req.params["id"]!;
@@ -1360,8 +1372,8 @@ router.post("/rides/:id/ignore", async (req, res) => {
   const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
 
-  if (ride.dispatchedRiderId !== riderId) {
-    res.status(400).json({ error: "This ride is not dispatched to you" }); return;
+  if (!["searching", "bargaining"].includes(ride.status)) {
+    res.status(400).json({ error: "This ride is no longer available" }); return;
   }
 
   const s = await getPlatformSettings();
@@ -1409,15 +1421,6 @@ router.post("/rides/:id/ignore", async (req, res) => {
     amount: penaltyApplied > 0 ? ignorePenaltyAmt.toFixed(2) : "0",
     reason: `Ignored ride ${rideId.slice(-6).toUpperCase()} (${dailyIgnores} today)`,
   });
-
-  const currentAttempts = ride.dispatchAttempts ? JSON.parse(ride.dispatchAttempts) : [];
-  if (!currentAttempts.includes(riderId)) currentAttempts.push(riderId);
-  await db.update(ridesTable).set({
-    dispatchedRiderId: null,
-    dispatchAttempts: JSON.stringify(currentAttempts),
-    expiresAt: null,
-    updatedAt: new Date(),
-  }).where(eq(ridesTable.id, rideId));
 
   res.json({ success: true, dailyIgnores, threshold: ignoreThreshold, penaltyApplied });
 });
