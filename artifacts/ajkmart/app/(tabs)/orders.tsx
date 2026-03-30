@@ -25,6 +25,8 @@ import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { useGetOrders } from "@workspace/api-client-react";
+import { CancelModal } from "@/components/CancelModal";
+import type { CancelTarget } from "@/components/CancelModal";
 
 const C = Colors.light;
 
@@ -100,8 +102,14 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
     : 0;
   const canRate = reviews && isDelivered && !order._reviewed && hourssinceDelivery <= ratingWindowHours;
 
+  const handleCardPress = () => {
+    if (isActive) {
+      router.push(`/order?orderId=${order.id}`);
+    }
+  };
+
   return (
-    <View style={styles.card}>
+    <Pressable onPress={handleCardPress} disabled={!isActive} style={styles.card}>
       <View style={styles.cardTop}>
         <View style={[styles.chip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
           <Ionicons
@@ -204,9 +212,19 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
           <Text style={styles.refundText}>{T("refundInfo").replace("{n}", String(refundDays))}</Text>
         </View>
       )}
-    </View>
+
+      {isActive && (
+        <View style={styles.tapHint}>
+          <Ionicons name="open-outline" size={11} color={C.textMuted} />
+          <Text style={styles.tapHintText}>Tap for details</Text>
+        </View>
+      )}
+    </Pressable>
   );
 }
+
+const RIDE_STEPS = ["accepted", "arrived", "in_transit", "completed"];
+const RIDE_STEP_LABELS = ["Accepted", "Arrived", "On Route", "Done"];
 
 function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   ride: any;
@@ -222,9 +240,17 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   const isCompleted = ride.status === "completed";
   const canCancel   = ["searching", "bargaining", "accepted", "arrived", "in_transit"].includes(ride.status);
   const hasRider    = ["accepted", "arrived", "in_transit", "ongoing"].includes(ride.status);
+  const rideStepIdx = RIDE_STEPS.indexOf(ride.status);
+  const showStepper = isActive && rideStepIdx >= 0;
+
+  const handleCardPress = () => {
+    if (isActive) {
+      router.push(`/ride?rideId=${ride.id}`);
+    }
+  };
 
   return (
-    <View style={styles.card}>
+    <Pressable onPress={handleCardPress} disabled={!isActive} style={styles.card}>
       <View style={styles.cardTop}>
         <View style={[styles.chip, { backgroundColor: "#ECFDF5" }]}>
           <Ionicons
@@ -309,7 +335,47 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
           <Text style={styles.reviewedText}>{T("reviewedThanks")}</Text>
         </View>
       )}
-    </View>
+
+      {showStepper && (
+        <View style={styles.rideStepperWrap}>
+          <View style={styles.rideStepperRow}>
+            {RIDE_STEPS.map((step, i) => {
+              const done = rideStepIdx >= i;
+              const active = rideStepIdx === i;
+              const isLast = i === RIDE_STEPS.length - 1;
+              return (
+                <React.Fragment key={step}>
+                  <View style={styles.rideStepItem}>
+                    <View style={[
+                      styles.rideStepDot,
+                      done && { backgroundColor: active ? cfg.color : "#10B981" },
+                      active && { shadowColor: cfg.color, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+                    ]}>
+                      {done
+                        ? <Ionicons name="checkmark" size={10} color="#fff" />
+                        : <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#CBD5E1" }} />}
+                    </View>
+                    <Text style={[styles.rideStepLabel, done && { color: C.text }, active && { fontFamily: "Inter_700Bold" }]}>
+                      {RIDE_STEP_LABELS[i]}
+                    </Text>
+                  </View>
+                  {!isLast && (
+                    <View style={[styles.rideStepLine, rideStepIdx > i && { backgroundColor: "#10B981" }]} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {isActive && (
+        <View style={styles.tapHint}>
+          <Ionicons name="open-outline" size={11} color={C.textMuted} />
+          <Text style={styles.tapHintText}>Tap to track</Text>
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -400,8 +466,14 @@ function ParcelCard({ booking }: { booking: any }) {
     ? booking.parcelType.charAt(0).toUpperCase() + booking.parcelType.slice(1)
     : T("parcel");
 
+  const handleCardPress = () => {
+    if (isActive) {
+      router.push(`/order?orderId=${booking.id}&type=parcel`);
+    }
+  };
+
   return (
-    <View style={styles.card}>
+    <Pressable onPress={handleCardPress} disabled={!isActive} style={styles.card}>
       <View style={styles.cardTop}>
         <View style={[styles.chip, { backgroundColor: "#FEF3C7" }]}>
           <Ionicons name="cube-outline" size={13} color="#D97706" />
@@ -455,7 +527,14 @@ function ParcelCard({ booking }: { booking: any }) {
           </View>
         </View>
       )}
-    </View>
+
+      {isActive && (
+        <View style={styles.tapHint}>
+          <Ionicons name="open-outline" size={11} color={C.textMuted} />
+          <Text style={styles.tapHintText}>Tap to track</Text>
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -590,224 +669,6 @@ const rm = StyleSheet.create({
   submitText:{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
 });
 
-type CancelTarget = {
-  id: string;
-  type: "order" | "ride";
-  status: string;
-  total?: number;
-  fare?: number;
-  paymentMethod?: string;
-  riderAssigned?: boolean;
-  cancelMinsLeft?: number;
-};
-
-const ORDER_CANCEL_REASONS = [
-  { key: "changed_mind",     label: "Changed my mind",       icon: "swap-horizontal-outline" },
-  { key: "wrong_items",      label: "Wrong items ordered",   icon: "alert-circle-outline" },
-  { key: "found_cheaper",    label: "Found a better price",  icon: "pricetag-outline" },
-  { key: "taking_too_long",  label: "Taking too long",       icon: "time-outline" },
-  { key: "other",            label: "Other reason",          icon: "chatbox-ellipses-outline" },
-] as const;
-
-const RIDE_CANCEL_REASONS = [
-  { key: "changed_mind",     label: "Changed my mind",       icon: "swap-horizontal-outline" },
-  { key: "wrong_location",   label: "Wrong pickup/drop",     icon: "location-outline" },
-  { key: "wait_too_long",    label: "Driver taking too long", icon: "time-outline" },
-  { key: "found_other",      label: "Found another ride",    icon: "car-outline" },
-  { key: "other",            label: "Other reason",          icon: "chatbox-ellipses-outline" },
-] as const;
-
-function CancelModal({ target, cancellationFee, apiBase, token, onClose, onDone }: {
-  target: CancelTarget;
-  cancellationFee: number;
-  apiBase: string;
-  token: string | null;
-  onClose: () => void;
-  onDone: (result: any) => void;
-}) {
-  const [selectedReason, setSelectedReason] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const isRide = target.type === "ride";
-  const reasons = isRide ? RIDE_CANCEL_REASONS : ORDER_CANCEL_REASONS;
-  const riderAssigned = target.riderAssigned ?? false;
-  const hasFee = isRide && riderAssigned && cancellationFee > 0;
-  const isWallet = target.paymentMethod === "wallet";
-  const amount = isRide ? target.fare : target.total;
-
-  const handleConfirm = async () => {
-    if (!selectedReason) { setError("Please select a reason."); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const url = isRide
-        ? `${apiBase}/rides/${target.id}/cancel`
-        : `${apiBase}/orders/${target.id}/cancel`;
-      const res = await fetch(url, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ reason: selectedReason }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || "Could not cancel. Please try again.");
-        setLoading(false);
-        return;
-      }
-      const result = await res.json().catch(() => ({}));
-      onDone(result);
-      onClose();
-    } catch {
-      setError("Network error. Please try again.");
-    }
-    setLoading(false);
-  };
-
-  const safeClose = () => { if (!loading) onClose(); };
-
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={safeClose}>
-      <Pressable style={cm.backdrop} onPress={safeClose}>
-        <Pressable style={cm.sheet} onPress={() => {}}>
-          <View style={cm.handle} />
-
-          <View style={cm.headerIconWrap}>
-            <View style={cm.headerIcon}>
-              <Ionicons name="warning" size={24} color="#fff" />
-            </View>
-          </View>
-
-          <Text style={cm.title}>
-            {isRide ? "Cancel Ride?" : "Cancel Order?"}
-          </Text>
-          <Text style={cm.sub}>
-            {isRide
-              ? `Ride #${target.id.slice(-8).toUpperCase()}`
-              : `Order #${target.id.slice(-8).toUpperCase()}`}
-            {target.cancelMinsLeft != null && !isRide
-              ? ` · ${target.cancelMinsLeft}m left`
-              : ""}
-          </Text>
-
-          {(hasFee || isWallet) && (
-            <View style={cm.infoBox}>
-              {hasFee && (
-                <View style={cm.infoRow}>
-                  <Ionicons name="cash-outline" size={15} color="#DC2626" />
-                  <Text style={cm.infoTextRed}>
-                    Rs. {cancellationFee} cancellation fee will apply
-                  </Text>
-                </View>
-              )}
-              {isWallet && amount != null && (
-                <View style={cm.infoRow}>
-                  <Ionicons name="wallet-outline" size={15} color="#059669" />
-                  <Text style={cm.infoTextGreen}>
-                    Rs. {Math.round(amount)} will be refunded to wallet
-                  </Text>
-                </View>
-              )}
-              {!hasFee && !isWallet && isRide && !riderAssigned && (
-                <View style={cm.infoRow}>
-                  <Ionicons name="checkmark-circle-outline" size={15} color="#059669" />
-                  <Text style={cm.infoTextGreen}>No cancellation fee applies</Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {!hasFee && !isWallet && isRide && !riderAssigned && (
-            <View style={cm.infoBox}>
-              <View style={cm.infoRow}>
-                <Ionicons name="checkmark-circle-outline" size={15} color="#059669" />
-                <Text style={cm.infoTextGreen}>No cancellation fee applies</Text>
-              </View>
-            </View>
-          )}
-
-          <Text style={cm.reasonTitle}>Why are you cancelling?</Text>
-          <View style={cm.reasons}>
-            {reasons.map(r => {
-              const active = selectedReason === r.key;
-              return (
-                <Pressable
-                  key={r.key}
-                  onPress={() => { setSelectedReason(r.key); setError(""); }}
-                  style={[cm.reasonChip, active && cm.reasonChipActive]}
-                >
-                  <Ionicons
-                    name={r.icon as any}
-                    size={16}
-                    color={active ? "#DC2626" : C.textSecondary}
-                  />
-                  <Text style={[cm.reasonText, active && cm.reasonTextActive]}>
-                    {r.label}
-                  </Text>
-                  {active && (
-                    <Ionicons name="checkmark-circle" size={16} color="#DC2626" />
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {error ? <Text style={cm.error}>{error}</Text> : null}
-
-          <View style={cm.btns}>
-            <Pressable style={cm.keepBtn} onPress={safeClose}>
-              <Text style={cm.keepText}>
-                {isRide ? "Keep Ride" : "Keep Order"}
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[cm.confirmBtn, !selectedReason && { opacity: 0.5 }]}
-              onPress={handleConfirm}
-              disabled={loading || !selectedReason}
-            >
-              {loading
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={cm.confirmText}>Confirm Cancel</Text>}
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-const cm = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, maxHeight: "85%" },
-  handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  headerIconWrap: { alignItems: "center", marginBottom: 14 },
-  headerIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: "#DC2626", alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, textAlign: "center", marginBottom: 4 },
-  sub: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center", marginBottom: 16 },
-  infoBox: { backgroundColor: "#FAFAFA", borderRadius: 14, padding: 14, gap: 8, marginBottom: 16, borderWidth: 1, borderColor: C.border },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  infoTextRed: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#DC2626", flex: 1 },
-  infoTextGreen: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#059669", flex: 1 },
-  reasonTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text, marginBottom: 10 },
-  reasons: { gap: 8, marginBottom: 12 },
-  reasonChip: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    paddingVertical: 13, paddingHorizontal: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: C.border, backgroundColor: "#FAFAFA",
-  },
-  reasonChipActive: { borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" },
-  reasonText: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.textSecondary, flex: 1 },
-  reasonTextActive: { color: "#DC2626" },
-  error: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#EF4444", textAlign: "center", marginBottom: 8 },
-  btns: { flexDirection: "row", gap: 12, marginTop: 8 },
-  keepBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, paddingVertical: 15, alignItems: "center" },
-  keepText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary },
-  confirmBtn: { flex: 2, backgroundColor: "#DC2626", borderRadius: 16, paddingVertical: 15, alignItems: "center", justifyContent: "center" },
-  confirmText: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
-});
 
 function SectionHeader({ title, count, active }: { title: string; count: number; active?: boolean }) {
   return (
@@ -900,9 +761,12 @@ export default function OrdersScreen() {
 
   const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
+  const [hasActiveItems, setHasActiveItems] = useState(false);
+  const pollInterval = hasActiveItems ? 10000 : 30000;
+
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
     { userId: user?.id || "" },
-    { query: { enabled: !!user?.id && anyMartFood, refetchInterval: 30000 } }
+    { query: { enabled: !!user?.id && anyMartFood, refetchInterval: pollInterval } }
   );
 
   const [ridesData, setRidesData] = useState<any>(null);
@@ -990,9 +854,9 @@ export default function OrdersScreen() {
       fetchRides();
       fetchPharmacy();
       fetchParcel();
-    }, 30000);
+    }, pollInterval);
     return () => clearInterval(interval);
-  }, [user?.id, fetchRides, fetchPharmacy, fetchParcel]);
+  }, [user?.id, fetchRides, fetchPharmacy, fetchParcel, pollInterval]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1011,6 +875,16 @@ export default function OrdersScreen() {
   const parcels = parcelActive ? (parcelData?.bookings || parcelData?.parcelBookings || []) : [];
 
   const totalCount = allOrders.length + rides.length + pharmOrders.length + parcels.length;
+
+  const globalActiveCount =
+    allOrders.filter(o => !["delivered", "cancelled"].includes(o.status)).length +
+    rides.filter((r: any) => !["completed", "cancelled"].includes(r.status)).length +
+    pharmOrders.filter((o: any) => !["delivered", "cancelled"].includes(o.status)).length +
+    parcels.filter((b: any) => !["completed", "cancelled"].includes(b.status)).length;
+
+  React.useEffect(() => {
+    setHasActiveItems(globalActiveCount > 0);
+  }, [globalActiveCount]);
 
   const isLoading = ordersLoading || ridesLoading || pharmLoading || parcelLoading;
 
@@ -1372,4 +1246,20 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: "#BFDBFE",
   },
   reorderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
+
+  tapHint: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.borderLight,
+  },
+  tapHintText: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
+
+  rideStepperWrap: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.borderLight },
+  rideStepperRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center" },
+  rideStepItem: { alignItems: "center", width: 56 },
+  rideStepDot: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: "#E2E8F0",
+    alignItems: "center", justifyContent: "center", marginBottom: 4,
+  },
+  rideStepLabel: { fontFamily: "Inter_500Medium", fontSize: 9, color: C.textMuted, textAlign: "center" },
+  rideStepLine: { flex: 1, height: 2, backgroundColor: "#E2E8F0", marginTop: 10 },
 });

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useMapsAutocomplete, resolveLocation, getDirections } from "@/hooks/useMaps";
 import type { MapPrediction } from "@/hooks/useMaps";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -25,6 +25,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
+import { CancelModal } from "@/components/CancelModal";
+import type { CancelTarget } from "@/components/CancelModal";
 import {
   estimateFare, bookRide,
   getRide as getRideApi,
@@ -79,7 +81,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
   const [ride,           setRide]           = useState<any>(null);
   const [cancelling,     setCancelling]     = useState(false);
-  const [showCancelModal,setShowCancelModal]= useState(false);
+  const [cancelModalTarget, setCancelModalTarget] = useState<CancelTarget | null>(null);
   const [rating,         setRating]         = useState(0);
   const [ratingDone,     setRatingDone]     = useState(false);
   const [ratingComment,  setRatingComment]  = useState("");
@@ -203,7 +205,6 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
   const cancelRideHandler = async () => {
     setCancelling(true);
-    setShowCancelModal(false);
     try {
       const result = await cancelRideApi(rideId, {}) as any;
       setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason });
@@ -212,6 +213,19 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
       showToast("Could not cancel. Please try again.", "error");
     }
     setCancelling(false);
+  };
+
+  const rideApiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+  const openUnifiedCancelModal = () => {
+    const riderAssigned = ["accepted", "arrived", "in_transit", "ongoing"].includes(ride?.status || "");
+    setCancelModalTarget({
+      id: rideId,
+      type: "ride",
+      status: ride?.status || "searching",
+      fare: ride?.fare,
+      paymentMethod: ride?.paymentMethod,
+      riderAssigned,
+    });
   };
 
   const openInMaps = () => {
@@ -367,7 +381,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
         <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 24) + 8 }}>
           <Pressable
-            onPress={() => setShowCancelModal(true)}
+            onPress={() => openUnifiedCancelModal()}
             disabled={cancelling}
             style={{ alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(239,68,68,0.3)", backgroundColor: "rgba(239,68,68,0.1)" }}>
             {cancelling
@@ -377,31 +391,19 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
           </Pressable>
         </View>
 
-        <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: 24 }} onPress={() => setShowCancelModal(false)}>
-            <Pressable style={{ backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 380, gap: 20 }} onPress={() => {}}>
-              <View style={{ alignItems: "center", gap: 12 }}>
-                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center" }}>
-                  <Ionicons name="close-circle" size={34} color="#DC2626" />
-                </View>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827" }}>Cancel Offer?</Text>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#6B7280", textAlign: "center", lineHeight: 21 }}>
-                  All pending rider bids will also be cancelled.
-                </Text>
-              </View>
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <Pressable onPress={() => setShowCancelModal(false)} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#F3F4F6" }}>
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Go Back</Text>
-                </Pressable>
-                <Pressable onPress={cancelRideHandler} disabled={cancelling} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#DC2626" }}>
-                  {cancelling
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Cancel</Text>}
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        {cancelModalTarget && (
+          <CancelModal
+            target={cancelModalTarget}
+            cancellationFee={cancellationFee}
+            apiBase={rideApiBase}
+            token={token}
+            onClose={() => setCancelModalTarget(null)}
+            onDone={(result) => {
+              setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason });
+              setRide((r: any) => r ? { ...r, status: "cancelled" } : r);
+            }}
+          />
+        )}
       </View>
     );
   }
@@ -439,7 +441,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
             }
           </Pressable>
           <Pressable
-            onPress={() => setShowCancelModal(true)}
+            onPress={() => openUnifiedCancelModal()}
             disabled={cancelling}
             style={{ borderWidth: 1.5, borderColor: "rgba(239,68,68,0.4)", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 32, alignItems: "center", width: "100%", marginBottom: 12 }}>
             {cancelling
@@ -454,31 +456,19 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
           </Pressable>
         </View>
 
-        <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: 24 }} onPress={() => setShowCancelModal(false)}>
-            <Pressable style={{ backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 380, gap: 20 }} onPress={() => {}}>
-              <View style={{ alignItems: "center", gap: 12 }}>
-                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center" }}>
-                  <Ionicons name="close-circle" size={34} color="#DC2626" />
-                </View>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827" }}>Cancel Ride?</Text>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#6B7280", textAlign: "center", lineHeight: 21 }}>
-                  No driver assigned yet — no cancellation fee will apply.
-                </Text>
-              </View>
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <Pressable onPress={() => setShowCancelModal(false)} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#F3F4F6" }}>
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Go Back</Text>
-                </Pressable>
-                <Pressable onPress={cancelRideHandler} disabled={cancelling} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#DC2626" }}>
-                  {cancelling
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Cancel</Text>}
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        {cancelModalTarget && (
+          <CancelModal
+            target={cancelModalTarget}
+            cancellationFee={cancellationFee}
+            apiBase={rideApiBase}
+            token={token}
+            onClose={() => setCancelModalTarget(null)}
+            onDone={(result) => {
+              setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason });
+              setRide((r: any) => r ? { ...r, status: "cancelled" } : r);
+            }}
+          />
+        )}
       </View>
     );
   }
@@ -528,7 +518,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
         </View>
 
         <View style={{ paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 24) + 16 }}>
-          <Pressable onPress={() => setShowCancelModal(true)} disabled={cancelling} style={{ alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(239,68,68,0.3)", backgroundColor: "rgba(239,68,68,0.08)" }}>
+          <Pressable onPress={() => openUnifiedCancelModal()} disabled={cancelling} style={{ alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: "rgba(239,68,68,0.3)", backgroundColor: "rgba(239,68,68,0.08)" }}>
             {cancelling
               ? <ActivityIndicator color="#EF4444" size="small" />
               : <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#EF4444" }}>Cancel Ride</Text>
@@ -536,31 +526,19 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
           </Pressable>
         </View>
 
-        <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: 24 }} onPress={() => setShowCancelModal(false)}>
-            <Pressable style={{ backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 380, gap: 20 }} onPress={() => {}}>
-              <View style={{ alignItems: "center", gap: 12 }}>
-                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center" }}>
-                  <Ionicons name="close-circle" size={34} color="#DC2626" />
-                </View>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827" }}>Cancel Ride?</Text>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#6B7280", textAlign: "center", lineHeight: 21 }}>
-                  No driver assigned yet — no cancellation fee will apply.
-                </Text>
-              </View>
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <Pressable onPress={() => setShowCancelModal(false)} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#F3F4F6" }}>
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Go Back</Text>
-                </Pressable>
-                <Pressable onPress={cancelRideHandler} disabled={cancelling} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#DC2626" }}>
-                  {cancelling
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Cancel</Text>}
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        {cancelModalTarget && (
+          <CancelModal
+            target={cancelModalTarget}
+            cancellationFee={cancellationFee}
+            apiBase={rideApiBase}
+            token={token}
+            onClose={() => setCancelModalTarget(null)}
+            onDone={(result) => {
+              setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason });
+              setRide((r: any) => r ? { ...r, status: "cancelled" } : r);
+            }}
+          />
+        )}
       </View>
     );
   }
@@ -915,7 +893,7 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
           {canCancel && (
             <Pressable
-              onPress={() => setShowCancelModal(true)}
+              onPress={() => openUnifiedCancelModal()}
               disabled={cancelling}
               style={{ alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" }}>
               {cancelling
@@ -928,33 +906,19 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: 24 }} onPress={() => setShowCancelModal(false)}>
-          <Pressable style={{ backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 380, gap: 20 }} onPress={() => {}}>
-            <View style={{ alignItems: "center", gap: 12 }}>
-              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="close-circle" size={34} color="#DC2626" />
-              </View>
-              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827" }}>Cancel Ride?</Text>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#6B7280", textAlign: "center", lineHeight: 21 }}>
-                {cancellationFee > 0
-                  ? `A cancellation fee of Rs. ${cancellationFee} will be charged since a driver has been assigned.`
-                  : "Your ride will be cancelled. No fee applies."}
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <Pressable onPress={() => setShowCancelModal(false)} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#F3F4F6" }}>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#374151" }}>Go Back</Text>
-              </Pressable>
-              <Pressable onPress={cancelRideHandler} disabled={cancelling} style={{ flex: 1, alignItems: "center", padding: 15, borderRadius: 14, backgroundColor: "#DC2626" }}>
-                {cancelling
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Cancel</Text>}
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {cancelModalTarget && (
+        <CancelModal
+          target={cancelModalTarget}
+          cancellationFee={cancellationFee}
+          apiBase={rideApiBase}
+          token={token}
+          onClose={() => setCancelModalTarget(null)}
+          onDone={(result) => {
+            setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason });
+            setRide((r: any) => r ? { ...r, status: "cancelled" } : r);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -969,6 +933,7 @@ function RideScreenInner() {
   const ridesEnabled = config.features.rides;
   const inMaintenance = config.appStatus === "maintenance";
   const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+  const { rideId: urlRideId } = useLocalSearchParams<{ rideId?: string }>();
 
   const [pickup,     setPickup]    = useState("");
   const [drop,       setDrop]      = useState("");
@@ -995,7 +960,7 @@ function RideScreenInner() {
   } | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [booking,    setBooking]   = useState(false);
-  const [booked,     setBooked]    = useState<any>(null);
+  const [booked,     setBooked]    = useState<any>(urlRideId ? { id: urlRideId, type: "bike" } : null);
   const [showHistory,setShowHistory] = useState(false);
   const [history,    setHistory]   = useState<any[]>([]);
   const [histLoading,setHistLoading] = useState(false);

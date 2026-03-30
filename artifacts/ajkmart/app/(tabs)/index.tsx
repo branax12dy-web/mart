@@ -50,8 +50,8 @@ function ActiveTrackerStrip({ userId, position }: { userId: string; position?: "
       return r.json();
     },
     enabled: !!userId && !!token,
-    refetchInterval: 30000,
-    staleTime: 20000,
+    refetchInterval: 10000,
+    staleTime: 8000,
   });
 
   const { data: ridesData } = useQuery({
@@ -61,8 +61,8 @@ function ActiveTrackerStrip({ userId, position }: { userId: string; position?: "
       return r.json();
     },
     enabled: !!userId && !!token,
-    refetchInterval: 30000,
-    staleTime: 20000,
+    refetchInterval: 10000,
+    staleTime: 8000,
   });
 
   if (!pCfg.content.trackerBannerEnabled) return null;
@@ -122,9 +122,19 @@ function ActiveTrackerStrip({ userId, position }: { userId: string; position?: "
 
   const isBottom = (position || pCfg.content.trackerBannerPosition) === "bottom";
 
+  const handleTrackPress = () => {
+    if (activeRides.length === 1 && activeOrders.length === 0) {
+      router.push(`/ride?rideId=${activeRides[0].id}`);
+    } else if (activeOrders.length === 1 && activeRides.length === 0) {
+      router.push(`/order?orderId=${activeOrders[0].id}`);
+    } else {
+      router.push("/(tabs)/orders");
+    }
+  };
+
   return (
     <Pressable
-      onPress={() => router.push("/(tabs)/orders")}
+      onPress={handleTrackPress}
       style={[styles.trackerWrap, isBottom && styles.trackerWrapBottom]}
     >
       <LinearGradient
