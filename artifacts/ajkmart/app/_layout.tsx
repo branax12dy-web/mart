@@ -183,6 +183,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     let cancelled = false;
+    let cleanupFontHandler: (() => void) | null = null;
 
     const loadFonts = async () => {
       const coreFonts = {
@@ -191,28 +192,9 @@ export default function RootLayout() {
         Inter_600SemiBold,
         Inter_700Bold,
       };
-      const urduFonts = {
-        NotoNastaliqUrdu_400Regular,
-        NotoNastaliqUrdu_500Medium,
-        NotoNastaliqUrdu_600SemiBold,
-        NotoNastaliqUrdu_700Bold,
-      };
 
       try {
         await Font.loadAsync(coreFonts);
-      } catch {
-      }
-
-      try {
-        if (Platform.OS === "web") {
-          const fontPromise = Font.loadAsync(urduFonts).catch(() => {});
-          await Promise.race([
-            fontPromise,
-            new Promise<void>((resolve) => setTimeout(resolve, 4000)),
-          ]);
-        } else {
-          await Font.loadAsync(urduFonts);
-        }
       } catch {
       }
 
@@ -220,10 +202,54 @@ export default function RootLayout() {
         setReady(true);
         SplashScreen.hideAsync();
       }
+
+      const urduFonts = {
+        NotoNastaliqUrdu_400Regular,
+        NotoNastaliqUrdu_500Medium,
+        NotoNastaliqUrdu_600SemiBold,
+        NotoNastaliqUrdu_700Bold,
+      };
+
+      if (Platform.OS === "web") {
+        const suppressFontRejection = (e: PromiseRejectionEvent) => {
+          const msg = String(e.reason?.message || e.reason || "").toLowerCase();
+          const isFontTimeout =
+            (msg.includes("timeout") && (msg.includes("font") || msg.includes("nastaliq"))) ||
+            msg.includes("fontfaceobserver") ||
+            msg.includes("fontface");
+          if (isFontTimeout) {
+            e.preventDefault();
+          }
+        };
+        window.addEventListener("unhandledrejection", suppressFontRejection);
+        cleanupFontHandler = () => {
+          window.removeEventListener("unhandledrejection", suppressFontRejection);
+        };
+        try {
+          await Promise.race([
+            Font.loadAsync(urduFonts),
+            new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+          ]);
+        } catch {
+        }
+        setTimeout(() => {
+          cleanupFontHandler?.();
+          cleanupFontHandler = null;
+        }, 5000);
+      } else {
+        try {
+          await Font.loadAsync(urduFonts);
+        } catch {
+        }
+      }
     };
 
     loadFonts();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      cleanupFontHandler?.();
+      cleanupFontHandler = null;
+    };
   }, []);
 
   if (!ready) {
