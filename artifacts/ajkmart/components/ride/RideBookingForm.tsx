@@ -22,13 +22,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useApiCall } from "@/hooks/useApiCall";
+import { API_BASE } from "@/utils/api";
 import { ServiceListSkeleton, FareEstimateSkeleton } from "@/components/ride/Skeletons";
 import {
   estimateFare,
   bookRide,
   getRideStops,
   getRideServices,
-  getPaymentMethods,
   getRideHistory,
   getSchoolRoutes,
   subscribeSchoolRoute,
@@ -86,7 +86,6 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const { showToast } = useToast();
   const { config } = usePlatformConfig();
   const rideCfg = config.rides;
-  const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
   const DEFAULT_SERVICES: ServiceType[] = [
     {
@@ -197,34 +196,25 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   }, [rideType]);
 
   useEffect(() => {
-    Promise.all([
-      getPaymentMethods(),
-      fetch(`${apiBase}/rides/payment-methods`)
-        .then((r) => r.json())
-        .catch(() => null),
-    ])
-      .then(([legacyData, rideData]) => {
-        const rideKeys = new Set(
-          (rideData?.methods || []).map((m: any) => m.key),
-        );
-        if (legacyData?.methods?.length) {
-          const filtered = legacyData.methods.filter((m: any) =>
-            rideKeys.has(m.id),
-          );
-          if (filtered.length > 0) {
-            setPayMethods(filtered);
-            setPayMethod(filtered[0]!.id);
-          }
-        } else if (rideData?.methods?.length) {
+    fetch(`${API_BASE}/rides/payment-methods`)
+      .then((r) => r.json())
+      .then((rideData) => {
+        if (rideData?.methods?.length) {
           const mapped = rideData.methods.map((m: any) => ({
-            id: m.key,
-            label: m.label,
+            id: m.key ?? m.id,
+            label: m.label ?? m.name,
           }));
           setPayMethods(mapped);
           setPayMethod(mapped[0]!.id);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setPayMethods([
+          { id: "cash", label: "Cash" },
+          { id: "wallet", label: "Wallet" },
+        ]);
+        setPayMethod("cash");
+      });
   }, []);
 
   useEffect(() => {
@@ -245,7 +235,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
 
   useEffect(() => {
     if (!user?.id) return;
-    fetch(`${apiBase}/users/${user.id}/debt`, {
+    fetch(`${API_BASE}/users/${user.id}/debt`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then((r) => r.json())
@@ -490,7 +480,10 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
             longitude: pos.coords.longitude,
             role: "customer",
           });
-        } catch {}
+        } catch (locErr) {
+          if (__DEV__) console.warn("[location] ride booking update failed:", locErr);
+          showToast("Ride booked, but location update failed", "info");
+        }
       })();
     } catch (err: any) {
       const errData = err?.response?.data || err?.data;

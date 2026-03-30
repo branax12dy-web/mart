@@ -22,9 +22,9 @@ import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { createOrder } from "@workspace/api-client-react";
+import { API_BASE } from "@/utils/api";
 
 const C = Colors.light;
-const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 type PayMethod = "cash" | "wallet" | "jazzcash" | "easypaisa";
 
 interface PaymentMethod {
@@ -226,7 +226,12 @@ export default function CartScreen() {
         setPromoApplied(false);
         showToast("Promo code is no longer valid — removed", "error");
       }
-    } catch { /* silent */ }
+    } catch {
+      showToast("Could not verify promo code — please try again", "error");
+      setPromoCode(null);
+      setPromoDiscount(0);
+      setPromoApplied(false);
+    }
   };
 
   const applyPromo = async () => {
@@ -295,7 +300,10 @@ export default function CartScreen() {
             accuracy: pos.coords.accuracy ?? null, role: "customer", action: "order_placed",
           }),
         });
-      } catch { /* silent */ }
+      } catch (locErr) {
+        if (__DEV__) console.warn("[location] order placement update failed:", locErr);
+        showToast("Order placed, but location update failed", "info");
+      }
     })();
 
     clearCart();
@@ -453,6 +461,7 @@ export default function CartScreen() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        body: JSON.stringify({ reason: "payment_failed" }),
       });
     } catch {}
   };

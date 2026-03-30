@@ -18,6 +18,7 @@ import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
+import { API_BASE } from "@/utils/api";
 
 const C = Colors.light;
 
@@ -47,28 +48,31 @@ export default function OrderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
 
-  const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
-
   useEffect(() => {
     if (!orderId) return;
     const endpoint = isParcel
       ? `${API_BASE}/parcel-bookings/${orderId}`
       : `${API_BASE}/orders/${orderId}`;
-    const fetchOrder = async () => {
+    let ivRef: ReturnType<typeof setInterval> | null = null;
+    const fetchAndMaybeClear = async () => {
       try {
         const res = await fetch(endpoint, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();
-        setOrder(data.order || data.booking || data);
+        const fetched = data.order || data.booking || data;
+        setOrder(fetched);
+        if (fetched && ["delivered", "cancelled"].includes(fetched.status)) {
+          if (ivRef !== null) clearInterval(ivRef);
+        }
       } catch {
         showToast(isParcel ? "Could not load parcel details" : "Could not load order details", "error");
       }
       setLoading(false);
     };
-    fetchOrder();
-    const iv = setInterval(fetchOrder, 10000);
-    return () => clearInterval(iv);
+    fetchAndMaybeClear();
+    ivRef = setInterval(fetchAndMaybeClear, 10000);
+    return () => { if (ivRef !== null) clearInterval(ivRef); };
   }, [orderId, isParcel]);
 
   if (loading) {

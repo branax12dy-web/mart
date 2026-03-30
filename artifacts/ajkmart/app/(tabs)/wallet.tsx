@@ -25,9 +25,9 @@ import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual } from "@workspace/i18n";
 import { useGetWallet } from "@workspace/api-client-react";
+import { API_BASE as API } from "@/utils/api";
 
-const C   = Colors.light;
-const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+const C = Colors.light;
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
 
@@ -138,6 +138,8 @@ function DepositModal({ onClose, onSuccess, onFrozen, token }: { onClose: () => 
   const goToConfirm = () => {
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
+    if (amt < 100) { setErr("Minimum deposit amount is Rs. 100"); return; }
+    if (amt > 50000) { setErr("Maximum deposit amount is Rs. 50,000"); return; }
     if (!txId.trim()) { setErr("Transaction ID is required"); return; }
     setErr("");
     setStep("confirm");
