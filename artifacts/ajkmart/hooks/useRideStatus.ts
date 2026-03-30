@@ -29,7 +29,13 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
     const poll = async () => {
       try {
         const d = await getRideApi(rideId);
-        if (mountedRef.current) setRide(d as any);
+        if (mountedRef.current) {
+          setRide(d as any);
+          const status = (d as any)?.status;
+          if (status === "completed" || status === "cancelled") {
+            stopPolling();
+          }
+        }
       } catch {}
     };
     poll();
@@ -75,6 +81,10 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
         try {
           const data = JSON.parse(event.data);
           setRide(data);
+          if (data?.status === "completed" || data?.status === "cancelled") {
+            closeSse();
+            stopPolling();
+          }
         } catch {}
       };
 
@@ -83,6 +93,10 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
         try {
           const data = JSON.parse(event.data);
           setRide(data);
+          if (data?.status === "completed" || data?.status === "cancelled") {
+            closeSse();
+            stopPolling();
+          }
         } catch {}
       });
 
@@ -106,8 +120,10 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
 
   const reconnect = useCallback(() => {
     sseFailCountRef.current = 0;
+    stopPolling();
+    closeSse();
     connectSse();
-  }, [connectSse]);
+  }, [connectSse, stopPolling, closeSse]);
 
   useEffect(() => {
     mountedRef.current = true;

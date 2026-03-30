@@ -69,8 +69,8 @@ export default function ForgotPasswordScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [totpCode, setTotpCode] = useState("");
-  const [requires2FA, setRequires2FA] = useState(false);
 
   const [resendCooldown, setResendCooldown] = useState(0);
 
@@ -135,7 +135,6 @@ export default function ForgotPasswordScreen() {
       const data = await res.json();
       if (!res.ok) {
         if (data.requires2FA) {
-          setRequires2FA(true);
           setStep("totp");
           setLoading(false);
           return;
@@ -302,14 +301,19 @@ export default function ForgotPasswordScreen() {
               <PasswordStrength password={newPassword} />
 
               <Text style={s.fieldLabel}>Confirm Password</Text>
-              <TextInput
-                style={[s.inputFull, confirmPassword && newPassword !== confirmPassword && s.inputError]}
-                value={confirmPassword}
-                onChangeText={v => { setConfirmPassword(v); clearError(); }}
-                placeholder="Re-enter password"
-                placeholderTextColor={C.textMuted}
-                secureTextEntry={!showPwd}
-              />
+              <View style={[s.inputRow, confirmPassword && newPassword !== confirmPassword && s.inputError]}>
+                <TextInput
+                  style={[s.input, { flex: 1, marginBottom: 0, borderWidth: 0 }]}
+                  value={confirmPassword}
+                  onChangeText={v => { setConfirmPassword(v); clearError(); }}
+                  placeholder="Re-enter password"
+                  placeholderTextColor={C.textMuted}
+                  secureTextEntry={!showConfirmPwd}
+                />
+                <Pressable onPress={() => setShowConfirmPwd(v => !v)} style={s.eyeBtn}>
+                  <Ionicons name={showConfirmPwd ? "eye-off-outline" : "eye-outline"} size={20} color={C.textMuted} />
+                </Pressable>
+              </View>
             </>
           )}
 

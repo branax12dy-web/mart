@@ -142,15 +142,19 @@ function ParcelScreenInner() {
       .finally(() => setFareLoading(false));
   }, [parcelType, weight]);
 
+  const phoneRegex = /^03\d{9}$/;
+
   const validateStep = (s: number): boolean => {
     if (s === 0) {
       if (!senderName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!senderPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
+      if (!phoneRegex.test(senderPhone.replace(/\s/g, ""))) { showToast("Phone must be in format 03XXXXXXXXX", "error"); return false; }
       if (!pickupAddress.trim()) { showToast(T("pickupAddress"), "error"); return false; }
     }
     if (s === 1) {
       if (!receiverName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!receiverPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
+      if (!phoneRegex.test(receiverPhone.replace(/\s/g, ""))) { showToast("Phone must be in format 03XXXXXXXXX", "error"); return false; }
       if (!dropAddress.trim()) { showToast(T("dropAddress"), "error"); return false; }
     }
     if (s === 2) {
@@ -300,7 +304,7 @@ function ParcelScreenInner() {
             <Text style={ss.label}>{T("orTypeManually")}</Text>
             <TextInput
               value={pickupAddress}
-              onChangeText={setPickupAddress}
+              onChangeText={v => { setPickupAddress(v); setPickupLat(undefined); setPickupLng(undefined); }}
               placeholder="e.g. Chowk Adalat, Muzaffarabad"
               placeholderTextColor={C.textMuted}
               style={ss.input}
@@ -327,7 +331,7 @@ function ParcelScreenInner() {
             <Text style={ss.label}>{T("orTypeManually")}</Text>
             <TextInput
               value={dropAddress}
-              onChangeText={setDropAddress}
+              onChangeText={v => { setDropAddress(v); setDropLat(undefined); setDropLng(undefined); }}
               placeholder="e.g. Commercial Area, Mirpur"
               placeholderTextColor={C.textMuted}
               style={ss.input}
@@ -449,9 +453,17 @@ function ParcelScreenInner() {
                 <Ionicons name="cube-outline" size={14} color={C.textMuted} />
                 <Text style={ss.summaryTxt}>{selectedType?.emoji} {selectedType?.label}{weight ? ` • ${weight} kg` : ""}</Text>
               </View>
-              <View style={[ss.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
-                <Text style={ss.summaryTotal}>{T("totalFare")}</Text>
-                <Text style={ss.summaryFare}>Rs. {estimatedFare}</Text>
+              <View style={[{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
+                {estimatedFare > 0 && confirmedFare > 0 && confirmedFare !== estimatedFare && (
+                  <View style={ss.summaryRow}>
+                    <Text style={[ss.summaryTotal, { color: C.textMuted, fontSize: 12 }]}>Estimated Fare</Text>
+                    <Text style={[ss.summaryFare, { color: C.textMuted, fontSize: 12, textDecorationLine: "line-through" }]}>Rs. {estimatedFare.toLocaleString()}</Text>
+                  </View>
+                )}
+                <View style={ss.summaryRow}>
+                  <Text style={ss.summaryTotal}>{confirmedFare > 0 ? "Confirmed Fare" : T("totalFare")}</Text>
+                  <Text style={ss.summaryFare}>Rs. {(confirmedFare || estimatedFare).toLocaleString()}</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -520,19 +532,23 @@ function ParcelScreenInner() {
                 key={pred.placeId}
                 style={ss.locOption}
                 onPress={async () => {
-                  const loc = await resolveLocation(pred);
-                  const address = loc.address || pred.description;
-                  if (showLocPicker === "pickup") {
-                    setPickupAddress(address);
-                    setPickupLat(loc.lat);
-                    setPickupLng(loc.lng);
-                  } else {
-                    setDropAddress(address);
-                    setDropLat(loc.lat);
-                    setDropLng(loc.lng);
+                  try {
+                    const loc = await resolveLocation(pred);
+                    const address = loc.address || pred.description;
+                    if (showLocPicker === "pickup") {
+                      setPickupAddress(address);
+                      setPickupLat(loc.lat);
+                      setPickupLng(loc.lng);
+                    } else {
+                      setDropAddress(address);
+                      setDropLat(loc.lat);
+                      setDropLng(loc.lng);
+                    }
+                    setShowLocPicker(null);
+                    setLocSearch("");
+                  } catch {
+                    showToast("Could not resolve location. Please type the address manually.", "error");
                   }
-                  setShowLocPicker(null);
-                  setLocSearch("");
                 }}
               >
                 <View style={ss.locIconWrap}>

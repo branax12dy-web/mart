@@ -46,7 +46,7 @@ function ActiveTrackerStrip({ userId, position }: { userId: string; position?: "
   const { data: ordersData } = useQuery({
     queryKey: ["home-active-orders", userId],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/orders`, { headers: authHdrs });
+      const r = await fetch(`${API_BASE}/orders?status=active`, { headers: authHdrs });
       return r.json();
     },
     enabled: !!userId && !!token,
@@ -57,7 +57,7 @@ function ActiveTrackerStrip({ userId, position }: { userId: string; position?: "
   const { data: ridesData } = useQuery({
     queryKey: ["home-active-rides", userId],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/rides`, { headers: authHdrs });
+      const r = await fetch(`${API_BASE}/rides?status=active`, { headers: authHdrs });
       return r.json();
     },
     enabled: !!userId && !!token,
@@ -439,10 +439,10 @@ function WalletStrip({
             <Text style={styles.walletBal}>Rs. {balance.toLocaleString()}</Text>
           </View>
         </View>
-        <Pressable onPress={onPress} style={styles.walletTopUp}>
+        <View style={styles.walletTopUp}>
           <Ionicons name="add" size={15} color={C.primary} />
           <Text style={styles.walletTopUpTxt}>Top Up</Text>
-        </Pressable>
+        </View>
       </LinearGradient>
     </Tap>
   );

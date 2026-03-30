@@ -267,6 +267,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
   const { biometricEnabled, setBiometricEnabled, user, updateUser } = useAuth();
   const { config } = usePlatformConfig();
   const [cfg,     setCfg]     = useState<Record<string, boolean>>({});
+  const cfgRef = React.useRef<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState<string | null>(null);
   const authHdrs = token ? { Authorization: `Bearer ${token}` } : {};
@@ -282,22 +283,33 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
   const [showDisable2FA, setShowDisable2FA] = useState(false);
   const [disableCode, setDisableCode]      = useState("");
   const [exportingData, setExportingData]  = useState(false);
+  const [exportCooldown, setExportCooldown] = useState(0);
+  const exportCooldownRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!visible || !userId) return;
     setLoading(true);
     fetch(`${API}/settings`, { headers: authHdrs })
       .then(r => r.json())
-      .then(d => setCfg({ notifOrders: d.notifOrders, notifWallet: d.notifWallet, notifDeals: d.notifDeals, notifRides: d.notifRides, locationSharing: d.locationSharing, darkMode: d.darkMode }))
+      .then(d => {
+        const loaded = { notifOrders: d.notifOrders, notifWallet: d.notifWallet, notifDeals: d.notifDeals, notifRides: d.notifRides, locationSharing: d.locationSharing, darkMode: d.darkMode };
+        cfgRef.current = loaded;
+        setCfg(loaded);
+      })
       .finally(() => setLoading(false));
   }, [visible, userId, token]);
 
   const toggle = async (k: string, v: boolean) => {
     setSaving(k);
-    const upd = { ...cfg, [k]: v };
+    const snapshot = { ...cfgRef.current };
+    const upd = { ...cfgRef.current, [k]: v };
+    cfgRef.current = upd;
     setCfg(upd);
     try { await fetch(`${API}/settings`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHdrs }, body: JSON.stringify(upd) }); }
-    catch { setCfg(cfg); }
+    catch {
+      cfgRef.current = snapshot;
+      setCfg(snapshot);
+    }
     setSaving(null);
   };
 
@@ -439,8 +451,9 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
             <Accordion title="⚙️ Account Actions" icon="settings-outline" iconColor={C.textSecondary} iconBg={C.surfaceSecondary}>
               <View style={secCard.wrap}>
                 <Pressable
-                  disabled={exportingData}
+                  disabled={exportingData || exportCooldown > 0}
                   onPress={async () => {
+                    if (exportCooldown > 0) return;
                     setExportingData(true);
                     try {
                       const res = await fetch(`${API}/users/export-data`, {
@@ -452,20 +465,28 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                       });
                       if (!res.ok) throw new Error("Request failed");
                       showToast("Your data will be emailed within 24 hours.", "success");
+                      setExportCooldown(60);
+                      if (exportCooldownRef.current) clearInterval(exportCooldownRef.current);
+                      exportCooldownRef.current = setInterval(() => {
+                        setExportCooldown(c => {
+                          if (c <= 1) { clearInterval(exportCooldownRef.current!); return 0; }
+                          return c - 1;
+                        });
+                      }, 1000);
                     } catch {
                       showToast("Could not request data export. Please try again.", "error");
                     } finally {
                       setExportingData(false);
                     }
                   }}
-                  style={[privRow.wrap, { borderBottomWidth: 0, opacity: exportingData ? 0.5 : 1 }]}
+                  style={[privRow.wrap, { borderBottomWidth: 0, opacity: (exportingData || exportCooldown > 0) ? 0.5 : 1 }]}
                 >
                   <View style={[privRow.icon, { backgroundColor: C.surfaceSecondary }]}>
                     {exportingData
                       ? <ActivityIndicator size="small" color={C.textSecondary} />
                       : <Ionicons name="download-outline" size={17} color={C.textSecondary} />}
                   </View>
-                  <View style={{ flex: 1 }}><Text style={privRow.label}>Download My Data</Text><Text style={privRow.sub}>{exportingData ? "Requesting export…" : "Export all your data"}</Text></View>
+                  <View style={{ flex: 1 }}><Text style={privRow.label}>Download My Data</Text><Text style={privRow.sub}>{exportingData ? "Requesting export…" : exportCooldown > 0 ? `Available in ${exportCooldown}s` : "Export all your data"}</Text></View>
                   {!exportingData && <Ionicons name="chevron-forward" size={15} color={C.textMuted} />}
                 </Pressable>
               </View>
@@ -496,6 +517,12 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                       <Text key={i} style={{ ...typography.subtitle, color: "#92400E", textAlign: "center", paddingVertical: 4, letterSpacing: 2 }}>{code}</Text>
                     ))}
                   </View>
+                  <Pressable
+                    onPress={() => { setShow2FASetup(false); setTwoFACode(""); setBackupCodes([]); setTwoFAError(""); }}
+                    style={[primaryBtn.base, { marginTop: spacing.sm }]}
+                  >
+                    <Text style={primaryBtn.txt}>Done — I've saved my codes</Text>
+                  </Pressable>
                 </>
               ) : (
                 <>

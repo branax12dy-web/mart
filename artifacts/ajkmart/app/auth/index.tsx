@@ -22,6 +22,7 @@ import Colors, { spacing, radii, shadows, typography } from "@/constants/colors"
 import { useAuth, type AppUser } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
+import { useToast } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { sendOtp, verifyOtp } from "@workspace/api-client-react";
 
@@ -49,6 +50,7 @@ export default function AuthScreen() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const { config: platformCfg } = usePlatformConfig();
+  const { showToast } = useToast();
   const authCfg = platformCfg.auth;
   const appName = platformCfg.platform.appName;
   const appTagline = platformCfg.platform.appTagline;
@@ -192,7 +194,12 @@ export default function AuthScreen() {
   const handleSendEmailOtp = async () => {
     clearError();
     if (!email || !email.includes("@")) { setError("Please enter a valid email address"); return; }
-    if (emailResendCooldown > 0) return;
+    if (emailResendCooldown > 0) {
+      const msg = `Please wait ${emailResendCooldown}s before requesting another OTP`;
+      setError(msg);
+      showToast(msg, "error");
+      return;
+    }
     setLoading(true);
     try {
       const res = await authPost("/auth/send-email-otp", { email });

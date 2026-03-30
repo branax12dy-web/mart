@@ -75,7 +75,7 @@ export async function resolveLocation(prediction: MapPrediction): Promise<{ lat:
     const d: GeocodeResult = await r.json();
     return { lat: d.lat, lng: d.lng, address: d.formattedAddress };
   } catch {
-    return { lat: 0, lng: 0, address: prediction.description };
+    throw new Error(`Could not resolve location for: ${prediction.description}`);
   }
 }
 

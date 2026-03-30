@@ -132,7 +132,7 @@ export default function RegisterScreen() {
         const regRes = await fetch(`${API}/auth/register`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: formattedDashPhone }),
+          body: JSON.stringify({ phone: normalizedPhone }),
         });
         const regData = await regRes.json();
         if (!regRes.ok) {
@@ -355,7 +355,7 @@ export default function RegisterScreen() {
                     maxLength={6}
                     autoFocus
                   />
-                  {devOtp ? (
+                  {__DEV__ && devOtp ? (
                     <View style={s.devOtpBox}>
                       <Ionicons name="key-outline" size={14} color={C.success} />
                       <Text style={s.devOtpTxt}>Dev OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{devOtp}</Text></Text>

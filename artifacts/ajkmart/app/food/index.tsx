@@ -5,6 +5,7 @@ import React, { useState, useRef } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -40,7 +41,9 @@ function FoodCard({ item }: { item: any }) {
   return (
     <View style={styles.foodCard}>
       <View style={styles.foodImageBox}>
-        <Ionicons name="restaurant-outline" size={32} color="#D97706" />
+        {item.image
+          ? <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          : <Ionicons name="restaurant-outline" size={32} color="#D97706" />}
         {item.deliveryTime && (
           <View style={styles.timeBadge}>
             <Ionicons name="time-outline" size={10} color="#fff" />
@@ -51,13 +54,17 @@ function FoodCard({ item }: { item: any }) {
       <View style={styles.foodInfo}>
         <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.foodVendor} numberOfLines={1}>{item.vendorName || "Restaurant"}</Text>
-        <View style={styles.ratingRow}>
-          <View style={styles.ratingPill}>
-            <Ionicons name="star" size={11} color="#F59E0B" />
-            <Text style={styles.ratingText}>{item.rating || "4.5"}</Text>
+        {item.rating != null && (
+          <View style={styles.ratingRow}>
+            <View style={styles.ratingPill}>
+              <Ionicons name="star" size={11} color="#F59E0B" />
+              <Text style={styles.ratingText}>{item.rating}</Text>
+            </View>
+            {item.reviewCount != null && (
+              <Text style={styles.reviewCount}>({item.reviewCount} reviews)</Text>
+            )}
           </View>
-          <Text style={styles.reviewCount}>({item.reviewCount || 50} reviews)</Text>
-        </View>
+        )}
         <View style={styles.foodFooter}>
           <Text style={styles.foodPrice}>Rs. {item.price}</Text>
           <Animated.View style={{ transform: [{ scale }] }}>
@@ -214,7 +221,7 @@ const styles = StyleSheet.create({
 
   foodList: { paddingHorizontal: 16, paddingTop: 4, gap: 12 },
   foodCard: { backgroundColor: C.surface, borderRadius: 18, flexDirection: "row", overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
-  foodImageBox: { width: 110, backgroundColor: "#FEF3C7", alignItems: "center", justifyContent: "center" },
+  foodImageBox: { width: 110, backgroundColor: "#FEF3C7", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   timeBadge: { position: "absolute", bottom: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   timeText: { fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" },
   foodInfo: { flex: 1, padding: 14, justifyContent: "center" },

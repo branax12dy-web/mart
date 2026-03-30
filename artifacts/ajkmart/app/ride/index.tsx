@@ -41,7 +41,7 @@ function RideScreenInner() {
         setBooked({ id: urlRideId, type: ride.type || "bike" });
       })
       .catch(() => {
-        setBooked({ id: urlRideId, type: "bike" });
+        setBooked({ id: urlRideId, type: "unknown" });
       });
   }, [urlRideId, token]);
 

@@ -109,7 +109,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   };
 
   return (
-    <Pressable onPress={handleCardPress} disabled={!isActive} style={styles.card}>
+    <Pressable onPress={handleCardPress} style={styles.card}>
       <View style={styles.cardTop}>
         <View style={[styles.chip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
           <Ionicons
@@ -238,7 +238,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   const cfg = RIDE_STATUS[ride.status] || RIDE_STATUS["searching"]!;
   const isActive    = !["completed", "cancelled"].includes(ride.status);
   const isCompleted = ride.status === "completed";
-  const canCancel   = ["searching", "bargaining", "accepted", "arrived", "in_transit"].includes(ride.status);
+  const canCancel   = ["searching", "bargaining", "accepted", "arrived"].includes(ride.status);
   const hasRider    = ["accepted", "arrived", "in_transit", "ongoing"].includes(ride.status);
   const rideStepIdx = RIDE_STEPS.indexOf(ride.status);
   const showStepper = isActive && rideStepIdx >= 0;

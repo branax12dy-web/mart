@@ -17,16 +17,28 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getProducts, createPharmacyOrder } from "@workspace/api-client-react";
-import type { GetProductsParams, GetProductsType } from "@workspace/api-client-react";
+import type { GetProductsType } from "@workspace/api-client-react";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
 
 const C = Colors.light;
 const W = Dimensions.get("window").width;
+
+interface PharmacyProduct {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  vendorName?: string;
+  unit?: string;
+  description?: string;
+  requires_prescription?: boolean;
+}
 
 interface Med {
   id: string;
@@ -83,6 +95,7 @@ function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user, updateUser, token } = useAuth();
+  const { items: globalCartItems, addItem: addToGlobalCart, removeItem: removeFromGlobalCart, updateQuantity, clearCart } = useCart();
   const { showToast } = useToast();
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
@@ -97,26 +110,26 @@ function PharmacyScreenInner() {
   const [medsError, setMedsError] = useState(false);
   const [activeTab, setActiveTab] = useState("All");
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState<Record<string, number>>({});
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
 
-  const [address, setAddress] = useState(user?.name ? `${user.name}'s address, AJK` : "");
+  const pharmacyCartItems = globalCartItems.filter(i => i.type === "pharmacy");
+
+  const [address, setAddress] = useState("");
   const [phone, setPhone] = useState(user?.phone || "");
   const [prescription, setPrescription] = useState("");
   const [payMethod, setPayMethod] = useState<"wallet" | "cash">("cash");
 
-  useEffect(() => {
+  const loadMeds = () => {
     if (!pharmacyEnabled) return;
     setLoadingMeds(true);
-    const params: GetProductsParams = { type: "pharmacy" as GetProductsType };
     setMedsError(false);
-    getProducts(params)
+    getProducts({ type: "pharmacy" as GetProductsType })
       .then(data => {
         if (data?.products?.length) {
-          const meds: Med[] = data.products.map(p => ({
+          const meds: Med[] = (data.products as unknown as PharmacyProduct[]).map(p => ({
             id: p.id,
             name: p.name,
             brand: p.vendorName ?? "Various",
@@ -124,28 +137,7 @@ function PharmacyScreenInner() {
             price: p.price,
             unit: p.unit ?? p.description ?? "1 unit",
             emoji: "💊",
-            requires_prescription: false,
-          }));
-          setMedicines(meds);
-          const cats = ["All", ...new Set(meds.map(m => m.category))];
-          setCategories(cats);
-        }
-      })
-      .catch(() => { setMedsError(true); })
-      .finally(() => setLoadingMeds(false));
-  }, [pharmacyEnabled]);
-
-  const fetchMeds = () => {
-    setLoadingMeds(true);
-    setMedsError(false);
-    getProducts({ type: "pharmacy" as GetProductsType })
-      .then(data => {
-        if (data?.products?.length) {
-          const meds: Med[] = data.products.map(p => ({
-            id: p.id, name: p.name, brand: p.vendorName ?? "Various",
-            category: p.category, price: p.price,
-            unit: p.unit ?? p.description ?? "1 unit", emoji: "💊",
-            requires_prescription: false,
+            requires_prescription: !!p.requires_prescription,
           }));
           setMedicines(meds);
           setCategories(["All", ...new Set(meds.map(m => m.category))]);
@@ -155,6 +147,8 @@ function PharmacyScreenInner() {
       .finally(() => setLoadingMeds(false));
   };
 
+  useEffect(() => { loadMeds(); }, [pharmacyEnabled]);
+
   const filtered = medicines.filter(m => {
     const matchCat = activeTab === "All" || m.category === activeTab;
     const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase());
@@ -162,24 +156,42 @@ function PharmacyScreenInner() {
   });
 
   const cartItems: CartItem[] = medicines
-    .filter(m => (cart[m.id] ?? 0) > 0)
-    .map(m => ({ ...m, qty: cart[m.id]! }));
+    .filter(m => pharmacyCartItems.some(ci => ci.productId === m.id))
+    .map(m => {
+      const ci = pharmacyCartItems.find(ci => ci.productId === m.id)!;
+      return { ...m, qty: ci.quantity };
+    });
 
   const cartTotal = cartItems.reduce((sum, m) => sum + m.price * m.qty, 0);
-  const cartCount = Object.values(cart).reduce((sum, v) => sum + v, 0);
+  const cartCount = pharmacyCartItems.reduce((sum, i) => sum + i.quantity, 0);
 
   useEffect(() => {
     if (payMethod === "cash" && cartTotal > config.orderRules.maxCodAmount) {
-      setPayMethod("wallet");
+      const walletBalance = user?.walletBalance ?? 0;
+      if (config.features.wallet && walletBalance >= cartTotal) {
+        setPayMethod("wallet");
+      } else {
+        showToast(
+          `Order total exceeds COD limit (Rs. ${config.orderRules.maxCodAmount.toLocaleString()}) and wallet balance is insufficient. Please reduce your order.`,
+          "error"
+        );
+      }
     }
-  }, [cartTotal, config.orderRules.maxCodAmount]);
+  }, [cartTotal, config.orderRules.maxCodAmount, payMethod]);
 
-  const addToCart = (id: string) => setCart(p => ({ ...p, [id]: (p[id] ?? 0) + 1 }));
-  const removeFromCart = (id: string) => setCart(p => {
-    const v = (p[id] ?? 0) - 1;
-    if (v <= 0) { const n = { ...p }; delete n[id]; return n; }
-    return { ...p, [id]: v };
-  });
+  const addToCart = (med: Med) => {
+    addToGlobalCart({ productId: med.id, name: med.name, price: med.price, quantity: 1, type: "pharmacy" });
+  };
+
+  const removeFromCart = (med: Med) => {
+    const existing = pharmacyCartItems.find(ci => ci.productId === med.id);
+    if (!existing) return;
+    if (existing.quantity <= 1) {
+      removeFromGlobalCart(med.id);
+    } else {
+      updateQuantity(med.id, existing.quantity - 1);
+    }
+  };
 
   const placeOrder = async () => {
     if (!address.trim() || !phone.trim()) {
@@ -188,6 +200,13 @@ function PharmacyScreenInner() {
     }
     if (cartItems.length === 0) {
       showToast(T("addToCart"), "error");
+      return;
+    }
+    if (payMethod === "cash" && cartTotal > config.orderRules.maxCodAmount) {
+      showToast(
+        `Order total exceeds COD limit (Rs. ${config.orderRules.maxCodAmount.toLocaleString()}). Please use wallet or reduce your order.`,
+        "error"
+      );
       return;
     }
     setLoading(true);
@@ -204,7 +223,7 @@ function PharmacyScreenInner() {
       }
       setConfirmedOrderId(data.id);
       setConfirmed(true);
-      setCart({});
+      clearCart();
     } catch {
       showToast(T("networkError"), "error");
     } finally {
@@ -335,7 +354,7 @@ function PharmacyScreenInner() {
             </View>
             <Text style={s.errorTitle}>{T("cannotLoad")}</Text>
             <Text style={s.errorSub}>{T("checkInternet")}</Text>
-            <Pressable onPress={fetchMeds} style={s.retryBtn}>
+            <Pressable onPress={loadMeds} style={s.retryBtn}>
               <Ionicons name="refresh-outline" size={16} color="#fff" />
               <Text style={s.retryBtnTxt}>{T("retry")}</Text>
             </Pressable>
@@ -350,9 +369,9 @@ function PharmacyScreenInner() {
             <MedCard
               key={med.id}
               med={med}
-              qty={cart[med.id] ?? 0}
-              onAdd={() => addToCart(med.id)}
-              onRemove={() => removeFromCart(med.id)}
+              qty={pharmacyCartItems.find(ci => ci.productId === med.id)?.quantity ?? 0}
+              onAdd={() => addToCart(med)}
+              onRemove={() => removeFromCart(med)}
             />
           ))
         )}

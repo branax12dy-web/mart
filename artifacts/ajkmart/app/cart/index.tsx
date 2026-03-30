@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Location from "expo-location";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -142,6 +142,17 @@ export default function CartScreen() {
   const [gwPaying, setGwPaying] = useState(false);
   const [gwStep, setGwStep] = useState<"input" | "waiting" | "done">("input");
 
+  const mountedRef = useRef(true);
+  const gwPollRef = useRef<{ active: boolean; intervalId?: ReturnType<typeof setInterval> }>({ active: false });
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      gwPollRef.current.active = false;
+      if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
+    };
+  }, []);
+
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const deliveryFeeConfig = platformConfig.deliveryFee;
   const freeDeliveryAbove = platformConfig.deliveryFee.freeDeliveryAbove;
@@ -182,7 +193,7 @@ export default function CartScreen() {
       const fallback = availablePayMethods.find(m => m.id !== "cash" && m.available);
       if (fallback) setPayMethod(fallback.id as PayMethod);
     }
-  }, [grandTotal, orderRules.maxCodAmount]);
+  }, [grandTotal, orderRules.maxCodAmount, payMethod]);
 
   const selectedAddr = addresses.find(a => a.id === selectedAddrId);
   const deliveryLine = selectedAddr
@@ -213,7 +224,7 @@ export default function CartScreen() {
 
   const revalidatePromo = async (code: string) => {
     try {
-      const orderType = cartType === "mixed" ? "mart" : cartType;
+      const orderType = (cartType === "mixed" || cartType === "pharmacy" || cartType === "none") ? "mart" : cartType;
       const res = await fetch(`${API_BASE}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${grandTotal}&type=${orderType}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -240,7 +251,7 @@ export default function CartScreen() {
     setPromoLoading(true);
     setPromoError(null);
     try {
-      const orderType = cartType === "mixed" ? "mart" : cartType;
+      const orderType = (cartType === "mixed" || cartType === "pharmacy" || cartType === "none") ? "mart" : cartType;
       const res = await fetch(`${API_BASE}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${grandTotal}&type=${orderType}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -318,6 +329,7 @@ export default function CartScreen() {
     if (loading) return;
     if (!user) { showToast("Please log in to place an order", "error"); return; }
     if (items.length === 0) { showToast("Your cart is empty", "error"); return; }
+    if (cartType === "pharmacy") { router.push("/pharmacy"); return; }
     if (!deliveryLine) {
       showToast("Please select a delivery address", "error");
       setShowAddrPicker(true);
@@ -412,39 +424,61 @@ export default function CartScreen() {
         const POLL_INTERVAL = 4000;
         const MAX_POLL_TIME = 120000;
         const startTime = Date.now();
-        let resolved = false;
+        gwPollRef.current.active = true;
 
-        while (!resolved && (Date.now() - startTime) < MAX_POLL_TIME) {
-          await new Promise(res => setTimeout(res, POLL_INTERVAL));
-          try {
-            const statusRes = await fetch(`${API_BASE}/payments/status/${encodeURIComponent(txnRef)}`);
-            const statusData = await statusRes.json() as any;
-            if (statusData.status === "completed" || statusData.status === "success") {
-              resolved = true;
-              setGwStep("done");
-              await new Promise(res => setTimeout(res, 600));
-              clearCart();
-              setOrderSuccess({
-                id: realOrderId.slice(-6).toUpperCase(),
-                time: (order as any).estimatedTime || "30-45 min",
-                payMethod,
-              });
-              setShowGwModal(false);
-            } else if (statusData.status === "failed" || statusData.status === "expired") {
+        await new Promise<void>((resolve, reject) => {
+          const intervalId = setInterval(async () => {
+            if (!gwPollRef.current.active) {
+              clearInterval(intervalId);
+              gwPollRef.current.intervalId = undefined;
+              resolve();
+              return;
+            }
+            if (Date.now() - startTime >= MAX_POLL_TIME) {
+              clearInterval(intervalId);
+              gwPollRef.current.active = false;
+              gwPollRef.current.intervalId = undefined;
               await cancelPendingOrder(realOrderId);
-              throw new Error(statusData.message || "Payment failed");
+              reject(new Error("Payment timeout — no response in 2 minutes. Please check your account or contact support if charged."));
+              return;
             }
-          } catch (pollErr: any) {
-            if (pollErr.message && pollErr.message !== "Failed to fetch") {
-              throw pollErr;
+            try {
+              const statusRes = await fetch(`${API_BASE}/payments/status/${encodeURIComponent(txnRef)}`);
+              const statusData = await statusRes.json() as any;
+              if (statusData.status === "completed" || statusData.status === "success") {
+                clearInterval(intervalId);
+                gwPollRef.current.active = false;
+                gwPollRef.current.intervalId = undefined;
+                if (!mountedRef.current) { resolve(); return; }
+                setGwStep("done");
+                await new Promise(r => setTimeout(r, 600));
+                if (!mountedRef.current) { resolve(); return; }
+                clearCart();
+                setOrderSuccess({
+                  id: realOrderId.slice(-6).toUpperCase(),
+                  time: (order as any).estimatedTime || "30-45 min",
+                  payMethod,
+                });
+                setShowGwModal(false);
+                resolve();
+              } else if (statusData.status === "failed" || statusData.status === "expired") {
+                clearInterval(intervalId);
+                gwPollRef.current.active = false;
+                gwPollRef.current.intervalId = undefined;
+                await cancelPendingOrder(realOrderId);
+                reject(new Error(statusData.message || "Payment failed"));
+              }
+            } catch (pollErr: any) {
+              if (pollErr.message && pollErr.message !== "Failed to fetch") {
+                clearInterval(intervalId);
+                gwPollRef.current.active = false;
+                gwPollRef.current.intervalId = undefined;
+                reject(pollErr);
+              }
             }
-          }
-        }
-
-        if (!resolved) {
-          await cancelPendingOrder(realOrderId);
-          throw new Error("Payment timeout — no response in 2 minutes. Please check your account.");
-        }
+          }, POLL_INTERVAL);
+          gwPollRef.current.intervalId = intervalId;
+        });
       }
     } catch (e: any) {
       showToast(e.message || "Payment failed. Please try again.", "error");
@@ -958,7 +992,7 @@ export default function CartScreen() {
             </View>
           </View>
         ) : (
-          <Pressable style={[styles.checkoutBtn, loading && { opacity: 0.7 }]} onPress={handleCheckout} disabled={loading}>
+          <Pressable style={[styles.checkoutBtn, (loading || addrLoading) && { opacity: 0.7 }]} onPress={handleCheckout} disabled={loading || addrLoading}>
             {loading ? <ActivityIndicator color="#fff" size="small" /> : (
               <>
                 <Text style={styles.checkoutBtnTxt}>Place Order</Text>

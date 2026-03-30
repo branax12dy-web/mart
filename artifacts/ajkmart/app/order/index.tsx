@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -35,6 +35,8 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: string; l
 
 const STEPS = ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"];
 const STEP_LABELS = ["Placed", "Confirmed", "Preparing", "On Way", "Delivered"];
+const PARCEL_STEPS = ["pending", "accepted", "in_transit", "completed"];
+const PARCEL_STEP_LABELS = ["Placed", "Accepted", "In Transit", "Delivered"];
 
 export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -48,7 +50,10 @@ export default function OrderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
 
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
     if (!orderId) return;
     const endpoint = isParcel
       ? `${API_BASE}/parcel-bookings/${orderId}`
@@ -61,18 +66,25 @@ export default function OrderDetailScreen() {
         });
         const data = await res.json();
         const fetched = data.order || data.booking || data;
-        setOrder(fetched);
-        if (fetched && ["delivered", "cancelled"].includes(fetched.status)) {
-          if (ivRef !== null) clearInterval(ivRef);
+        if (mountedRef.current) {
+          setOrder(fetched);
+          if (fetched && ["delivered", "cancelled", "completed"].includes(fetched.status)) {
+            if (ivRef !== null) clearInterval(ivRef);
+          }
         }
       } catch {
-        showToast(isParcel ? "Could not load parcel details" : "Could not load order details", "error");
+        if (mountedRef.current) {
+          showToast(isParcel ? "Could not load parcel details" : "Could not load order details", "error");
+        }
       }
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     };
     fetchAndMaybeClear();
     ivRef = setInterval(fetchAndMaybeClear, 10000);
-    return () => { if (ivRef !== null) clearInterval(ivRef); };
+    return () => {
+      mountedRef.current = false;
+      if (ivRef !== null) clearInterval(ivRef);
+    };
   }, [orderId, isParcel]);
 
   if (loading) {
@@ -105,8 +117,10 @@ export default function OrderDetailScreen() {
   }
 
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG["pending"]!;
-  const isActive = !["delivered", "cancelled"].includes(order.status);
-  const stepIdx = STEPS.indexOf(order.status);
+  const isActive = !["delivered", "cancelled", "completed"].includes(order.status);
+  const activeSteps = isParcel ? PARCEL_STEPS : STEPS;
+  const activeStepLabels = isParcel ? PARCEL_STEP_LABELS : STEP_LABELS;
+  const stepIdx = activeSteps.indexOf(order.status);
   const isFood = order.type === "food";
 
   const minutesSincePlaced = order.createdAt
@@ -144,10 +158,10 @@ export default function OrderDetailScreen() {
           <View style={s.stepperCard}>
             <Text style={s.sectionTitle}>Order Progress</Text>
             <View style={s.stepperRow}>
-              {STEPS.map((step, i) => {
+              {activeSteps.map((step, i) => {
                 const done = stepIdx >= i;
                 const active = stepIdx === i;
-                const isLast = i === STEPS.length - 1;
+                const isLast = i === activeSteps.length - 1;
                 return (
                   <React.Fragment key={step}>
                     <View style={s.stepItem}>
@@ -161,7 +175,7 @@ export default function OrderDetailScreen() {
                           : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#CBD5E1" }} />}
                       </View>
                       <Text style={[s.stepLabel, done && { color: C.text }, active && { fontFamily: "Inter_700Bold" }]}>
-                        {STEP_LABELS[i]}
+                        {activeStepLabels[i]}
                       </Text>
                     </View>
                     {!isLast && (

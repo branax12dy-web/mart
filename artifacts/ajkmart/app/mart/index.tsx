@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -50,8 +51,9 @@ function AddToCartButton({ onPress, added }: { onPress: () => void; added: boole
 function FlashCard({ product }: { product: any }) {
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);
-  const discount = product.originalPrice
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+  const origPrice = Number(product.originalPrice) || 0;
+  const discount = origPrice > 0
+    ? Math.round(((origPrice - product.price) / origPrice) * 100)
     : 0;
 
   const handleAdd = () => {
@@ -62,15 +64,18 @@ function FlashCard({ product }: { product: any }) {
 
   return (
     <View style={[styles.flashCard, { width: FLASH_CARD_W }]}>
-      <LinearGradient colors={["#FFF7ED", "#FFEDD5"]} style={styles.flashImg}>
-        <Ionicons name="flash" size={28} color="#F59E0B" />
+      <View style={styles.flashImg}>
+        {product.image
+          ? <Image source={{ uri: product.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          : <LinearGradient colors={["#FFF7ED", "#FFEDD5"]} style={StyleSheet.absoluteFill} />}
+        {!product.image && <Ionicons name="flash" size={28} color="#F59E0B" />}
         {discount > 0 && (
           <View style={styles.flashBadge}>
             <Text style={styles.flashBadgeTxt}>{discount}%</Text>
             <Text style={styles.flashBadgeSub}>OFF</Text>
           </View>
         )}
-      </LinearGradient>
+      </View>
       <View style={styles.flashBody}>
         <Text style={styles.flashName} numberOfLines={2}>{product.name}</Text>
         {product.unit && <Text style={styles.flashUnit}>{product.unit}</Text>}
@@ -89,8 +94,9 @@ function FlashCard({ product }: { product: any }) {
 function ProductCard({ product }: { product: any }) {
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);
-  const discount = product.originalPrice
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+  const origPrice = Number(product.originalPrice) || 0;
+  const discount = origPrice > 0
+    ? Math.round(((origPrice - product.price) / origPrice) * 100)
     : 0;
 
   const handleAdd = () => {
@@ -102,7 +108,9 @@ function ProductCard({ product }: { product: any }) {
   return (
     <View style={[styles.productCard, { width: PRODUCT_CARD_W }]}>
       <View style={styles.productImg}>
-        <Ionicons name="leaf-outline" size={32} color={C.textMuted} />
+        {product.image
+          ? <Image source={{ uri: product.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          : <Ionicons name="leaf-outline" size={32} color={C.textMuted} />}
         {discount > 0 && (
           <View style={styles.discountBadge}>
             <Text style={styles.discountTxt}>{discount}% OFF</Text>
@@ -148,8 +156,8 @@ function MartScreenInner() {
 
   const categories = catData?.categories || [];
   const products   = data?.products   || [];
-  const flashDeals = products.filter(p => p.originalPrice && (p.originalPrice as number) > p.price);
-  const allProducts = search || selectedCat ? products : products.filter(p => !(p.originalPrice && (p.originalPrice as number) > p.price));
+  const flashDeals = products.filter(p => Number(p.originalPrice) > p.price);
+  const allProducts = search || selectedCat ? products : products.filter(p => !(Number(p.originalPrice) > p.price));
 
   return (
     <View style={styles.container}>
@@ -321,7 +329,7 @@ const styles = StyleSheet.create({
 
   flashGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16, gap: 12, marginBottom: 8 },
   flashCard: { backgroundColor: C.surface, borderRadius: 18, overflow: "hidden", borderWidth: 1.5, borderColor: "#FED7AA", shadowColor: "#F59E0B", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
-  flashImg: { height: 100, alignItems: "center", justifyContent: "center" },
+  flashImg: { height: 100, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   flashBadge: { position: "absolute", top: 8, left: 8, backgroundColor: "#DC2626", paddingHorizontal: 7, paddingVertical: 4, borderRadius: 10, alignItems: "center" },
   flashBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff" },
   flashBadgeSub: { fontFamily: "Inter_700Bold", fontSize: 8, color: "#fff", marginTop: -1 },
@@ -334,7 +342,7 @@ const styles = StyleSheet.create({
 
   productsGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16, paddingTop: 4, gap: 12 },
   productCard: { backgroundColor: C.surface, borderRadius: 18, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
-  productImg: { height: 110, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" },
+  productImg: { height: 110, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   discountBadge: { position: "absolute", top: 8, left: 8, backgroundColor: C.danger, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   discountTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff" },
   productBody: { padding: 12 },

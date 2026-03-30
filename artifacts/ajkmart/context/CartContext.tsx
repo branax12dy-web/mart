@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { Alert } from "react-native";
+import { useAuth } from "@/context/AuthContext";
 
 export interface CartItem {
   productId: string;
@@ -8,14 +9,14 @@ export interface CartItem {
   price: number;
   quantity: number;
   image?: string;
-  type: "mart" | "food";
+  type: "mart" | "food" | "pharmacy";
 }
 
 interface CartContextType {
   items: CartItem[];
   itemCount: number;
   total: number;
-  cartType: "mart" | "food" | "mixed";
+  cartType: "mart" | "food" | "pharmacy" | "mixed" | "none";
   addItem: (item: CartItem) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
@@ -29,6 +30,7 @@ const CartContext = createContext<CartContextType | null>(null);
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const { token } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -61,19 +63,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (cartItems.length === 0) return;
     setIsValidating(true);
     try {
-      const authToken = await AsyncStorage.getItem("@ajkmart_token");
       const res = await fetch(`${API_BASE}/orders/validate-cart`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ items: cartItems }),
       });
       if (!res.ok) { setIsValidating(false); return; }
       const data = await res.json();
       if (!data.valid) {
-        save(data.items);
+        if (Array.isArray(data.items)) save(data.items);
         if (data.removed.length > 0) {
           Alert.alert("Items Removed", `The following items are no longer available and were removed: ${data.removed.join(", ")}`);
         }
@@ -100,27 +101,29 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const types = [...new Set(items.map(i => i.type))];
     const currentType = types.length === 1 ? types[0] : null;
 
+    if (items.length > 0 && currentType === null) {
+      Alert.alert("Mixed Cart", "Your cart has mixed items. Please clear your cart before adding new items.", [{ text: "OK" }]);
+      return;
+    }
+
     if (currentType && currentType !== item.type && items.length > 0) {
-      const existingTypeName = currentType === "mart" ? "Mart" : "Food";
-      const newTypeName = item.type === "mart" ? "Mart" : "Food";
+      const nameFor = (t: string) => t === "mart" ? "Mart" : t === "food" ? "Food" : "Pharmacy";
       Alert.alert(
         "Mixed Cart",
-        `Your cart has items from ${existingTypeName}. Adding ${newTypeName} items will clear your cart. Continue?`,
+        `Your cart has items from ${nameFor(currentType)}. Adding ${nameFor(item.type)} items will clear your cart. Continue?`,
         [
           { text: "Cancel", style: "cancel" },
           {
             text: "Yes, Clear & Add",
             style: "destructive",
-            onPress: () => {
-              save([{ ...item, type: item.type || "mart" }]);
-            },
+            onPress: () => { save([item]); },
           },
         ]
       );
       return;
     }
 
-    save([...items, { ...item, type: item.type || "mart" }]);
+    save([...items, item]);
   };
 
   const removeItem = (productId: string) => save(items.filter(i => i.productId !== productId));
@@ -136,9 +139,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   const types = [...new Set(items.map(i => i.type))];
-  const cartType: "mart" | "food" | "mixed" =
-    types.length === 0 ? "mart" :
-    types.length === 1 ? (types[0] as "mart" | "food") :
+  const cartType: "mart" | "food" | "pharmacy" | "mixed" | "none" =
+    types.length === 0 ? "none" :
+    types.length === 1 ? (types[0] as "mart" | "food" | "pharmacy") :
     "mixed";
 
   return (

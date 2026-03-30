@@ -15,9 +15,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { getProducts } from "@workspace/api-client-react";
+import type { GetProductsType, Product } from "@workspace/api-client-react";
 
 const C = Colors.light;
-const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 type ServiceType = "mart" | "food" | "pharmacy";
 
@@ -66,9 +67,9 @@ export default function UniversalSearchScreen() {
   const fetchResults = async (q: string, type: ServiceType) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/products?type=${type}&search=${encodeURIComponent(q)}&limit=30`);
-      const data = await res.json();
-      const items: SearchResult[] = (data.products || []).map((p: any) => ({ ...p, type }));
+      const params: Parameters<typeof getProducts>[0] & { limit?: number } = { type: type as GetProductsType, search: q, limit: 30 };
+      const data = await getProducts(params as Parameters<typeof getProducts>[0]);
+      const items: SearchResult[] = (data?.products || []).map((p: Product) => ({ id: p.id, name: p.name, price: p.price, image: p.image, category: p.category, originalPrice: p.originalPrice, type }));
       setResults(items);
     } catch {
       setResults([]);
@@ -78,7 +79,11 @@ export default function UniversalSearchScreen() {
   };
 
   const handleAdd = (item: SearchResult) => {
-    addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: item.type });
+    if (item.type === "pharmacy") {
+      router.push("/pharmacy");
+      return;
+    }
+    addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: item.type as "mart" | "food" });
     setAdded(prev => ({ ...prev, [item.id]: true }));
     setTimeout(() => setAdded(prev => ({ ...prev, [item.id]: false })), 1500);
   };

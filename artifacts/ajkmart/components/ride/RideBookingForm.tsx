@@ -323,18 +323,28 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const selectPickup = useCallback(async (pred: MapPrediction) => {
     setPickup(pred.mainText);
     setPickupFocus(false);
-    const loc = await resolveLocation(pred);
-    setPickupObj({ ...loc, address: pred.description });
-    setPickup(pred.description);
-  }, []);
+    try {
+      const loc = await resolveLocation(pred);
+      setPickupObj({ ...loc, address: pred.description });
+      setPickup(pred.description);
+    } catch {
+      showToast("Could not resolve pickup location. Please try again.", "error");
+      setPickup("");
+    }
+  }, [showToast]);
 
   const selectDrop = useCallback(async (pred: MapPrediction) => {
     setDrop(pred.mainText);
     setDropFocus(false);
-    const loc = await resolveLocation(pred);
-    setDropObj({ ...loc, address: pred.description });
-    setDrop(pred.description);
-  }, []);
+    try {
+      const loc = await resolveLocation(pred);
+      setDropObj({ ...loc, address: pred.description });
+      setDrop(pred.description);
+    } catch {
+      showToast("Could not resolve drop location. Please try again.", "error");
+      setDrop("");
+    }
+  }, [showToast]);
 
   const handleChip = (spot: PopularSpot) => {
     if (!pickupObj) {

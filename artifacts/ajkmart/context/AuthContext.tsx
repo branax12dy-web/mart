@@ -118,6 +118,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const doLogout = async () => {
     clearRefreshTimer();
     await AsyncStorage.multiRemove([USER_KEY, TOKEN_KEY, REFRESH_TOKEN_KEY]);
+    try {
+      const SecureStore = await import("expo-secure-store");
+      await SecureStore.deleteItemAsync(BIOMETRIC_TOKEN);
+    } catch {}
+    setBiometricEnabledState(false);
+    await AsyncStorage.setItem(BIOMETRIC_KEY, "false");
     setUser(null);
     setToken(null);
     setTwoFactorPending(null);
@@ -247,7 +253,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fallbackLabel: "Use password",
         disableDeviceFallback: false,
       });
-      if (!result.success) return false;
+      if (!result.success) {
+        await setBiometricEnabled(false);
+        return false;
+      }
 
       const SecureStore = await import("expo-secure-store");
       const storedRefreshToken = await SecureStore.getItemAsync(BIOMETRIC_TOKEN);
