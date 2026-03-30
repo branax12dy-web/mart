@@ -185,7 +185,7 @@ export default function RootLayout() {
 
     const loadFonts = async () => {
       try {
-        const fontPromise = Font.loadAsync({
+        await Font.loadAsync({
           Inter_400Regular,
           Inter_500Medium,
           Inter_600SemiBold,
@@ -194,14 +194,9 @@ export default function RootLayout() {
           NotoNastaliqUrdu_500Medium,
           NotoNastaliqUrdu_600SemiBold,
           NotoNastaliqUrdu_700Bold,
-        }).catch(() => { /* fall back to system fonts silently */ });
-
-        await Promise.race([
-          fontPromise,
-          new Promise<void>(resolve => setTimeout(resolve, Platform.OS === "web" ? 500 : 2000)),
-        ]);
+        });
       } catch {
-        /* ignore */
+        /* fall back to system fonts silently */
       } finally {
         if (!cancelled) {
           setReady(true);
