@@ -7,7 +7,7 @@ import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { TwoFactorSetup, TwoFactorVerify } from "@workspace/auth-utils";
 import {
-  ArrowLeft, Shield, ShieldCheck, ShieldOff, Loader2, Lock, Eye, EyeOff,
+  ArrowLeft, Shield, ShieldCheck, ShieldOff, Loader2, Lock, Eye, EyeOff, ChevronDown,
 } from "lucide-react";
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,

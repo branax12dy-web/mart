@@ -53,6 +53,8 @@ export interface PlatformConfig {
     reviews: boolean;
   };
   content: {
+    trackerBannerEnabled: boolean;
+    trackerBannerPosition: "top" | "bottom";
     showBanner: boolean;
     banner: string;
     announcement: string;
@@ -187,7 +189,7 @@ const DEFAULT_CONFIG: PlatformConfig = {
     minOrderAmount: 100,
   },
   features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
-  content: { showBanner: true, banner: "Free delivery on your first order! 🎉", announcement: "", maintenanceMsg: "We're performing scheduled maintenance. Back soon!", supportMsg: "Need help? Chat with us!", vendorNotice: "", riderNotice: "", tncUrl: "", privacyUrl: "", refundPolicyUrl: "", faqUrl: "", aboutUrl: "" },
+  content: { trackerBannerEnabled: true, trackerBannerPosition: "top", showBanner: true, banner: "Free delivery on your first order! 🎉", announcement: "", maintenanceMsg: "We're performing scheduled maintenance. Back soon!", supportMsg: "Need help? Chat with us!", vendorNotice: "", riderNotice: "", tncUrl: "", privacyUrl: "", refundPolicyUrl: "", faqUrl: "", aboutUrl: "" },
   orderRules: { minOrderAmount: 100, maxCodAmount: 5000, maxCartValue: 50000, cancelWindowMin: 5, autoCancelMin: 15, refundDays: 3, preptimeMin: 15, ratingWindowHours: 48, scheduleEnabled: false },
   deliveryFee: { mart: 80, food: 60, pharmacy: 50, parcel: 100, parcelPerKg: 40, freeEnabled: true, freeDeliveryAbove: 1000 },
   rides: { bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50, carBaseFare: 25, carPerKm: 12, carMinFare: 80, surgeEnabled: false, surgeMultiplier: 1.5, cancellationFee: 30, riderEarningPct: 80 },

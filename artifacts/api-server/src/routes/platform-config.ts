@@ -127,6 +127,8 @@ router.get("/", async (req, res) => {
       reviews:      (s["feature_reviews"]       ?? "on")  === "on",
     },
     content: {
+      trackerBannerEnabled: (s["content_tracker_banner_enabled"] ?? "on") === "on",
+      trackerBannerPosition: (s["content_tracker_banner_position"] === "bottom" ? "bottom" : "top") as "top" | "bottom",
       showBanner:       (s["content_show_banner"]        ?? "on")  === "on",
       banner:           s["content_banner"]              ?? "Free delivery on your first order! 🎉",
       announcement:     s["content_announcement"]        ?? "",

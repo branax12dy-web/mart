@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Target, BarChart2, Star, TrendingUp, CheckCircle,
-  Wallet, ClipboardList, CreditCard,
+  Wallet, ClipboardList, CreditCard, ChevronDown,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";

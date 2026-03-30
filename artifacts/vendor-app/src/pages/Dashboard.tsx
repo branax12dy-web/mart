@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -101,6 +102,29 @@ export default function Dashboard() {
       />
 
       <div className="px-4 py-4 space-y-4 md:px-0 md:py-0 md:space-y-0">
+        {/* Active Tracker Banner — top position */}
+        {config.content.trackerBannerEnabled && config.content.trackerBannerPosition === "top" && activeOrders.length > 0 && (
+          <Link href="/orders"
+            className="block bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl px-4 py-3.5 shadow-lg shadow-orange-200 active:scale-[0.98] transition-transform mb-2">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center flex-shrink-0">
+                <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-extrabold text-white tracking-tight">
+                  {activeOrders.length} Active Order{activeOrders.length > 1 ? "s" : ""}
+                </p>
+                <p className="text-xs text-white/70 mt-0.5 truncate">
+                  {activeOrders.map((o: any) => `#${o.id?.slice(-6).toUpperCase()}`).join(" · ")}
+                </p>
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm text-white font-extrabold text-xs px-3 py-2 rounded-xl flex-shrink-0">
+                Track →
+              </div>
+            </div>
+          </Link>
+        )}
+
         {/* Vendor Notice Banner */}
         {config.content.vendorNotice && (
           <VendorNoticeBanner message={config.content.vendorNotice} />
@@ -238,6 +262,29 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Active Tracker Banner — bottom position */}
+        {config.content.trackerBannerEnabled && config.content.trackerBannerPosition === "bottom" && activeOrders.length > 0 && (
+          <Link href="/orders"
+            className="block bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl px-4 py-3.5 shadow-lg shadow-orange-200 active:scale-[0.98] transition-transform mt-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center flex-shrink-0">
+                <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-extrabold text-white tracking-tight">
+                  {activeOrders.length} Active Order{activeOrders.length > 1 ? "s" : ""}
+                </p>
+                <p className="text-xs text-white/70 mt-0.5 truncate">
+                  {activeOrders.map((o: any) => `#${o.id?.slice(-6).toUpperCase()}`).join(" · ")}
+                </p>
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm text-white font-extrabold text-xs px-3 py-2 rounded-xl flex-shrink-0">
+                Track →
+              </div>
+            </div>
+          </Link>
+        )}
       </div>
 
       {/* Live Tracking disabled notice */}

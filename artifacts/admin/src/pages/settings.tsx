@@ -88,6 +88,7 @@ const TOGGLE_KEYS = new Set([
   "wallet_p2p_enabled","wallet_kyc_required",
   "wallet_allowed_mart","wallet_allowed_food","wallet_allowed_pharmacy","wallet_allowed_parcel","wallet_allowed_rides",
   "wallet_cashback_on_orders","wallet_cashback_on_rides","wallet_cashback_on_pharmacy",
+  "content_tracker_banner_enabled",
   "content_show_banner",
   "order_schedule_enabled",
   "finance_gst_enabled",
@@ -2937,12 +2938,35 @@ function renderSection(
         <div>
           <SLabel icon={ToggleRight}>Feature Switches</SLabel>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {T("content_tracker_banner_enabled", "Active Tracker Banner", "Shows active ride/order tracker strip in all apps")}
             {T("content_show_banner", "Show Promotional Banner Carousel", "Slide-show banners on customer home screen")}
           </div>
           <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
             <Zap size={11} className="text-violet-500" />
             Chat, Live Tracking and Reviews toggles have moved to the <strong>Feature Toggles</strong> tab.
           </p>
+        </div>
+
+        {/* ── Tracker Banner Position ── */}
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={ToggleRight}>Tracker Banner Position</SLabel>
+          <div className="rounded-xl border p-4 space-y-2.5 transition-all border-border bg-white">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Banner Position</p>
+                <p className="text-xs text-muted-foreground">Where the active tracker banner appears on screen</p>
+              </div>
+              <select
+                value={localValues["content_tracker_banner_position"] ?? "top"}
+                onChange={e => handleChange("content_tracker_banner_position", e.target.value)}
+                className={`text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${dirtyKeys.has("content_tracker_banner_position") ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-gray-50"}`}
+              >
+                <option value="top">Top</option>
+                <option value="bottom">Bottom</option>
+              </select>
+            </div>
+            <p className="text-[10px] text-muted-foreground/60 font-mono">content_tracker_banner_position</p>
+          </div>
         </div>
 
         {/* ── App Messaging ── */}

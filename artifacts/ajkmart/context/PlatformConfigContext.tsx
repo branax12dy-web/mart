@@ -20,6 +20,8 @@ export interface PlatformConfig {
     reviews: boolean;
   };
   content: {
+    trackerBannerEnabled: boolean;
+    trackerBannerPosition: "top" | "bottom";
     showBanner: boolean;
     banner: string;
     announcement: string;
@@ -155,6 +157,8 @@ const DEFAULT: PlatformConfig = {
   appStatus: "active",
   features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
   content: {
+    trackerBannerEnabled: true,
+    trackerBannerPosition: "top" as const,
     showBanner:      true,
     banner:          "Free delivery on your first order! 🎉",
     announcement:    "",
@@ -292,6 +296,8 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           reviews:      raw.features?.reviews      ?? true,
         },
         content: {
+          trackerBannerEnabled: raw.content?.trackerBannerEnabled ?? true,
+          trackerBannerPosition: raw.content?.trackerBannerPosition ?? "top",
           showBanner:      raw.content?.showBanner      ?? true,
           banner:          raw.content?.banner          ?? DEFAULT.content.banner,
           announcement:    raw.content?.announcement    ?? "",

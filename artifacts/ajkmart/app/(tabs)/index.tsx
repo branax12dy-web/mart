@@ -38,8 +38,9 @@ const W = Dimensions.get("window").width;
 const H_PAD = spacing.lg;
 const HALF_W = (W - H_PAD * 2 - spacing.md) / 2;
 
-function ActiveTrackerStrip({ userId }: { userId: string }) {
+function ActiveTrackerStrip({ userId, position }: { userId: string; position?: "top" | "bottom" }) {
   const { token } = useAuth();
+  const { config: pCfg } = usePlatformConfig();
   const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const { data: ordersData } = useQuery({
@@ -63,6 +64,8 @@ function ActiveTrackerStrip({ userId }: { userId: string }) {
     refetchInterval: 30000,
     staleTime: 20000,
   });
+
+  if (!pCfg.content.trackerBannerEnabled) return null;
 
   const activeOrders = (ordersData?.orders || []).filter((o: any) =>
     !["delivered", "cancelled"].includes(o.status)
@@ -117,8 +120,13 @@ function ActiveTrackerStrip({ userId }: { userId: string }) {
     c2 = C.primaryLight;
   }
 
+  const isBottom = (position || pCfg.content.trackerBannerPosition) === "bottom";
+
   return (
-    <Pressable onPress={() => router.push("/(tabs)/orders")} style={styles.trackerWrap}>
+    <Pressable
+      onPress={() => router.push("/(tabs)/orders")}
+      style={[styles.trackerWrap, isBottom && styles.trackerWrapBottom]}
+    >
       <LinearGradient
         colors={[c1, c2]}
         start={{ x: 0, y: 0 }}
@@ -643,7 +651,9 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {user?.id && <ActiveTrackerStrip userId={user.id} />}
+      {user?.id && platformConfig.content.trackerBannerPosition === "top" && (
+        <ActiveTrackerStrip userId={user.id} position="top" />
+      )}
 
       <Animated.View style={{ opacity: hdOp }}>
         <LinearGradient
@@ -835,6 +845,10 @@ export default function HomeScreen() {
           </>
         )}
 
+        {user?.id && platformConfig.content.trackerBannerPosition === "bottom" && (
+          <ActiveTrackerStrip userId={user.id} position="bottom" />
+        )}
+
         <View style={{ height: TAB_H + insets.bottom + 20 }} />
       </ScrollView>
     </View>
@@ -845,6 +859,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
 
   trackerWrap: { marginHorizontal: H_PAD, marginTop: spacing.sm },
+  trackerWrapBottom: { marginTop: spacing.md, marginBottom: spacing.sm },
   trackerCard: {
     flexDirection: "row",
     alignItems: "center",

@@ -155,6 +155,8 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "feature_new_users",      value: "on",    label: "New User Registration",         category: "features" },
   { key: "user_require_approval",  value: "off",   label: "Require Admin Approval for New Users", category: "features" },
   /* Content & Messaging */
+  { key: "content_tracker_banner_enabled", value: "on", label: "Active Tracker Banner (shows active rides/orders)", category: "content" },
+  { key: "content_tracker_banner_position", value: "top", label: "Tracker Banner Position (top or bottom)", category: "content" },
   { key: "content_show_banner",    value: "on",    label: "Show Promotional Banner Carousel",     category: "content" },
   { key: "content_banner",         value: "Free delivery on your first order! 🎉", label: "Promo Ribbon Text (below services)", category: "content" },
   { key: "content_announcement",   value: "",      label: "Announcement Bar (empty = hidden)",    category: "content" },
