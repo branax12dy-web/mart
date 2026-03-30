@@ -65,34 +65,48 @@ export function getSilenceRemaining(): number {
 
 export function playRequestSound() {
   if (isSilenced() || getSilenceMode()) return;
-  const ctx = getCtx();
-  if (!ctx) return;
-  if (ctx.state === "suspended") ctx.resume();
 
-  const now = ctx.currentTime;
+  try {
+    const ctx = getCtx();
+    if (!ctx) {
+      vibrateFallback();
+      return;
+    }
+    if (ctx.state === "suspended") ctx.resume();
 
-  const playTone = (freq: number, start: number, dur: number, vol: number, type: OscillatorType = "sine") => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, now + start);
-    gain.gain.setValueAtTime(0, now + start);
-    gain.gain.linearRampToValueAtTime(vol, now + start + 0.015);
-    gain.gain.setValueAtTime(vol, now + start + dur * 0.7);
-    gain.gain.linearRampToValueAtTime(0, now + start + dur);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now + start);
-    osc.stop(now + start + dur);
-  };
+    const now = ctx.currentTime;
 
-  playTone(880, 0, 0.1, 0.35, "square");
-  playTone(1100, 0.12, 0.1, 0.35, "square");
-  playTone(1320, 0.24, 0.15, 0.3, "sine");
+    const playTone = (freq: number, start: number, dur: number, vol: number, type: OscillatorType = "sine") => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now + start);
+      gain.gain.setValueAtTime(0, now + start);
+      gain.gain.linearRampToValueAtTime(vol, now + start + 0.015);
+      gain.gain.setValueAtTime(vol, now + start + dur * 0.7);
+      gain.gain.linearRampToValueAtTime(0, now + start + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + dur);
+    };
 
-  playTone(880, 0.5, 0.1, 0.35, "square");
-  playTone(1100, 0.62, 0.1, 0.35, "square");
-  playTone(1320, 0.74, 0.15, 0.3, "sine");
+    playTone(880, 0, 0.1, 0.35, "square");
+    playTone(1100, 0.12, 0.1, 0.35, "square");
+    playTone(1320, 0.24, 0.15, 0.3, "sine");
 
-  playTone(1400, 0.95, 0.2, 0.25, "sine");
+    playTone(880, 0.5, 0.1, 0.35, "square");
+    playTone(1100, 0.62, 0.1, 0.35, "square");
+    playTone(1320, 0.74, 0.15, 0.3, "sine");
+
+    playTone(1400, 0.95, 0.2, 0.25, "sine");
+  } catch {
+    vibrateFallback();
+  }
+}
+
+function vibrateFallback() {
+  try {
+    navigator?.vibrate?.([200, 100, 200]);
+  } catch {}
 }

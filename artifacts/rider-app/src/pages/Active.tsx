@@ -3,7 +3,7 @@ import {
   AlertTriangle, Camera, MapPin, Phone, Package, ShoppingCart,
   UtensilsCrossed, Bike, Car, User, CheckCircle, X, RefreshCw,
   MapPinned, ArrowDown, Shield, Navigation, Clock, Zap,
-  ChevronRight, Eye, Truck,
+  ChevronRight, Eye, Truck, WifiOff,
 } from "lucide-react";
 import { api, apiFetch } from "../lib/api";
 import { useState, useRef, useEffect } from "react";
@@ -77,7 +77,7 @@ function useElapsedTimer(startIso?: string | null) {
   const m = Math.floor((elapsed % 3600) / 60);
   const s = elapsed % 60;
   const label = h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
-  const urgent = elapsed > 1800;
+  const urgent = elapsed > 1200;
   return { label, elapsed, urgent };
 }
 
@@ -151,6 +151,36 @@ const RIDE_STEP_ICONS = [
   <CheckCircle key="done" size={14}/>,
 ];
 
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function EstimatedArrivalBadge({ riderPos, pickupLat, pickupLng }: {
+  riderPos: { lat: number; lng: number } | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+}) {
+  if (!riderPos || pickupLat == null || pickupLng == null) return null;
+  const distKm = haversineDistance(riderPos.lat, riderPos.lng, pickupLat, pickupLng);
+  const etaMin = Math.max(1, Math.round((distKm / 25) * 60));
+  return (
+    <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-4 py-3">
+      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
+        <Navigation size={16} className="text-white"/>
+      </div>
+      <div className="flex-1">
+        <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Est. Arrival to Pickup</p>
+        <p className="text-base font-black text-gray-900">{etaMin} min <span className="text-gray-400 font-semibold text-xs">({distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)} km`})</span></p>
+      </div>
+    </div>
+  );
+}
+
 export default function Active() {
   const qc = useQueryClient();
   const { config } = usePlatformConfig();
@@ -170,9 +200,55 @@ export default function Active() {
   const photoInputRef                              = useRef<HTMLInputElement>(null);
   const toastTimerRef                              = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pressedBtn, setPressedBtn]                = useState<string | null>(null);
+  const [isOffline, setIsOffline]                  = useState(!navigator.onLine);
+  const [riderPos, setRiderPos]                    = useState<{ lat: number; lng: number } | null>(null);
+
+  type QueuedUpdate = { kind: "location" | "status"; run: () => Promise<unknown> };
+  const pendingUpdatesRef                          = useRef<QueuedUpdate[]>([]);
 
   useEffect(() => {
     return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
+
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => {
+      setIsOffline(false);
+      const pending = [...pendingUpdatesRef.current];
+      pendingUpdatesRef.current = [];
+      const locationUpdates = pending.filter(item => item.kind === "location");
+      const statusUpdates = pending.filter(item => item.kind === "status");
+      if (locationUpdates.length > 0) {
+        const latest = locationUpdates[locationUpdates.length - 1];
+        latest.run().catch(() => { pendingUpdatesRef.current.push(latest); });
+      }
+      statusUpdates.forEach(item => item.run().then(() => {
+        qc.invalidateQueries({ queryKey: ["rider-active"] });
+        qc.invalidateQueries({ queryKey: ["rider-history"] });
+        qc.invalidateQueries({ queryKey: ["rider-earnings"] });
+        qc.invalidateQueries({ queryKey: ["rider-requests"] });
+        showToast(T("statusUpdated"));
+      }).catch(() => {
+        pendingUpdatesRef.current.push(item);
+      }));
+      refetch();
+    };
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!navigator?.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setRiderPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: false, maximumAge: 30_000, timeout: 30_000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
   const showToast = (msg: string, isError = false) => {
@@ -181,11 +257,23 @@ export default function Active() {
     toastTimerRef.current = setTimeout(() => setToastMsg(""), 3000);
   };
 
+  const [tabVisible, setTabVisible] = useState(!document.hidden);
+
+  useEffect(() => {
+    const handler = () => setTabVisible(!document.hidden);
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["rider-active"],
     queryFn:  () => api.getActive(),
-    refetchInterval: 8000,
+    refetchInterval: tabVisible ? 8000 : false,
   });
+
+  useEffect(() => {
+    if (tabVisible) refetch();
+  }, [tabVisible]);
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
 
@@ -219,14 +307,14 @@ export default function Active() {
     if (!navigator?.geolocation) return;
 
     let lastSentTime = 0;
-    const MIN_INTERVAL_MS = 15_000;
+    const MIN_INTERVAL_MS = 8_000;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
-        api.updateLocation({
+        const doUpdate = () => api.updateLocation({
           latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
           accuracy:  pos.coords.accuracy,
@@ -237,6 +325,11 @@ export default function Active() {
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
           setGpsWarning(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
+        if (!navigator.onLine) {
+          pendingUpdatesRef.current.push({ kind: "location", run: doUpdate });
+        } else {
+          doUpdate();
+        }
       },
       (geoErr) => {
         setGpsWarning(`GPS unavailable: ${geoErr.message}`);
@@ -258,7 +351,15 @@ export default function Active() {
   };
 
   const updateOrderMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => api.updateOrder(id, status, status === "delivered" ? (proofPhoto ?? undefined) : undefined),
+    mutationFn: ({ id, status }: { id: string; status: string }) => {
+      const photo = status === "delivered" ? (proofPhoto ?? undefined) : undefined;
+      if (!navigator.onLine) {
+        showToast("You're offline — update queued for retry", true);
+        pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateOrder(id, status, photo) });
+        return Promise.reject(new Error("Offline — queued for retry"));
+      }
+      return api.updateOrder(id, status, photo);
+    },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       qc.invalidateQueries({ queryKey: ["rider-history"] });
@@ -277,12 +378,21 @@ export default function Active() {
         showToast(T("statusUpdated"));
       }
     },
-    onError: (e: Error) => showToast(e.message, true),
+    onError: (e: Error) => {
+      if (e.message !== "Offline — queued for retry") showToast(e.message, true);
+    },
   });
 
   const updateRideMut = useMutation({
-    mutationFn: ({ id, status, lat, lng }: { id: string; status: string; lat?: number; lng?: number }) =>
-      api.updateRide(id, status, lat != null && lng != null ? { lat, lng } : undefined),
+    mutationFn: ({ id, status, lat, lng }: { id: string; status: string; lat?: number; lng?: number }) => {
+      const loc = lat != null && lng != null ? { lat, lng } : undefined;
+      if (!navigator.onLine) {
+        showToast("You're offline — update queued for retry", true);
+        pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateRide(id, status, loc) });
+        return Promise.reject(new Error("Offline — queued for retry"));
+      }
+      return api.updateRide(id, status, loc);
+    },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       qc.invalidateQueries({ queryKey: ["rider-history"] });
@@ -293,7 +403,9 @@ export default function Active() {
       else if (vars.status === "cancelled") { setShowCancelConfirm(false); showToast(T("rideCancelledMsg")); }
       else showToast(T("statusUpdated"));
     },
-    onError: (e: Error) => showToast(e.message, true),
+    onError: (e: Error) => {
+      if (e.message !== "Offline — queued for retry") showToast(e.message, true);
+    },
   });
 
   if (isLoading) return <SkeletonActive />;
@@ -368,6 +480,18 @@ export default function Active() {
           <ElapsedBadge startIso={startedAt}/>
         </div>
       </div>
+
+      {isOffline && (
+        <div className="mx-4 mt-3 bg-gradient-to-r from-red-50 to-orange-50 border border-red-300 rounded-3xl p-3.5 flex items-center gap-3 shadow-sm animate-pulse">
+          <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+            <WifiOff size={18} className="text-red-600"/>
+          </div>
+          <div className="flex-1">
+            <p className="text-xs font-extrabold text-red-800">Reconnecting…</p>
+            <p className="text-[11px] text-red-600 mt-0.5 leading-relaxed">No internet connection. Updates will retry automatically.</p>
+          </div>
+        </div>
+      )}
 
       {gpsWarning && (
         <div className="mx-4 mt-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-3.5 flex items-start gap-3 shadow-sm animate-[slideDown_0.3s_ease-out]">
@@ -709,6 +833,10 @@ export default function Active() {
                     {ride.customerPhone && <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Phone size={10}/> {ride.customerPhone}</p>}
                   </div>
                 </div>
+              )}
+
+              {ride.status === "accepted" && (
+                <EstimatedArrivalBadge riderPos={riderPos} pickupLat={ride.pickupLat} pickupLng={ride.pickupLng} />
               )}
 
               <div className="grid grid-cols-2 gap-2">

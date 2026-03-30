@@ -33,7 +33,7 @@ function LiveClock() {
 function RequestAge({ createdAt }: { createdAt: string }) {
   const [label, setLabel] = useState(timeAgo(createdAt));
   useEffect(() => {
-    const t = setInterval(() => setLabel(timeAgo(createdAt)), 5000);
+    const t = setInterval(() => setLabel(timeAgo(createdAt)), 30000);
     return () => clearInterval(t);
   }, [createdAt]);
   const diffSec = (Date.now() - new Date(createdAt).getTime()) / 1000;
@@ -103,6 +103,7 @@ export default function Home() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const qc = useQueryClient();
   const [toggling, setToggling] = useState(false);
+  const [tabVisible, setTabVisible] = useState(!document.hidden);
   const [toastMsg, setToastMsg] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [newFlash, setNewFlash] = useState(false);
@@ -160,20 +161,20 @@ export default function Home() {
   const { data: earningsData } = useQuery({
     queryKey: ["rider-earnings"],
     queryFn: () => api.getEarnings(),
-    refetchInterval: 60000,
+    refetchInterval: tabVisible ? 60000 : false,
   });
 
   const { data: activeData } = useQuery({
     queryKey: ["rider-active"],
     queryFn: () => api.getActive(),
-    refetchInterval: 8000,
+    refetchInterval: tabVisible ? 8000 : false,
   });
   const hasActiveTask = !!(activeData?.order || activeData?.ride);
 
   const { data: requestsData } = useQuery({
     queryKey: ["rider-requests"],
     queryFn: () => api.getRequests(),
-    refetchInterval: user?.isOnline ? 12000 : 60000,
+    refetchInterval: tabVisible ? (user?.isOnline ? 12000 : 60000) : false,
   });
 
   const allOrders: any[] = requestsData?.orders || [];
@@ -201,6 +202,19 @@ export default function Home() {
     }
     prevIdsRef.current = currentIds;
   }, [currentIdsSig]);
+
+  useEffect(() => {
+    const handler = () => setTabVisible(!document.hidden);
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+
+  useEffect(() => {
+    if (tabVisible) {
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      qc.invalidateQueries({ queryKey: ["rider-active"] });
+    }
+  }, [tabVisible]);
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
 
@@ -299,6 +313,7 @@ export default function Home() {
 
   const [counterInputs, setCounterInputs] = useState<Record<string, string>>({});
   const [showCounter,   setShowCounter]   = useState<Record<string, boolean>>({});
+  const [counterErrors, setCounterErrors] = useState<Record<string, string>>({});
 
   const counterRideMut = useMutation({
     mutationFn: ({ id, counterFare }: { id: string; counterFare: number }) =>
@@ -856,10 +871,23 @@ export default function Home() {
                                     placeholder="Update bid..."
                                     className="flex-1 h-10 px-3 bg-white border border-orange-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                                   />
+                                  {counterErrors[r.id] && (
+                                    <p className="text-xs text-red-500 font-semibold col-span-full">{counterErrors[r.id]}</p>
+                                  )}
                                   <button
                                     onClick={() => {
                                       const v = Number(counterInputs[r.id] || 0);
-                                      if (v > 0) counterRideMut.mutate({ id: r.id, counterFare: v });
+                                      const maxFare = (r.offeredFare ?? r.fare) * 3;
+                                      if (!v || v <= 0) {
+                                        setCounterErrors(prev => ({ ...prev, [r.id]: "Fare must be greater than Rs. 0" }));
+                                        return;
+                                      }
+                                      if (v > maxFare) {
+                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)} (3× offered price)` }));
+                                        return;
+                                      }
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
+                                      counterRideMut.mutate({ id: r.id, counterFare: v });
                                     }}
                                     disabled={counterRideMut.isPending}
                                     className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-3.5 py-2 rounded-xl text-sm disabled:opacity-60 transition-colors">
@@ -873,27 +901,45 @@ export default function Home() {
                                 </div>
                               </div>
                             ) : showCounter[r.id] ? (
-                              <div className="flex gap-2">
+                              <div className="space-y-2">
+                                <div className="flex gap-2">
                                 <input
                                   type="number" inputMode="numeric"
                                   value={counterInputs[r.id] || ""}
-                                  onChange={e => setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                  onChange={e => {
+                                    setCounterInputs(prev => ({ ...prev, [r.id]: e.target.value }));
+                                    if (counterErrors[r.id]) setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
+                                  }}
                                   placeholder="Your counter fare..."
-                                  className="flex-1 h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                                  className={`flex-1 h-11 px-4 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 ${counterErrors[r.id] ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-gray-200 focus:border-orange-400 focus:ring-orange-100"}`}
                                 />
                                 <button
                                   onClick={() => {
                                     const v = Number(counterInputs[r.id] || 0);
-                                    if (v > 0) counterRideMut.mutate({ id: r.id, counterFare: v });
+                                    const maxFare = (r.offeredFare ?? r.fare) * 3;
+                                    if (!v || v <= 0) {
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: "Fare must be greater than Rs. 0" }));
+                                      return;
+                                    }
+                                    if (v > maxFare) {
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)} (3× offered price)` }));
+                                      return;
+                                    }
+                                    setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
+                                    counterRideMut.mutate({ id: r.id, counterFare: v });
                                   }}
                                   disabled={counterRideMut.isPending}
                                   className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold px-4 py-2.5 rounded-xl text-sm disabled:opacity-60 transition-colors">
                                   {counterRideMut.isPending ? "..." : "Submit"}
                                 </button>
-                                <button onClick={() => setShowCounter(prev => ({ ...prev, [r.id]: false }))}
+                                <button onClick={() => { setShowCounter(prev => ({ ...prev, [r.id]: false })); setCounterErrors(prev => ({ ...prev, [r.id]: "" })); }}
                                   className="bg-gray-100 text-gray-400 px-3 py-2.5 rounded-xl flex items-center hover:bg-gray-200 transition-colors">
                                   <X size={15}/>
                                 </button>
+                                </div>
+                                {counterErrors[r.id] && (
+                                  <p className="text-xs text-red-500 font-semibold px-1">{counterErrors[r.id]}</p>
+                                )}
                               </div>
                             ) : (
                               <div className="flex gap-2">
