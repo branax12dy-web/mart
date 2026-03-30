@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { api } from "../lib/api";
 import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken, decodeGoogleJwtPayload } from "@workspace/auth-utils";
+import { useAuth, type AuthUser } from "../lib/auth";
 import {
   Bike, ArrowLeft, ArrowRight, Loader2, Eye, EyeOff,
   Clock, User, Phone, Mail, FileText, Car, Shield, Lightbulb,
@@ -100,6 +101,8 @@ function FileUploadBox({ label, icon, value, onChange, required, uploading }: {
 
 export default function Register() {
   const { config } = usePlatformConfig();
+  const { login: authLogin } = useAuth();
+  const [, navigate] = useLocation();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
 
@@ -170,18 +173,28 @@ export default function Register() {
     setUploadingField("");
   }, []);
 
+  const usernameAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!username || username.length < 3) { setUsernameStatus("idle"); return; }
     if (usernameTimer.current) clearTimeout(usernameTimer.current);
     usernameTimer.current = setTimeout(async () => {
+      /* Abort any in-flight request from a previous keystroke */
+      if (usernameAbortRef.current) usernameAbortRef.current.abort();
+      usernameAbortRef.current = new AbortController();
       setUsernameStatus("checking");
       try {
-        const res = await api.checkAvailable({ username });
+        const res = await api.checkAvailable({ username }, usernameAbortRef.current!.signal);
         if (res.username && !res.username.available) setUsernameStatus("taken");
         else setUsernameStatus("available");
-      } catch { setUsernameStatus("taken"); }
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        setUsernameStatus("taken");
+      }
     }, 600);
-    return () => { if (usernameTimer.current) clearTimeout(usernameTimer.current); };
+    return () => {
+      if (usernameTimer.current) clearTimeout(usernameTimer.current);
+      if (usernameAbortRef.current) usernameAbortRef.current.abort();
+    };
   }, [username]);
 
   useEffect(() => {
@@ -315,7 +328,7 @@ export default function Register() {
         if (cnicPhoto?.url) docsPayload.files.push({ type: "cnic_front", url: cnicPhoto.url, label: "CNIC Front" });
         if (cnicBackPhoto?.url) docsPayload.files.push({ type: "cnic_back", url: cnicBackPhoto.url, label: "CNIC Back" });
         if (licensePhoto?.url) docsPayload.files.push({ type: "driving_license", url: licensePhoto.url, label: "Driving License" });
-        if (vehiclePhoto?.url) docsPayload.files.push({ type: "vehicle_photo", url: vehiclePhoto.url, label: "Vehicle Photo" });
+        /* vehiclePhoto is sent as a top-level field — do NOT duplicate it inside documents JSON */
         if (registrationNote.trim()) docsPayload.note = registrationNote.trim();
 
         const regData = {
@@ -365,12 +378,37 @@ export default function Register() {
         if (auth.captchaEnabled) {
           captchaToken = await executeCaptcha("register_verify_otp", config.auth?.captchaSiteKey || "");
         }
+        type OtpVerifyResponse = {
+          token?: string; refreshToken?: string;
+          user?: AuthUser;
+          pendingApproval?: boolean;
+        };
+        let res: OtpVerifyResponse;
         if (verifyChannel === "phone") {
-          await api.verifyOtp(formatPhoneForApi(phone), otp, undefined, captchaToken);
+          res = await api.verifyOtp(formatPhoneForApi(phone), otp, undefined, captchaToken) as OtpVerifyResponse;
         } else {
-          await api.verifyEmailOtp(email, otp, undefined, captchaToken);
+          res = await api.verifyEmailOtp(email, otp, undefined, captchaToken) as OtpVerifyResponse;
         }
-        setCompleted(true);
+        /* If server returns a token the rider was auto-approved, log them in directly.
+           Backend may return a token without an embedded user object; in that case,
+           store the token and fetch the full profile via getMe(). */
+        if (res?.token) {
+          api.storeTokens(res.token, res.refreshToken);
+          let profile: AuthUser | null = res.user ?? null;
+          if (!profile) {
+            try {
+              profile = await api.getMe() as AuthUser;
+            } catch {
+              /* getMe failed — treat as pending instead of completing login with partial data */
+              setCompleted(true);
+              return;
+            }
+          }
+          authLogin(res.token, profile, res.refreshToken);
+          navigate("/");
+        } else {
+          setCompleted(true);
+        }
       } catch (e: unknown) { setError(e instanceof Error ? e.message : T("verificationFailed")); }
       setLoading(false);
     }

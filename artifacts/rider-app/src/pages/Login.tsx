@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "../lib/auth";
+import { useAuth, type AuthUser } from "../lib/auth";
 import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
@@ -82,9 +82,24 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
 
-  const [failedAttempts, setFailedAttempts] = useState(0);
-  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
-  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  const [failedAttempts, setFailedAttempts] = useState(() => {
+    try { return parseInt(sessionStorage.getItem("rider_login_attempts") || "0", 10) || 0; } catch { return 0; }
+  });
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(() => {
+    try {
+      const stored = sessionStorage.getItem("rider_lockout_until");
+      const val = stored ? parseInt(stored, 10) : null;
+      return val && val > Date.now() ? val : null;
+    } catch { return null; }
+  });
+  const [lockoutRemaining, setLockoutRemaining] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("rider_lockout_until");
+      const val = stored ? parseInt(stored, 10) : null;
+      if (val && val > Date.now()) return Math.ceil((val - Date.now()) / 1000);
+      return 0;
+    } catch { return 0; }
+  });
 
   const [twoFaPending, setTwoFaPending] = useState<AuthResponse | null>(null);
   const [twoFaError, setTwoFaError] = useState("");
@@ -100,10 +115,15 @@ export default function Login() {
       api.magicLinkVerify({ token: magicToken })
         .then(async (res: AuthResponse) => {
           await doLogin(res);
+          /* Clean up token from URL only AFTER login resolves successfully */
+          window.history.replaceState({}, "", window.location.pathname);
         })
-        .catch((e: unknown) => setError(e instanceof Error ? e.message : T("loginFailed")))
+        .catch((e: unknown) => {
+          setError(e instanceof Error ? e.message : T("loginFailed"));
+          /* Still clean up the URL on failure to prevent retry loops */
+          window.history.replaceState({}, "", window.location.pathname);
+        })
         .finally(() => setLoading(false));
-      window.history.replaceState({}, "", window.location.pathname);
     }
   }, [login, navigate, setGlobalTwoFaPending]);
 
@@ -115,6 +135,7 @@ export default function Login() {
       if (rem <= 0) {
         setLockoutUntil(null);
         setFailedAttempts(0);
+        try { sessionStorage.removeItem("rider_lockout_until"); sessionStorage.removeItem("rider_login_attempts"); } catch {}
       }
     }, 1000);
     return () => clearInterval(interval);
@@ -144,7 +165,20 @@ export default function Login() {
     if (!checkRiderRole(res)) return;
     if (res.pendingApproval) { setStep("pending"); return; }
     api.storeTokens(res.token, res.refreshToken);
-    const profile = await api.getMe();
+    /* Fetch full profile. If it fails (e.g. brief network blip), clear the tokens
+       and show an error — we do NOT proceed with a structurally invalid user object.
+       This avoids both an unsafe cast AND downstream undefined-access crashes. The
+       error is set directly (not via handleAuthError) so it cannot inflate the lockout
+       counter, which should only count credential failures, not profile-fetch failures. */
+    let profile: AuthUser;
+    try {
+      profile = await api.getMe() as AuthUser;
+    } catch (fetchErr: unknown) {
+      api.clearTokens();
+      const msg = fetchErr instanceof Error ? fetchErr.message : T("loginFailed");
+      setError(`${T("loginFailed")} (${msg})`);
+      return;
+    }
     login(res.token, profile, res.refreshToken);
   };
 
@@ -160,9 +194,12 @@ export default function Login() {
       }
       setFailedAttempts(prev => {
         const next = prev + 1;
+        try { sessionStorage.setItem("rider_login_attempts", String(next)); } catch {}
         if (next >= auth.lockoutMaxAttempts) {
-          setLockoutUntil(Date.now() + auth.lockoutDurationSec * 1000);
+          const until = Date.now() + auth.lockoutDurationSec * 1000;
+          setLockoutUntil(until);
           setLockoutRemaining(auth.lockoutDurationSec);
+          try { sessionStorage.setItem("rider_lockout_until", String(until)); } catch {}
         }
         return next;
       });
@@ -180,7 +217,7 @@ export default function Login() {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
       const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken);
-      setDevOtp(res.otp || "");
+      if (import.meta.env.DEV) setDevOtp(res.otp || "");
       setStep("otp");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : T("sendOtpFailed");
@@ -196,7 +233,7 @@ export default function Login() {
     try {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_email_otp");
       const res = await api.sendEmailOtp(phoneFallbackEmail, captchaToken);
-      setEmailDevOtp(res.otp || "");
+      if (import.meta.env.DEV) setEmailDevOtp(res.otp || "");
       setEmail(phoneFallbackEmail);
       setMethod("email");
       setStep("otp");
@@ -223,7 +260,7 @@ export default function Login() {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_email_otp");
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
       const res = await api.sendEmailOtp(email, captchaToken);
-      setEmailDevOtp(res.otp || "");
+      if (import.meta.env.DEV) setEmailDevOtp(res.otp || "");
       setStep("otp");
     } catch (e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
     setLoading(false);
@@ -445,7 +482,7 @@ export default function Login() {
             <>
               <h2 className="text-xl font-bold text-gray-800 mb-1">{T("enterOtp")}</h2>
               <p className="text-sm text-gray-500 mb-1">+92{phone}</p>
-              {devOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {devOtp}</div>}
+              {import.meta.env.DEV && devOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {devOtp}</div>}
               <input type="number" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-gray-900 mb-3" maxLength={6} autoFocus />
               <button onClick={sendPhoneOtp} className="w-full text-sm text-gray-400 hover:text-gray-900 mb-3 py-1">{T("resendOtp")}</button>
@@ -483,7 +520,7 @@ export default function Login() {
             <>
               <h2 className="text-xl font-bold text-gray-800 mb-1">{T("enterOtp")}</h2>
               <p className="text-sm text-gray-500 mb-1">{email}</p>
-              {emailDevOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {emailDevOtp}</div>}
+              {import.meta.env.DEV && emailDevOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {emailDevOtp}</div>}
               <input type="number" placeholder={T("enterOtpDigits")} value={emailOtp} onChange={e => setEmailOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-gray-900 mb-3" maxLength={6} autoFocus />
               <button onClick={sendEmailOtpFn} className="w-full text-sm text-gray-400 hover:text-gray-900 mb-3 py-1">{T("resendOtp")}</button>

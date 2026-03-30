@@ -24,9 +24,10 @@ type HistoryItem = {
 };
 
 export default function History() {
-  const [period, setPeriod]   = useState<FilterPeriod>("all");
-  const [kind,   setKind]     = useState<FilterKind>("all");
+  const [period, setPeriod]       = useState<FilterPeriod>("all");
+  const [kind,   setKind]         = useState<FilterKind>("all");
   const [visibleCount, setVisibleCount] = useState(20);
+  const [expandedId, setExpandedId]     = useState<string | null>(null);
   const PAGE_SIZE = 20;
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
@@ -41,7 +42,10 @@ export default function History() {
 
   const now      = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const weekStart  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  /* Use calendar-day based week start rather than rolling 7×24h offset so that
+     the "week" filter always starts at midnight 7 days ago, not an arbitrary time */
+  const weekStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+  const weekStart = weekStartDate;
 
   const filtered = raw.filter(item => {
     const d = new Date(item.createdAt);
@@ -62,7 +66,7 @@ export default function History() {
   const PERIOD_TABS: { key: FilterPeriod; label: string }[] = [
     { key: "today", label: T("today") },
     { key: "week",  label: T("thisWeek") },
-    { key: "all",   label: T("allTimeEarnings") },
+    { key: "all",   label: T("all") },
   ];
   type KindTab = { key: FilterKind; label: string; icon: React.ReactElement };
   const KIND_TABS: KindTab[] = [
@@ -96,7 +100,7 @@ export default function History() {
               </p>
               <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("history")}</h1>
             </div>
-            <button onClick={() => refetch()} disabled={isFetching}
+            <button onClick={() => { refetch(); setVisibleCount(PAGE_SIZE); }} disabled={isFetching}
               className="w-10 h-10 rounded-2xl bg-white/[0.08] border border-white/[0.06] flex items-center justify-center disabled:opacity-50 transition-opacity active:bg-white/[0.12]">
               <RefreshCw size={16} className={`text-white/60 ${isFetching ? "animate-spin" : ""}`}/>
             </button>
@@ -170,6 +174,7 @@ export default function History() {
               lastGroup = group;
               const completed = item.status === "delivered" || item.status === "completed";
               const cancelled = item.status === "cancelled";
+              const isExpanded = expandedId === item.id;
               return (
                 <div key={item.id}>
                   {showHeader && (
@@ -179,7 +184,10 @@ export default function History() {
                       <div className="flex-1 h-px bg-gray-200"/>
                     </div>
                   )}
-                  <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
+                  <div
+                    className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100 active:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                  >
                     <div className="p-4 flex items-center gap-3.5">
                       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${item.kind === "ride" ? "bg-green-50" : "bg-blue-50"}`}>
                         <ItemIcon kind={item.kind} type={item.type}/>
@@ -206,7 +214,34 @@ export default function History() {
                         </span>
                       </div>
                     </div>
-                    {completed && item.earnings > 0 && (
+                    {/* Expanded detail panel */}
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 px-4 py-3 space-y-2 bg-gray-50/50">
+                        {item.address && (
+                          <div className="flex items-start gap-2">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5 w-16 flex-shrink-0">Address</span>
+                            <span className="text-xs text-gray-600 font-medium flex-1">{item.address}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-16 flex-shrink-0">Status</span>
+                          <span className="text-xs text-gray-700 font-semibold capitalize">{item.status.replace(/_/g, " ")}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-16 flex-shrink-0">Date</span>
+                          <span className="text-xs text-gray-600">{formatDate(item.createdAt)}</span>
+                        </div>
+                        {(completed || cancelled) && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-16 flex-shrink-0">{T("earnings")}</span>
+                            <span className={`text-xs font-extrabold ${completed ? "text-green-600" : "text-gray-400"}`}>
+                              {completed ? `+${formatCurrency(item.earnings || 0)}` : "—"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!isExpanded && completed && item.earnings > 0 && (
                       <div className="px-4 pb-3">
                         <div className="bg-green-50 rounded-xl px-3.5 py-2 flex items-center justify-between border border-green-100">
                           <span className="text-xs text-green-600 font-medium flex items-center gap-1.5"><CreditCard size={12}/> {T("earningsCredited")}</span>

@@ -48,7 +48,24 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(opts.headers as Record<string, string> || {}),
   };
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+
+  /* Build a combined signal: always include a 30s timeout, plus any caller-provided signal */
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
+  const externalSignal = opts.signal as AbortSignal | undefined;
+  /* AbortSignal.any() is available in modern browsers; fall back to timeout-only if unavailable */
+  const signal: AbortSignal = externalSignal
+    ? (typeof AbortSignal.any === "function"
+        ? AbortSignal.any([timeoutController.signal, externalSignal])
+        : externalSignal)
+    : timeoutController.signal;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...opts, headers, signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (res.status === 401 && _retry) {
     const refreshed = await attemptTokenRefresh();
@@ -90,7 +107,7 @@ export const api = {
   sendEmailOtp: (email: string, captchaToken?: string) => apiFetch("/auth/send-email-otp", { method: "POST", body: JSON.stringify({ email, captchaToken }) }),
   verifyEmailOtp:(email: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp, deviceFingerprint, captchaToken }) }),
   loginUsername:(username: string, password: string, captchaToken?: string, deviceFingerprint?: string) => apiFetch("/auth/login/username", { method: "POST", body: JSON.stringify({ username, password, captchaToken, deviceFingerprint }) }),
-  checkAvailable:(data: { phone?: string; email?: string; username?: string }) => apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data) }),
+  checkAvailable:(data: { phone?: string; email?: string; username?: string }, signal?: AbortSignal) => apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data), ...(signal ? { signal } : {}) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
   refreshToken: () => attemptTokenRefresh(),
 
@@ -146,7 +163,7 @@ export const api = {
   getRefreshToken,
 
   /* Rider */
-  getMe:        () => apiFetch("/rider/me"),
+  getMe:        (signal?: AbortSignal) => apiFetch("/rider/me", signal ? { signal } : {}),
   setOnline:    (isOnline: boolean) => apiFetch("/rider/online", { method: "PATCH", body: JSON.stringify({ isOnline }) }),
   updateProfile:(data: any) => apiFetch("/rider/profile", { method: "PATCH", body: JSON.stringify(data) }),
   getRequests:  () => apiFetch("/rider/requests"),

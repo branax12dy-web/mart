@@ -1,4 +1,5 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
+import { useState, useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { usePlatformConfig, getRiderModules } from "./lib/useConfig";
@@ -26,6 +27,22 @@ function AppRoutes() {
   const modules = getRiderModules(config);
   useLanguage();
 
+  /* Show a subtle toast whenever refreshUser fails persistently */
+  const [refreshFailToast, setRefreshFailToast] = useState(false);
+  const refreshFailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const handler = () => {
+      setRefreshFailToast(true);
+      if (refreshFailTimer.current) clearTimeout(refreshFailTimer.current);
+      refreshFailTimer.current = setTimeout(() => setRefreshFailToast(false), 4000);
+    };
+    window.addEventListener("ajkmart:refresh-user-failed", handler);
+    return () => {
+      window.removeEventListener("ajkmart:refresh-user-failed", handler);
+      if (refreshFailTimer.current) clearTimeout(refreshFailTimer.current);
+    };
+  }, []);
+
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center">
       <div className="text-center">
@@ -49,6 +66,13 @@ function AppRoutes() {
       {/* ── Maintenance overlay (fullscreen) ── */}
       {config.platform.appStatus === "maintenance" && (
         <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />
+      )}
+
+      {/* ── Subtle sync-failure toast ── */}
+      {refreshFailToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg pointer-events-none">
+          Connection issue — profile sync failed
+        </div>
       )}
 
       {/* ── Announcement bar (top, dismissable) ── */}

@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import { api } from "./api";
 
-interface AuthUser {
+export interface AuthUser {
   id: string; phone: string; name?: string; email?: string;
   avatar?: string; isOnline: boolean; walletBalance: number;
   isRestricted?: boolean;
@@ -33,25 +33,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [twoFactorPending, setTwoFactorPending] = useState(false);
+  const refreshFailCountRef = useRef(0);
 
-  useEffect(() => {
+  useEffect((): (() => void) | void => {
     /* Try new namespaced key first, fall back to legacy key */
     const t = localStorage.getItem("ajkmart_rider_token") || localStorage.getItem("rider_token");
-    if (t) {
-      setToken(t);
-      api.getMe().then(u => {
-        setUser(u);
-        /* Migrate legacy key to new key on successful load */
-        if (!localStorage.getItem("ajkmart_rider_token")) {
-          localStorage.setItem("ajkmart_rider_token", t);
-          localStorage.removeItem("rider_token");
-        }
-      }).catch(() => {
-        api.clearTokens();
-      }).finally(() => setLoading(false));
-    } else { setLoading(false); }
+    if (!t) { setLoading(false); return; }
 
-    /* Listen for session-expired events from apiFetch */
+    setToken(t);
+    const controller = new AbortController();
+    api.getMe(controller.signal).then(u => {
+      setUser(u);
+      refreshFailCountRef.current = 0;
+      /* Migrate legacy key to new key on successful load */
+      if (!localStorage.getItem("ajkmart_rider_token")) {
+        localStorage.setItem("ajkmart_rider_token", t);
+        localStorage.removeItem("rider_token");
+      }
+    }).catch((err: unknown) => {
+      /* Ignore AbortError — component unmounted before fetch completed */
+      if (err instanceof Error && err.name === "AbortError") return;
+      api.clearTokens();
+    }).finally(() => setLoading(false));
+    return () => controller.abort();
+  }, []);
+
+  /* Single logout-event listener for the full lifetime of the auth context */
+  useEffect(() => {
     const handleLogout = () => { setToken(null); setUser(null); };
     window.addEventListener("ajkmart:logout", handleLogout);
     return () => window.removeEventListener("ajkmart:logout", handleLogout);
@@ -61,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.storeTokens(t, refreshToken);
     setToken(t);
     setUser(u);
+    refreshFailCountRef.current = 0;
   };
 
   const logout = () => {
@@ -77,8 +86,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const u = await api.getMe();
       setUser(u);
+      refreshFailCountRef.current = 0;
     } catch {
-      /* silently ignore — user remains logged in */
+      refreshFailCountRef.current += 1;
+      if (refreshFailCountRef.current >= 3) {
+        /* Show a subtle toast on persistent failure — dispatch a custom event that
+           any page can listen to. We don't import showToast here to avoid coupling. */
+        window.dispatchEvent(new CustomEvent("ajkmart:refresh-user-failed", {
+          detail: { count: refreshFailCountRef.current },
+        }));
+      }
     }
   };
 

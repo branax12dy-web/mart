@@ -25,7 +25,7 @@ export default function Earnings() {
   const riderKeepPct = config.rider?.keepPct ?? config.finance.riderEarningPct;
   const [period, setPeriod] = useState<Period>("week");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["rider-earnings"],
     queryFn: () => api.getEarnings(),
     refetchInterval: 60000,
@@ -37,7 +37,8 @@ export default function Earnings() {
 
   const totalDeliveries = user?.stats?.totalDeliveries || 0;
   const totalEarnings   = user?.stats?.totalEarnings   || 0;
-  const avgPerDelivery  = totalDeliveries > 0 ? totalEarnings / totalDeliveries : 0;
+  /* avgPerDelivery reflects the selected period, not all-time stats */
+  const avgPerDelivery  = periodData.deliveries > 0 ? periodData.earnings / periodData.deliveries : 0;
 
   const rating = user?.stats?.rating ?? 5;
   const ratingLabel = rating >= 4.8 ? "Excellent" : rating >= 4.5 ? "Very Good" : rating >= 4.0 ? "Good" : "Needs Work";
@@ -79,6 +80,11 @@ export default function Earnings() {
 
         {isLoading ? (
           <div className="h-32 bg-white rounded-3xl animate-pulse border border-gray-100" />
+        ) : isError ? (
+          <div className="bg-red-50 border border-red-100 rounded-3xl p-5 text-center">
+            <p className="text-sm font-bold text-red-700">Could not load earnings data.</p>
+            <p className="text-xs text-red-500 mt-1">Please check your connection and try again.</p>
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gray-900 rounded-3xl p-5 text-white shadow-sm">
@@ -151,16 +157,16 @@ export default function Earnings() {
           <Accordion type="single" collapsible defaultValue="breakdown">
             <AccordionItem value="breakdown" className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
               <AccordionTrigger className="px-5 py-4 bg-gray-50/50 hover:no-underline">
-                <span className="font-bold text-gray-800 text-sm">{T("thisMonthBreakdown")}</span>
+                <span className="font-bold text-gray-800 text-sm">
+                  {period === "today" ? `${T("today")} Breakdown` : period === "week" ? `${T("thisWeek")} Breakdown` : T("thisMonthBreakdown")}
+                </span>
               </AccordionTrigger>
               <AccordionContent className="pb-0 pt-0">
                 <div className="divide-y divide-gray-50">
                   {[
-                    { label: `${T("totalEarned")} (${riderKeepPct}%)`, value: formatCurrency(data?.month?.earnings || 0), color: "text-green-600" },
-                    { label: `${T("deliveries")} ${T("completedLabel")}`,   value: String(data?.month?.deliveries || 0),       color: "text-gray-900"  },
-                    { label: T("avgPerDelivery"),                 value: formatCurrency((data?.month?.deliveries ?? 0) > 0 ? (data?.month?.earnings ?? 0) / (data?.month?.deliveries ?? 1) : 0), color: "text-gray-900" },
-                    { label: T("allTimeEarnings"),                       value: formatCurrency(totalEarnings),              color: "text-green-600" },
-                    { label: T("allTimeDeliveries"),                     value: String(totalDeliveries),                    color: "text-gray-900"  },
+                    { label: `${T("totalEarned")} (${riderKeepPct}%)`, value: formatCurrency(periodData.earnings), color: "text-green-600" },
+                    { label: `${T("deliveries")} ${T("completedLabel")}`, value: String(periodData.deliveries),     color: "text-gray-900"  },
+                    { label: T("avgPerDelivery"),                 value: formatCurrency(avgPerDelivery),           color: "text-gray-900"  },
                   ].map(row => (
                     <div key={row.label} className="px-5 py-3.5 flex items-center justify-between">
                       <span className="text-sm text-gray-600">{row.label}</span>

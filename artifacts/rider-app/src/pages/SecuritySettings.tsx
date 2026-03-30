@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -7,13 +7,13 @@ import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { TwoFactorSetup, TwoFactorVerify } from "@workspace/auth-utils";
 import {
-  ArrowLeft, Shield, ShieldCheck, ShieldOff, Loader2, Lock, Eye, EyeOff, ChevronDown,
+  ArrowLeft, Shield, ShieldCheck, ShieldOff, Loader2, Lock, Eye, EyeOff,
 } from "lucide-react";
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
 
-function PasswordChangeSection({ token, showToastFn, T }: { token: string | null; showToastFn: (msg: string) => void; T: (key: TranslationKey) => string }) {
+function PasswordChangeSection({ showToastFn, T }: { showToastFn: (msg: string) => void; T: (key: TranslationKey) => string }) {
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -30,7 +30,7 @@ function PasswordChangeSection({ token, showToastFn, T }: { token: string | null
     try {
       await apiFetch("/auth/set-password", {
         method: "POST",
-        body: JSON.stringify({ token, password: newPw, currentPassword: currentPw || undefined }),
+        body: JSON.stringify({ password: newPw, currentPassword: currentPw || undefined }),
       });
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
       showToastFn("Password updated successfully");
@@ -77,13 +77,15 @@ type ViewState = "main" | "setup" | "verify-disable";
 export default function SecuritySettings() {
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
-  const { user, token } = useAuth();
+  const { user, refreshUser } = useAuth();
   const T = (key: TranslationKey) => tDual(key, language);
 
   const [view, setView] = useState<ViewState>("main");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [backupCodesSaved, setBackupCodesSaved] = useState(false);
 
   const [is2faEnabled, setIs2faEnabled] = useState(() => !!user?.twoFactorEnabled);
 
@@ -96,7 +98,17 @@ export default function SecuritySettings() {
   const [verifyError, setVerifyError] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(msg);
+    toastTimerRef.current = setTimeout(() => setToast(""), 3500);
+  };
 
   const handleToggle2fa = async () => {
     if (is2faEnabled) {
@@ -111,6 +123,7 @@ export default function SecuritySettings() {
           secret: data.secret || "",
           backupCodes: data.backupCodes || [],
         });
+        setBackupCodesSaved(false);
         setView("setup");
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : T("sendOtpFailed"));
@@ -128,15 +141,17 @@ export default function SecuritySettings() {
         setSetupData({ ...setupData, backupCodes: res.backupCodes });
       }
       setIs2faEnabled(true);
+      await refreshUser();
+      showToast(T("twoFactorEnableSuccess"));
       if (!res.backupCodes || res.backupCodes.length === 0) {
         setView("main");
       }
-      showToast(T("twoFactorEnableSuccess"));
+      /* If backup codes are present, stay on setup screen until rider clicks Done */
     } catch (e: unknown) {
       setVerifyError(e instanceof Error ? e.message : T("verificationFailed"));
     }
     setVerifyLoading(false);
-  }, [T, setupData]);
+  }, [T, setupData, refreshUser]);
 
   const handleDisableVerify = useCallback(async (code: string) => {
     setVerifyLoading(true);
@@ -144,16 +159,18 @@ export default function SecuritySettings() {
     try {
       await api.twoFactorDisable({ code });
       setIs2faEnabled(false);
+      await refreshUser();
       setView("main");
       showToast(T("twoFactorDisableSuccess"));
     } catch (e: unknown) {
       setVerifyError(e instanceof Error ? e.message : T("verificationFailed"));
     }
     setVerifyLoading(false);
-  }, [T]);
+  }, [T, refreshUser]);
 
 
   if (view === "setup" && setupData) {
+    const hasBackupCodes = setupData.backupCodes && setupData.backupCodes.length > 0;
     return (
       <div className="min-h-screen bg-[#F5F6F8] pb-24">
         <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
@@ -165,7 +182,7 @@ export default function SecuritySettings() {
           </button>
           <h1 className="text-xl font-bold text-white relative z-10">{T("twoFactorAuthentication")}</h1>
         </div>
-        <div className="px-4 -mt-4 relative z-10">
+        <div className="px-4 -mt-4 relative z-10 space-y-3">
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
             <TwoFactorSetup
               qrCodeDataUrl={setupData.qrCodeDataUrl}
@@ -177,6 +194,29 @@ export default function SecuritySettings() {
               appName={config.platform.appName}
             />
           </div>
+          {is2faEnabled && hasBackupCodes && (
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 space-y-3">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                2FA is now enabled. Make sure you have saved your backup codes above before continuing.
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={backupCodesSaved}
+                  onChange={e => setBackupCodesSaved(e.target.checked)}
+                  className="w-4 h-4 rounded accent-gray-900"
+                />
+                <span className="text-sm font-semibold text-gray-700">I've saved my backup codes</span>
+              </label>
+              <button
+                onClick={() => { if (backupCodesSaved) setView("main"); }}
+                disabled={!backupCodesSaved}
+                className="w-full h-11 bg-gray-900 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-40 transition-all"
+              >
+                <ShieldCheck size={16} /> Done — Return to Security Settings
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -237,7 +277,7 @@ export default function SecuritySettings() {
               </div>
             </AccordionTrigger>
             <AccordionContent>
-              <PasswordChangeSection token={token} showToastFn={showToast} T={T} />
+              <PasswordChangeSection showToastFn={showToast} T={T} />
             </AccordionContent>
           </AccordionItem>
 

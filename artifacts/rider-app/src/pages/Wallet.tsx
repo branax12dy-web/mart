@@ -251,7 +251,7 @@ export default function Wallet() {
   const { data: codData, refetch: refetchCod } = useQuery({
     queryKey: ["rider-cod"],
     queryFn: () => api.getCodSummary(),
-    refetchInterval: 60000,
+    refetchInterval: 30000,
     enabled: config.features.wallet,
   });
 
@@ -264,7 +264,10 @@ export default function Wallet() {
   });
 
   const transactions: WalletTx[] = data?.transactions || [];
-  const balance = data?.balance ?? (user?.walletBalance ? Number(user.walletBalance) : 0);
+  /* When getWallet returns no balance field, fall back to cached user balance but flag it as stale */
+  const balanceFromServer = data?.balance;
+  const balance = balanceFromServer != null ? Number(balanceFromServer) : (user?.walletBalance ? Number(user.walletBalance) : 0);
+  const isBalanceStale = data && balanceFromServer == null;
 
   const today   = new Date(); today.setHours(0,0,0,0);
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
@@ -393,6 +396,12 @@ export default function Wallet() {
             <p className="text-[42px] font-black text-white tracking-tight leading-none">
               {balanceHidden ? "••••••" : fc(balance)}
             </p>
+            {isBalanceStale && !balanceHidden && (
+              <div className="mb-2 flex items-center gap-1 bg-amber-500/15 px-2 py-0.5 rounded-full">
+                <AlertTriangle size={9} className="text-amber-400"/>
+                <span className="text-[9px] text-amber-400 font-bold">cached</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mb-5">

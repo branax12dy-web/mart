@@ -72,23 +72,30 @@ const fd = (d: string | Date) => {
   return new Date(d).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
-function dateGroup(d: string): string {
+type DateGroupKey = "today" | "yesterday" | "thisWeek" | "earlier";
+function dateGroupKey(d: string): DateGroupKey {
   const now = new Date();
   const dt  = new Date(d);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  if (dt >= today) return "Today";
-  if (dt >= yesterday) return "Yesterday";
+  if (dt >= today) return "today";
+  if (dt >= yesterday) return "yesterday";
   const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
-  if (dt >= weekAgo) return "This Week";
-  return "Earlier";
+  if (dt >= weekAgo) return "thisWeek";
+  return "earlier";
 }
 
 type NFilter = "all" | "order" | "wallet" | "ride" | "system";
 
 type NotifRecord = {
   id: string; type: string; title: string; body: string;
-  isRead: boolean; createdAt: string;
+  isRead: boolean; createdAt: string; status?: string;
+};
+
+type NotifQueryData = {
+  notifications: NotifRecord[];
+  unread: number;
+  total?: number;
 };
 
 type TypeInfo = {
@@ -109,21 +116,14 @@ function typeInfo(type: string): TypeInfo {
   return                        { icon: <Bell     size={20} className="text-white"/>,   label: "Other",  gradient: "from-gray-500 to-slate-600",    badge: "bg-gray-100 text-gray-600",    iconBg: "bg-gradient-to-br from-gray-500 to-slate-600",    dotColor: "bg-gray-500"  };
 }
 
-function navTarget(type: string): string | null {
-  if (type === "order")  return "/active";
-  if (type === "ride")   return "/active";
+function navTarget(type: string, status?: string): string | null {
+  /* Completed order/ride notifications → history; active → active */
+  const isCompleted = status === "delivered" || status === "completed" || status === "cancelled";
+  if (type === "order")  return isCompleted ? "/history" : "/active";
+  if (type === "ride")   return isCompleted ? "/history" : "/active";
   if (type === "wallet") return "/wallet";
   return null;
 }
-
-type FilterTab = { key: NFilter; label: string; icon: React.ReactElement };
-const FILTER_TABS: FilterTab[] = [
-  { key: "all",    label: "All",    icon: <Bell size={14}/>     },
-  { key: "order",  label: "Orders", icon: <Package size={14}/>  },
-  { key: "wallet", label: "Wallet", icon: <Wallet size={14}/>   },
-  { key: "ride",   label: "Rides",  icon: <Bike size={14}/>     },
-  { key: "system", label: "System", icon: <Settings size={14}/> },
-];
 
 const STAT_CONFIGS = [
   { label: "Total",  key: "total",  icon: <Bell size={14} className="text-white/50"/> },
@@ -173,28 +173,61 @@ export default function Notifications() {
 
   const markOneMut = useMutation({
     mutationFn: (id: string) => api.markOneRead(id),
+    onMutate: async (id: string) => {
+      /* Optimistic cache update: mark notification as read immediately */
+      await qc.cancelQueries({ queryKey: ["rider-notifications"] });
+      const prev = qc.getQueryData<NotifQueryData>(["rider-notifications"]);
+      if (prev) {
+        qc.setQueryData<NotifQueryData>(["rider-notifications"], (old) => {
+          if (!old) return old;
+          const updated = old.notifications.map((n) => n.id === id ? { ...n, isRead: true } : n);
+          const unreadCount = updated.filter((n) => !n.isRead).length;
+          return { ...old, notifications: updated, unread: unreadCount };
+        });
+      }
+      return { prev };
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rider-notifications"] });
       qc.invalidateQueries({ queryKey: ["rider-notifs-count"] });
     },
-    onError: (err: Error) => showToast(err.message || "Failed to mark as read", true),
+    onError: (err: Error, _id: string, ctx: { prev: NotifQueryData | undefined } | undefined) => {
+      /* Revert optimistic update on error */
+      if (ctx?.prev) qc.setQueryData(["rider-notifications"], ctx.prev);
+      showToast(err.message || "Failed to mark as read", true);
+    },
   });
+
+  const DATE_GROUP_LABELS: Record<DateGroupKey, string> = {
+    today: T("today"),
+    yesterday: T("yesterday"),
+    thisWeek: T("thisWeek"),
+    earlier: T("earlier"),
+  };
+
+  const FILTER_TABS: { key: NFilter; labelKey: TranslationKey; icon: React.ReactElement }[] = [
+    { key: "all",    labelKey: "all",           icon: <Bell size={14}/>     },
+    { key: "order",  labelKey: "orders",         icon: <Package size={14}/>  },
+    { key: "wallet", labelKey: "wallet",         icon: <Wallet size={14}/>   },
+    { key: "ride",   labelKey: "rides",          icon: <Bike size={14}/>     },
+    { key: "system", labelKey: "system",          icon: <Settings size={14}/> },
+  ];
 
   const filtered = filter === "all" ? notifs : notifs.filter(n => n.type === filter || (filter === "system" && !["order","wallet","ride"].includes(n.type)));
 
   const grouped = useMemo(() => {
-    const groups: { label: string; items: NotifRecord[] }[] = [];
-    const groupMap = new Map<string, NotifRecord[]>();
+    const groups: { key: DateGroupKey; label: string; items: NotifRecord[] }[] = [];
+    const groupMap = new Map<DateGroupKey, NotifRecord[]>();
     for (const n of filtered) {
-      const g = dateGroup(n.createdAt);
-      if (!groupMap.has(g)) {
-        groupMap.set(g, []);
-        groups.push({ label: g, items: groupMap.get(g)! });
+      const gKey = dateGroupKey(n.createdAt);
+      if (!groupMap.has(gKey)) {
+        groupMap.set(gKey, []);
+        groups.push({ key: gKey, label: DATE_GROUP_LABELS[gKey], items: groupMap.get(gKey)! });
       }
-      groupMap.get(g)!.push(n);
+      groupMap.get(gKey)!.push(n);
     }
     return groups;
-  }, [filtered]);
+  }, [filtered, language]);
 
   const filterCounts = useMemo(() => ({
     all:    notifs.filter(n => !n.isRead).length,
@@ -283,7 +316,7 @@ export default function Notifications() {
                   ? "bg-gray-900 text-white shadow-sm"
                   : "bg-white text-gray-500 border border-gray-200 active:bg-gray-50"
               }`}>
-              {tab.icon} {tab.label}
+              {tab.icon} {T(tab.labelKey)}
               {filterCounts[tab.key] > 0 && (
                 <span className={`text-[9px] font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${
                   filter === tab.key ? "bg-white/20 text-white" : "bg-red-500 text-white shadow-sm"
@@ -328,7 +361,7 @@ export default function Notifications() {
                 <div className="space-y-2.5">
                   {group.items.map((n: NotifRecord, ni: number) => {
                     const info = typeInfo(n.type);
-                    const dest = navTarget(n.type);
+                    const dest = navTarget(n.type, n.status);
                     return (
                       <div key={n.id}
                         className={`bg-white rounded-3xl border overflow-hidden transition-all duration-300 ${

@@ -157,9 +157,16 @@ export default function Profile() {
     toastTimerRef.current = setTimeout(() => setToast(""), 3500);
   };
 
+  const ALLOWED_IMAGE_MIME = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!ALLOWED_IMAGE_MIME.includes(file.type.toLowerCase())) {
+      showToast("Invalid file type. Please upload a JPEG, PNG, or WebP image.");
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) { showToast("Image too large (max 5MB)"); return; }
     setAvatarUploading(true);
     try {
@@ -194,11 +201,35 @@ export default function Profile() {
     setEditing(section);
   };
 
+  /* Re-sync form fields when user data updates from server (e.g. after refreshUser) */
+  useEffect(() => {
+    if (!editing) {
+      setName(user?.name || "");
+      setEmail(user?.email || "");
+      setCnic(user?.cnic || "");
+      setCity(user?.city || "");
+      setAddress(user?.address || "");
+      setEmergency(user?.emergencyContact || "");
+      setVehicleType(user?.vehicleType || "");
+      setVehiclePlate(user?.vehiclePlate || "");
+      setVehicleRegNo(user?.vehicleRegNo || "");
+      setDrivingLicense(user?.drivingLicense || "");
+      setBankName(user?.bankName || "");
+      setBankAccount(user?.bankAccount || "");
+      setBankAccountTitle(user?.bankAccountTitle || "");
+    }
+  }, [user]);
+
   const saveSection = async (section: EditSection) => {
     setSaving(true);
     try {
       const payload: ProfilePayload = {};
       if (section === "personal") {
+        if (!name.trim()) {
+          showToast(T("nameRequired"));
+          setSaving(false);
+          return;
+        }
         if (cnic && cnic.trim()) {
           const cnicPattern = /^\d{5}-\d{7}-\d{1}$/;
           if (!cnicPattern.test(cnic.trim())) {
@@ -207,7 +238,7 @@ export default function Profile() {
             return;
           }
         }
-        Object.assign(payload, { name, email, cnic: cnic.trim(), city, address, emergencyContact: emergency });
+        Object.assign(payload, { name: name.trim(), email, cnic: cnic.trim(), city, address, emergencyContact: emergency });
       }
       if (section === "vehicle")  Object.assign(payload, { vehicleType, vehiclePlate, vehicleRegNo, drivingLicense });
       if (section === "bank") {

@@ -34,8 +34,22 @@ function LiveClock() {
 function RequestAge({ createdAt }: { createdAt: string }) {
   const [label, setLabel] = useState(timeAgo(createdAt));
   useEffect(() => {
-    const t = setInterval(() => setLabel(timeAgo(createdAt)), 30000);
-    return () => clearInterval(t);
+    /* Per-second updates for the first 60s; coarsen to every 10s after that */
+    const timerRef: { id: ReturnType<typeof setInterval> | null } = { id: null };
+
+    const tick = () => {
+      setLabel(timeAgo(createdAt));
+      const diffNow = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+      if (diffNow >= 60 && timerRef.id !== null) {
+        /* Switch to coarse interval — clear current and restart at 10s */
+        clearInterval(timerRef.id);
+        timerRef.id = setInterval(() => setLabel(timeAgo(createdAt)), 10000);
+      }
+    };
+
+    const initialDiff = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+    timerRef.id = setInterval(tick, initialDiff >= 60 ? 10000 : 1000);
+    return () => { if (timerRef.id) clearInterval(timerRef.id); };
   }, [createdAt]);
   const diffSec = (Date.now() - new Date(createdAt).getTime()) / 1000;
   const urgent = diffSec > 90;
@@ -152,15 +166,25 @@ export default function Home() {
     toastTimerRef.current = setTimeout(() => setToastMsg(""), 3000);
   };
 
+  const [optimisticOnline, setOptimisticOnline] = useState<boolean | null>(null);
+  const effectiveOnline = optimisticOnline !== null ? optimisticOnline : !!user?.isOnline;
+
   const toggleOnline = async () => {
     if (toggling) return;
     setToggling(true);
+    const newStatus = !effectiveOnline;
+    /* Optimistic update — move pill immediately for snappy UX */
+    setOptimisticOnline(newStatus);
     try {
-      const newStatus = !user?.isOnline;
       await api.setOnline(newStatus);
       await refreshUser();
       showToast(newStatus ? T("youAreNowOnline") : T("youAreNowOffline"), "success");
-    } catch (e: any) { showToast(e.message, "error"); }
+    } catch (e: any) {
+      /* Revert on failure */
+      setOptimisticOnline(!newStatus);
+      showToast(e.message, "error");
+    }
+    setOptimisticOnline(null);
     setToggling(false);
   };
 
@@ -236,6 +260,16 @@ export default function Home() {
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
+  /* Clear dismissed set when rider logs out so stale entries don't persist */
+  useEffect(() => {
+    const handleLogout = () => {
+      setDismissed(new Set());
+      try { sessionStorage.removeItem("rider_dismissed"); } catch {}
+    };
+    window.addEventListener("ajkmart:logout", handleLogout);
+    return () => window.removeEventListener("ajkmart:logout", handleLogout);
+  }, []);
+
   useEffect(() => {
     if (tabVisible) {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
@@ -291,6 +325,16 @@ export default function Home() {
   const dismiss = (id: string) => setDismissed(prev => {
     const next = new Set([...prev, id]);
     try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
+    /* Stop the notification sound if all server-side requests are now dismissed */
+    const serverIds = new Set<string>([
+      ...allOrders.map((o: any) => o.id),
+      ...allRides.map((r: any) => r.id),
+    ]);
+    const remainingVisible = [...serverIds].filter(sid => !next.has(sid));
+    if (remainingVisible.length === 0) {
+      hasUnseenRequestsRef.current = false;
+      if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
+    }
     return next;
   });
 
@@ -435,22 +479,22 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className={`rounded-2xl p-4 transition-all duration-300 border backdrop-blur-sm ${user?.isOnline ? "bg-white/[0.08] border-green-500/20" : "bg-white/[0.04] border-white/[0.06]"}`}>
+          <div className={`rounded-2xl p-4 transition-all duration-300 border backdrop-blur-sm ${effectiveOnline ? "bg-white/[0.08] border-green-500/20" : "bg-white/[0.04] border-white/[0.06]"}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${user?.isOnline ? "bg-green-500/15" : "bg-white/[0.06]"}`}>
-                  {user?.isOnline
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${effectiveOnline ? "bg-green-500/15" : "bg-white/[0.06]"}`}>
+                  {effectiveOnline
                     ? <Zap size={22} className="text-green-400"/>
                     : <Wifi size={22} className="text-white/40"/>
                   }
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2.5 h-2.5 rounded-full ${user?.isOnline ? "bg-green-400 animate-pulse shadow-lg shadow-green-400/50" : "bg-gray-500"}`} />
-                    <p className="font-extrabold text-lg tracking-tight">{user?.isOnline ? T("online") : T("offline")}</p>
+                    <div className={`w-2.5 h-2.5 rounded-full ${effectiveOnline ? "bg-green-400 animate-pulse shadow-lg shadow-green-400/50" : "bg-gray-500"}`} />
+                    <p className="font-extrabold text-lg tracking-tight">{effectiveOnline ? T("online") : T("offline")}</p>
                   </div>
                   <p className="text-white/40 text-xs mt-0.5">
-                    {user?.isOnline ? T("acceptingOrders") : T("tapToStart")}
+                    {effectiveOnline ? T("acceptingOrders") : T("tapToStart")}
                   </p>
                 </div>
               </div>
@@ -461,8 +505,8 @@ export default function Home() {
                   {silenceOn ? <VolumeX size={16}/> : <Volume2 size={16}/>}
                 </button>
                 <button onClick={toggleOnline} disabled={toggling}
-                  className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${user?.isOnline ? "bg-green-500 shadow-green-500/30" : "bg-white/20"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
-                  <div className={`w-[24px] h-[24px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${user?.isOnline ? "left-[29px]" : "left-[3px]"}`} />
+                  className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${effectiveOnline ? "bg-green-500 shadow-green-500/30" : "bg-white/20"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
+                  <div className={`w-[24px] h-[24px] bg-white rounded-full absolute top-[3px] shadow-md transition-all duration-300 ${effectiveOnline ? "left-[29px]" : "left-[3px]"}`} />
                 </button>
               </div>
             </div>
@@ -552,25 +596,45 @@ export default function Home() {
           </div>
         )}
 
-        {cancelStatsData && cancelStatsData.dailyCancels > 0 && (() => {
+        {cancelStatsData && (cancelStatsData.dailyCancels > 0 || cancelStatsData.dailyIgnores > 0) && (() => {
           const atRisk = cancelStatsData.remaining === 0;
+          const cancelRate: number | null = cancelStatsData.cancelRate ?? null;
+          const dailyIgnores: number = cancelStatsData.dailyIgnores ?? 0;
           return (
-            <div className={`rounded-3xl px-4 py-3 flex items-center gap-3 shadow-sm border ${atRisk ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${atRisk ? "bg-red-100" : "bg-amber-100"}`}>
-                <XCircle size={18} className={atRisk ? "text-red-500" : "text-amber-500"}/>
-              </div>
-              <div className="flex-1">
-                <p className={`text-xs font-extrabold ${atRisk ? "text-red-800" : "text-amber-800"}`}>
-                  {cancelStatsData.dailyCancels} cancellation{cancelStatsData.dailyCancels !== 1 ? "s" : ""} today
-                  {atRisk ? " — Limit Reached!" : ""}
-                </p>
-                {cancelStatsData.dailyLimit != null && (
-                  <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
-                    Limit: {cancelStatsData.dailyLimit} per day · {cancelStatsData.remaining} remaining
-                    {cancelStatsData.penaltyAmount > 0 && ` · Rs. ${Math.round(cancelStatsData.penaltyAmount)} penalty per excess`}
+            <div className={`rounded-3xl px-4 py-3.5 shadow-sm border ${atRisk ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${atRisk ? "bg-red-100" : "bg-amber-100"}`}>
+                  <XCircle size={18} className={atRisk ? "text-red-500" : "text-amber-500"}/>
+                </div>
+                <div className="flex-1">
+                  <p className={`text-xs font-extrabold ${atRisk ? "text-red-800" : "text-amber-800"}`}>
+                    {cancelStatsData.dailyCancels} cancellation{cancelStatsData.dailyCancels !== 1 ? "s" : ""} today
+                    {atRisk ? " — Limit Reached!" : ""}
                   </p>
-                )}
+                  {cancelStatsData.dailyLimit != null && (
+                    <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
+                      Limit: {cancelStatsData.dailyLimit}/day · {cancelStatsData.remaining} remaining
+                      {cancelStatsData.penaltyAmount > 0 && ` · Rs. ${Math.round(cancelStatsData.penaltyAmount)} penalty per excess`}
+                    </p>
+                  )}
+                </div>
               </div>
+              {(cancelRate != null || dailyIgnores > 0) && (
+                <div className="mt-2.5 flex items-center gap-3 flex-wrap">
+                  {cancelRate != null && (
+                    <div className="flex items-center gap-1.5 bg-white/70 rounded-xl px-2.5 py-1.5 border border-amber-200/60">
+                      <span className="text-[10px] text-gray-500 font-semibold">Cancel rate</span>
+                      <span className={`text-[10px] font-extrabold ${cancelRate > 20 ? "text-red-600" : "text-amber-700"}`}>{Math.round(cancelRate)}%</span>
+                    </div>
+                  )}
+                  {dailyIgnores > 0 && (
+                    <div className="flex items-center gap-1.5 bg-white/70 rounded-xl px-2.5 py-1.5 border border-amber-200/60">
+                      <span className="text-[10px] text-gray-500 font-semibold">Ignores today</span>
+                      <span className="text-[10px] font-extrabold text-amber-700">{dailyIgnores}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()}

@@ -215,6 +215,13 @@ export default function Active() {
 
   type QueuedUpdate = { kind: "location" | "status"; run: () => Promise<unknown> };
   const pendingUpdatesRef                          = useRef<QueuedUpdate[]>([]);
+  /* Replace or add queued updates — deduplicate by kind to keep only latest */
+  const queueUpdate = (update: QueuedUpdate) => {
+    pendingUpdatesRef.current = [
+      ...pendingUpdatesRef.current.filter(u => u.kind !== update.kind),
+      update,
+    ];
+  };
 
   useEffect(() => {
     return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
@@ -314,7 +321,7 @@ export default function Active() {
           setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
         if (!navigator.onLine) {
-          pendingUpdatesRef.current.push({ kind: "location", run: doUpdate });
+          queueUpdate({ kind: "location", run: doUpdate });
         } else {
           doUpdate();
         }
@@ -338,8 +345,8 @@ export default function Active() {
     reader.readAsDataURL(file);
   };
 
-  const handleMarkDelivered = async (id: string) => {
-    if (!proofPhoto && !showNoPhotoWarning) {
+  const handleMarkDelivered = async (id: string, forceNoPhoto = false) => {
+    if (!proofPhoto && !forceNoPhoto) {
       setShowNoPhotoWarning(true);
       return;
     }
@@ -363,7 +370,7 @@ export default function Active() {
     }
     if (!navigator.onLine) {
       showToast("You're offline — update queued for retry", true);
-      pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateOrder(id, "delivered", photoUrl) });
+      queueUpdate({ kind: "status", run: () => api.updateOrder(id, "delivered", photoUrl) });
       return;
     }
     updateOrderMut.mutate({ id, status: "delivered", photoUrl });
@@ -373,7 +380,7 @@ export default function Active() {
     mutationFn: ({ id, status, photoUrl }: { id: string; status: string; photoUrl?: string }) => {
       if (!navigator.onLine) {
         showToast("You're offline — update queued for retry", true);
-        pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateOrder(id, status, photoUrl) });
+        queueUpdate({ kind: "status", run: () => api.updateOrder(id, status, photoUrl) });
         return Promise.reject(new Error("Offline — queued for retry"));
       }
       return api.updateOrder(id, status, photoUrl);
@@ -396,8 +403,16 @@ export default function Active() {
         showToast(T("statusUpdated"));
       }
     },
-    onError: (e: Error) => {
-      if (e.message !== "Offline — queued for retry") showToast(e.message, true);
+    onError: (e: Error, vars) => {
+      if (e.message !== "Offline — queued for retry") {
+        showToast(e.message, true);
+        /* If the delivery update failed, revert local optimistic state so
+           the rider can retry without being stuck in "delivering" view */
+        if (vars.status === "delivered") {
+          _setOrderPickedUp(false);
+          sessionStorage.removeItem("orderPickedUp");
+        }
+      }
     },
   });
 
@@ -406,7 +421,7 @@ export default function Active() {
       const loc = lat != null && lng != null ? { lat, lng } : undefined;
       if (!navigator.onLine) {
         showToast("You're offline — update queued for retry", true);
-        pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateRide(id, status, loc) });
+        queueUpdate({ kind: "status", run: () => api.updateRide(id, status, loc) });
         return Promise.reject(new Error("Offline — queued for retry"));
       }
       return api.updateRide(id, status, loc);
@@ -462,8 +477,8 @@ export default function Active() {
     : order.status === "delivered" ? 2
     : (order.status === "picked_up" || orderPickedUp) ? 1
     : 0;
-  const rideStep  = ride ? RIDE_STEPS.indexOf(ride.status) : -1;
-  const startedAt = order?.acceptedAt || order?.updatedAt || ride?.acceptedAt || ride?.updatedAt || null;
+  const rideStep  = ride ? Math.max(0, RIDE_STEPS.indexOf(ride.status)) : 0;
+  const startedAt = order?.acceptedAt || ride?.acceptedAt || null;
 
   function OrderTypeIcon({ type }: { type: string }) {
     if (type === "food") return <UtensilsCrossed size={22} className="text-white"/>;
@@ -754,7 +769,7 @@ export default function Active() {
                         <p className="text-xs font-bold text-amber-800">Are you sure? No photo was taken.</p>
                         <p className="text-[11px] text-amber-700 mt-0.5">Delivering without photo proof may cause disputes. Tap confirm to proceed anyway.</p>
                       </div>
-                      <button onClick={() => handleMarkDelivered(order.id)}
+                      <button onClick={() => handleMarkDelivered(order.id, true)}
                         disabled={proofUploading || updateOrderMut.isPending}
                         className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl active:bg-amber-700 transition-colors disabled:opacity-60 flex-shrink-0">
                         Confirm
