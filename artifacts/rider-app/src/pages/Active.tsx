@@ -279,7 +279,7 @@ export default function Active() {
       window.removeEventListener("offline", goOffline);
       window.removeEventListener("online", goOnline);
     };
-  }, []);
+  }, [language]);
 
 
   const showToast = (msg: string, isError = false) => {
@@ -315,7 +315,12 @@ export default function Active() {
   };
 
   useEffect(() => {
-    if (data?.order?.status === "picked_up") setOrderPickedUp(true);
+    if (data?.order?.status === "picked_up" || data?.order?.status === "out_for_delivery") {
+      setOrderPickedUp(true);
+    } else if (data?.order?.status === "delivered") {
+      sessionStorage.removeItem("orderPickedUp");
+      _setOrderPickedUp(false);
+    }
   }, [data?.order?.status]);
 
   useEffect(() => {
@@ -516,7 +521,7 @@ export default function Active() {
 
   const orderStep = !order ? 0
     : order.status === "delivered" ? 2
-    : (order.status === "picked_up" || orderPickedUp) ? 1
+    : (order.status === "picked_up" || order.status === "out_for_delivery" || orderPickedUp) ? 1
     : 0;
   const rideStep  = ride ? Math.max(0, RIDE_STEPS.indexOf(ride.status)) : 0;
   const startedAt = order?.acceptedAt || ride?.acceptedAt || null;

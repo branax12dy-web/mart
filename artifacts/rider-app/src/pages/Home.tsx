@@ -256,6 +256,13 @@ export default function Home() {
     staleTime: 60000,
   });
 
+  const { data: ignoreStatsData } = useQuery({
+    queryKey: ["rider-ignore-stats"],
+    queryFn: () => api.getIgnoreStats(),
+    refetchInterval: tabVisible ? 120000 : false,
+    staleTime: 60000,
+  });
+
   const allOrders: any[] = requestsData?.orders || [];
   const allRides:  any[] = requestsData?.rides  || [];
 
@@ -641,19 +648,28 @@ export default function Home() {
           </div>
         )}
 
-        {config.content.riderNotice && (
+        {config.content.riderNotice && !dismissed.has("rider-notice") && (
           <div className="bg-blue-50 border border-blue-200 rounded-3xl px-4 py-3 flex items-start gap-3 shadow-sm">
             <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
               <Pin size={14} className="text-blue-500"/>
             </div>
             <p className="text-sm text-blue-700 font-medium leading-relaxed flex-1 pt-0.5">{config.content.riderNotice}</p>
+            <button
+              onClick={() => setDismissed(prev => {
+                const next = new Set(prev);
+                next.add("rider-notice");
+                try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
+                return next;
+              })}
+              className="text-blue-400 hover:text-blue-600 flex-shrink-0 mt-0.5">
+              <X size={14}/>
+            </button>
           </div>
         )}
 
-        {cancelStatsData && (cancelStatsData.dailyCancels > 0 || cancelStatsData.dailyIgnores > 0) && (() => {
-          const atRisk = cancelStatsData.remaining === 0;
+        {cancelStatsData && cancelStatsData.dailyCancels > 0 && (() => {
+          const atRisk = cancelStatsData.remaining <= 1;
           const cancelRate: number | null = cancelStatsData.cancelRate ?? null;
-          const dailyIgnores: number = cancelStatsData.dailyIgnores ?? 0;
           return (
             <div className={`rounded-3xl px-4 py-3.5 shadow-sm border ${atRisk ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
               <div className="flex items-center gap-3">
@@ -663,7 +679,7 @@ export default function Home() {
                 <div className="flex-1">
                   <p className={`text-xs font-extrabold ${atRisk ? "text-red-800" : "text-amber-800"}`}>
                     {cancelStatsData.dailyCancels} cancellation{cancelStatsData.dailyCancels !== 1 ? "s" : ""} today
-                    {atRisk ? " — Limit Reached!" : ""}
+                    {cancelStatsData.remaining === 0 ? " — Limit Reached!" : cancelStatsData.remaining === 1 ? " — 1 left before penalty!" : ""}
                   </p>
                   {cancelStatsData.dailyLimit != null && (
                     <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
@@ -673,22 +689,39 @@ export default function Home() {
                   )}
                 </div>
               </div>
-              {(cancelRate != null || dailyIgnores > 0) && (
+              {cancelRate != null && (
                 <div className="mt-2.5 flex items-center gap-3 flex-wrap">
-                  {cancelRate != null && (
-                    <div className="flex items-center gap-1.5 bg-white/70 rounded-xl px-2.5 py-1.5 border border-amber-200/60">
-                      <span className="text-[10px] text-gray-500 font-semibold">Cancel rate</span>
-                      <span className={`text-[10px] font-extrabold ${cancelRate > 20 ? "text-red-600" : "text-amber-700"}`}>{Math.round(cancelRate)}%</span>
-                    </div>
-                  )}
-                  {dailyIgnores > 0 && (
-                    <div className="flex items-center gap-1.5 bg-white/70 rounded-xl px-2.5 py-1.5 border border-amber-200/60">
-                      <span className="text-[10px] text-gray-500 font-semibold">Ignores today</span>
-                      <span className="text-[10px] font-extrabold text-amber-700">{dailyIgnores}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5 bg-white/70 rounded-xl px-2.5 py-1.5 border border-amber-200/60">
+                    <span className="text-[10px] text-gray-500 font-semibold">Cancel rate</span>
+                    <span className={`text-[10px] font-extrabold ${cancelRate > 20 ? "text-red-600" : "text-amber-700"}`}>{Math.round(cancelRate)}%</span>
+                  </div>
                 </div>
               )}
+            </div>
+          );
+        })()}
+
+        {ignoreStatsData && ignoreStatsData.dailyIgnores > 0 && (() => {
+          const atRisk = ignoreStatsData.remaining <= 1;
+          return (
+            <div className={`rounded-3xl px-4 py-3.5 shadow-sm border ${atRisk ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${atRisk ? "bg-red-100" : "bg-amber-100"}`}>
+                  <SkipForward size={18} className={atRisk ? "text-red-500" : "text-amber-500"}/>
+                </div>
+                <div className="flex-1">
+                  <p className={`text-xs font-extrabold ${atRisk ? "text-red-800" : "text-amber-800"}`}>
+                    {ignoreStatsData.dailyIgnores} request{ignoreStatsData.dailyIgnores !== 1 ? "s" : ""} ignored today
+                    {ignoreStatsData.remaining === 0 ? " — Limit Reached!" : ignoreStatsData.remaining === 1 ? " — 1 left before penalty!" : ""}
+                  </p>
+                  {ignoreStatsData.dailyLimit != null && (
+                    <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
+                      Limit: {ignoreStatsData.dailyLimit}/day · {ignoreStatsData.remaining} remaining
+                      {ignoreStatsData.penaltyAmount > 0 && ` · Rs. ${Math.round(ignoreStatsData.penaltyAmount)} penalty per excess`}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           );
         })()}

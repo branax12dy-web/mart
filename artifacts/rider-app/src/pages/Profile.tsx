@@ -4,10 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Bell, MapPin, Circle, Bike, User, Landmark, Home, Wallet,
   ClipboardList, BarChart2, Pencil, Star, Camera,
-  Shield, Clock, CheckCircle, AlertTriangle,
+  Shield, Clock, CheckCircle, AlertTriangle, X,
   CreditCard, Phone, Mail, Facebook, Instagram, MessageCircle,
   FileText, Lock, HelpCircle, Info, LogOut, RefreshCcw,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, ChevronUp, Ban,
   Languages, Settings,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
@@ -106,6 +106,9 @@ export default function Profile() {
   const [editing, setEditing]   = useState<EditSection>(null);
   const [saving, setSaving]     = useState(false);
   const [toast, setToast]       = useState("");
+  const [toastIsError, setToastIsError] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [penaltyHistoryOpen, setPenaltyHistoryOpen] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<"personal" | "vehicle" | "bank">("personal");
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -125,6 +128,13 @@ export default function Profile() {
   const { data: reviewsData } = useQuery({
     queryKey: ["rider-my-reviews"],
     queryFn: () => api.getMyReviews(),
+    staleTime: 60000,
+  });
+
+  const { data: penaltyData } = useQuery({
+    queryKey: ["rider-penalty-history"],
+    queryFn: () => api.getPenaltyHistory(),
+    enabled: penaltyHistoryOpen,
     staleTime: 60000,
   });
 
@@ -156,9 +166,10 @@ export default function Profile() {
     };
   }, []);
 
-  const showToast = (m: string) => {
+  const showToast = (m: string, isError = false) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(m);
+    setToastIsError(isError);
     toastTimerRef.current = setTimeout(() => setToast(""), 3500);
   };
 
@@ -249,6 +260,7 @@ export default function Profile() {
     } else if (section === "bank") {
       setBankName(user?.bankName || ""); setBankAccount(user?.bankAccount || ""); setBankAccountTitle(user?.bankAccountTitle || "");
     }
+    if (section) setActiveTab(section);
     setEditing(section);
   };
 
@@ -281,15 +293,23 @@ export default function Profile() {
           setSaving(false);
           return;
         }
-        if (cnic && cnic.trim()) {
-          const cnicPattern = /^\d{5}-\d{7}-\d{1}$/;
-          if (!cnicPattern.test(cnic.trim())) {
-            showToast(T("cnicFormatError"));
+        if (email && email.trim()) {
+          const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailPattern.test(email.trim())) {
+            showToast(T("invalidEmail") as string || "Invalid email address format", true);
             setSaving(false);
             return;
           }
         }
-        Object.assign(payload, { name: name.trim(), email, cnic: cnic.trim(), city, address, emergencyContact: emergency });
+        if (cnic && cnic.trim()) {
+          const cnicPattern = /^\d{5}-\d{7}-\d{1}$/;
+          if (!cnicPattern.test(cnic.trim())) {
+            showToast(T("cnicFormatError"), true);
+            setSaving(false);
+            return;
+          }
+        }
+        Object.assign(payload, { name: name.trim(), email: email.trim(), cnic: cnic.trim(), city, address, emergencyContact: emergency });
       }
       if (section === "vehicle")  Object.assign(payload, { vehicleType, vehiclePlate, vehicleRegNo, drivingLicense });
       if (section === "bank") {
@@ -310,16 +330,19 @@ export default function Profile() {
         }
         Object.assign(payload, { bankName, bankAccount: bankAccount.trim(), bankAccountTitle: bankAccountTitle.trim() });
       }
-      await api.updateProfile(payload);
+      const result = await api.updateProfile(payload);
       await refreshUser();
       setEditing(null);
       setSavedSection(section);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSavedSection(null), 3000);
+      if (result?.pendingVerification) {
+        setPendingVerification(true);
+      }
       showToast(T("changesSaved"));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : T("saveFailedMsg");
-      showToast(msg);
+      showToast(msg, true);
     }
     setSaving(false);
   };
@@ -373,8 +396,25 @@ export default function Profile() {
     <div className={`bg-[#F5F6F8] pb-24 min-h-screen transition-opacity duration-500 ${fadeIn ? "opacity-100" : "opacity-0"}`}>
 
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw]">
-          <CheckCircle size={15} className="text-green-400 flex-shrink-0"/> {toast}
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw] ${toastIsError ? "bg-red-600 text-white" : "bg-gray-900 text-white"}`}>
+          {toastIsError
+            ? <AlertTriangle size={15} className="text-red-200 flex-shrink-0"/>
+            : <CheckCircle size={15} className="text-green-400 flex-shrink-0"/>
+          }
+          {toast}
+        </div>
+      )}
+
+      {pendingVerification && (
+        <div className="fixed top-4 left-4 right-4 z-40 bg-amber-500 text-white px-5 py-4 rounded-2xl shadow-2xl text-sm font-semibold flex items-start gap-3 animate-[slideDown_0.3s_ease-out]">
+          <AlertTriangle size={18} className="text-amber-100 flex-shrink-0 mt-0.5"/>
+          <div className="flex-1">
+            <p className="font-extrabold">Pending Re-Verification</p>
+            <p className="text-amber-100 text-xs mt-0.5 font-medium leading-relaxed">Your profile changes require admin approval. You cannot go online until your account is re-verified.</p>
+          </div>
+          <button onClick={() => setPendingVerification(false)} className="text-amber-200 hover:text-white flex-shrink-0">
+            <X size={16}/>
+          </button>
         </div>
       )}
 
@@ -937,6 +977,70 @@ export default function Profile() {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-[slideUp_0.7s_ease-out]">
+          <button
+            onClick={() => setPenaltyHistoryOpen(v => !v)}
+            className="w-full px-5 py-4 flex items-center justify-between active:bg-gray-50 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Ban size={16} className="text-red-500"/>
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-gray-900 text-[14px]">Penalty History</p>
+                <p className="text-[10px] text-gray-400">Deductions, ignores &amp; cancellation penalties</p>
+              </div>
+            </div>
+            {penaltyHistoryOpen ? <ChevronUp size={16} className="text-gray-300"/> : <ChevronDown size={16} className="text-gray-300"/>}
+          </button>
+          {penaltyHistoryOpen && (
+            <div className="border-t border-gray-50">
+              {!penaltyData ? (
+                <div className="px-5 py-8 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/>
+                </div>
+              ) : (() => {
+                const penalties: any[] = penaltyData?.penalties ?? [];
+                if (penalties.length === 0) return (
+                  <div className="px-5 py-8 text-center">
+                    <p className="text-sm text-gray-400 font-medium">No penalties on record</p>
+                  </div>
+                );
+                const typeColor: Record<string, string> = {
+                  ignore: "bg-amber-100 text-amber-700",
+                  cancel: "bg-red-100 text-red-700",
+                  ignore_penalty: "bg-orange-100 text-orange-700",
+                  cancel_penalty: "bg-red-100 text-red-700",
+                };
+                return (
+                  <div className="divide-y divide-gray-50">
+                    {penalties.map((p: any) => (
+                      <div key={p.id} className="px-5 py-3.5 flex items-start gap-3">
+                        <div className="w-9 h-9 bg-red-50 rounded-2xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <Ban size={15} className="text-red-400"/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${typeColor[p.type] ?? "bg-gray-100 text-gray-600"}`}>
+                              {(p.type || "penalty").replace(/_/g, " ")}
+                            </span>
+                            {p.amount > 0 && (
+                              <span className="text-xs font-black text-red-600">−Rs. {Math.round(p.amount)}</span>
+                            )}
+                          </div>
+                          {p.reason && <p className="text-xs text-gray-600 mt-1 leading-relaxed">{p.reason}</p>}
+                          <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1">
+                            <Clock size={9}/> {new Date(p.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
 
         {(reviewsData?.reviews?.length ?? 0) > 0 && (
