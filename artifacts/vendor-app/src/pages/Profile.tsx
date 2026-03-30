@@ -8,6 +8,9 @@ import { PageHeader } from "../components/PageHeader";
 import { fc, CARD, INPUT, BTN_PRIMARY, LABEL } from "../lib/ui";
 import { useLanguage } from "../lib/useLanguage";
 import { LANGUAGE_OPTIONS, tDual, type Language, type TranslationKey } from "@workspace/i18n";
+import {
+  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
+} from "../components/ui/accordion";
 
 const CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Jhelum","Rawalpindi","Islamabad","Lahore","Karachi","Other"];
 const BANKS  = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Other"];
@@ -277,65 +280,72 @@ export default function Profile() {
           {/* ── Column 2: Personal Information ── */}
           <div className="space-y-4">
             <div className={CARD}>
-              <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-gray-800 text-sm">👤 Personal Information</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Contact & identity details</p>
-                </div>
-                <button onClick={() => editing === "personal" ? setEditing(null) : startEdit("personal")}
-                  className="text-orange-500 text-sm font-bold android-press min-h-0 py-1">
-                  {editing === "personal" ? "Cancel" : "✏️ Edit"}
-                </button>
-              </div>
-
-              {editing === "personal" ? (
-                <div className="p-4 space-y-3">
-                  <div>
-                    <label className={LABEL}>Full Name *</label>
-                    <input value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" className={INPUT}/>
+              <Accordion type="single" collapsible defaultValue="personal-info">
+                <AccordionItem value="personal-info" className="border-0">
+                  <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100">
+                    <AccordionTrigger className="hover:no-underline p-0 flex-1 border-0">
+                      <div className="text-left">
+                        <span className="font-bold text-gray-800 text-sm block">👤 Personal Information</span>
+                        <span className="text-xs text-gray-400 mt-0.5">Contact & identity details</span>
+                      </div>
+                    </AccordionTrigger>
+                    <button onClick={() => editing === "personal" ? setEditing(null) : startEdit("personal")}
+                      className="text-orange-500 text-sm font-bold android-press min-h-0 py-1 ml-3 flex-shrink-0">
+                      {editing === "personal" ? "Cancel" : "✏️ Edit"}
+                    </button>
                   </div>
-                  <div>
-                    <label className={LABEL}>Email Address</label>
-                    <input value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email" placeholder="email@company.com" className={INPUT}/>
-                  </div>
-                  <div>
-                    <label className={LABEL}>CNIC / National ID</label>
-                    <input value={cnic} onChange={e => setCnic(e.target.value)} inputMode="numeric" placeholder="XXXXX-XXXXXXX-X" className={INPUT}/>
-                    <p className="text-[10px] text-gray-400 mt-1">Format: 42101-1234567-8 · Required for verification</p>
-                  </div>
-                  <div>
-                    <label className={LABEL}>City</label>
-                    <select value={city} onChange={e => setCity(e.target.value)} className={SELECT}>
-                      <option value="">Select city</option>
-                      {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={LABEL}>Business Address</label>
-                    <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Street, Area, City" className={INPUT}/>
-                  </div>
-                  <div>
-                    <label className={LABEL}>Business Type</label>
-                    <select value={businessType} onChange={e => setBusinessType(e.target.value)} className={SELECT}>
-                      <option value="">Select business type</option>
-                      {BIZ_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <button onClick={() => saveSection("personal")} disabled={saving} className={BTN_PRIMARY}>
-                    {saving ? "Saving..." : "✓ Save Changes"}
-                  </button>
-                </div>
-              ) : (
-                <div className="px-4 py-3">
-                  <InfoRow label="Full Name"      value={user?.name} />
-                  <InfoRow label="Phone"          value={user?.phone} empty="—" />
-                  <InfoRow label="Email"          value={user?.email} />
-                  <InfoRow label="CNIC"           value={user?.cnic} />
-                  <InfoRow label="City"           value={user?.city} />
-                  <InfoRow label="Address"        value={user?.address} />
-                  <InfoRow label="Business Type"  value={user?.businessType} />
-                </div>
-              )}
+                  <AccordionContent className="pt-0 pb-0">
+                    {editing === "personal" ? (
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <label className={LABEL}>Full Name *</label>
+                          <input value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" className={INPUT}/>
+                        </div>
+                        <div>
+                          <label className={LABEL}>Email Address</label>
+                          <input value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email" placeholder="email@company.com" className={INPUT}/>
+                        </div>
+                        <div>
+                          <label className={LABEL}>CNIC / National ID</label>
+                          <input value={cnic} onChange={e => setCnic(e.target.value)} inputMode="numeric" placeholder="XXXXX-XXXXXXX-X" className={INPUT}/>
+                          <p className="text-[10px] text-gray-400 mt-1">Format: 42101-1234567-8 · Required for verification</p>
+                        </div>
+                        <div>
+                          <label className={LABEL}>City</label>
+                          <select value={city} onChange={e => setCity(e.target.value)} className={SELECT}>
+                            <option value="">Select city</option>
+                            {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={LABEL}>Business Address</label>
+                          <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Street, Area, City" className={INPUT}/>
+                        </div>
+                        <div>
+                          <label className={LABEL}>Business Type</label>
+                          <select value={businessType} onChange={e => setBusinessType(e.target.value)} className={SELECT}>
+                            <option value="">Select business type</option>
+                            {BIZ_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <button onClick={() => saveSection("personal")} disabled={saving} className={BTN_PRIMARY}>
+                          {saving ? "Saving..." : "✓ Save Changes"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="px-4 py-3">
+                        <InfoRow label="Full Name"      value={user?.name} />
+                        <InfoRow label="Phone"          value={user?.phone} empty="—" />
+                        <InfoRow label="Email"          value={user?.email} />
+                        <InfoRow label="CNIC"           value={user?.cnic} />
+                        <InfoRow label="City"           value={user?.city} />
+                        <InfoRow label="Address"        value={user?.address} />
+                        <InfoRow label="Business Type"  value={user?.businessType} />
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
 
             {/* Quick Actions — Desktop only */}
@@ -370,90 +380,103 @@ export default function Profile() {
           {/* ── Column 3: Bank / Withdrawal Account ── */}
           <div className="space-y-4">
             <div className={CARD}>
-              <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-gray-800 text-sm">🏦 Withdrawal Account</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Bank or mobile wallet for payouts</p>
-                </div>
-                <button onClick={() => editing === "bank" ? setEditing(null) : startEdit("bank")}
-                  className="text-orange-500 text-sm font-bold android-press min-h-0 py-1">
-                  {editing === "bank" ? "Cancel" : "✏️ Edit"}
-                </button>
-              </div>
-
-              {editing === "bank" ? (
-                <div className="p-4 space-y-3">
-                  <div>
-                    <label className={LABEL}>Bank / Mobile Wallet *</label>
-                    <select value={bankName} onChange={e => setBankName(e.target.value)} className={SELECT}>
-                      <option value="">Select bank or wallet</option>
-                      {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={LABEL}>Account / Phone Number *</label>
-                    <input value={bankAccount} onChange={e => setBankAccount(e.target.value)} inputMode="numeric" placeholder="03XX-XXXXXXX or IBAN" className={INPUT}/>
-                  </div>
-                  <div>
-                    <label className={LABEL}>Account Holder Name *</label>
-                    <input value={bankAccountTitle} onChange={e => setBankAccountTitle(e.target.value)} placeholder="Full name as on account" className={INPUT}/>
-                  </div>
-                  <div className="bg-amber-50 rounded-xl p-3">
-                    <p className="text-xs text-amber-700 font-medium">⚠️ Ensure details match your bank records. Incorrect info may delay withdrawals.</p>
-                  </div>
-                  <button onClick={() => saveSection("bank")} disabled={saving} className={BTN_PRIMARY}>
-                    {saving ? "Saving..." : "✓ Save Account Details"}
-                  </button>
-                </div>
-              ) : (
-                <div className="px-4 py-3">
-                  {user?.bankName ? (
-                    <>
-                      <div className="flex items-center gap-3 bg-orange-50 rounded-xl p-3.5 mb-3">
-                        <span className="text-2xl">{user.bankName.includes("Easy") ? "📱" : user.bankName.includes("Jazz") ? "📱" : "🏦"}</span>
-                        <div>
-                          <p className="font-bold text-gray-800 text-sm">{user.bankName}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{user.bankAccount}</p>
-                          <p className="text-xs text-gray-500">{user.bankAccountTitle}</p>
-                        </div>
-                        <span className="ml-auto text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ Set</span>
+              <Accordion type="single" collapsible defaultValue="bank-info">
+                <AccordionItem value="bank-info" className="border-0">
+                  <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100">
+                    <AccordionTrigger className="hover:no-underline p-0 flex-1 border-0">
+                      <div className="text-left">
+                        <span className="font-bold text-gray-800 text-sm block">🏦 Withdrawal Account</span>
+                        <span className="text-xs text-gray-400 mt-0.5">Bank or mobile wallet for payouts</span>
                       </div>
-                      <InfoRow label="Bank"           value={user.bankName}         />
-                      <InfoRow label="Account No."    value={user.bankAccount}      />
-                      <InfoRow label="Account Title"  value={user.bankAccountTitle} />
-                    </>
-                  ) : (
-                    <div className="py-6 text-center">
-                      <p className="text-3xl mb-2">🏦</p>
-                      <p className="text-sm font-bold text-gray-600">No account set</p>
-                      <p className="text-xs text-gray-400 mt-1">Add your bank account to receive withdrawals</p>
-                      <button onClick={() => startEdit("bank")}
-                        className="mt-3 px-4 py-2 bg-orange-50 text-orange-600 font-bold rounded-xl text-sm">
-                        + Add Account
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                    </AccordionTrigger>
+                    <button onClick={() => editing === "bank" ? setEditing(null) : startEdit("bank")}
+                      className="text-orange-500 text-sm font-bold android-press min-h-0 py-1 ml-3 flex-shrink-0">
+                      {editing === "bank" ? "Cancel" : "✏️ Edit"}
+                    </button>
+                  </div>
+                  <AccordionContent className="pt-0 pb-0">
+                    {editing === "bank" ? (
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <label className={LABEL}>Bank / Mobile Wallet *</label>
+                          <select value={bankName} onChange={e => setBankName(e.target.value)} className={SELECT}>
+                            <option value="">Select bank or wallet</option>
+                            {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={LABEL}>Account / Phone Number *</label>
+                          <input value={bankAccount} onChange={e => setBankAccount(e.target.value)} inputMode="numeric" placeholder="03XX-XXXXXXX or IBAN" className={INPUT}/>
+                        </div>
+                        <div>
+                          <label className={LABEL}>Account Holder Name *</label>
+                          <input value={bankAccountTitle} onChange={e => setBankAccountTitle(e.target.value)} placeholder="Full name as on account" className={INPUT}/>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-3">
+                          <p className="text-xs text-amber-700 font-medium">⚠️ Ensure details match your bank records. Incorrect info may delay withdrawals.</p>
+                        </div>
+                        <button onClick={() => saveSection("bank")} disabled={saving} className={BTN_PRIMARY}>
+                          {saving ? "Saving..." : "✓ Save Account Details"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="px-4 py-3">
+                        {user?.bankName ? (
+                          <>
+                            <div className="flex items-center gap-3 bg-orange-50 rounded-xl p-3.5 mb-3">
+                              <span className="text-2xl">{user.bankName.includes("Easy") ? "📱" : user.bankName.includes("Jazz") ? "📱" : "🏦"}</span>
+                              <div>
+                                <p className="font-bold text-gray-800 text-sm">{user.bankName}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{user.bankAccount}</p>
+                                <p className="text-xs text-gray-500">{user.bankAccountTitle}</p>
+                              </div>
+                              <span className="ml-auto text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ Set</span>
+                            </div>
+                            <InfoRow label="Bank"           value={user.bankName}         />
+                            <InfoRow label="Account No."    value={user.bankAccount}      />
+                            <InfoRow label="Account Title"  value={user.bankAccountTitle} />
+                          </>
+                        ) : (
+                          <div className="py-6 text-center">
+                            <p className="text-3xl mb-2">🏦</p>
+                            <p className="text-sm font-bold text-gray-600">No account set</p>
+                            <p className="text-xs text-gray-400 mt-1">Add your bank account to receive withdrawals</p>
+                            <button onClick={() => startEdit("bank")}
+                              className="mt-3 px-4 py-2 bg-orange-50 text-orange-600 font-bold rounded-xl text-sm">
+                              + Add Account
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
 
             {/* Payout Policy */}
-            <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-2xl p-4">
-              <p className="font-bold text-orange-700 text-sm mb-2">💡 Payout Policy</p>
-              <div className="space-y-2">
-                {[
-                  { icon: "✅", text: "85% earnings — 15% platform fee" },
-                  { icon: "💸", text: "Minimum withdrawal: Rs. 500" },
-                  { icon: "⏱️", text: "Processed in 24–48 hours by admin" },
-                  { icon: "🔒", text: "CNIC verification required for large withdrawals" },
-                ].map((p, i) => (
-                  <div key={i} className="flex gap-2 text-xs text-orange-700">
-                    <span className="flex-shrink-0">{p.icon}</span>
-                    <span>{p.text}</span>
+            <Accordion type="single" collapsible>
+              <AccordionItem value="payout-policy" className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-2xl overflow-hidden">
+                <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                  <span className="font-bold text-orange-700 text-sm">💡 Payout Policy</span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="px-4 pb-1 space-y-2">
+                    {[
+                      { icon: "✅", text: "85% earnings — 15% platform fee" },
+                      { icon: "💸", text: "Minimum withdrawal: Rs. 500" },
+                      { icon: "⏱️", text: "Processed in 24–48 hours by admin" },
+                      { icon: "🔒", text: "CNIC verification required for large withdrawals" },
+                    ].map((p, i) => (
+                      <div key={i} className="flex gap-2 text-xs text-orange-700">
+                        <span className="flex-shrink-0">{p.icon}</span>
+                        <span>{p.text}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
 
             {/* AJKMart Vendor Agreement + Links */}
             <div className="bg-gray-100 rounded-2xl p-4 space-y-3">

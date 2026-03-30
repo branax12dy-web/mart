@@ -9,6 +9,9 @@ import { useAuth } from "../lib/auth";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
+import {
+  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
+} from "../components/ui/accordion";
 
 function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
 
@@ -144,43 +147,53 @@ export default function Earnings() {
         </div>
 
         {!isLoading && (
-          <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
-            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-              <p className="font-bold text-gray-800 text-sm">{T("thisMonthBreakdown")}</p>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {[
-                { label: `${T("totalEarned")} (${riderKeepPct}%)`, value: formatCurrency(data?.month?.earnings || 0), color: "text-green-600" },
-                { label: `${T("deliveries")} ${T("completedLabel")}`,   value: String(data?.month?.deliveries || 0),       color: "text-gray-900"  },
-                { label: T("avgPerDelivery"),                 value: formatCurrency((data?.month?.deliveries || 0) > 0 ? (data?.month?.earnings || 0) / data.month.deliveries : 0), color: "text-gray-900" },
-                { label: T("allTimeEarnings"),                       value: formatCurrency(totalEarnings),              color: "text-green-600" },
-                { label: T("allTimeDeliveries"),                     value: String(totalDeliveries),                    color: "text-gray-900"  },
-              ].map(row => (
-                <div key={row.label} className="px-5 py-3.5 flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{row.label}</span>
-                  <span className={`font-extrabold text-sm ${row.color}`}>{row.value}</span>
+          <Accordion type="single" collapsible defaultValue="breakdown">
+            <AccordionItem value="breakdown" className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
+              <AccordionTrigger className="px-5 py-4 bg-gray-50/50 hover:no-underline">
+                <span className="font-bold text-gray-800 text-sm">{T("thisMonthBreakdown")}</span>
+              </AccordionTrigger>
+              <AccordionContent className="pb-0 pt-0">
+                <div className="divide-y divide-gray-50">
+                  {[
+                    { label: `${T("totalEarned")} (${riderKeepPct}%)`, value: formatCurrency(data?.month?.earnings || 0), color: "text-green-600" },
+                    { label: `${T("deliveries")} ${T("completedLabel")}`,   value: String(data?.month?.deliveries || 0),       color: "text-gray-900"  },
+                    { label: T("avgPerDelivery"),                 value: formatCurrency((data?.month?.deliveries || 0) > 0 ? (data?.month?.earnings || 0) / data.month.deliveries : 0), color: "text-gray-900" },
+                    { label: T("allTimeEarnings"),                       value: formatCurrency(totalEarnings),              color: "text-green-600" },
+                    { label: T("allTimeDeliveries"),                     value: String(totalDeliveries),                    color: "text-gray-900"  },
+                  ].map(row => (
+                    <div key={row.label} className="px-5 py-3.5 flex items-center justify-between">
+                      <span className="text-sm text-gray-600">{row.label}</span>
+                      <span className={`font-extrabold text-sm ${row.color}`}>{row.value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         )}
 
-        <div className="bg-gray-900 rounded-3xl p-5 space-y-2.5">
-          <p className="font-bold text-white text-sm flex items-center gap-1.5"><CreditCard size={14} className="text-white/60"/> {T("howEarningsWork")}</p>
-          <div className="space-y-2">
-            {[
-              T("keepPercentage").replace("{pct}", String(riderKeepPct)),
-              T("earningsCreditedInstantly"),
-              T("withdrawAnytime"),
-              T("processedWithin"),
-            ].map((item, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <CheckCircle size={13} className="text-green-400 flex-shrink-0 mt-0.5"/>
-                <p className="text-xs text-white/60 leading-relaxed font-medium">{item}</p>
+        <Accordion type="single" collapsible>
+          <AccordionItem value="how-it-works" className="bg-gray-900 rounded-3xl overflow-hidden border-0">
+            <AccordionTrigger className="px-5 py-4 hover:no-underline [&>svg]:text-white/40">
+              <span className="font-bold text-white text-sm flex items-center gap-1.5"><CreditCard size={14} className="text-white/60"/> {T("howEarningsWork")}</span>
+            </AccordionTrigger>
+            <AccordionContent className="pt-0">
+              <div className="px-5 pb-1 space-y-2">
+                {[
+                  T("keepPercentage").replace("{pct}", String(riderKeepPct)),
+                  T("earningsCreditedInstantly"),
+                  T("withdrawAnytime"),
+                  T("processedWithin"),
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <CheckCircle size={13} className="text-green-400 flex-shrink-0 mt-0.5"/>
+                    <p className="text-xs text-white/60 leading-relaxed font-medium">{item}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
 
       </div>
     </div>

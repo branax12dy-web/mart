@@ -9,6 +9,9 @@ import { TwoFactorSetup, TwoFactorVerify } from "@workspace/auth-utils";
 import {
   ArrowLeft, Shield, ShieldCheck, ShieldOff, Loader2, Lock, Eye, EyeOff,
 } from "lucide-react";
+import {
+  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
+} from "../components/ui/accordion";
 
 function PasswordChangeSection({ token, showToastFn, T }: { token: string | null; showToastFn: (msg: string) => void; T: (key: TranslationKey) => string }) {
   const [currentPw, setCurrentPw] = useState("");
@@ -38,17 +41,7 @@ function PasswordChangeSection({ token, showToastFn, T }: { token: string | null
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-      <div className="flex items-start gap-4 mb-4">
-        <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-          <Lock size={24} className="text-blue-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-[15px] font-bold text-gray-900">{T("password")}</h3>
-          <p className="text-xs text-gray-500 mt-1 leading-relaxed">Change your account password</p>
-        </div>
-      </div>
-
+    <div className="px-5 pb-1">
       <div className="space-y-3">
         <div className="relative">
           <input type={showCurrent ? "text" : "password"} value={currentPw} onChange={e => setCurrentPw(e.target.value)}
@@ -227,37 +220,54 @@ export default function SecuritySettings() {
       </div>
 
       <div className="px-4 mt-4 space-y-4 max-w-md mx-auto">
-        <PasswordChangeSection token={token} showToastFn={showToast} T={T} />
-
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-start gap-4">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${is2faEnabled ? "bg-green-100" : "bg-gray-100"}`}>
-              {is2faEnabled ? <ShieldCheck size={24} className="text-green-600" /> : <Shield size={24} className="text-gray-400" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-[15px] font-bold text-gray-900">{T("twoFactorAuthentication")}</h3>
-              <p className="text-xs text-gray-500 mt-1 leading-relaxed">{T("twoFactorDesc")}</p>
-              <div className="mt-3 flex items-center gap-2">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${is2faEnabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                  {is2faEnabled ? T("twoFactorEnabled") : T("twoFactorDisabled")}
-                </span>
+        <Accordion type="multiple" defaultValue={["password", "2fa"]}>
+          <AccordionItem value="password" className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+            <AccordionTrigger className="px-5 py-4 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <Lock size={20} className="text-blue-600" />
+                </div>
+                <div className="text-left">
+                  <span className="text-[15px] font-bold text-gray-900 block">{T("password")}</span>
+                  <span className="text-xs text-gray-500">Change your account password</span>
+                </div>
               </div>
-            </div>
-          </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <PasswordChangeSection token={token} showToastFn={showToast} T={T} />
+            </AccordionContent>
+          </AccordionItem>
 
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <button onClick={handleToggle2fa} disabled={loading}
-              className={`w-full h-11 font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-60 ${is2faEnabled
-                  ? "border-2 border-red-200 text-red-500 hover:bg-red-50"
-                  : "bg-gray-900 hover:bg-gray-800 text-white"
-                }`}>
-              {loading ? <Loader2 size={16} className="animate-spin" /> : is2faEnabled ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
-              {loading ? T("pleaseWait") : is2faEnabled ? T("disable2fa") : T("enable2fa")}
-            </button>
-          </div>
-
-          {error && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-        </div>
+          <AccordionItem value="2fa" className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <AccordionTrigger className="px-5 py-4 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${is2faEnabled ? "bg-green-100" : "bg-gray-100"}`}>
+                  {is2faEnabled ? <ShieldCheck size={20} className="text-green-600" /> : <Shield size={20} className="text-gray-400" />}
+                </div>
+                <div className="text-left">
+                  <span className="text-[15px] font-bold text-gray-900 block">{T("twoFactorAuthentication")}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${is2faEnabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                    {is2faEnabled ? T("twoFactorEnabled") : T("twoFactorDisabled")}
+                  </span>
+                </div>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="px-5 pb-1">
+                <p className="text-xs text-gray-500 leading-relaxed mb-4">{T("twoFactorDesc")}</p>
+                <button onClick={handleToggle2fa} disabled={loading}
+                  className={`w-full h-11 font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-60 ${is2faEnabled
+                      ? "border-2 border-red-200 text-red-500 hover:bg-red-50"
+                      : "bg-gray-900 hover:bg-gray-800 text-white"
+                    }`}>
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : is2faEnabled ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
+                  {loading ? T("pleaseWait") : is2faEnabled ? T("disable2fa") : T("enable2fa")}
+                </button>
+                {error && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
 
       {toast && (

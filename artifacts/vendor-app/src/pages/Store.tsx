@@ -7,6 +7,9 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
 import { fc, CARD, CARD_HEADER, INPUT, TEXTAREA, BTN_PRIMARY, LABEL } from "../lib/ui";
+import {
+  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
+} from "../components/ui/accordion";
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const DEFAULT_HOURS = Object.fromEntries(DAYS.map(d => [d, { open:"09:00", close:"22:00", closed:false }]));
@@ -187,77 +190,91 @@ export default function Store() {
         {tab === "hours" && (
           <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
             <div className={CARD}>
-              <div className={`${CARD_HEADER} bg-gray-50`}>
-                <p className="font-bold text-gray-800 text-sm">Operating Hours</p>
-                <p className="text-xs text-gray-400">Per-day open/close times</p>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {DAYS.slice(0,4).map(day => {
-                  const h = hours[day] || { open:"09:00", close:"22:00", closed:false };
-                  return (
-                    <div key={day} className="px-4 py-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="font-bold text-sm text-gray-800">{day}</p>
-                        <button onClick={() => setHours(prev => ({ ...prev, [day]: { ...h, closed: !h.closed } }))}
-                          className={`text-xs font-bold px-3 py-1.5 rounded-full android-press min-h-0 ${h.closed ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"}`}>
-                          {h.closed ? "Closed" : "Open"}
-                        </button>
-                      </div>
-                      {!h.closed && (
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1">
-                            <p className="text-[10px] text-gray-400 font-bold mb-1">OPENS</p>
-                            <input type="time" value={h.open} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, open: e.target.value } }))}
-                              className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
-                          </div>
-                          <span className="text-gray-300 font-bold mt-4">—</span>
-                          <div className="flex-1">
-                            <p className="text-[10px] text-gray-400 font-bold mb-1">CLOSES</p>
-                            <input type="time" value={h.close} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, close: e.target.value } }))}
-                              className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
-                          </div>
-                        </div>
-                      )}
+              <Accordion type="single" collapsible defaultValue="weekdays">
+                <AccordionItem value="weekdays" className="border-0">
+                  <AccordionTrigger className="px-4 py-3.5 bg-gray-50 hover:no-underline rounded-t-2xl">
+                    <div>
+                      <span className="font-bold text-gray-800 text-sm block text-left">Weekday Hours</span>
+                      <span className="text-xs text-gray-400">Mon – Thu open/close times</span>
                     </div>
-                  );
-                })}
-              </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-0 pb-0">
+                    <div className="divide-y divide-gray-50">
+                      {DAYS.slice(0,4).map(day => {
+                        const h = hours[day] || { open:"09:00", close:"22:00", closed:false };
+                        return (
+                          <div key={day} className="px-4 py-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="font-bold text-sm text-gray-800">{day}</p>
+                              <button onClick={() => setHours(prev => ({ ...prev, [day]: { ...h, closed: !h.closed } }))}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-full android-press min-h-0 ${h.closed ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"}`}>
+                                {h.closed ? "Closed" : "Open"}
+                              </button>
+                            </div>
+                            {!h.closed && (
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1">
+                                  <p className="text-[10px] text-gray-400 font-bold mb-1">OPENS</p>
+                                  <input type="time" value={h.open} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, open: e.target.value } }))}
+                                    className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
+                                </div>
+                                <span className="text-gray-300 font-bold mt-4">—</span>
+                                <div className="flex-1">
+                                  <p className="text-[10px] text-gray-400 font-bold mb-1">CLOSES</p>
+                                  <input type="time" value={h.close} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, close: e.target.value } }))}
+                                    className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
             <div className={CARD}>
-              <div className={`${CARD_HEADER} bg-gray-50`}>
-                <p className="font-bold text-gray-800 text-sm">Weekend Hours</p>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {DAYS.slice(4).map(day => {
-                  const h = hours[day] || { open:"09:00", close:"22:00", closed:false };
-                  return (
-                    <div key={day} className="px-4 py-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="font-bold text-sm text-gray-800">{day}</p>
-                        <button onClick={() => setHours(prev => ({ ...prev, [day]: { ...h, closed: !h.closed } }))}
-                          className={`text-xs font-bold px-3 py-1.5 rounded-full android-press min-h-0 ${h.closed ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"}`}>
-                          {h.closed ? "Closed" : "Open"}
-                        </button>
-                      </div>
-                      {!h.closed && (
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1">
-                            <p className="text-[10px] text-gray-400 font-bold mb-1">OPENS</p>
-                            <input type="time" value={h.open} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, open: e.target.value } }))}
-                              className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
+              <Accordion type="single" collapsible defaultValue="weekend">
+                <AccordionItem value="weekend" className="border-0">
+                  <AccordionTrigger className="px-4 py-3.5 bg-gray-50 hover:no-underline rounded-t-2xl">
+                    <span className="font-bold text-gray-800 text-sm">Weekend Hours</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-0 pb-0">
+                    <div className="divide-y divide-gray-50">
+                      {DAYS.slice(4).map(day => {
+                        const h = hours[day] || { open:"09:00", close:"22:00", closed:false };
+                        return (
+                          <div key={day} className="px-4 py-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="font-bold text-sm text-gray-800">{day}</p>
+                              <button onClick={() => setHours(prev => ({ ...prev, [day]: { ...h, closed: !h.closed } }))}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-full android-press min-h-0 ${h.closed ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"}`}>
+                                {h.closed ? "Closed" : "Open"}
+                              </button>
+                            </div>
+                            {!h.closed && (
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1">
+                                  <p className="text-[10px] text-gray-400 font-bold mb-1">OPENS</p>
+                                  <input type="time" value={h.open} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, open: e.target.value } }))}
+                                    className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
+                                </div>
+                                <span className="text-gray-300 font-bold mt-4">—</span>
+                                <div className="flex-1">
+                                  <p className="text-[10px] text-gray-400 font-bold mb-1">CLOSES</p>
+                                  <input type="time" value={h.close} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, close: e.target.value } }))}
+                                    className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <span className="text-gray-300 font-bold mt-4">—</span>
-                          <div className="flex-1">
-                            <p className="text-[10px] text-gray-400 font-bold mb-1">CLOSES</p>
-                            <input type="time" value={h.close} onChange={e => setHours(prev => ({ ...prev, [day]: { ...h, close: e.target.value } }))}
-                              className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm"/>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
             <div className="md:col-span-2 mt-4 md:mt-0">
               <button onClick={() => hoursMut.mutate()} disabled={hoursMut.isPending} className={BTN_PRIMARY}>

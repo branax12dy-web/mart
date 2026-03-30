@@ -23,6 +23,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
 import { LANGUAGE_OPTIONS, tDual, type Language, type TranslationKey } from "@workspace/i18n";
+import Accordion from "@/components/Accordion";
 
 const C   = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
@@ -388,25 +389,22 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
           <Pressable onPress={onClose} style={modalHdr.close}><Ionicons name="close" size={20} color={C.text} /></Pressable>
         </View>
         {loading ? <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} /> : (
-          <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.xl, paddingBottom: 40 }}>
-            <View>
-              <Text style={secHdr.label}>🔔 Notifications</Text>
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 40 }}>
+            <Accordion title="🔔 Notifications" icon="notifications-outline" iconColor={C.accent} iconBg={C.accentSoft} defaultOpen={true} badge="4 toggles" badgeColor={C.textMuted} badgeBg={C.surfaceSecondary}>
               <View style={secCard.wrap}>
                 <ToggleRow k="notifOrders"  label="Order Updates"    sub="Delivery & order status"     icon="bag-outline"           ic={C.primary} ib={C.primarySoft} />
                 <ToggleRow k="notifWallet"  label="Wallet Activity"  sub="Payment & top-up alerts"     icon="wallet-outline"        ic={C.info}    ib={C.infoSoft} />
                 <ToggleRow k="notifDeals"   label="Deals & Offers"   sub="Discounts & promotions"      icon="pricetag-outline"      ic={C.accent}  ib={C.accentSoft} />
                 <ToggleRow k="notifRides"   label="Ride Updates"     sub="Driver assignment & ETA"     icon="car-outline"           ic={C.success} ib={C.successSoft} />
               </View>
-            </View>
-            <View>
-              <Text style={secHdr.label}>🔒 Privacy</Text>
+            </Accordion>
+            <Accordion title="🔒 Privacy" icon="eye-off-outline" iconColor={C.info} iconBg={C.infoSoft}>
               <View style={secCard.wrap}>
                 <ToggleRow k="locationSharing" label="Location Sharing" sub="For rides and deliveries"  icon="location-outline"     ic={C.success} ib={C.successSoft} />
                 <ToggleRow k="darkMode"        label="Dark Mode"        sub="App appearance"            icon="moon-outline"         ic={C.info}    ib={C.infoSoft} />
               </View>
-            </View>
-            <View>
-              <Text style={secHdr.label}>🛡️ Security</Text>
+            </Accordion>
+            <Accordion title="🛡️ Security" icon="shield-checkmark-outline" iconColor={C.success} iconBg={C.successSoft}>
               <View style={secCard.wrap}>
                 {isBioEnabled && (
                   <View style={privRow.wrap}>
@@ -436,9 +434,8 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                   </Pressable>
                 )}
               </View>
-            </View>
-            <View>
-              <Text style={secHdr.label}>⚙️ Account Actions</Text>
+            </Accordion>
+            <Accordion title="⚙️ Account Actions" icon="settings-outline" iconColor={C.textSecondary} iconBg={C.surfaceSecondary}>
               <View style={secCard.wrap}>
                 <Pressable onPress={() => showToast("Your data will be emailed within 24 hours.", "info")} style={[privRow.wrap, { borderBottomWidth: 0 }]}>
                   <View style={[privRow.icon, { backgroundColor: C.surfaceSecondary }]}><Ionicons name="download-outline" size={17} color={C.textSecondary} /></View>
@@ -446,7 +443,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                   <Ionicons name="chevron-forward" size={15} color={C.textMuted} />
                 </Pressable>
               </View>
-            </View>
+            </Accordion>
           </ScrollView>
         )}
 
@@ -954,75 +951,83 @@ export default function ProfileScreen() {
           </SectionCard>
         )}
 
-        <SectionCard title={T("helpSupport")}>
-          <Row icon="call-outline"
-               label={T("contactSupport")}
-               sub={platformCfg.supportHours || `Call: ${platformCfg.supportPhone}`}
-               onPress={() => Linking.openURL(`tel:${platformCfg.supportPhone}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
-               iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
-          {platformCfg.supportEmail ? (
-            <Row icon="mail-outline"
-                 label={T("emailSupport")}
-                 sub={platformCfg.supportEmail}
-                 onPress={() => Linking.openURL(`mailto:${platformCfg.supportEmail}`).catch(() => showToast(platformCfg.supportEmail, "info"))}
-                 iconColor={C.info} iconBg={C.infoSoft} />
-          ) : null}
-          {platformCfg.chat && (
-            <Row icon="logo-whatsapp"
-                 label={T("liveChatLabel")}
-                 sub={platformCfg.supportMsg}
-                 onPress={() => Linking.openURL(`https://wa.me/${platformCfg.supportPhone.replace(/^0/, "92")}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
-                 iconColor="#25D366" iconBg="#DCFCE7" />
-          )}
-          {(platformCfg.socialFacebook || platformCfg.socialInstagram) && (
-            <Row icon="share-social-outline"
-                 label={T("followUsLabel")}
-                 sub={[platformCfg.socialFacebook && "Facebook", platformCfg.socialInstagram && "Instagram"].filter(Boolean).join(" • ")}
-                 onPress={() => Linking.openURL(platformCfg.socialFacebook || platformCfg.socialInstagram).catch(() => {})}
-                 iconColor="#1877F2" iconBg={C.primarySoft} />
-          )}
-          {platformCfg.tncUrl ? (
-            <Row icon="document-text-outline"
-                 label={T("termsOfService")}
-                 sub={T("termsSubLabel")}
-                 onPress={() => Linking.openURL(platformCfg.tncUrl).catch(() => {})}
+        <View style={[sec.wrap, { overflow: "hidden" }]}>
+          <Accordion
+            title={T("helpSupport")}
+            icon="help-buoy-outline"
+            iconColor={C.info}
+            iconBg={C.infoSoft}
+            headerStyle={{ paddingHorizontal: spacing.lg }}
+          >
+            <Row icon="call-outline"
+                 label={T("contactSupport")}
+                 sub={platformCfg.supportHours || `Call: ${platformCfg.supportPhone}`}
+                 onPress={() => Linking.openURL(`tel:${platformCfg.supportPhone}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
                  iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
-          ) : (
-            <Row icon="document-text-outline"
-                 label={T("termsOfService")}
-                 sub={T("termsSubLabel")}
-                 onPress={() => showToast(`By using ${platformCfg.appName}, you agree to our terms.`, "info")}
-                 iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
-          )}
-          {platformCfg.privacyUrl && (
-            <Row icon="shield-checkmark-outline"
-                 label={T("privacyPolicy")}
-                 sub={T("privacySubLabel")}
-                 onPress={() => Linking.openURL(platformCfg.privacyUrl).catch(() => {})}
-                 iconColor={C.primary} iconBg={C.primarySoft} />
-          )}
-          {platformCfg.refundPolicyUrl && (
-            <Row icon="return-down-back-outline"
-                 label={T("refundPolicy")}
-                 sub={T("refundSubLabel")}
-                 onPress={() => Linking.openURL(platformCfg.refundPolicyUrl).catch(() => {})}
-                 iconColor={C.success} iconBg={C.successSoft} />
-          )}
-          {platformCfg.faqUrl && (
-            <Row icon="help-circle-outline"
-                 label={T("helpFaqsLabel")}
-                 sub={T("faqSubLabel")}
-                 onPress={() => Linking.openURL(platformCfg.faqUrl).catch(() => {})}
-                 iconColor={C.info} iconBg={C.infoSoft} />
-          )}
-          {platformCfg.aboutUrl && (
-            <Row icon="information-circle-outline"
-                 label={T("aboutUsLabel")}
-                 sub={`${platformCfg.appName} ${T("aboutSubLabel")}`}
-                 onPress={() => Linking.openURL(platformCfg.aboutUrl).catch(() => {})}
-                 iconColor={C.parcel} iconBg={C.parcelLight} />
-          )}
-        </SectionCard>
+            {platformCfg.supportEmail ? (
+              <Row icon="mail-outline"
+                   label={T("emailSupport")}
+                   sub={platformCfg.supportEmail}
+                   onPress={() => Linking.openURL(`mailto:${platformCfg.supportEmail}`).catch(() => showToast(platformCfg.supportEmail, "info"))}
+                   iconColor={C.info} iconBg={C.infoSoft} />
+            ) : null}
+            {platformCfg.chat && (
+              <Row icon="logo-whatsapp"
+                   label={T("liveChatLabel")}
+                   sub={platformCfg.supportMsg}
+                   onPress={() => Linking.openURL(`https://wa.me/${platformCfg.supportPhone.replace(/^0/, "92")}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
+                   iconColor="#25D366" iconBg="#DCFCE7" />
+            )}
+            {(platformCfg.socialFacebook || platformCfg.socialInstagram) && (
+              <Row icon="share-social-outline"
+                   label={T("followUsLabel")}
+                   sub={[platformCfg.socialFacebook && "Facebook", platformCfg.socialInstagram && "Instagram"].filter(Boolean).join(" • ")}
+                   onPress={() => Linking.openURL(platformCfg.socialFacebook || platformCfg.socialInstagram).catch(() => {})}
+                   iconColor="#1877F2" iconBg={C.primarySoft} />
+            )}
+            {platformCfg.tncUrl ? (
+              <Row icon="document-text-outline"
+                   label={T("termsOfService")}
+                   sub={T("termsSubLabel")}
+                   onPress={() => Linking.openURL(platformCfg.tncUrl).catch(() => {})}
+                   iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
+            ) : (
+              <Row icon="document-text-outline"
+                   label={T("termsOfService")}
+                   sub={T("termsSubLabel")}
+                   onPress={() => showToast(`By using ${platformCfg.appName}, you agree to our terms.`, "info")}
+                   iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
+            )}
+            {platformCfg.privacyUrl && (
+              <Row icon="shield-checkmark-outline"
+                   label={T("privacyPolicy")}
+                   sub={T("privacySubLabel")}
+                   onPress={() => Linking.openURL(platformCfg.privacyUrl).catch(() => {})}
+                   iconColor={C.primary} iconBg={C.primarySoft} />
+            )}
+            {platformCfg.refundPolicyUrl && (
+              <Row icon="return-down-back-outline"
+                   label={T("refundPolicy")}
+                   sub={T("refundSubLabel")}
+                   onPress={() => Linking.openURL(platformCfg.refundPolicyUrl).catch(() => {})}
+                   iconColor={C.success} iconBg={C.successSoft} />
+            )}
+            {platformCfg.faqUrl && (
+              <Row icon="help-circle-outline"
+                   label={T("helpFaqsLabel")}
+                   sub={T("faqSubLabel")}
+                   onPress={() => Linking.openURL(platformCfg.faqUrl).catch(() => {})}
+                   iconColor={C.info} iconBg={C.infoSoft} />
+            )}
+            {platformCfg.aboutUrl && (
+              <Row icon="information-circle-outline"
+                   label={T("aboutUsLabel")}
+                   sub={`${platformCfg.appName} ${T("aboutSubLabel")}`}
+                   onPress={() => Linking.openURL(platformCfg.aboutUrl).catch(() => {})}
+                   iconColor={C.parcel} iconBg={C.parcelLight} />
+            )}
+          </Accordion>
+        </View>
 
         <View style={appInfo.wrap}>
           <View style={appInfo.logo}><Ionicons name="storefront" size={26} color={C.primary} /></View>
