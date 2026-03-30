@@ -88,7 +88,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   const minutesSincePlaced = order.createdAt
     ? (Date.now() - new Date(order.createdAt).getTime()) / 60000
     : 999;
-  const canCancel = order.status === "pending" && minutesSincePlaced <= cancelWindowMin;
+  const canCancel = ["pending", "confirmed"].includes(order.status) && minutesSincePlaced <= cancelWindowMin;
   const cancelMinsLeft = Math.max(0, Math.ceil(cancelWindowMin - minutesSincePlaced));
 
   const hourssinceDelivery = order.updatedAt
@@ -655,9 +655,16 @@ export default function OrdersScreen() {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders },
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "Could not cancel order.", "error");
+        return;
+      }
+      showToast("Order cancelled successfully.", "success");
       refetchOrders();
-    } catch { /* silent — order list will refresh on next poll */ }
+    } catch {
+      showToast("Could not cancel order. Please try again.", "error");
+    }
   }, [user, token, refetchOrders, API_BASE]);
 
   const fetchRides = useCallback(async () => {
@@ -695,13 +702,21 @@ export default function OrdersScreen() {
 
   const handleCancelRide = useCallback(async (ride: any) => {
     try {
-      await fetch(`${API_BASE}/rides/${ride.id}/cancel`, {
+      const res = await fetch(`${API_BASE}/rides/${ride.id}/cancel`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({}),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "Could not cancel ride.", "error");
+        return;
+      }
+      showToast("Ride cancelled.", "success");
       fetchRides();
-    } catch { /* ride list will refresh on next poll */ }
+    } catch {
+      showToast("Could not cancel ride. Please try again.", "error");
+    }
   }, [user?.id, token, fetchRides, API_BASE]);
 
   React.useEffect(() => {

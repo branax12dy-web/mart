@@ -228,11 +228,16 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
 
         <View style={{ paddingTop: topPad + 16, paddingHorizontal: 20, paddingBottom: 14 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <Pressable onPress={() => router.push("/(tabs)")} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="chevron-back" size={20} color="#fff" />
+              </Pressable>
+              <View>
               <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: "#fff" }}>Live Negotiation</Text>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
                 #{rideId.slice(-8).toUpperCase()} · {elapsedStr}
               </Text>
+              </View>
             </View>
             <View style={{ backgroundColor: "rgba(251,191,36,0.15)", borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: "rgba(251,191,36,0.3)" }}>
               <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#FCD34D" }}>Rs. {offeredFare}</Text>
@@ -441,6 +446,11 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
   if (status === "searching") {
     return (
       <View style={{ flex: 1, backgroundColor: "#0F172A" }}>
+        <View style={{ position: "absolute", top: topPad + 16, left: 20, zIndex: 10 }}>
+          <Pressable onPress={() => router.push("/(tabs)")} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
+          </Pressable>
+        </View>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
           <View style={{ width: 160, height: 160, alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
             <Animated.View style={{ position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(16,185,129,0.06)", transform: [{ scale: ring3 }], opacity: ring3Op }} />
@@ -702,6 +712,9 @@ function RideTracker({ rideId, initialType, userId, token, cancellationFee, onRe
     <View style={{ flex: 1, backgroundColor: C.background }}>
       <View style={{ paddingTop: topPad + 16, paddingBottom: 20, paddingHorizontal: 20, backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: C.border }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <Pressable onPress={() => router.push("/(tabs)")} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="chevron-back" size={20} color={C.text} />
+          </Pressable>
           <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: `${hdrCfg.color}15`, alignItems: "center", justifyContent: "center" }}>
             <Ionicons name={hdrCfg.icon as any} size={26} color={hdrCfg.color} />
           </View>
