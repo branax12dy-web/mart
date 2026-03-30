@@ -134,7 +134,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
     address: string;
   } | null>(null);
   const [rideType, setRideType] = useState("bike");
-  const [payMethod, setPayMethod] = useState<"cash" | "wallet">("cash");
+  const [payMethod, setPayMethod] = useState("cash");
   const [services, setServices] = useState<ServiceType[]>(DEFAULT_SERVICES);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [payMethods, setPayMethods] = useState<
@@ -213,15 +213,15 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
           );
           if (filtered.length > 0) {
             setPayMethods(filtered);
-            setPayMethod(filtered[0]!.id as "cash" | "wallet");
+            setPayMethod(filtered[0]!.id);
           }
         } else if (rideData?.methods?.length) {
           const mapped = rideData.methods.map((m: any) => ({
             id: m.key,
-            name: m.label,
+            label: m.label,
           }));
           setPayMethods(mapped);
-          setPayMethod(mapped[0]!.id as "cash" | "wallet");
+          setPayMethod(mapped[0]!.id);
         }
       })
       .catch(() => {});
@@ -379,7 +379,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
         routeId: selectedRoute.id,
         studentName: schoolStudent.trim(),
         studentClass: schoolClass.trim(),
-        paymentMethod: payMethod as "cash" | "wallet",
+        paymentMethod: payMethod,
       });
       setShowSchoolModal(false);
       setSelectedRoute(null);
@@ -1600,14 +1600,21 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
           style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}
         >
           {payMethods.map((pm) => {
-            const pmId = pm.id as "cash" | "wallet";
+            const pmId = pm.id;
             const active = payMethod === pmId;
-            const isWallet = pmId === "wallet";
             const isCash = pmId === "cash";
+            const isWallet = pmId === "wallet";
+            const isJazzcash = pmId === "jazzcash";
+            const isEasypaisa = pmId === "easypaisa";
             const insufficient =
               isWallet &&
               estimate &&
               (user?.walletBalance ?? 0) < estimate.fare;
+            const pmLabel = pm.label || pm.name || pmId;
+            const pmIcon: string = isCash ? "cash-outline" : isWallet ? "wallet-outline" : isJazzcash ? "phone-portrait-outline" : isEasypaisa ? "phone-portrait-outline" : "card-outline";
+            const pmColor = isCash ? C.success : isWallet ? C.primary : isJazzcash ? "#E53E3E" : isEasypaisa ? "#38A169" : C.primary;
+            const pmBg = isCash ? "#D1FAE5" : isWallet ? "#DBEAFE" : isJazzcash ? "#FEE2E2" : isEasypaisa ? "#D1FAE5" : "#DBEAFE";
+            const pmSubtext = isCash ? "Pay on arrival" : isWallet ? `Rs. ${(user?.walletBalance ?? 0).toLocaleString()}` : `Pay via ${pmLabel}`;
             return (
               <Pressable
                 key={pmId}
@@ -1618,16 +1625,8 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                   padding: 16,
                   borderRadius: 16,
                   borderWidth: 1.5,
-                  borderColor: active
-                    ? isWallet
-                      ? C.primary
-                      : C.success
-                    : C.border,
-                  backgroundColor: active
-                    ? isWallet
-                      ? `${C.primary}08`
-                      : `${C.success}08`
-                    : "#fff",
+                  borderColor: active ? pmColor : C.border,
+                  backgroundColor: active ? `${pmColor}08` : "#fff",
                   gap: 6,
                 }}
               >
@@ -1636,27 +1635,15 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                     width: 44,
                     height: 44,
                     borderRadius: 14,
-                    backgroundColor: active
-                      ? isWallet
-                        ? "#DBEAFE"
-                        : "#D1FAE5"
-                      : C.surfaceSecondary,
+                    backgroundColor: active ? pmBg : C.surfaceSecondary,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
                   <Ionicons
-                    name={
-                      isCash ? "cash-outline" : "wallet-outline"
-                    }
+                    name={pmIcon as any}
                     size={22}
-                    color={
-                      active
-                        ? isWallet
-                          ? C.primary
-                          : C.success
-                        : C.textSecondary
-                    }
+                    color={active ? pmColor : C.textSecondary}
                   />
                 </View>
                 <Text
@@ -1668,7 +1655,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                     color: active ? C.text : C.textSecondary,
                   }}
                 >
-                  {isCash ? "Cash" : "Wallet"}
+                  {pmLabel}
                 </Text>
                 <Text
                   style={{
@@ -1677,9 +1664,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                     color: insufficient ? C.danger : C.textMuted,
                   }}
                 >
-                  {isCash
-                    ? "Pay on arrival"
-                    : `Rs. ${(user?.walletBalance ?? 0).toLocaleString()}`}
+                  {pmSubtext}
                 </Text>
                 {active && (
                   <View
@@ -1690,7 +1675,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                       width: 20,
                       height: 20,
                       borderRadius: 10,
-                      backgroundColor: isWallet ? C.primary : C.success,
+                      backgroundColor: pmColor,
                       alignItems: "center",
                       justifyContent: "center",
                     }}
@@ -2406,7 +2391,9 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                     {selectedRoute.monthlyPrice?.toLocaleString()} —{" "}
                     {payMethod === "wallet"
                       ? "From wallet"
-                      : "Cash on pickup"}
+                      : payMethod === "cash"
+                        ? "Cash on pickup"
+                        : `Via ${payMethod}`}
                   </Text>
                 </View>
                 <Pressable

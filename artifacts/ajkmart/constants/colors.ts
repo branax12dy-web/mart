@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 const primary = "#0066FF";
 const primaryLight = "#4D94FF";
 const primaryDark = "#0047B3";
@@ -50,35 +52,16 @@ export const typography = {
   otp: { fontFamily: "Inter_700Bold", fontSize: 24, lineHeight: 30 },
 } as const;
 
+const _mkShadow = (yOff: number, blur: number, opacity: number, elev: number) =>
+  Platform.OS === "web"
+    ? { boxShadow: `0 ${yOff}px ${blur}px rgba(15,23,42,${opacity})`, elevation: elev }
+    : { shadowColor: "#0F172A", shadowOffset: { width: 0, height: yOff }, shadowOpacity: opacity, shadowRadius: blur, elevation: elev };
+
 export const shadows = {
-  sm: {
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  md: {
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  lg: {
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  xl: {
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 10,
-  },
+  sm: _mkShadow(1, 3, 0.04, 1),
+  md: _mkShadow(2, 8, 0.06, 3),
+  lg: _mkShadow(4, 16, 0.08, 6),
+  xl: _mkShadow(8, 24, 0.12, 10),
 } as const;
 
 export default {

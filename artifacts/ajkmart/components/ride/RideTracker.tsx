@@ -1151,7 +1151,7 @@ export function RideTracker({
                 {
                   lbl: "Payment",
                   val:
-                    ride?.paymentMethod === "wallet" ? "Wallet" : "Cash",
+                    ride?.paymentMethod === "wallet" ? "Wallet" : ride?.paymentMethod === "jazzcash" ? "JazzCash" : ride?.paymentMethod === "easypaisa" ? "EasyPaisa" : "Cash",
                 },
                 {
                   lbl: "Driver",
