@@ -28,6 +28,15 @@ router.get("/profile", async (req, res) => {
   });
 });
 
+router.get("/:id/debt", async (req, res) => {
+  const userId = req.customerId!;
+  if (req.params["id"] !== userId) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
+  res.json({ debtBalance: 0 });
+});
+
 router.put("/profile", async (req, res) => {
   const userId = req.customerId!;
   const { userId: _ignored, name, email, avatar, cnic, city, address } = req.body;
