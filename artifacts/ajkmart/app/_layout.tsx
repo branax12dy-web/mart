@@ -184,24 +184,40 @@ export default function RootLayout() {
     let cancelled = false;
 
     const loadFonts = async () => {
+      const coreFonts = {
+        Inter_400Regular,
+        Inter_500Medium,
+        Inter_600SemiBold,
+        Inter_700Bold,
+      };
+      const urduFonts = {
+        NotoNastaliqUrdu_400Regular,
+        NotoNastaliqUrdu_500Medium,
+        NotoNastaliqUrdu_600SemiBold,
+        NotoNastaliqUrdu_700Bold,
+      };
+
       try {
-        await Font.loadAsync({
-          Inter_400Regular,
-          Inter_500Medium,
-          Inter_600SemiBold,
-          Inter_700Bold,
-          NotoNastaliqUrdu_400Regular,
-          NotoNastaliqUrdu_500Medium,
-          NotoNastaliqUrdu_600SemiBold,
-          NotoNastaliqUrdu_700Bold,
-        });
+        await Font.loadAsync(coreFonts);
       } catch {
-        /* fall back to system fonts silently */
-      } finally {
-        if (!cancelled) {
-          setReady(true);
-          SplashScreen.hideAsync();
+      }
+
+      try {
+        if (Platform.OS === "web") {
+          const fontPromise = Font.loadAsync(urduFonts).catch(() => {});
+          await Promise.race([
+            fontPromise,
+            new Promise<void>((resolve) => setTimeout(resolve, 4000)),
+          ]);
+        } else {
+          await Font.loadAsync(urduFonts);
         }
+      } catch {
+      }
+
+      if (!cancelled) {
+        setReady(true);
+        SplashScreen.hideAsync();
       }
     };
 
