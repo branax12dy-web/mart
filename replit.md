@@ -96,6 +96,16 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - **Customer App Theme:** Ride tracker searching screen uses rider app dark theme (gray-900 gradient, green accents) for consistent brand experience.
 - **Dispatch Status:** `GET /rides/:id/status` returns dispatch metadata (loop count, attempts, expiry) for customer polling.
 
+### Accordion Components
+- **Customer App (Expo):** Custom `Accordion` component at `artifacts/ajkmart/components/Accordion.tsx` with animated chevron rotation, `LayoutAnimation` transitions, icon/badge support. `AccordionGroup` wrapper for grouped sections. Used in: Profile (Help & Support sections), Privacy Modal (Notification/Privacy/Security/Account sections), Orders (expandable item lists on OrderCard and PharmacyCard).
+- **Rider App (React-Vite):** Radix-based `AccordionGroup` component at `artifacts/rider-app/src/components/Accordion.tsx`. Used in: Earnings (breakdown sections), SecuritySettings (info sections).
+- **Vendor App (React-Vite):** Uses `@radix-ui/react-accordion` directly. Used in: Store (operating hours sections), Profile (bank details, payout policy).
+
+### Safe Area / Edge-to-Edge Display
+- **Customer App (Expo):** Uses `SafeAreaProvider` + `useSafeAreaInsets` with `topPad = Platform.OS === "web" ? 67 : insets.top` pattern on all tab and service screens.
+- **Rider App (React-Vite):** `index.html` has `viewport-fit=cover` + PWA/iOS meta tags. `index.css` defines `--sat/--sar/--sab/--sal` CSS variables. All page headers use `style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}` instead of fixed `pt-14`. BottomNav and App.tsx content area use `env(safe-area-inset-bottom)` for bottom spacing.
+- **Vendor App (React-Vite):** `index.html` has `viewport-fit=cover`. `Header.tsx` component centrally applies `paddingTop: calc(env(safe-area-inset-top, 0px) + 2.5rem)`. BottomNav uses `env(safe-area-inset-bottom)`.
+
 - **Mapping APIs:** Google Maps Platform (or similar) for autocomplete, geocoding, and distance calculations (gated by `maps_places_autocomplete`, `maps_geocoding`, `maps_distance_matrix` settings).
 - **Sentry:** For error tracking and performance monitoring (configured via `sentry_dsn`, `sentry_env`, etc.).
 - **Analytics Platform:** For tracking user behavior (configured via `analytics_platform`, `tracking_id`).

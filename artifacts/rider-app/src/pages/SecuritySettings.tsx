@@ -156,7 +156,8 @@ export default function SecuritySettings() {
   if (view === "setup" && setupData) {
     return (
       <div className="min-h-screen bg-[#F5F6F8] pb-24">
-        <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <div className="absolute top-[-30%] right-[-15%] w-64 h-64 rounded-full bg-white/[0.02]" />
           <div className="absolute bottom-[-20%] left-[-10%] w-48 h-48 rounded-full bg-green-500/[0.04]" />
           <button onClick={() => setView("main")} className="text-white/60 text-sm font-semibold mb-3 flex items-center gap-1 relative z-10">
@@ -184,7 +185,8 @@ export default function SecuritySettings() {
   if (view === "verify-disable") {
     return (
       <div className="min-h-screen bg-[#F5F6F8] pb-24">
-        <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <div className="absolute top-[-30%] right-[-15%] w-64 h-64 rounded-full bg-white/[0.02]" />
           <div className="absolute bottom-[-20%] left-[-10%] w-48 h-48 rounded-full bg-green-500/[0.04]" />
           <button onClick={() => setView("main")} className="text-white/60 text-sm font-semibold mb-3 flex items-center gap-1 relative z-10">
@@ -208,7 +210,8 @@ export default function SecuritySettings() {
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] pb-24">
-      <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+      <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute top-[-30%] right-[-15%] w-64 h-64 rounded-full bg-white/[0.02]" />
         <div className="absolute bottom-[-20%] left-[-10%] w-48 h-48 rounded-full bg-green-500/[0.04]" />
         <div className="flex items-center gap-3 mb-2 relative z-10">

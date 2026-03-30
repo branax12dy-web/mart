@@ -304,7 +304,8 @@ export default function Wallet() {
   if (isLoading) {
     return (
       <div className="bg-[#F5F6F8] pb-24 min-h-screen">
-        <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+        <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.03] rounded-full -translate-y-1/2 translate-x-1/3"/>
           <div className="absolute bottom-0 left-0 w-44 h-44 bg-white/[0.02] rounded-full translate-y-1/2 -translate-x-1/4"/>
           <div className="relative">
@@ -344,7 +345,8 @@ export default function Wallet() {
   if (!config.features.wallet) {
     return (
       <div className="bg-[#F5F6F8] pb-24 min-h-screen">
-        <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-10 rounded-b-[2rem]">
+        <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-10 rounded-b-[2rem]"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <p className="text-white/40 text-xs font-semibold tracking-widest uppercase">{T("wallet")}</p>
         </div>
         <div className="px-5 -mt-4">
@@ -363,7 +365,8 @@ export default function Wallet() {
   return (
     <div className="bg-[#F5F6F8] pb-28 min-h-screen">
 
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute top-0 right-0 w-72 h-72 bg-green-500/[0.04] rounded-full -translate-y-1/2 translate-x-1/3"/>
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/[0.02] rounded-full translate-y-1/2 -translate-x-1/4"/>
         <div className="absolute top-1/2 right-8 w-24 h-24 bg-emerald-500/[0.03] rounded-full"/>

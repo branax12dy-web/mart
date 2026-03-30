@@ -82,6 +82,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
 }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const [itemsExpanded, setItemsExpanded] = useState(false);
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isFood = order.type === "food";
   const isDelivered = order.status === "delivered";
@@ -116,7 +117,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       </View>
 
       <View style={styles.cardItems}>
-        {(order.items || []).slice(0, 2).map((item: any, i: number) => (
+        {(order.items || []).slice(0, itemsExpanded ? undefined : 2).map((item: any, i: number) => (
           <View key={i} style={styles.itemRow}>
             <View style={styles.itemDot} />
             <Text style={styles.itemText} numberOfLines={1}>{item.quantity}× {item.name}</Text>
@@ -124,7 +125,16 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
           </View>
         ))}
         {(order.items || []).length > 2 && (
-          <Text style={styles.moreItems}>+{order.items.length - 2} more items</Text>
+          <Pressable onPress={() => setItemsExpanded(prev => !prev)} style={styles.expandRow}>
+            <Text style={styles.moreItems}>
+              {itemsExpanded ? T("showLess") : `+${order.items.length - 2} ${T("moreItems")}`}
+            </Text>
+            <Ionicons
+              name={itemsExpanded ? "chevron-up" : "chevron-down"}
+              size={13}
+              color={C.primary}
+            />
+          </Pressable>
         )}
       </View>
 
@@ -310,6 +320,7 @@ function PharmacyCard({ order, reviews, onRate }: {
 }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const [itemsExpanded, setItemsExpanded] = useState(false);
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isDelivered = order.status === "delivered";
 
@@ -331,7 +342,7 @@ function PharmacyCard({ order, reviews, onRate }: {
       )}
 
       <View style={styles.cardItems}>
-        {(order.items || []).slice(0, 2).map((item: any, i: number) => (
+        {(order.items || []).slice(0, itemsExpanded ? undefined : 2).map((item: any, i: number) => (
           <View key={i} style={styles.itemRow}>
             <View style={styles.itemDot} />
             <Text style={styles.itemText} numberOfLines={1}>{item.quantity}× {item.name}</Text>
@@ -339,7 +350,16 @@ function PharmacyCard({ order, reviews, onRate }: {
           </View>
         ))}
         {(order.items || []).length > 2 && (
-          <Text style={styles.moreItems}>+{order.items.length - 2} more items</Text>
+          <Pressable onPress={() => setItemsExpanded(prev => !prev)} style={styles.expandRow}>
+            <Text style={styles.moreItems}>
+              {itemsExpanded ? T("showLess") : `+${order.items.length - 2} ${T("moreItems")}`}
+            </Text>
+            <Ionicons
+              name={itemsExpanded ? "chevron-up" : "chevron-down"}
+              size={13}
+              color={C.primary}
+            />
+          </Pressable>
         )}
       </View>
 
@@ -1293,7 +1313,8 @@ const styles = StyleSheet.create({
   itemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.border },
   itemText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary },
   itemPrice: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text },
-  moreItems: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginLeft: 14 },
+  moreItems: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.primary },
+  expandRow: { flexDirection: "row", alignItems: "center", gap: 4, marginLeft: 14, paddingVertical: 4 },
 
   noteRow: { flexDirection: "row", gap: 8, alignItems: "flex-start", marginBottom: 12, padding: 10, backgroundColor: "#F5F3FF", borderRadius: 12, borderWidth: 1, borderColor: "#EDE9FE" },
   noteText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: "#5B21B6" },

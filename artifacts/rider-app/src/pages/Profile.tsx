@@ -43,7 +43,8 @@ function SkeletonBlock({ className }: { className?: string }) {
 function SkeletonProfile() {
   return (
     <div className="bg-[#F5F6F8] pb-24 min-h-screen">
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-24 rounded-b-[2rem]" />
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-24 rounded-b-[2rem]"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }} />
       <div className="px-4 -mt-20 space-y-4">
         <div className="bg-white rounded-3xl shadow-lg p-5">
           <div className="flex items-start gap-4">
@@ -275,7 +276,8 @@ export default function Profile() {
         </div>
       )}
 
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-24 rounded-b-[2rem] relative overflow-hidden">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-24 rounded-b-[2rem] relative overflow-hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
         <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative flex items-center justify-between mb-2">

@@ -19,7 +19,8 @@ function SkeletonBlock({ className }: { className?: string }) {
 function SkeletonActive() {
   return (
     <div className="bg-[#F5F6F8] pb-24 min-h-screen">
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-8 rounded-b-[2rem] relative overflow-hidden">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
         <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative flex items-center justify-between">
@@ -301,7 +302,8 @@ export default function Active() {
 
   if (!order && !ride) return (
     <div className="min-h-screen bg-[#F5F6F8] flex flex-col">
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-10 rounded-b-[2rem] relative overflow-hidden">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-10 rounded-b-[2rem] relative overflow-hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
         <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative">
@@ -346,7 +348,8 @@ export default function Active() {
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] pb-24">
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pt-14 pb-7 rounded-b-[2rem] relative overflow-hidden">
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-7 rounded-b-[2rem] relative overflow-hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
         <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="absolute top-1/2 left-1/2 w-32 h-32 rounded-full bg-white/[0.015] -translate-x-1/2 -translate-y-1/2"/>

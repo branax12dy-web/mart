@@ -54,7 +54,7 @@ function AppRoutes() {
       {/* ── Announcement bar (top, dismissable) ── */}
       <AnnouncementBar message={config.content.announcement} />
 
-      <div className="flex-1 pb-20">
+      <div className="flex-1" style={{ paddingBottom: "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))" }}>
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/active" component={Active} />
