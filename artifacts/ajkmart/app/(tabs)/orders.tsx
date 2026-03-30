@@ -40,8 +40,9 @@ const ORDER_STATUS: Record<string, { color: string; bg: string; icon: string; la
 };
 
 const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  searching:  { color: "#D97706", bg: "#FEF3C7", icon: "search-outline",            labelKey: "searching" },
-  accepted:   { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "accepted" },
+  searching:   { color: "#D97706", bg: "#FEF3C7", icon: "search-outline",            labelKey: "searching" },
+  bargaining:  { color: "#D97706", bg: "#FEF3C7", icon: "swap-horizontal-outline",   labelKey: "bargaining" },
+  accepted:    { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "accepted" },
   arrived:    { color: "#7C3AED", bg: "#EDE9FE", icon: "location-outline",          labelKey: "arrived" },
   in_transit: { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
   ongoing:    { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
@@ -209,7 +210,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   const cfg = RIDE_STATUS[ride.status] || RIDE_STATUS["searching"]!;
   const isActive    = !["completed", "cancelled"].includes(ride.status);
   const isCompleted = ride.status === "completed";
-  const canCancel   = ["searching", "accepted"].includes(ride.status);
+  const canCancel   = ["searching", "bargaining", "accepted", "arrived", "in_transit"].includes(ride.status);
   const hasRider    = ["accepted", "arrived", "in_transit", "ongoing"].includes(ride.status);
 
   return (
@@ -280,7 +281,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
         <Pressable style={styles.cancelBtn} onPress={() => onCancel(ride)}>
           <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
           <Text style={styles.cancelBtnText}>
-            {ride.status === "accepted" ? T("cancelRideFee") : T("cancelRide")}
+            {["accepted", "arrived", "in_transit"].includes(ride.status) ? T("cancelRideFee") : T("cancelRide")}
           </Text>
         </Pressable>
       )}
@@ -818,6 +819,30 @@ export default function OrdersScreen() {
 
   const orderRules = config.orderRules;
 
+  const svcFeatures = config.features;
+  const martActive = svcFeatures.mart;
+  const foodActive = svcFeatures.food;
+  const ridesActive = svcFeatures.rides;
+  const pharmActive = svcFeatures.pharmacy;
+  const parcelActive = svcFeatures.parcel;
+  const anyMartFood = martActive || foodActive;
+
+  const visibleTabs = TABS.filter(tab => {
+    if (tab.key === "all") return true;
+    if (tab.key === "mart") return martActive;
+    if (tab.key === "food") return foodActive;
+    if (tab.key === "rides") return ridesActive;
+    if (tab.key === "pharmacy") return pharmActive;
+    if (tab.key === "parcel") return parcelActive;
+    return true;
+  });
+
+  React.useEffect(() => {
+    if (!visibleTabs.some(t => t.key === activeTab)) {
+      setActiveTab("all");
+    }
+  }, [martActive, foodActive, ridesActive, pharmActive, parcelActive]);
+
   const handleReorder = useCallback((order: any) => {
     if (!order.items || order.items.length === 0) return;
     const validItems = order.items.filter((i: any) => i.productId);
@@ -857,7 +882,7 @@ export default function OrdersScreen() {
 
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
     { userId: user?.id || "" },
-    { query: { enabled: !!user?.id, refetchInterval: 30000 } }
+    { query: { enabled: !!user?.id && anyMartFood, refetchInterval: 30000 } }
   );
 
   const [ridesData, setRidesData] = useState<any>(null);
@@ -887,7 +912,7 @@ export default function OrdersScreen() {
   }, [orderRules.cancelWindowMin]);
 
   const fetchRides = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !ridesActive) return;
     setRidesLoading(true);
     try {
       const res = await fetch(`${API_BASE}/rides`, { headers: authHeaders });
@@ -895,10 +920,10 @@ export default function OrdersScreen() {
       setRidesData(d);
     } catch {}
     setRidesLoading(false);
-  }, [user?.id, token]);
+  }, [user?.id, token, ridesActive]);
 
   const fetchPharmacy = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !pharmActive) return;
     setPharmLoading(true);
     try {
       const res = await fetch(`${API_BASE}/pharmacy-orders`, { headers: authHeaders });
@@ -906,10 +931,10 @@ export default function OrdersScreen() {
       setPharmData(d);
     } catch {}
     setPharmLoading(false);
-  }, [user?.id, token]);
+  }, [user?.id, token, pharmActive]);
 
   const fetchParcel = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !parcelActive) return;
     setParcelLoading(true);
     try {
       const res = await fetch(`${API_BASE}/parcel-bookings`, { headers: authHeaders });
@@ -917,10 +942,10 @@ export default function OrdersScreen() {
       setParcelData(d);
     } catch {}
     setParcelLoading(false);
-  }, [user?.id, token]);
+  }, [user?.id, token, parcelActive]);
 
   const handleCancelRide = useCallback((ride: any) => {
-    const riderAssigned = ["accepted", "arrived", "in_transit"].includes(ride.status);
+    const riderAssigned = ["accepted", "arrived", "in_transit", "ongoing"].includes(ride.status);
     setCancelTarget({
       id: ride.id,
       type: "ride",
@@ -937,7 +962,7 @@ export default function OrdersScreen() {
       fetchPharmacy();
       fetchParcel();
     }
-  }, [user?.id]);
+  }, [user?.id, ridesActive, pharmActive, parcelActive]);
 
   React.useEffect(() => {
     if (!user?.id) return;
@@ -955,12 +980,15 @@ export default function OrdersScreen() {
     setRefreshing(false);
   }, [refetchOrders, fetchRides, fetchPharmacy, fetchParcel]);
 
-  const allOrders = [...(ordersData?.orders || [])].reverse();
-  const martOrders = allOrders.filter(o => o.type === "mart");
-  const foodOrders = allOrders.filter(o => o.type === "food");
-  const rides = (ridesData?.rides || []);
-  const pharmOrders = (pharmData?.orders || pharmData?.pharmacyOrders || []);
-  const parcels = (parcelData?.bookings || parcelData?.parcelBookings || []);
+  const rawOrders = [...(ordersData?.orders || [])].reverse();
+  const allOrders = rawOrders.filter(o =>
+    (o.type === "mart" && martActive) || (o.type === "food" && foodActive)
+  );
+  const martOrders = martActive ? allOrders.filter(o => o.type === "mart") : [];
+  const foodOrders = foodActive ? allOrders.filter(o => o.type === "food") : [];
+  const rides = ridesActive ? (ridesData?.rides || []) : [];
+  const pharmOrders = pharmActive ? (pharmData?.orders || pharmData?.pharmacyOrders || []) : [];
+  const parcels = parcelActive ? (parcelData?.bookings || parcelData?.parcelBookings || []) : [];
 
   const totalCount = allOrders.length + rides.length + pharmOrders.length + parcels.length;
 
@@ -987,18 +1015,36 @@ export default function OrdersScreen() {
             {T("trackActivity")}
           </Text>
           <View style={styles.emptyBtns}>
-            <Pressable onPress={() => router.push("/mart")} style={styles.emptyBtn}>
-              <Ionicons name="storefront-outline" size={15} color="#fff" />
-              <Text style={styles.emptyBtnText}>Mart</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: "#D97706" }]}>
-              <Ionicons name="restaurant-outline" size={15} color="#fff" />
-              <Text style={styles.emptyBtnText}>Food</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: "#059669" }]}>
-              <Ionicons name="car-outline" size={15} color="#fff" />
-              <Text style={styles.emptyBtnText}>Ride</Text>
-            </Pressable>
+            {martActive && (
+              <Pressable onPress={() => router.push("/mart")} style={styles.emptyBtn}>
+                <Ionicons name="storefront-outline" size={15} color="#fff" />
+                <Text style={styles.emptyBtnText}>Mart</Text>
+              </Pressable>
+            )}
+            {foodActive && (
+              <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: "#D97706" }]}>
+                <Ionicons name="restaurant-outline" size={15} color="#fff" />
+                <Text style={styles.emptyBtnText}>Food</Text>
+              </Pressable>
+            )}
+            {ridesActive && (
+              <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: "#059669" }]}>
+                <Ionicons name="car-outline" size={15} color="#fff" />
+                <Text style={styles.emptyBtnText}>Ride</Text>
+              </Pressable>
+            )}
+            {pharmActive && (
+              <Pressable onPress={() => router.push("/pharmacy")} style={[styles.emptyBtn, { backgroundColor: "#7C3AED" }]}>
+                <Ionicons name="medical-outline" size={15} color="#fff" />
+                <Text style={styles.emptyBtnText}>Pharmacy</Text>
+              </Pressable>
+            )}
+            {parcelActive && (
+              <Pressable onPress={() => router.push("/parcel")} style={[styles.emptyBtn, { backgroundColor: "#B45309" }]}>
+                <Ionicons name="cube-outline" size={15} color="#fff" />
+                <Text style={styles.emptyBtnText}>Parcel</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       );
@@ -1115,7 +1161,7 @@ export default function OrdersScreen() {
 
       <View style={styles.tabsWrap}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-          {TABS.map(tab => {
+          {visibleTabs.map(tab => {
             const count =
               tab.key === "all"      ? totalCount :
               tab.key === "mart"     ? martOrders.length :
