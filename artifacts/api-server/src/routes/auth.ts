@@ -656,15 +656,28 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
     .set({ emailOtpCode: otp, emailOtpExpiry: expiry, updatedAt: new Date() })
     .where(eq(usersTable.id, user.id));
 
-  /* In dev mode, return OTP in response. In production, send via email service. */
   const isDev = process.env.NODE_ENV !== "production";
-  req.log.info({ email: normalized, otp }, "Email OTP sent");
+  req.log.info({ email: normalized, otp: isDev ? otp : "[hidden]" }, "Email OTP generated");
 
-  /* TODO: Send via email service when configured */
-  addAuditEntry({ action: "email_otp_sent", ip, details: `Email OTP for: ${normalized}`, result: "success" });
+  /* Send OTP via email service. Falls back gracefully when SMTP is not configured.
+     In development, the OTP is also exposed in the response for easy testing. */
+  const emailResult = await sendPasswordResetEmail(normalized, otp, user.name ?? undefined);
+
+  if (!emailResult.sent) {
+    if (isDev) {
+      /* In development, log OTP to console so developers can see it */
+      console.log(`[EMAIL-OTP DEV] Email OTP for ${normalized}: ${otp} (SMTP not configured: ${emailResult.reason ?? "unknown"})`);
+    } else {
+      /* In production, log a warning but still issue the OTP (client won't see it) */
+      console.warn(`[EMAIL-OTP] Failed to send OTP email to ${normalized}: ${emailResult.reason ?? "SMTP not configured"}`);
+    }
+  }
+
+  addAuditEntry({ action: "email_otp_sent", ip, details: `Email OTP for: ${normalized} (delivered: ${emailResult.sent})`, result: "success" });
 
   res.json({
     message: "OTP aapki email par bhej diya gaya hai",
+    channel: emailResult.sent ? "email" : "console",
     ...(isDev ? { otp } : {}),
   });
 });

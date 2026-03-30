@@ -328,7 +328,17 @@ router.post("/initiate", customerAuth, async (req, res) => {
     const timeoutMins = parseInt(s["payment_timeout_mins"] ?? "15");
 
     if (mode !== "sandbox" && (!merchantId || !password || !salt)) {
-      res.status(503).json({ error: "JazzCash API credentials incomplete. Admin settings mein configure karein." }); return;
+      /* Return pending-manual-verification instead of a hard 503 so the customer
+         flow is not completely blocked when the admin has not yet configured API keys.
+         The customer is informed to pay manually and the order is flagged for review. */
+      res.json({
+        gateway: "jazzcash", mode: "pending_manual", type: "pending",
+        status: "pending_manual_verification",
+        message: "JazzCash digital payment is temporarily unavailable. Please pay via bank transfer or contact support to complete your order.",
+        orderId,
+        amount: parseFloat(amount),
+        supportNote: "Your order will be processed once payment is confirmed by admin.",
+      }); return;
     }
 
     const txnRef     = `AJKM${Date.now()}`;
@@ -408,7 +418,16 @@ router.post("/initiate", customerAuth, async (req, res) => {
 
     const isSandbox = mode === "sandbox";
     if (!isSandbox && (!storeId || !hashKey)) {
-      res.status(503).json({ error: "EasyPaisa API credentials incomplete. Admin settings mein configure karein." }); return;
+      /* Return pending-manual-verification instead of a hard 503 so the customer
+         flow is not completely blocked when the admin has not yet configured API keys. */
+      res.json({
+        gateway: "easypaisa", mode: "pending_manual", type: "pending",
+        status: "pending_manual_verification",
+        message: "EasyPaisa digital payment is temporarily unavailable. Please pay via bank transfer or contact support to complete your order.",
+        orderId,
+        amount: parseFloat(amount),
+        supportNote: "Your order will be processed once payment is confirmed by admin.",
+      }); return;
     }
 
     const txnRef    = `EP${Date.now()}`;

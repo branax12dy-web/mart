@@ -180,23 +180,54 @@ export default function Home() {
   const [optimisticOnline, setOptimisticOnline] = useState<boolean | null>(null);
   const effectiveOnline = optimisticOnline !== null ? optimisticOnline : !!user?.isOnline;
 
+  /* isMountedRef prevents state updates after the component unmounts mid-request
+     (e.g. when the rider navigates away while the toggle API call is in-flight). */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  /* Debounce ref: tracks the timestamp of the most recent toggle so that rapid
+     consecutive taps within TOGGLE_DEBOUNCE_MS are silently ignored instead of
+     queuing conflicting online/offline API calls. */
+  const TOGGLE_DEBOUNCE_MS = 1000;
+  const lastToggleRef = useRef<number>(0);
+
   const toggleOnline = async () => {
-    if (toggling) return;
+    const now = Date.now();
+    /* Debounce: reject if a toggle fired within the last second */
+    if (toggling || now - lastToggleRef.current < TOGGLE_DEBOUNCE_MS) return;
+    lastToggleRef.current = now;
+
     setToggling(true);
     const newStatus = !effectiveOnline;
     /* Optimistic update — move pill immediately for snappy UX */
     setOptimisticOnline(newStatus);
     try {
       await api.setOnline(newStatus);
-      await refreshUser();
+      /* Write succeeded — status is confirmed on server. Guard remaining state updates. */
+      if (!isMountedRef.current) return;
+      /* Refresh user profile to sync server state; if refresh fails, we still keep
+         the new status shown (because the write already succeeded) instead of rolling back. */
+      await refreshUser().catch(() => {
+        /* Profile refresh failed — not a toggle failure. Keep new status in UI.
+           React-query will re-fetch on next focus/mount and self-correct. */
+      });
+      if (!isMountedRef.current) return;
       showToast(newStatus ? T("youAreNowOnline") : T("youAreNowOffline"), "success");
     } catch (e: any) {
-      /* Revert on failure */
+      /* Write itself failed — rollback the optimistic UI change */
+      if (!isMountedRef.current) return;
       setOptimisticOnline(!newStatus);
       showToast(e.message, "error");
+    } finally {
+      /* Only reset loading state if still mounted */
+      if (isMountedRef.current) {
+        setOptimisticOnline(null);
+        setToggling(false);
+      }
     }
-    setOptimisticOnline(null);
-    setToggling(false);
   };
 
   const { data: earningsData } = useQuery({

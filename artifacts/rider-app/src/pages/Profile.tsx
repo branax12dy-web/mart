@@ -112,7 +112,12 @@ export default function Profile() {
   const [savedSection, setSavedSection] = useState<EditSection>(null);
   const [fadeIn, setFadeIn] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [docUploading, setDocUploading] = useState<"cnic" | "license" | "regDoc" | "vehiclePhoto" | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const cnicDocInputRef = useRef<HTMLInputElement | null>(null);
+  const licenseDocInputRef = useRef<HTMLInputElement | null>(null);
+  const regDocInputRef = useRef<HTMLInputElement | null>(null);
+  const vehiclePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -186,6 +191,52 @@ export default function Profile() {
     }
     setAvatarUploading(false);
     if (avatarInputRef.current) avatarInputRef.current.value = "";
+  };
+
+  const handleDocUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    kind: "cnic" | "license" | "regDoc" | "vehiclePhoto",
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_MIME.includes(file.type.toLowerCase())) {
+      showToast("Invalid file type. Please upload a JPEG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) { showToast("Document image too large (max 5MB)"); return; }
+    setDocUploading(kind);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const uploadRes = await api.uploadFile({ file: base64, filename: file.name, mimeType: file.type });
+      if (!uploadRes?.url) { showToast("Upload failed — no URL returned"); return; }
+      /* Map each document kind to the appropriate profile field */
+      const patch =
+        kind === "cnic"        ? { cnicDocUrl: uploadRes.url } :
+        kind === "license"     ? { licenseDocUrl: uploadRes.url } :
+        kind === "regDoc"      ? { regDocUrl: uploadRes.url } :
+                                 { vehiclePhoto: uploadRes.url };
+      await api.updateProfile(patch);
+      await refreshUser();
+      const labels: Record<typeof kind, string> = {
+        cnic:         "CNIC photo uploaded",
+        license:      "Driving license photo uploaded",
+        regDoc:       "Registration document uploaded",
+        vehiclePhoto: "Vehicle photo uploaded",
+      };
+      showToast(labels[kind]);
+    } catch {
+      showToast(`Failed to upload ${kind} photo`);
+    } finally {
+      setDocUploading(null);
+      const refs = { cnic: cnicDocInputRef, license: licenseDocInputRef, regDoc: regDocInputRef, vehiclePhoto: vehiclePhotoInputRef };
+      const ref = refs[kind];
+      if (ref.current) ref.current.value = "";
+    }
   };
 
   const startEdit = (section: EditSection) => {
@@ -603,6 +654,64 @@ export default function Profile() {
                     <div>
                       <label className={LABEL}>Driving License No.</label>
                       <input value={drivingLicense} onChange={e => setDrivingLicense(e.target.value)} placeholder="DL-12345678" className={INPUT}/>
+                    </div>
+                    {/* Document photo uploads — CNIC, License, Registration, and Vehicle photos */}
+                    <div className="space-y-2 pt-1">
+                      <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Document Photos (for verification)</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* CNIC photo upload */}
+                        <div className="relative">
+                          <input ref={cnicDocInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleDocUpload(e, "cnic")}/>
+                          <button type="button" onClick={() => cnicDocInputRef.current?.click()} disabled={docUploading === "cnic"}
+                            className="w-full h-16 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-1 active:bg-gray-50 transition-all disabled:opacity-60">
+                            {docUploading === "cnic" ? (
+                              <><RefreshCcw size={14} className="animate-spin text-gray-400"/><span className="text-[10px] text-gray-400">Uploading...</span></>
+                            ) : (
+                              <><Camera size={14} className="text-gray-400"/><span className="text-[10px] font-semibold text-gray-500">CNIC Photo</span></>
+                            )}
+                          </button>
+                          {user?.cnicDocUrl && <CheckCircle size={12} className="text-green-500 absolute top-1 right-1"/>}
+                        </div>
+                        {/* Driving license photo upload */}
+                        <div className="relative">
+                          <input ref={licenseDocInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleDocUpload(e, "license")}/>
+                          <button type="button" onClick={() => licenseDocInputRef.current?.click()} disabled={docUploading === "license"}
+                            className="w-full h-16 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-1 active:bg-gray-50 transition-all disabled:opacity-60">
+                            {docUploading === "license" ? (
+                              <><RefreshCcw size={14} className="animate-spin text-gray-400"/><span className="text-[10px] text-gray-400">Uploading...</span></>
+                            ) : (
+                              <><Camera size={14} className="text-gray-400"/><span className="text-[10px] font-semibold text-gray-500">License Photo</span></>
+                            )}
+                          </button>
+                          {user?.licenseDocUrl && <CheckCircle size={12} className="text-green-500 absolute top-1 right-1"/>}
+                        </div>
+                        {/* Vehicle registration document photo upload */}
+                        <div className="relative">
+                          <input ref={regDocInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleDocUpload(e, "regDoc")}/>
+                          <button type="button" onClick={() => regDocInputRef.current?.click()} disabled={docUploading === "regDoc"}
+                            className="w-full h-16 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-1 active:bg-gray-50 transition-all disabled:opacity-60">
+                            {docUploading === "regDoc" ? (
+                              <><RefreshCcw size={14} className="animate-spin text-gray-400"/><span className="text-[10px] text-gray-400">Uploading...</span></>
+                            ) : (
+                              <><Camera size={14} className="text-gray-400"/><span className="text-[10px] font-semibold text-gray-500">Reg. Document</span></>
+                            )}
+                          </button>
+                          {user?.regDocUrl && <CheckCircle size={12} className="text-green-500 absolute top-1 right-1"/>}
+                        </div>
+                        {/* Vehicle photo upload */}
+                        <div className="relative">
+                          <input ref={vehiclePhotoInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleDocUpload(e, "vehiclePhoto")}/>
+                          <button type="button" onClick={() => vehiclePhotoInputRef.current?.click()} disabled={docUploading === "vehiclePhoto"}
+                            className="w-full h-16 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-1 active:bg-gray-50 transition-all disabled:opacity-60">
+                            {docUploading === "vehiclePhoto" ? (
+                              <><RefreshCcw size={14} className="animate-spin text-gray-400"/><span className="text-[10px] text-gray-400">Uploading...</span></>
+                            ) : (
+                              <><Camera size={14} className="text-gray-400"/><span className="text-[10px] font-semibold text-gray-500">Vehicle Photo</span></>
+                            )}
+                          </button>
+                          {user?.vehiclePhoto && <CheckCircle size={12} className="text-green-500 absolute top-1 right-1"/>}
+                        </div>
+                      </div>
                     </div>
                     <button onClick={() => saveSection("vehicle")} disabled={saving}
                       className="w-full h-12 bg-gray-900 text-white font-bold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2 active:bg-gray-800 transition-colors shadow-sm">

@@ -28,6 +28,13 @@ const profileSchema = z.object({
   bankAccount: z.string().optional(),
   bankAccountTitle: z.string().optional(),
   avatar: z.string().optional(),
+  /* Document photo URLs — set separately via the document upload flow in Profile.tsx.
+     cnicDocUrl, licenseDocUrl, regDocUrl stored in the `documents` JSON column.
+     vehiclePhoto stored in the dedicated `vehicle_photo` column. */
+  cnicDocUrl: z.string().optional(),
+  licenseDocUrl: z.string().optional(),
+  regDocUrl: z.string().optional(),
+  vehiclePhoto: z.string().optional(),
 });
 
 const MAX_PROOF_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -105,28 +112,31 @@ async function riderAuth(req: Request, res: Response, next: NextFunction) {
   const tokenHeader = req.headers["x-auth-token"] as string | undefined;
   const raw = tokenHeader || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
 
-  if (!raw) { res.status(401).json({ error: "Authentication required" }); return; }
+  /* Include machine-readable `code` in all auth-denial responses so the frontend
+     api.ts can reliably detect auth vs. business-rule 403s and trigger logout
+     only for genuine auth failures, not policy blocks (e.g. "withdrawals disabled"). */
+  if (!raw) { res.status(401).json({ code: "AUTH_REQUIRED", error: "Authentication required" }); return; }
 
   const payload = verifyUserJwt(raw);
-  if (!payload) { res.status(401).json({ error: "Invalid or expired session. Please log in again." }); return; }
+  if (!payload) { res.status(401).json({ code: "TOKEN_INVALID", error: "Invalid or expired session. Please log in again." }); return; }
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
-  if (!user) { res.status(401).json({ error: "User not found" }); return; }
-  if (user.isBanned) { res.status(403).json({ error: "Account is banned" }); return; }
+  if (!user) { res.status(401).json({ code: "AUTH_REQUIRED", error: "User not found" }); return; }
+  if (user.isBanned) { res.status(403).json({ code: "AUTH_REQUIRED", error: "Account is banned" }); return; }
   if (!user.isActive) {
-    res.status(403).json({ error: "Account is inactive" }); return;
+    res.status(403).json({ code: "AUTH_REQUIRED", error: "Account is inactive" }); return;
   }
 
   /* Token version check — invalidates all outstanding JWTs after logout / password change / ban */
   if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
-    res.status(401).json({ error: "Session revoked. Please log in again." }); return;
+    res.status(401).json({ code: "TOKEN_EXPIRED", error: "Session revoked. Please log in again." }); return;
   }
 
   /* Enforce rider role — check BOTH the JWT claim and the DB roles field */
   const dbRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
   const jwtRoles = (payload.roles || payload.role || "").split(",").map((r: string) => r.trim());
   if (!dbRoles.includes("rider") || !jwtRoles.includes("rider")) {
-    res.status(403).json({ error: "Access denied. This portal is for riders only." }); return;
+    res.status(403).json({ code: "ROLE_DENIED", error: "Access denied. This portal is for riders only." }); return;
   }
 
   req.riderId = user.id;
@@ -179,6 +189,14 @@ router.get("/me", async (req, res) => {
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
     twoFactorEnabled: !!user.totpEnabled,
     lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
+    vehiclePhoto: user.vehiclePhoto,
+    /* Document photo URLs parsed from the documents JSON column */
+    ...(() => {
+      try {
+        const docs = JSON.parse(user.documents || "{}");
+        return { cnicDocUrl: docs.cnicDocUrl || null, licenseDocUrl: docs.licenseDocUrl || null, regDocUrl: docs.regDocUrl || null };
+      } catch { return { cnicDocUrl: null, licenseDocUrl: null, regDocUrl: null }; }
+    })(),
     stats: {
       deliveriesToday,
       earningsToday:   parseFloat(earningsToday.toFixed(2)),
@@ -210,7 +228,7 @@ router.patch("/profile", async (req, res) => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
   const currentUser = req.riderUser!;
-  const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, vehicleRegNo, drivingLicense, bankName, bankAccount, bankAccountTitle, avatar } = parsed.data;
+  const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, vehicleRegNo, drivingLicense, bankName, bankAccount, bankAccountTitle, avatar, cnicDocUrl, licenseDocUrl, regDocUrl, vehiclePhoto } = parsed.data;
   const updates: any = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
   if (email            !== undefined) updates.email            = email;
@@ -231,6 +249,32 @@ router.patch("/profile", async (req, res) => {
       return;
     }
     updates.avatar = avatar;
+  }
+  /* Document photo URLs — stored in the `documents` JSON column (cnicDocUrl, licenseDocUrl,
+     regDocUrl) to avoid schema migration. vehiclePhoto uses its dedicated DB column. */
+  if (cnicDocUrl !== undefined || licenseDocUrl !== undefined || regDocUrl !== undefined) {
+    if (cnicDocUrl && !cnicDocUrl.startsWith("/api/uploads/")) {
+      res.status(400).json({ error: "cnicDocUrl must be an uploaded file URL" }); return;
+    }
+    if (licenseDocUrl && !licenseDocUrl.startsWith("/api/uploads/")) {
+      res.status(400).json({ error: "licenseDocUrl must be an uploaded file URL" }); return;
+    }
+    if (regDocUrl && !regDocUrl.startsWith("/api/uploads/")) {
+      res.status(400).json({ error: "regDocUrl must be an uploaded file URL" }); return;
+    }
+    let existingDocs: Record<string, string> = {};
+    try { existingDocs = JSON.parse(currentUser.documents || "{}"); } catch { /* ignore */ }
+    if (cnicDocUrl !== undefined) existingDocs.cnicDocUrl = cnicDocUrl;
+    if (licenseDocUrl !== undefined) existingDocs.licenseDocUrl = licenseDocUrl;
+    if (regDocUrl !== undefined) existingDocs.regDocUrl = regDocUrl;
+    updates.documents = JSON.stringify(existingDocs);
+  }
+  /* vehiclePhoto uses the dedicated `vehicle_photo` column in the users table */
+  if (vehiclePhoto !== undefined) {
+    if (vehiclePhoto && !vehiclePhoto.startsWith("/api/uploads/")) {
+      res.status(400).json({ error: "vehiclePhoto must be an uploaded file URL" }); return;
+    }
+    updates.vehiclePhoto = vehiclePhoto;
   }
 
   /* Detect sensitive identity field changes — reset approval to pending so admin can re-verify */
@@ -263,6 +307,14 @@ router.patch("/profile", async (req, res) => {
     vehicleRegNo: user.vehicleRegNo, drivingLicense: user.drivingLicense,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
     createdAt: user.createdAt, lastLoginAt: user.lastLoginAt,
+    vehiclePhoto: user.vehiclePhoto,
+    /* Document photo URLs parsed from the documents JSON column */
+    ...(() => {
+      try {
+        const docs = JSON.parse(user.documents || "{}");
+        return { cnicDocUrl: docs.cnicDocUrl || null, licenseDocUrl: docs.licenseDocUrl || null, regDocUrl: docs.regDocUrl || null };
+      } catch { return { cnicDocUrl: null, licenseDocUrl: null, regDocUrl: null }; }
+    })(),
     ...(cnicChanged || drivingLicenseChanged ? { pendingVerification: true } : {}),
   });
 });
@@ -1474,7 +1526,14 @@ router.patch("/location", async (req, res) => {
     res.status(403).json({ error: "GPS tracking is currently disabled by admin." }); return;
   }
 
-  if (accuracy !== undefined) {
+  /* Accuracy-only spoof signal: reject if accuracy is suspiciously perfect AND high speed.
+     A single bad reading (network glitch, tunnel exit) is tolerated via a consecutive-failure
+     counter stored in memory — only 3+ consecutive suspicious readings trigger a hard reject. */
+  const GPS_SUSPICIOUS_ACCURACY_THRESHOLD_M = 50;
+  const GPS_HIGH_SPEED_WITH_ACCURACY_KMH = 80;
+
+  let accuracySpoofSuspected = false;
+  if (accuracy !== undefined && accuracy > GPS_SUSPICIOUS_ACCURACY_THRESHOLD_M) {
     const minAccuracyMeters = parseInt(settings["security_gps_accuracy"] ?? "50", 10);
     if (accuracy > minAccuracyMeters) {
       console.warn(`[rider/location] Rider ${riderId} GPS accuracy ${accuracy}m exceeds threshold ${minAccuracyMeters}m`);
@@ -1482,25 +1541,48 @@ router.patch("/location", async (req, res) => {
   }
 
   if (settings["security_spoof_detection"] === "on") {
-    const maxSpeedKmh = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
+    const maxSpeedKmh = parseInt(settings["security_max_speed_kmh"] ?? "120", 10);
     const [prev] = await db.select().from(liveLocationsTable).where(eq(liveLocationsTable.userId, riderId)).limit(1);
     if (prev) {
       const prevLat = parseFloat(String(prev.latitude));
       const prevLon = parseFloat(String(prev.longitude));
       const { spoofed, speedKmh } = detectGPSSpoof(prevLat, prevLon, prev.updatedAt, latitude, longitude, maxSpeedKmh);
-      if (spoofed) {
+
+      /* Combined accuracy + speed heuristic: low accuracy (>50m) AND unrealistically fast movement
+         is a strong signal of a mock location app switching between coarse fake positions. */
+      if (accuracy !== undefined && accuracy > GPS_SUSPICIOUS_ACCURACY_THRESHOLD_M && speedKmh > GPS_HIGH_SPEED_WITH_ACCURACY_KMH) {
+        accuracySpoofSuspected = true;
+      }
+
+      const spoofHitKey = `spoof_hits:${riderId}`;
+      const currentHits: number = locationRateStore.get(spoofHitKey) ?? 0;
+
+      if (spoofed || accuracySpoofSuspected) {
+        const newHits = currentHits + 1;
+        locationRateStore.set(spoofHitKey, newHits);
+
         const ip = getClientIp(req);
         addSecurityEvent({
           type: "gps_spoof_detected", ip, userId: riderId,
-          details: `GPS spoof detected: speed ${speedKmh.toFixed(1)} km/h exceeds limit of ${maxSpeedKmh} km/h`,
-          severity: "high",
+          details: `GPS spoof suspected: speed ${speedKmh.toFixed(1)} km/h, accuracy ${accuracy ?? "N/A"}m (hit ${newHits})`,
+          severity: newHits >= 3 ? "high" : "medium",
         });
-        res.status(422).json({
-          error: "GPS location rejected: movement speed is physically impossible. Please disable mock location apps.",
-          code: "GPS_SPOOF_DETECTED",
-          detectedSpeedKmh: Math.round(speedKmh),
-          maxAllowedKmh: maxSpeedKmh,
-        }); return;
+
+        /* Only hard-reject after 3+ consecutive suspicious readings — one bad reading is forgiven */
+        if (newHits >= 3) {
+          res.status(422).json({
+            error: "GPS location rejected: repeated suspicious movement detected. Please disable mock location apps.",
+            code: "GPS_SPOOF_DETECTED",
+            detectedSpeedKmh: Math.round(speedKmh),
+            maxAllowedKmh: maxSpeedKmh,
+            consecutiveSuspicious: newHits,
+          }); return;
+        }
+        /* Soft warning — log but accept the reading on first/second hit */
+        console.warn(`[rider/location] Suspicious GPS reading ${newHits}/3 for rider ${riderId}: ${speedKmh.toFixed(1)} km/h`);
+      } else if (currentHits > 0) {
+        /* Reset counter on clean reading */
+        locationRateStore.set(spoofHitKey, 0);
       }
     }
   }
@@ -1521,68 +1603,6 @@ router.patch("/location", async (req, res) => {
   });
 
   res.json({ success: true, updatedAt: new Date().toISOString() });
-});
-
-/* ── POST /rider/rides/:id/ignore — Rider ignores a ride request (broadcast model) ──
-   Any nearby rider can ignore a ride. Tracks ignore count and applies penalty if threshold exceeded. */
-router.post("/rides/:id/ignore", async (req, res) => {
-  const riderId = req.riderId!;
-  const rideId  = req.params["id"]!;
-
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-  if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
-
-  if (!["searching", "bargaining"].includes(ride.status)) {
-    res.status(400).json({ error: "This ride is no longer available" }); return;
-  }
-
-  const s = await getPlatformSettings();
-  const ignoreThreshold = parseInt(s["dispatch_ignore_threshold"] ?? "10", 10);
-  const ignorePenaltyAmt = parseFloat(s["dispatch_ignore_penalty"] ?? "25");
-
-  await db.update(usersTable)
-    .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
-    .where(eq(usersTable.id, riderId));
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const [countRow] = await db.select({ c: count() })
-    .from(riderPenaltiesTable)
-    .where(and(
-      eq(riderPenaltiesTable.riderId, riderId),
-      eq(riderPenaltiesTable.type, "ignore"),
-      gte(riderPenaltiesTable.createdAt, today),
-    ));
-  const dailyIgnores = (countRow?.c ?? 0) + 1;
-
-  let penaltyApplied = 0;
-  if (dailyIgnores > ignoreThreshold) {
-    penaltyApplied = ignorePenaltyAmt;
-    await db.transaction(async (tx) => {
-      await tx.update(usersTable)
-        .set({ walletBalance: sql`wallet_balance - ${ignorePenaltyAmt}`, updatedAt: new Date() })
-        .where(eq(usersTable.id, riderId));
-      await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId: riderId, type: "ignore_penalty",
-        amount: ignorePenaltyAmt.toFixed(2),
-        description: `Ignore penalty (${dailyIgnores}/${ignoreThreshold} today) — Rs. ${ignorePenaltyAmt}`,
-        reference: `ignore_penalty:${Date.now()}`,
-      });
-    });
-    await db.insert(notificationsTable).values({
-      id: generateId(), userId: riderId,
-      title: "Ignore Penalty ⚠️",
-      body: `You ignored ${dailyIgnores} rides today (limit: ${ignoreThreshold}). Rs. ${ignorePenaltyAmt} penalty applied.`,
-      type: "system", icon: "alert-circle-outline",
-    }).catch(() => {});
-  }
-
-  await db.insert(riderPenaltiesTable).values({
-    id: generateId(), riderId, type: "ignore",
-    amount: penaltyApplied > 0 ? ignorePenaltyAmt.toFixed(2) : "0",
-    reason: `Ignored ride ${rideId.slice(-6).toUpperCase()} (${dailyIgnores} today)`,
-  });
-
-  res.json({ success: true, dailyIgnores, threshold: ignoreThreshold, penaltyApplied });
 });
 
 /* ── GET /rider/wallet/deposits — Deposit history ── */
@@ -1616,6 +1636,11 @@ async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: num
   let penaltyApplied = 0;
   let restricted = false;
 
+  /* Increment the rider's lifetime ignore counter on the user record */
+  await db.update(usersTable)
+    .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
+    .where(eq(usersTable.id, riderId));
+
   await db.insert(riderPenaltiesTable).values({
     id: generateId(), riderId, type: "ignore",
     amount: "0",
@@ -1628,6 +1653,13 @@ async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: num
       await tx.update(usersTable)
         .set({ walletBalance: sql`wallet_balance - ${penaltyAmt}`, updatedAt: new Date() })
         .where(eq(usersTable.id, riderId));
+      /* Insert wallet ledger entry so the rider can see the deduction in their transaction history */
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: riderId, type: "ignore_penalty",
+        amount: penaltyAmt.toFixed(2),
+        description: `Ignore penalty (${dailyIgnores}/${limit} today) — Rs. ${penaltyAmt}`,
+        reference: `ignore_penalty:${Date.now()}`,
+      });
       await tx.insert(riderPenaltiesTable).values({
         id: generateId(), riderId, type: "ignore_penalty",
         amount: penaltyAmt.toFixed(2),

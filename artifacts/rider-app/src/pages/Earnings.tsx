@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Target, BarChart2, Star, TrendingUp, CheckCircle,
-  Wallet, ClipboardList, CreditCard, ChevronDown,
+  Wallet, ClipboardList, CreditCard, ChevronDown, RefreshCw,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -24,6 +24,7 @@ export default function Earnings() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const riderKeepPct = config.rider?.keepPct ?? config.finance.riderEarningPct;
   const [period, setPeriod] = useState<Period>("week");
+  const qc = useQueryClient();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["rider-earnings"],
@@ -84,6 +85,12 @@ export default function Earnings() {
           <div className="bg-red-50 border border-red-100 rounded-3xl p-5 text-center">
             <p className="text-sm font-bold text-red-700">Could not load earnings data.</p>
             <p className="text-xs text-red-500 mt-1">Please check your connection and try again.</p>
+            <button
+              onClick={() => qc.invalidateQueries({ queryKey: ["rider-earnings"] })}
+              className="mt-3 flex items-center gap-1.5 mx-auto px-4 py-2 bg-red-100 text-red-700 text-xs font-bold rounded-xl active:bg-red-200 transition-colors"
+            >
+              <RefreshCw size={12} /> Retry
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">

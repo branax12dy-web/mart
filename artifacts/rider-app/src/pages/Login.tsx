@@ -269,6 +269,14 @@ export default function Login() {
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
       const res = await api.sendEmailOtp(email, captchaToken);
       if (import.meta.env.DEV) setEmailDevOtp(res.otp || "");
+      /* Surface delivery channel so rider knows if email actually sent.
+         When SMTP is not configured, backend returns channel: "console" — 
+         show a visible notice so the rider knows to check server logs in dev. */
+      if (res.channel === "console") {
+        setError("Email OTP could not be sent — email delivery is not configured. Check server logs for the OTP (dev/staging only).");
+        setLoading(false);
+        return;
+      }
       setStep("otp");
     } catch (e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
     setLoading(false);

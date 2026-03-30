@@ -3,19 +3,97 @@ const BASE = `/api`;
 const TOKEN_KEY   = "ajkmart_rider_token";
 const REFRESH_KEY = "ajkmart_rider_refresh_token";
 
-function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || "";
+/* ── Secure token storage ──────────────────────────────────────────────────────
+   Access tokens are short-lived (15 min) so we store them in sessionStorage —
+   they are cleared when the tab closes and are not accessible cross-tab.
+   Refresh tokens have a longer lifetime; we use localStorage for persistence
+   across sessions but rely on server-side revocation for security.
+
+   Separate in-memory variables are used per token class so that storage-restricted
+   environments (incognito strict mode, cross-origin iframes) cannot accidentally
+   mix access and refresh tokens. */
+
+let _inMemoryAccessToken   = "";
+let _inMemoryRefreshToken  = "";
+
+/* Access token helpers — sessionStorage */
+function sessionGet(): string {
+  try { return sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return _inMemoryAccessToken; }
+}
+function sessionSet(value: string): void {
+  try { sessionStorage.setItem(TOKEN_KEY, value); } catch { _inMemoryAccessToken = value; }
+}
+function sessionRemove(): void {
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch { _inMemoryAccessToken = ""; }
 }
 
-function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY) || "";
+/* Refresh token helpers — localStorage */
+function localGet(): string {
+  try { return localStorage.getItem(REFRESH_KEY) ?? ""; } catch { return _inMemoryRefreshToken; }
+}
+function localSet(value: string): void {
+  try { localStorage.setItem(REFRESH_KEY, value); } catch { _inMemoryRefreshToken = value; }
+}
+function localRemove(): void {
+  try { localStorage.removeItem(REFRESH_KEY); } catch { _inMemoryRefreshToken = ""; }
 }
 
-function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  /* Also clear legacy key if it exists */
-  localStorage.removeItem("rider_token");
+/* Read the access token — check sessionStorage first, fall back to localStorage
+   for sessions that were stored under the legacy scheme (pre-sessionStorage migration).
+   On first successful read from localStorage the token is immediately migrated. */
+function getToken(): string {
+  const fromSession = sessionGet();
+  if (fromSession) return fromSession;
+
+  /* Legacy migration: old code stored access tokens in localStorage under TOKEN_KEY or "rider_token" */
+  try {
+    const legacy = localStorage.getItem(TOKEN_KEY) || localStorage.getItem("rider_token") || "";
+    if (legacy) {
+      /* Migrate to sessionStorage and erase from localStorage */
+      sessionSet(legacy);
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem("rider_token");
+      return legacy;
+    }
+  } catch {}
+  return "";
+}
+
+function getRefreshToken(): string {
+  return localGet();
+}
+
+function clearTokens(): void {
+  sessionRemove();
+  localRemove();
+  /* Erase all possible legacy keys */
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+  try { localStorage.removeItem("rider_token"); } catch {}
+  _inMemoryAccessToken  = "";
+  _inMemoryRefreshToken = "";
+}
+
+/* ── Module-level logout callback ─────────────────────────────────────────────
+   The auth context registers this callback at mount time. Using a module-level
+   reference avoids coupling to React's event system and guarantees the logout
+   fires regardless of which component is mounted or whether the CustomEvent
+   listener has been attached yet. */
+let _logoutCallback: (() => void) | null = null;
+
+export function registerLogoutCallback(fn: () => void): () => void {
+  _logoutCallback = fn;
+  return () => { if (_logoutCallback === fn) _logoutCallback = null; };
+}
+
+function triggerLogout(reason: string) {
+  clearTokens();
+  if (_logoutCallback) {
+    _logoutCallback();
+  }
+  /* Also dispatch CustomEvent for components that still listen to it */
+  try {
+    window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason } }));
+  } catch {}
 }
 
 async function attemptTokenRefresh(): Promise<boolean> {
@@ -32,8 +110,12 @@ async function attemptTokenRefresh(): Promise<boolean> {
       return false;
     }
     const data = await res.json();
-    if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
-    if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    if (data.token) {
+      sessionSet(data.token);
+      /* Ensure no stale access token copy remains in localStorage */
+      try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem("rider_token"); } catch {}
+    }
+    if (data.refreshToken) localSet(data.refreshToken);
     return true;
   } catch {
     return false;
@@ -53,7 +135,6 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
   const externalSignal = opts.signal as AbortSignal | undefined;
-  /* AbortSignal.any() is available in modern browsers; fall back to timeout-only if unavailable */
   const signal: AbortSignal = externalSignal
     ? (typeof AbortSignal.any === "function"
         ? AbortSignal.any([timeoutController.signal, externalSignal])
@@ -72,26 +153,33 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
     if (refreshed) {
       return apiFetch(path, opts, false);
     }
-    clearTokens();
-    window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "session_expired" } }));
+    triggerLogout("session_expired");
     const err = await res.json().catch(() => ({ error: "Session expired" }));
     throw Object.assign(new Error(err.error || "Session expired. Please log in again."), { status: 401 });
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    /* 403 only triggers logout when the server signals an auth/role denial, NOT for
-       business-rule rejections (e.g. "insufficient balance" or "deposits disabled").
-       We distinguish by checking the error message — auth denials say "Access denied"
-       or "Unauthorized" while business-rule 403s carry a descriptive message. */
+    /* 403 handling:
+       - Auth/role denials (missing token, wrong role) trigger logout so the rider is
+         sent to the login screen rather than seeing a cryptic error.
+       - Business-rule 403s (withdrawals paused, feature disabled, etc.) must NOT
+         trigger logout — the rider is still authenticated, just blocked by a policy.
+       We use the backend's `code` field as the reliable machine-readable signal.
+       When `code` is absent we fall back to a short allowlist of auth-specific phrases
+       that the Express riderAuth/customerAuth/adminAuth middleware uses verbatim. */
     if (res.status === 403) {
       const msg = err.error || "";
-      const isAuthDenial = msg.toLowerCase() === "access denied" || msg.toLowerCase() === "forbidden";
+      const code = err.code || "";
+      const AUTH_DENY_CODES = ["AUTH_REQUIRED", "ROLE_DENIED", "TOKEN_INVALID", "TOKEN_EXPIRED"];
+      const AUTH_DENY_PHRASES = ["access denied", "forbidden", "unauthorized", "authentication required", "token invalid", "token expired"];
+      const isAuthDenial =
+        AUTH_DENY_CODES.includes(code) ||
+        AUTH_DENY_PHRASES.some(p => msg.toLowerCase().startsWith(p));
       if (isAuthDenial) {
-        clearTokens();
-        window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "access_denied" } }));
+        triggerLogout("access_denied");
       }
-      throw Object.assign(new Error(msg || "Access denied"), { status: 403 });
+      throw Object.assign(new Error(msg || "Access denied"), { status: 403, code });
     }
     const error = new Error(err.error || "Request failed");
     Object.assign(error, { responseData: err, status: res.status });
@@ -154,13 +242,16 @@ export const api = {
 
   /* Token helpers */
   storeTokens: (token: string, refreshToken?: string) => {
-    localStorage.setItem(TOKEN_KEY, token);
-    if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
-    localStorage.removeItem("rider_token");
+    /* Store access token in sessionStorage; refresh token in localStorage */
+    sessionSet(token);
+    if (refreshToken) localSet(refreshToken);
+    /* Erase any stale access token from localStorage (legacy migration) */
+    try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem("rider_token"); } catch {}
   },
   clearTokens,
   getToken,
   getRefreshToken,
+  registerLogoutCallback,
 
   /* Rider */
   getMe:        (signal?: AbortSignal) => apiFetch("/rider/me", signal ? { signal } : {}),

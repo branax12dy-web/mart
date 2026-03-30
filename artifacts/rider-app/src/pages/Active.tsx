@@ -226,6 +226,16 @@ export default function Active() {
   const [isOffline, setIsOffline]                  = useState(!navigator.onLine);
   const [riderPos, setRiderPos]                    = useState<{ lat: number; lng: number } | null>(null);
 
+  /* isMountedRef prevents state updates (setRiderPos, setGpsWarning, etc.) from firing
+     after the Active component unmounts — e.g. when a rider navigates away while the
+     geolocation watchPosition callback is still in-flight. Without this guard,
+     React would log "Can't perform a state update on an unmounted component". */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   type QueuedUpdate = { kind: "location" | "status"; run: () => Promise<unknown> };
   const pendingUpdatesRef                          = useRef<QueuedUpdate[]>([]);
   /* Replace or add queued updates — deduplicate by kind to keep only latest */
@@ -318,6 +328,8 @@ export default function Active() {
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        /* Guard: stop all state updates if the component has already unmounted */
+        if (!isMountedRef.current) return;
         setRiderPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
@@ -327,11 +339,11 @@ export default function Active() {
         const accuracy = pos.coords.accuracy;
         const altitude = pos.coords.altitude;
         if (accuracy !== null && accuracy < 1) {
-          setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
+          if (isMountedRef.current) setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
           return;
         }
         if (altitude !== null && altitude === 0 && accuracy !== null && accuracy < 5) {
-          setGpsWarningWithRef("Suspicious GPS signal detected. Please disable mock location apps.");
+          if (isMountedRef.current) setGpsWarningWithRef("Suspicious GPS signal detected. Please disable mock location apps.");
           return;
         }
 
@@ -340,8 +352,9 @@ export default function Active() {
           longitude: pos.coords.longitude,
           accuracy:  pos.coords.accuracy,
         }).then(() => {
-          if (gpsWarningRef.current) setGpsWarningWithRef(null);
+          if (isMountedRef.current && gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
+          if (!isMountedRef.current) return;
           const msg = err.message || "Location update failed";
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("gps");
           setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
@@ -353,6 +366,8 @@ export default function Active() {
         }
       },
       (geoErr) => {
+        /* Guard: skip error state update after unmount */
+        if (!isMountedRef.current) return;
         setGpsWarningWithRef(`GPS unavailable: ${geoErr.message}`);
       },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },

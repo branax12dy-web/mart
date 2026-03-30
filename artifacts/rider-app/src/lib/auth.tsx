@@ -8,10 +8,15 @@ export interface AuthUser {
   createdAt?: string; lastLoginAt?: string;
   stats: { deliveriesToday: number; earningsToday: number; totalDeliveries: number; totalEarnings: number; rating?: number };
   cnic?: string; city?: string; address?: string; emergencyContact?: string;
-  vehicleType?: string; vehiclePlate?: string;
+  vehicleType?: string; vehiclePlate?: string; vehiclePhoto?: string;
   vehicleRegNo?: string; drivingLicense?: string;
   bankName?: string; bankAccount?: string; bankAccountTitle?: string;
   twoFactorEnabled?: boolean;
+  /** Document photo URLs — uploaded separately for admin verification */
+  cnicDocUrl?: string | null;
+  licenseDocUrl?: string | null;
+  /** Registration document photo URL */
+  regDocUrl?: string | null;
 }
 
 interface AuthCtx {
@@ -36,8 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshFailCountRef = useRef(0);
 
   useEffect((): (() => void) | void => {
-    /* Try new namespaced key first, fall back to legacy key */
-    const t = localStorage.getItem("ajkmart_rider_token") || localStorage.getItem("rider_token");
+    /* Try sessionStorage first (new approach), fall back to localStorage for existing sessions */
+    const t = api.getToken();
     if (!t) { setLoading(false); return; }
 
     setToken(t);
@@ -45,24 +50,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.getMe(controller.signal).then(u => {
       setUser(u);
       refreshFailCountRef.current = 0;
-      /* Migrate legacy key to new key on successful load */
-      if (!localStorage.getItem("ajkmart_rider_token")) {
-        localStorage.setItem("ajkmart_rider_token", t);
-        localStorage.removeItem("rider_token");
-      }
     }).catch((err: unknown) => {
-      /* Ignore AbortError — component unmounted before fetch completed */
       if (err instanceof Error && err.name === "AbortError") return;
       api.clearTokens();
+      setToken(null);
     }).finally(() => setLoading(false));
     return () => controller.abort();
   }, []);
 
-  /* Single logout-event listener for the full lifetime of the auth context */
+  /* Register module-level logout callback so api.ts can trigger logout directly
+     without relying only on the CustomEvent system. Also keep the CustomEvent
+     listener as a secondary mechanism (it's useful for cross-tab scenarios). */
   useEffect(() => {
-    const handleLogout = () => { setToken(null); setUser(null); };
-    window.addEventListener("ajkmart:logout", handleLogout);
-    return () => window.removeEventListener("ajkmart:logout", handleLogout);
+    const clearAuth = () => { setToken(null); setUser(null); };
+
+    const unregister = api.registerLogoutCallback(clearAuth);
+
+    const handleLogoutEvent = () => clearAuth();
+    window.addEventListener("ajkmart:logout", handleLogoutEvent);
+
+    return () => {
+      unregister();
+      window.removeEventListener("ajkmart:logout", handleLogoutEvent);
+    };
   }, []);
 
   const login = (t: string, u: AuthUser, refreshToken?: string) => {
@@ -74,10 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     const refreshTok = api.getRefreshToken();
-    if (refreshTok) api.logout(refreshTok).catch((err: Error) => {
-      console.warn("[auth] Server logout failed (token already expired or network):", err.message);
-    });
-    else api.clearTokens();
+    if (refreshTok) {
+      api.logout(refreshTok).catch((err: Error) => {
+        console.warn("[auth] Server logout failed (token already expired or network):", err.message);
+      });
+    } else {
+      api.clearTokens();
+    }
     setToken(null);
     setUser(null);
   };
@@ -90,8 +103,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       refreshFailCountRef.current += 1;
       if (refreshFailCountRef.current >= 3) {
-        /* Show a subtle toast on persistent failure — dispatch a custom event that
-           any page can listen to. We don't import showToast here to avoid coupling. */
         window.dispatchEvent(new CustomEvent("ajkmart:refresh-user-failed", {
           detail: { count: refreshFailCountRef.current },
         }));

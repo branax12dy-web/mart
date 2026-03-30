@@ -813,8 +813,10 @@ export default function Wallet() {
           onClose={() => setShowWithdraw(false)}
           onSuccess={() => {
             qc.invalidateQueries({ queryKey: ["rider-wallet"] });
-            refreshUser();
-            showToast(T("withdrawalSubmitted"));
+            refreshUser().catch(() => {});
+            /* Show "Under Review" message so rider knows the request is pending admin review
+               and their balance will only be deducted after the request is approved. */
+            showToast(`${T("withdrawalSubmitted")} ${T("underReview")}`, "success");
           }}
         />
       )}

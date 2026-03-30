@@ -666,17 +666,17 @@ export async function riderAuth(req: Request, res: Response, next: NextFunction)
   if (!user) { res.status(401).json({ error: "Account not found." }); return; }
   if (user.isBanned) {
     writeAuthAuditLog("auth_denied_banned", { userId: user.id, ip, metadata: { url: req.url, role: "rider" } });
-    res.status(403).json({ error: "Account is banned." }); return;
+    res.status(403).json({ code: "AUTH_REQUIRED", error: "Account is banned." }); return;
   }
   if (!user.isActive) {
     writeAuthAuditLog("auth_denied_inactive", { userId: user.id, ip, metadata: { url: req.url, role: "rider" } });
-    res.status(403).json({ error: "Account is inactive." }); return;
+    res.status(403).json({ code: "AUTH_REQUIRED", error: "Account is inactive." }); return;
   }
 
   /* Token version check — invalidates access JWTs on logout/ban/role change */
   if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
     writeAuthAuditLog("auth_denied_token_revoked", { userId: user.id, ip, metadata: { url: req.url, role: "rider" } });
-    res.status(401).json({ error: "Session revoked. Please log in again." });
+    res.status(401).json({ code: "TOKEN_EXPIRED", error: "Session revoked. Please log in again." });
     return;
   }
 
@@ -684,7 +684,7 @@ export async function riderAuth(req: Request, res: Response, next: NextFunction)
   const dbRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
   if (!dbRoles.includes("rider")) {
     writeAuthAuditLog("auth_denied_role", { userId: user.id, ip, metadata: { required: "rider", actual: user.roles } });
-    res.status(403).json({ error: "Access denied. Rider account required." });
+    res.status(403).json({ code: "ROLE_DENIED", error: "Access denied. Rider account required." });
     return;
   }
 
