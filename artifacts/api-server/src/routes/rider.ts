@@ -31,11 +31,21 @@ const profileSchema = z.object({
 });
 
 const MAX_PROOF_PHOTO_BYTES = 5 * 1024 * 1024;
+/* Base64 encoding inflates data by ~33%, so the encoded payload can be up to 4/3 * rawBytes.
+   We measure only the base64 payload (after the data URI prefix) for accuracy. */
+const MAX_PROOF_PHOTO_BASE64_LEN = Math.ceil(MAX_PROOF_PHOTO_BYTES * (4 / 3));
+
+function proofPhotoWithinLimit(dataUri: string): boolean {
+  const commaIdx = dataUri.indexOf(",");
+  const payload = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
+  return payload.length <= MAX_PROOF_PHOTO_BASE64_LEN;
+}
+
 const orderStatusSchema = z.object({
   status: z.enum(["out_for_delivery", "picked_up", "delivered", "cancelled"]),
   proofPhoto: z.string()
     .refine(v => v.startsWith("data:image/"), "proofPhoto must be a base64 data URI (data:image/...)")
-    .refine(v => v.length <= MAX_PROOF_PHOTO_BYTES, "proofPhoto exceeds 5 MB limit")
+    .refine(proofPhotoWithinLimit, "proofPhoto exceeds 5 MB limit")
     .optional(),
 });
 
@@ -102,10 +112,15 @@ async function riderAuth(req: Request, res: Response, next: NextFunction) {
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
   if (!user) { res.status(401).json({ error: "User not found" }); return; }
-  if (!user.isActive && !(user.isRestricted || (user.cancelCount ?? 0) > 0)) {
+  if (user.isBanned) { res.status(403).json({ error: "Account is banned" }); return; }
+  if (!user.isActive) {
     res.status(403).json({ error: "Account is inactive" }); return;
   }
-  if (user.isBanned) { res.status(403).json({ error: "Account is banned" }); return; }
+
+  /* Token version check — invalidates all outstanding JWTs after logout / password change / ban */
+  if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
+    res.status(401).json({ error: "Session revoked. Please log in again." }); return;
+  }
 
   /* Enforce rider role — check BOTH the JWT claim and the DB roles field */
   const dbRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
@@ -178,8 +193,13 @@ router.get("/me", async (req, res) => {
 router.patch("/online", async (req, res) => {
   const parsed = onlineSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
-  const riderId = req.riderId!;
+  const riderId   = req.riderId!;
+  const riderUser = req.riderUser!;
   const { isOnline } = parsed.data;
+  /* Block pending-approval riders from going online */
+  if (isOnline && (riderUser.approvalStatus ?? "pending") !== "approved") {
+    res.status(403).json({ error: "Your account is pending re-verification. You cannot go online until an admin approves your profile." }); return;
+  }
   await db.update(usersTable).set({ isOnline: !!isOnline, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
   res.json({ success: true, isOnline: !!isOnline });
 });
@@ -189,6 +209,7 @@ router.patch("/profile", async (req, res) => {
   const parsed = profileSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" }); return; }
   const riderId = req.riderId!;
+  const currentUser = req.riderUser!;
   const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, vehicleRegNo, drivingLicense, bankName, bankAccount, bankAccountTitle, avatar } = parsed.data;
   const updates: any = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
@@ -211,17 +232,38 @@ router.patch("/profile", async (req, res) => {
     }
     updates.avatar = avatar;
   }
+
+  /* Detect sensitive identity field changes — reset approval to pending so admin can re-verify */
+  const cnicChanged           = cnic !== undefined && cnic !== currentUser.cnic;
+  const drivingLicenseChanged = drivingLicense !== undefined && drivingLicense !== currentUser.drivingLicense;
+  if (cnicChanged || drivingLicenseChanged) {
+    updates.approvalStatus = "pending";
+    updates.isOnline = false;
+  }
+
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, riderId)).returning();
+
+  if (cnicChanged || drivingLicenseChanged) {
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: riderId,
+      title: "Re-verification Required",
+      body: "Your identity documents have been updated. Your account is pending admin review before you can accept orders again.",
+      type: "system", icon: "shield-outline",
+    }).catch(() => {});
+  }
+
   res.json({
     id: user.id, name: user.name, phone: user.phone, email: user.email,
     avatar: user.avatar,
     role: user.role, isOnline: user.isOnline, walletBalance: safeNum(user.walletBalance),
+    approvalStatus: user.approvalStatus,
     cnic: user.cnic, address: user.address, city: user.city,
     emergencyContact: user.emergencyContact,
     vehicleType: user.vehicleType, vehiclePlate: user.vehiclePlate,
     vehicleRegNo: user.vehicleRegNo, drivingLicense: user.drivingLicense,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
     createdAt: user.createdAt, lastLoginAt: user.lastLoginAt,
+    ...(cnicChanged || drivingLicenseChanged ? { pendingVerification: true } : {}),
   });
 });
 
@@ -357,6 +399,9 @@ router.post("/orders/:id/accept", async (req, res) => {
 
   if (riderUser.isRestricted) {
     res.status(403).json({ error: "Your account is restricted. You cannot accept new orders. Contact support for assistance." }); return;
+  }
+  if ((riderUser.approvalStatus ?? "pending") !== "approved") {
+    res.status(403).json({ error: "Your account is pending re-verification. You cannot accept orders until an admin approves your profile." }); return;
   }
 
   const s = await getPlatformSettings();
@@ -709,6 +754,9 @@ router.post("/rides/:id/accept", async (req, res) => {
 
   if (riderUser.isRestricted) {
     res.status(403).json({ error: "Your account is restricted. You cannot accept new rides. Contact support for assistance." }); return;
+  }
+  if ((riderUser.approvalStatus ?? "pending") !== "approved") {
+    res.status(403).json({ error: "Your account is pending re-verification. You cannot accept rides until an admin approves your profile." }); return;
   }
 
   // Check max simultaneous deliveries limit
@@ -1314,9 +1362,15 @@ router.patch("/notifications/:id/read", async (req, res) => {
     if (!id || typeof id !== "string") {
       return res.status(400).json({ error: "Invalid notification id" });
     }
-    const result = await db.update(notificationsTable).set({ isRead: true }).where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, riderId)));
-    const rowCount = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
-    if (rowCount === 0) {
+    await db.update(notificationsTable)
+      .set({ isRead: true })
+      .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, riderId)));
+    /* Confirm the update with a follow-up SELECT — avoids relying on fragile rowCount/changes fields */
+    const [updated] = await db.select({ id: notificationsTable.id, isRead: notificationsTable.isRead })
+      .from(notificationsTable)
+      .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, riderId)))
+      .limit(1);
+    if (!updated) {
       return res.status(404).json({ error: "Notification not found" });
     }
     return res.json({ success: true });
@@ -1393,11 +1447,25 @@ router.post("/wallet/deposit", async (req, res) => {
   res.json({ success: true, txId, amount: amt });
 });
 
+/* Per-rider in-memory rate limiter for GPS location endpoint: max 1 request per 5 seconds */
+const locationRateStore = new Map<string, number>();
+const LOCATION_RATE_INTERVAL_MS = 5_000;
+
 /* ── PATCH /rider/location — GPS heartbeat: rider sends periodic location updates ── */
 router.patch("/location", async (req, res) => {
   const parsed = locationSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid location data" }); return; }
   const riderId = req.riderId!;
+
+  /* Per-rider rate limit: 1 update per 5 seconds */
+  const now = Date.now();
+  const lastSent = locationRateStore.get(riderId) ?? 0;
+  if (now - lastSent < LOCATION_RATE_INTERVAL_MS) {
+    res.status(429).json({ error: "Location update rate limit exceeded. Please wait before sending another update.", retryAfterMs: LOCATION_RATE_INTERVAL_MS - (now - lastSent) });
+    return;
+  }
+  locationRateStore.set(riderId, now);
+
   const { latitude, longitude, accuracy } = parsed.data;
 
   const settings = await getCachedSettings();

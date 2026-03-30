@@ -48,14 +48,21 @@ async function refreshTorExitNodes(): Promise<void> {
     const resp = await fetch("https://check.torproject.org/torbulkexitlist", {
       signal: AbortSignal.timeout(10_000),
     });
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      const msg = `TOR list HTTP error ${resp.status}`;
+      console.warn(`[TOR] Failed to refresh exit node list: ${msg}`);
+      addSecurityEvent({ type: "tor_list_refresh_failed", ip: "server", details: msg, severity: "low" });
+      return;
+    }
     const text = await resp.text();
     const ips = text.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"));
     torExitNodes = new Set(ips);
     torListFetchedAt = Date.now();
     console.log(`[TOR] Refreshed exit node list: ${torExitNodes.size} nodes`);
   } catch (err: any) {
-    console.warn(`[TOR] Failed to fetch exit node list: ${err.message}`);
+    const msg = err?.message ?? "unknown error";
+    console.warn(`[TOR] Failed to fetch exit node list: ${msg}`);
+    addSecurityEvent({ type: "tor_list_refresh_failed", ip: "server", details: `TOR list fetch error: ${msg}`, severity: "low" });
   }
 }
 
@@ -86,12 +93,18 @@ async function isVpnOrProxy(ip: string): Promise<boolean> {
     const resp = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,proxy,hosting`, {
       signal: AbortSignal.timeout(5_000),
     });
-    if (!resp.ok) return false;
+    if (!resp.ok) {
+      console.warn(`[VPN] Check failed for IP ${ip}: HTTP ${resp.status} — flagging as check_failed`);
+      addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check HTTP error ${resp.status}`, severity: "low" });
+      return false;
+    }
     const data = await resp.json() as any;
     const isVpn = data.status === "success" && (data.proxy === true || data.hosting === true);
     vpnCache.set(ip, { isVpn, cachedAt: Date.now() });
     return isVpn;
-  } catch {
+  } catch (err: any) {
+    console.warn(`[VPN] Check failed for IP ${ip}: ${err?.message ?? "unknown error"} — flagging as check_failed`);
+    addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check error: ${err?.message ?? "unknown"}`, severity: "low" });
     return false;
   }
 }
@@ -287,8 +300,18 @@ export function decodeUserToken(token: string): { userId: string; phone: string;
   return { userId: v.userId, phone: v.phone, issuedAt: (raw?.iat ?? 0) * 1000 };
 }
 
-export function isTokenExpired(_issuedAt: number, _sessionDays: number): boolean {
-  return false;
+/**
+ * TTL-based session expiry check for legacy session-day tokens.
+ * For access JWTs, revocation is handled via `tokenVersion` in `riderAuth`:
+ * whenever a user changes password or logs out, `tokenVersion` is incremented
+ * in the DB, and any JWT carrying a stale version is immediately rejected.
+ * This function covers the additional wall-clock TTL guard for older-style
+ * session tokens that may not carry a `tokenVersion` claim.
+ */
+export function isTokenExpired(issuedAt: number, sessionDays: number): boolean {
+  const issuedAtMs = issuedAt < 1e12 ? issuedAt * 1000 : issuedAt;
+  const expiryMs = issuedAtMs + sessionDays * 24 * 60 * 60 * 1000;
+  return Date.now() > expiryMs;
 }
 
 /* ══════════════════════════════════════════════════════════════

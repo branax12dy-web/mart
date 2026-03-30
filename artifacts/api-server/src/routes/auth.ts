@@ -1028,7 +1028,13 @@ router.post("/set-password", async (req, res) => {
   const check = validatePasswordStrength(password);
   if (!check.ok) { res.status(400).json({ error: check.message }); return; }
 
-  await db.update(usersTable).set({ passwordHash: hashPassword(password), updatedAt: new Date() }).where(eq(usersTable.id, userId));
+  /* Bump tokenVersion to invalidate all outstanding JWTs on password change */
+  await db.update(usersTable).set({
+    passwordHash: hashPassword(password),
+    tokenVersion: sql`token_version + 1`,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, userId));
+  writeAuthAuditLog("password_changed", { userId, ip: getClientIp(req), userAgent: req.headers["user-agent"] ?? undefined });
   res.json({ success: true, message: "Password set ho gaya" });
 });
 

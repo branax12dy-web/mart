@@ -135,7 +135,9 @@ export default function Login() {
       if (rem <= 0) {
         setLockoutUntil(null);
         setFailedAttempts(0);
-        try { sessionStorage.removeItem("rider_lockout_until"); sessionStorage.removeItem("rider_login_attempts"); } catch {}
+        try { sessionStorage.removeItem("rider_lockout_until"); sessionStorage.removeItem("rider_login_attempts"); } catch (ssErr) {
+            console.warn("[Login] Could not clear lockout keys from sessionStorage:", ssErr);
+          }
       }
     }, 1000);
     return () => clearInterval(interval);
@@ -194,12 +196,18 @@ export default function Login() {
       }
       setFailedAttempts(prev => {
         const next = prev + 1;
-        try { sessionStorage.setItem("rider_login_attempts", String(next)); } catch {}
+        try { sessionStorage.setItem("rider_login_attempts", String(next)); } catch (ssErr) {
+          console.warn("[Login] Could not persist login attempt count to sessionStorage:", ssErr);
+        }
         if (next >= auth.lockoutMaxAttempts) {
           const until = Date.now() + auth.lockoutDurationSec * 1000;
           setLockoutUntil(until);
           setLockoutRemaining(auth.lockoutDurationSec);
-          try { sessionStorage.setItem("rider_lockout_until", String(until)); } catch {}
+          try { sessionStorage.setItem("rider_lockout_until", String(until)); } catch (ssErr) {
+            console.warn("[Login] Could not persist lockout expiry to sessionStorage — lockout state will not survive page refresh:", ssErr);
+            /* Surface to user: lockout is applied now but won't persist across tab reloads */
+            setError(T("accountLockedMsg") + " (Note: If you refresh this page, the timer may reset.)");
+          }
         }
         return next;
       });
@@ -314,10 +322,18 @@ export default function Login() {
     if (!checkRiderRole(postRes)) { setGlobalTwoFaPending(false); return; }
     if (postRes.pendingApproval) { setStep("pending"); setGlobalTwoFaPending(false); return; }
     api.storeTokens(finalToken, refreshTk);
-    const profile = await api.getMe();
+    let profile;
+    try {
+      profile = await api.getMe();
+    } catch (fetchErr: unknown) {
+      api.clearTokens();
+      setTwoFaError(fetchErr instanceof Error ? fetchErr.message : T("loginFailed"));
+      setGlobalTwoFaPending(false);
+      return;
+    }
     login(finalToken, profile, refreshTk);
     setGlobalTwoFaPending(false);
-  }, [twoFaPending, login, setGlobalTwoFaPending]);
+  }, [twoFaPending, login, setGlobalTwoFaPending, T]);
 
   const handle2faVerify = useCallback(async (code: string) => {
     if (!twoFaPending) return;

@@ -103,11 +103,24 @@ function ElapsedBadge({ startIso }: { startIso?: string | null }) {
   );
 }
 
+function buildMapsDeepLink(lat: number, lng: number): string {
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  if (isIOS) {
+    return `comgooglemaps://?daddr=${lat},${lng}&directionsmode=driving`;
+  }
+  const isAndroid = /Android/i.test(ua);
+  if (isAndroid) {
+    return `geo:${lat},${lng}?q=${lat},${lng}`;
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+}
+
 function NavButton({ label, lat, lng, address, color = "blue" }: {
   label: string; lat?: number | null; lng?: number | null; address?: string | null; color?: "blue" | "green" | "orange";
 }) {
   const href = lat && lng
-    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`
+    ? buildMapsDeepLink(lat, lng)
     : address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : null;
@@ -309,6 +322,19 @@ export default function Active() {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
+        /* Client-side spoof heuristic: implausibly high accuracy (< 1m) or zero altitude
+           are common signals of mock location apps on Android */
+        const accuracy = pos.coords.accuracy;
+        const altitude = pos.coords.altitude;
+        if (accuracy !== null && accuracy < 1) {
+          setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
+          return;
+        }
+        if (altitude !== null && altitude === 0 && accuracy !== null && accuracy < 5) {
+          setGpsWarningWithRef("Suspicious GPS signal detected. Please disable mock location apps.");
+          return;
+        }
+
         const doUpdate = () => api.updateLocation({
           latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -317,7 +343,7 @@ export default function Active() {
           if (gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
           const msg = err.message || "Location update failed";
-          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
+          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("gps");
           setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
         if (!navigator.onLine) {

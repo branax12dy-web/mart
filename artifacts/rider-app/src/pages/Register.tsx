@@ -398,8 +398,9 @@ export default function Register() {
           if (!profile) {
             try {
               profile = await api.getMe() as AuthUser;
-            } catch {
-              /* getMe failed — treat as pending instead of completing login with partial data */
+            } catch (getMeErr: unknown) {
+              /* getMe failed after OTP verify — treat as pending to avoid partial login state */
+              console.warn("[Register] getMe failed after OTP verify:", getMeErr instanceof Error ? getMeErr.message : getMeErr);
               setCompleted(true);
               return;
             }
@@ -746,7 +747,9 @@ export default function Register() {
                     try {
                       const res = await api.sendOtp(formatPhoneForApi(phone));
                       if (res.otp) setDevOtp(res.otp);
-                    } catch {}
+                    } catch (e: unknown) {
+                      setError(e instanceof Error ? e.message : "Failed to send phone OTP. Please try again.");
+                    }
                   }}
                     className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors ${verifyChannel === "phone" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                     {T("verifyViaPhone")}
@@ -757,7 +760,9 @@ export default function Register() {
                     try {
                       const res = await api.sendEmailOtp(email.trim());
                       if (res.otp) setDevOtp(res.otp);
-                    } catch {}
+                    } catch (e: unknown) {
+                      setError(e instanceof Error ? e.message : "Failed to send email OTP. Please try again.");
+                    }
                   }}
                     className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors ${verifyChannel === "email" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                     {T("verifyViaEmail")}

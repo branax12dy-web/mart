@@ -68,6 +68,17 @@ function OrderTypeIcon({ type }: { type: string }) {
   return <Package size={20} className="text-indigo-500"/>;
 }
 
+function buildMapsDeepLink(lat: number | null | undefined, lng: number | null | undefined, address?: string | null): string {
+  if (lat != null && lng != null) {
+    const ua = navigator.userAgent || "";
+    if (/iPhone|iPad|iPod/i.test(ua)) return `comgooglemaps://?daddr=${lat},${lng}&directionsmode=driving`;
+    if (/Android/i.test(ua))          return `geo:${lat},${lng}?q=${lat},${lng}`;
+    return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  }
+  if (address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  return "#";
+}
+
 function RideTypeIcon({ type }: { type: string }) {
   if (type === "car")          return <Car  size={20} className="text-blue-600"/>;
   if (type === "rickshaw")     return <Bike size={20} className="text-yellow-600"/>;
@@ -297,6 +308,18 @@ export default function Home() {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
+        /* Client-side spoof heuristic: implausibly high accuracy (< 1m) or zero altitude
+           are common signals of mock location apps on Android */
+        const accuracy = pos.coords.accuracy;
+        const altitude = pos.coords.altitude;
+        if (accuracy !== null && accuracy < 1) {
+          setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
+          return;
+        }
+        if (altitude !== null && altitude === 0 && accuracy !== null && accuracy < 5) {
+          setGpsWarningWithRef("Suspicious GPS signal detected. Please disable mock location apps.");
+          return;
+        }
         api.updateLocation({
           latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -305,7 +328,7 @@ export default function Home() {
           if (gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
           const msg = err.message || "Location update failed";
-          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock location");
+          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("gps");
           setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
         });
       },
@@ -805,7 +828,7 @@ export default function Home() {
                       </div>
                       <div className="flex gap-2 mt-3">
                         {o.deliveryAddress && (
-                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.deliveryAddress)}`}
+                          <a href={buildMapsDeepLink(null, null, o.deliveryAddress)}
                             target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-blue-100 transition-colors">
                             <MapPin size={14}/>
@@ -831,9 +854,7 @@ export default function Home() {
                     const offeredFare  = r.offeredFare  ?? r.fare;
                     const effectiveFare = isBargain ? offeredFare : r.fare;
                     const earnings     = effectiveFare * (config.finance.riderEarningPct / 100);
-                    const mapsUrl = (r.pickupLat && r.pickupLng)
-                      ? `https://www.google.com/maps/dir/?api=1&origin=${r.pickupLat},${r.pickupLng}&destination=${r.dropLat},${r.dropLng}&travelmode=driving`
-                      : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickupAddress)}&destination=${encodeURIComponent(r.dropAddress)}&travelmode=driving`;
+                    const mapsUrl = buildMapsDeepLink(r.dropLat, r.dropLng, r.dropAddress || r.pickupAddress);
                     const svcName = SVC_NAMES[r.type] ?? r.type?.replace(/_/g, " ") ?? "Ride";
                     const rideDistKm = r.distance ? parseFloat(r.distance) : null;
                     const etaMin = rideDistKm ? Math.max(1, Math.round((rideDistKm / 30) * 60)) : null;

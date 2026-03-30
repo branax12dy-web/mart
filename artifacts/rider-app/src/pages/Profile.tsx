@@ -281,7 +281,8 @@ export default function Profile() {
     { key: "vehiclePlate", label: T("vehiclePlate"),   val: user?.vehiclePlate },
     { key: "bankName",     label: T("bankDetails"),    val: user?.bankName },
   ];
-  const completionFilled = completionFieldMap.filter(f => Boolean(f.val));
+  /* Explicitly check for non-null AND non-empty-string to avoid false positives from empty string fields */
+  const completionFilled = completionFieldMap.filter(f => f.val !== null && f.val !== undefined && f.val !== "");
   const completionPct    = Math.round((completionFilled.length / completionFieldMap.length) * 100);
   const missingCount     = completionFieldMap.length - completionFilled.length;
 
