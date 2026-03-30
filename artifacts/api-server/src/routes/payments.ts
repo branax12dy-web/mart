@@ -616,6 +616,7 @@ router.get("/status/:txnRef", async (req, res) => {
     id: ordersTable.id,
     paymentStatus: ordersTable.paymentStatus,
     updatedAt: ordersTable.updatedAt,
+    total: ordersTable.total,
   }).from(ordersTable).where(eq(ordersTable.txnRef, txnRef)).limit(1);
 
   if (!order) {
@@ -637,7 +638,7 @@ router.get("/status/:txnRef", async (req, res) => {
     expired: "Payment session expired",
   };
 
-  res.json({ txnRef, status, message: messages[status] || status });
+  res.json({ txnRef, status, message: messages[status] || status, amount: order?.total ? parseFloat(String(order.total)) : null });
 });
 
 export default router;

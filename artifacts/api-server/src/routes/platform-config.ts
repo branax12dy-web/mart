@@ -275,6 +275,14 @@ router.get("/", async (req, res) => {
         facebookAppId:          s["facebook_app_id"] ?? "",
       };
     })(),
+    cities: (() => {
+      const raw = s["service_cities"] ?? "";
+      if (raw.trim()) {
+        const parsed = raw.split(",").map((c: string) => c.trim()).filter(Boolean);
+        if (parsed.length > 0) return parsed;
+      }
+      return ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Poonch","Neelum Valley","Rawalpindi","Islamabad","Other"];
+    })(),
     payment: {
       methods:              paymentMethods,
       currency:             "PKR",

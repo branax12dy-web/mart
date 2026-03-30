@@ -48,9 +48,19 @@ type PayMethod = {
 type DepositStep = "method" | "details" | "amount" | "confirm" | "done";
 
 function TxItem({ tx }: { tx: any }) {
-  const isPending  = tx.type === "deposit" && (!tx.reference || tx.reference === "pending" || tx.reference.startsWith("pending:"));
-  const isApproved = tx.type === "deposit" && tx.reference?.startsWith("approved:");
-  const isRejected = tx.type === "deposit" && tx.reference?.startsWith("rejected:");
+  const depositStatus: string | undefined = tx.status;
+  const isPending  = tx.type === "deposit" && (
+    depositStatus === "pending" ||
+    (!depositStatus && (!tx.reference || tx.reference === "pending" || tx.reference.startsWith("pending:")))
+  );
+  const isApproved = tx.type === "deposit" && (
+    depositStatus === "approved" ||
+    (!depositStatus && tx.reference?.startsWith("approved:"))
+  );
+  const isRejected = tx.type === "deposit" && (
+    depositStatus === "rejected" ||
+    (!depositStatus && tx.reference?.startsWith("rejected:"))
+  );
   const isCredit   = tx.type === "credit" || isApproved;
   const date = new Date(tx.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
   const time = new Date(tx.createdAt).toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });

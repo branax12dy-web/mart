@@ -29,6 +29,10 @@ import { sendOtp, verifyOtp } from "@workspace/api-client-react";
 const C = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
+if (typeof __DEV__ === "undefined") {
+  throw new Error("__DEV__ is not defined — Metro bundler misconfiguration");
+}
+
 type LoginMethod = "phone" | "email" | "username" | "magic" | "google" | "facebook";
 type Step = "method" | "otp" | "totp" | "pending" | "complete-profile";
 
@@ -107,6 +111,8 @@ export default function AuthScreen() {
   const [useBackup, setUseBackup] = useState(false);
   const [backupCode, setBackupCode] = useState("");
 
+  const loginResultRef = useRef<((res: any) => Promise<void>) | null>(null);
+
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
@@ -160,6 +166,49 @@ export default function AuthScreen() {
       router.replace("/(tabs)");
     }
   };
+  loginResultRef.current = handleLoginResult;
+
+  useEffect(() => {
+    const handleUrl = async (event: { url: string }) => {
+      try {
+        const parsed = Linking.parse(event.url);
+        const magicToken = parsed.queryParams?.token as string | undefined;
+        if (!magicToken) return;
+        setLoading(true);
+        try {
+          const res = await authPost("/auth/magic-link/verify", { token: magicToken });
+          if (loginResultRef.current) await loginResultRef.current(res);
+        } catch (e: any) {
+          setError(e.message || "Magic link verification failed.");
+        }
+        setLoading(false);
+      } catch { /* ignore malformed URLs */ }
+    };
+    const subscription = Linking.addEventListener("url", handleUrl);
+    Linking.getInitialURL().then(url => { if (url) handleUrl({ url }); }).catch(() => {});
+    return () => subscription.remove();
+  }, []);
+
+  const getDeviceFingerprint = async (): Promise<string> => {
+    try {
+      const SecureStore = await import("expo-secure-store");
+      const existing = await SecureStore.getItemAsync("device_fingerprint");
+      if (existing) return existing;
+      const Device = await import("expo-device");
+      const parts = [
+        Platform.OS,
+        Device.osName ?? Platform.OS,
+        Device.osVersion ?? "",
+        Device.modelName ?? Device.modelId ?? "",
+        Device.deviceName ?? "",
+      ];
+      const fp = parts.filter(Boolean).join("_").replace(/\s+/g, "-").slice(0, 128);
+      await SecureStore.setItemAsync("device_fingerprint", fp);
+      return fp;
+    } catch {
+      return `${Platform.OS}_${Platform.Version}_unknown`;
+    }
+  };
 
   const handleSendPhoneOtp = async () => {
     clearError();
@@ -168,7 +217,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const res = await sendOtp({ phone });
-      if (res.otp) setDevOtp(res.otp);
+      if (__DEV__ === true && res.otp) setDevOtp(res.otp);
       setResendCooldown(60);
       slide(); setStep("otp");
     } catch (e: any) {
@@ -185,7 +234,8 @@ export default function AuthScreen() {
     if (!otp || otp.length < 4) { setError("Please enter the OTP"); return; }
     setLoading(true);
     try {
-      const res = await verifyOtp({ phone, otp });
+      const fingerprint = await getDeviceFingerprint();
+      const res = await authPost("/auth/verify-otp", { phone, otp, deviceFingerprint: fingerprint });
       await handleLoginResult(res);
     } catch (e: any) { setError(e.message || "Invalid OTP."); }
     setLoading(false);
@@ -203,7 +253,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const res = await authPost("/auth/send-email-otp", { email });
-      if (res.otp) setEmailDevOtp(res.otp);
+      if (__DEV__ === true && res.otp) setEmailDevOtp(res.otp);
       setEmailResendCooldown(60);
       slide(); setStep("otp");
     } catch (e: any) { setError(e.message || "Could not send OTP."); }
@@ -215,7 +265,8 @@ export default function AuthScreen() {
     if (!emailOtp || emailOtp.length < 6) { setError("Please enter the 6-digit OTP"); return; }
     setLoading(true);
     try {
-      const res = await authPost("/auth/verify-email-otp", { email, otp: emailOtp });
+      const fingerprint = await getDeviceFingerprint();
+      const res = await authPost("/auth/verify-email-otp", { email, otp: emailOtp, deviceFingerprint: fingerprint });
       await handleLoginResult(res);
     } catch (e: any) { setError(e.message || "Invalid OTP."); }
     setLoading(false);
@@ -227,7 +278,8 @@ export default function AuthScreen() {
     if (!password || password.length < 6) { setError("Please enter your password"); return; }
     setLoading(true);
     try {
-      const res = await authPost("/auth/login/username", { username, password });
+      const fingerprint = await getDeviceFingerprint();
+      const res = await authPost("/auth/login/username", { username, password, deviceFingerprint: fingerprint });
       await handleLoginResult(res);
     } catch (e: any) { setError(e.message || "Invalid username or password."); }
     setLoading(false);
@@ -309,19 +361,6 @@ export default function AuthScreen() {
       setError("Biometric not available.");
     }
     setBiometricLoading(false);
-  };
-
-  const getDeviceFingerprint = async (): Promise<string> => {
-    try {
-      const SecureStore = await import("expo-secure-store");
-      const existing = await SecureStore.getItemAsync("device_fingerprint");
-      if (existing) return existing;
-      const fp = `${Platform.OS}_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-      await SecureStore.setItemAsync("device_fingerprint", fp);
-      return fp;
-    } catch {
-      return `${Platform.OS}_${Date.now().toString(36)}`;
-    }
   };
 
   const handleTotpVerify = async () => {
@@ -606,7 +645,7 @@ export default function AuthScreen() {
                 value={otp} onChangeText={v => { setOtp(v); clearError(); }}
                 placeholder="6-digit OTP" placeholderTextColor={C.textMuted}
                 keyboardType="number-pad" maxLength={6} autoFocus />
-              {devOtp ? (
+              {__DEV__ === true && devOtp ? (
                 <View style={styles.devOtpBox}>
                   <Ionicons name="key-outline" size={14} color={C.success} />
                   <Text style={styles.devOtpTxt}>Dev OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{devOtp}</Text></Text>
@@ -641,7 +680,7 @@ export default function AuthScreen() {
                 value={emailOtp} onChangeText={v => { setEmailOtp(v); clearError(); }}
                 placeholder="6-digit OTP" placeholderTextColor={C.textMuted}
                 keyboardType="number-pad" maxLength={6} autoFocus />
-              {emailDevOtp ? (
+              {__DEV__ === true && emailDevOtp ? (
                 <View style={styles.devOtpBox}>
                   <Ionicons name="key-outline" size={14} color={C.success} />
                   <Text style={styles.devOtpTxt}>Dev OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{emailDevOtp}</Text></Text>

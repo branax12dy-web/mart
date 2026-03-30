@@ -51,9 +51,16 @@ router.get("/routes/:id", async (req, res) => {
 ══════════════════════════════════════════════════════ */
 router.post("/subscribe", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const { routeId, studentName, studentClass, paymentMethod = "cash", notes } = req.body;
+  const {
+    routeId, studentName, studentClass, paymentMethod = "cash", notes,
+    shift, startDate: startDateReq, recurring,
+  } = req.body;
   if (!routeId || !studentName || !studentClass) {
     res.status(400).json({ error: "routeId, studentName, studentClass required" }); return;
+  }
+  const validShifts = ["morning", "afternoon", "both"];
+  if (shift && !validShifts.includes(shift)) {
+    res.status(400).json({ error: "shift must be morning, afternoon, or both" }); return;
   }
 
   const [route] = await db.select().from(schoolRoutesTable)
@@ -107,17 +114,36 @@ router.post("/subscribe", customerAuth, async (req, res) => {
     }).catch(() => {});
   }
 
-  /* Next billing = 30 days from now */
-  const startDate        = new Date();
+  /* Resolve start date — default to today, or validate requested date (must be ≥ today) */
+  const today            = new Date();
+  today.setHours(0, 0, 0, 0);
+  let startDate          = new Date(today);
+  if (startDateReq) {
+    const requested = new Date(startDateReq);
+    if (isNaN(requested.getTime())) {
+      res.status(400).json({ error: "Invalid startDate format. Use YYYY-MM-DD." }); return;
+    }
+    if (requested < today) {
+      res.status(400).json({ error: "startDate cannot be in the past" }); return;
+    }
+    startDate = requested;
+  }
   const nextBillingDate  = new Date(startDate);
   nextBillingDate.setDate(nextBillingDate.getDate() + 30);
+
+  /* Build composite notes */
+  const noteParts: string[] = [];
+  if (shift)     noteParts.push(`Shift: ${shift}`);
+  if (recurring === false) noteParts.push("Non-recurring");
+  if (notes?.trim()) noteParts.push(notes.trim());
+  const compositeNotes = noteParts.join(" | ") || null;
 
   const [sub] = await db.insert(schoolSubscriptionsTable).values({
     id: generateId(), userId, routeId, studentName, studentClass,
     monthlyAmount: monthlyAmt.toFixed(2),
     status: "active", paymentMethod,
     startDate, nextBillingDate,
-    notes: notes || null,
+    notes: compositeNotes,
   }).returning();
 
   /* Atomic increment — prevents under-counting under concurrent subscriptions */

@@ -38,7 +38,15 @@ import {
 import type {
   BookRideRequest,
   EstimateFareRequest,
+  SchoolSubscribeRequest,
 } from "@workspace/api-client-react";
+
+type SchoolSubscribeRequestWithNotes = SchoolSubscribeRequest & {
+  notes?: string;
+  shift?: "morning" | "afternoon" | "both";
+  startDate?: string;
+  recurring?: boolean;
+};
 
 const C = Colors.light;
 
@@ -169,6 +177,13 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const [selectedRoute, setSelectedRoute] = useState<any>(null);
   const [schoolStudent, setSchoolStudent] = useState("");
   const [schoolClass, setSchoolClass] = useState("");
+  const [schoolNotes, setSchoolNotes] = useState("");
+  const [schoolShift, setSchoolShift] = useState<"morning" | "afternoon" | "both">("morning");
+  const [schoolStartDate, setSchoolStartDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [schoolRecurring, setSchoolRecurring] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
   const [debtBalance, setDebtBalance] = useState(0);
   const [debtDismissed, setDebtDismissed] = useState(false);
@@ -378,24 +393,49 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
       showToast("Please enter the student's class", "error");
       return;
     }
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(schoolStartDate)) {
+      showToast("Please enter start date as YYYY-MM-DD", "error");
+      return;
+    }
+    const parsedDate = new Date(schoolStartDate);
+    if (isNaN(parsedDate.getTime())) {
+      showToast("Invalid start date", "error");
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (parsedDate < today) {
+      showToast("Start date cannot be in the past", "error");
+      return;
+    }
     setSubscribing(true);
     try {
-      await subscribeSchoolRoute({
+      const subscribePayload: SchoolSubscribeRequestWithNotes = {
         routeId: selectedRoute.id,
         studentName: schoolStudent.trim(),
         studentClass: schoolClass.trim(),
-        paymentMethod: payMethod,
-      });
+        paymentMethod: payMethod as SchoolSubscribeRequest["paymentMethod"],
+        shift: schoolShift,
+        startDate: schoolStartDate,
+        recurring: schoolRecurring,
+        ...(schoolNotes.trim() ? { notes: schoolNotes.trim() } : {}),
+      };
+      await subscribeSchoolRoute(subscribePayload);
       setShowSchoolModal(false);
       setSelectedRoute(null);
       setSchoolStudent("");
       setSchoolClass("");
+      setSchoolNotes("");
+      setSchoolShift("morning");
+      setSchoolRecurring(true);
       showToast(
         `${schoolStudent} has been subscribed to ${selectedRoute.schoolName}!`,
         "success",
       );
-    } catch {
-      showToast("Network error. Please try again.", "error");
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || e?.message || "Network error. Please try again.";
+      showToast(msg, "error");
     } finally {
       setSubscribing(false);
     }
@@ -2378,6 +2418,111 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
                           color: C.text,
                         }}
                         placeholderTextColor={C.textMuted}
+                      />
+                    </View>
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontFamily: "Inter_500Medium" }}>
+                      Shift
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {(["morning", "afternoon", "both"] as const).map(s => (
+                        <Pressable
+                          key={s}
+                          onPress={() => setSchoolShift(s)}
+                          style={{
+                            flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center",
+                            backgroundColor: schoolShift === s ? C.primary : "#fff",
+                            borderWidth: 1.5, borderColor: schoolShift === s ? C.primary : C.border,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: schoolShift === s ? "#fff" : C.textSecondary, textTransform: "capitalize" }}>{s}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    {selectedRoute?.morningTime && schoolShift !== "afternoon" ? (
+                      <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 4, fontFamily: "Inter_400Regular" }}>
+                        AM pickup: {selectedRoute.morningTime}
+                      </Text>
+                    ) : null}
+                    {selectedRoute?.afternoonTime && schoolShift !== "morning" ? (
+                      <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 2, fontFamily: "Inter_400Regular" }}>
+                        PM pickup: {selectedRoute.afternoonTime}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontFamily: "Inter_500Medium" }}>
+                      Start Date
+                    </Text>
+                    <View style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: "#fff" }}>
+                      <TextInput
+                        value={schoolStartDate}
+                        onChangeText={v => setSchoolStartDate(v)}
+                        placeholder="YYYY-MM-DD"
+                        style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.text }}
+                        placeholderTextColor={C.textMuted}
+                        keyboardType="numbers-and-punctuation"
+                        maxLength={10}
+                      />
+                    </View>
+                    <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 3, fontFamily: "Inter_400Regular" }}>
+                      Subscription starts on this date (today or later)
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 4 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontFamily: "Inter_500Medium", color: C.text }}>Auto-Renew Monthly</Text>
+                      <Text style={{ fontSize: 11, color: C.textMuted, fontFamily: "Inter_400Regular" }}>Renew subscription every 30 days</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => setSchoolRecurring(r => !r)}
+                      style={{
+                        width: 48, height: 26, borderRadius: 13,
+                        backgroundColor: schoolRecurring ? C.primary : C.border,
+                        justifyContent: "center", paddingHorizontal: 3,
+                      }}
+                    >
+                      <View style={{
+                        width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff",
+                        alignSelf: schoolRecurring ? "flex-end" : "flex-start",
+                      }} />
+                    </Pressable>
+                  </View>
+                  <View>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: C.textSecondary,
+                        marginBottom: 6,
+                        fontFamily: "Inter_500Medium",
+                      }}
+                    >
+                      Notes (Optional)
+                    </Text>
+                    <View
+                      style={{
+                        borderWidth: 1.5,
+                        borderColor: C.border,
+                        borderRadius: 14,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        backgroundColor: "#fff",
+                        minHeight: 72,
+                      }}
+                    >
+                      <TextInput
+                        value={schoolNotes}
+                        onChangeText={setSchoolNotes}
+                        placeholder="e.g. Drop off at gate B, allergies, etc."
+                        style={{
+                          fontFamily: "Inter_400Regular",
+                          fontSize: 14,
+                          color: C.text,
+                        }}
+                        placeholderTextColor={C.textMuted}
+                        multiline
+                        numberOfLines={2}
                       />
                     </View>
                   </View>

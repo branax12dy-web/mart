@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -17,6 +18,9 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
@@ -39,21 +43,84 @@ function relativeTime(iso: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const EXPO_CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Poonch","Neelum Valley","Rawalpindi","Islamabad","Other"];
+const FALLBACK_CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Poonch","Neelum Valley","Rawalpindi","Islamabad","Other"];
 
 function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { user, updateUser, token } = useAuth();
   const { showToast } = useToast();
-  const [name,   setName]   = useState(user?.name  || "");
-  const [email,  setEmail]  = useState(user?.email || "");
-  const [cnic,   setCnic]   = useState(user?.cnic  || "");
-  const [city,   setCity]   = useState(user?.city  || "");
-  const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState("");
+  const { config: platformConfig } = usePlatformConfig();
+  const [name,        setName]       = useState(user?.name  || "");
+  const [email,       setEmail]      = useState(user?.email || "");
+  const [cnic,        setCnic]       = useState(user?.cnic  || "");
+  const [city,        setCity]       = useState(user?.city  || "");
+  const [saving,      setSaving]     = useState(false);
+  const [error,       setError]      = useState("");
+  const [avatarUri,   setAvatarUri]  = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  const cityList: string[] = React.useMemo(() => {
+    const raw: any = (platformConfig as any).cities ?? (platformConfig as any).platform?.cities;
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    if (typeof raw === "string" && raw.trim()) {
+      const parsed = raw.split(",").map((c: string) => c.trim()).filter(Boolean);
+      if (parsed.length > 0) return parsed;
+    }
+    return FALLBACK_CITIES;
+  }, [platformConfig]);
 
   useEffect(() => {
-    if (visible) { setName(user?.name || ""); setEmail(user?.email || ""); setCnic(user?.cnic || ""); setCity(user?.city || ""); setError(""); }
+    if (visible) {
+      setName(user?.name || "");
+      setEmail(user?.email || "");
+      setCnic(user?.cnic || "");
+      setCity(user?.city || "");
+      setError("");
+      setAvatarUri(null);
+    }
   }, [visible, user]);
+
+  const pickAvatar = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { showToast("Photo library permission denied", "error"); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0]!;
+      if (!asset.base64) { showToast("Could not read image data", "error"); return; }
+      setAvatarUploading(true);
+      try {
+        const mimeType = asset.mimeType ?? "image/jpeg";
+        const avatarRes = await fetch(`${API}/users/avatar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            file: `data:${mimeType};base64,${asset.base64}`,
+            mimeType,
+          }),
+        });
+        if (!avatarRes.ok) {
+          const err = await avatarRes.json().catch(() => ({}));
+          throw new Error((err as any)?.error || "Avatar upload failed");
+        }
+        const avatarData = await avatarRes.json();
+        const avatarUrl: string = avatarData.avatarUrl;
+        if (!avatarUrl) throw new Error("No URL returned from server");
+        updateUser({ avatar: avatarUrl });
+        setAvatarUri(asset.uri);
+        showToast("Avatar updated!", "success");
+      } catch (e: any) {
+        showToast(e.message || "Avatar upload failed", "error");
+      } finally {
+        setAvatarUploading(false);
+      }
+    } catch { showToast("Could not open photo library", "error"); }
+  };
 
   const save = async () => {
     if (!name.trim()) { setError("Name is required"); return; }
@@ -80,6 +147,21 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
           <View style={sheet.handle} />
           <Text style={sheet.title}>Edit Profile</Text>
           <Text style={sheet.sub}>Update your information</Text>
+
+          <Pressable onPress={pickAvatar} disabled={avatarUploading} style={{ alignSelf: "center", marginBottom: spacing.lg }}>
+            <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.primary, overflow: "hidden" }}>
+              {avatarUploading
+                ? <ActivityIndicator color={C.primary} />
+                : avatarUri
+                  ? <Image source={{ uri: avatarUri }} style={{ width: 80, height: 80, borderRadius: 40 }} />
+                  : user?.avatar
+                    ? <Image source={{ uri: user.avatar.startsWith("/") ? `${API.replace(/\/api$/, "")}${user.avatar}` : user.avatar }} style={{ width: 80, height: 80, borderRadius: 40 }} />
+                    : <Ionicons name="camera-outline" size={28} color={C.primary} />}
+            </View>
+            <View style={{ position: "absolute", bottom: 0, right: 0, backgroundColor: C.primary, borderRadius: 12, padding: 4 }}>
+              <Ionicons name="pencil" size={11} color="#fff" />
+            </View>
+          </Pressable>
 
           <Text style={fld.label}>Phone Number</Text>
           <View style={[fld.wrap, { backgroundColor: C.surfaceSecondary }]}>
@@ -129,7 +211,7 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", gap: 6, alignItems: "center", paddingRight: 12, paddingLeft: 8, height: 52 }}>
-                {EXPO_CITIES.map(c => (
+                {cityList.map(c => (
                   <Pressable key={c} onPress={() => setCity(c)}
                     style={[chip.base, city === c && chip.active]}>
                     <Text style={[chip.text, city === c && chip.textActive]}>{c}</Text>
@@ -473,7 +555,18 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                                 },
                               });
                               if (!res.ok) throw new Error("Request failed");
-                              showToast("Your data export is ready.", "success");
+                              const data = await res.json();
+                              const exportPayload = data.data ?? data;
+                              const jsonStr = JSON.stringify(exportPayload, null, 2);
+                              const fileName = `ajkmart-data-${Date.now()}.json`;
+                              const filePath = `${FileSystem.documentDirectory}${fileName}`;
+                              await FileSystem.writeAsStringAsync(filePath, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
+                              const canShare = await Sharing.isAvailableAsync();
+                              if (canShare) {
+                                await Sharing.shareAsync(filePath, { mimeType: "application/json", dialogTitle: "Save your AJKMart data" });
+                              } else {
+                                showToast("Your data export is ready.", "success");
+                              }
                               setExportCooldown(60);
                               if (exportCooldownRef.current) clearInterval(exportCooldownRef.current);
                               exportCooldownRef.current = setInterval(() => {
@@ -483,7 +576,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                                 });
                               }, 1000);
                             } catch {
-                              showToast("Could not request data export. Please try again.", "error");
+                              showToast("Could not export data. Please try again.", "error");
                             } finally {
                               setExportingData(false);
                             }
@@ -899,7 +992,12 @@ export default function ProfileScreen() {
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
             <View style={ph.avatar}>
-              <Text style={ph.avatarTxt}>{initials}</Text>
+              {user?.avatar
+                ? <Image
+                    source={{ uri: user.avatar.startsWith("/") ? `${API.replace(/\/api$/, "")}${user.avatar}` : user.avatar }}
+                    style={{ width: 68, height: 68, borderRadius: radii.xl }}
+                  />
+                : <Text style={ph.avatarTxt}>{initials}</Text>}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={ph.name}>{user?.name || "AJKMart User"}</Text>

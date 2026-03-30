@@ -43,7 +43,21 @@ async function validatePromoCode(code: string, orderTotal: number, orderType: st
     return { valid: false, discount: 0, discountType: null, error: "Yeh promo code apni limit reach kar chuka hai." };
   if (promo.minOrderAmount && orderTotal < parseFloat(String(promo.minOrderAmount)))
     return { valid: false, discount: 0, discountType: null, error: `Minimum order Rs. ${promo.minOrderAmount} hona chahiye is code ke liye.` };
-  if (promo.appliesTo !== "all" && promo.appliesTo !== orderType)
+  const ORDER_TYPE_ALIASES: Record<string, string[]> = {
+    mart: ["mart", "grocery", "ajkmart"],
+    grocery: ["grocery", "mart", "ajkmart"],
+    ride: ["ride", "rides", "taxi"],
+    school: ["school", "school_bus", "schoolbus"],
+    parcel: ["parcel", "delivery", "courier"],
+  };
+  const normalizedType = orderType.toLowerCase().trim();
+  const normalizedAppliesTo = (promo.appliesTo ?? "all").toLowerCase().trim();
+  const typeAliases = ORDER_TYPE_ALIASES[normalizedType] ?? [normalizedType];
+  const appliesToAliases = ORDER_TYPE_ALIASES[normalizedAppliesTo] ?? [normalizedAppliesTo];
+  const typeMatches = normalizedAppliesTo === "all"
+    || typeAliases.includes(normalizedAppliesTo)
+    || appliesToAliases.includes(normalizedType);
+  if (!typeMatches)
     return { valid: false, discount: 0, discountType: null, error: `Yeh code sirf ${promo.appliesTo} orders ke liye hai.` };
 
   let discount = 0;

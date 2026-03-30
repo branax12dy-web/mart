@@ -8,6 +8,13 @@ import { customerAuth } from "../middleware/security.js";
 
 const router: IRouter = Router();
 
+function deriveStatus(reference: string | null): "pending" | "approved" | "rejected" {
+  const ref = reference ?? "";
+  if (ref.startsWith("approved:") || ref.startsWith("approved")) return "approved";
+  if (ref.startsWith("rejected:") || ref.startsWith("rejected")) return "rejected";
+  return "pending";
+}
+
 function mapTx(t: typeof walletTransactionsTable.$inferSelect) {
   return {
     id: t.id,
@@ -15,6 +22,7 @@ function mapTx(t: typeof walletTransactionsTable.$inferSelect) {
     amount: parseFloat(t.amount),
     description: t.description,
     reference: t.reference,
+    status: deriveStatus(t.reference),
     createdAt: t.createdAt.toISOString(),
   };
 }

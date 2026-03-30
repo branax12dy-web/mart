@@ -12,6 +12,11 @@ export interface CartItem {
   type: "mart" | "food" | "pharmacy";
 }
 
+export interface CartValidationResult {
+  valid: boolean;
+  cartChanged: boolean;
+}
+
 interface CartContextType {
   items: CartItem[];
   itemCount: number;
@@ -21,7 +26,7 @@ interface CartContextType {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
   clearCart: () => void;
-  validateCart: () => Promise<void>;
+  validateCart: () => Promise<CartValidationResult>;
   isValidating: boolean;
 }
 
@@ -64,8 +69,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(newItems));
   };
 
-  const validateCartItems = async (cartItems: CartItem[]) => {
-    if (cartItems.length === 0) return;
+  const validateCartItems = async (cartItems: CartItem[]): Promise<CartValidationResult> => {
+    if (cartItems.length === 0) return { valid: true, cartChanged: false };
     setIsValidating(true);
     try {
       const storedToken = authTokenRef.current ?? await AsyncStorage.getItem("@ajkmart_token");
@@ -79,28 +84,48 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
       if (!res.ok) {
         setIsValidating(false);
-        Alert.alert("Cart Validation Failed", "Could not verify your cart items. Please check your connection and try again.");
-        return;
+        return { valid: false, cartChanged: false };
       }
       const data = await res.json();
       if (!data.valid) {
-        if (Array.isArray(data.items)) save(data.items);
-        if (data.removed.length > 0) {
-          Alert.alert("Items Removed", `The following items are no longer available and were removed: ${data.removed.join(", ")}`);
+        let cartChanged = false;
+        if (Array.isArray(data.items)) {
+          save(data.items);
+          cartChanged = true;
         }
-        if (data.priceChanges.length > 0) {
+        const messages: string[] = [];
+        if (data.removed?.length > 0) {
+          messages.push(`Removed (unavailable): ${data.removed.join(", ")}`);
+        }
+        if (data.priceChanges?.length > 0) {
           const changes = data.priceChanges.map((c: any) => `${c.name}: Rs.${c.oldPrice} → Rs.${c.newPrice}`).join("\n");
-          Alert.alert("Prices Updated", `Some prices have changed:\n${changes}`);
+          messages.push(`Prices updated:\n${changes}`);
         }
+        if (messages.length > 0) {
+          await new Promise<void>(resolve => {
+            Alert.alert("Cart Updated", messages.join("\n\n") + "\n\nPlease review your cart before placing the order.", [
+              { text: "Review Cart", onPress: resolve },
+            ]);
+          });
+        }
+        setIsValidating(false);
+        return { valid: false, cartChanged };
       }
-    } catch {
-      Alert.alert("Cart Validation Error", "Could not validate your cart items. Please check your connection.");
+      setIsValidating(false);
+      return { valid: true, cartChanged: false };
+    } catch (err: any) {
+      setIsValidating(false);
+      Alert.alert(
+        "Validation Error",
+        "Could not validate your cart. Please check your connection and try again.",
+        [{ text: "OK" }]
+      );
+      return { valid: false, cartChanged: false };
     }
-    setIsValidating(false);
   };
 
-  const validateCart = useCallback(async () => {
-    await validateCartItems(items);
+  const validateCart = useCallback(async (): Promise<CartValidationResult> => {
+    return validateCartItems(items);
   }, [items]);
 
   const addItem = (item: CartItem) => {

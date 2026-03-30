@@ -108,7 +108,7 @@ function AddressPickerModal({
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser, token } = useAuth();
-  const { items, total, cartType, updateQuantity, clearCart } = useCart();
+  const { items, total, cartType, updateQuantity, clearCart, validateCart, isValidating } = useCart();
   const { showToast } = useToast();
   const { config: platformConfig } = usePlatformConfig();
   const appName    = platformConfig.platform.appName;
@@ -327,7 +327,7 @@ export default function CartScreen() {
   };
 
   const handleCheckout = async () => {
-    if (loading) return;
+    if (loading || isValidating) return;
     if (!user) { showToast("Please log in to place an order", "error"); return; }
     if (items.length === 0) { showToast("Your cart is empty", "error"); return; }
     if (cartType === "pharmacy") { router.push("/pharmacy"); return; }
@@ -342,6 +342,11 @@ export default function CartScreen() {
     }
     if (total > orderRules.maxCartValue) {
       showToast(`Cart value cannot exceed Rs.${orderRules.maxCartValue.toLocaleString()}`, "error");
+      return;
+    }
+
+    const cartResult = await validateCart();
+    if (!cartResult.valid) {
       return;
     }
 
