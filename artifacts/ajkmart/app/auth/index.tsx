@@ -757,12 +757,24 @@ export default function AuthScreen() {
                     </Pressable>
                   )}
 
-                  {socialMethods.map(sm => (
-                    <Pressable key={sm.key} onPress={() => handleSocialLogin(sm.key as "google" | "facebook")} style={styles.socialBtn}>
-                      <Ionicons name={sm.icon} size={20} color={sm.color} />
-                      <Text style={styles.socialBtnText}>Continue with {sm.label}</Text>
-                    </Pressable>
-                  ))}
+                  {socialMethods.map(sm => {
+                    const isConfigured = sm.key === "google"
+                      ? !!process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
+                      : !!process.env.EXPO_PUBLIC_FB_APP_ID;
+                    return (
+                      <Pressable
+                        key={sm.key}
+                        onPress={() => isConfigured ? handleSocialLogin(sm.key as "google" | "facebook") : undefined}
+                        style={[styles.socialBtn, !isConfigured && { opacity: 0.45 }]}
+                        disabled={!isConfigured}
+                      >
+                        <Ionicons name={sm.icon} size={20} color={isConfigured ? sm.color : C.textMuted} />
+                        <Text style={[styles.socialBtnText, !isConfigured && { color: C.textMuted }]}>
+                          {isConfigured ? `Continue with ${sm.label}` : `${sm.label} (Coming Soon)`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
 
                   {showMagicLink && (
                     <>

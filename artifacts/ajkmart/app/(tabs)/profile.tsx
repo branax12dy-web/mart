@@ -268,6 +268,26 @@ function NotificationsModal({ visible, userId, token, onClose }: {
     await fetch(`${API}/notifications/${id}/read`, { method: "PATCH", headers: authHdrs });
     setNotifs(p => p.map(n => n.id === id ? { ...n, isRead: true } : n));
   };
+
+  const handleNotifPress = async (n: any) => {
+    if (!n.isRead) await markOne(n.id);
+    onClose(notifs.filter(x => !x.isRead && x.id !== n.id).length);
+    const meta = n.meta || {};
+    const type: string = n.type || "";
+    if ((type === "order" || type === "food" || type === "mart") && meta.orderId) {
+      router.push(`/order?orderId=${meta.orderId}`);
+    } else if (type === "ride" && meta.rideId) {
+      router.push(`/ride?rideId=${meta.rideId}`);
+    } else if (type === "parcel" && meta.bookingId) {
+      router.push(`/order?orderId=${meta.bookingId}&type=parcel`);
+    } else if (type === "pharmacy" && meta.orderId) {
+      router.push(`/order?orderId=${meta.orderId}&type=pharmacy`);
+    } else if (type === "wallet") {
+      router.push("/(tabs)/wallet");
+    } else if (type === "deal" || type === "deals") {
+      router.push("/(tabs)");
+    }
+  };
   const markAll = async () => {
     setMarking(true);
     await fetch(`${API}/notifications/read-all`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHdrs } });
@@ -321,7 +341,7 @@ function NotificationsModal({ visible, userId, token, onClose }: {
             {notifs.map(n => {
               const [icon, color, bg] = typeMap[n.type] || typeMap.system!;
               return (
-                <Pressable key={n.id} onPress={() => !n.isRead && markOne(n.id)} style={[notifItem.wrap, !n.isRead && notifItem.unread]}>
+                <Pressable key={n.id} onPress={() => handleNotifPress(n)} style={[notifItem.wrap, !n.isRead && notifItem.unread]}>
                   <View style={[notifItem.icon, { backgroundColor: bg }]}>
                     <Ionicons name={icon} size={19} color={color} />
                     {!n.isRead && <View style={notifItem.dot} />}
@@ -716,6 +736,12 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
   const [city,    setCity]    = useState("Muzaffarabad");
   const [saving,  setSaving]  = useState(false);
 
+  const [editId,    setEditId]    = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("Home");
+  const [editAddr,  setEditAddr]  = useState("");
+  const [editCity,  setEditCity]  = useState("Muzaffarabad");
+  const [editSaving, setEditSaving] = useState(false);
+
   const authHdrs = token ? { Authorization: `Bearer ${token}` } : {};
 
   const load = useCallback(async () => {
@@ -746,6 +772,32 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
     setList(p => p.filter(a => a.id !== id));
     setDeleteConfirmId(null);
     showToast("Address deleted", "info");
+  };
+
+  const startEdit = (a: any) => {
+    setEditId(a.id);
+    setEditLabel(a.label || "Home");
+    setEditAddr(a.address || "");
+    setEditCity(a.city || "Muzaffarabad");
+    setDeleteConfirmId(null);
+  };
+  const cancelEdit = () => { setEditId(null); };
+  const saveEdit = async () => {
+    if (!editAddr.trim()) { showToast("Address is required", "error"); return; }
+    setEditSaving(true);
+    const opt = LABEL_OPTS.find(o => o.label === editLabel)!;
+    try {
+      const r = await fetch(`${API}/addresses/${editId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHdrs },
+        body: JSON.stringify({ label: editLabel, address: editAddr.trim(), city: editCity, icon: opt?.icon }),
+      });
+      if (!r.ok) throw new Error();
+      setList(p => p.map(a => a.id === editId ? { ...a, label: editLabel, address: editAddr.trim(), city: editCity, icon: opt?.icon } : a));
+      setEditId(null);
+      showToast("Address updated!", "success");
+    } catch { showToast("Could not update address", "error"); }
+    setEditSaving(false);
   };
 
   const [settingDefault, setSettingDefault] = useState<string | null>(null);
@@ -816,42 +868,83 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
           <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 10 }}>
             {list.map(a => {
               const opt = LABEL_OPTS.find(o => o.label === a.label) || LABEL_OPTS[2]!;
+              const isEditing = editId === a.id;
               return (
                 <View key={a.id} style={addrItem.wrap}>
-                  <View style={[addrItem.icon, { backgroundColor: opt.bg }]}>
-                    <Ionicons name={opt.icon} size={19} color={opt.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={addrItem.label}>{a.label}</Text>
-                      {a.isDefault && <View style={addrItem.defBadge}><Text style={addrItem.defTxt}>Default</Text></View>}
-                    </View>
-                    <Text style={addrItem.addr}>{a.address}</Text>
-                    <Text style={addrItem.city}>{a.city}, AJK</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-                    {!a.isDefault && (
-                      <Pressable onPress={() => setDefault(a.id)} disabled={settingDefault === a.id} style={addrItem.setDefBtn}>
-                        {settingDefault === a.id
-                          ? <ActivityIndicator size="small" color={C.primary} />
-                          : <Text style={addrItem.setDefTxt}>Set Default</Text>}
-                      </Pressable>
-                    )}
-                    {deleteConfirmId === a.id ? (
-                      <View style={{ flexDirection: "row", gap: 6 }}>
-                        <Pressable onPress={() => del(a.id)} style={[addrItem.delBtn, { backgroundColor: C.dangerSoft, paddingHorizontal: 8 }]}>
-                          <Text style={{ ...typography.smallMedium, color: C.danger }}>Yes</Text>
+                  {isEditing ? (
+                    <View style={{ flex: 1 }}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
+                        <View style={{ flexDirection: "row", gap: 6 }}>
+                          {LABEL_OPTS.map(o => (
+                            <Pressable key={o.label} onPress={() => setEditLabel(o.label)} style={[chip.base, editLabel === o.label && { backgroundColor: o.bg, borderColor: o.color }]}>
+                              <Ionicons name={o.icon} size={13} color={editLabel === o.label ? o.color : C.textMuted} />
+                              <Text style={[chip.text, editLabel === o.label && { color: o.color }]}>{o.label}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </ScrollView>
+                      <View style={[addrAdd.fld, { marginBottom: spacing.sm }]}>
+                        <TextInput value={editAddr} onChangeText={setEditAddr} placeholder="Enter full address..." placeholderTextColor={C.textMuted} style={addrAdd.fldTxt} multiline />
+                      </View>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
+                        <View style={{ flexDirection: "row", gap: 6 }}>
+                          {AJK_CITIES.map(c => (
+                            <Pressable key={c} onPress={() => setEditCity(c)} style={[chip.base, editCity === c && { backgroundColor: C.primarySoft, borderColor: C.primary }]}>
+                              <Text style={[chip.text, editCity === c && { color: C.primary }]}>{c}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </ScrollView>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <Pressable onPress={saveEdit} disabled={editSaving} style={[primaryBtn.base, { flex: 1, opacity: editSaving ? 0.7 : 1 }]}>
+                          {editSaving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={primaryBtn.txt}>Save Changes</Text>}
                         </Pressable>
-                        <Pressable onPress={() => setDeleteConfirmId(null)} style={[addrItem.delBtn, { backgroundColor: C.surfaceSecondary, paddingHorizontal: 8 }]}>
-                          <Text style={{ ...typography.smallMedium, color: C.textMuted }}>No</Text>
+                        <Pressable onPress={cancelEdit} style={[primaryBtn.base, { backgroundColor: C.surfaceSecondary, paddingHorizontal: spacing.md, width: "auto" }]}>
+                          <Text style={[primaryBtn.txt, { color: C.textSecondary }]}>Cancel</Text>
                         </Pressable>
                       </View>
-                    ) : (
-                      <Pressable onPress={() => setDeleteConfirmId(a.id)} style={addrItem.delBtn}>
-                        <Ionicons name="trash-outline" size={16} color={C.danger} />
-                      </Pressable>
-                    )}
-                  </View>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={[addrItem.icon, { backgroundColor: opt.bg }]}>
+                        <Ionicons name={opt.icon} size={19} color={opt.color} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={addrItem.label}>{a.label}</Text>
+                          {a.isDefault && <View style={addrItem.defBadge}><Text style={addrItem.defTxt}>Default</Text></View>}
+                        </View>
+                        <Text style={addrItem.addr}>{a.address}</Text>
+                        <Text style={addrItem.city}>{a.city}, AJK</Text>
+                      </View>
+                      <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                        <Pressable onPress={() => startEdit(a)} style={addrItem.delBtn}>
+                          <Ionicons name="pencil-outline" size={16} color={C.primary} />
+                        </Pressable>
+                        {!a.isDefault && (
+                          <Pressable onPress={() => setDefault(a.id)} disabled={settingDefault === a.id} style={addrItem.setDefBtn}>
+                            {settingDefault === a.id
+                              ? <ActivityIndicator size="small" color={C.primary} />
+                              : <Text style={addrItem.setDefTxt}>Set Default</Text>}
+                          </Pressable>
+                        )}
+                        {deleteConfirmId === a.id ? (
+                          <View style={{ flexDirection: "row", gap: 6 }}>
+                            <Pressable onPress={() => del(a.id)} style={[addrItem.delBtn, { backgroundColor: C.dangerSoft, paddingHorizontal: 8 }]}>
+                              <Text style={{ ...typography.smallMedium, color: C.danger }}>Yes</Text>
+                            </Pressable>
+                            <Pressable onPress={() => setDeleteConfirmId(null)} style={[addrItem.delBtn, { backgroundColor: C.surfaceSecondary, paddingHorizontal: 8 }]}>
+                              <Text style={{ ...typography.smallMedium, color: C.textMuted }}>No</Text>
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <Pressable onPress={() => setDeleteConfirmId(a.id)} style={addrItem.delBtn}>
+                            <Ionicons name="trash-outline" size={16} color={C.danger} />
+                          </Pressable>
+                        )}
+                      </View>
+                    </>
+                  )}
                 </View>
               );
             })}
@@ -916,16 +1009,22 @@ export default function ProfileScreen() {
     if (!user?.id) return;
     const hdrs = token ? { Authorization: `Bearer ${token}` } : {};
     try {
-      const [oR, rR, nR] = await Promise.all([
-        fetch(`${API}/orders`,        { headers: hdrs }),
-        fetch(`${API}/rides`,         { headers: hdrs }),
-        fetch(`${API}/notifications`, { headers: hdrs }),
+      const [oR, rR, nR, phR, parR] = await Promise.all([
+        fetch(`${API}/orders`,            { headers: hdrs }),
+        fetch(`${API}/rides`,             { headers: hdrs }),
+        fetch(`${API}/notifications`,     { headers: hdrs }),
+        fetch(`${API}/pharmacy-orders`,   { headers: hdrs }),
+        fetch(`${API}/parcel-bookings`,   { headers: hdrs }),
       ]);
-      const [oD, rD, nD] = await Promise.all([oR.json(), rR.json(), nR.json()]);
-      const orders = oD.orders || [];
-      const rides  = rD.rides  || [];
-      const spent  = orders.reduce((s: number, o: any) => s + (parseFloat(o.total) || 0), 0)
-                   + rides.reduce((s: number,  r: any) => s + (parseFloat(r.fare)  || 0), 0);
+      const [oD, rD, nD, phD, parD] = await Promise.all([oR.json(), rR.json(), nR.json(), phR.json().catch(() => ({})), parR.json().catch(() => ({}))]);
+      const orders   = oD.orders   || [];
+      const rides    = rD.rides    || [];
+      const pharmacy = phD.orders  || phD.pharmacyOrders  || [];
+      const parcels  = parD.bookings || parD.parcelBookings || [];
+      const spent    = orders.reduce((s: number, o: any) => s + (parseFloat(o.total) || 0), 0)
+                     + rides.reduce((s: number,  r: any) => s + (parseFloat(r.fare)  || 0), 0)
+                     + pharmacy.reduce((s: number, p: any) => s + (parseFloat(p.total) || 0), 0)
+                     + parcels.reduce((s: number,  p: any) => s + (parseFloat(p.price || p.fare || p.total) || 0), 0);
       setStats({ orders: orders.length, rides: rides.length, spent: Math.round(spent) });
       setUnread(nD.unreadCount || 0);
     } catch { /* ignore */ }

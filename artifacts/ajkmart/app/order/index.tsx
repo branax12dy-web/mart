@@ -127,6 +127,8 @@ export default function OrderDetailScreen() {
   const activeStepLabels = isParcel ? PARCEL_STEP_LABELS : STEP_LABELS;
   const stepIdx = activeSteps.indexOf(order.status);
   const isFood = order.type === "food";
+  const isPharmacy = order.type === "pharmacy" || type === "pharmacy";
+  const isParcelType = isParcel || order.type === "parcel";
 
   const minutesSincePlaced = order.createdAt
     ? (serverNow - new Date(order.createdAt).getTime()) / 60000
@@ -195,12 +197,31 @@ export default function OrderDetailScreen() {
 
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <View style={[s.typeChip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
-              <Ionicons name={isFood ? "restaurant-outline" : "storefront-outline"} size={13} color={isFood ? "#D97706" : "#1A56DB"} />
-              <Text style={[s.typeChipText, { color: isFood ? "#D97706" : "#1A56DB" }]}>{isFood ? "Food" : "Mart"}</Text>
-            </View>
+            {isPharmacy ? (
+              <View style={[s.typeChip, { backgroundColor: "#F3E8FF" }]}>
+                <Ionicons name="medical-outline" size={13} color="#7C3AED" />
+                <Text style={[s.typeChipText, { color: "#7C3AED" }]}>Pharmacy</Text>
+              </View>
+            ) : isParcelType ? (
+              <View style={[s.typeChip, { backgroundColor: "#ECFDF5" }]}>
+                <Ionicons name="cube-outline" size={13} color="#059669" />
+                <Text style={[s.typeChipText, { color: "#059669" }]}>Parcel</Text>
+              </View>
+            ) : (
+              <View style={[s.typeChip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
+                <Ionicons name={isFood ? "restaurant-outline" : "storefront-outline"} size={13} color={isFood ? "#D97706" : "#1A56DB"} />
+                <Text style={[s.typeChipText, { color: isFood ? "#D97706" : "#1A56DB" }]}>{isFood ? "Food" : "Mart"}</Text>
+              </View>
+            )}
             {order.vendorName && <Text style={s.vendorName}>{order.vendorName}</Text>}
           </View>
+
+          {isPharmacy && order.prescriptionNote ? (
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#F3E8FF", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "#DDD6FE" }}>
+              <Ionicons name="document-text-outline" size={16} color="#7C3AED" style={{ marginTop: 1 }} />
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#5B21B6", flex: 1, lineHeight: 19 }}>{order.prescriptionNote}</Text>
+            </View>
+          ) : null}
 
           <Text style={s.sectionTitle}>Items</Text>
           {(order.items || []).map((item: any, i: number) => (
@@ -305,7 +326,7 @@ export default function OrderDetailScreen() {
       {cancelTarget && (
         <CancelModal
           target={cancelTarget}
-          cancellationFee={0}
+          cancellationFee={order?.cancellationFee ?? config.rides?.cancellationFee ?? 0}
           apiBase={API_BASE}
           token={token}
           onClose={() => setCancelTarget(null)}

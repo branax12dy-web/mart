@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, Text, Platform } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { API_BASE } from "@/utils/api";
 
 const C = Colors.light;
 
@@ -31,8 +32,7 @@ function RideScreenInner() {
   useEffect(() => {
     if (!urlRideId || !token) return;
     setRideLoadError(false);
-    const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
-    fetch(`${apiBase}/rides/${urlRideId}`, {
+    fetch(`${API_BASE}/rides/${urlRideId}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => {

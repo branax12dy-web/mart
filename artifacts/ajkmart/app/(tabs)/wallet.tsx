@@ -48,20 +48,21 @@ type PayMethod = {
 type DepositStep = "method" | "details" | "amount" | "confirm" | "done";
 
 function TxItem({ tx }: { tx: any }) {
-  const depositStatus: string | undefined = tx.status;
-  const isPending  = tx.type === "deposit" && (
-    depositStatus === "pending" ||
-    (!depositStatus && (!tx.reference || tx.reference === "pending" || tx.reference.startsWith("pending:")))
+  const txStatus: string | undefined = tx.status;
+  const isManualTx = tx.type === "deposit" || tx.type === "withdrawal";
+  const isPending  = isManualTx && (
+    txStatus === "pending" ||
+    (!txStatus && (!tx.reference || tx.reference === "pending" || tx.reference.startsWith("pending:")))
   );
-  const isApproved = tx.type === "deposit" && (
-    depositStatus === "approved" ||
-    (!depositStatus && tx.reference?.startsWith("approved:"))
+  const isApproved = isManualTx && (
+    txStatus === "approved" ||
+    (!txStatus && tx.reference?.startsWith("approved:"))
   );
-  const isRejected = tx.type === "deposit" && (
-    depositStatus === "rejected" ||
-    (!depositStatus && tx.reference?.startsWith("rejected:"))
+  const isRejected = isManualTx && (
+    txStatus === "rejected" ||
+    (!txStatus && tx.reference?.startsWith("rejected:"))
   );
-  const isCredit   = tx.type === "credit" || isApproved;
+  const isCredit   = tx.type === "credit" || (tx.type === "deposit" && isApproved);
   const date = new Date(tx.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
   const time = new Date(tx.createdAt).toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
 
@@ -115,6 +116,185 @@ function MethodIcon({ id, size = 24 }: { id: string; size?: number }) {
   const name = id === "jazzcash" ? "phone-portrait" : id === "easypaisa" ? "phone-portrait" : "business";
   const color = id === "jazzcash" ? "#E53E3E" : id === "easypaisa" ? "#38A169" : "#2B6CB0";
   return <Ionicons name={name as any} size={size} color={color} />;
+}
+
+type WithdrawMethod = "jazzcash" | "easypaisa" | "bank";
+type WithdrawStep = "method" | "details" | "done";
+
+function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; balance: number }) {
+  const [step, setStep]               = useState<WithdrawStep>("method");
+  const [selectedMethod, setSelectedMethod] = useState<WithdrawMethod | null>(null);
+  const [amount, setAmount]           = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [note, setNote]               = useState("");
+  const [submitting, setSubmitting]   = useState(false);
+  const [err, setErr]                 = useState("");
+  const { showToast } = useToast();
+
+  const WITHDRAW_METHODS: { id: WithdrawMethod; label: string; placeholder: string }[] = [
+    { id: "jazzcash",  label: "JazzCash",  placeholder: "03XX-XXXXXXX" },
+    { id: "easypaisa", label: "EasyPaisa", placeholder: "03XX-XXXXXXX" },
+    { id: "bank",      label: "Bank Transfer", placeholder: "PKXX XXXX XXXX XXXX XXXX (IBAN)" },
+  ];
+
+  const handleSubmit = async () => {
+    const amt = parseFloat(amount);
+    if (!amount || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
+    if (amt > balance)                      { setErr(`Insufficient balance. Available: Rs. ${balance.toLocaleString()}`); return; }
+    if (!accountNumber.trim())              { setErr("Account number is required"); return; }
+    setSubmitting(true); setErr("");
+    try {
+      const res = await fetch(`${API}/wallet/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ amount: amt, paymentMethod: selectedMethod, accountNumber: accountNumber.trim(), note: note.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === "wallet_frozen") { onFrozen?.(); onClose(); return; }
+        setErr(data.error || "Request failed");
+        setSubmitting(false); return;
+      }
+      setStep("done");
+      onSuccess();
+    } catch { setErr("Network error. Please try again."); }
+    setSubmitting(false);
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={ws.overlay} onPress={onClose}>
+        <Pressable style={[ws.sheet, { maxHeight: "85%" }]} onPress={e => e.stopPropagation()}>
+          <View style={ws.handle} />
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+            {step === "done" && (
+              <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                  <Ionicons name="arrow-up-circle" size={40} color={C.danger} />
+                </View>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>Your withdrawal will be processed within 1-2 business days.</Text>
+                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, width: "100%", marginTop: 20, gap: 10, borderWidth: 1, borderColor: C.border }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Method</Text>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: C.text }}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Account</Text>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: C.text }}>{accountNumber}</Text>
+                  </View>
+                  <View style={{ height: 1, backgroundColor: C.border }} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Amount</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                  </View>
+                </View>
+                <Pressable onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]}>
+                  <Text style={ws.actionBtnTxt}>Done</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {step === "method" && (
+              <View>
+                <Text style={ws.sheetTitle}>Withdraw Money</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, marginBottom: 18 }}>Choose your withdrawal method</Text>
+                <View style={{ gap: 10 }}>
+                  {WITHDRAW_METHODS.map(m => (
+                    <Pressable key={m.id} onPress={() => { setSelectedMethod(m.id); setErr(""); setStep("details"); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: "#fff" }}>
+                      <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+                        <MethodIcon id={m.id} size={26} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.text }}>{m.label}</Text>
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 }}>Withdraw to your {m.label} account</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {step === "details" && selectedMethod && (
+              <View>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 18 }}>
+                  <Pressable onPress={() => setStep("method")} style={{ marginRight: 10, padding: 4 }}>
+                    <Ionicons name="arrow-back" size={20} color={C.text} />
+                  </Pressable>
+                  <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Withdrawal</Text>
+                </View>
+
+                <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
+                <View style={ws.amtWrap}>
+                  <Text style={ws.rupee}>Rs.</Text>
+                  <TextInput
+                    style={ws.amtInput}
+                    value={amount}
+                    onChangeText={t => { setAmount(t.replace(/[^0-9]/g, "")); setErr(""); }}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={C.textMuted}
+                  />
+                </View>
+                <View style={ws.quickRow}>
+                  {QUICK_AMOUNTS.map(a => (
+                    <Pressable key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]}>
+                      <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, backgroundColor: "#FEF3C7", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: "#FDE68A" }}>
+                  <Ionicons name="wallet-outline" size={14} color="#D97706" />
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>Available: Rs. {balance.toLocaleString()}</Text>
+                </View>
+
+                <Text style={ws.sheetLbl}>Your {WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Account *</Text>
+                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                  <TextInput
+                    value={accountNumber}
+                    onChangeText={v => { setAccountNumber(v); setErr(""); }}
+                    placeholder={WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.placeholder}
+                    placeholderTextColor={C.textMuted}
+                    style={[ws.sendInput, { paddingVertical: 0 }]}
+                    autoCapitalize="characters"
+                  />
+                </View>
+
+                <Text style={ws.sheetLbl}>Note (Optional)</Text>
+                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                  <TextInput
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder="Any additional info..."
+                    placeholderTextColor={C.textMuted}
+                    style={[ws.sendInput, { paddingVertical: 0 }]}
+                  />
+                </View>
+
+                {err ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10 }}>
+                    <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.danger, flex: 1 }}>{err}</Text>
+                  </View>
+                ) : null}
+
+                <Pressable onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { backgroundColor: C.danger }, submitting && { opacity: 0.6 }]}>
+                  {submitting ? <ActivityIndicator color="#fff" /> : (
+                    <>
+                      <Ionicons name="arrow-up-outline" size={18} color="#fff" />
+                      <Text style={ws.actionBtnTxt}>Submit Withdrawal Request</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 }
 
 function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; minTopup: number; maxTopup: number }) {
@@ -508,9 +688,10 @@ export default function WalletScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
 
-  const [showDeposit, setShowDeposit] = useState(false);
-  const [showSend,    setShowSend]    = useState(false);
-  const [showQR,      setShowQR]      = useState(false);
+  const [showDeposit,  setShowDeposit]  = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [showSend,     setShowSend]     = useState(false);
+  const [showQR,       setShowQR]       = useState(false);
   const [showP2PTopup, setShowP2PTopup] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [txFilter,    setTxFilter]    = useState<TxFilter>("all");
@@ -685,9 +866,10 @@ export default function WalletScreen() {
 
   const balance      = data?.balance ?? user?.walletBalance ?? 0;
   const transactions = data?.transactions ?? [];
-  const filtered     = txFilter === "all" ? transactions : transactions.filter(t => t.type === txFilter);
-  const totalIn      = transactions.filter(t => t.type === "credit").reduce((s, t) => s + Number(t.amount), 0);
-  const totalOut     = transactions.filter(t => t.type === "debit").reduce((s, t)  => s + Number(t.amount), 0);
+  const isDebitType  = (t: any) => t.type === "debit" || t.type === "withdrawal" || t.type === "transfer" || t.type === "ride" || t.type === "order" || t.type === "mart" || t.type === "food" || t.type === "pharmacy" || t.type === "parcel";
+  const filtered     = txFilter === "all" ? transactions : txFilter === "debit" ? transactions.filter(isDebitType) : transactions.filter(t => t.type === txFilter);
+  const totalIn      = transactions.filter(t => t.type === "credit" || t.type === "refund" || t.type === "cashback" || t.type === "referral" || t.type === "bonus").reduce((s, t) => s + Number(t.amount), 0);
+  const totalOut     = transactions.filter(isDebitType).reduce((s, t) => s + Number(t.amount), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
@@ -717,6 +899,12 @@ export default function WalletScreen() {
                 <Ionicons name="add" size={20} color={C.success} />
               </View>
               <Text style={ws.actionCardTxt}>{T("topUp")}</Text>
+            </Pressable>
+            <Pressable onPress={() => setShowWithdraw(true)} style={ws.actionCard} disabled={walletFrozen}>
+              <View style={[ws.actionCardIcon, { backgroundColor: walletFrozen ? "#F3F4F6" : "#FEE2E2" }]}>
+                <Ionicons name="arrow-up-outline" size={18} color={walletFrozen ? C.textMuted : C.danger} />
+              </View>
+              <Text style={[ws.actionCardTxt, walletFrozen && { color: C.textMuted }]}>Withdraw</Text>
             </Pressable>
             {p2pEnabled && (
               <Pressable onPress={() => setShowSend(true)} style={ws.actionCard}>
@@ -818,6 +1006,19 @@ export default function WalletScreen() {
           onFrozen={() => setWalletFrozen(true)}
           minTopup={platformConfig.customer.minTopup}
           maxTopup={platformConfig.customer.maxTopup}
+        />
+      )}
+
+      {showWithdraw && (
+        <WithdrawModal
+          token={token}
+          balance={balance}
+          onClose={() => setShowWithdraw(false)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["getWallet"] });
+            showToast("Withdrawal request submitted! It will be processed within 1-2 business days.", "success");
+          }}
+          onFrozen={() => setWalletFrozen(true)}
         />
       )}
 

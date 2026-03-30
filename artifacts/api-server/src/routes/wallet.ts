@@ -434,6 +434,67 @@ router.post("/p2p-topup", customerAuth, async (req, res) => {
   res.json({ success: true, txId, status: "pending", amount: amt });
 });
 
+/* ── POST /wallet/withdraw — Customer requests a withdrawal ─────────────── */
+router.post("/withdraw", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+
+  const [withdrawUser] = await db.select({ blockedServices: usersTable.blockedServices, walletBalance: usersTable.walletBalance })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!withdrawUser) { res.status(404).json({ error: "User not found" }); return; }
+  if (isWalletFrozen(withdrawUser)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
+
+  const { amount, paymentMethod, accountNumber, note } = req.body;
+
+  const ALLOWED_WITHDRAWAL_METHODS = ["jazzcash", "easypaisa", "bank"] as const;
+  if (!amount)        { res.status(400).json({ error: "amount required" }); return; }
+  if (!paymentMethod) { res.status(400).json({ error: "paymentMethod required" }); return; }
+  if (!(ALLOWED_WITHDRAWAL_METHODS as readonly string[]).includes(paymentMethod)) {
+    res.status(400).json({ error: `Invalid paymentMethod. Must be one of: ${ALLOWED_WITHDRAWAL_METHODS.join(", ")}` }); return;
+  }
+  if (!accountNumber) { res.status(400).json({ error: "accountNumber required" }); return; }
+
+  const amt = parseFloat(String(amount));
+  if (isNaN(amt) || amt <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
+
+  const s = await getPlatformSettings();
+  const walletEnabled  = (s["feature_wallet"]        ?? "on") === "on";
+  const minWithdrawal  = parseFloat(s["wallet_min_withdrawal"] ?? "200");
+  const maxWithdrawal  = parseFloat(s["wallet_max_withdrawal"] ?? "10000");
+
+  if (!walletEnabled) { res.status(503).json({ error: "Wallet service is currently disabled" }); return; }
+  if (amt < minWithdrawal) { res.status(400).json({ error: `Minimum withdrawal is Rs. ${minWithdrawal}` }); return; }
+  if (amt > maxWithdrawal) { res.status(400).json({ error: `Maximum single withdrawal is Rs. ${maxWithdrawal}` }); return; }
+
+  const balance = parseFloat(String(withdrawUser.walletBalance ?? "0"));
+  if (balance < amt) {
+    res.status(400).json({ error: `Insufficient wallet balance. Available: Rs. ${balance.toFixed(0)}` }); return;
+  }
+
+  const txId = generateId();
+  const desc = [
+    `Withdrawal request — ${paymentMethod}`,
+    `Account: ${accountNumber}`,
+    note ? `Note: ${note}` : null,
+  ].filter(Boolean).join(" · ");
+
+  await db.insert(walletTransactionsTable).values({
+    id: txId, userId, type: "withdrawal",
+    amount: amt.toFixed(2),
+    description: desc,
+    reference: "pending",
+    paymentMethod,
+  });
+
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId,
+    title: "Withdrawal Request Submitted",
+    body: `Rs. ${amt.toFixed(0)} withdrawal request pending hai. Admin 1-2 business days mein process karega.`,
+    type: "wallet", icon: "wallet-outline",
+  }).catch(e => console.error("withdrawal notif insert failed:", e));
+
+  res.json({ success: true, txId, status: "pending", amount: amt });
+});
+
 /* ── GET /wallet/pending-topups — Customer pending topup count ────────── */
 router.get("/pending-topups", customerAuth, async (req, res) => {
   const userId = req.customerId!;
