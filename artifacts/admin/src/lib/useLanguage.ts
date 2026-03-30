@@ -1,14 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
-import { fetcher } from "./api";
+import { useState, useCallback } from "react";
 import type { Language } from "@workspace/i18n";
 import { DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, isRTL } from "@workspace/i18n";
 
-interface SettingsResponse {
-  language?: string;
-  [key: string]: unknown;
-}
-
 const VALID_LANGS = new Set<string>(LANGUAGE_OPTIONS.map(o => o.value));
+const STORAGE_KEY = "ajkmart_admin_language";
 
 function applyRTL(lang: Language) {
   const dir = isRTL(lang) ? "rtl" : "ltr";
@@ -16,34 +11,28 @@ function applyRTL(lang: Language) {
   document.documentElement.setAttribute("lang", lang === "ur" ? "ur" : "en");
 }
 
-export function useLanguage() {
-  const [language, setLang] = useState<Language>(DEFAULT_LANGUAGE);
-  const [loading, setLoading] = useState(false);
-  const [initialised, setInitialised] = useState(false);
+function getSavedLanguage(): Language {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && VALID_LANGS.has(saved)) return saved as Language;
+  } catch {}
+  return DEFAULT_LANGUAGE;
+}
 
-  useEffect(() => {
-    fetcher("/settings")
-      .then((s: SettingsResponse) => {
-        if (s?.language && VALID_LANGS.has(s.language)) {
-          const lang = s.language as Language;
-          setLang(lang);
-          applyRTL(lang);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setInitialised(true));
-  }, []);
+export function useLanguage() {
+  const [language, setLang] = useState<Language>(() => {
+    const lang = getSavedLanguage();
+    applyRTL(lang);
+    return lang;
+  });
+  const [loading, setLoading] = useState(false);
+  const initialised = true;
 
   const setLanguage = useCallback(async (lang: Language) => {
     setLoading(true);
     setLang(lang);
     applyRTL(lang);
-    try {
-      await fetcher("/settings", {
-        method: "PUT",
-        body: JSON.stringify({ language: lang }),
-      });
-    } catch {}
+    try { localStorage.setItem(STORAGE_KEY, lang); } catch {}
     setLoading(false);
   }, []);
 

@@ -316,7 +316,7 @@ function GatewayCard({
     setTesting(true); setTestResult(null);
     try {
       const r = await fetch(`/api/payments/test-connection/${prefix}`, {
-        headers: { "x-admin-secret": localStorage.getItem("ajkmart_admin_token") || "" },
+        headers: { "x-admin-token": localStorage.getItem("ajkmart_admin_token") || "" },
       });
       const data = await r.json() as any;
       setTestResult({ ok: data.ok, message: data.message });
@@ -1893,7 +1893,7 @@ function SecuritySection({ localValues, dirtyKeys, handleChange, handleToggle }:
   const [mfaLoading,   setMfaLoading]   = useState(false);
 
   const adminSecret = localStorage.getItem("ajkmart_admin_token") || "";
-  const apiHeaders  = { "Content-Type": "application/json", "x-admin-secret": adminSecret };
+  const apiHeaders  = { "Content-Type": "application/json", "x-admin-token": adminSecret };
 
   const fetchLiveData = useCallback(async () => {
     if (!adminSecret) return;
@@ -4569,7 +4569,7 @@ function SystemSection() {
   const apiFetch = async (path: string, opts?: RequestInit) => {
     const res = await fetch(`/api/admin/system${path}`, {
       ...opts,
-      headers: { "x-admin-secret": adminSecret, "Content-Type": "application/json", ...(opts?.headers || {}) },
+      headers: { "x-admin-token": adminSecret, "Content-Type": "application/json", ...(opts?.headers || {}) },
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Request failed");
@@ -4642,7 +4642,7 @@ function SystemSection() {
   const handleBackup = async () => {
     setActionLoading("backup");
     try {
-      const res = await fetch("/api/admin/system/backup", { headers: { "x-admin-secret": adminSecret } });
+      const res = await fetch("/api/admin/system/backup", { headers: { "x-admin-token": adminSecret } });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

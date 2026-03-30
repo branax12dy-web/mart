@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -22,8 +22,8 @@ import {
 import { count, lt, eq } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { invalidateSettingsCache } from "../middleware/security.js";
+import { adminAuth } from "./admin.js";
 
-const ADMIN_SECRET       = process.env.ADMIN_SECRET || "ajkmart-admin-2025";
 const DEMO_WALLET_BALANCE = "1000";
 const UNDO_WINDOW_MS      = 30 * 60 * 1000; // 30 minutes
 
@@ -48,15 +48,8 @@ const TABLE_MAP: Record<string, any> = {
 
 const router: IRouter = Router();
 
-/* ── Admin auth guard ── */
-router.use((req: Request, res: Response, next: NextFunction) => {
-  const auth = String(req.headers["x-admin-secret"] || req.query["secret"] || "");
-  if (auth !== ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized. Admin secret required." });
-    return;
-  }
-  next();
-});
+/* ── Admin auth guard — uses the same JWT/secret middleware as the rest of admin routes ── */
+router.use(adminAuth);
 
 /* ── Auto-purge expired snapshots on every request ── */
 router.use(async (_req, _res, next) => {
