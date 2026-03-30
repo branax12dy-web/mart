@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ClipboardList, Package, Bike, Car, UtensilsCrossed,
-  ShoppingCart, CreditCard, Calendar,
+  ShoppingCart, CreditCard, Calendar, RefreshCw,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
@@ -31,9 +31,10 @@ export default function History() {
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["rider-history"],
     queryFn: () => api.getHistory(),
+    refetchInterval: false,
   });
 
   const raw: HistoryItem[] = data?.history || [];
@@ -88,10 +89,18 @@ export default function History() {
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
         <div className="absolute bottom-10 -left-16 w-56 h-56 rounded-full bg-white/[0.02]"/>
         <div className="relative">
-          <p className="text-white/40 text-xs font-semibold tracking-widest uppercase mb-1">
-            <Calendar size={11} className="inline mr-1"/> {raw.length} {T("totalRecords")}
-          </p>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("history")}</h1>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white/40 text-xs font-semibold tracking-widest uppercase mb-1">
+                <Calendar size={11} className="inline mr-1"/> {raw.length} {T("totalRecords")}
+              </p>
+              <h1 className="text-2xl font-extrabold text-white tracking-tight">{T("history")}</h1>
+            </div>
+            <button onClick={() => refetch()} disabled={isFetching}
+              className="w-10 h-10 rounded-2xl bg-white/[0.08] border border-white/[0.06] flex items-center justify-center disabled:opacity-50 transition-opacity active:bg-white/[0.12]">
+              <RefreshCw size={16} className={`text-white/60 ${isFetching ? "animate-spin" : ""}`}/>
+            </button>
+          </div>
 
           {!isLoading && (
             <div className="mt-5 grid grid-cols-3 gap-3">

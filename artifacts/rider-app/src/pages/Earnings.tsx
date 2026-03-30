@@ -158,7 +158,7 @@ export default function Earnings() {
                   {[
                     { label: `${T("totalEarned")} (${riderKeepPct}%)`, value: formatCurrency(data?.month?.earnings || 0), color: "text-green-600" },
                     { label: `${T("deliveries")} ${T("completedLabel")}`,   value: String(data?.month?.deliveries || 0),       color: "text-gray-900"  },
-                    { label: T("avgPerDelivery"),                 value: formatCurrency((data?.month?.deliveries || 0) > 0 ? (data?.month?.earnings || 0) / data.month.deliveries : 0), color: "text-gray-900" },
+                    { label: T("avgPerDelivery"),                 value: formatCurrency((data?.month?.deliveries ?? 0) > 0 ? (data?.month?.earnings ?? 0) / (data?.month?.deliveries ?? 1) : 0), color: "text-gray-900" },
                     { label: T("allTimeEarnings"),                       value: formatCurrency(totalEarnings),              color: "text-green-600" },
                     { label: T("allTimeDeliveries"),                     value: String(totalDeliveries),                    color: "text-gray-900"  },
                   ].map(row => (

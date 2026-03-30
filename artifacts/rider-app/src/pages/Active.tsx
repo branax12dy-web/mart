@@ -160,14 +160,16 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function EstimatedArrivalBadge({ riderPos, pickupLat, pickupLng }: {
+function EstimatedArrivalBadge({ riderPos, pickupLat, pickupLng, vehicleType }: {
   riderPos: { lat: number; lng: number } | null;
   pickupLat?: number | null;
   pickupLng?: number | null;
+  vehicleType?: string | null;
 }) {
   if (!riderPos || pickupLat == null || pickupLng == null) return null;
   const distKm = haversineDistance(riderPos.lat, riderPos.lng, pickupLat, pickupLng);
-  const etaMin = Math.max(1, Math.round((distKm / 25) * 60));
+  const speedKmh = vehicleType === "car" ? 30 : 25;
+  const etaMin = Math.max(1, Math.round((distKm / speedKmh) * 60));
   return (
     <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-4 py-3">
       <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
@@ -176,6 +178,7 @@ function EstimatedArrivalBadge({ riderPos, pickupLat, pickupLng }: {
       <div className="flex-1">
         <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Est. Arrival to Pickup</p>
         <p className="text-base font-black text-gray-900">{etaMin} min <span className="text-gray-400 font-semibold text-xs">({distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)} km`})</span></p>
+        <p className="text-[10px] text-blue-400">Estimate only · {speedKmh} km/h avg</p>
       </div>
     </div>
   );
@@ -197,6 +200,8 @@ export default function Active() {
   const setOrderPickedUp = (v: boolean) => { _setOrderPickedUp(v); sessionStorage.setItem("orderPickedUp", String(v)); };
   const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
   const [proofFileName, setProofFileName]          = useState<string>("");
+  const [proofUploading, setProofUploading]        = useState(false);
+  const [showNoPhotoWarning, setShowNoPhotoWarning] = useState(false);
   const photoInputRef                              = useRef<HTMLInputElement>(null);
   const toastTimerRef                              = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pressedBtn, setPressedBtn]                = useState<string | null>(null);
@@ -241,15 +246,6 @@ export default function Active() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!navigator?.geolocation) return;
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => setRiderPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: false, maximumAge: 30_000, timeout: 30_000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
 
   const showToast = (msg: string, isError = false) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -279,7 +275,7 @@ export default function Active() {
 
   const logRideEvent = (rideId: string, event: string) => {
     const doLog = (lat?: number, lng?: number) => {
-      apiFetch(`/rides/${rideId}/event-log`, {
+      apiFetch(`/rider/rides/${rideId}/event-log`, {
         method:  "POST",
         body: JSON.stringify({ event, lat, lng }),
       }).catch((err: Error) => {
@@ -311,6 +307,7 @@ export default function Active() {
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        setRiderPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
@@ -350,15 +347,41 @@ export default function Active() {
     reader.readAsDataURL(file);
   };
 
+  const handleMarkDelivered = async (id: string) => {
+    if (!proofPhoto && !showNoPhotoWarning) {
+      setShowNoPhotoWarning(true);
+      return;
+    }
+    setShowNoPhotoWarning(false);
+    let photoUrl: string | undefined;
+    if (proofPhoto) {
+      setProofUploading(true);
+      try {
+        const uploadRes = await api.uploadFile({ file: proofPhoto, filename: proofFileName || "proof.jpg" });
+        photoUrl = uploadRes.url;
+      } catch (e: any) {
+        showToast(e.message || "Photo upload failed. Please try again.", true);
+        setProofUploading(false);
+        return;
+      }
+      setProofUploading(false);
+    }
+    if (!navigator.onLine) {
+      showToast("You're offline — update queued for retry", true);
+      pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateOrder(id, "delivered", photoUrl) });
+      return;
+    }
+    updateOrderMut.mutate({ id, status: "delivered", photoUrl });
+  };
+
   const updateOrderMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => {
-      const photo = status === "delivered" ? (proofPhoto ?? undefined) : undefined;
+    mutationFn: ({ id, status, photoUrl }: { id: string; status: string; photoUrl?: string }) => {
       if (!navigator.onLine) {
         showToast("You're offline — update queued for retry", true);
-        pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateOrder(id, status, photo) });
+        pendingUpdatesRef.current.push({ kind: "status", run: () => api.updateOrder(id, status, photoUrl) });
         return Promise.reject(new Error("Offline — queued for retry"));
       }
-      return api.updateOrder(id, status, photo);
+      return api.updateOrder(id, status, photoUrl);
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["rider-active"] });
@@ -526,7 +549,16 @@ export default function Active() {
                 <div className="relative text-right">
                   <p className="font-black text-white text-xl tracking-tight">{formatCurrency(order.total)}</p>
                   <div className="mt-1 bg-white/15 backdrop-blur-sm rounded-lg px-2.5 py-1 border border-white/10">
-                    <p className="text-white text-[10px] font-bold">You earn {formatCurrency(order.total * (config.finance.riderEarningPct / 100))}</p>
+                    <p className="text-white text-[10px] font-bold">You earn {formatCurrency((() => {
+                      const df = config.deliveryFee;
+                      let fee: number;
+                      if (typeof df === "number") { fee = df; }
+                      else if (df && typeof df === "object") {
+                        const raw = (df as Record<string, unknown>)[order.type] ?? (df as Record<string, unknown>).mart ?? 0;
+                        fee = typeof raw === "number" ? raw : parseFloat(String(raw)) || 0;
+                      } else { fee = parseFloat(String(df)) || 0; }
+                      return fee * (config.finance.riderEarningPct / 100);
+                    })())}</p>
                   </div>
                 </div>
               </div>
@@ -692,7 +724,7 @@ export default function Active() {
                             </span>
                           </div>
                         </div>
-                        <button onClick={() => { setProofPhoto(null); setProofFileName(""); }}
+                        <button onClick={() => { setProofPhoto(null); setProofFileName(""); setShowNoPhotoWarning(false); }}
                           className="w-full text-xs text-blue-600 font-bold py-2.5 border-2 border-blue-200 rounded-xl bg-white flex items-center justify-center gap-1.5 active:bg-blue-50 transition-colors">
                           <Camera size={12}/> {T("retakePhoto")}
                         </button>
@@ -720,22 +752,48 @@ export default function Active() {
                     )}
                   </div>
 
+                  {showNoPhotoWarning && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 flex items-start gap-3">
+                      <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5"/>
+                      <div className="flex-1">
+                        <p className="text-xs font-bold text-amber-800">Are you sure? No photo was taken.</p>
+                        <p className="text-[11px] text-amber-700 mt-0.5">Delivering without photo proof may cause disputes. Tap confirm to proceed anyway.</p>
+                      </div>
+                      <button onClick={() => handleMarkDelivered(order.id)}
+                        disabled={proofUploading || updateOrderMut.isPending}
+                        className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl active:bg-amber-700 transition-colors disabled:opacity-60 flex-shrink-0">
+                        Confirm
+                      </button>
+                    </div>
+                  )}
+
                   <button
-                    onClick={() => { updateOrderMut.mutate({ id: order.id, status: "delivered" }); }}
-                    disabled={updateOrderMut.isPending}
+                    onClick={() => handleMarkDelivered(order.id)}
+                    disabled={updateOrderMut.isPending || proofUploading}
                     onTouchStart={() => setPressedBtn("deliver")} onTouchEnd={() => setPressedBtn(null)}
                     className={`w-full font-black rounded-2xl py-4 text-lg disabled:opacity-60 transition-transform bg-gradient-to-r from-green-500 to-emerald-600 text-white flex items-center justify-center gap-2.5 shadow-lg shadow-green-200 ${pressedBtn === "deliver" ? "scale-[0.97]" : ""}`}>
                     <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center">
-                      <CheckCircle size={20}/>
+                      {proofUploading ? <RefreshCw size={18} className="animate-spin"/> : <CheckCircle size={20}/>}
                     </div>
-                    {updateOrderMut.isPending ? T("updating") : proofPhoto ? T("confirmDeliveryWithProof") : T("markDelivered")}
+                    {proofUploading ? "Uploading photo…" : updateOrderMut.isPending ? T("updating") : proofPhoto ? T("confirmDeliveryWithProof") : T("markDelivered")}
                   </button>
 
-                  <button
-                    onClick={() => setOrderPickedUp(false)}
-                    className="w-full border-2 border-gray-200 text-gray-600 text-sm font-bold rounded-xl py-3 bg-white active:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
-                    <ChevronRight size={14} className="rotate-180"/> {T("backToStoreStep")}
-                  </button>
+                  {order.status !== "picked_up" ? (
+                    <button
+                      onClick={() => setOrderPickedUp(false)}
+                      className="w-full border-2 border-gray-200 text-gray-600 text-sm font-bold rounded-xl py-3 bg-white active:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
+                      <ChevronRight size={14} className="rotate-180"/> {T("backToStoreStep")}
+                    </button>
+                  ) : (
+                    <div>
+                      <div className="w-full border-2 border-gray-100 text-gray-400 text-sm font-bold rounded-xl py-3 bg-gray-50 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                        <ChevronRight size={14} className="rotate-180"/> {T("backToStoreStep")}
+                      </div>
+                      <p className="text-[10px] text-gray-400 text-center mt-1">
+                        Cannot go back — server already recorded pickup. Contact support if needed.
+                      </p>
+                    </div>
+                  )}
 
                   <button
                     onClick={() => { setCancelTarget("order"); setShowCancelConfirm(true); }}
@@ -764,7 +822,7 @@ export default function Active() {
               <div className="relative text-right">
                 <p className="font-black text-white text-xl tracking-tight">{formatCurrency(ride.fare)}</p>
                 <div className="mt-1 bg-white/15 backdrop-blur-sm rounded-lg px-2.5 py-1 border border-white/10">
-                  <p className="text-white text-[10px] font-bold">You earn {formatCurrency(ride.fare * (config.finance.riderEarningPct / 100))}</p>
+                  <p className="text-white text-[10px] font-bold">You earn {formatCurrency(ride.fare * ((config.rides?.riderEarningPct ?? config.finance.riderEarningPct) / 100))}</p>
                 </div>
               </div>
             </div>
@@ -836,7 +894,7 @@ export default function Active() {
               )}
 
               {ride.status === "accepted" && (
-                <EstimatedArrivalBadge riderPos={riderPos} pickupLat={ride.pickupLat} pickupLng={ride.pickupLng} />
+                <EstimatedArrivalBadge riderPos={riderPos} pickupLat={ride.pickupLat} pickupLng={ride.pickupLng} vehicleType={ride.type} />
               )}
 
               <div className="grid grid-cols-2 gap-2">

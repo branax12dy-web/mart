@@ -107,7 +107,12 @@ export default function Home() {
   const [toastMsg, setToastMsg] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [newFlash, setNewFlash] = useState(false);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    try {
+      const saved = sessionStorage.getItem("rider_dismissed");
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
   const [silenceOn, setSilenceOn] = useState(getSilenceMode());
   const prevIdsRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -255,11 +260,15 @@ export default function Home() {
   const rides  = allRides.filter((r: any) => !dismissed.has(r.id));
   const totalRequests = orders.length + rides.length;
 
-  const dismiss = (id: string) => setDismissed(prev => new Set([...prev, id]));
+  const dismiss = (id: string) => setDismissed(prev => {
+    const next = new Set([...prev, id]);
+    try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
+    return next;
+  });
 
   const logRideEvent = (rideId: string, event: string) => {
     const doLog = (lat?: number, lng?: number) => {
-      apiFetch(`/rides/${rideId}/event-log`, {
+      apiFetch(`/rider/rides/${rideId}/event-log`, {
         method: "POST",
         body: JSON.stringify({ event, lat, lng }),
       }).catch((err: Error) => {
@@ -337,7 +346,7 @@ export default function Home() {
   });
 
   const ignoreRideMut = useMutation({
-    mutationFn: (id: string) => apiFetch(`/rider/rides/${id}/ignore`, { method: "POST" }),
+    mutationFn: (id: string) => api.ignoreRide(id),
     onSuccess: (data: any, id) => {
       dismiss(id);
       qc.invalidateQueries({ queryKey: ["rider-requests"] });

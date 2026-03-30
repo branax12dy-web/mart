@@ -243,7 +243,7 @@ export default function Register() {
     if (!emergencyContact.trim() || emergencyContact.replace(/\D/g, "").length < 10) {
       setError("Valid emergency contact number is required"); return false;
     }
-    if (availabilityStatus === "taken") { setError(T("loginFailed")); return false; }
+    if (availabilityStatus === "taken") { setError("This phone number or email is already registered. Please log in instead."); return false; }
     if (username && usernameStatus === "taken") { setError("Username is already taken. Please choose another."); return false; }
     return true;
   };
@@ -331,18 +331,13 @@ export default function Register() {
           documents: JSON.stringify(docsPayload),
           ...(username ? { username: username.trim() } : {}),
         };
-        if (auth.phoneOtp) {
-          const res = await api.registerRider(regData);
-          if (selectedChannel === "email") {
-            const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
-            if (emailRes.otp) setDevOtp(emailRes.otp);
-          } else {
-            if (res.otp) setDevOtp(res.otp);
-          }
-        } else {
+        if (selectedChannel === "email") {
           await api.emailRegisterRider(regData);
           const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
-          if (emailRes.otp) setDevOtp(emailRes.otp);
+          if (import.meta.env.DEV && emailRes.otp) setDevOtp(emailRes.otp);
+        } else {
+          const res = await api.registerRider(regData);
+          if (import.meta.env.DEV && res.otp) setDevOtp(res.otp);
         }
         setStep(4);
       } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); }
@@ -716,7 +711,7 @@ export default function Register() {
                   </button>
                 </div>
               )}
-              {devOtp && (
+              {devOtp && import.meta.env.DEV && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700">
                   <strong>{T("devOtp")}:</strong> {devOtp}
                 </div>

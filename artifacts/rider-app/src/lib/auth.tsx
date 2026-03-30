@@ -73,7 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const refreshUser = async () => { const u = await api.getMe(); setUser(u); };
+  const refreshUser = async () => {
+    try {
+      const u = await api.getMe();
+      setUser(u);
+    } catch {
+      /* silently ignore — user remains logged in */
+    }
+  };
 
   return <Ctx.Provider value={{ user, token, loading, twoFactorPending, setTwoFactorPending, login, logout, refreshUser }}>{children}</Ctx.Provider>;
 }
