@@ -24,7 +24,6 @@ import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { sendOtp, verifyOtp } from "@workspace/api-client-react";
-import { LANGUAGE_OPTIONS, type Language } from "@workspace/i18n";
 
 const C = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
@@ -43,16 +42,11 @@ async function authPost(path: string, body: object) {
   return data;
 }
 
-const LANG_PRESETS: { value: Language; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { value: "en_roman", label: "English", icon: "language-outline" },
-  { value: "ur", label: "\u0627\u0631\u062F\u0648", icon: "language-outline" },
-  { value: "en_ur", label: "En + \u0627\u0631\u062F\u0648", icon: "language-outline" },
-];
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { login, setTwoFactorPending, twoFactorPending, completeTwoFactorLogin, biometricEnabled, attemptBiometricLogin } = useAuth();
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const { config: platformCfg } = usePlatformConfig();
   const authCfg = platformCfg.auth;
@@ -567,15 +561,6 @@ export default function AuthScreen() {
           </View>
           <Text style={styles.appName}>{appName}</Text>
           <Text style={styles.tagline}>{appTagline}</Text>
-          <View style={styles.langRow}>
-            {LANG_PRESETS.map(lp => (
-              <Pressable key={lp.value} onPress={() => setLanguage(lp.value)}
-                style={[styles.langChip, language === lp.value && styles.langChipActive]}>
-                <Ionicons name={lp.icon} size={13} color={language === lp.value ? "#fff" : "rgba(255,255,255,0.7)"} />
-                <Text style={[styles.langChipTxt, language === lp.value && styles.langChipTxtActive]}>{lp.label}</Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
 
         <ScrollView style={styles.card} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -863,9 +848,4 @@ const styles = StyleSheet.create({
   footer: { backgroundColor: C.surface, paddingHorizontal: spacing.xxl, paddingTop: 12, alignItems: "center" },
   footerText: { ...typography.caption, color: C.textMuted, textAlign: "center" },
 
-  langRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xl },
-  langChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.full, backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
-  langChipActive: { backgroundColor: "rgba(255,255,255,0.25)", borderColor: "rgba(255,255,255,0.4)" },
-  langChipTxt: { ...typography.captionMedium, color: "rgba(255,255,255,0.7)" },
-  langChipTxtActive: { color: "#fff", fontFamily: "Inter_700Bold" },
 });

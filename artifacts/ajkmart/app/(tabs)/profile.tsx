@@ -22,7 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
-import { LANGUAGE_OPTIONS, tDual, type Language, type TranslationKey } from "@workspace/i18n";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import Accordion from "@/components/Accordion";
 
 const C   = Colors.light;
@@ -743,7 +743,6 @@ export default function ProfileScreen() {
   const [showNotifs,  setShowNotifs]  = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showAddrs,   setShowAddrs]   = useState(false);
-  const [showLang,    setShowLang]    = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [unread,      setUnread]      = useState(0);
   const [stats,       setStats]       = useState({ orders: 0, rides: 0, spent: 0 });
@@ -757,7 +756,7 @@ export default function ProfileScreen() {
     }
   }, [section]);
 
-  const { language, setLanguage, loading: langLoading } = useLanguage();
+  const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
 
   const { config: platformConfig } = usePlatformConfig();
@@ -959,7 +958,6 @@ export default function ProfileScreen() {
           <Row icon="shield-checkmark-outline" label={T("privacySecurity")} sub="Toggles, biometric, location"       onPress={() => setShowPrivacy(true)} iconColor={C.success} iconBg={C.successSoft}
             right={<View style={{ flexDirection:"row", alignItems:"center", gap:4 }}><View style={sec.secureBadge}><Text style={sec.secureTxt}>Secure</Text></View><Ionicons name="chevron-forward" size={15} color={C.textMuted} /></View>}
           />
-          <Row icon="language-outline" label="Language / زبان" sub={LANGUAGE_OPTIONS.find(o => o.value === language)?.label || "Select Language"} onPress={() => setShowLang(true)} iconColor={C.info} iconBg={C.infoSoft} />
         </SectionCard>
 
         <SectionCard title={T("myActivity")}>
@@ -1106,41 +1104,6 @@ export default function ProfileScreen() {
       <PrivacyModal       visible={showPrivacy} userId={user?.id || ""} token={token} onClose={() => setShowPrivacy(false)} />
       <AddressesModal     visible={showAddrs}  userId={user?.id || ""} token={token} onClose={() => setShowAddrs(false)} />
 
-      <Modal visible={showLang} transparent animationType="slide" onRequestClose={() => setShowLang(false)}>
-        <Pressable style={sheet.overlay} onPress={() => setShowLang(false)}>
-          <Pressable style={sheet.container} onPress={e => e.stopPropagation()}>
-            <View style={sheet.handle} />
-            <Text style={langModal.title}>Language / زبان</Text>
-            <Text style={langModal.sub}>{T("selectLanguageSub")}</Text>
-            <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
-              {LANGUAGE_OPTIONS.map(opt => {
-                const active = language === opt.value;
-                return (
-                  <Pressable
-                    key={opt.value}
-                    onPress={async () => {
-                      await setLanguage(opt.value as Language);
-                      setShowLang(false);
-                      showToast("Language saved!", "success");
-                    }}
-                    disabled={langLoading}
-                    style={[langModal.option, active && langModal.optionActive]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[langModal.optLabel, active && langModal.optLabelActive]}>{opt.label}</Text>
-                      <Text style={[langModal.optNative, active && { color: C.primary }]}>{opt.nativeLabel}</Text>
-                    </View>
-                    {active && <Ionicons name="checkmark-circle" size={22} color={C.primary} />}
-                    {opt.rtl && (
-                      <View style={langModal.rtlBadge}><Text style={langModal.rtlBadgeTxt}>RTL</Text></View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -1329,14 +1292,3 @@ const addrItem = StyleSheet.create({
   delBtn: { width: 30, height: 30, borderRadius: radii.sm, alignItems: "center", justifyContent: "center" },
 });
 
-const langModal = StyleSheet.create({
-  title: { ...typography.h2, color: C.text, marginBottom: spacing.xs },
-  sub: { ...typography.caption, color: C.textMuted, marginBottom: spacing.sm },
-  option: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, padding: spacing.lg },
-  optionActive: { borderColor: C.primary, backgroundColor: C.primarySoft },
-  optLabel: { ...typography.bodySemiBold, color: C.text },
-  optLabelActive: { color: C.primary },
-  optNative: { ...typography.caption, color: C.textMuted, marginTop: 2 },
-  rtlBadge: { backgroundColor: C.accentSoft, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radii.full },
-  rtlBadgeTxt: { ...typography.smallMedium, color: C.accent },
-});
