@@ -23,7 +23,7 @@ import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { tDual, type TranslationKey } from "@workspace/i18n";
+import { tDual, type TranslationKey, type Language } from "@workspace/i18n";
 import { useGetOrders } from "@workspace/api-client-react";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
@@ -560,48 +560,103 @@ function ParcelCard({ booking }: { booking: any }) {
   );
 }
 
-function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
-  target: any;
+function StarPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <View style={{ flexDirection: "row", justifyContent: "center", gap: 12, marginVertical: 8 }}>
+      {[1, 2, 3, 4, 5].map(s => (
+        <Pressable key={s} onPress={() => onChange(s)} hitSlop={10}>
+          <Ionicons
+            name={s <= value ? "star" : "star-outline"}
+            size={36}
+            color={s <= value ? "#F59E0B" : "#E2E8F0"}
+          />
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+const RATING_LABELS = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
+
+function ReviewModal({ target, userId, apiBase, token, language, onClose, onDone }: {
+  target: Record<string, unknown>;
   userId: string;
   apiBase: string;
   token: string | null;
+  language: Language;
   onClose: () => void;
   onDone: (orderId: string) => void;
 }) {
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const t = (k: TranslationKey) => tDual(k, language);
+  const orderType: string = String(target._type ?? target.type ?? "order");
+  const isRideOrder = orderType === "ride";
+  /* Ride orders: rated via the general /reviews endpoint, rider is the subject.
+     Delivery orders with a rider AND a vendor: dual-rating (vendor + rider separately).
+     Delivery orders with only a vendor (no rider yet): vendor-only rating. */
+  const hasVendor    = !!target.vendorId;
+  const hasRider     = !!target.riderId;   // include ride orders
+  const isDualRating = hasVendor && hasRider && !isRideOrder;
+
+  const [vendorRating, setVendorRating] = useState(0);
+  const [riderRating,  setRiderRating]  = useState(0);
+  const [comment, setComment]           = useState("");
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState("");
+
+  const primaryRating   = isRideOrder ? riderRating : vendorRating;
+  const primaryLabel    = isRideOrder ? "Please rate your rider." : "Please rate the vendor.";
+  const secondaryError  = "Please rate the delivery rider too.";
 
   const submit = async () => {
-    if (rating === 0) { setError("Please select a star rating."); return; }
+    if (primaryRating === 0) { setError(primaryLabel); return; }
+    if (isDualRating && riderRating === 0) { setError(secondaryError); return; }
     setLoading(true);
     setError("");
     try {
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
+
+      /* Single-request: primary rating (vendor for delivery, rider for rides)
+         + optional separate rider rating stored in riderRating column */
       const res = await fetch(`${apiBase}/reviews`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: hdrs,
         body: JSON.stringify({
-          orderId: target.id,
-          vendorId: target.vendorId ?? null,
-          riderId: target.riderId ?? null,
-          orderType: target._type ?? target.type ?? "order",
-          rating,
+          orderId: String(target.id),
+          vendorId: hasVendor && !isRideOrder ? target.vendorId : null,
+          riderId: hasRider ? target.riderId : null,
+          orderType,
+          rating: primaryRating,
+          riderRating: isDualRating && riderRating > 0 ? riderRating : null,
           comment: comment.trim() || null,
         }),
       });
-      if (res.status === 409) { onDone(target.id); onClose(); return; }
-      if (!res.ok) throw new Error("Failed");
-      onDone(target.id);
+
+      if (res.status === 409) {
+        /* Already reviewed — treat as success */
+        onDone(String(target.id));
+        onClose();
+        return;
+      }
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+        if (body["expired"]) {
+          setError(tDual("reviewWindowExpired", language));
+        } else {
+          setError(tDual("reviewSubmitError", language));
+        }
+        return;
+      }
+
+      onDone(String(target.id));
       onClose();
     } catch {
-      setError("Could not submit review. Please try again.");
+      setError(tDual("reviewSubmitError", language));
     } finally {
       setLoading(false);
     }
   };
-
-  const ratingLabels = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -617,31 +672,42 @@ function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
 
           <Text style={rm.title}>Rate your experience</Text>
           <Text style={rm.sub}>
-            {target._type === "ride"
-              ? `Ride #${target.id?.slice(-8).toUpperCase()}`
-              : target._type === "pharmacy"
-              ? `Pharmacy order #${target.id?.slice(-8).toUpperCase()}`
-              : `Order #${target.id?.slice(-8).toUpperCase()}`}
+            {orderType === "ride"
+              ? `Ride #${String(target.id)?.slice(-8).toUpperCase()}`
+              : orderType === "pharmacy"
+              ? `Pharmacy #${String(target.id)?.slice(-8).toUpperCase()}`
+              : `Order #${String(target.id)?.slice(-8).toUpperCase()}`}
           </Text>
 
-          <View style={rm.stars}>
-            {[1, 2, 3, 4, 5].map(s => (
-              <Pressable key={s} onPress={() => setRating(s)} hitSlop={10}>
-                <Ionicons
-                  name={s <= rating ? "star" : "star-outline"}
-                  size={38}
-                  color={s <= rating ? "#F59E0B" : "#E2E8F0"}
-                />
-              </Pressable>
-            ))}
-          </View>
-          {rating > 0 && (
-            <Text style={rm.ratingLabel}>{ratingLabels[rating]}</Text>
+          {/* Primary star picker:
+              - Ride orders    → rate the rider
+              - Delivery orders → rate the vendor */}
+          <Text style={rm.sectionLabel}>
+            {isRideOrder ? t("rateYourRider") : isDualRating ? t("rateTheVendor") : t("rateYourExperience")}
+          </Text>
+          <StarPicker
+            value={isRideOrder ? riderRating : vendorRating}
+            onChange={isRideOrder ? setRiderRating : setVendorRating}
+          />
+          {(isRideOrder ? riderRating : vendorRating) > 0 && (
+            <Text style={rm.ratingLabel}>{RATING_LABELS[isRideOrder ? riderRating : vendorRating]}</Text>
+          )}
+
+          {/* Secondary: separate rider rating on delivery orders that also have a rider */}
+          {isDualRating && (
+            <>
+              <View style={rm.divider} />
+              <Text style={rm.sectionLabel}>{t("rateDeliveryRider")}</Text>
+              <StarPicker value={riderRating} onChange={setRiderRating} />
+              {riderRating > 0 && (
+                <Text style={rm.ratingLabel}>{RATING_LABELS[riderRating]}</Text>
+              )}
+            </>
           )}
 
           <TextInput
             style={rm.input}
-            placeholder="Share your experience (optional)..."
+            placeholder={t("shareExperiencePlaceholder")}
             placeholderTextColor="#94A3B8"
             value={comment}
             onChangeText={setComment}
@@ -654,12 +720,16 @@ function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
 
           <View style={rm.btns}>
             <Pressable style={rm.cancelBtn} onPress={onClose}>
-              <Text style={rm.cancelText}>Cancel</Text>
+              <Text style={rm.cancelText}>{t("back")}</Text>
             </Pressable>
-            <Pressable style={[rm.submitBtn, rating === 0 && { opacity: 0.5 }]} onPress={submit} disabled={loading}>
+            <Pressable
+              style={[rm.submitBtn, primaryRating === 0 && { opacity: 0.5 }]}
+              onPress={submit}
+              disabled={loading}
+            >
               {loading
                 ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={rm.submitText}>Submit Review</Text>}
+                : <Text style={rm.submitText}>{t("submitReview")}</Text>}
             </Pressable>
           </View>
         </Pressable>
@@ -670,18 +740,19 @@ function ReviewModal({ target, userId, apiBase, token, onClose, onDone }: {
 
 const rm = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet:    { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 },
+  sheet:    { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, maxHeight: "90%" },
   handle:   { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
   headerIconWrap: { alignItems: "center", marginBottom: 14 },
   headerIcon: { width: 52, height: 52, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   title:    { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, textAlign: "center", marginBottom: 4 },
-  sub:      { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center", marginBottom: 20 },
-  stars:    { flexDirection: "row", justifyContent: "center", gap: 14, marginBottom: 8 },
-  ratingLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#B45309", textAlign: "center", marginBottom: 16 },
+  sub:      { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center", marginBottom: 16 },
+  sectionLabel: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.textSecondary, textAlign: "center", marginTop: 4, marginBottom: 2 },
+  divider:  { height: 1, backgroundColor: C.border, marginVertical: 12 },
+  ratingLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#B45309", textAlign: "center", marginBottom: 4, marginTop: 2 },
   input: {
     borderWidth: 1.5, borderColor: C.border, borderRadius: 16,
     padding: 14, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text,
-    minHeight: 80, textAlignVertical: "top", marginBottom: 8, backgroundColor: C.surfaceSecondary,
+    minHeight: 72, textAlignVertical: "top", marginTop: 8, marginBottom: 8, backgroundColor: C.surfaceSecondary,
   },
   error:    { fontFamily: "Inter_400Regular", fontSize: 13, color: "#EF4444", textAlign: "center", marginBottom: 8 },
   btns:     { flexDirection: "row", gap: 12, marginTop: 8 },
@@ -1182,6 +1253,7 @@ export default function OrdersScreen() {
           userId={user.id}
           apiBase={API_BASE}
           token={token}
+          language={language}
           onClose={() => setReviewTarget(null)}
           onDone={handleReviewDone}
         />

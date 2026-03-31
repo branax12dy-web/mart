@@ -12,6 +12,7 @@ const items: { href: string; labelKey: TranslationKey; icon: string; descKey: Tr
   { href: "/products",   labelKey: "products",    icon: "🍽️", descKey: "yourMenuStock"    },
   { href: "/wallet",     labelKey: "wallet",      icon: "💰", descKey: "earningsPayoutsShort" },
   { href: "/analytics",  labelKey: "analytics",   icon: "📈", descKey: "salesPerf"        },
+  { href: "/reviews",    labelKey: "reviews",     icon: "⭐", descKey: "customerFeedback" },
   { href: "/store",      labelKey: "myStore",     icon: "🏪", descKey: "settingsAndHours" },
   { href: "/profile",    labelKey: "account",     icon: "👤", descKey: "profileAndSecurity" },
 ];

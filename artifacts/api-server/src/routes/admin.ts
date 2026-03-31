@@ -26,8 +26,9 @@ import {
   rideEventLogsTable,
   rideNotifiedRidersTable,
   locationLogsTable,
+  reviewsTable,
 } from "@workspace/db/schema";
-import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull } from "drizzle-orm";
+import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import {
   checkAdminIPWhitelist,
@@ -4134,6 +4135,164 @@ router.get("/riders/:userId/route", async (req, res) => {
   const lastLocation   = points[points.length - 1] ?? null;
 
   res.json({ userId, date: dateParam ?? "today", loginLocation, lastLocation, route: points, total: points.length });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   Admin — Review Management
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── GET /admin/reviews — paginated list of all reviews (order reviews + ride ratings) ── */
+router.get("/reviews", adminAuth, async (req, res) => {
+  const page   = Math.max(1, parseInt(String(req.query["page"]  || "1")));
+  const limit  = Math.min(parseInt(String(req.query["limit"] || "50")), 200);
+  const offset = (page - 1) * limit;
+
+  const typeFilter    = req.query["type"]    as string | undefined;  // "order" | "ride"
+  const starsFilter   = req.query["stars"]   as string | undefined;  // "1"–"5"
+  const statusFilter  = req.query["status"]  as string | undefined;  // "visible" | "hidden" | "deleted"
+  const subjectFilter = req.query["subject"] as string | undefined;  // "vendor" | "rider"
+  const dateFrom      = req.query["dateFrom"] as string | undefined;
+  const dateTo        = req.query["dateTo"]   as string | undefined;
+
+  /* ── Order Reviews ── */
+  const orderConditions: any[] = [];
+  if (starsFilter) orderConditions.push(eq(reviewsTable.rating, parseInt(starsFilter)));
+  if (statusFilter === "hidden")  orderConditions.push(eq(reviewsTable.hidden, true));
+  if (statusFilter === "deleted") orderConditions.push(isNotNull(reviewsTable.deletedAt));
+  if (statusFilter === "visible") orderConditions.push(eq(reviewsTable.hidden, false), isNull(reviewsTable.deletedAt));
+  if (dateFrom) orderConditions.push(gte(reviewsTable.createdAt, new Date(dateFrom)));
+  if (dateTo)   orderConditions.push(lte(reviewsTable.createdAt, new Date(dateTo)));
+  /* subject filter:
+     vendor = has vendorId (includes dual-rated delivery orders)
+     rider  = has riderId (includes both ride-only AND dual-rated delivery orders where rider feedback exists) */
+  if (subjectFilter === "vendor") orderConditions.push(isNotNull(reviewsTable.vendorId));
+  if (subjectFilter === "rider")  orderConditions.push(isNotNull(reviewsTable.riderId));
+
+  /* ── Ride Ratings ── */
+  const rideConditions: any[] = [];
+  if (starsFilter) rideConditions.push(eq(rideRatingsTable.stars, parseInt(starsFilter)));
+  if (statusFilter === "hidden")  rideConditions.push(eq(rideRatingsTable.hidden, true));
+  if (statusFilter === "deleted") rideConditions.push(isNotNull(rideRatingsTable.deletedAt));
+  if (statusFilter === "visible") rideConditions.push(eq(rideRatingsTable.hidden, false), isNull(rideRatingsTable.deletedAt));
+  if (dateFrom) rideConditions.push(gte(rideRatingsTable.createdAt, new Date(dateFrom)));
+  if (dateTo)   rideConditions.push(lte(rideRatingsTable.createdAt, new Date(dateTo)));
+  /* For ride_ratings: all rows are rider-subject; vendor filter means exclude all ride_ratings */
+  const skipRideRatings = subjectFilter === "vendor";
+
+  const [orderReviews, rideRatings] = await Promise.all([
+    typeFilter === "ride" ? [] : db
+      .select({
+        id: reviewsTable.id,
+        type: sql<string>`'order'`,
+        rating: reviewsTable.rating,
+        riderRating: reviewsTable.riderRating,
+        comment: reviewsTable.comment,
+        orderType: reviewsTable.orderType,
+        hidden: reviewsTable.hidden,
+        deletedAt: reviewsTable.deletedAt,
+        createdAt: reviewsTable.createdAt,
+        reviewerId: reviewsTable.userId,
+        subjectId: sql<string | null>`COALESCE(${reviewsTable.vendorId}, ${reviewsTable.riderId})`,
+        subjectRiderId: reviewsTable.riderId,
+        reviewerName: usersTable.name,
+        reviewerPhone: usersTable.phone,
+      })
+      .from(reviewsTable)
+      .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined)
+      .orderBy(desc(reviewsTable.createdAt)),
+
+    (typeFilter === "order" || skipRideRatings) ? [] : db
+      .select({
+        id: rideRatingsTable.id,
+        type: sql<string>`'ride'`,
+        rating: rideRatingsTable.stars,
+        riderRating: sql<null>`null`,
+        comment: rideRatingsTable.comment,
+        orderType: sql<string>`'ride'`,
+        hidden: rideRatingsTable.hidden,
+        deletedAt: rideRatingsTable.deletedAt,
+        createdAt: rideRatingsTable.createdAt,
+        reviewerId: rideRatingsTable.customerId,
+        subjectId: rideRatingsTable.riderId,
+        subjectRiderId: rideRatingsTable.riderId,
+        reviewerName: usersTable.name,
+        reviewerPhone: usersTable.phone,
+      })
+      .from(rideRatingsTable)
+      .leftJoin(usersTable, eq(rideRatingsTable.customerId, usersTable.id))
+      .where(rideConditions.length > 0 ? and(...rideConditions) : undefined)
+      .orderBy(desc(rideRatingsTable.createdAt)),
+  ]);
+
+  /* Merge and sort by date descending */
+  const combined = [...orderReviews, ...rideRatings]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const total = combined.length;
+  const paginated = combined.slice(offset, offset + limit);
+
+  /* Enrich with subject names */
+  const subjectIds = [...new Set(paginated.map(r => r.subjectId).filter(Boolean))];
+  const subjectUsers = subjectIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, storeName: usersTable.storeName, phone: usersTable.phone })
+        .from(usersTable).where(sql`${usersTable.id} = ANY(${subjectIds})`)
+    : [];
+  const subjectMap = new Map(subjectUsers.map(u => [u.id, u]));
+
+  const enriched = paginated.map(r => ({
+    ...r,
+    deletedAt: r.deletedAt ? r.deletedAt.toISOString?.() ?? r.deletedAt : null,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    subjectName: r.subjectId ? (subjectMap.get(r.subjectId)?.storeName || subjectMap.get(r.subjectId)?.name || null) : null,
+    subjectPhone: r.subjectId ? subjectMap.get(r.subjectId)?.phone ?? null : null,
+  }));
+
+  res.json({ reviews: enriched, total, page, limit, pages: Math.ceil(total / limit) });
+});
+
+/* ── PATCH /admin/reviews/:id/hide — toggle hidden status ── */
+router.patch("/reviews/:id/hide", adminAuth, async (req, res) => {
+  const [existing] = await db.select({ id: reviewsTable.id, hidden: reviewsTable.hidden })
+    .from(reviewsTable).where(eq(reviewsTable.id, req.params["id"]!)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Review not found" }); return; }
+  const newHidden = !existing.hidden;
+  await db.update(reviewsTable).set({ hidden: newHidden }).where(eq(reviewsTable.id, existing.id));
+  res.json({ success: true, hidden: newHidden });
+});
+
+/* ── DELETE /admin/reviews/:id — soft delete ── */
+router.delete("/reviews/:id", adminAuth, async (req, res) => {
+  const adminId = (req as any).adminId ?? "admin";
+  const [existing] = await db.select({ id: reviewsTable.id })
+    .from(reviewsTable).where(eq(reviewsTable.id, req.params["id"]!)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Review not found" }); return; }
+  await db.update(reviewsTable)
+    .set({ deletedAt: new Date(), deletedBy: adminId, hidden: true })
+    .where(eq(reviewsTable.id, existing.id));
+  res.json({ success: true });
+});
+
+/* ── PATCH /admin/ride-ratings/:id/hide — toggle hidden status ── */
+router.patch("/ride-ratings/:id/hide", adminAuth, async (req, res) => {
+  const [existing] = await db.select({ id: rideRatingsTable.id, hidden: rideRatingsTable.hidden })
+    .from(rideRatingsTable).where(eq(rideRatingsTable.id, req.params["id"]!)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Ride rating not found" }); return; }
+  const newHidden = !existing.hidden;
+  await db.update(rideRatingsTable).set({ hidden: newHidden }).where(eq(rideRatingsTable.id, existing.id));
+  res.json({ success: true, hidden: newHidden });
+});
+
+/* ── DELETE /admin/ride-ratings/:id — soft delete ── */
+router.delete("/ride-ratings/:id", adminAuth, async (req, res) => {
+  const adminId = (req as any).adminId ?? "admin";
+  const [existing] = await db.select({ id: rideRatingsTable.id })
+    .from(rideRatingsTable).where(eq(rideRatingsTable.id, req.params["id"]!)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Ride rating not found" }); return; }
+  await db.update(rideRatingsTable)
+    .set({ deletedAt: new Date(), deletedBy: adminId, hidden: true })
+    .where(eq(rideRatingsTable.id, existing.id));
+  res.json({ success: true });
 });
 
 export default router;

@@ -28,6 +28,7 @@ import {
   Shield,
   Navigation,
   AlertTriangle,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -97,6 +98,12 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { nameKey: "navSecurityPage",  href: "/security",       icon: Shield },
       { nameKey: "navSosAlerts",     href: "/sos-alerts",     icon: AlertTriangle },
+    ],
+  },
+  {
+    labelKey: "navReviewsMgmt",
+    items: [
+      { nameKey: "navReviews", href: "/reviews", icon: Star },
     ],
   },
   {

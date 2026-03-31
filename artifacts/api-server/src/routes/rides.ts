@@ -1010,6 +1010,12 @@ router.post("/:id/rate", customerAuth, requireRideState(["completed"]), requireR
 
   if (!ride.riderId) { res.status(400).json({ error: "No rider assigned" }); return; }
 
+  /* Explicit self-rating guard: customer cannot be the same person as the rider */
+  if (ride.riderId === userId) {
+    res.status(403).json({ error: "You cannot rate yourself." });
+    return;
+  }
+
   const existing = await db.select({ id: rideRatingsTable.id }).from(rideRatingsTable).where(eq(rideRatingsTable.rideId, rideId)).limit(1);
   if (existing.length > 0) { res.status(409).json({ error: "Already rated" }); return; }
 

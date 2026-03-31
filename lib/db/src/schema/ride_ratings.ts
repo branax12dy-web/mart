@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -9,6 +9,9 @@ export const rideRatingsTable = pgTable("ride_ratings", {
   riderId: text("rider_id").notNull(),
   stars: integer("stars").notNull(),
   comment: text("comment"),
+  hidden: boolean("hidden").notNull().default(false),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: text("deleted_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("ride_ratings_ride_id_uidx").on(t.rideId),

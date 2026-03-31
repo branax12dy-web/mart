@@ -140,6 +140,14 @@ export const api = {
 
   /* Reviews */
   getReviews:    (vendorId: string) => apiFetch(`/reviews/vendor/${vendorId}`),
+  getVendorReviews: (params?: { page?: number; limit?: number; stars?: string; sort?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.page)  q.set("page",  String(params.page));
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.stars) q.set("stars", params.stars);
+    if (params?.sort)  q.set("sort",  params.sort);
+    return apiFetch(`/vendor/reviews?${q.toString()}`);
+  },
 
   /* Wallet */
   getWallet:      () => apiFetch("/vendor/wallet/transactions"),

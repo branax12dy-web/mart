@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable, locationLogsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable, rideRatingsTable, locationLogsTable } from "@workspace/db/schema";
 import { eq, desc, and, or, sql, count, sum, avg, gte, isNull, type InferSelectModel } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -1214,35 +1214,129 @@ router.get("/history", async (req, res) => {
   res.json({ history: combined });
 });
 
-/* ── GET /rider/reviews — Reviews received by this rider ── */
+/* ── GET /rider/reviews — Reviews received by this rider (excludes hidden/deleted) ── */
 router.get("/reviews", async (req, res) => {
   const riderId = req.riderId!;
+  const pageLimit = 50;
 
-  const [statsRow] = await db
-    .select({ total: count(), avgRating: avg(reviewsTable.rating) })
+  /* For unified reviews table: COALESCE(riderRating, rating) gives the rider-specific score.
+     - Dual-rated delivery: `riderRating` = rider score, `rating` = vendor score.
+     - Ride-only: `rating` IS the rider score, `riderRating` is null. */
+  const riderScore = sql<number>`COALESCE(${reviewsTable.riderRating}, ${reviewsTable.rating})`;
+  const visibleReviewConditions = and(
+    eq(reviewsTable.riderId, riderId),
+    eq(reviewsTable.hidden, false),
+    isNull(reviewsTable.deletedAt),
+  );
+  const visibleRatingConditions = and(
+    eq(rideRatingsTable.riderId, riderId),
+    eq(rideRatingsTable.hidden, false),
+    isNull(rideRatingsTable.deletedAt),
+  );
+
+  /* ── Aggregates from reviewsTable (DB-level, no limit) ── */
+  const [reviewStats, reviewBreakdown] = await Promise.all([
+    db
+      .select({ total: count(), avgRating: avg(riderScore) })
+      .from(reviewsTable)
+      .where(visibleReviewConditions),
+    db
+      .select({ star: sql<number>`ROUND(${riderScore})`, cnt: count() })
+      .from(reviewsTable)
+      .where(visibleReviewConditions)
+      .groupBy(sql`ROUND(${riderScore})`),
+  ]);
+
+  /* ── Aggregates from rideRatingsTable (DB-level, exclude rides already in reviewsTable) ── */
+  /* Get the set of rideIds from reviewsTable for this rider so we can exclude them */
+  const rideIdsInReviews = await db
+    .select({ rideId: reviewsTable.orderId })
     .from(reviewsTable)
-    .where(eq(reviewsTable.riderId, riderId));
+    .where(and(visibleReviewConditions, eq(reviewsTable.orderType, "ride")));
+  const rideIdSet = rideIdsInReviews.map(r => r.rideId);
 
-  const total = statsRow?.total ?? 0;
-  const avgRating = statsRow?.avgRating ? parseFloat(parseFloat(statsRow.avgRating).toFixed(1)) : null;
+  /* Build the legacy-ratings filter (exclude already-counted rideIds) */
+  const legacyConditions = rideIdSet.length > 0
+    ? and(
+        visibleRatingConditions,
+        sql`${rideRatingsTable.rideId} NOT IN (${sql.join(rideIdSet.map(id => sql`${id}`), sql`, `)})`,
+      )
+    : visibleRatingConditions;
 
-  const rows = await db
-    .select({
-      id: reviewsTable.id,
-      orderId: reviewsTable.orderId,
-      rating: reviewsTable.rating,
-      comment: reviewsTable.comment,
-      orderType: reviewsTable.orderType,
-      createdAt: reviewsTable.createdAt,
-      customerName: usersTable.name,
-    })
-    .from(reviewsTable)
-    .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
-    .where(eq(reviewsTable.riderId, riderId))
-    .orderBy(desc(reviewsTable.createdAt))
-    .limit(20);
+  const [legacyStats, legacyBreakdown] = await Promise.all([
+    db
+      .select({ total: count(), avgSum: sql<number>`SUM(${rideRatingsTable.stars})` })
+      .from(rideRatingsTable)
+      .where(legacyConditions),
+    db
+      .select({ star: sql<number>`ROUND(${rideRatingsTable.stars})`, cnt: count() })
+      .from(rideRatingsTable)
+      .where(legacyConditions)
+      .groupBy(sql`ROUND(${rideRatingsTable.stars})`),
+  ]);
 
-  res.json({ reviews: rows, avgRating, total });
+  /* ── Compute unified aggregates ── */
+  const reviewTotal = reviewStats[0]?.total ?? 0;
+  const legacyTotal = legacyStats[0]?.total ?? 0;
+  const total = reviewTotal + legacyTotal;
+
+  /* Weighted avg: (reviewAvg * reviewTotal + legacySum) / total */
+  const reviewAvgRaw = reviewStats[0]?.avgRating ? parseFloat(reviewStats[0].avgRating) : 0;
+  const legacySum = legacyStats[0]?.avgSum ? Number(legacyStats[0].avgSum) : 0;
+  const avgRating = total > 0
+    ? parseFloat(((reviewAvgRaw * reviewTotal + legacySum) / total).toFixed(1))
+    : null;
+
+  const starBreakdown: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const row of reviewBreakdown) {
+    const s = Math.round(Number(row.star));
+    if (s >= 1 && s <= 5) starBreakdown[s] = (starBreakdown[s] ?? 0) + row.cnt;
+  }
+  for (const row of legacyBreakdown) {
+    const s = Math.round(Number(row.star));
+    if (s >= 1 && s <= 5) starBreakdown[s] = (starBreakdown[s] ?? 0) + row.cnt;
+  }
+
+  /* ── Paginated review list (most recent 50) from both sources ── */
+  const [reviewRows, ratingRows] = await Promise.all([
+    db
+      .select({
+        id: reviewsTable.id,
+        orderId: reviewsTable.orderId,
+        rating: riderScore,
+        comment: reviewsTable.comment,
+        orderType: reviewsTable.orderType,
+        createdAt: reviewsTable.createdAt,
+        customerName: usersTable.name,
+      })
+      .from(reviewsTable)
+      .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+      .where(visibleReviewConditions)
+      .orderBy(desc(reviewsTable.createdAt))
+      .limit(pageLimit),
+
+    db
+      .select({
+        id: rideRatingsTable.id,
+        orderId: rideRatingsTable.rideId,
+        rating: rideRatingsTable.stars,
+        comment: rideRatingsTable.comment,
+        orderType: sql<string>`'ride'`,
+        createdAt: rideRatingsTable.createdAt,
+        customerName: usersTable.name,
+      })
+      .from(rideRatingsTable)
+      .leftJoin(usersTable, eq(rideRatingsTable.customerId, usersTable.id))
+      .where(legacyConditions)
+      .orderBy(desc(rideRatingsTable.createdAt))
+      .limit(pageLimit),
+  ]);
+
+  const reviews = [...reviewRows, ...ratingRows]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, pageLimit);
+
+  res.json({ reviews, avgRating, total, starBreakdown });
 });
 
 /* ── GET /rider/earnings — Earnings summary ── */

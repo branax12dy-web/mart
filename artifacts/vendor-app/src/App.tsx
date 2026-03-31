@@ -18,6 +18,7 @@ import Profile from "./pages/Profile";
 import Wallet from "./pages/Wallet";
 import Analytics from "./pages/Analytics";
 import Notifications from "./pages/Notifications";
+import Reviews from "./pages/Reviews";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -104,6 +105,7 @@ function AppRoutes() {
                 <Route path="/products" component={Products} />
                 <Route path="/wallet" component={Wallet} />
                 <Route path="/analytics" component={Analytics} />
+                <Route path="/reviews" component={Reviews} />
                 <Route path="/store" component={Store} />
                 <Route path="/notifications" component={Notifications} />
                 <Route path="/profile" component={Profile} />

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull } from "drizzle-orm";
+import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable } from "@workspace/db/schema";
+import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull, avg } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, writeAuthAuditLog, getClientIp } from "../middleware/security.js";
@@ -567,6 +567,74 @@ router.get("/analytics", async (req, res) => {
     topProducts,
     byStatus,
     period: days,
+  });
+});
+
+/* ── GET /vendor/reviews — all reviews for this vendor (authenticated) ── */
+router.get("/reviews", async (req, res) => {
+  const vendorId = req.vendorId!;
+  const page  = Math.max(1, parseInt(String(req.query["page"]  || "1")));
+  const limit = Math.min(parseInt(String(req.query["limit"] || "20")), 100);
+  const offset = (page - 1) * limit;
+  const starsFilter = req.query["stars"] as string | undefined;
+  const sort = req.query["sort"] as string || "newest";
+
+  const conditions: any[] = [eq(reviewsTable.vendorId, vendorId), eq(reviewsTable.hidden, false), isNull(reviewsTable.deletedAt)];
+  if (starsFilter) conditions.push(eq(reviewsTable.rating, parseInt(starsFilter)));
+
+  const [statsRow] = await db
+    .select({ total: count(), avgRating: avg(reviewsTable.rating) })
+    .from(reviewsTable)
+    .where(and(eq(reviewsTable.vendorId, vendorId), eq(reviewsTable.hidden, false), isNull(reviewsTable.deletedAt)));
+
+  const totalCount = statsRow?.total ?? 0;
+  const avgRating  = statsRow?.avgRating ? parseFloat(parseFloat(statsRow.avgRating).toFixed(1)) : null;
+
+  /* Star breakdown */
+  const breakdown = await db
+    .select({ rating: reviewsTable.rating, cnt: count() })
+    .from(reviewsTable)
+    .where(and(eq(reviewsTable.vendorId, vendorId), eq(reviewsTable.hidden, false), isNull(reviewsTable.deletedAt)))
+    .groupBy(reviewsTable.rating);
+  const starBreakdown: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const row of breakdown) starBreakdown[row.rating] = row.cnt;
+
+  const rows = await db
+    .select({
+      id: reviewsTable.id,
+      orderId: reviewsTable.orderId,
+      rating: reviewsTable.rating,
+      comment: reviewsTable.comment,
+      orderType: reviewsTable.orderType,
+      createdAt: reviewsTable.createdAt,
+      customerName: usersTable.name,
+    })
+    .from(reviewsTable)
+    .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+    .where(and(...conditions))
+    .orderBy(sort === "oldest" ? reviewsTable.createdAt : desc(reviewsTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  /* Mask customer names: first name + last initial */
+  const masked = rows.map(r => ({
+    ...r,
+    customerName: r.customerName
+      ? (() => {
+          const parts = r.customerName.trim().split(/\s+/);
+          return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
+        })()
+      : "Customer",
+  }));
+
+  res.json({
+    reviews: masked,
+    total: totalCount,
+    avgRating,
+    starBreakdown,
+    page,
+    limit,
+    pages: Math.ceil(totalCount / limit),
   });
 });
 
