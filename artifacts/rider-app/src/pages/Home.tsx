@@ -15,7 +15,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
-  ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
+  ShoppingCart, Pill, Package, Banana, Navigation, Wifi, WifiOff,
   X, Timer, CheckCircle, MessageSquare, ChevronRight,
   TrendingUp, Calendar, Trophy, Radio, Zap, Clock,
   ArrowUpRight, Eye, VolumeX, Volume2, XCircle, Ban, SkipForward,
@@ -274,6 +274,8 @@ export default function Home() {
     };
   }, []);
 
+  const [socketConnected, setSocketConnected] = useState(true);
+
   /* ── Socket.io: subscribe to rider:new-request for instant push notification ──
      When the server dispatches a new order or ride offer to this rider's socket room,
      we immediately invalidate the requests query — no waiting for the polling interval. */
@@ -289,6 +291,16 @@ export default function Home() {
         transports: ["polling", "websocket"],
         reconnection: true,
         reconnectionDelay: 3000,
+      });
+
+      socket.on("connect", () => {
+        if (isMountedRef.current) setSocketConnected(true);
+      });
+      socket.on("disconnect", () => {
+        if (isMountedRef.current) setSocketConnected(false);
+      });
+      socket.on("connect_error", () => {
+        if (isMountedRef.current) setSocketConnected(false);
       });
 
       socket.on("rider:new-request", () => {
@@ -771,6 +783,13 @@ export default function Home() {
             <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"/>
             New Request Available!
           </div>
+        </div>
+      )}
+
+      {!socketConnected && effectiveOnline && (
+        <div className="fixed top-0 left-0 right-0 z-40 bg-red-600 text-white text-xs font-bold text-center py-1.5 flex items-center justify-center gap-1.5 shadow-lg"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 6px)" }}>
+          <WifiOff size={13}/> Connection lost — new requests may not appear
         </div>
       )}
 

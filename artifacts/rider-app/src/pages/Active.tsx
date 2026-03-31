@@ -1096,8 +1096,9 @@ export default function Active() {
 
                   <button
                     onClick={() => { updateOrderMut.mutate({ id: order.id, status: "picked_up" }); }}
+                    disabled={updateOrderMut.isPending}
                     onTouchStart={() => setPressedBtn("pickup")} onTouchEnd={() => setPressedBtn(null)}
-                    className={`w-full bg-gray-900 text-white font-black rounded-2xl py-4 text-base flex items-center justify-center gap-2.5 shadow-lg transition-transform ${pressedBtn === "pickup" ? "scale-[0.97]" : ""}`}>
+                    className={`w-full bg-gray-900 text-white font-black rounded-2xl py-4 text-base disabled:opacity-60 flex items-center justify-center gap-2.5 shadow-lg transition-transform ${pressedBtn === "pickup" ? "scale-[0.97]" : ""}`}>
                     <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center">
                       <Package size={18}/>
                     </div>

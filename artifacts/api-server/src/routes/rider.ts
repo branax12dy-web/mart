@@ -2138,17 +2138,23 @@ router.get("/penalty-history", async (req, res) => {
   });
 });
 
+const sosSchema = z.object({
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
+  rideId: z.string().optional().nullable(),
+});
+
 /* ── POST /rider/sos — Rider SOS alert ── */
 router.post("/sos", async (req, res) => {
+  const parsed = sosSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid SOS data" }); return; }
   const riderId   = req.riderId!;
   const riderUser = req.riderUser!;
-  const { latitude, longitude, rideId } = req.body;
+  const { latitude, longitude, rideId } = parsed.data;
 
-  /* lat/lng are optional — SOS can be sent without coordinates (admin calls rider by phone) */
-  const parsedLat = latitude != null ? parseFloat(String(latitude)) : null;
-  const parsedLng = longitude != null ? parseFloat(String(longitude)) : null;
+  const parsedLat = latitude ?? null;
+  const parsedLng = longitude ?? null;
 
-  /* Reject null-island (0,0) coordinates server-side too */
   const validCoords = parsedLat != null && parsedLng != null &&
     isFinite(parsedLat) && isFinite(parsedLng) &&
     !(Math.abs(parsedLat) < 0.001 && Math.abs(parsedLng) < 0.001);
@@ -2167,12 +2173,20 @@ router.post("/sos", async (req, res) => {
   res.json({ success: true, sentAt: new Date().toISOString() });
 });
 
+const osrmQuerySchema = z.object({
+  fromLat: z.coerce.number().min(-90).max(90),
+  fromLng: z.coerce.number().min(-180).max(180),
+  toLat: z.coerce.number().min(-90).max(90),
+  toLng: z.coerce.number().min(-180).max(180),
+});
+
 /* ── GET /rider/osrm-route — Fetch turn-by-turn directions from OSRM ── */
 router.get("/osrm-route", async (req, res) => {
-  const { fromLat, fromLng, toLat, toLng } = req.query;
-  if (!fromLat || !fromLng || !toLat || !toLng) {
-    res.status(400).json({ error: "fromLat, fromLng, toLat, toLng required" }); return;
+  const parsed = osrmQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || "fromLat, fromLng, toLat, toLng required (valid coordinates)" }); return;
   }
+  const { fromLat, fromLng, toLat, toLng } = parsed.data;
 
   const coords = `${fromLng},${fromLat};${toLng},${toLat}`;
   const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&annotations=false`;
