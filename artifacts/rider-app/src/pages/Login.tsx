@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth, type AuthUser } from "../lib/auth";
 import { api, apiFetch } from "../lib/api";
@@ -100,6 +100,20 @@ export default function Login() {
       return 0;
     } catch { return 0; }
   });
+
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCooldown = (sec = 60) => {
+    setOtpCooldown(sec);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setOtpCooldown(prev => {
+        if (prev <= 1) { if (cooldownRef.current) clearInterval(cooldownRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const [twoFaPending, setTwoFaPending] = useState<AuthResponse | null>(null);
   const [twoFaError, setTwoFaError] = useState("");
@@ -206,7 +220,7 @@ export default function Login() {
           try { sessionStorage.setItem("rider_lockout_until", String(until)); } catch (ssErr) {
             console.warn("[Login] Could not persist lockout expiry to sessionStorage — lockout state will not survive page refresh:", ssErr);
             /* Surface to user: lockout is applied now but won't persist across tab reloads */
-            setError(T("accountLockedMsg") + " (Note: If you refresh this page, the timer may reset.)");
+            setError(T("accountLockedMsg"));
           }
         }
         return next;
@@ -227,6 +241,7 @@ export default function Login() {
       const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken);
       if (import.meta.env.DEV) setDevOtp(res.otp || "");
       setStep("otp");
+      startCooldown(60);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : T("sendOtpFailed");
       setError(msg);
@@ -278,6 +293,7 @@ export default function Login() {
         return;
       }
       setStep("otp");
+      startCooldown(60);
     } catch (e: unknown) { setError(e instanceof Error ? e.message : T("sendOtpFailed")); }
     setLoading(false);
   };
@@ -481,11 +497,12 @@ export default function Login() {
             <>
               <h2 className="text-xl font-bold text-gray-800 mb-1">{T("phoneLogin")}</h2>
               <p className="text-sm text-gray-500 mb-4">{T("enterRegisteredPhone")}</p>
-              <div className="flex gap-2 mb-4">
-                <div className="h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-sm font-medium text-gray-600">+92</div>
+              <div className="flex gap-2 mb-1">
+                <div className="h-12 px-3 bg-gray-100 border border-gray-200 rounded-xl flex items-center text-sm font-bold text-gray-700 select-none gap-1" title="Pakistan only">🇵🇰 +92</div>
                 <input type="tel" placeholder="3XX XXXXXXX" value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
-                  className="flex-1 h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" autoFocus />
+                  className="flex-1 h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" autoFocus inputMode="numeric" />
               </div>
+              <p className="text-[10px] text-gray-400 mb-3">Pakistan only (+92)</p>
               {showEmailFallback && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
                   <p className="text-xs text-amber-700 font-semibold mb-2">SMS not working? Use email OTP instead:</p>
@@ -507,9 +524,12 @@ export default function Login() {
               <h2 className="text-xl font-bold text-gray-800 mb-1">{T("enterOtp")}</h2>
               <p className="text-sm text-gray-500 mb-1">+92{phone}</p>
               {import.meta.env.DEV && devOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {devOtp}</div>}
-              <input type="number" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-gray-900 mb-3" maxLength={6} autoFocus />
-              <button onClick={sendPhoneOtp} className="w-full text-sm text-gray-400 hover:text-gray-900 mb-3 py-1">{T("resendOtp")}</button>
+              <button onClick={() => { if (otpCooldown === 0) sendPhoneOtp(); }} disabled={otpCooldown > 0}
+                className="w-full text-sm text-gray-400 hover:text-gray-900 mb-3 py-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                {otpCooldown > 0 ? `${T("resendOtp")} (${otpCooldown}s)` : T("resendOtp")}
+              </button>
               {auth.emailOtp && !showEmailFallback && (
                 <button onClick={() => setShowEmailFallback(true)} className="w-full text-xs text-amber-600 hover:text-amber-700 py-1 font-semibold">
                   Not receiving SMS? Use email OTP instead
@@ -545,9 +565,12 @@ export default function Login() {
               <h2 className="text-xl font-bold text-gray-800 mb-1">{T("enterOtp")}</h2>
               <p className="text-sm text-gray-500 mb-1">{email}</p>
               {import.meta.env.DEV && emailDevOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {emailDevOtp}</div>}
-              <input type="number" placeholder={T("enterOtpDigits")} value={emailOtp} onChange={e => setEmailOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={T("enterOtpDigits")} value={emailOtp} onChange={e => setEmailOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-gray-900 mb-3" maxLength={6} autoFocus />
-              <button onClick={sendEmailOtpFn} className="w-full text-sm text-gray-400 hover:text-gray-900 mb-3 py-1">{T("resendOtp")}</button>
+              <button onClick={() => { if (otpCooldown === 0) sendEmailOtpFn(); }} disabled={otpCooldown > 0}
+                className="w-full text-sm text-gray-400 hover:text-gray-900 mb-3 py-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                {otpCooldown > 0 ? `${T("resendOtp")} (${otpCooldown}s)` : T("resendOtp")}
+              </button>
             </>
           )}
 

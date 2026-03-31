@@ -85,7 +85,7 @@ function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
         .filter(t => t.type === "credit" && new Date(t.createdAt) >= d && new Date(t.createdAt) < next)
         .reduce((s, t) => s + Number(t.amount), 0);
       result.push({
-        label: i === 0 ? "Aaj" : d.toLocaleDateString("en-PK", { weekday: "short" }),
+        label: i === 0 ? T("today") : d.toLocaleDateString("en-PK", { weekday: "short" }),
         amount: earned,
         date: d.toLocaleDateString("en-PK", { day: "numeric", month: "short" }),
       });
@@ -432,7 +432,7 @@ export default function Wallet() {
           <div className="grid grid-cols-3 gap-2.5 mb-5">
             <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
               <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("earnedToday")}</p>
-              <p className="text-sm font-black text-green-400 mt-0.5">{fc(todayEarned)}</p>
+              <p className="text-sm font-black text-green-400 mt-0.5">{balanceHidden ? "••••" : fc(todayEarned)}</p>
             </div>
             <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
               <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("yourShare" as TranslationKey)}</p>
@@ -452,6 +452,13 @@ export default function Wallet() {
                 <p className="text-[10px] text-amber-400/60">Rs. {Math.round(minBalance - balance)} {T("moreNeeded")}</p>
               </div>
             </div>
+          )}
+
+          {procDays > 0 && (
+            <p className="text-[10px] text-white/25 mb-3 flex items-center gap-1.5">
+              <Clock size={9} className="text-white/25"/>
+              {T("walletProcessingTime")}: {procDays * 24}–{procDays * 24 + 24}h
+            </p>
           )}
 
           <div className="flex gap-2.5">

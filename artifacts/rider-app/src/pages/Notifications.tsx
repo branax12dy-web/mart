@@ -364,11 +364,12 @@ export default function Notifications() {
                     const dest = navTarget(n.type, n.status);
                     return (
                       <div key={n.id}
-                        className={`bg-white rounded-3xl border overflow-hidden transition-all duration-300 ${
+                        className={`bg-white rounded-3xl border overflow-hidden transition-all duration-300 cursor-pointer ${
                           !n.isRead
                             ? "border-l-4 border-l-green-500 border-r border-t border-b border-r-gray-100 border-t-gray-100 border-b-gray-100 shadow-lg shadow-green-100/50"
                             : "border-gray-100 shadow-sm"
                         }`}
+                        onClick={() => { if (!n.isRead) markOneMut.mutate(n.id); if (dest) navigate(dest); }}
                         style={{ animationDelay: `${(gi * 100) + (ni * 50)}ms`, animation: "slideUp 0.4s ease-out both" }}>
                         <div className="px-4 py-4 flex gap-3.5">
                           <div className="relative flex-shrink-0">
@@ -391,10 +392,10 @@ export default function Notifications() {
                               {!n.isRead && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); markOneMut.mutate(n.id); }}
-                                  className="w-8 h-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center active:bg-green-100 transition-all flex-shrink-0 border border-green-100 hover:shadow-sm"
+                                  className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center active:bg-green-100 transition-all flex-shrink-0 border border-green-100 hover:shadow-sm"
                                   title="Mark as read"
                                 >
-                                  <Check size={14}/>
+                                  <Check size={16}/>
                                 </button>
                               )}
                             </div>
@@ -407,12 +408,9 @@ export default function Notifications() {
                                 {info.label}
                               </span>
                               {dest && (
-                                <button
-                                  onClick={() => navigate(dest)}
-                                  className="text-[10px] text-gray-900 font-bold flex items-center gap-0.5 bg-gray-100 px-2.5 py-1 rounded-full active:bg-gray-200 transition-colors border border-gray-200"
-                                >
+                                <span className="text-[10px] text-gray-900 font-bold flex items-center gap-0.5 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200">
                                   View <ChevronRight size={10}/>
-                                </button>
+                                </span>
                               )}
                             </div>
                           </div>

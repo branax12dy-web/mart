@@ -258,7 +258,7 @@ export default function History() {
         {!isLoading && hasMore && (
           <button onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
             className="w-full py-3 text-sm font-bold text-gray-600 bg-white rounded-2xl border border-gray-200 shadow-sm active:bg-gray-50 transition-colors">
-            Show more ({filtered.length - visibleCount} remaining)
+            {T("showMore")} ({filtered.length - visibleCount} {T("remaining")})
           </button>
         )}
       </div>

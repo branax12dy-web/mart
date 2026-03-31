@@ -364,12 +364,12 @@ export default function Profile() {
   };
 
   const completionFieldMap: { key: string; label: string; val: unknown }[] = [
-    { key: "name",         label: T("fullName"),       val: user?.name },
-    { key: "cnic",         label: T("cnicNationalId"), val: user?.cnic },
-    { key: "city",         label: T("cityLabel"),      val: user?.city },
-    { key: "vehicleType",  label: T("vehicleType"),    val: user?.vehicleType },
-    { key: "vehiclePlate", label: T("vehiclePlate"),   val: user?.vehiclePlate },
-    { key: "bankName",     label: T("bankDetails"),    val: user?.bankName },
+    { key: "name",         label: T("fullName"),       val: editing === "personal" ? name : user?.name },
+    { key: "cnic",         label: T("cnicNationalId"), val: editing === "personal" ? cnic : user?.cnic },
+    { key: "city",         label: T("cityLabel"),      val: editing === "personal" ? city : user?.city },
+    { key: "vehicleType",  label: T("vehicleType"),    val: editing === "vehicle" ? vehicleType : user?.vehicleType },
+    { key: "vehiclePlate", label: T("vehiclePlate"),   val: editing === "vehicle" ? vehiclePlate : user?.vehiclePlate },
+    { key: "bankName",     label: T("bankDetails"),    val: editing === "bank" ? bankName : user?.bankName },
   ];
   /* Explicitly check for non-null AND non-empty-string to avoid false positives from empty string fields */
   const completionFilled = completionFieldMap.filter(f => f.val !== null && f.val !== undefined && f.val !== "");
@@ -459,7 +459,7 @@ export default function Profile() {
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-5 relative overflow-hidden animate-[slideUp_0.4s_ease-out]">
           <div className="absolute -top-8 -right-8 w-24 h-24 bg-gray-50 rounded-full opacity-50"/>
           <div className="relative flex items-start gap-4">
-            <input type="file" accept="image/*" ref={avatarInputRef} onChange={handleAvatarUpload} className="hidden" />
+            <input type="file" accept="image/*" capture="user" ref={avatarInputRef} onChange={handleAvatarUpload} className="hidden" />
             <button
               onClick={() => avatarInputRef.current?.click()}
               disabled={avatarUploading}
@@ -623,6 +623,11 @@ export default function Profile() {
                 </div>
                 {editing === "personal" ? (
                   <div className="p-5 space-y-3.5 animate-[slideDown_0.3s_ease-out]">
+                    <div>
+                      <label className={LABEL}>{T("phoneNumber")}</label>
+                      <div className={`${INPUT} text-gray-400 bg-gray-100 cursor-not-allowed select-none flex items-center`}>{user?.phone || "—"}</div>
+                      <p className="text-[10px] text-gray-400 mt-1">Phone number cannot be changed here. Contact support to update it.</p>
+                    </div>
                     <div>
                       <label className={LABEL}>{T("fullNameRequired")}</label>
                       <input value={name} onChange={e => setName(e.target.value)} placeholder={T("enterFullName")} className={INPUT}/>

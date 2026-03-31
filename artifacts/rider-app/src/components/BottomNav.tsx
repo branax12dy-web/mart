@@ -61,7 +61,7 @@ export function BottomNav() {
                     {unread > 9 ? "9+" : unread}
                   </span>
                 )}
-                {item.href === "/active" && hasActive && (
+                {item.href === "/active" && hasActive && location !== "/active" && (
                   <span className="absolute -top-1 -right-0.5 flex items-center justify-center">
                     <span className="w-3.5 h-3.5 bg-green-500 rounded-full flex items-center justify-center">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>

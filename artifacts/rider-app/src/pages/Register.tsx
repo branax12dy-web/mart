@@ -67,34 +67,37 @@ interface UploadedDoc {
   preview: string;
 }
 
-function FileUploadBox({ label, icon, value, onChange, required, uploading }: {
+function FileUploadBox({ label, icon, value, onChange, required, uploading, error }: {
   label: string; icon: React.ReactNode; value: UploadedDoc | null;
-  onChange: (file: File) => void; required?: boolean; uploading?: boolean;
+  onChange: (file: File) => void; required?: boolean; uploading?: boolean; error?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div className={`border-2 border-dashed rounded-xl p-3 transition-all ${value ? "border-green-300 bg-green-50/50" : "border-gray-200 bg-gray-50/50 hover:border-gray-400"}`}>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) onChange(e.target.files[0]); }} />
-      {value ? (
-        <div className="flex items-center gap-3">
-          <img src={value.preview} alt={label} className="w-14 h-14 rounded-lg object-cover border border-green-200" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-green-700 flex items-center gap-1"><CheckCircle2 size={12} /> {label}</p>
-            <p className="text-[10px] text-green-600 truncate">{value.url ? "Uploaded" : "Ready"}</p>
+    <div>
+      <div className={`border-2 border-dashed rounded-xl p-3 transition-all ${error ? "border-red-400 bg-red-50/50" : value ? "border-green-300 bg-green-50/50" : "border-gray-200 bg-gray-50/50 hover:border-gray-400"}`}>
+        <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden"
+          onChange={e => { if (e.target.files?.[0]) onChange(e.target.files[0]); }} />
+        {value ? (
+          <div className="flex items-center gap-3">
+            <img src={value.preview} alt={label} className="w-14 h-14 rounded-lg object-cover border border-green-200" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-green-700 flex items-center gap-1"><CheckCircle2 size={12} /> {label}</p>
+              <p className="text-[10px] text-green-600 truncate">{value.url ? "Uploaded" : "Ready"}</p>
+            </div>
+            <button onClick={() => inputRef.current?.click()} className="text-[10px] text-gray-600 font-bold hover:text-gray-900 px-2 py-1 rounded-lg hover:bg-gray-100">
+              Change
+            </button>
           </div>
-          <button onClick={() => inputRef.current?.click()} className="text-[10px] text-gray-600 font-bold hover:text-gray-900 px-2 py-1 rounded-lg hover:bg-gray-100">
-            Change
+        ) : (
+          <button onClick={() => inputRef.current?.click()} disabled={uploading}
+            className="w-full flex flex-col items-center gap-1.5 py-2 disabled:opacity-50">
+            {uploading ? <Loader2 size={20} className="text-gray-500 animate-spin" /> : icon}
+            <span className={`text-xs font-semibold ${error ? "text-red-600" : "text-gray-600"}`}>{label} {required && <span className="text-red-500">*</span>}</span>
+            <span className="text-[10px] text-gray-400">Tap to capture or upload</span>
           </button>
-        </div>
-      ) : (
-        <button onClick={() => inputRef.current?.click()} disabled={uploading}
-          className="w-full flex flex-col items-center gap-1.5 py-2 disabled:opacity-50">
-          {uploading ? <Loader2 size={20} className="text-gray-500 animate-spin" /> : icon}
-          <span className="text-xs font-semibold text-gray-600">{label} {required && <span className="text-red-500">*</span>}</span>
-          <span className="text-[10px] text-gray-400">Tap to capture or upload</span>
-        </button>
-      )}
+        )}
+      </div>
+      {error && <p className="text-[10px] text-red-500 mt-1 font-medium">{error}</p>}
     </div>
   );
 }
@@ -135,6 +138,7 @@ export default function Register() {
   const [cnicBackPhoto, setCnicBackPhoto] = useState<UploadedDoc | null>(null);
   const [licensePhoto, setLicensePhoto] = useState<UploadedDoc | null>(null);
   const [uploadingField, setUploadingField] = useState("");
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [registrationNote, setRegistrationNote] = useState("");
 
   const [password, setPassword] = useState("");
@@ -157,6 +161,7 @@ export default function Register() {
 
   const handleFileUpload = useCallback(async (file: File, field: string, setter: (doc: UploadedDoc) => void) => {
     setUploadingField(field);
+    setUploadErrors(prev => { const next = { ...prev }; delete next[field]; return next; });
     try {
       const reader = new FileReader();
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -168,7 +173,8 @@ export default function Register() {
       const res = await api.uploadFile({ file: base64, filename: file.name, mimeType: file.type });
       setter({ label: file.name, url: res.url, preview });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Upload failed. Please try again.");
+      const msg = e instanceof Error ? e.message : "Upload failed. Please try again.";
+      setUploadErrors(prev => ({ ...prev, [field]: msg }));
     }
     setUploadingField("");
   }, []);
@@ -344,7 +350,6 @@ export default function Register() {
           address: address.trim(),
           city: city === "Other" ? customCity.trim() : city.trim(),
           emergencyContact: emergencyContact.trim(),
-          vehiclePlate: vehicleReg.trim(),
           vehiclePhoto: vehiclePhoto?.url || undefined,
           documents: JSON.stringify(docsPayload),
           ...(username ? { username: username.trim() } : {}),
@@ -464,12 +469,14 @@ export default function Register() {
         <div className="bg-white rounded-3xl p-6 shadow-2xl">
           <div className="flex items-center gap-1 mb-6">
             {[1, 2, 3, 4].map(s => (
-              <div key={s} className="flex-1 flex flex-col items-center gap-1">
+              <button key={s} type="button"
+                onClick={() => { if (s < step) { clearError(); setStep(s); } }}
+                className={`flex-1 flex flex-col items-center gap-1 ${s < step ? "cursor-pointer" : "cursor-default"}`}>
                 <div className={`w-full h-1.5 rounded-full transition-all ${s <= step ? "bg-gray-900" : "bg-gray-200"}`} />
-                <span className={`text-[10px] font-semibold ${s <= step ? "text-gray-900" : "text-gray-400"}`}>
+                <span className={`text-[10px] font-semibold ${s <= step ? "text-gray-900" : "text-gray-400"} ${s < step ? "underline underline-offset-2" : ""}`}>
                   {T(stepLabels[s - 1])}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -486,9 +493,10 @@ export default function Register() {
                   <Phone size={11} /> {T("phoneRequired")}
                 </label>
                 <div className="flex gap-2">
-                  <div className="h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-sm font-medium text-gray-600">+92</div>
-                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3XX XXXXXXX" className={`flex-1 ${INPUT}`} />
+                  <div className="h-12 px-3 bg-gray-100 border border-gray-200 rounded-xl flex items-center text-sm font-bold text-gray-700 select-none gap-1">🇵🇰 +92</div>
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="03XX-XXXXXXX" inputMode="numeric" className={`flex-1 ${INPUT}`} />
                 </div>
+                <p className="text-[10px] text-gray-400 mt-1">Format: 03XX-XXXXXXX</p>
               </div>
               <div>
                 <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
@@ -630,6 +638,7 @@ export default function Register() {
                     onChange={f => handleFileUpload(f, "vehicle", setVehiclePhoto)}
                     required
                     uploading={uploadingField === "vehicle"}
+                    error={uploadErrors["vehicle"]}
                   />
                   <FileUploadBox
                     label="CNIC Front"
@@ -638,6 +647,7 @@ export default function Register() {
                     onChange={f => handleFileUpload(f, "cnic", setCnicPhoto)}
                     required
                     uploading={uploadingField === "cnic"}
+                    error={uploadErrors["cnic"]}
                   />
                   <FileUploadBox
                     label="CNIC Back"
@@ -646,6 +656,7 @@ export default function Register() {
                     onChange={f => handleFileUpload(f, "cnicBack", setCnicBackPhoto)}
                     required
                     uploading={uploadingField === "cnicBack"}
+                    error={uploadErrors["cnicBack"]}
                   />
                   <FileUploadBox
                     label="Driving License Photo"
@@ -654,6 +665,7 @@ export default function Register() {
                     onChange={f => handleFileUpload(f, "license", setLicensePhoto)}
                     required
                     uploading={uploadingField === "license"}
+                    error={uploadErrors["license"]}
                   />
                 </div>
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-2.5 mt-2 flex items-start gap-2">
@@ -798,7 +810,7 @@ export default function Register() {
                   <strong>{T("devOtp")}:</strong> {devOtp}
                 </div>
               )}
-              <input type="number" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)}
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && goNextStep()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-gray-900"
                 maxLength={6} autoFocus />

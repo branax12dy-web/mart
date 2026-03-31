@@ -13,6 +13,20 @@ import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
 
+function getPasswordStrength(pw: string): { level: number; label: TranslationKey; color: string } {
+  if (!pw) return { level: 0, label: "passwordWeak", color: "" };
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  if (score <= 1) return { level: 1, label: "passwordWeak", color: "bg-red-500" };
+  if (score <= 2) return { level: 2, label: "passwordFair", color: "bg-amber-400" };
+  if (score <= 3) return { level: 3, label: "passwordGood", color: "bg-yellow-400" };
+  return { level: 4, label: "passwordStrong", color: "bg-green-500" };
+}
+
 function PasswordChangeSection({ showToastFn, T }: { showToastFn: (msg: string) => void; T: (key: TranslationKey) => string }) {
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -22,6 +36,7 @@ function PasswordChangeSection({ showToastFn, T }: { showToastFn: (msg: string) 
   const [showConfirm, setShowConfirm] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState("");
+  const strength = getPasswordStrength(newPw);
 
   const handleChangePassword = async () => {
     setPwError("");
@@ -51,12 +66,26 @@ function PasswordChangeSection({ showToastFn, T }: { showToastFn: (msg: string) 
             {showCurrent ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <div className="relative">
-          <input type={showNew ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)}
-            placeholder="New password" className="w-full h-11 px-4 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:bg-white transition-all" />
-          <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-            {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
+        <div>
+          <div className="relative">
+            <input type={showNew ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)}
+              placeholder="New password" className="w-full h-11 px-4 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:bg-white transition-all" />
+            <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+              {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          {newPw && (
+            <div className="mt-1.5">
+              <div className="flex gap-1 mb-1">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className={`flex-1 h-1 rounded-full transition-all duration-300 ${i <= strength.level ? strength.color : "bg-gray-100"}`} />
+                ))}
+              </div>
+              <p className={`text-[10px] font-bold ${strength.level <= 1 ? "text-red-500" : strength.level <= 2 ? "text-amber-500" : strength.level <= 3 ? "text-yellow-600" : "text-green-600"}`}>
+                {T(strength.label)}
+              </p>
+            </div>
+          )}
         </div>
         <div className="relative">
           <input type={showConfirm ? "text" : "password"} value={confirmPw} onChange={e => setConfirmPw(e.target.value)}

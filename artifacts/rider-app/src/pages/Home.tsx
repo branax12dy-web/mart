@@ -194,40 +194,41 @@ export default function Home() {
   const TOGGLE_DEBOUNCE_MS = 1000;
   const lastToggleRef = useRef<number>(0);
 
+  const [showOfflineConfirm, setShowOfflineConfirm] = useState(false);
+
+  const doActualToggle = async () => {
+    const now = Date.now();
+    lastToggleRef.current = now;
+    setToggling(true);
+    const newStatus = !effectiveOnline;
+    setOptimisticOnline(newStatus);
+    try {
+      await api.setOnline(newStatus);
+      if (!isMountedRef.current) return;
+      await refreshUser().catch(() => {});
+      if (!isMountedRef.current) return;
+      showToast(newStatus ? T("youAreNowOnline") : T("youAreNowOffline"), "success");
+    } catch (e: unknown) {
+      if (!isMountedRef.current) return;
+      setOptimisticOnline(!newStatus);
+      showToast(e instanceof Error ? e.message : T("somethingWentWrong"), "error");
+    } finally {
+      if (isMountedRef.current) { setOptimisticOnline(null); setToggling(false); }
+    }
+  };
+
   const toggleOnline = async () => {
     const now = Date.now();
     /* Debounce: reject if a toggle fired within the last second */
     if (toggling || now - lastToggleRef.current < TOGGLE_DEBOUNCE_MS) return;
     lastToggleRef.current = now;
 
-    setToggling(true);
-    const newStatus = !effectiveOnline;
-    /* Optimistic update — move pill immediately for snappy UX */
-    setOptimisticOnline(newStatus);
-    try {
-      await api.setOnline(newStatus);
-      /* Write succeeded — status is confirmed on server. Guard remaining state updates. */
-      if (!isMountedRef.current) return;
-      /* Refresh user profile to sync server state; if refresh fails, we still keep
-         the new status shown (because the write already succeeded) instead of rolling back. */
-      await refreshUser().catch(() => {
-        /* Profile refresh failed — not a toggle failure. Keep new status in UI.
-           React-query will re-fetch on next focus/mount and self-correct. */
-      });
-      if (!isMountedRef.current) return;
-      showToast(newStatus ? T("youAreNowOnline") : T("youAreNowOffline"), "success");
-    } catch (e: any) {
-      /* Write itself failed — rollback the optimistic UI change */
-      if (!isMountedRef.current) return;
-      setOptimisticOnline(!newStatus);
-      showToast(e.message, "error");
-    } finally {
-      /* Only reset loading state if still mounted */
-      if (isMountedRef.current) {
-        setOptimisticOnline(null);
-        setToggling(false);
-      }
+    if (effectiveOnline && totalRequests > 0) {
+      setShowOfflineConfirm(true);
+      return;
     }
+
+    await doActualToggle();
   };
 
   const { data: earningsData } = useQuery({
@@ -361,13 +362,13 @@ export default function Home() {
         }).then(() => {
           if (gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
-          const msg = err.message || "Location update failed";
+          const msg = err.message || "";
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("gps");
-          setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
+          setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : T("gpsLocationError"));
         });
       },
-      (geoErr) => {
-        setGpsWarningWithRef(`GPS unavailable: ${geoErr.message}`);
+      () => {
+        setGpsWarningWithRef(T("gpsNotAvailable"));
       },
       { enableHighAccuracy: false, maximumAge: 20_000, timeout: 30_000 },
     );
@@ -494,9 +495,9 @@ export default function Home() {
 
   const greeting = (() => {
     const h = new Date().getHours();
-    if (h < 12) return "Good Morning";
-    if (h < 17) return "Good Afternoon";
-    return "Good Evening";
+    if (h < 12) return T("goodMorning");
+    if (h < 17) return T("goodAfternoon");
+    return T("goodEvening");
   })();
 
   return (
@@ -557,9 +558,10 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={toggleSilence}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${silenceOn ? "bg-red-500/20 text-red-400" : "bg-white/10 text-white/40"}`}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all ${silenceOn ? "bg-red-500/20 text-red-400 border border-red-500/20" : "bg-white/10 text-white/40 border border-white/10"}`}
                   title={silenceOn ? "Unmute sounds" : "Mute sounds"}>
-                  {silenceOn ? <VolumeX size={16}/> : <Volume2 size={16}/>}
+                  {silenceOn ? <VolumeX size={15}/> : <Volume2 size={15}/>}
+                  <span className="text-[10px] font-bold leading-none">{silenceOn ? "Sound Off" : "Sound"}</span>
                 </button>
                 <button onClick={toggleOnline} disabled={toggling}
                   className={`w-[56px] h-[30px] rounded-full relative transition-all duration-300 shadow-inner ${effectiveOnline ? "bg-green-500 shadow-green-500/30" : "bg-white/20"} ${toggling ? "opacity-50 scale-95" : "active:scale-95"}`}>
@@ -895,7 +897,8 @@ export default function Home() {
                           </a>
                         )}
                         <button onClick={() => dismiss(o.id)}
-                          className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                          className="border border-gray-200 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors flex items-center"
+                          title="Ignore">
                           <X size={16}/>
                         </button>
                         <button onClick={() => acceptOrderMut.mutate(o.id)}
@@ -1018,12 +1021,13 @@ export default function Home() {
                             {isDispatched ? (
                               <button onClick={() => ignoreRideMut.mutate(r.id)}
                                 disabled={ignoreRideMut.isPending}
-                                className="bg-amber-50 border border-amber-200 text-amber-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-amber-100 transition-colors flex items-center gap-1">
+                                className="border border-amber-300 text-amber-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-amber-50 transition-colors flex items-center gap-1">
                                 <SkipForward size={14}/> Ignore
                               </button>
                             ) : (
                               <button onClick={() => dismiss(r.id)}
-                                className="bg-gray-100 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-200 transition-colors flex items-center">
+                                className="border border-gray-200 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors flex items-center"
+                                title="Ignore">
                                 <X size={16}/>
                               </button>
                             )}
@@ -1208,6 +1212,36 @@ export default function Home() {
           <div className={`${toastType === "success" ? "bg-green-600" : "bg-red-600"} text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-center gap-2 max-w-md mx-auto`}>
             {toastType === "success" ? <CheckCircle size={16}/> : <AlertTriangle size={16}/>}
             {toastMsg}
+          </div>
+        </div>
+      )}
+
+      {hasActiveTask && !config.content.trackerBannerEnabled && (
+        <Link href="/active"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] left-4 right-4 z-30 block bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl px-4 py-3 shadow-lg shadow-green-300/40 active:scale-[0.98] transition-transform animate-[slideUp_0.3s_ease-out]">
+          <div className="flex items-center gap-2.5 max-w-md mx-auto">
+            <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse flex-shrink-0" />
+            <p className="text-sm font-extrabold text-white flex-1 truncate">{T("youHaveActiveTask")}</p>
+            <ChevronRight size={14} className="text-white/80 flex-shrink-0" />
+          </div>
+        </Link>
+      )}
+
+      {showOfflineConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center pointer-events-auto animate-[fadeIn_0.15s_ease-out]">
+          <div className="w-full max-w-sm mx-auto bg-white rounded-t-3xl px-6 py-6 shadow-2xl animate-[slideUp_0.2s_ease-out]">
+            <p className="text-base font-extrabold text-gray-900 mb-1.5">Go Offline?</p>
+            <p className="text-sm text-gray-500 mb-5">You have {totalRequests} request{totalRequests > 1 ? "s" : ""} waiting — go offline anyway?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowOfflineConfirm(false)}
+                className="flex-1 h-12 border-2 border-gray-200 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                Stay Online
+              </button>
+              <button onClick={async () => { setShowOfflineConfirm(false); await doActualToggle(); }}
+                className="flex-1 h-12 bg-gray-900 text-white font-bold rounded-xl text-sm hover:bg-gray-800 transition-colors">
+                Go Offline
+              </button>
+            </div>
           </div>
         </div>
       )}

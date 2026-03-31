@@ -213,7 +213,7 @@ export default function Active() {
   const [toastMsg, setToastMsg]                    = useState("");
   const [toastIsError, setToastIsError]            = useState(false);
   const [showCancelConfirm, setShowCancelConfirm]  = useState(false);
-  const [cancelTarget, setCancelTarget]            = useState<"order" | "ride">("ride");
+  const [cancelTarget, setCancelTarget]            = useState<"order" | "ride">("order");
   const [orderPickedUp, _setOrderPickedUp]          = useState(() => sessionStorage.getItem("orderPickedUp") === "true");
   const setOrderPickedUp = (v: boolean) => { _setOrderPickedUp(v); sessionStorage.setItem("orderPickedUp", String(v)); };
   const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
@@ -318,6 +318,7 @@ export default function Active() {
 
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
   const gpsWarningRef = useRef<string | null>(null);
+  const [showProximityWarning, setShowProximityWarning] = useState(false);
 
   const setGpsWarningWithRef = (val: string | null) => {
     gpsWarningRef.current = val;
@@ -332,6 +333,24 @@ export default function Active() {
       _setOrderPickedUp(false);
     }
   }, [data?.order?.status]);
+
+  useEffect(() => {
+    if (data?.order && !data?.ride) setCancelTarget("order");
+    else if (data?.ride && !data?.order) setCancelTarget("ride");
+  }, [!!data?.order, !!data?.ride]);
+
+  useEffect(() => {
+    if (!riderPos || !data?.order) { setShowProximityWarning(false); return; }
+    const vendorLat = (data.order as Record<string, unknown>).vendorLat as number | undefined;
+    const vendorLng = (data.order as Record<string, unknown>).vendorLng as number | undefined;
+    if (!vendorLat || !vendorLng) { setShowProximityWarning(false); return; }
+    const R = 6371000;
+    const dLat = (vendorLat - riderPos.lat) * Math.PI / 180;
+    const dLng = (vendorLng - riderPos.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(riderPos.lat * Math.PI/180) * Math.cos(vendorLat * Math.PI/180) * Math.sin(dLng/2)**2;
+    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    setShowProximityWarning(dist > 500 && !data.order.status?.startsWith("picked") && data.order.status !== "out_for_delivery");
+  }, [riderPos, data?.order]);
 
   useEffect(() => {
     const hasActiveWork = !!(data?.order || data?.ride);
@@ -364,11 +383,13 @@ export default function Active() {
           accuracy:  pos.coords.accuracy,
         }).then(() => {
           if (isMountedRef.current && gpsWarningRef.current) setGpsWarningWithRef(null);
-        }).catch((err: Error) => {
+        }).catch((err: unknown) => {
           if (!isMountedRef.current) return;
-          const msg = err.message || "Location update failed";
-          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("gps");
-          setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : `Location not being tracked: ${msg}`);
+          const msg = err instanceof Error ? err.message : "";
+          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock");
+          setGpsWarningWithRef(isSpoofError
+            ? "Mock location detected — please disable fake GPS apps."
+            : TRef.current?.("gpsLocationError") ?? "Location not being tracked — check GPS permissions");
         });
         if (!navigator.onLine) {
           queueUpdate({ kind: "location", run: doUpdate });
@@ -376,10 +397,9 @@ export default function Active() {
           doUpdate();
         }
       },
-      (geoErr) => {
-        /* Guard: skip error state update after unmount */
+      () => {
         if (!isMountedRef.current) return;
-        setGpsWarningWithRef(`GPS unavailable: ${geoErr.message}`);
+        setGpsWarningWithRef(TRef.current?.("gpsNotAvailable") ?? "GPS not available — please enable location in Settings");
       },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },
     );
@@ -390,6 +410,11 @@ export default function Active() {
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Photo is too large — maximum 5MB allowed. Please take a smaller photo.", true);
+      if (e.target) e.target.value = "";
+      return;
+    }
     setProofFileName(file.name);
     const reader = new FileReader();
     reader.onload = (ev) => { setProofPhoto(ev.target?.result as string); };
@@ -413,8 +438,8 @@ export default function Active() {
       try {
         const uploadRes = await api.uploadFile({ file: proofPhoto, filename: proofFileName || "proof.jpg" });
         photoUrl = uploadRes.url;
-      } catch (e: any) {
-        showToast(e.message || "Photo upload failed. Please try again.", true);
+      } catch (e: unknown) {
+        showToast(e instanceof Error ? e.message : "Photo upload failed. Please try again.", true);
         setProofUploading(false);
         return;
       }
@@ -569,13 +594,13 @@ export default function Active() {
       </div>
 
       {isOffline && (
-        <div className="mx-4 mt-3 bg-gradient-to-r from-red-50 to-orange-50 border border-red-300 rounded-3xl p-3.5 flex items-center gap-3 shadow-sm animate-pulse">
-          <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+        <div className="mx-4 mt-3 bg-gradient-to-r from-red-50 to-orange-50 border border-red-300 rounded-3xl p-3.5 flex items-center gap-3 shadow-sm">
+          <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0 animate-pulse">
             <WifiOff size={18} className="text-red-600"/>
           </div>
           <div className="flex-1">
-            <p className="text-xs font-extrabold text-red-800">Reconnecting…</p>
-            <p className="text-[11px] text-red-600 mt-0.5 leading-relaxed">No internet connection. Updates will retry automatically.</p>
+            <p className="text-xs font-extrabold text-red-800">You're offline{pendingUpdatesRef.current.length > 0 ? ` — ${pendingUpdatesRef.current.length} update${pendingUpdatesRef.current.length > 1 ? "s" : ""} queued` : ""}</p>
+            <p className="text-[11px] text-red-600 mt-0.5 leading-relaxed">Updates will retry automatically when reconnected.</p>
           </div>
         </div>
       )}
@@ -592,6 +617,18 @@ export default function Active() {
           <button onClick={() => setGpsWarning(null)} className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-500 active:bg-amber-200 transition-colors">
             <X size={13}/>
           </button>
+        </div>
+      )}
+
+      {showProximityWarning && (
+        <div className="mx-4 mt-3 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-3xl p-3.5 flex items-center gap-3 shadow-sm animate-[slideDown_0.3s_ease-out]">
+          <div className="w-9 h-9 rounded-xl bg-yellow-100 flex items-center justify-center flex-shrink-0">
+            <MapPin size={18} className="text-yellow-600"/>
+          </div>
+          <div className="flex-1">
+            <p className="text-xs font-extrabold text-yellow-800">Far from store</p>
+            <p className="text-[11px] text-yellow-700 mt-0.5 leading-relaxed">You're more than 500m from the store. Head there to pick up the order.</p>
+          </div>
         </div>
       )}
 
@@ -816,20 +853,6 @@ export default function Active() {
                     )}
                   </div>
 
-                  {showNoPhotoWarning && (
-                    <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 flex items-start gap-3">
-                      <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5"/>
-                      <div className="flex-1">
-                        <p className="text-xs font-bold text-amber-800">Are you sure? No photo was taken.</p>
-                        <p className="text-[11px] text-amber-700 mt-0.5">Delivering without photo proof may cause disputes. Tap confirm to proceed anyway.</p>
-                      </div>
-                      <button onClick={() => handleMarkDelivered(order.id, true)}
-                        disabled={proofUploading || updateOrderMut.isPending}
-                        className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl active:bg-amber-700 transition-colors disabled:opacity-60 flex-shrink-0">
-                        Confirm
-                      </button>
-                    </div>
-                  )}
 
                   <button
                     onClick={() => handleMarkDelivered(order.id)}
@@ -1060,6 +1083,33 @@ export default function Active() {
                   {(updateOrderMut.isPending || updateRideMut.isPending) ? T("cancelling") : T("yesCancel")}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNoPhotoWarning && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end justify-center pointer-events-auto animate-[fadeIn_0.15s_ease-out]">
+          <div className="w-full max-w-sm mx-auto bg-white rounded-t-3xl px-6 py-6 shadow-2xl animate-[slideUp_0.2s_ease-out]">
+            <div className="flex flex-col items-center gap-3 mb-5">
+              <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center">
+                <AlertTriangle size={28} className="text-amber-600"/>
+              </div>
+              <div className="text-center">
+                <p className="text-base font-extrabold text-gray-900">No Photo Taken</p>
+                <p className="text-sm text-gray-500 mt-1 leading-relaxed">Delivering without proof photo may cause disputes. Are you sure?</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowNoPhotoWarning(false)}
+                className="flex-1 h-12 border-2 border-gray-200 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                Take Photo
+              </button>
+              <button onClick={() => { setShowNoPhotoWarning(false); handleMarkDelivered(order!.id, true); }}
+                disabled={proofUploading || updateOrderMut.isPending}
+                className="flex-1 h-12 bg-amber-600 text-white font-bold rounded-xl text-sm hover:bg-amber-700 transition-colors disabled:opacity-60">
+                Deliver Anyway
+              </button>
             </div>
           </div>
         </div>
