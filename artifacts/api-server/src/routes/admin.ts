@@ -3288,34 +3288,41 @@ router.get("/live-riders", async (_req, res) => {
   const STALE_MS = staleTimeoutSec * 1000;
   const cutoff   = new Date(Date.now() - STALE_MS);
 
-  const locs = await db.select().from(liveLocationsTable)
+  /* Single JOIN query — eliminates N+1 per-rider lookups */
+  const locs = await db
+    .select({
+      userId:      liveLocationsTable.userId,
+      latitude:    liveLocationsTable.latitude,
+      longitude:   liveLocationsTable.longitude,
+      action:      liveLocationsTable.action,
+      updatedAt:   liveLocationsTable.updatedAt,
+      name:        usersTable.name,
+      phone:       usersTable.phone,
+      isOnline:    usersTable.isOnline,
+      vehicleType: usersTable.vehicleType,
+    })
+    .from(liveLocationsTable)
+    .leftJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
     .where(eq(liveLocationsTable.role, "rider"));
 
-  const enriched = await Promise.all(locs.map(async loc => {
-    const [user] = await db
-      .select({ name: usersTable.name, phone: usersTable.phone, isOnline: usersTable.isOnline, vehicleType: usersTable.vehicleType })
-      .from(usersTable)
-      .where(eq(usersTable.id, loc.userId))
-      .limit(1);
-
+  const enriched = locs.map(loc => {
     const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt);
     const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
     const isFresh    = updatedAt >= cutoff;
-
     return {
       userId:      loc.userId,
-      name:        user?.name        ?? "Unknown Rider",
-      phone:       user?.phone       ?? null,
-      isOnline:    user?.isOnline    ?? false,
-      vehicleType: user?.vehicleType ?? null,
+      name:        loc.name        ?? "Unknown Rider",
+      phone:       loc.phone       ?? null,
+      isOnline:    loc.isOnline    ?? false,
+      vehicleType: loc.vehicleType ?? null,
       lat:         parseFloat(String(loc.latitude)),
       lng:         parseFloat(String(loc.longitude)),
-      action:      loc.action        ?? null,
+      action:      loc.action      ?? null,
       updatedAt:   updatedAt.toISOString(),
       ageSeconds,
       isFresh,
     };
-  }));
+  });
 
   /* Sort: online first, then by freshness */
   enriched.sort((a, b) => {
@@ -3341,35 +3348,40 @@ router.get("/customer-locations", async (_req, res) => {
   const STALE_MS = 2 * 60 * 60 * 1000; /* 2 hours */
   const cutoff   = new Date(Date.now() - STALE_MS);
 
-  const locs = await db.select().from(liveLocationsTable)
+  /* Single JOIN query — eliminates N+1 per-customer lookups */
+  const locs = await db
+    .select({
+      userId:    liveLocationsTable.userId,
+      latitude:  liveLocationsTable.latitude,
+      longitude: liveLocationsTable.longitude,
+      action:    liveLocationsTable.action,
+      updatedAt: liveLocationsTable.updatedAt,
+      name:      usersTable.name,
+      phone:     usersTable.phone,
+      email:     usersTable.email,
+    })
+    .from(liveLocationsTable)
+    .leftJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
     .where(eq(liveLocationsTable.role, "customer"))
     .orderBy(desc(liveLocationsTable.updatedAt));
 
-  const enriched = await Promise.all(locs.map(async loc => {
-    const [user] = await db
-      .select({ name: usersTable.name, phone: usersTable.phone, email: usersTable.email })
-      .from(usersTable)
-      .where(eq(usersTable.id, loc.userId))
-      .limit(1);
-
+  const enriched = locs.map(loc => {
     const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt as string);
     const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
     const isFresh    = updatedAt >= cutoff;
-    const action     = loc.action ?? null;
-
     return {
-      userId:     loc.userId,
-      name:       user?.name  ?? "Unknown User",
-      phone:      user?.phone ?? null,
-      email:      user?.email ?? null,
-      lat:        parseFloat(String(loc.latitude)),
-      lng:        parseFloat(String(loc.longitude)),
-      action,
-      updatedAt:  updatedAt.toISOString(),
+      userId:    loc.userId,
+      name:      loc.name  ?? "Unknown User",
+      phone:     loc.phone ?? null,
+      email:     loc.email ?? null,
+      lat:       parseFloat(String(loc.latitude)),
+      lng:       parseFloat(String(loc.longitude)),
+      action:    loc.action ?? null,
+      updatedAt: updatedAt.toISOString(),
       ageSeconds,
       isFresh,
     };
-  }));
+  });
 
   res.json({ customers: enriched, total: enriched.length, freshCount: enriched.filter(c => c.isFresh).length });
 });

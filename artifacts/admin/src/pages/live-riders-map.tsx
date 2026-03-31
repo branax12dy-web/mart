@@ -131,7 +131,9 @@ export default function LiveRidersMap() {
     const socketUrl = window.location.origin;
     const socket = io(socketUrl, {
       path: "/api/socket.io",
-      query: { rooms: "admin-fleet", adminToken: token },
+      /* Token goes in auth + header only — NOT in query string to prevent
+         it from appearing in HTTP polling URLs and server access logs. */
+      query: { rooms: "admin-fleet" },
       auth: { adminToken: token },
       extraHeaders: { "x-admin-token": token },
       transports: ["polling", "websocket"],
@@ -144,6 +146,11 @@ export default function LiveRidersMap() {
       socket.emit("join", "admin-fleet");
     });
 
+    socket.on("connect_error", (err) => {
+      console.warn("[Fleet] Socket connect error:", err.message);
+      setWsConnected(false);
+    });
+
     socket.on("disconnect", () => setWsConnected(false));
 
     socket.on("rider:location", (payload: {
@@ -153,15 +160,29 @@ export default function LiveRidersMap() {
       action?: string | null;
       updatedAt: string;
     }) => {
-      setRiderOverrides(prev => ({
-        ...prev,
-        [payload.userId]: {
-          lat: payload.latitude,
-          lng: payload.longitude,
-          updatedAt: payload.updatedAt,
-          action: payload.action,
-        },
-      }));
+      if (typeof payload.userId !== "string" ||
+          typeof payload.latitude !== "number" ||
+          typeof payload.longitude !== "number") return;
+      setRiderOverrides(prev => {
+        const next = {
+          ...prev,
+          [payload.userId]: {
+            lat: payload.latitude,
+            lng: payload.longitude,
+            updatedAt: payload.updatedAt,
+            action: payload.action,
+          },
+        };
+        /* Prune to prevent unbounded growth — keep most recent 500 riders */
+        const keys = Object.keys(next);
+        if (keys.length > 500) {
+          const sorted = keys.sort(
+            (a, b) => new Date(prev[a]?.updatedAt ?? 0).getTime() - new Date(prev[b]?.updatedAt ?? 0).getTime()
+          );
+          for (const k of sorted.slice(0, keys.length - 500)) delete next[k];
+        }
+        return next;
+      });
       setSecAgo(0);
     });
 
@@ -171,14 +192,28 @@ export default function LiveRidersMap() {
       longitude: number;
       updatedAt: string;
     }) => {
-      setCustomerOverrides(prev => ({
-        ...prev,
-        [payload.userId]: {
-          lat: payload.latitude,
-          lng: payload.longitude,
-          updatedAt: payload.updatedAt,
-        },
-      }));
+      if (typeof payload.userId !== "string" ||
+          typeof payload.latitude !== "number" ||
+          typeof payload.longitude !== "number") return;
+      setCustomerOverrides(prev => {
+        const next = {
+          ...prev,
+          [payload.userId]: {
+            lat: payload.latitude,
+            lng: payload.longitude,
+            updatedAt: payload.updatedAt,
+          },
+        };
+        /* Prune to prevent unbounded growth — keep most recent 500 customers */
+        const keys = Object.keys(next);
+        if (keys.length > 500) {
+          const sorted = keys.sort(
+            (a, b) => new Date(prev[a]?.updatedAt ?? 0).getTime() - new Date(prev[b]?.updatedAt ?? 0).getTime()
+          );
+          for (const k of sorted.slice(0, keys.length - 500)) delete next[k];
+        }
+        return next;
+      });
     });
 
     return () => {
