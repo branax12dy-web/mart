@@ -1016,6 +1016,11 @@ router.patch("/orders/:id/status", async (req, res) => {
 
   let order = preOrder;
 
+  const NON_CANCELLABLE_STATUSES = ["delivered", "completed"];
+  if (status === "cancelled" && NON_CANCELLABLE_STATUSES.includes(preOrder.status)) {
+    res.status(400).json({ error: `Cannot cancel an order that is already ${preOrder.status}.` }); return;
+  }
+
   if (status === "cancelled" && preOrder.paymentMethod === "wallet" && !preOrder.refundedAt) {
     const refundAmt = parseFloat(String(preOrder.total));
     const now = new Date();

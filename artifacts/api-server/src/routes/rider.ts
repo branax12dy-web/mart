@@ -732,12 +732,24 @@ router.patch("/orders/:id/status", async (req, res) => {
     }); return;
   }
 
-  /* Include riderId in WHERE to close the TOCTOU window — only the assigned rider can advance status */
+  const ORDER_RIDER_TRANSITIONS: Record<string, string[]> = {
+    confirmed:        ["picked_up"],
+    preparing:        ["picked_up"],
+    ready:            ["picked_up"],
+    picked_up:        ["out_for_delivery"],
+    out_for_delivery: ["delivered"],
+  };
+  const allowedNext = ORDER_RIDER_TRANSITIONS[order.status] || [];
+  if (!allowedNext.includes(status)) {
+    res.status(400).json({ error: `Cannot change order from "${order.status}" to "${status}". Allowed: ${allowedNext.join(", ") || "none"}.` }); return;
+  }
+
   const updateData: Record<string, any> = { status, updatedAt: new Date() };
   if (status === "delivered" && proofPhoto) {
     updateData.proofPhotoUrl = proofPhoto;
   }
-  const [updated] = await db.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
+
+  let updated: typeof order;
 
   if (status === "delivered") {
     const s = await getPlatformSettings();
@@ -748,11 +760,11 @@ router.patch("/orders/:id/status", async (req, res) => {
     const isCash = order.paymentMethod === "cash" || order.paymentMethod === "cod";
 
     if (isCash) {
-      /* ── CASH ORDER: record cash collection + deduct platform fee from wallet (atomic) ── */
       const platformFee = parseFloat((orderTotal * platformFeePct).toFixed(2));
       const riderShare  = parseFloat((orderTotal - platformFee).toFixed(2));
-      await db.transaction(async (tx) => {
-        /* 1. Cash-collection ledger: rider physically collected full amount in cash */
+      updated = await db.transaction(async (tx) => {
+        const [row] = await tx.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
+        if (!row) throw new Error("Order not found or already updated");
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "cash_collection",
           amount: orderTotal.toFixed(2),
@@ -760,7 +772,6 @@ router.patch("/orders/:id/status", async (req, res) => {
           reference: `order:${order.id}`,
           paymentMethod: "cash",
         });
-        /* 2. Platform fee deduction from wallet (commission) */
         await tx.update(usersTable)
           .set({ walletBalance: sql`wallet_balance - ${platformFee}`, updatedAt: new Date() })
           .where(eq(usersTable.id, riderId));
@@ -770,7 +781,6 @@ router.patch("/orders/:id/status", async (req, res) => {
           description: `Platform fee (${Math.round(platformFeePct * 100)}%) — Cash Order #${order.id.slice(-6).toUpperCase()} · Rider keeps Rs. ${riderShare}`,
           reference: `order:${order.id}`,
         });
-        /* Bonus still applies for cash orders */
         if (bonusPerTrip > 0) {
           await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${bonusPerTrip}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
           await tx.insert(walletTransactionsTable).values({
@@ -779,6 +789,7 @@ router.patch("/orders/:id/status", async (req, res) => {
             description: `Per-trip bonus — Order #${order.id.slice(-6).toUpperCase()}`,
           });
         }
+        return row;
       });
       const riderCashLang = await getUserLanguage(riderId);
       await db.insert(notificationsTable).values({
@@ -787,10 +798,11 @@ router.patch("/orders/:id/status", async (req, res) => {
         type: "wallet", icon: "wallet-outline",
       }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
     } else {
-      /* ── WALLET/ONLINE ORDER: credit rider's share (atomic) ── */
       const earnings = parseFloat((orderTotal * riderKeepPct).toFixed(2));
       const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
-      await db.transaction(async (tx) => {
+      updated = await db.transaction(async (tx) => {
+        const [row] = await tx.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
+        if (!row) throw new Error("Order not found or already updated");
         await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "credit",
@@ -804,6 +816,7 @@ router.patch("/orders/:id/status", async (req, res) => {
             description: `Per-trip bonus — Order #${order.id.slice(-6).toUpperCase()}`,
           });
         }
+        return row;
       });
       const riderEarnLang = await getUserLanguage(riderId);
       await db.insert(notificationsTable).values({
@@ -872,6 +885,10 @@ router.patch("/orders/:id/status", async (req, res) => {
         }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
       }
     }
+  } else {
+    const [row] = await db.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
+    if (!row) { res.status(404).json({ error: "Order not found or not yours" }); return; }
+    updated = row;
   }
 
   res.json({ ...updated, total: safeNum(updated.total) });
@@ -1062,8 +1079,7 @@ router.patch("/rides/:id/status", async (req, res) => {
     }
   }
 
-  /* Include riderId in WHERE to close TOCTOU between ownership check and update */
-  const [updated] = await db.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+  let updated: typeof ride;
 
   if (status === "completed") {
     const s = await getPlatformSettings();
@@ -1074,11 +1090,11 @@ router.patch("/rides/:id/status", async (req, res) => {
     const isCashRide = ride.paymentMethod === "cash";
 
     if (isCashRide) {
-      /* ── CASH RIDE: record cash collection + deduct platform fee from wallet (atomic) ── */
       const platformFee = parseFloat((fareAmt * platformFeePct).toFixed(2));
       const riderShare  = parseFloat((fareAmt - platformFee).toFixed(2));
-      await db.transaction(async (tx) => {
-        /* 1. Cash-collection ledger: rider physically collected full fare in cash */
+      updated = await db.transaction(async (tx) => {
+        const [statusRow] = await tx.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+        if (!statusRow) throw new Error("Ride not found or already updated");
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "cash_collection",
           amount: fareAmt.toFixed(2),
@@ -1086,7 +1102,6 @@ router.patch("/rides/:id/status", async (req, res) => {
           reference: `ride:${ride.id}`,
           paymentMethod: "cash",
         });
-        /* 2. Platform fee deduction: commission paid from wallet */
         await tx.update(usersTable)
           .set({ walletBalance: sql`wallet_balance - ${platformFee}`, updatedAt: new Date() })
           .where(eq(usersTable.id, riderId));
@@ -1104,6 +1119,7 @@ router.patch("/rides/:id/status", async (req, res) => {
             description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
           });
         }
+        return statusRow;
       });
       const rideCashLang = await getUserLanguage(riderId);
       await db.insert(notificationsTable).values({
@@ -1112,10 +1128,11 @@ router.patch("/rides/:id/status", async (req, res) => {
         type: "wallet", icon: "wallet-outline",
       }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
     } else {
-      /* ── WALLET RIDE: credit rider's share (atomic) ── */
       const earnings = parseFloat((fareAmt * riderKeepPct).toFixed(2));
       const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
-      await db.transaction(async (tx) => {
+      updated = await db.transaction(async (tx) => {
+        const [statusRow] = await tx.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+        if (!statusRow) throw new Error("Ride not found or already updated");
         await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "credit",
@@ -1129,6 +1146,7 @@ router.patch("/rides/:id/status", async (req, res) => {
             description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
           });
         }
+        return statusRow;
       });
       const rideEarnLang = await getUserLanguage(riderId);
       await db.insert(notificationsTable).values({
@@ -1144,6 +1162,10 @@ router.patch("/rides/:id/status", async (req, res) => {
       title: t("rideCompleted", custRideCompleteLang) + " ✅", body: t("notifRideCompletedBody", custRideCompleteLang),
       type: "ride", icon: "checkmark-circle-outline",
     }).catch(e => console.error("customer notif insert failed:", e));
+  } else {
+    const [row] = await db.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+    if (!row) { res.status(404).json({ error: "Ride not found or not yours" }); return; }
+    updated = row;
   }
 
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });

@@ -430,11 +430,11 @@ router.post("/", customerAuth, async (req, res) => {
       if (!walletEnabled) { res.status(400).json({ error: "Wallet payments are currently disabled" }); return; }
 
       rideRecord = await db.transaction(async (tx) => {
-        const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-        if (!user) throw new Error("User not found");
-        const balance = parseFloat(user.walletBalance ?? "0");
-        if (balance < fareToCharge) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${fareToCharge.toFixed(0)}`);
-        await tx.update(usersTable).set({ walletBalance: (balance - fareToCharge).toFixed(2) }).where(eq(usersTable.id, userId));
+        const [deducted] = await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance - ${fareToCharge.toFixed(2)}` })
+          .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, fareToCharge.toFixed(2))))
+          .returning({ id: usersTable.id, walletBalance: usersTable.walletBalance });
+        if (!deducted) throw new Error(`Insufficient wallet balance. Required: Rs. ${fareToCharge.toFixed(0)}`);
         // NOTE: ride.id is unknown at this point; we patch the reference after insertion
         const rideId = generateId();
         await tx.insert(walletTransactionsTable).values({
@@ -557,20 +557,24 @@ router.patch("/:id/cancel", customerAuth, requireRideState(["searching", "bargai
     }
 
     if (riderAssigned && cancelFee > 0) {
-      // Re-fetch balance after the refund credit above
       const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
       if (user) {
         const balance = parseFloat(user.walletBalance ?? "0");
         if (balance >= cancelFee) {
-          actualCancelFee = cancelFee;
-          await tx.update(usersTable)
-            .set({ walletBalance: (balance - cancelFee).toFixed(2) })
-            .where(eq(usersTable.id, userId));
-          await tx.insert(walletTransactionsTable).values({
-            id: generateId(), userId, type: "debit",
-            amount: cancelFee.toFixed(2),
-            description: `Ride cancellation fee — #${ride.id.slice(-6).toUpperCase()}`,
-          });
+          const [feeDeducted] = await tx.update(usersTable)
+            .set({ walletBalance: sql`wallet_balance - ${cancelFee.toFixed(2)}` })
+            .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, cancelFee.toFixed(2))))
+            .returning({ id: usersTable.id });
+          if (feeDeducted) {
+            actualCancelFee = cancelFee;
+            await tx.insert(walletTransactionsTable).values({
+              id: generateId(), userId, type: "debit",
+              amount: cancelFee.toFixed(2),
+              description: `Ride cancellation fee — #${ride.id.slice(-6).toUpperCase()}`,
+            });
+          } else {
+            cancelFeeAsDebt = true;
+          }
         } else if (balance > 0) {
           actualCancelFee = balance;
           cancelFeeAsDebt = true;
@@ -686,11 +690,11 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
       const agreedFare = parseFloat(bid.fare);
 
       if (ride.paymentMethod === "wallet") {
-        const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-        if (!user) throw new Error("User not found");
-        const balance = parseFloat(user.walletBalance ?? "0");
-        if (balance < agreedFare) throw new Error(`Insufficient wallet balance. Need Rs. ${agreedFare.toFixed(0)}`);
-        await tx.update(usersTable).set({ walletBalance: (balance - agreedFare).toFixed(2) }).where(eq(usersTable.id, userId));
+        const [deducted] = await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance - ${agreedFare.toFixed(2)}` })
+          .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, agreedFare.toFixed(2))))
+          .returning({ id: usersTable.id });
+        if (!deducted) throw new Error(`Insufficient wallet balance. Need Rs. ${agreedFare.toFixed(0)}`);
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId, type: "debit", amount: agreedFare.toFixed(2),
           description: `Ride payment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
