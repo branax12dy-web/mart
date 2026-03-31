@@ -80,7 +80,36 @@ export default function Earnings() {
         </div>
 
         {isLoading ? (
-          <div className="h-32 bg-white rounded-3xl animate-pulse border border-gray-100" />
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm space-y-2 animate-pulse">
+                <div className="h-3 bg-gray-100 rounded-full w-16"/>
+                <div className="h-8 bg-gray-200 rounded-full w-28"/>
+                <div className="h-2.5 bg-gray-100 rounded-full w-20"/>
+              </div>
+              <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm space-y-2 animate-pulse">
+                <div className="h-3 bg-gray-100 rounded-full w-16"/>
+                <div className="h-8 bg-gray-200 rounded-full w-12"/>
+                <div className="h-2.5 bg-gray-100 rounded-full w-16"/>
+              </div>
+            </div>
+            <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm animate-pulse space-y-3">
+              <div className="h-3 bg-gray-100 rounded-full w-24"/>
+              <div className="h-3.5 bg-gray-200 rounded-full w-full"/>
+              <div className="h-2.5 bg-gray-100 rounded-full w-28"/>
+            </div>
+            <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm animate-pulse">
+              <div className="h-3 bg-gray-100 rounded-full w-24 mb-3"/>
+              <div className="grid grid-cols-2 gap-3">
+                {[0,1,2,3].map(i => (
+                  <div key={i} className="bg-gray-50 rounded-2xl p-4 space-y-2">
+                    <div className="h-6 bg-gray-200 rounded-full w-16 mx-auto"/>
+                    <div className="h-2.5 bg-gray-100 rounded-full w-20 mx-auto"/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
         ) : isError ? (
           <div className="bg-red-50 border border-red-100 rounded-3xl p-5 text-center">
             <p className="text-sm font-bold text-red-700">Could not load earnings data.</p>

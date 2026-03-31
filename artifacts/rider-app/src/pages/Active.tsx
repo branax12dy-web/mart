@@ -1072,9 +1072,9 @@ export default function Active() {
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
                           <MapPin size={18} className="text-white"/>
                         </div>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Store Location</p>
-                          <p className="text-sm font-bold text-gray-900 mt-0.5">{order.vendorAddress}</p>
+                          <p className="text-sm font-bold text-gray-900 mt-0.5 break-words">{order.vendorAddress}</p>
                         </div>
                       </div>
                     </div>
@@ -1142,9 +1142,9 @@ export default function Active() {
                       <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-red-200">
                         <MapPinned size={18} className="text-white"/>
                       </div>
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <p className="text-[10px] text-red-500 font-bold uppercase tracking-wider">Delivery Address</p>
-                        <p className="text-sm font-bold text-gray-900 mt-0.5">{order.deliveryAddress || "Address not provided"}</p>
+                        <p className="text-sm font-bold text-gray-900 mt-0.5 break-words">{order.deliveryAddress || "Address not provided"}</p>
                       </div>
                     </div>
                   </div>

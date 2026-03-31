@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as FileSystem from "expo-file-system";
 import { router } from "expo-router";
 import React, { useState, useEffect } from "react";
 import {
@@ -98,7 +100,7 @@ function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Math.max(insets.top, 12);
   const { user, updateUser, token } = useAuth();
-  const { items: globalCartItems, addItem: addToGlobalCart, removeItem: removeFromGlobalCart, updateQuantity, clearCart } = useCart();
+  const { items: globalCartItems, addItem: addToGlobalCart, removeItem: removeFromGlobalCart, updateQuantity, clearCart, setPharmacyPendingOrderId } = useCart();
   const { showToast } = useToast();
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
@@ -247,6 +249,33 @@ function PharmacyScreenInner() {
     }
   };
 
+  const uploadPrescriptionAsync = (photoUri: string, refId: string): void => {
+    (async () => {
+      try {
+        const compressed = await ImageManipulator.manipulateAsync(
+          photoUri,
+          [{ resize: { width: 1024 } }],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        const base64 = await FileSystem.readAsStringAsync(compressed.uri, { encoding: "base64" as const });
+        const res = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/uploads/prescription`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ file: `data:image/jpeg;base64,${base64}`, mimeType: "image/jpeg", refId }),
+        });
+        if (!res.ok && __DEV__) {
+          const err = await res.json().catch(() => ({}));
+          console.warn("[prescription upload] failed:", res.status, err);
+        }
+      } catch (e) {
+        if (__DEV__) console.warn("[prescription upload] error:", e);
+      }
+    })();
+  };
+
   const placeOrder = async () => {
     if (!address.trim() || !phone.trim()) {
       showToast(T("deliveryAddress"), "error");
@@ -270,40 +299,18 @@ function PharmacyScreenInner() {
     }
     setLoading(true);
     try {
-      // Upload prescription photo if selected, then submit order with returned URL
-      let prescriptionPhotoUrl: string | undefined;
-      if (prescriptionPhotoUri) {
-        try {
-          // Read the file as base64
-          const FileSystem = await import("expo-file-system");
-          const base64 = await FileSystem.readAsStringAsync(prescriptionPhotoUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          const mimeType = prescriptionPhotoUri.endsWith(".png") ? "image/png" : "image/jpeg";
-          const uploadRes = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/uploads`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            body: JSON.stringify({ file: `data:${mimeType};base64,${base64}`, mimeType }),
-          });
-          if (uploadRes.ok) {
-            const uploadData = await uploadRes.json();
-            prescriptionPhotoUrl = uploadData.url as string;
-          } else {
-            showToast("Could not upload prescription photo — check connection and try again", "error");
-            setLoading(false);
-            return;
-          }
-        } catch {
-          showToast("Could not upload prescription photo", "error");
-          setLoading(false);
-          return;
-        }
+      const prescriptionRefId = prescriptionPhotoUri
+        ? `rx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        : undefined;
+
+      if (prescriptionPhotoUri && prescriptionRefId) {
+        uploadPrescriptionAsync(prescriptionPhotoUri, prescriptionRefId);
       }
 
       const data = await createPharmacyOrder({
         items: cartItems.map(m => ({ id: m.id, name: m.name, price: m.price, quantity: m.qty, requires_prescription: (m as any).requires_prescription ?? false })),
         prescriptionNote: prescription || null,
-        prescriptionPhotoUri: prescriptionPhotoUrl || undefined,
+        prescriptionPhotoUri: prescriptionRefId,
         deliveryAddress: address,
         contactPhone: phone,
         paymentMethod: payMethod as "cash" | "wallet",
@@ -313,7 +320,11 @@ function PharmacyScreenInner() {
       }
       setConfirmedOrderId(data.id);
       setConfirmed(true);
-      clearCart();
+      if (data.id) {
+        setPharmacyPendingOrderId(data.id);
+      } else {
+        clearCart();
+      }
     } catch {
       showToast(T("networkError"), "error");
     } finally {
@@ -439,10 +450,20 @@ function PharmacyScreenInner() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}>
         {loadingMeds ? (
-          <View style={s.centerState}>
-            <ActivityIndicator size="large" color="#7C3AED" />
-            <Text style={s.emptyTxt}>{T("loadingMedicines")}</Text>
-          </View>
+          <>
+            {[0,1,2,3,4,5,6].map(i => (
+              <View key={i} style={[s.medCard, { opacity: 1 - i * 0.08 }]}>
+                <View style={[s.medEmoji, { backgroundColor: "#EDE9FE" }]} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <View style={{ height: 13, width: "65%", backgroundColor: "#EDE9FE", borderRadius: 6 }} />
+                  <View style={{ height: 10, width: "45%", backgroundColor: "#F5F3FF", borderRadius: 5 }} />
+                  <View style={{ height: 10, width: "30%", backgroundColor: "#F5F3FF", borderRadius: 5 }} />
+                  <View style={{ height: 12, width: "40%", backgroundColor: "#EDE9FE", borderRadius: 6 }} />
+                </View>
+                <View style={{ width: 80, height: 32, backgroundColor: "#EDE9FE", borderRadius: 10 }} />
+              </View>
+            ))}
+          </>
         ) : medsError ? (
           <View style={s.centerState}>
             <View style={s.errorIconWrap}>

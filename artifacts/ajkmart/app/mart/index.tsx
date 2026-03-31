@@ -3,7 +3,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState, useRef, useEffect } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
@@ -257,9 +256,17 @@ function MartScreenInner() {
         </ScrollView>
 
         {isLoading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={C.primary} size="large" />
-            <Text style={styles.loadingTxt}>Loading products...</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, paddingHorizontal: 16, paddingTop: 8 }}>
+            {[0,1,2,3,4,5].map(i => (
+              <View key={i} style={{ width: PRODUCT_CARD_W, backgroundColor: C.surface, borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: C.border }}>
+                <View style={{ width: "100%", height: 130, backgroundColor: C.surfaceSecondary }} />
+                <View style={{ padding: 10, gap: 6 }}>
+                  <View style={{ height: 12, width: "70%", backgroundColor: C.surfaceSecondary, borderRadius: 6 }} />
+                  <View style={{ height: 10, width: "45%", backgroundColor: C.surfaceSecondary, borderRadius: 5 }} />
+                  <View style={{ height: 28, width: "55%", backgroundColor: C.surfaceSecondary, borderRadius: 8, marginTop: 4 }} />
+                </View>
+              </View>
+            ))}
           </View>
         ) : isError ? (
           <View style={styles.center}>
@@ -393,7 +400,6 @@ const styles = StyleSheet.create({
   errorSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
   retryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 4 },
   retryBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
-  loadingTxt: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted },
   emptyIconWrap: { width: 80, height: 80, borderRadius: 24, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   emptyTitle: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text },
   emptyTxt: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary },

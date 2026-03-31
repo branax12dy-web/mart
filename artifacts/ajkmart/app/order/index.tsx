@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -72,9 +72,54 @@ export default function OrderDetailScreen() {
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [trackFailed, setTrackFailed] = useState(false);
 
+  const navigation = useNavigation();
+
+  const goBack = () => {
+    if (navigation.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/orders");
+    }
+  };
+
   const mountedRef = useRef(true);
   const socketRef = useRef<Socket | null>(null);
   const isPharmacyType = type === "pharmacy";
+
+  const interpFromRef = useRef<{ lat: number; lng: number } | null>(null);
+  const interpToRef   = useRef<{ lat: number; lng: number } | null>(null);
+  const interpRenderedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const interpStartRef = useRef<number>(0);
+  const interpRafRef   = useRef<number | null>(null);
+  const INTERP_DURATION_MS = 4000;
+
+  const animateToLocation = (newLat: number, newLng: number) => {
+    if (!mountedRef.current) return;
+    const renderedLat = interpRenderedRef.current?.lat ?? interpToRef.current?.lat ?? newLat;
+    const renderedLng = interpRenderedRef.current?.lng ?? interpToRef.current?.lng ?? newLng;
+    if (interpRafRef.current !== null) { cancelAnimationFrame(interpRafRef.current); interpRafRef.current = null; }
+    interpFromRef.current = { lat: renderedLat, lng: renderedLng };
+    interpToRef.current   = { lat: newLat, lng: newLng };
+    interpStartRef.current = performance.now();
+    const tick = (now: number) => {
+      if (!mountedRef.current) return;
+      const from = interpFromRef.current!;
+      const to   = interpToRef.current!;
+      const t    = Math.min((now - interpStartRef.current) / INTERP_DURATION_MS, 1);
+      const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      const lat = from.lat + (to.lat - from.lat) * ease;
+      const lng = from.lng + (to.lng - from.lng) * ease;
+      interpRenderedRef.current = { lat, lng };
+      setRiderLat(lat);
+      setRiderLng(lng);
+      if (t < 1) {
+        interpRafRef.current = requestAnimationFrame(tick);
+      } else {
+        interpRafRef.current = null;
+      }
+    };
+    interpRafRef.current = requestAnimationFrame(tick);
+  };
 
   // Poll rider live location for all active order types.
   // - Parcel orders: GET /rides/:id/track (returns riderId live loc + ETA)
@@ -103,8 +148,12 @@ export default function OrderDetailScreen() {
         if (res.ok) {
           const d = await res.json();
           if (mountedRef.current) {
-            setRiderLat(d.riderLat ?? null);
-            setRiderLng(d.riderLng ?? null);
+            if (typeof d.riderLat === "number" && typeof d.riderLng === "number") {
+              animateToLocation(d.riderLat, d.riderLng);
+            } else {
+              setRiderLat(null);
+              setRiderLng(null);
+            }
             setEtaMinutes(d.etaMinutes ?? null);
             setTrackFailed(false);
           }
@@ -143,8 +192,7 @@ export default function OrderDetailScreen() {
       socket.on("connect", () => socket?.emit("join", room));
       socket.on("rider:location", (payload: { latitude: number; longitude: number }) => {
         if (mountedRef.current) {
-          setRiderLat(payload.latitude);
-          setRiderLng(payload.longitude);
+          animateToLocation(payload.latitude, payload.longitude);
         }
       });
     });
@@ -152,6 +200,10 @@ export default function OrderDetailScreen() {
     return () => {
       socket?.disconnect();
       socketRef.current = null;
+      if (interpRafRef.current !== null) {
+        cancelAnimationFrame(interpRafRef.current);
+        interpRafRef.current = null;
+      }
     };
   }, [order?.status, orderId, token, isRide, isParcel]);
 
@@ -226,7 +278,7 @@ export default function OrderDetailScreen() {
     return (
       <View style={[s.root, { paddingTop: topPad }]}>
         <View style={s.headerBar}>
-          <Pressable onPress={() => router.back()} style={s.backBtn}>
+          <Pressable onPress={goBack} style={s.backBtn}>
             <Ionicons name="chevron-back" size={20} color={C.text} />
           </Pressable>
           <Text style={s.headerTitle}>{isParcel ? "Parcel Details" : isRide ? "Ride Details" : "Order Details"}</Text>
@@ -272,7 +324,7 @@ export default function OrderDetailScreen() {
   return (
     <View style={[s.root, { paddingTop: topPad }]}>
       <View style={s.headerBar}>
-        <Pressable onPress={() => router.back()} style={s.backBtn}>
+        <Pressable onPress={goBack} style={s.backBtn}>
           <Ionicons name="chevron-back" size={20} color={C.text} />
         </Pressable>
         <Text style={s.headerTitle}>{isParcel ? "Parcel Details" : isRide ? "Ride Details" : "Order Details"}</Text>
@@ -600,14 +652,14 @@ const s = StyleSheet.create({
   etaText: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#92400E" },
   stepperCard: { backgroundColor: "#fff", borderRadius: 20, padding: 18, borderWidth: 1, borderColor: C.border },
   sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, marginBottom: 14 },
-  stepperRow: { flexDirection: "row", alignItems: "flex-start" },
-  stepItem: { alignItems: "center", flex: 1, gap: 6 },
+  stepperRow: { flexDirection: "row", alignItems: "flex-start", overflow: "hidden" },
+  stepItem: { alignItems: "center", flex: 1, gap: 6, minWidth: 0 },
   stepDot: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: "#F1F5F9",
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center", justifyContent: "center", flexShrink: 0,
   },
-  stepLabel: { fontSize: 9, textAlign: "center", color: C.textMuted, fontFamily: "Inter_400Regular" },
-  stepLine: { height: 2, flex: 0.4, backgroundColor: "#F1F5F9", marginTop: 13, borderRadius: 1 },
+  stepLabel: { fontSize: 9, textAlign: "center", color: C.textMuted, fontFamily: "Inter_400Regular", maxWidth: "100%", flexShrink: 1 },
+  stepLine: { height: 2, flex: 0.3, backgroundColor: "#F1F5F9", marginTop: 13, borderRadius: 1, flexShrink: 1 },
   card: { backgroundColor: "#fff", borderRadius: 20, padding: 18, borderWidth: 1, borderColor: C.border },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
   typeChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },

@@ -761,11 +761,23 @@ export default function WalletScreen() {
   const p2pEnabled  = platformConfig.customer.p2pEnabled;
 
   const [walletFrozen, setWalletFrozen] = useState(false);
+  const [socketBalance, setSocketBalance] = useState<number | null>(null);
+  const prevUserBalanceRef = useRef<number | undefined>(user?.walletBalance);
 
   const { data, isLoading, isError: walletError, refetch } = useGetWallet(
     { userId: user?.id || "" },
     { query: { enabled: !!user?.id, retry: 1 } }
   );
+
+  useEffect(() => {
+    const current = user?.walletBalance;
+    if (current !== undefined && current !== prevUserBalanceRef.current) {
+      prevUserBalanceRef.current = current;
+      if (data?.balance !== undefined && current !== data.balance) {
+        setSocketBalance(current);
+      }
+    }
+  }, [user?.walletBalance, data?.balance]);
 
   useEffect(() => {
     if (token) {
@@ -794,7 +806,10 @@ export default function WalletScreen() {
       } catch {}
     }
     const res = await refetch();
-    if (res.data?.balance !== undefined) updateUser({ walletBalance: res.data.balance });
+    if (res.data?.balance !== undefined) {
+      updateUser({ walletBalance: res.data.balance });
+      setSocketBalance(null);
+    }
     setRefreshing(false);
   }, [refetch, updateUser, token]);
 
@@ -909,7 +924,7 @@ export default function WalletScreen() {
     setSendLoading(false);
   };
 
-  const balance      = data?.balance ?? user?.walletBalance ?? 0;
+  const balance      = socketBalance ?? data?.balance ?? user?.walletBalance ?? 0;
   const transactions = data?.transactions ?? [];
   const isDebitType  = (t: any) => t.type === "debit" || t.type === "withdrawal" || t.type === "transfer" || t.type === "ride" || t.type === "order" || t.type === "mart" || t.type === "food" || t.type === "pharmacy" || t.type === "parcel";
   const filtered     = txFilter === "all" ? transactions : txFilter === "debit" ? transactions.filter(isDebitType) : transactions.filter(t => t.type === txFilter);
@@ -943,9 +958,15 @@ export default function WalletScreen() {
             </View>
           )}
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
-          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
-            {isLoading ? "Rs. ···" : `Rs. ${balance.toLocaleString()}`}
-          </Text>
+          {isLoading && !data ? (
+            <View style={{ marginBottom: 4 }}>
+              <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "#E2E8F0", opacity: 0.7 }} />
+            </View>
+          ) : (
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
+              {`Rs. ${balance.toLocaleString()}`}
+            </Text>
+          )}
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 24 }}>{T("availableBalance")}</Text>
 
           <View style={{ flexDirection: "row", gap: 10 }}>
@@ -1033,8 +1054,19 @@ export default function WalletScreen() {
             )}
           </View>
 
-          {isLoading ? (
-            <ActivityIndicator color={C.primary} style={{ marginTop: 24 }} />
+          {isLoading && !data ? (
+            <View style={{ gap: 12, marginTop: 8 }}>
+              {[1,2,3,4].map(i => (
+                <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: "#E2E8F0" }} />
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <View style={{ height: 13, width: "70%", borderRadius: 6, backgroundColor: "#E2E8F0" }} />
+                    <View style={{ height: 11, width: "45%", borderRadius: 5, backgroundColor: "#EDF2F7" }} />
+                  </View>
+                  <View style={{ height: 14, width: 64, borderRadius: 6, backgroundColor: "#E2E8F0" }} />
+                </View>
+              ))}
+            </View>
           ) : filtered.length === 0 ? (
             <View style={{ alignItems: "center", gap: 10, paddingVertical: 48 }}>
               <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>

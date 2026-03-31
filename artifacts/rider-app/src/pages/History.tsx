@@ -146,7 +146,19 @@ export default function History() {
 
       <div className="px-4 py-3 space-y-3">
         {isLoading ? (
-          [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-3xl animate-pulse border border-gray-100"/>)
+          [1,2,3,4,5].map(i => (
+            <div key={i} className="bg-white rounded-3xl border border-gray-100 p-4 flex items-center gap-3 animate-pulse">
+              <div className="w-10 h-10 rounded-2xl bg-gray-100 flex-shrink-0"/>
+              <div className="flex-1 space-y-2">
+                <div className="h-3.5 bg-gray-200 rounded-full w-32"/>
+                <div className="h-2.5 bg-gray-100 rounded-full w-24"/>
+              </div>
+              <div className="space-y-1.5 items-end flex flex-col">
+                <div className="h-3.5 bg-gray-200 rounded-full w-16"/>
+                <div className="h-5 bg-gray-100 rounded-full w-14"/>
+              </div>
+            </div>
+          ))
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-16 h-16 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-3">

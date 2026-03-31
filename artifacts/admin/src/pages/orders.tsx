@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { StatusBadge } from "@/components/AdminShared";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function exportOrdersCSV(orders: any[]) {
   const header = "ID,Type,Status,Total,Payment,Customer,Rider,Date";
@@ -313,7 +314,24 @@ export default function Orders() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading orders...</TableCell></TableRow>
+                Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-7 w-7 rounded-full shrink-0" />
+                        <div className="space-y-1.5">
+                          <Skeleton className="h-3.5 w-28" />
+                          <Skeleton className="h-3 w-20" />
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-36 rounded-xl" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                  </TableRow>
+                ))
               ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No orders found.</TableCell></TableRow>
               ) : (
@@ -560,12 +578,12 @@ export default function Orders() {
                   </p>
                   <div className="space-y-2">
                     {selectedOrder.items.map((item: any, i: number) => (
-                      <div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-3 py-2.5">
-                        <div>
-                          <p className="text-sm font-semibold">{item.name}</p>
+                      <div key={i} className="flex justify-between items-center gap-3 bg-muted/30 rounded-xl px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">{item.name}</p>
                           <p className="text-xs text-muted-foreground">×{item.quantity}</p>
                         </div>
-                        <p className="font-bold text-foreground">{formatCurrency(item.price * item.quantity)}</p>
+                        <p className="font-bold text-foreground shrink-0">{formatCurrency(item.price * item.quantity)}</p>
                       </div>
                     ))}
                     <div className="flex justify-between items-center bg-primary/5 border border-primary/20 rounded-xl px-3 py-2.5">

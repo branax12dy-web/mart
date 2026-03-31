@@ -17,6 +17,12 @@ export interface CartValidationResult {
   cartChanged: boolean;
 }
 
+export interface AckSuccessData {
+  id: string;
+  time: string;
+  payMethod?: string;
+}
+
 interface CartContextType {
   items: CartItem[];
   itemCount: number;
@@ -26,9 +32,20 @@ interface CartContextType {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
   clearCart: () => void;
+  clearCartOnAck: () => void;
   restoreCart: (snapshot: CartItem[]) => void;
   validateCart: () => Promise<CartValidationResult>;
   isValidating: boolean;
+  pendingAck: boolean;
+  setPendingAck: (v: boolean) => void;
+  ackStuck: boolean;
+  orderSuccess: AckSuccessData | null;
+  clearOrderSuccess: () => void;
+  setPendingOrderId: (id: string | null, data?: AckSuccessData | null) => void;
+  startAckStuckTimer: (delayMs: number) => void;
+  cancelAckStuckTimer: () => void;
+  dismissAck: () => void;
+  setPharmacyPendingOrderId: (id: string | null) => void;
 }
 
 const CartContext = createContext<CartContextType | null>(null);
@@ -36,15 +53,86 @@ const CartContext = createContext<CartContextType | null>(null);
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const { token } = useAuth();
+  const { token, socket } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [pendingAck, setPendingAck] = useState(false);
+  const [ackStuck, setAckStuck] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState<AckSuccessData | null>(null);
   const authTokenRef = useRef<string | null | undefined>(token);
+  const pharmacyPendingOrderIdRef = useRef<string | null>(null);
+  const pendingOrderIdRef = useRef<string | null>(null);
+  const pendingOrderDataRef = useRef<AckSuccessData | null>(null);
+  const ackStuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     authTokenRef.current = token;
   }, [token]);
+
+  const save = (newItems: CartItem[]) => {
+    setItems(newItems);
+    AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(newItems));
+  };
+
+  const resetAckState = useCallback(() => {
+    if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
+    pendingOrderIdRef.current = null;
+    pendingOrderDataRef.current = null;
+    setPendingAck(false);
+    setAckStuck(false);
+  }, []);
+
+  const clearCartOnAck = useCallback(() => {
+    setPendingAck(false);
+    setItems([]);
+    AsyncStorage.removeItem("@ajkmart_cart");
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleAck = (payload: { orderId?: string; id?: string }) => {
+      const ackId = payload?.orderId ?? payload?.id;
+      const pending = pendingOrderIdRef.current;
+      if (!pending) return;
+      if (ackId && ackId !== pending) return;
+      if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
+      const data = pendingOrderDataRef.current;
+      pendingOrderIdRef.current = null;
+      pendingOrderDataRef.current = null;
+      setAckStuck(false);
+      clearCartOnAck();
+      if (data) setOrderSuccess(data);
+    };
+    socket.on("order:ack", handleAck);
+    socket.on("order:confirmed", handleAck);
+    return () => {
+      socket.off("order:ack", handleAck);
+      socket.off("order:confirmed", handleAck);
+    };
+  }, [socket, clearCartOnAck]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handlePharmacyAck = (payload: { orderId?: string; id?: string }) => {
+      const ackId = payload?.orderId ?? payload?.id;
+      const pending = pharmacyPendingOrderIdRef.current;
+      if (!pending) return;
+      if (ackId && ackId !== pending) return;
+      pharmacyPendingOrderIdRef.current = null;
+      setItems(current => {
+        const remaining = current.filter(i => i.type !== "pharmacy");
+        AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(remaining));
+        return remaining;
+      });
+    };
+    socket.on("order:ack", handlePharmacyAck);
+    socket.on("order:confirmed", handlePharmacyAck);
+    return () => {
+      socket.off("order:ack", handlePharmacyAck);
+      socket.off("order:confirmed", handlePharmacyAck);
+    };
+  }, [socket]);
 
   useEffect(() => {
     AsyncStorage.getItem("@ajkmart_cart").then(stored => {
@@ -64,11 +152,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       validateCartItems(items);
     }
   }, [hasLoaded, token]);
-
-  const save = (newItems: CartItem[]) => {
-    setItems(newItems);
-    AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(newItems));
-  };
 
   const validateCartItems = async (cartItems: CartItem[]): Promise<CartValidationResult> => {
     if (cartItems.length === 0) return { valid: true, cartChanged: false };
@@ -171,8 +254,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     save(items.map(i => i.productId === productId ? { ...i, quantity: qty } : i));
   };
 
-  const clearCart = () => save([]);
-  const restoreCart = (snapshot: CartItem[]) => save([...snapshot]);
+  const clearCart = () => {
+    resetAckState();
+    save([]);
+  };
+
+  const restoreCart = (snapshot: CartItem[]) => {
+    resetAckState();
+    save([...snapshot]);
+  };
+
+  const dismissAck = useCallback(() => {
+    resetAckState();
+  }, [resetAckState]);
 
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
   const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -183,8 +277,40 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     types.length === 1 ? (types[0] as "mart" | "food" | "pharmacy") :
     "mixed";
 
+  const setPharmacyPendingOrderId = (id: string | null) => {
+    pharmacyPendingOrderIdRef.current = id;
+  };
+
+  const setPendingOrderId = (id: string | null, data?: AckSuccessData | null) => {
+    pendingOrderIdRef.current = id;
+    pendingOrderDataRef.current = data ?? null;
+  };
+
+  const startAckStuckTimer = (delayMs: number) => {
+    if (ackStuckTimerRef.current) clearTimeout(ackStuckTimerRef.current);
+    ackStuckTimerRef.current = setTimeout(() => {
+      if (pendingOrderIdRef.current) setAckStuck(true);
+    }, delayMs);
+  };
+
+  const cancelAckStuckTimer = () => {
+    if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
+  };
+
+  const clearOrderSuccess = () => setOrderSuccess(null);
+
   return (
-    <CartContext.Provider value={{ items, itemCount, total, cartType, addItem, removeItem, updateQuantity, clearCart, restoreCart, validateCart, isValidating }}>
+    <CartContext.Provider value={{
+      items, itemCount, total, cartType,
+      addItem, removeItem, updateQuantity,
+      clearCart, clearCartOnAck, restoreCart, validateCart, isValidating,
+      pendingAck, setPendingAck,
+      ackStuck,
+      orderSuccess, clearOrderSuccess,
+      setPendingOrderId, startAckStuckTimer, cancelAckStuckTimer,
+      dismissAck,
+      setPharmacyPendingOrderId,
+    }}>
       {children}
     </CartContext.Provider>
   );

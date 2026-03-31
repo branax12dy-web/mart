@@ -8,6 +8,7 @@ import { customerAuth, riderAuth, addSecurityEvent, idorGuard } from "../middlew
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
 import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
+import { prescriptionRefMap } from "./uploads.js";
 
 const router: IRouter = Router();
 
@@ -18,7 +19,11 @@ function mapOrder(o: typeof pharmacyOrdersTable.$inferSelect) {
   if (noteText) {
     const photoMatch = noteText.match(/\[photo:\s*([^\]]+)\]/);
     if (photoMatch) {
-      prescriptionPhotoUrl = photoMatch[1]!.trim();
+      const raw = photoMatch[1]!.trim();
+      // If stored value is still a refId (upload was in-flight at order creation), try to resolve now
+      prescriptionPhotoUrl = (raw.startsWith("rx-") && prescriptionRefMap.has(raw))
+        ? prescriptionRefMap.get(raw)!
+        : raw.startsWith("rx-") ? null : raw;
       noteText = noteText.replace(/\n?\[photo:\s*[^\]]+\]/, "").trim() || null;
     }
   }
@@ -110,11 +115,23 @@ router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const { items, prescriptionNote, prescriptionPhotoUri, deliveryAddress, contactPhone, paymentMethod } = req.body;
 
+  // If prescriptionPhotoUri is a refId (async upload in-flight), resolve to real URL
+  // If no URL found yet, store the refId as placeholder — mapOrder will handle rendering
+  let resolvedPhotoUrl: string | null = null;
+  if (prescriptionPhotoUri?.trim()) {
+    const rawUri = prescriptionPhotoUri.trim();
+    if (rawUri.startsWith("rx-")) {
+      resolvedPhotoUrl = prescriptionRefMap.get(rawUri) ?? rawUri;
+    } else {
+      resolvedPhotoUrl = rawUri;
+    }
+  }
+
   // Merge text note + photo URL into a single prescriptionNote for storage
   // Format: "text note\n[photo: /api/uploads/filename.jpg]"
   const mergedPrescriptionNote = [
     prescriptionNote?.trim() || null,
-    prescriptionPhotoUri?.trim() ? `[photo: ${prescriptionPhotoUri.trim()}]` : null,
+    resolvedPhotoUrl ? `[photo: ${resolvedPhotoUrl}]` : null,
   ].filter(Boolean).join("\n") || null;
   if (!items || !deliveryAddress || !contactPhone || !paymentMethod) {
     res.status(400).json({ error: "Missing required fields" });

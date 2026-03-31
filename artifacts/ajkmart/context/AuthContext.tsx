@@ -48,6 +48,7 @@ interface AuthContextType {
   setTwoFactorPending: (pending: TwoFactorPending | null) => void;
   completeTwoFactorLogin: (user: AppUser, token: string, refreshToken?: string) => Promise<void>;
   attemptBiometricLogin: () => Promise<boolean>;
+  socket: Socket | null;
 }
 
 const TOKEN_KEY         = "@ajkmart_token";
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [suspendedMessage, setSuspendedMessage] = useState("");
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
   const [twoFactorPending, setTwoFactorPending] = useState<TwoFactorPending | null>(null);
+  const [socketState, setSocketState] = useState<Socket | null>(null);
   const { syncToServer, setAuthToken } = useLanguage();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -386,8 +388,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
+    setSocketState(socket);
 
-    socket.on("wallet:update", (payload: { balance: number }) => {
+    const handleWalletBalance = (payload: { balance: number }) => {
       if (typeof payload?.balance === "number") {
         setUser(prev => prev ? { ...prev, walletBalance: payload.balance } : prev);
         AsyncStorage.getItem(USER_KEY).then(stored => {
@@ -398,11 +401,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } catch {}
         });
       }
-    });
+    };
+
+    socket.on("wallet:update", handleWalletBalance);
+    socket.on("wallet:balance", handleWalletBalance);
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketState(null);
     };
   }, [token, user?.id]);
 
@@ -413,6 +420,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login, logout, updateUser, clearSuspended,
       setBiometricEnabled, setTwoFactorPending,
       completeTwoFactorLogin, attemptBiometricLogin,
+      socket: socketState,
     }}>
       {children}
     </AuthContext.Provider>

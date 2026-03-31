@@ -120,8 +120,15 @@ function AddressPickerModal({
 
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
-  const { user, updateUser, token } = useAuth();
-  const { items, total, cartType, updateQuantity, clearCart, restoreCart, addItem, validateCart, isValidating } = useCart();
+  const { user, updateUser, token, socket } = useAuth();
+  const {
+    items, total, cartType, updateQuantity, clearCart, clearCartOnAck, restoreCart, addItem, validateCart, isValidating,
+    pendingAck, setPendingAck,
+    ackStuck,
+    dismissAck,
+    orderSuccess, clearOrderSuccess,
+    setPendingOrderId, startAckStuckTimer, cancelAckStuckTimer,
+  } = useCart();
   const { showToast } = useToast();
   const { config: platformConfig } = usePlatformConfig();
   const { language } = useLanguage();
@@ -137,7 +144,6 @@ export default function CartScreen() {
   const [undoSnapshot, setUndoSnapshot] = useState<typeof items | null>(null);
   const [showUndoClear, setShowUndoClear] = useState(false);
   const undoClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [orderSuccess, setOrderSuccess] = useState<{ id: string; time: string; payMethod?: string } | null>(null);
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddrId, setSelectedAddrId] = useState<string>("");
@@ -168,6 +174,7 @@ export default function CartScreen() {
   const gwTxnRef  = useRef<string | null>(null);
   const gwOrderId = useRef<string | null>(null);
   const promoRevalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -203,10 +210,13 @@ export default function CartScreen() {
               gwPollRef.current.active = false;
               if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
               if (!mountedRef.current) return;
+              if (oid) {
+                const successData = { id: oid.slice(-6).toUpperCase(), time: "30-45 min", payMethod };
+                setPendingOrderId(oid, successData);
+                setPendingAck(true);
+                startAckStuckTimer(60000);
+              }
               setGwStep("done");
-              await new Promise(res => setTimeout(res, 600));
-              clearCart();
-              setOrderSuccess({ id: (oid || txn).slice(-6).toUpperCase(), time: "30-45 min", payMethod });
               setShowGwModal(false);
             } else if (d.status === "failed" || d.status === "expired") {
               gwPollRef.current.active = false;
@@ -221,7 +231,7 @@ export default function CartScreen() {
       }
     });
     return () => sub.remove();
-  }, [gwStep, gwBackgrounded, payMethod, clearCart, showToast]);
+  }, [gwStep, gwBackgrounded, payMethod, showToast]);
 
   const topPad = Math.max(insets.top, 12);
   const deliveryFeeConfig = platformConfig.deliveryFee;
@@ -367,6 +377,7 @@ export default function CartScreen() {
     let lastError: Error | null = null;
     let order: any = null;
     const idemKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    setPendingAck(true);
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
@@ -386,14 +397,20 @@ export default function CartScreen() {
       } catch (err: any) {
         lastError = err;
         const status = err?.status ?? err?.statusCode ?? 0;
-        if (status >= 400 && status < 500) throw err;
+        if (status >= 400 && status < 500) {
+          setPendingAck(false);
+          throw err;
+        }
         if (attempt < MAX_RETRIES - 1) {
           const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
           await new Promise(r => setTimeout(r, delay));
         }
       }
     }
-    if (lastError || !order) throw lastError ?? new Error("Order failed after retries");
+    if (lastError || !order) {
+      setPendingAck(false);
+      throw lastError ?? new Error("Order failed after retries");
+    }
 
     if (finalPayMethod === "wallet") {
       const serverDeducted = parseFloat((order as any).total ?? grandTotal);
@@ -418,12 +435,19 @@ export default function CartScreen() {
       }
     })();
 
-    clearCart();
-    setOrderSuccess({
-      id: (order as any).id?.slice(-6).toUpperCase() || "------",
+    const orderId = (order as any).id as string | undefined;
+    const successData = {
+      id: (orderId ?? "------").slice(-6).toUpperCase(),
       time: (order as any).estimatedTime || "30-45 min",
       payMethod: finalPayMethod,
-    });
+    };
+
+    if (orderId) {
+      setPendingOrderId(orderId, successData);
+      startAckStuckTimer(socket ? 60000 : 10000);
+    } else {
+      clearCartOnAck();
+    }
   };
 
   const handleCheckout = async () => {
@@ -528,19 +552,44 @@ export default function CartScreen() {
     setGwPaying(true);
     setGwStep("waiting");
     setGwBackgrounded(false);
+    let orderRegistered = false;
     try {
-      const order = await createOrder({
-        type: cartType === "mixed" ? "mart" : cartType,
-        items: items.map(i => ({
-          productId: i.productId, name: i.name,
-          price: i.price, quantity: i.quantity, image: i.image,
-        })),
-        deliveryAddress: deliveryLine,
-        paymentMethod: payMethod,
-        ...(promoCode ? { promoCode } : {}),
-      } as any);
+      const GW_MAX_RETRIES = 3;
+      let gwLastError: Error | null = null;
+      let order: any = null;
+      const gwIdemKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      setPendingAck(true);
+      for (let attempt = 0; attempt < GW_MAX_RETRIES; attempt++) {
+        try {
+          order = await createOrder({
+            type: cartType === "mixed" ? "mart" : cartType,
+            items: items.map(i => ({
+              productId: i.productId, name: i.name,
+              price: i.price, quantity: i.quantity, image: i.image,
+            })),
+            deliveryAddress: deliveryLine,
+            paymentMethod: payMethod,
+            idempotencyKey: gwIdemKey,
+            ...(promoCode ? { promoCode } : {}),
+          } as any);
+          gwLastError = null;
+          break;
+        } catch (err: any) {
+          gwLastError = err;
+          const status = err?.status ?? err?.statusCode ?? 0;
+          if (status >= 400 && status < 500) throw err;
+          if (attempt < GW_MAX_RETRIES - 1) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+      if (gwLastError || !order) {
+        setPendingAck(false);
+        throw gwLastError ?? new Error("Order creation failed after retries");
+      }
       const realOrderId = (order as any).id;
-      if (!realOrderId) throw new Error("Could not create order");
+      if (!realOrderId) { setPendingAck(false); throw new Error("Could not create order"); }
 
       const r = await fetch(`${API_BASE}/payments/initiate`, {
         method: "POST",
@@ -591,15 +640,18 @@ export default function CartScreen() {
               gwPollRef.current.active = false;
               gwPollRef.current.intervalId = undefined;
               if (!mountedRef.current) { resolve(); return; }
+              {
+                const successData = {
+                  id: realOrderId.slice(-6).toUpperCase(),
+                  time: (order as any).estimatedTime || "30-45 min",
+                  payMethod,
+                };
+                setPendingOrderId(realOrderId, successData);
+                setPendingAck(true);
+                startAckStuckTimer(60000);
+                orderRegistered = true;
+              }
               setGwStep("done");
-              await new Promise(r => setTimeout(r, 600));
-              if (!mountedRef.current) { resolve(); return; }
-              clearCart();
-              setOrderSuccess({
-                id: realOrderId.slice(-6).toUpperCase(),
-                time: (order as any).estimatedTime || "30-45 min",
-                payMethod,
-              });
               setShowGwModal(false);
               resolve();
             } else if (statusData.status === "failed" || statusData.status === "expired") {
@@ -623,6 +675,7 @@ export default function CartScreen() {
     } catch (e: any) {
       showToast(e.message || T("paymentFailed"), "error");
       setGwStep("input");
+      if (!orderRegistered) setPendingAck(false);
     }
     setGwPaying(false);
   };
@@ -749,14 +802,13 @@ export default function CartScreen() {
                         const statusData = await statusRes.json() as any;
                         if (statusData.status === "completed" || statusData.status === "success") {
                           setGwBackgrounded(false);
+                          if (oid) {
+                            const successData = { id: oid.slice(-6).toUpperCase(), time: "30-45 min", payMethod };
+                            setPendingOrderId(oid, successData);
+                            setPendingAck(true);
+                            startAckStuckTimer(60000);
+                          }
                           setGwStep("done");
-                          await new Promise(r => setTimeout(r, 600));
-                          clearCart();
-                          setOrderSuccess({
-                            id: (oid || txn).slice(-6).toUpperCase(),
-                            time: "30-45 min",
-                            payMethod,
-                          });
                           setShowGwModal(false);
                         } else if (statusData.status === "failed" || statusData.status === "expired") {
                           setGwBackgrounded(false);
@@ -800,6 +852,43 @@ export default function CartScreen() {
     </Modal>
   );
 
+  if (pendingAck && !orderSuccess) {
+    if (ackStuck) {
+      return (
+        <View style={[styles.container, { backgroundColor: C.background, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
+          <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: "#FEF9C3", justifyContent: "center", alignItems: "center", marginBottom: 20 }}>
+            <Ionicons name="warning-outline" size={32} color="#B45309" />
+          </View>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: C.text, textAlign: "center" }}>Taking longer than expected</Text>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginTop: 10, textAlign: "center", lineHeight: 20 }}>
+            Your order was placed but we haven't received server confirmation yet. Check your orders list to see if it appears.
+          </Text>
+          <Pressable
+            onPress={() => router.push("/(tabs)/orders")}
+            style={{ marginTop: 24, backgroundColor: C.primary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14 }}
+          >
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>View My Orders</Text>
+          </Pressable>
+          <Pressable
+            onPress={dismissAck}
+            style={{ marginTop: 12, paddingVertical: 10 }}
+          >
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Dismiss</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.container, { backgroundColor: C.background, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={C.primary} />
+        <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: C.text, marginTop: 16 }}>Confirming your order…</Text>
+        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginTop: 6, textAlign: "center", maxWidth: 260 }}>
+          Waiting for server confirmation. Please wait.
+        </Text>
+      </View>
+    );
+  }
+
   if (orderSuccess) {
     const methodLabel: Record<string, string> = {
       cash: "Cash on Delivery", wallet: `${appName} Wallet`,
@@ -821,11 +910,11 @@ export default function CartScreen() {
             </Text>
           </View>
           <View style={styles.successBtns}>
-            <Pressable onPress={() => router.push("/(tabs)/orders")} style={styles.trackBtn}>
+            <Pressable onPress={() => { clearOrderSuccess(); router.push("/(tabs)/orders"); }} style={styles.trackBtn}>
               <Ionicons name="navigate-outline" size={16} color="#fff" />
               <Text style={styles.trackBtnTxt}>Track Order</Text>
             </Pressable>
-            <Pressable onPress={() => router.replace("/(tabs)")} style={styles.homeBtn}>
+            <Pressable onPress={() => { clearOrderSuccess(); router.replace("/(tabs)"); }} style={styles.homeBtn}>
               <Ionicons name="home-outline" size={16} color={C.primary} />
               <Text style={styles.homeBtnTxt}>Home</Text>
             </Pressable>
