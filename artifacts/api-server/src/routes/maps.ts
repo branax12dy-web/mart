@@ -8,6 +8,61 @@ const router: IRouter = Router();
 
 const GOOGLE_BASE = "https://maps.googleapis.com/maps/api";
 
+/* ── Reverse-geocode LRU cache: keyed by "lat,lng" rounded to 4 decimal places
+   (~11m precision), so minor coordinate drift reuses the cached result.
+   Max 200 entries; TTL 10 minutes. ── */
+interface RevGeoCache { address: string; ts: number }
+const _revGeoCache = new Map<string, RevGeoCache>();
+const REV_GEO_TTL_MS = 10 * 60_000;
+const REV_GEO_MAX    = 200;
+
+function revGeoCacheKey(lat: number, lng: number): string {
+  return `${lat.toFixed(4)},${lng.toFixed(4)}`;
+}
+
+function revGeoCacheGet(lat: number, lng: number): string | null {
+  const key   = revGeoCacheKey(lat, lng);
+  const entry = _revGeoCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > REV_GEO_TTL_MS) { _revGeoCache.delete(key); return null; }
+  return entry.address;
+}
+
+function revGeoCacheSet(lat: number, lng: number, address: string): void {
+  if (_revGeoCache.size >= REV_GEO_MAX) {
+    /* Evict the oldest entry */
+    const firstKey = _revGeoCache.keys().next().value;
+    if (firstKey) _revGeoCache.delete(firstKey);
+  }
+  _revGeoCache.set(revGeoCacheKey(lat, lng), { address, ts: Date.now() });
+}
+
+/**
+ * Extract the highest-precision (street-level) address component from a
+ * Google Geocoding result.  Priority order:
+ *   route (street name) → sublocality_level_1 → locality → formatted_address
+ */
+function extractStreetAddress(result: any): string {
+  const components: Array<{ long_name: string; types: string[] }> =
+    result.address_components ?? [];
+
+  const find = (...types: string[]) =>
+    components.find((c) => types.some((t) => c.types.includes(t)))?.long_name;
+
+  const streetNumber = find("street_number") ?? "";
+  const route        = find("route") ?? "";
+  const sublocality  = find("sublocality_level_1", "sublocality") ?? "";
+  const locality     = find("locality") ?? "";
+
+  if (route) {
+    const parts = [streetNumber, route, sublocality || locality].filter(Boolean);
+    return parts.join(", ");
+  }
+  if (sublocality) return sublocality + (locality ? `, ${locality}` : "");
+  if (locality) return locality;
+  return result.formatted_address ?? "";
+}
+
 /* ─── Helper: resolve API key + check feature gate ─── */
 async function getKey(): Promise<{
   key: string | null;
@@ -196,6 +251,58 @@ router.get("/geocode", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: "Maps geocode request failed" });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════
+   GET /api/maps/reverse-geocode?lat=LAT&lng=LNG
+   Converts lat/lng to a street-level address.
+   Uses street-level component extraction + in-process cache to avoid
+   redundant API calls on minor coordinate drift.
+══════════════════════════════════════════════════════════ */
+router.get("/reverse-geocode", async (req, res) => {
+  const lat = parseFloat(String(req.query.lat ?? ""));
+  const lng = parseFloat(String(req.query.lng ?? ""));
+
+  if (isNaN(lat) || isNaN(lng)) {
+    res.status(400).json({ error: "lat and lng are required" }); return;
+  }
+
+  /* Cache hit — avoid redundant API call */
+  const cached = revGeoCacheGet(lat, lng);
+  if (cached) {
+    res.json({ address: cached, source: "cache" }); return;
+  }
+
+  const { key, enabled, geocoding } = await getKey();
+
+  if (!enabled || !key || !geocoding) {
+    /* Closest AJK fallback location */
+    let closest = AJK_FALLBACK[0]!;
+    let closestDist = Infinity;
+    for (const loc of AJK_FALLBACK) {
+      const d = haversineKm(lat, lng, loc.lat, loc.lng);
+      if (d < closestDist) { closestDist = d; closest = loc; }
+    }
+    const address = closest.description;
+    revGeoCacheSet(lat, lng, address);
+    res.json({ address, source: "fallback" }); return;
+  }
+
+  try {
+    const url  = `${GOOGLE_BASE}/geocode/json?latlng=${lat},${lng}&language=en&key=${key}`;
+    const raw  = await fetch(url);
+    const data = await raw.json() as any;
+
+    if (data.status !== "OK" || !data.results?.length) {
+      res.status(404).json({ error: "Address not found", googleStatus: data.status }); return;
+    }
+
+    const address = extractStreetAddress(data.results[0]);
+    revGeoCacheSet(lat, lng, address);
+    res.json({ address, formattedAddress: data.results[0].formatted_address, source: "google" });
+  } catch {
+    res.status(500).json({ error: "Reverse geocode request failed" });
   }
 });
 

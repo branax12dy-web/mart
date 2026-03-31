@@ -6,6 +6,10 @@ import { db } from "@workspace/db";
 import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable } from "@workspace/db/schema";
 import { eq, or, and } from "drizzle-orm";
 
+/* ── Server-side GPS broadcast throttle: max 1 emit per rider per 1500ms ── */
+const RIDER_LOC_THROTTLE_MS = 1500;
+const _riderLocLastEmit = new Map<string, number>();
+
 let _io: SocketIOServer | null = null;
 
 /**
@@ -372,6 +376,20 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
       for (const key of _pendingRideJoins.keys()) {
         if (key.startsWith(prefix)) _pendingRideJoins.delete(key);
       }
+
+      /* Clean up stale live_locations row for riders on disconnect */
+      const disconnectToken = getTokenFromHandshake(headers, auth);
+      if (disconnectToken) {
+        const disconnectPayload = verifyUserJwt(disconnectToken);
+        if (disconnectPayload?.userId && disconnectPayload.role === "rider") {
+          const riderId = disconnectPayload.userId;
+          db.delete(liveLocationsTable)
+            .where(eq(liveLocationsTable.userId, riderId))
+            .catch((err) => logger.warn({ err, riderId }, "Failed to clean up stale live_location on disconnect"));
+          _riderLocLastEmit.delete(riderId);
+        }
+      }
+
       logger.debug({ socketId: socket.id }, "Socket disconnected");
     });
   });
@@ -382,15 +400,6 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
 
 export function getIO(): SocketIOServer | null {
   return _io;
-}
-
-export function emitRiderStatus(payload: {
-  userId: string;
-  isOnline: boolean;
-  updatedAt: string;
-}) {
-  if (!_io) return;
-  _io.to("admin-fleet").emit("rider:status", payload);
 }
 
 export function emitRiderLocation(payload: {
@@ -409,6 +418,15 @@ export function emitRiderLocation(payload: {
   updatedAt: string;
 }) {
   if (!_io) return;
+
+  /* ── Server-side broadcast throttle: max 1 emit per rider per RIDER_LOC_THROTTLE_MS ──
+     Prevents downstream clients (Admin Panel, Rider App) from receiving
+     rapid-fire updates that cause map flicker. */
+  const now = Date.now();
+  const last = _riderLocLastEmit.get(payload.userId) ?? 0;
+  if (now - last < RIDER_LOC_THROTTLE_MS) return;
+  _riderLocLastEmit.set(payload.userId, now);
+
   _io.to("admin-fleet").emit("rider:location", payload);
   if (payload.rideId) {
     const room = `ride:${payload.rideId}`;

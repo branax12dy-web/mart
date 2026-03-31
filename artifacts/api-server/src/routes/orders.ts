@@ -6,6 +6,7 @@ import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
 import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
+import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
 
 const router: IRouter = Router();
 
@@ -411,38 +412,13 @@ router.post("/", customerAuth, async (req, res) => {
     res.status(400).json({ error: "Scheduled orders are not available at this time." }); return;
   }
 
-  /* ── Delivery fee calculation (from admin Delivery settings) ── */
-  const feeMap: Record<string, string> = {
-    mart:     "delivery_fee_mart",
-    food:     "delivery_fee_food",
-    pharmacy: "delivery_fee_pharmacy",
-    parcel:   "delivery_fee_parcel",
-  };
-  const feeKey = feeMap[type] ?? "delivery_fee_mart";
-  const baseFee = parseFloat(s[feeKey] ?? "80");
-
-  /* Parcel: add per-kg fee if weight provided */
-  const parcelPerKg  = parseFloat(s["delivery_parcel_per_kg"] ?? "40");
-  const itemWeight   = type === "parcel" ? items.reduce((sum: number, it: any) => sum + (parseFloat(it.weightKg ?? "0")), 0) : 0;
-  const rawDelivery  = baseFee + (type === "parcel" ? itemWeight * parcelPerKg : 0);
-
-  /* Free delivery override */
-  const freeEnabled = (s["delivery_free_enabled"] ?? "on") === "on";
-  const freeAbove   = parseFloat(s["free_delivery_above"] ?? "1000");
-  const deliveryFee = (freeEnabled && itemsTotal >= freeAbove) ? 0 : rawDelivery;
-
-  /* ── GST (Finance settings) ── */
-  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
-  const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
-  const gstAmount  = gstEnabled ? parseFloat(((itemsTotal * gstPct) / 100).toFixed(2)) : 0;
-
-  /* ── COD service fee (cod_fee charged when total < cod_free_above threshold) ── */
-  const codFee = (() => {
-    if (paymentMethod !== "cash") return 0;
-    const fee       = parseFloat(s["cod_fee"]        ?? "0");
-    const freeAb    = parseFloat(s["cod_free_above"] ?? "2000");
-    return (fee > 0 && itemsTotal < freeAb) ? fee : 0;
-  })();
+  /* ── Delivery fee, GST, COD fee — via shared utility (see lib/fees.ts) ── */
+  const itemWeight  = type === "parcel"
+    ? items.reduce((sum: number, it: any) => sum + parseFloat(it.weightKg ?? "0"), 0)
+    : 0;
+  const deliveryFee = calcDeliveryFee(s, type, itemsTotal, itemWeight);
+  const gstAmount   = calcGst(s, itemsTotal);
+  const codFee      = calcCodFee(s, paymentMethod, itemsTotal + deliveryFee + gstAmount);
 
   let promoDiscount = 0;
   let promoId: string | null = null;
@@ -615,10 +591,21 @@ router.post("/", customerAuth, async (req, res) => {
         return newOrder!;
       });
       const mapped = { ...mapOrder(order, deliveryFee, gstAmount, codFee), promoDiscount };
+
+      /* ── Emit new-order to admin/vendor IMMEDIATELY after DB commit ── */
       broadcastNewOrder(mapped, (order as any).vendorId);
 
+      /* ── Two-Way ACK: confirm order receipt back to the customer ── */
+      const io = getIO();
+      if (io) io.to(`user:${userId}`).emit("order:ack", { orderId: order.id, status: "pending", createdAt: order.createdAt.toISOString() });
+
+      /* ── Broadcast updated wallet balance to all customer devices ── */
       const [updatedUser] = await db.select({ walletBalance: usersTable.walletBalance }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-      if (updatedUser) broadcastWalletUpdate(userId, parseFloat(updatedUser.walletBalance ?? "0"));
+      if (updatedUser) {
+        const newBalance = parseFloat(updatedUser.walletBalance ?? "0");
+        broadcastWalletUpdate(userId, newBalance);
+        if (io) io.to(`user:${userId}`).emit("wallet:balance", { balance: newBalance });
+      }
 
       res.status(201).json(mapped);
       /* Notify online riders via socket so their Home screen refreshes instantly */
@@ -629,27 +616,38 @@ router.post("/", customerAuth, async (req, res) => {
     return;
   }
 
-  /* ── Cash / JazzCash / EasyPaisa / Bank ── */
-  const [order] = await db.insert(ordersTable).values({
-    id: generateId(), userId, type, items,
-    status: "pending", total: total.toFixed(2),
-    deliveryAddress, paymentMethod,
-    estimatedTime,
-  }).returning();
-  if (promoId) {
-    await db.update(promoCodesTable)
-      .set({ usedCount: sql`${promoCodesTable.usedCount} + 1` })
-      .where(eq(promoCodesTable.id, promoId))
-      .catch(() => {});
+  /* ── Cash / JazzCash / EasyPaisa / Bank — wrapped in try/catch to prevent unhandled rejections ── */
+  try {
+    const [order] = await db.insert(ordersTable).values({
+      id: generateId(), userId, type, items,
+      status: "pending", total: total.toFixed(2),
+      deliveryAddress, paymentMethod,
+      estimatedTime,
+    }).returning();
+    if (promoId) {
+      await db.update(promoCodesTable)
+        .set({ usedCount: sql`${promoCodesTable.usedCount} + 1` })
+        .where(eq(promoCodesTable.id, promoId))
+        .catch(() => {});
+    }
+    const mapped = { ...mapOrder(order!, deliveryFee, gstAmount, codFee), promoDiscount };
+
+    /* ── Emit to admin IMMEDIATELY after DB commit (Task 7: <500ms latency) ── */
+    broadcastNewOrder(mapped, (order as any)?.vendorId);
+
+    /* ── Two-Way ACK for non-wallet orders ── */
+    const io = getIO();
+    if (io) io.to(`user:${userId}`).emit("order:ack", { orderId: order!.id, status: "pending", createdAt: order!.createdAt.toISOString() });
+
+    if (idempotencyKey) {
+      idempotencyCache.set(`${userId}:${idempotencyKey}`, { ...mapped, _ts: Date.now() });
+    }
+    res.status(201).json(mapped);
+    /* Notify online riders via socket so their Home screen refreshes instantly */
+    notifyOnlineRidersOfOrder(order!.id, type || "mart").catch(() => {});
+  } catch (e: any) {
+    res.status(500).json({ error: "Order could not be created. Please try again." });
   }
-  const mapped = { ...mapOrder(order!, deliveryFee, gstAmount, codFee), promoDiscount };
-  broadcastNewOrder(mapped, (order as any).vendorId);
-  if (idempotencyKey) {
-    idempotencyCache.set(`${userId}:${idempotencyKey}`, { ...mapped, _ts: Date.now() });
-  }
-  res.status(201).json(mapped);
-  /* Notify online riders via socket so their Home screen refreshes instantly */
-  notifyOnlineRidersOfOrder(order!.id, type || "mart").catch(() => {});
 });
 
 /* ── PATCH /orders/:id/cancel — customer cancel only ────────────────────── */

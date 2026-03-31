@@ -7,6 +7,7 @@ import { getPlatformSettings } from "./admin.js";
 import { customerAuth, riderAuth, addSecurityEvent, idorGuard } from "../middleware/security.js";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
+import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
 
 const router: IRouter = Router();
 
@@ -232,24 +233,10 @@ router.post("/", customerAuth, async (req, res) => {
     res.status(400).json({ error: `Minimum order amount is Rs. ${minOrder}` }); return;
   }
 
-  /* ── Delivery fee (delivery_fee_pharmacy) with free threshold ── */
-  const baseFee      = parseFloat(s["delivery_fee_pharmacy"] ?? "50");
-  const freeEnabled  = (s["delivery_free_enabled"] ?? "on") === "on";
-  const freeAbove    = parseFloat(s["free_delivery_above"] ?? "1000");
-  const deliveryFee  = (freeEnabled && itemsTotal >= freeAbove) ? 0 : baseFee;
-
-  /* ── GST (Finance settings) ── */
-  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
-  const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
-  const gstAmount  = gstEnabled ? parseFloat(((itemsTotal * gstPct) / 100).toFixed(2)) : 0;
-
-  /* ── COD service fee (charged when total < cod_free_above threshold) ── */
-  const codFee = (() => {
-    if (paymentMethod !== "cash") return 0;
-    const fee    = parseFloat(s["cod_fee"]        ?? "0");
-    const freeAb = parseFloat(s["cod_free_above"] ?? "2000");
-    return (fee > 0 && itemsTotal < freeAb) ? fee : 0;
-  })();
+  /* ── Delivery fee, GST, COD fee — via shared utility (see lib/fees.ts) ── */
+  const deliveryFee = calcDeliveryFee(s, "pharmacy", itemsTotal);
+  const gstAmount   = calcGst(s, itemsTotal);
+  const codFee      = calcCodFee(s, paymentMethod, itemsTotal + deliveryFee + gstAmount);
 
   const total = itemsTotal + deliveryFee + gstAmount + codFee;
 

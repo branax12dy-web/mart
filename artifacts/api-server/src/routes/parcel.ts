@@ -7,6 +7,7 @@ import { getPlatformSettings } from "./admin.js";
 import { customerAuth, riderAuth, addSecurityEvent, idorGuard } from "../middleware/security.js";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
+import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
 
 const router: IRouter = Router();
 
@@ -140,24 +141,11 @@ router.post("/", customerAuth, async (req, res) => {
     }
   }
 
-  /* ── Delivery fare from admin settings (replaces hardcoded lookup table) ── */
-  const baseFee    = parseFloat(s["delivery_fee_parcel"]    ?? "100");
-  const perKgRate  = parseFloat(s["delivery_parcel_per_kg"] ?? "40");
-  const fare       = calcParcelFare(baseFee, perKgRate, weight);
-
-  /* ── GST (Finance settings) ── */
-  const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
-  const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
-  const gstAmount  = gstEnabled ? parseFloat(((fare * gstPct) / 100).toFixed(2)) : 0;
-
-  /* ── COD service fee (charged when fare < cod_free_above threshold) ── */
-  const codFee = (() => {
-    if (paymentMethod !== "cash") return 0;
-    const fee    = parseFloat(s["cod_fee"]        ?? "0");
-    const freeAb = parseFloat(s["cod_free_above"] ?? "2000");
-    return (fee > 0 && fare < freeAb) ? fee : 0;
-  })();
-
+  /* ── Delivery fare, GST, COD fee — via shared utility (see lib/fees.ts) ── */
+  const weightKg   = weight && weight > 0 ? parseFloat(String(weight)) : 0;
+  const fare       = calcDeliveryFee(s, "parcel", 0, weightKg); /* base + per-kg, no free-threshold for parcels */
+  const gstAmount  = calcGst(s, fare);
+  const codFee     = calcCodFee(s, paymentMethod, fare + gstAmount);
   const totalFare  = fare + gstAmount + codFee;
 
   /* ── Estimated time from admin Order settings ── */
