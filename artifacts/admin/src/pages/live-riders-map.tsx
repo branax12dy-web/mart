@@ -69,11 +69,20 @@ type SOSAlert = {
   sentAt: string;
 };
 
-/* ── Rider status logic: Green = Online/idle, Red = Busy/Active Order, Grey = Offline ── */
-function getRiderStatus(rider: Rider, offlineAfterSec = DEFAULT_OFFLINE_AFTER_SEC): "online" | "offline" | "busy" {
-  if (!rider.isOnline || rider.ageSeconds >= offlineAfterSec) return "offline";
+/* ── Rider status logic ──
+   isOnline (from DB) is the authoritative "online" flag set by the rider.
+   GPS staleness only affects visual freshness, not the displayed status.
+   Green = online/idle  |  Red = busy/on_trip  |  Grey = offline (rider tapped offline)
+─────────────────────────────────────────────────────────────────────────────── */
+function getRiderStatus(rider: Rider): "online" | "offline" | "busy" {
+  if (!rider.isOnline) return "offline";
   if (rider.action === "on_trip" || rider.action === "delivering") return "busy";
   return "online";
+}
+
+/* Returns true when the last GPS ping is older than offlineAfterSec */
+function isGpsStale(rider: Rider, offlineAfterSec: number): boolean {
+  return rider.ageSeconds >= offlineAfterSec;
 }
 
 /* ── Vehicle type → icon emoji ── */
@@ -88,13 +97,15 @@ function getVehicleIcon(vehicleType: string | null): string {
   return "🏍️";
 }
 
-function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean) {
+function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean) {
   /* Color: Green = online, Red = busy/on-trip, Grey = offline */
   const color = status === "online" ? "#22c55e" : status === "busy" ? "#ef4444" : "#9ca3af";
   const size = isSelected ? 40 : 32;
   const emoji = getVehicleIcon(rider.vehicleType);
+  /* Stale GPS indicator: yellow ring on online riders with stale GPS */
+  const staleBorder = stale && status !== "offline" ? "3px solid #f59e0b" : `${isSelected ? "3px" : "2px"} solid white`;
   return L.divIcon({
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${isSelected ? "3px" : "2px"} solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:${isSelected ? "18px" : "14px"};cursor:pointer;transition:all 0.2s">${emoji}</div>`,
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:${isSelected ? "18px" : "14px"};cursor:pointer;transition:all 0.2s">${emoji}</div>`,
     className: "",
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -129,15 +140,41 @@ function makeLoginIcon() {
   });
 }
 
-function MapAutoCenter({ lat, lng }: { lat: number; lng: number }) {
+/* Auto-fits the map to include all markers on first data load.
+   Falls back to the default center if there are no markers. */
+function FitBoundsOnLoad({
+  riders,
+  customers,
+  defaultLat,
+  defaultLng,
+}: {
+  riders: Array<{ lat: number; lng: number }>;
+  customers: Array<{ lat: number; lng: number }>;
+  defaultLat: number;
+  defaultLng: number;
+}) {
   const map = useMap();
-  const initializedRef = useRef(false);
+  const fittedRef = useRef(false);
+
   useEffect(() => {
-    if (!initializedRef.current) {
-      map.setView([lat, lng], map.getZoom());
-      initializedRef.current = true;
+    if (fittedRef.current) return;
+    const points = [
+      ...riders.filter(r => r.lat !== 0 || r.lng !== 0).map(r => [r.lat, r.lng] as [number, number]),
+      ...customers.filter(c => c.lat !== 0 || c.lng !== 0).map(c => [c.lat, c.lng] as [number, number]),
+    ];
+    if (points.length === 0) {
+      map.setView([defaultLat, defaultLng], 12);
+      return;
     }
-  }, [lat, lng]);
+    fittedRef.current = true;
+    if (points.length === 1) {
+      map.setView(points[0]!, 14);
+    } else {
+      const bounds = L.latLngBounds(points);
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    }
+  }, [riders.length, customers.length]);
+
   return null;
 }
 
@@ -360,7 +397,7 @@ export default function LiveRidersMap() {
       query: { rooms: "admin-fleet" },
       auth: { adminToken: token },
       extraHeaders: { "x-admin-token": token },
-      transports: ["polling", "websocket"],
+      transports: ["websocket", "polling"],
     });
 
     socketRef.current = socket;
@@ -496,7 +533,8 @@ export default function LiveRidersMap() {
       action: ov.action ?? r.action,
       ageSeconds,
       isFresh: ageSeconds < offlineAfterSec,
-      isOnline: ageSeconds < offlineAfterSec,
+      /* Preserve DB isOnline — don't override it with GPS age */
+      isOnline: r.isOnline,
     };
   });
 
@@ -546,8 +584,8 @@ export default function LiveRidersMap() {
       .map(([uid, ov]) => ({ userId: uid, lat: ov.lat, lng: ov.lng, updatedAt: ov.updatedAt })),
   ];
 
-  const onlineCount = riders.filter(r => getRiderStatus(r, offlineAfterSec) === "online").length;
-  const busyCount   = riders.filter(r => getRiderStatus(r, offlineAfterSec) === "busy").length;
+  const onlineCount = riders.filter(r => getRiderStatus(r) === "online").length;
+  const busyCount   = riders.filter(r => getRiderStatus(r) === "busy").length;
   const selectedRider = riders.find(r => r.userId === selectedId) || null;
 
   /* Icon caches */
@@ -557,12 +595,13 @@ export default function LiveRidersMap() {
   const riderIconMap = (() => {
     const result = new Map<string, ReturnType<typeof makeRiderIcon>>();
     for (const rider of riders) {
-      const status = getRiderStatus(rider, offlineAfterSec);
+      const status = getRiderStatus(rider);
+      const stale = isGpsStale(rider, offlineAfterSec);
       const isSelected = rider.userId === selectedId;
-      const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}`;
+      const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}:${stale ? "s" : "f"}`;
       let icon = riderIconCacheRef.current.get(cacheKey);
       if (!icon) {
-        icon = makeRiderIcon(rider, status, isSelected);
+        icon = makeRiderIcon(rider, status, isSelected, stale);
         riderIconCacheRef.current.set(cacheKey, icon);
       }
       result.set(rider.userId, icon);
@@ -782,11 +821,17 @@ export default function LiveRidersMap() {
                       attribution="&copy; OpenStreetMap contributors"
                       maxZoom={19}
                     />
-                    <MapAutoCenter lat={defaultLat} lng={defaultLng} />
+                    <FitBoundsOnLoad
+                      riders={riders}
+                      customers={customers}
+                      defaultLat={defaultLat}
+                      defaultLng={defaultLng}
+                    />
 
                     {/* Rider markers */}
                     {riders.map(rider => {
-                      const status = getRiderStatus(rider, offlineAfterSec);
+                      const status = getRiderStatus(rider);
+                      const stale = isGpsStale(rider, offlineAfterSec);
                       return (
                         <Marker
                           key={rider.userId}
@@ -796,13 +841,16 @@ export default function LiveRidersMap() {
                         >
                           <Popup maxWidth={200}>
                             <div style={{ fontFamily: "sans-serif", minWidth: 160 }}>
-                              <p style={{ fontWeight: 700, margin: "0 0 4px" }}>{rider.name}</p>
+                              <p style={{ fontWeight: 700, margin: "0 0 4px" }}>{rider.name || "Unknown Rider"}</p>
                               <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>
                                 {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
                               </p>
                               <p style={{ fontSize: 11, margin: "4px 0 0", color: status === "online" ? "#22c55e" : status === "busy" ? "#ef4444" : "#9ca3af" }}>
                                 ● {status === "online" ? "Online" : status === "busy" ? "Busy / On Trip" : "Offline"} · {fd(rider.updatedAt)}
                               </p>
+                              {stale && status !== "offline" && (
+                                <p style={{ fontSize: 10, margin: "2px 0 0", color: "#f59e0b" }}>⚠ GPS stale — last ping {fd(rider.updatedAt)}</p>
+                              )}
                             </div>
                           </Popup>
                         </Marker>
@@ -900,7 +948,8 @@ export default function LiveRidersMap() {
                 ) : (
                   <div className="divide-y divide-border/40">
                     {riders.map(rider => {
-                      const status = getRiderStatus(rider, offlineAfterSec);
+                      const status = getRiderStatus(rider);
+                      const stale = isGpsStale(rider, offlineAfterSec);
                       return (
                         <button
                           key={rider.userId}
@@ -913,10 +962,13 @@ export default function LiveRidersMap() {
                             <StatusDot status={status} />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="font-semibold text-sm text-foreground truncate">{rider.name}</p>
+                            <p className="font-semibold text-sm text-foreground truncate">{rider.name || "Unknown Rider"}</p>
                             <p className="text-xs text-muted-foreground">
                               {getVehicleIcon(rider.vehicleType)} {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
                             </p>
+                            {stale && status !== "offline" && (
+                              <p className="text-[10px] text-amber-500 mt-0.5">⚠ GPS stale</p>
+                            )}
                           </div>
                           <div className="text-right flex-shrink-0">
                             <Badge
@@ -931,7 +983,7 @@ export default function LiveRidersMap() {
                               {status === "busy" ? "Busy" : status === "online" ? "Online" : "Offline"}
                             </Badge>
                             <p className="text-[10px] text-muted-foreground mt-1">
-                              {status === "offline" ? `Last seen ${fd(rider.updatedAt)}` : fd(rider.updatedAt)}
+                              {fd(rider.updatedAt)}
                             </p>
                           </div>
                         </button>
@@ -964,8 +1016,11 @@ export default function LiveRidersMap() {
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Status</p>
                   <p className="font-bold mt-0.5 flex items-center gap-1.5">
-                    <StatusDot status={getRiderStatus(selectedRider, offlineAfterSec)} />
-                    {getRiderStatus(selectedRider, offlineAfterSec) === "busy" ? "Busy / On Trip" : getRiderStatus(selectedRider, offlineAfterSec) === "online" ? "Online" : "Offline"}
+                    <StatusDot status={getRiderStatus(selectedRider)} />
+                    {getRiderStatus(selectedRider) === "busy" ? "Busy / On Trip" : getRiderStatus(selectedRider) === "online" ? "Online" : "Offline"}
+                    {isGpsStale(selectedRider, offlineAfterSec) && getRiderStatus(selectedRider) !== "offline" && (
+                      <span className="text-[10px] text-amber-500 font-normal ml-1">⚠ GPS stale</span>
+                    )}
                   </p>
                 </div>
                 <div>
@@ -979,7 +1034,7 @@ export default function LiveRidersMap() {
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Last Update</p>
                   <p className="font-bold mt-0.5">
-                    {getRiderStatus(selectedRider, offlineAfterSec) === "offline"
+                    {getRiderStatus(selectedRider) === "offline"
                       ? `Last Seen ${fd(selectedRider.updatedAt)}`
                       : fd(selectedRider.updatedAt)}
                   </p>

@@ -241,7 +241,7 @@ router.patch("/online", async (req, res) => {
           updatedAt: now,
         }).onConflictDoUpdate({
           target: liveLocationsTable.userId,
-          set: { role: "rider", action: null, updatedAt: now },
+          set: { latitude: lastLog.latitude, longitude: lastLog.longitude, role: "rider", action: null, updatedAt: now },
         });
       }
     } catch { /* non-critical — rider will appear on next GPS ping */ }
