@@ -6,7 +6,7 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fc, fd, CARD, CARD_HEADER, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, BADGE_GREEN, BADGE_RED, BADGE_BLUE, BADGE_GRAY } from "../lib/ui";
+import { fc, fd, CARD, CARD_HEADER, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, BADGE_GREEN, BADGE_RED, BADGE_BLUE, BADGE_GRAY, DEFAULT_COMMISSION_PCT } from "../lib/ui";
 
 const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","Habib Bank","NBP","Faysal Bank","Allied Bank","Other"];
 
@@ -136,8 +136,8 @@ export default function Wallet() {
   const T = (key: TranslationKey) => tDual(key, language);
   const fin = config.finance;
   const vc = config.vendor;
-  const vendorKeepPct  = Math.round(100 - fin.vendorCommissionPct);
-  const commissionPct  = fin.vendorCommissionPct;
+  const vendorKeepPct  = Math.round(100 - (fin.vendorCommissionPct ?? DEFAULT_COMMISSION_PCT));
+  const commissionPct  = fin.vendorCommissionPct ?? DEFAULT_COMMISSION_PCT;
   const minPayout      = vc?.minPayout ?? fin.minVendorPayout;
   const maxPayout      = vc?.maxPayout ?? null;
   const settleDays     = vc?.settleDays ?? fin.vendorSettleDays;

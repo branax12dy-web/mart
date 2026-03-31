@@ -6,6 +6,7 @@ import { usePlatformConfig } from "./lib/useConfig";
 import { useLanguage } from "./lib/useLanguage";
 import { BottomNav } from "./components/BottomNav";
 import { SideNav } from "./components/SideNav";
+import { BOTTOM_PADDING } from "./lib/ui";
 import { AnnouncementBar } from "./components/AnnouncementBar";
 import { MaintenanceScreen } from "./components/MaintenanceScreen";
 import Login from "./pages/Login";
@@ -93,7 +94,7 @@ function AppRoutes() {
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div
             className="flex-1 overflow-y-auto scroll-momentum"
-            style={{ paddingBottom: "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))" }}
+            style={{ paddingBottom: BOTTOM_PADDING }}
             id="main-scroll"
           >
             <div className="md:max-w-5xl md:mx-auto md:px-6 md:pb-8">

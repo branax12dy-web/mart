@@ -286,46 +286,53 @@ export default function Products() {
 
         {/* ── Desktop Table View ── */}
         <div className={`${CARD} hidden md:block`}>
-          <div className="grid gap-1 px-3 py-2.5 bg-gray-50 border-b border-gray-100"
-            style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr 0.7fr 0.7fr 0.7fr auto" }}>
-            {["Name *","Price *","Short Description","Image URL","Category","Unit","Stock","Type",""].map((h,i) => (
-              <p key={i} className="text-[9px] font-extrabold text-gray-400 uppercase tracking-widest">{h}</p>
-            ))}
+          <div className="text-[10px] text-gray-400 font-medium px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-1">
+            <span>↔</span><span>Scroll horizontally if columns are too narrow</span>
           </div>
-          {bulkRows.map((row, i) => {
-            const hasErr = !!(bulkRows[i]!.name && !bulkRows[i]!.price) || false;
-            return (
-              <div key={i} className={`grid gap-1 px-2 py-1.5 border-b border-gray-50 last:border-0 ${hasErr ? "bg-red-50/30" : ""}`}
-                style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr 0.7fr 0.7fr 0.7fr auto" }}>
-                <input className={`${B_INPUT} ${!row.name && row.price ? "border-red-300 bg-red-50" : ""}`}
-                  value={row.name} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,name:e.target.value} : x))} placeholder="Product name *"/>
-                <input className={`${B_INPUT} ${row.name && !row.price ? "border-red-300 bg-red-50" : ""}`}
-                  type="number" inputMode="numeric" value={row.price} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,price:e.target.value} : x))} placeholder="Rs. *"/>
-                <input className={B_INPUT} value={row.description}
-                  onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,description:e.target.value} : x))} placeholder="Short description"/>
-                <input className={B_INPUT} type="url" value={row.image}
-                  onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,image:e.target.value} : x))} placeholder="https://img.url"/>
-                <select className={`${B_INPUT} appearance-none`} value={row.category}
-                  onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,category:e.target.value} : x))}>
-                  <option value="">{bulkCat || "category"}</option>
-                  {CATS.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <input className={B_INPUT} value={row.unit}
-                  onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,unit:e.target.value} : x))} placeholder="kg/pcs"/>
-                <input className={B_INPUT} type="number" inputMode="numeric" value={row.stock}
-                  onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,stock:e.target.value} : x))} placeholder="qty"/>
-                <select className={`${B_INPUT} appearance-none`} value={row.type || "mart"}
-                  onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,type:e.target.value} : x))}>
-                  {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <button onClick={() => setBulkRows(r => r.filter((_,j) => j!==i))}
-                  className="w-8 h-9 text-red-400 hover:text-red-600 font-bold flex items-center justify-center text-base min-h-0">✕</button>
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: "900px" }}>
+              <div className="grid gap-1 px-3 py-2.5 bg-gray-50 border-b border-gray-100"
+                style={{ gridTemplateColumns: "minmax(140px,2fr) minmax(80px,1fr) minmax(140px,2fr) minmax(120px,1.5fr) minmax(90px,1fr) minmax(60px,0.7fr) minmax(60px,0.7fr) minmax(60px,0.7fr) 32px" }}>
+                {["Name *","Price *","Short Description","Image URL","Category","Unit","Stock","Type",""].map((h,i) => (
+                  <p key={i} className="text-[9px] font-extrabold text-gray-400 uppercase tracking-widest">{h}</p>
+                ))}
               </div>
-            );
-          })}
-          {bulkRows.length === 0 && (
-            <div className="px-4 py-8 text-center text-gray-400 text-sm">No rows yet — add rows or paste data above</div>
-          )}
+              {bulkRows.map((row, i) => {
+                const hasErr = !!(bulkRows[i]!.name && !bulkRows[i]!.price) || false;
+                return (
+                  <div key={i} className={`grid gap-1 px-2 py-1.5 border-b border-gray-50 last:border-0 ${hasErr ? "bg-red-50/30" : ""}`}
+                    style={{ gridTemplateColumns: "minmax(140px,2fr) minmax(80px,1fr) minmax(140px,2fr) minmax(120px,1.5fr) minmax(90px,1fr) minmax(60px,0.7fr) minmax(60px,0.7fr) minmax(60px,0.7fr) 32px" }}>
+                    <input className={`${B_INPUT} ${!row.name && row.price ? "border-red-300 bg-red-50" : ""}`}
+                      value={row.name} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,name:e.target.value} : x))} placeholder="Product name *"/>
+                    <input className={`${B_INPUT} ${row.name && !row.price ? "border-red-300 bg-red-50" : ""}`}
+                      type="number" inputMode="numeric" value={row.price} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,price:e.target.value} : x))} placeholder="Rs. *"/>
+                    <input className={B_INPUT} value={row.description}
+                      onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,description:e.target.value} : x))} placeholder="Short description"/>
+                    <input className={B_INPUT} type="url" value={row.image}
+                      onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,image:e.target.value} : x))} placeholder="https://img.url"/>
+                    <select className={`${B_INPUT} appearance-none`} value={row.category}
+                      onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,category:e.target.value} : x))}>
+                      <option value="">{bulkCat || "category"}</option>
+                      {CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input className={B_INPUT} value={row.unit}
+                      onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,unit:e.target.value} : x))} placeholder="kg/pcs"/>
+                    <input className={B_INPUT} type="number" inputMode="numeric" value={row.stock}
+                      onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,stock:e.target.value} : x))} placeholder="qty"/>
+                    <select className={`${B_INPUT} appearance-none`} value={row.type || "mart"}
+                      onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,type:e.target.value} : x))}>
+                      {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button onClick={() => setBulkRows(r => r.filter((_,j) => j!==i))}
+                      className="w-8 h-9 text-red-400 hover:text-red-600 font-bold flex items-center justify-center text-base min-h-0">✕</button>
+                  </div>
+                );
+              })}
+              {bulkRows.length === 0 && (
+                <div className="px-4 py-8 text-center text-gray-400 text-sm">No rows yet — add rows or paste data above</div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* ── Mobile Card View ── */}
@@ -476,10 +483,26 @@ export default function Products() {
           </div>
         ) : products.length === 0 ? (
           <div className={`${CARD} px-4 py-16 text-center`}>
-            <p className="text-5xl mb-4">🍽️</p>
-            <p className="font-bold text-gray-700 text-base">{search ? "No matching products" : "No products yet"}</p>
-            <p className="text-sm text-gray-400 mt-1">{search ? "Try a different search" : "Add your first product"}</p>
-            {!search && <button onClick={() => setShowAdd(true)} className="mt-5 h-12 px-8 bg-orange-500 text-white font-bold rounded-2xl android-press">+ Add First Product</button>}
+            <p className="text-5xl mb-4">{search || filterCat !== "all" ? "🔍" : "🍽️"}</p>
+            {search ? (
+              <>
+                <p className="font-bold text-gray-700 text-base">No products found for "{search}"</p>
+                <p className="text-sm text-gray-400 mt-1">Try a different search term or clear the filter</p>
+                <button onClick={() => setSearch("")} className="mt-4 h-10 px-6 bg-gray-100 text-gray-600 font-bold rounded-xl android-press text-sm">Clear Search</button>
+              </>
+            ) : filterCat !== "all" ? (
+              <>
+                <p className="font-bold text-gray-700 text-base">No products in "{filterCat}"</p>
+                <p className="text-sm text-gray-400 mt-1">Try a different category or add products to this one</p>
+                <button onClick={() => setFilterCat("all")} className="mt-4 h-10 px-6 bg-gray-100 text-gray-600 font-bold rounded-xl android-press text-sm">Show All</button>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-gray-700 text-base">No products yet</p>
+                <p className="text-sm text-gray-400 mt-1">Add your first product to get started</p>
+                <button onClick={() => setShowAdd(true)} className="mt-5 h-12 px-8 bg-orange-500 text-white font-bold rounded-2xl android-press">+ Add First Product</button>
+              </>
+            )}
           </div>
         ) : (
           <div className="md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4 space-y-3 md:space-y-0">

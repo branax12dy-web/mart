@@ -7,7 +7,7 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
 import { useState, useRef } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { fc, CARD, STAT_VAL, STAT_LBL } from "../lib/ui";
+import { fc, CARD, STAT_VAL, STAT_LBL, DEFAULT_COMMISSION_PCT } from "../lib/ui";
 
 function VendorNoticeBanner({ message }: { message: string }) {
   const key = `vendor_notice_dismissed_${message.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)}`;
@@ -48,6 +48,7 @@ export default function Dashboard() {
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
   const [pendingOrderIds, setPendingOrderIds] = useState<Set<string>>(new Set());
   const [cancelDialog, setCancelDialog] = useState<{ orderId: string } | null>(null);
+  const [acceptDialog, setAcceptDialog] = useState<{ orderId: string; total: number } | null>(null);
   const cancelReasonRef = useRef("");
 
   const { data: stats, isLoading } = useQuery({ queryKey: ["vendor-stats"], queryFn: () => api.getStats(), refetchInterval: 30000 });
@@ -162,7 +163,7 @@ export default function Dashboard() {
           </div>
           <div className="text-center border-l border-white/20 pl-4">
             <p className="text-orange-100 text-xs font-medium">{T("commission")}</p>
-            <p className="text-3xl font-extrabold">{Math.round(100 - (config.platform.vendorCommissionPct ?? 15))}%</p>
+            <p className="text-3xl font-extrabold">{Math.round(100 - (config.platform.vendorCommissionPct ?? DEFAULT_COMMISSION_PCT))}%</p>
           </div>
           <div className="text-right border-l border-white/20 pl-4">
             <p className="text-orange-100 text-xs font-medium">{T("allTimeEarned")}</p>
@@ -218,7 +219,7 @@ export default function Dashboard() {
                         <p className="text-xs text-gray-400 font-mono">#{o.id.slice(-6).toUpperCase()} · {fc(o.total)}</p>
                       </div>
                       <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => orderActionMut.mutate({ orderId: o.id, status: "confirmed" })} disabled={isOrderPending}
+                        <button onClick={() => setAcceptDialog({ orderId: o.id, total: o.total })} disabled={isOrderPending}
                           className="h-9 px-4 bg-green-500 text-white text-xs font-bold rounded-xl android-press min-h-0 disabled:opacity-60">✓ Accept</button>
                         <button onClick={() => { cancelReasonRef.current = ""; setCancelDialog({ orderId: o.id }); }} disabled={isOrderPending}
                           className="h-9 px-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl android-press min-h-0 disabled:opacity-60">✕</button>
@@ -278,7 +279,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-sm text-orange-100 font-medium">Your Commission</p>
-              <p className="text-4xl font-extrabold">{Math.round(100 - (config.platform.vendorCommissionPct ?? 15))}%</p>
+              <p className="text-4xl font-extrabold">{Math.round(100 - (config.platform.vendorCommissionPct ?? DEFAULT_COMMISSION_PCT))}%</p>
               <p className="text-xs text-orange-100 mt-0.5">of every order value</p>
             </div>
             <div className="text-right">
@@ -314,6 +315,27 @@ export default function Dashboard() {
 
       {/* Live Tracking disabled notice — dismissable once per session */}
       <LiveTrackingNotice liveTracking={config.features.liveTracking} />
+
+      {/* Accept order confirmation dialog */}
+      {acceptDialog && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setAcceptDialog(null)}>
+          <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-extrabold text-gray-800 mb-1">Accept Order?</h3>
+            <p className="text-sm text-gray-500 mb-4">Yeh order accept karna chahte hain? / By accepting, you commit to preparing this order ({fc(acceptDialog.total)}) within the required time.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setAcceptDialog(null)} className="flex-1 h-11 border-2 border-gray-200 text-gray-600 font-bold rounded-xl text-sm">← Back</button>
+              <button
+                onClick={() => {
+                  orderActionMut.mutate({ orderId: acceptDialog.orderId, status: "confirmed" });
+                  setAcceptDialog(null);
+                }}
+                className="flex-1 h-11 bg-green-500 text-white font-bold rounded-xl text-sm">
+                ✓ Confirm Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cancel order dialog with reason */}
       {cancelDialog && (

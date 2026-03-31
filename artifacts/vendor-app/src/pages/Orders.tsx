@@ -5,7 +5,7 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fc, fd, CARD } from "../lib/ui";
+import { fc, fd, CARD, DEFAULT_COMMISSION_PCT } from "../lib/ui";
 
 function useNow(intervalMs = 10000) {
   const [now, setNow] = useState(Date.now());
@@ -48,7 +48,7 @@ export default function Orders() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const orderRules = config.orderRules;
-  const vendorKeep = 1 - ((config.platform.vendorCommissionPct ?? 15) / 100);
+  const vendorKeep = 1 - ((config.platform.vendorCommissionPct ?? DEFAULT_COMMISSION_PCT) / 100);
   const dlvFeeMap: Record<string,number> = {
     mart: config.deliveryFee.mart,
     food: config.deliveryFee.food,
@@ -62,6 +62,8 @@ export default function Orders() {
   const [toast, setToast]       = useState("");
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
   const [pendingOrderIds, setPendingOrderIds] = useState<Set<string>>(new Set());
+  const [acceptDialog, setAcceptDialog] = useState<{ id: string; total: number } | null>(null);
+  const [rejectDialog, setRejectDialog] = useState<{ id: string } | null>(null);
 
   const apiStatus = tab === "new" ? "pending" : tab;
   const { data, isLoading, refetch } = useQuery({ queryKey: ["vendor-orders", tab], queryFn: () => api.getOrders(apiStatus), refetchInterval: 15000 });
@@ -196,12 +198,9 @@ export default function Orders() {
                   {/* Quick Accept */}
                   {!isExp && o.status === "pending" && (
                     <div className="px-4 pb-3 flex gap-2">
-                      <button onClick={() => updateMut.mutate({ id: o.id, status: "confirmed" })} disabled={isOrderPending}
+                      <button onClick={() => setAcceptDialog({ id: o.id, total: o.total })} disabled={isOrderPending}
                         className="flex-1 h-10 bg-green-500 text-white font-bold rounded-xl text-sm android-press disabled:opacity-60">✓ Accept</button>
-                      <button onClick={() => {
-                        if (!window.confirm("Are you sure you want to reject this order? / Kya aap yeh order reject karna chahtay hain?")) return;
-                        updateMut.mutate({ id: o.id, status: "cancelled" });
-                      }} disabled={isOrderPending}
+                      <button onClick={() => setRejectDialog({ id: o.id })} disabled={isOrderPending}
                         className="h-10 px-4 bg-red-50 text-red-600 font-bold rounded-xl text-sm android-press disabled:opacity-60">✕ Reject</button>
                     </div>
                   )}
@@ -264,15 +263,12 @@ export default function Orders() {
                       </div>
                       {next && !["picked_up", "out_for_delivery"].includes(o.status) && (
                         <div className="px-4 pb-4 pt-2 flex gap-2">
-                          <button onClick={() => updateMut.mutate({ id: o.id, status: next.next })} disabled={isOrderPending}
+                          <button onClick={() => o.status === "pending" ? setAcceptDialog({ id: o.id, total: o.total }) : updateMut.mutate({ id: o.id, status: next.next })} disabled={isOrderPending}
                             className={`flex-1 h-11 ${next.bg} font-bold rounded-xl text-sm android-press disabled:opacity-60`}>
                             {T(next.labelKey)}
                           </button>
                           {o.status === "pending" && (
-                            <button onClick={() => {
-                              if (!window.confirm("Are you sure you want to reject this order? / Kya aap yeh order reject karna chahtay hain?")) return;
-                              updateMut.mutate({ id: o.id, status: "cancelled" });
-                            }} disabled={isOrderPending}
+                            <button onClick={() => setRejectDialog({ id: o.id })} disabled={isOrderPending}
                               className="h-11 px-4 bg-red-50 text-red-600 font-bold rounded-xl text-sm android-press disabled:opacity-60">✕ {T("rejectOrder")}</button>
                           )}
                         </div>
@@ -285,6 +281,48 @@ export default function Orders() {
           </div>
         )}
       </div>
+
+      {/* Accept order confirmation dialog */}
+      {acceptDialog && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setAcceptDialog(null)}>
+          <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-extrabold text-gray-800 mb-1">Accept Order?</h3>
+            <p className="text-sm text-gray-500 mb-4">Yeh order accept karna chahte hain? / By accepting, you commit to preparing this order ({fc(acceptDialog.total)}) within the required time.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setAcceptDialog(null)} className="flex-1 h-11 border-2 border-gray-200 text-gray-600 font-bold rounded-xl text-sm">← Back</button>
+              <button
+                onClick={() => {
+                  updateMut.mutate({ id: acceptDialog.id, status: "confirmed" });
+                  setAcceptDialog(null);
+                }}
+                className="flex-1 h-11 bg-green-500 text-white font-bold rounded-xl text-sm">
+                ✓ Confirm Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject order dialog */}
+      {rejectDialog && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setRejectDialog(null)}>
+          <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-extrabold text-gray-800 mb-1">Reject Order?</h3>
+            <p className="text-sm text-gray-500 mb-4">Kya aap yeh order reject karna chahtay hain? / Are you sure you want to reject this order? This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setRejectDialog(null)} className="flex-1 h-11 border-2 border-gray-200 text-gray-600 font-bold rounded-xl text-sm">← Back</button>
+              <button
+                onClick={() => {
+                  updateMut.mutate({ id: rejectDialog.id, status: "cancelled" });
+                  setRejectDialog(null);
+                }}
+                className="flex-1 h-11 bg-red-500 text-white font-bold rounded-xl text-sm">
+                ✕ Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="fixed top-0 left-0 right-0 z-50 flex justify-center toast-in"

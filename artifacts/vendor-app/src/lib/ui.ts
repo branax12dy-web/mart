@@ -3,6 +3,9 @@
    identical across the whole app.
 ─────────────────────────────────────────────────────────────── */
 
+export const DEFAULT_COMMISSION_PCT = 15;
+export const BOTTOM_PADDING = "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))";
+
 export const BTN_PRIMARY   = "h-12 w-full bg-orange-500 text-white font-bold rounded-2xl text-base android-press flex items-center justify-center gap-2 disabled:opacity-60";
 export const BTN_SECONDARY = "h-12 w-full border-2 border-gray-200 text-gray-600 font-bold rounded-2xl text-base android-press flex items-center justify-center";
 export const BTN_SM        = "h-9 px-4 text-sm font-bold rounded-xl android-press min-h-0 flex items-center";
