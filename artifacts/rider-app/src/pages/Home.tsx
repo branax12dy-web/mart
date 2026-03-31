@@ -359,9 +359,10 @@ export default function Home() {
         const now = Date.now();
         const { latitude, longitude, accuracy, speed, heading } = pos.coords;
 
-        /* Client-side spoof heuristic: implausibly high accuracy (< 1m) is a strong
-           signal of a mock location app on Android. */
-        if (accuracy !== null && accuracy < 1) {
+        /* Client-side spoof heuristic: exactly zero accuracy is impossible with real GPS.
+           Threshold changed from < 1 to === 0 to avoid false positives on high-end devices
+           that legitimately report sub-meter accuracy (e.g. 0.3m–0.9m). */
+        if (accuracy !== null && accuracy === 0) {
           setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
           return;
         }

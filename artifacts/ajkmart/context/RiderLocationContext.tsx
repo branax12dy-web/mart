@@ -19,24 +19,26 @@ import React, {
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import * as Battery from "expo-battery";
-import { Platform } from "react-native";
+import { AppState, AppStateStatus, Platform } from "react-native";
 import { useAuth } from "./AuthContext";
 
 const BACKGROUND_LOCATION_TASK = "RIDER_BACKGROUND_LOCATION";
 const MIN_DISTANCE_METERS = 25;
 const MAX_INTERVAL_SEC = 20;
 
+/* ── Bug 5 fix: Use a Set of handlers instead of a single mutable global ── */
+const backgroundLocationHandlers = new Set<(loc: Location.LocationObject) => void>();
+
 /* ── Task registration (must be at module top level) ── */
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskManager.TaskManagerTaskBody<unknown>) => {
   if (error) return;
   const locations = (data as { locations?: Location.LocationObject[] })?.locations;
   if (!locations?.length) return;
-  /* Dispatch a custom event so the context can handle it while the app is in background */
-  backgroundLocationHandler?.(locations[locations.length - 1]!);
+  const loc = locations[locations.length - 1]!;
+  backgroundLocationHandlers.forEach((handler) => {
+    try { handler(loc); } catch {}
+  });
 });
-
-/* Global handler set by the context — bridge between task and React world */
-let backgroundLocationHandler: ((loc: Location.LocationObject) => void) | null = null;
 
 /* ── Haversine distance ── */
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -51,11 +53,13 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+export type GoOnlineResult = "ok" | "permission_denied" | "tracking_failed";
+
 interface RiderLocationContextType {
   isOnline: boolean;
-  goOnline: () => Promise<void>;
+  goOnline: () => Promise<GoOnlineResult>;
   goOffline: () => Promise<void>;
-  toggleOnline: () => Promise<void>;
+  toggleOnline: () => Promise<GoOnlineResult>;
   lastPosition: { lat: number; lng: number } | null;
   locationPermission: "granted" | "denied" | "undetermined";
 }
@@ -73,6 +77,9 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
   const prevPositionRef = useRef<{ lat: number; lng: number; ts: number } | null>(null);
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
+
+  const isOnlineRef = useRef(false);
+  isOnlineRef.current = isOnline;
 
   const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
@@ -119,13 +126,11 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     } catch {}
   }, [API_BASE]);
 
-  /* Register background handler */
+  /* ── Bug 5 fix: Register/unregister handler in the Set (no race condition on remount) ── */
   useEffect(() => {
-    backgroundLocationHandler = sendLocation;
+    backgroundLocationHandlers.add(sendLocation);
     return () => {
-      if (backgroundLocationHandler === sendLocation) {
-        backgroundLocationHandler = null;
-      }
+      backgroundLocationHandlers.delete(sendLocation);
     };
   }, [sendLocation]);
 
@@ -147,25 +152,24 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     return true;
   }, []);
 
+  /* ── Bug 1 fix: startTracking now throws on failure so goOnline can handle it ── */
   const startTracking = useCallback(async () => {
     if (Platform.OS === "web") return;
-    try {
-      const running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-      if (!running) {
-        await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-          accuracy: Location.Accuracy.Balanced,
-          distanceInterval: MIN_DISTANCE_METERS,
-          timeInterval: MAX_INTERVAL_SEC * 1000,
-          showsBackgroundLocationIndicator: true,
-          foregroundService: {
-            notificationTitle: "AJKMart Rider",
-            notificationBody: "You are online and tracking your location.",
-            notificationColor: "#1A56DB",
-          },
-          pausesUpdatesAutomatically: false,
-        });
-      }
-    } catch {}
+    const running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+    if (!running) {
+      await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+        accuracy: Location.Accuracy.Balanced,
+        distanceInterval: MIN_DISTANCE_METERS,
+        timeInterval: MAX_INTERVAL_SEC * 1000,
+        showsBackgroundLocationIndicator: true,
+        foregroundService: {
+          notificationTitle: "AJKMart Rider",
+          notificationBody: "You are online and tracking your location.",
+          notificationColor: "#1A56DB",
+        },
+        pausesUpdatesAutomatically: false,
+      });
+    }
   }, []);
 
   const stopTracking = useCallback(async () => {
@@ -200,34 +204,66 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     }
   }, []);
 
-  const goOnline = useCallback(async () => {
-    if (!isRider) return;
+  /* ── Bug 2 fix: AppState listener to start/stop foreground watch on native ── */
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (!isOnlineRef.current) return;
+      if (nextState === "active") {
+        startForegroundWatch().catch(() => {});
+      } else {
+        stopForegroundWatch();
+      }
+    };
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => {
+      subscription.remove();
+    };
+  }, [startForegroundWatch, stopForegroundWatch]);
+
+  /* ── Bug 1 & 7 fix: goOnline now returns a status result ── */
+  const goOnline = useCallback(async (): Promise<GoOnlineResult> => {
+    if (!isRider) return "permission_denied";
     const ok = await checkPermissions();
-    if (!ok) return;
+    if (!ok) return "permission_denied";
     setIsOnline(true);
     prevPositionRef.current = null;
     if (Platform.OS === "web") {
       await startForegroundWatch();
     } else {
-      await startTracking();
+      try {
+        await startTracking();
+        /* Also start foreground watch immediately since app is in foreground now */
+        await startForegroundWatch();
+      } catch (err) {
+        /* Bug 1 fix: startTracking failed — revert to offline and report error.
+           Note: we do NOT set locationPermission to "denied" here since this is
+           an operational GPS/system failure (not a permission denial — permissions
+           were already confirmed above). We only revert isOnline. */
+        setIsOnline(false);
+        return "tracking_failed";
+      }
     }
+    return "ok";
   }, [isRider, checkPermissions, startTracking, startForegroundWatch]);
 
   const goOffline = useCallback(async () => {
     setIsOnline(false);
     prevPositionRef.current = null;
-    if (Platform.OS === "web") {
-      stopForegroundWatch();
-    } else {
+    stopForegroundWatch();
+    if (Platform.OS !== "web") {
       await stopTracking();
     }
   }, [stopTracking, stopForegroundWatch]);
 
-  const toggleOnline = useCallback(async () => {
+  const toggleOnline = useCallback(async (): Promise<GoOnlineResult> => {
     if (isOnline) {
       await goOffline();
+      return "ok";
     } else {
-      await goOnline();
+      return goOnline();
     }
   }, [isOnline, goOnline, goOffline]);
 

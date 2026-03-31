@@ -99,18 +99,67 @@ export default function Orders() {
     staleTime: 20_000,
   });
 
+  /* Save vendor location to backend (used for rider dispatch radius checks) */
+  const saveVendorLocationToBackend = async (lat: number, lng: number) => {
+    try {
+      const token = localStorage.getItem("ajkmart_vendor_token") ?? "";
+      if (!token) return;
+      const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+      await fetch(`${base}/api/locations/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ latitude: lat, longitude: lng, role: "vendor" }),
+      });
+    } catch {}
+  };
+
   useEffect(() => {
     if (vendorLocData?.latitude != null && vendorLocData?.longitude != null) {
       setVendorLat(vendorLocData.latitude);
       setVendorLng(vendorLocData.longitude);
     } else if (navigator.geolocation) {
-      /* Fallback: use browser geolocation only when no backend location found */
+      /* Fallback: use browser geolocation when no backend location found,
+         and save the result to the backend so dispatch radius checks work */
       navigator.geolocation.getCurrentPosition(
-        (pos) => { setVendorLat(pos.coords.latitude); setVendorLng(pos.coords.longitude); },
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setVendorLat(latitude);
+          setVendorLng(longitude);
+          saveVendorLocationToBackend(latitude, longitude);
+        },
         () => {},
       );
     }
   }, [vendorLocData]);
+
+  /* Periodic refresh: re-save vendor location every 5 minutes and on window focus */
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const refreshLocation = () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setVendorLat(latitude);
+          setVendorLng(longitude);
+          saveVendorLocationToBackend(latitude, longitude);
+        },
+        () => {},
+      );
+    };
+
+    const intervalId = setInterval(refreshLocation, 5 * 60 * 1000);
+    window.addEventListener("focus", refreshLocation);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("focus", refreshLocation);
+    };
+  }, [user?.id]);
 
   /* Socket.io: subscribe to vendor:{userId} room for rider tracking */
   useEffect(() => {

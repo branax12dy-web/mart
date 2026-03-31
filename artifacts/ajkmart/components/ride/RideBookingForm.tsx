@@ -573,7 +573,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
 
       (async () => {
         try {
-          const perm = await Location.getForegroundPermissionsAsync();
+          const perm = await Location.requestForegroundPermissionsAsync();
           if (perm.status !== "granted") return;
           const pos = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,

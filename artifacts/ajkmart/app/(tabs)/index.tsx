@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   NativeScrollEvent,
@@ -466,7 +467,20 @@ function RiderOnlineBanner() {
   const handleToggle = async () => {
     setToggling(true);
     try {
-      await toggleOnline();
+      const result = await toggleOnline();
+      if (result === "permission_denied") {
+        Alert.alert(
+          "GPS Permission Required",
+          "Please allow location access to go online and receive ride requests. Go to your phone Settings → Apps → AJKMart → Permissions → Location → Allow all the time.",
+          [{ text: "OK" }],
+        );
+      } else if (result === "tracking_failed") {
+        Alert.alert(
+          "GPS Failed to Start",
+          "Location tracking could not be started. Please make sure GPS is enabled in your device settings and try again. If the problem persists, restart the app.",
+          [{ text: "OK" }],
+        );
+      }
     } finally {
       setToggling(false);
     }
