@@ -14,6 +14,30 @@ import { Toggle, Field, SecretInput } from "@/components/AdminShared";
 
 type SecTab = "auth" | "authmethods" | "ratelimit" | "gps" | "passwords" | "uploads" | "fraud";
 
+type SecurityDashboard = Record<string, unknown>;
+
+type LockoutEntry = {
+  phone: string;
+  minutesLeft?: number;
+  attempts?: number;
+};
+
+type SecurityEvent = {
+  severity: "critical" | "high" | "medium" | "low";
+  type: string;
+  details: string;
+  timestamp: string;
+};
+
+type MfaStatus = {
+  enabled: boolean;
+};
+
+type MfaSetupData = {
+  secret: string;
+  qrCode: string;
+};
+
 const SEC_TABS: { id: SecTab; label: string; emoji: string; active: string; desc: string }[] = [
   { id: "auth",        label: "Auth & Sessions",  emoji: "🔐", active: "bg-indigo-600",  desc: "OTP bypass, MFA, login lockout, session durations, live lockouts" },
   { id: "authmethods", label: "Auth Methods",      emoji: "🔑", active: "bg-cyan-600",    desc: "Per-role login method toggles: Phone OTP, Email OTP, Username/Password, Social, Magic Link, 2FA, Biometric" },
@@ -45,16 +69,16 @@ export default function SecurityPage() {
   const [secTab, setSecTab] = useState<SecTab>("auth");
 
   /* ── Live Security State ── */
-  const [secDash,       setSecDash]       = useState<any>(null);
-  const [lockouts,      setLockouts]      = useState<any[]>([]);
+  const [secDash,       setSecDash]       = useState<SecurityDashboard | null>(null);
+  const [lockouts,      setLockouts]      = useState<LockoutEntry[]>([]);
   const [blockedIPsList,setBlockedIPsList] = useState<string[]>([]);
-  const [secEvents,     setSecEvents]     = useState<any[]>([]);
+  const [secEvents,     setSecEvents]     = useState<SecurityEvent[]>([]);
   const [newBlockIP,    setNewBlockIP]    = useState("");
   const [liveLoading,   setLiveLoading]  = useState(false);
 
   /* ── MFA / TOTP State ── */
-  const [mfaStatus,    setMfaStatus]    = useState<any>(null);
-  const [mfaSetupData, setMfaSetupData] = useState<any>(null);
+  const [mfaStatus,    setMfaStatus]    = useState<MfaStatus | null>(null);
+  const [mfaSetupData, setMfaSetupData] = useState<MfaSetupData | null>(null);
   const [mfaToken,     setMfaToken]     = useState("");
   const [disableToken, setDisableToken] = useState("");
   const [mfaLoading,   setMfaLoading]  = useState(false);
