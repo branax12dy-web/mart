@@ -239,11 +239,13 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
   }
 
   /* ── OTP Bypass Mode (dev/testing only) ──
-     Hard-disabled in production regardless of config.
+     Only allowed when NODE_ENV is explicitly "development" or "test".
+     Any other value (including undefined/unset) treats the env as production-like.
      security_phone_verify=on also overrides the bypass. ── */
-  const isProduction = process.env.NODE_ENV === "production";
+  const nodeEnv = process.env.NODE_ENV;
+  const isExplicitlyDev = nodeEnv === "development" || nodeEnv === "test";
   const phoneVerifyRequired = settings["security_phone_verify"] === "on";
-  const otpBypass = !isProduction && settings["security_otp_bypass"] === "on" && !phoneVerifyRequired;
+  const otpBypass = isExplicitlyDev && settings["security_otp_bypass"] === "on" && !phoneVerifyRequired;
 
   /* ── Atomic OTP consumption via a single conditional UPDATE ──
      The WHERE clause combines: correct code + not-yet-used + not-expired.

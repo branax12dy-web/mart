@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { timingSafeEqual } from "crypto";
 import { db } from "@workspace/db";
 import {
   liveLocationsTable, notificationsTable, rideBidsTable,
@@ -80,8 +81,12 @@ async function broadcastRide(rideId: string) {
     const radiusKm = parseFloat(s["dispatch_min_radius_km"] ?? "5");
     const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
 
-    const pickupLat = parseFloat(ride.pickupLat ?? "0");
-    const pickupLng = parseFloat(ride.pickupLng ?? "0");
+    const pickupLat = parseFloat(ride.pickupLat ?? "");
+    const pickupLng = parseFloat(ride.pickupLng ?? "");
+    if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) {
+      console.error(`[broadcast] Ride ${rideId} has invalid coordinates — skipping dispatch`);
+      return;
+    }
 
     const onlineRiders = await db.select({
       userId: liveLocationsTable.userId,
@@ -100,7 +105,10 @@ async function broadcastRide(rideId: string) {
 
     for (const r of onlineRiders) {
       if (alreadySet.has(r.userId)) continue;
-      const dist = calcDistance(pickupLat, pickupLng, parseFloat(r.latitude), parseFloat(r.longitude));
+      const rLat = parseFloat(String(r.latitude));
+      const rLng = parseFloat(String(r.longitude));
+      if (!Number.isFinite(rLat) || !Number.isFinite(rLng)) continue;
+      const dist = calcDistance(pickupLat, pickupLng, rLat, rLng);
       if (dist > radiusKm) continue;
 
       const [user] = await db.select({ isActive: usersTable.isActive, isBanned: usersTable.isBanned, isRestricted: usersTable.isRestricted, vehicleType: usersTable.vehicleType })
@@ -506,7 +514,21 @@ router.patch("/:id/cancel", customerAuth, requireRideState(["searching", "bargai
       .set({ status: "rejected", updatedAt: new Date() })
       .where(and(eq(rideBidsTable.rideId, String(req.params["id"])), eq(rideBidsTable.status, "pending")));
 
+    // Credit the fare refund FIRST so the balance includes it when we later
+    // calculate how much of the cancellation fee the user can cover.
+    if (fareWasCharged) {
+      const refundAmt = parseFloat(ride.fare);
+      await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, userId));
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId, type: "credit", amount: refundAmt.toFixed(2),
+        description: `Ride refund — #${ride.id.slice(-6).toUpperCase()} cancelled`,
+      });
+    }
+
     if (riderAssigned && cancelFee > 0) {
+      // Re-fetch balance after the refund credit above
       const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
       if (user) {
         const balance = parseFloat(user.walletBalance ?? "0");
@@ -542,17 +564,6 @@ router.patch("/:id/cancel", customerAuth, requireRideState(["searching", "bargai
       await tx.update(usersTable)
         .set({ cancellationDebt: sql`cancellation_debt + ${remainingDebt}`, updatedAt: new Date() })
         .where(eq(usersTable.id, userId));
-    }
-
-    if (fareWasCharged) {
-      const refundAmt = parseFloat(ride.fare);
-      await tx.update(usersTable)
-        .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
-        .where(eq(usersTable.id, userId));
-      await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId, type: "credit", amount: refundAmt.toFixed(2),
-        description: `Ride refund — #${ride.id.slice(-6).toUpperCase()} cancelled`,
-      });
     }
 
     return upd;
@@ -605,6 +616,18 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const { bidId } = parsed.data;
   const rideId = String(req.params["id"]);
+
+  // Block users who accumulated cancellation debt from accepting bids (mirrors the booking check)
+  const [debtUserBid] = await db.select({ cancellationDebt: usersTable.cancellationDebt })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const bidDebt = parseFloat(debtUserBid?.cancellationDebt ?? "0");
+  if (bidDebt > 0) {
+    res.status(402).json({
+      error: `You have an outstanding cancellation fee debt of Rs. ${bidDebt.toFixed(0)}. Please clear your debt before accepting a ride.`,
+      debtAmount: bidDebt,
+    });
+    return;
+  }
 
   let updated: any;
   try {
@@ -950,7 +973,10 @@ router.post("/:id/event-log", riderAuth, loadRide(), requireRideOwner("riderId")
 router.get("/:id/event-logs", async (req, res) => {
   const adminSecret = process.env.ADMIN_SECRET;
   const provided    = req.headers["x-admin-secret"] as string | undefined;
-  if (!adminSecret || !provided || provided !== adminSecret) {
+  const isValid = adminSecret && provided &&
+    provided.length === adminSecret.length &&
+    timingSafeEqual(Buffer.from(provided), Buffer.from(adminSecret));
+  if (!isValid) {
     res.status(401).json({ error: "Admin authentication required" }); return;
   }
   const logs = await db.select().from(rideEventLogsTable)

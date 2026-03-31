@@ -1504,9 +1504,46 @@ router.get("/platform-settings", async (_req, res) => {
   res.json({ settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })), grouped });
 });
 
+/* Keys that must be valid finite numbers */
+const NUMERIC_SETTING_KEYS = new Set([
+  "dispatch_min_radius_km", "dispatch_max_radius_km", "dispatch_avg_speed_kmh",
+  "ride_cancellation_fee", "ride_surge_multiplier", "ride_bargaining_min_pct",
+  "finance_gst_pct", "customer_signup_bonus",
+  "payment_min_online", "payment_max_online",
+  "security_login_max_attempts", "security_lockout_minutes", "security_otp_cooldown_sec",
+  "auth_trusted_device_days", "order_refund_days",
+]);
+
+/* Keys that must be strictly "on" or "off" */
+const BOOLEAN_SETTING_KEYS = new Set([
+  "feature_rides", "feature_wallet", "feature_mart", "feature_food", "feature_parcel",
+  "feature_pharmacy", "feature_school", "feature_new_users",
+  "ride_bargaining_enabled", "ride_surge_enabled", "rider_cash_allowed",
+  "cod_enabled", "finance_gst_enabled", "jazzcash_enabled", "easypaisa_enabled",
+  "auth_phone_otp_enabled", "auth_2fa_enabled",
+  "security_otp_bypass", "security_phone_verify",
+  "user_require_approval", "integration_whatsapp",
+  "cod_allowed_rides", "wallet_allowed_rides", "jazzcash_allowed_rides", "easypaisa_allowed_rides",
+]);
+
+function validateSettingValue(key: string, value: string): string | null {
+  if (NUMERIC_SETTING_KEYS.has(key)) {
+    const n = parseFloat(value);
+    if (!Number.isFinite(n)) return `Setting "${key}" must be a valid number (got: "${value}")`;
+  }
+  if (BOOLEAN_SETTING_KEYS.has(key)) {
+    if (value !== "on" && value !== "off") return `Setting "${key}" must be "on" or "off" (got: "${value}")`;
+  }
+  return null;
+}
+
 router.put("/platform-settings", async (req, res) => {
   const { settings } = req.body as { settings: Array<{ key: string; value: string }> };
   if (!Array.isArray(settings)) { res.status(400).json({ error: "settings array required" }); return; }
+  for (const { key, value } of settings) {
+    const err = validateSettingValue(key, String(value));
+    if (err) { res.status(422).json({ error: err }); return; }
+  }
   for (const { key, value } of settings) {
     await db
       .update(platformSettingsTable)
@@ -1524,6 +1561,8 @@ router.put("/platform-settings", async (req, res) => {
 router.patch("/platform-settings/:key", async (req, res) => {
   const { value } = req.body;
   const settingKey = req.params["key"]!;
+  const err = validateSettingValue(settingKey, String(value));
+  if (err) { res.status(422).json({ error: err }); return; }
   const [row] = await db
     .update(platformSettingsTable)
     .set({ value: String(value), updatedAt: new Date() })

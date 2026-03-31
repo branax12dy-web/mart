@@ -29,8 +29,11 @@ export const REFRESH_TOKEN_TTL_DAYS = 30;
    ADMIN JWT CONFIGURATION — separate from user JWT
 ══════════════════════════════════════════════════════════════ */
 const _adminJwtSecret = process.env["ADMIN_JWT_SECRET"];
-if (!_adminJwtSecret) {
-  console.error("FATAL: ADMIN_JWT_SECRET environment variable is required");
+if (!_adminJwtSecret || _adminJwtSecret.length < 32) {
+  const msg = !_adminJwtSecret
+    ? "[AUTH] FATAL: ADMIN_JWT_SECRET environment variable is not set. Minimum 32 characters required."
+    : `[AUTH] FATAL: ADMIN_JWT_SECRET too short (${_adminJwtSecret.length} chars, need ≥32).`;
+  console.error(msg);
   process.exit(1);
 }
 export const ADMIN_JWT_SECRET: string = _adminJwtSecret;
