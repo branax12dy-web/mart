@@ -17,8 +17,7 @@ type Step = "input" | "otp" | "pending" | "2fa";
 type AuthResponse = {
   token: string; refreshToken?: string;
   pendingApproval?: boolean;
-  requires2fa?: boolean; requires2FA?: boolean;
-  twoFactorRequired?: boolean;
+  requires2FA?: boolean;
   tempToken?: string; userId?: string;
   user?: { roles?: string; role?: string; name?: string; email?: string };
   isNewUser?: boolean; needsProfileCompletion?: boolean;
@@ -172,7 +171,7 @@ export default function Login() {
   };
 
   const doLogin = async (res: AuthResponse) => {
-    if (res.requires2fa || res.requires2FA || res.twoFactorRequired) {
+    if (res.requires2FA) {
       setTwoFaPending(res);
       setStep("2fa");
       setGlobalTwoFaPending(true);
