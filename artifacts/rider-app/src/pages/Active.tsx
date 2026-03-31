@@ -19,7 +19,7 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonActive() {
   return (
-    <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+    <div className="bg-[#F5F6F8] min-h-screen">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
@@ -82,7 +82,7 @@ function useElapsedTimer(startIso?: string | null) {
   return { label, elapsed, urgent };
 }
 
-function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
+function formatCurrency(n: number, currencySymbol = "Rs.") { return `${currencySymbol} ${Math.round(n).toLocaleString()}`; }
 
 function ElapsedBadge({ startIso }: { startIso?: string | null }) {
   const { label, urgent, elapsed } = useElapsedTimer(startIso);
@@ -231,14 +231,13 @@ export default function Active() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const currency = config.platform.currencySymbol ?? "Rs.";
   const ORDER_LABELS = [T("goToStore"), T("pickedUp"), T("delivered")];
   const RIDE_LABELS = [T("acceptOrder"), T("atPickup"), T("inTransit"), T("done")];
   const [toastMsg, setToastMsg]                    = useState("");
   const [toastIsError, setToastIsError]            = useState(false);
   const [showCancelConfirm, setShowCancelConfirm]  = useState(false);
   const [cancelTarget, setCancelTarget]            = useState<"order" | "ride">("order");
-  const [orderPickedUp, _setOrderPickedUp]          = useState(() => sessionStorage.getItem("orderPickedUp") === "true");
-  const setOrderPickedUp = (v: boolean) => { _setOrderPickedUp(v); sessionStorage.setItem("orderPickedUp", String(v)); };
   const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
   const [proofFileName, setProofFileName]          = useState<string>("");
   const [proofUploading, setProofUploading]        = useState(false);
@@ -348,14 +347,6 @@ export default function Active() {
     setGpsWarning(val);
   };
 
-  useEffect(() => {
-    if (data?.order?.status === "picked_up" || data?.order?.status === "out_for_delivery") {
-      setOrderPickedUp(true);
-    } else if (data?.order?.status === "delivered") {
-      sessionStorage.removeItem("orderPickedUp");
-      _setOrderPickedUp(false);
-    }
-  }, [data?.order?.status]);
 
   useEffect(() => {
     if (data?.order && !data?.ride) setCancelTarget("order");
@@ -491,13 +482,11 @@ export default function Active() {
       qc.invalidateQueries({ queryKey: ["rider-earnings"] });
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       if (vars.status === "delivered") {
-        sessionStorage.removeItem("orderPickedUp");
         setProofPhoto(null);
         setProofFileName("");
         if (photoInputRef.current) photoInputRef.current.value = "";
         showToast(T("orderDeliveredEarnings"));
       } else if (vars.status === "cancelled") {
-        sessionStorage.removeItem("orderPickedUp");
         setProofPhoto(null);
         setShowCancelConfirm(false);
         showToast(T("orderCancelledMsg"));
@@ -508,12 +497,6 @@ export default function Active() {
     onError: (e: Error, vars) => {
       if (e.message !== "Offline — queued for retry") {
         showToast(e.message, true);
-        /* If the delivery update failed, revert local optimistic state so
-           the rider can retry without being stuck in "delivering" view */
-        if (vars.status === "delivered") {
-          _setOrderPickedUp(false);
-          sessionStorage.removeItem("orderPickedUp");
-        }
       }
     },
   });
@@ -577,7 +560,7 @@ export default function Active() {
 
   const orderStep = !order ? 0
     : order.status === "delivered" ? 2
-    : (order.status === "picked_up" || order.status === "out_for_delivery" || orderPickedUp) ? 1
+    : (order.status === "picked_up" || order.status === "out_for_delivery") ? 1
     : 0;
   const rideStep  = ride ? Math.max(0, RIDE_STEPS.indexOf(ride.status)) : 0;
   const startedAt = order?.acceptedAt || ride?.acceptedAt || null;
@@ -595,7 +578,7 @@ export default function Active() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] pb-24">
+    <div className="min-h-screen bg-[#F5F6F8]">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-7 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
@@ -609,7 +592,7 @@ export default function Active() {
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight">{order ? T("activeDelivery") : T("activeRide")}</h1>
             <p className="text-white/40 text-sm mt-1 font-medium">
-              {order ? `${order.type} order — ${orderPickedUp ? "Delivering to customer" : "Pick up from store"}` : `${ride?.type} ride in progress`}
+              {order ? `${order.type} order — ${(order.status === "picked_up" || order.status === "out_for_delivery") ? "Delivering to customer" : "Pick up from store"}` : `${ride?.type} ride in progress`}
             </p>
           </div>
           <ElapsedBadge startIso={startedAt}/>
@@ -671,7 +654,7 @@ export default function Active() {
                   <p className="text-white/70 text-xs font-mono mt-0.5">#{order.id.slice(-6).toUpperCase()}</p>
                 </div>
                 <div className="relative text-right">
-                  <p className="font-black text-white text-xl tracking-tight">{formatCurrency(order.total)}</p>
+                  <p className="font-black text-white text-xl tracking-tight">{formatCurrency(order.total, currency)}</p>
                   <div className="mt-1 bg-white/15 backdrop-blur-sm rounded-lg px-2.5 py-1 border border-white/10">
                     <p className="text-white text-[10px] font-bold">You earn {formatCurrency((() => {
                       const df = config.deliveryFee;
@@ -682,7 +665,7 @@ export default function Active() {
                         fee = typeof raw === "number" ? raw : parseFloat(String(raw)) || 0;
                       } else { fee = parseFloat(String(df)) || 0; }
                       return fee * (config.finance.riderEarningPct / 100);
-                    })())}</p>
+                    })(), currency)}</p>
                   </div>
                 </div>
               </div>
@@ -709,7 +692,7 @@ export default function Active() {
               </div>
             </div>
 
-            {!orderPickedUp && (
+            {order && order.status !== "picked_up" && order.status !== "out_for_delivery" && order.status !== "delivered" && (
               <div className="bg-white rounded-3xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
                 <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 flex items-center gap-2">
                   <div className="w-7 h-7 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
@@ -742,7 +725,7 @@ export default function Active() {
                         {(order.items as OrderItem[]).slice(0, 5).map((item: OrderItem, i: number) => (
                           <div key={i} className="flex justify-between text-sm bg-white rounded-xl px-3 py-2.5 border border-gray-100">
                             <span className="text-gray-700 font-medium">{item.name} <span className="text-gray-400">×{item.quantity}</span></span>
-                            <span className="font-bold text-gray-800">{formatCurrency(item.price * item.quantity)}</span>
+                            <span className="font-bold text-gray-800">{formatCurrency(item.price * item.quantity, currency)}</span>
                           </div>
                         ))}
                         {order.items.length > 5 && (
@@ -772,7 +755,7 @@ export default function Active() {
                   </div>
 
                   <button
-                    onClick={() => { setOrderPickedUp(true); updateOrderMut.mutate({ id: order.id, status: "picked_up" }); }}
+                    onClick={() => { updateOrderMut.mutate({ id: order.id, status: "picked_up" }); }}
                     onTouchStart={() => setPressedBtn("pickup")} onTouchEnd={() => setPressedBtn(null)}
                     className={`w-full bg-gray-900 text-white font-black rounded-2xl py-4 text-base flex items-center justify-center gap-2.5 shadow-lg transition-transform ${pressedBtn === "pickup" ? "scale-[0.97]" : ""}`}>
                     <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center">
@@ -791,7 +774,7 @@ export default function Active() {
               </div>
             )}
 
-            {orderPickedUp && (
+            {order && (order.status === "picked_up" || order.status === "out_for_delivery") && (
               <div className="bg-white rounded-3xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden animate-[slideUp_0.5s_ease-out]">
                 <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3 flex items-center gap-2">
                   <div className="w-7 h-7 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
@@ -888,22 +871,14 @@ export default function Active() {
                     {proofUploading ? "Uploading photo…" : updateOrderMut.isPending ? T("updating") : proofPhoto ? T("confirmDeliveryWithProof") : T("markDelivered")}
                   </button>
 
-                  {order.status !== "picked_up" ? (
-                    <button
-                      onClick={() => setOrderPickedUp(false)}
-                      className="w-full border-2 border-gray-200 text-gray-600 text-sm font-bold rounded-xl py-3 bg-white active:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
+                  <div>
+                    <div className="w-full border-2 border-gray-100 text-gray-400 text-sm font-bold rounded-xl py-3 bg-gray-50 flex items-center justify-center gap-1.5 cursor-not-allowed">
                       <ChevronRight size={14} className="rotate-180"/> {T("backToStoreStep")}
-                    </button>
-                  ) : (
-                    <div>
-                      <div className="w-full border-2 border-gray-100 text-gray-400 text-sm font-bold rounded-xl py-3 bg-gray-50 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                        <ChevronRight size={14} className="rotate-180"/> {T("backToStoreStep")}
-                      </div>
-                      <p className="text-[10px] text-gray-400 text-center mt-1">
-                        Cannot go back — server already recorded pickup. Contact support if needed.
-                      </p>
                     </div>
-                  )}
+                    <p className="text-[10px] text-gray-400 text-center mt-1">
+                      Cannot go back — server already recorded pickup. Contact support if needed.
+                    </p>
+                  </div>
 
                   <button
                     onClick={() => { setCancelTarget("order"); setShowCancelConfirm(true); }}
@@ -930,9 +905,9 @@ export default function Active() {
                 <p className="text-purple-200 text-xs font-mono mt-0.5">#{ride.id.slice(-6).toUpperCase()} · {ride.distance}km</p>
               </div>
               <div className="relative text-right">
-                <p className="font-black text-white text-xl tracking-tight">{formatCurrency(ride.fare)}</p>
+                <p className="font-black text-white text-xl tracking-tight">{formatCurrency(ride.fare, currency)}</p>
                 <div className="mt-1 bg-white/15 backdrop-blur-sm rounded-lg px-2.5 py-1 border border-white/10">
-                  <p className="text-white text-[10px] font-bold">You earn {formatCurrency(ride.fare * ((config.rides?.riderEarningPct ?? config.finance.riderEarningPct) / 100))}</p>
+                  <p className="text-white text-[10px] font-bold">You earn {formatCurrency(ride.fare * ((config.rides?.riderEarningPct ?? config.finance.riderEarningPct) / 100), currency)}</p>
                 </div>
               </div>
             </div>

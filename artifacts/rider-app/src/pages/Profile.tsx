@@ -42,7 +42,7 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonProfile() {
   return (
-    <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+    <div className="bg-[#F5F6F8] min-h-screen">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-24 rounded-b-[2rem]"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }} />
       <div className="px-4 -mt-20 space-y-4">
@@ -312,7 +312,7 @@ export default function Profile() {
         if (email && email.trim()) {
           const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (!emailPattern.test(email.trim())) {
-            showToast(T("invalidEmail") as string || "Invalid email address format", true);
+            showToast(T("enterValidEmail"), true);
             setSaving(false);
             return;
           }
@@ -409,7 +409,7 @@ export default function Profile() {
   if (authLoading) return <SkeletonProfile />;
 
   return (
-    <div className={`bg-[#F5F6F8] pb-24 min-h-screen transition-opacity duration-500 ${fadeIn ? "opacity-100" : "opacity-0"}`}>
+    <div className={`bg-[#F5F6F8] min-h-screen transition-opacity duration-500 ${fadeIn ? "opacity-100" : "opacity-0"}`}>
 
       {toast && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold flex items-center gap-2 animate-[slideDown_0.3s_ease-out] max-w-[90vw] ${toastIsError ? "bg-red-600 text-white" : "bg-gray-900 text-white"}`}>

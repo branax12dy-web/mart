@@ -16,7 +16,7 @@ import {
   Eye, EyeOff, Sparkles, BarChart3, ChevronRight,
 } from "lucide-react";
 
-const fc  = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
+const fc  = (n: number, currencySymbol = "Rs.") => `${currencySymbol} ${Math.round(n).toLocaleString()}`;
 const fd  = (d: string | Date) => new Date(d).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const fdr = (d: string | Date) => {
   const diff = Date.now() - new Date(d).getTime();
@@ -74,6 +74,8 @@ function MethodIcon({ method }: { method: string | null }) {
 function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const { config: chartConfig } = usePlatformConfig();
+  const chartCurrency = chartConfig.platform.currencySymbol ?? "Rs.";
   const days = useMemo(() => {
     const result: { label: string; amount: number; date: string }[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -104,7 +106,7 @@ function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
           <BarChart3 size={15} className="text-gray-400"/>
           <p className="font-bold text-gray-800 text-sm">{T("sevenDayEarnings")}</p>
         </div>
-        <p className="text-base font-black text-green-600">{fc(weekTotal)}</p>
+        <p className="text-base font-black text-green-600">{fc(weekTotal, chartCurrency)}</p>
       </div>
       <div className="flex items-end gap-3 h-20">
         {days.map((d, i) => (
@@ -115,7 +117,7 @@ function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
                   i === bestIdx ? "bg-green-500" : "bg-gray-100"
                 }`}
                 style={{ height: Math.max((d.amount / maxVal) * 56, d.amount > 0 ? 4 : 2) }}
-                title={`${d.date}: ${fc(d.amount)}`}
+                title={`${d.date}: ${fc(d.amount, chartCurrency)}`}
               />
             </div>
             <p className={`text-[9px] font-semibold ${i === bestIdx ? "text-green-600" : "text-gray-300"}`}>{d.label}</p>
@@ -129,6 +131,8 @@ function EarningsChart({ transactions }: { transactions: WalletTx[] }) {
 function PendingRequestCard({ tx }: { tx: WalletTx }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const { config: cardConfig } = usePlatformConfig();
+  const cardCurrency = cardConfig.platform.currencySymbol ?? "Rs.";
   const parsed = (() => {
     const parts = (tx.description || "").replace("Withdrawal — ", "").split(" · ");
     return { bank: parts[0] || "—", account: parts[1] || "—", title: parts[2] || "—", note: parts[3] || "" };
@@ -157,7 +161,7 @@ function PendingRequestCard({ tx }: { tx: WalletTx }) {
           </div>
         </div>
         <div className="text-right flex-shrink-0">
-          <p className="text-lg font-black text-gray-900">{fc(Number(tx.amount))}</p>
+          <p className="text-lg font-black text-gray-900">{fc(Number(tx.amount), cardCurrency)}</p>
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusConfig.badge} inline-flex items-center gap-1`}>
             <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot} ${status === "pending" ? "animate-pulse" : ""}`}/>
             {statusConfig.icon} {statusConfig.label}
@@ -192,6 +196,7 @@ type TxFilter = "all" | "credit" | "debit" | "bonus" | "fees";
 export default function Wallet() {
   const { user, refreshUser } = useAuth();
   const { config } = usePlatformConfig();
+  const currency = config.platform.currencySymbol ?? "Rs.";
   const riderKeepPct      = config.rider?.keepPct        ?? config.finance.riderEarningPct;
   const minPayout         = config.rider?.minPayout      ?? config.finance.minRiderPayout;
   const maxPayout         = config.rider?.maxPayout      ?? 50000;
@@ -274,10 +279,11 @@ export default function Wallet() {
   const minBalance = (minBalanceData?.minBalance ?? minBalanceFallback) as number;
 
   const transactions: WalletTx[] = data?.transactions || [];
-  /* When getWallet returns no balance field, fall back to cached user balance but flag it as stale */
+  /* Only show balance once the wallet query resolves — never fall back to user.walletBalance
+     to avoid the "jumping" effect when the two sources differ. */
   const balanceFromServer = data?.balance;
-  const balance = balanceFromServer != null ? Number(balanceFromServer) : (user?.walletBalance ? Number(user.walletBalance) : 0);
-  const isBalanceStale = data && balanceFromServer == null;
+  const balance = balanceFromServer != null ? Number(balanceFromServer) : 0;
+  const isBalanceStale = false;
 
   const today   = new Date(); today.setHours(0,0,0,0);
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
@@ -324,7 +330,7 @@ export default function Wallet() {
 
   if (isLoading) {
     return (
-      <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+      <div className="bg-[#F5F6F8] min-h-screen">
         <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.03] rounded-full -translate-y-1/2 translate-x-1/3"/>
@@ -365,7 +371,7 @@ export default function Wallet() {
 
   if (!config.features.wallet) {
     return (
-      <div className="bg-[#F5F6F8] pb-24 min-h-screen">
+      <div className="bg-[#F5F6F8] min-h-screen">
         <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-10 rounded-b-[2rem]"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <p className="text-white/40 text-xs font-semibold tracking-widest uppercase">{T("wallet")}</p>
@@ -384,7 +390,7 @@ export default function Wallet() {
   }
 
   return (
-    <div className="bg-[#F5F6F8] pb-28 min-h-screen">
+    <div className="bg-[#F5F6F8] min-h-screen">
 
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
@@ -404,7 +410,7 @@ export default function Wallet() {
 
           <div className="flex items-end gap-3 mb-1">
             <p className="text-[42px] font-black text-white tracking-tight leading-none">
-              {balanceHidden ? "••••••" : fc(balance)}
+              {balanceHidden ? "••••••" : isLoading ? <span className="text-[28px] animate-pulse text-white/40">loading...</span> : fc(balance, currency)}
             </p>
             {isBalanceStale && !balanceHidden && (
               <div className="mb-2 flex items-center gap-1 bg-amber-500/15 px-2 py-0.5 rounded-full">
@@ -424,7 +430,7 @@ export default function Wallet() {
             {pendingAmt > 0 && (
               <div className="flex items-center gap-1 bg-amber-500/15 px-2 py-0.5 rounded-full">
                 <Clock size={9} className="text-amber-400"/>
-                <span className="text-[9px] text-amber-400 font-bold">{fc(pendingAmt)} {T("pending")}</span>
+                <span className="text-[9px] text-amber-400 font-bold">{fc(pendingAmt, currency)} {T("pending")}</span>
               </div>
             )}
           </div>
@@ -432,7 +438,7 @@ export default function Wallet() {
           <div className="grid grid-cols-3 gap-2.5 mb-5">
             <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
               <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("earnedToday")}</p>
-              <p className="text-sm font-black text-green-400 mt-0.5">{balanceHidden ? "••••" : fc(todayEarned)}</p>
+              <p className="text-sm font-black text-green-400 mt-0.5">{balanceHidden ? "••••" : fc(todayEarned, currency)}</p>
             </div>
             <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
               <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("yourShare" as TranslationKey)}</p>
@@ -440,7 +446,7 @@ export default function Wallet() {
             </div>
             <div className="bg-white/[0.06] backdrop-blur-sm rounded-2xl px-3 py-2.5 border border-white/[0.06]">
               <p className="text-[9px] text-white/30 uppercase tracking-wider font-bold">{T("totalWithdrawn")}</p>
-              <p className="text-sm font-black text-red-400 mt-0.5">{fc(totalWithdrawn)}</p>
+              <p className="text-sm font-black text-red-400 mt-0.5">{fc(totalWithdrawn, currency)}</p>
             </div>
           </div>
 
@@ -448,8 +454,8 @@ export default function Wallet() {
             <div className="mb-4 bg-amber-500/15 rounded-2xl px-3.5 py-2.5 flex items-center gap-2.5 border border-amber-500/15">
               <AlertTriangle size={14} className="text-amber-400 flex-shrink-0"/>
               <div>
-                <p className="text-xs text-amber-300 font-bold">{T("cashMinBalance")}: {fc(minBalance)}</p>
-                <p className="text-[10px] text-amber-400/60">Rs. {Math.round(minBalance - balance)} {T("moreNeeded")}</p>
+                <p className="text-xs text-amber-300 font-bold">{T("cashMinBalance")}: {fc(minBalance, currency)}</p>
+                <p className="text-[10px] text-amber-400/60">{currency} {Math.round(minBalance - balance)} {T("moreNeeded")}</p>
               </div>
             </div>
           )}
@@ -494,9 +500,9 @@ export default function Wallet() {
         <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
           <div className="grid grid-cols-3 divide-x divide-gray-100">
             {[
-              { label: T("earnedToday"),    value: fc(todayEarned),  color: "text-emerald-600", icon: <TrendingUp size={13} className="text-emerald-500"/> },
-              { label: T("earnedThisWeek"), value: fc(weekEarned),   color: "text-blue-600",    icon: <BarChart3 size={13} className="text-blue-500"/>    },
-              { label: T("totalEarned"),     value: fc(totalEarned),  color: "text-violet-600",  icon: <Wallet2 size={13} className="text-violet-500"/>    },
+              { label: T("earnedToday"),    value: fc(todayEarned, currency),  color: "text-emerald-600", icon: <TrendingUp size={13} className="text-emerald-500"/> },
+              { label: T("earnedThisWeek"), value: fc(weekEarned, currency),   color: "text-blue-600",    icon: <BarChart3 size={13} className="text-blue-500"/>    },
+              { label: T("totalEarned"),     value: fc(totalEarned, currency),  color: "text-violet-600",  icon: <Wallet2 size={13} className="text-violet-500"/>    },
             ].map((s, i) => (
               <div key={s.label} className={`text-center ${i === 0 ? "pr-3" : i === 2 ? "pl-3" : "px-3"}`}>
                 <div className="flex items-center justify-center gap-1 mb-1">{s.icon}</div>
@@ -522,7 +528,7 @@ export default function Wallet() {
                 </div>
               </div>
               <div className="text-right">
-                <p className={`text-xl font-black ${codNetOwed > 0 ? "text-blue-600" : "text-green-600"}`}>{fc(codNetOwed)}</p>
+                <p className={`text-xl font-black ${codNetOwed > 0 ? "text-blue-600" : "text-green-600"}`}>{fc(codNetOwed, currency)}</p>
                 <p className="text-[10px] text-gray-400 flex items-center gap-1 justify-end">
                   {codNetOwed > 0 ? T("remitCodCashBtn") : <><CheckCircle size={10} className="text-green-500"/> {T("allClear")}</>}
                 </p>
@@ -531,15 +537,15 @@ export default function Wallet() {
 
             <div className="px-5 pb-3 grid grid-cols-3 gap-2 text-center border-t border-gray-50 pt-3">
               <div className="bg-gray-50 rounded-xl py-2">
-                <p className="text-xs font-black text-gray-800">{fc(codCollected)}</p>
+                <p className="text-xs font-black text-gray-800">{fc(codCollected, currency)}</p>
                 <p className="text-[9px] text-gray-400 font-medium">{T("collected")}</p>
               </div>
               <div className="bg-gray-50 rounded-xl py-2">
-                <p className="text-xs font-black text-green-600">{fc(codVerified)}</p>
+                <p className="text-xs font-black text-green-600">{fc(codVerified, currency)}</p>
                 <p className="text-[9px] text-gray-400 font-medium">{T("verified")}</p>
               </div>
               <div className="bg-gray-50 rounded-xl py-2">
-                <p className={`text-xs font-black ${codNetOwed > 0 ? "text-blue-600" : "text-gray-400"}`}>{fc(codNetOwed)}</p>
+                <p className={`text-xs font-black ${codNetOwed > 0 ? "text-blue-600" : "text-gray-400"}`}>{fc(codNetOwed, currency)}</p>
                 <p className="text-[9px] text-gray-400 font-medium">{T("owed")}</p>
               </div>
             </div>
@@ -585,7 +591,7 @@ export default function Wallet() {
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 ${stBadge}`}>{stIcon} {stLabel}</span>
                         </div>
                       </div>
-                      <p className="text-sm font-black text-blue-600 flex-shrink-0">{fc(Number(r.amount))}</p>
+                      <p className="text-sm font-black text-blue-600 flex-shrink-0">{fc(Number(r.amount), currency)}</p>
                     </div>
                   );
                 })}
@@ -637,7 +643,7 @@ export default function Wallet() {
                           </div>
                           {dep.note && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{dep.note}</p>}
                         </div>
-                        <p className="text-sm font-black text-green-600 flex-shrink-0">{fc(Number(dep.amount))}</p>
+                        <p className="text-sm font-black text-green-600 flex-shrink-0">{fc(Number(dep.amount), currency)}</p>
                       </div>
                     );
                   })}
@@ -686,7 +692,7 @@ export default function Wallet() {
             <div className="space-y-3">
               {[
                 { step: "1", icon: <TrendingUp size={14} className="text-green-600"/>, title: T("completeDeliveries"),    desc: `${riderKeepPct}% ${T("earningsAddedInstantly")}` },
-                { step: "2", icon: <Wallet2 size={14} className="text-green-600"/>,    title: T("buildBalance"),    desc: `${T("minToWithdraw")}: ${fc(minPayout)}`   },
+                { step: "2", icon: <Wallet2 size={14} className="text-green-600"/>,    title: T("buildBalance"),    desc: `${T("minToWithdraw")}: ${fc(minPayout, currency)}`   },
                 { step: "3", icon: <ArrowUpFromLine size={14} className="text-green-600"/>, title: T("requestWithdrawal"), desc: T("selectPaymentMethod")     },
                 { step: "4", icon: <CheckCircle size={14} className="text-green-600"/>, title: T("receivePayment"),       desc: `${procDays * 24}–${procDays * 24 + 24}h ${T("transferTime")}` },
               ].map(s => (
@@ -775,7 +781,7 @@ export default function Wallet() {
                             : wStatus === "rejected" ? "text-gray-400 line-through"
                             : "text-red-500"
                           }`}>
-                            {isDebitType ? "−" : "+"}{fc(Number(t.amount))}
+                            {isDebitType ? "−" : "+"}{fc(Number(t.amount), currency)}
                           </p>
                         </div>
                       );
@@ -795,9 +801,9 @@ export default function Wallet() {
           <div className="grid grid-cols-2 gap-2.5">
             {[
               { label: T("yourShare" as TranslationKey),       value: `${riderKeepPct}%` },
-              { label: T("minWithdrawalLabel"),  value: fc(minPayout) },
+              { label: T("minWithdrawalLabel"),  value: fc(minPayout, currency) },
               { label: T("processingTime"),      value: `${procDays * 24}-${procDays * 24 + 24}h` },
-              { label: T("maxWithdrawalLabel"),  value: fc(maxPayout) },
+              { label: T("maxWithdrawalLabel"),  value: fc(maxPayout, currency) },
             ].map(p => (
               <div key={p.label} className="bg-white rounded-xl px-3 py-2.5 border border-green-100">
                 <p className="text-[10px] text-green-600/60 font-bold uppercase tracking-wider">{p.label}</p>

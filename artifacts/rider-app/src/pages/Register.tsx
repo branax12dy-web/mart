@@ -72,6 +72,8 @@ function FileUploadBox({ label, icon, value, onChange, required, uploading, erro
   onChange: (file: File) => void; required?: boolean; uploading?: boolean; error?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   return (
     <div>
       <div className={`border-2 border-dashed rounded-xl p-3 transition-all ${error ? "border-red-400 bg-red-50/50" : value ? "border-green-300 bg-green-50/50" : "border-gray-200 bg-gray-50/50 hover:border-gray-400"}`}>
@@ -82,10 +84,10 @@ function FileUploadBox({ label, icon, value, onChange, required, uploading, erro
             <img src={value.preview} alt={label} className="w-14 h-14 rounded-lg object-cover border border-green-200" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-green-700 flex items-center gap-1"><CheckCircle2 size={12} /> {label}</p>
-              <p className="text-[10px] text-green-600 truncate">{value.url ? "Uploaded" : "Ready"}</p>
+              <p className="text-[10px] text-green-600 truncate">{value.url ? T("photoUploaded") : T("photoReady2")}</p>
             </div>
             <button onClick={() => inputRef.current?.click()} className="text-[10px] text-gray-600 font-bold hover:text-gray-900 px-2 py-1 rounded-lg hover:bg-gray-100">
-              Change
+              {T("changePhoto")}
             </button>
           </div>
         ) : (
@@ -93,7 +95,7 @@ function FileUploadBox({ label, icon, value, onChange, required, uploading, erro
             className="w-full flex flex-col items-center gap-1.5 py-2 disabled:opacity-50">
             {uploading ? <Loader2 size={20} className="text-gray-500 animate-spin" /> : icon}
             <span className={`text-xs font-semibold ${error ? "text-red-600" : "text-gray-600"}`}>{label} {required && <span className="text-red-500">*</span>}</span>
-            <span className="text-[10px] text-gray-400">Tap to capture or upload</span>
+            <span className="text-[10px] text-gray-400">{T("tapCaptureUpload")}</span>
           </button>
         )}
       </div>
@@ -173,7 +175,7 @@ export default function Register() {
       const res = await api.uploadFile({ file: base64, filename: file.name, mimeType: file.type });
       setter({ label: file.name, url: res.url, preview });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Upload failed. Please try again.";
+      const msg = e instanceof Error ? e.message : T("uploadFailed");
       setUploadErrors(prev => ({ ...prev, [field]: msg }));
     }
     setUploadingField("");
@@ -258,16 +260,16 @@ export default function Register() {
     if (!name.trim()) { setError(T("nameRequired")); return false; }
     if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return false; }
     if (!email || !email.includes("@")) { setError(T("enterValidEmail")); return false; }
-    if (!address.trim()) { setError("Home address is required"); return false; }
-    if (!city) { setError("Please select your city"); return false; }
-    if (city === "Other" && !customCity.trim()) { setError("Please enter your city name"); return false; }
+    if (!address.trim()) { setError(T("homeAddressRequired")); return false; }
+    if (!city) { setError(T("selectCity")); return false; }
+    if (city === "Other" && !customCity.trim()) { setError(T("enterCityName")); return false; }
     if (!emergencyContact.trim() || emergencyContact.replace(/\D/g, "").length < 10) {
-      setError("Valid emergency contact number is required"); return false;
+      setError(T("emergencyContactRequired")); return false;
     }
-    if (availabilityStatus === "taken") { setError("This phone number or email is already registered. Please log in instead."); return false; }
-    if (username && usernameStatus === "taken") { setError("Username is already taken. Please choose another."); return false; }
+    if (availabilityStatus === "taken") { setError(T("alreadyRegistered")); return false; }
+    if (username && usernameStatus === "taken") { setError(T("usernameTaken")); return false; }
     if (username && (usernameStatus === "checking" || usernameStatus === "idle")) {
-      setError("Please wait — checking username availability..."); return false;
+      setError(T("usernameCheckWait")); return false;
     }
     return true;
   };
@@ -278,10 +280,10 @@ export default function Register() {
     if (!vehicleType) { setError(T("vehicleTypeRequired")); return false; }
     if (!vehicleReg.trim()) { setError(T("vehicleRegRequired")); return false; }
     if (!drivingLicense.trim()) { setError(T("drivingLicenseRequired")); return false; }
-    if (!vehiclePhoto) { setError("Vehicle photo is required. Please upload a clear photo of your vehicle."); return false; }
-    if (!cnicPhoto) { setError("CNIC front photo is required for KYC verification."); return false; }
-    if (!cnicBackPhoto) { setError("CNIC back photo is required for KYC verification."); return false; }
-    if (!licensePhoto) { setError("Driving license photo is required for verification."); return false; }
+    if (!vehiclePhoto) { setError(T("vehiclePhotoRequired")); return false; }
+    if (!cnicPhoto) { setError(T("cnicFrontRequired")); return false; }
+    if (!cnicBackPhoto) { setError(T("cnicBackRequired")); return false; }
+    if (!licensePhoto) { setError(T("licensePhotoRequired")); return false; }
     return true;
   };
 
@@ -545,8 +547,8 @@ export default function Register() {
                     usernameStatus === "checking" ? "text-gray-400" :
                     usernameStatus === "available" ? "text-green-600" : "text-red-500"
                   }`}>
-                    {usernameStatus === "checking" ? "Checking..." :
-                     usernameStatus === "available" ? "Username available" : "Username already taken"}
+                    {usernameStatus === "checking" ? T("checkingAvailability") :
+                     usernameStatus === "available" ? T("usernameAvailable") : T("usernameTakenShort")}
                   </p>
                 )}
                 <p className="text-[10px] text-gray-400 mt-0.5">You can use this to log in with username + password later</p>
@@ -572,18 +574,34 @@ export default function Register() {
                     <div className="flex-1 h-px bg-gray-200" />
                   </div>
                   <div className="space-y-2">
-                    {auth.google && (
-                      <button onClick={() => handleSocialAutofill("google")} disabled={loading}
-                        className="w-full h-11 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
-                        {T("signInWithGoogle")}
-                      </button>
-                    )}
-                    {auth.facebook && (
-                      <button onClick={() => handleSocialAutofill("facebook")} disabled={loading}
-                        className="w-full h-11 bg-[#1877F2] rounded-xl text-sm font-semibold text-white hover:bg-[#166FE5] transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
-                        {T("signInWithFacebook")}
-                      </button>
-                    )}
+                    {auth.google && (() => {
+                      const hasClientId = !!config.auth?.googleClientId;
+                      return (
+                        <button onClick={() => handleSocialAutofill("google")} disabled={loading}
+                          className="w-full h-11 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-60 relative">
+                          {T("signInWithGoogle")}
+                          {!hasClientId && (
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 border border-gray-200">
+                              {T("socialLoginComingSoon")}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })()}
+                    {auth.facebook && (() => {
+                      const hasAppId = !!config.auth?.facebookAppId;
+                      return (
+                        <button onClick={() => handleSocialAutofill("facebook")} disabled={loading}
+                          className="w-full h-11 bg-[#1877F2] rounded-xl text-sm font-semibold text-white hover:bg-[#166FE5] transition-colors flex items-center justify-center gap-2 disabled:opacity-60 relative">
+                          {T("signInWithFacebook")}
+                          {!hasAppId && (
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/20 text-white border border-white/30">
+                              {T("socialLoginComingSoon")}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -801,7 +819,7 @@ export default function Register() {
                       setResendingOtp(false);
                     }}
                     className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-60">
-                    {resendingOtp ? "Sending..." : "Resend OTP"}
+                    {resendingOtp ? T("sending") : T("resendOtp")}
                   </button>
                 </div>
               )}

@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "../../lib/auth";
 import { api, apiFetch } from "../../lib/api";
+import { usePlatformConfig } from "../../lib/useConfig";
+import { useLanguage } from "../../lib/useLanguage";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import {
   X, ArrowLeft, Landmark, Smartphone, ChevronRight,
   CheckCircle, AlertTriangle, Loader2,
@@ -11,8 +14,6 @@ const TRADITIONAL_BANKS = [
   "HBL","MCB","UBL","Meezan Bank","Bank Alfalah","NBP",
   "Allied Bank","Bank Al Habib","Faysal Bank","Askari Bank","Other",
 ];
-
-const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
 
 export type PayMethod = {
   id: string; label: string; logo: string;
@@ -37,6 +38,12 @@ export default function WithdrawModal({
   balance: number; minPayout: number; maxPayout: number;
   onClose: () => void; onSuccess: () => void;
 }) {
+  const { config } = usePlatformConfig();
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
+  const currency = config.platform.currencySymbol ?? "Rs.";
+  const fc = (n: number) => `${currency} ${Math.round(n).toLocaleString()}`;
+
   const [amount, setAmount]         = useState("");
   const [selectedMethod, setMethod] = useState<PayMethod | null>(null);
   const [acNo, setAcNo]             = useState("");
@@ -54,9 +61,9 @@ export default function WithdrawModal({
   useEffect(() => {
     type ApiMethod = { id: string; label?: string; logo?: string; description?: string; manualNumber?: string; iban?: string; accountTitle?: string; bankName?: string; instructions?: string };
     const FALLBACK: Record<string, Pick<PayMethod, "label" | "description">> = {
-      jazzcash:  { label: "JazzCash",      description: "JazzCash mobile wallet mein transfer" },
-      easypaisa: { label: "EasyPaisa",     description: "EasyPaisa account mein transfer" },
-      bank:      { label: "Bank Transfer", description: "IBFT ya RAAST ke zariye bank account mein" },
+      jazzcash:  { label: "JazzCash",      description: "JazzCash mobile wallet transfer" },
+      easypaisa: { label: "EasyPaisa",     description: "EasyPaisa account transfer" },
+      bank:      { label: "Bank Transfer", description: "IBFT / RAAST bank transfer" },
     };
     apiFetch("/payments/methods").then((data: { methods?: ApiMethod[] }) => {
       const ms: ApiMethod[] = (data.methods || []).filter(m => ["jazzcash","easypaisa","bank"].includes(m.id));
@@ -94,28 +101,28 @@ export default function WithdrawModal({
 
   const goToMethod = () => {
     const amt = Number(amount);
-    if (!amount || isNaN(amt) || amt <= 0) { setErr("Valid amount likhein"); return; }
-    if (amt < minPayout) { setErr(`Minimum: ${fc(minPayout)}`); return; }
-    if (amt > maxPayout) { setErr(`Maximum: ${fc(maxPayout)}`); return; }
-    if (amt > balance)   { setErr(`Sirf ${fc(balance)} available hai`); return; }
+    if (!amount || isNaN(amt) || amt <= 0) { setErr(T("enterValidAmount")); return; }
+    if (amt < minPayout) { setErr(`${T("minWithdrawalLabel")}: ${fc(minPayout)}`); return; }
+    if (amt > maxPayout) { setErr(`${T("maxWithdrawalLabel")}: ${fc(maxPayout)}`); return; }
+    if (amt > balance)   { setErr(T("enterValidAmount")); return; }
     setErr(""); setStep("method");
   };
 
   const goToDetails  = (m: PayMethod) => { setMethod(m); setAcNo(""); setAcName(""); setBankName(""); setErr(""); setStep("details"); };
   const goToConfirm  = () => {
-    if (!acNo.trim())   { setErr("Account / phone number required"); return; }
-    if (!acName.trim()) { setErr("Account holder name required"); return; }
-    if (acName.trim().length < 3) { setErr("Account holder name at least 3 characters hona chahiye"); return; }
+    if (!acNo.trim())   { setErr(T("bankAccountRequired")); return; }
+    if (!acName.trim()) { setErr(T("bankAccountTitleRequired")); return; }
+    if (acName.trim().length < 3) { setErr(T("bankAccountTitleRequired")); return; }
     if (selectedMethod?.id === "bank") {
-      if (!bankName) { setErr("Bank name select karein"); return; }
+      if (!bankName) { setErr(T("bankNameRequired")); return; }
       const cleaned = acNo.replace(/[\s-]/g, "");
       const isIban = /^PK\d{2}[A-Z]{4}\d{16}$/i.test(cleaned);
       const isAccountNo = /^\d{8,20}$/.test(cleaned);
-      if (!isIban && !isAccountNo) { setErr("Valid IBAN (e.g. PK36SCBL0000001234567801) ya 8-20 digit account number daalen"); return; }
+      if (!isIban && !isAccountNo) { setErr(T("bankAccountRequired")); return; }
     }
     if (selectedMethod?.id === "jazzcash" || selectedMethod?.id === "easypaisa") {
       const cleanPhone = acNo.replace(/[\s-]/g, "");
-      if (!/^0[3]\d{9}$/.test(cleanPhone)) { setErr("Valid Pakistani mobile number daalen (e.g. 03XX-XXXXXXX, 11 digits)"); return; }
+      if (!/^0[3]\d{9}$/.test(cleanPhone)) { setErr(T("enterValidPhone")); return; }
     }
     setErr(""); setStep("confirm");
   };
@@ -150,36 +157,36 @@ export default function WithdrawModal({
               <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
                 <CheckCircle size={52} className="text-green-500"/>
               </div>
-              <h3 className="text-2xl font-extrabold text-gray-800">Request Submitted!</h3>
+              <h3 className="text-2xl font-extrabold text-gray-800">{T("requestSubmitted")}</h3>
               <p className="text-gray-500 mt-2">
-                <span className="font-extrabold text-green-600">{fc(Number(amount))}</span> withdrawal request queue mein hai.
+                <span className="font-extrabold text-green-600">{fc(Number(amount))}</span> {T("withdrawalSubmitted")}
               </p>
-              <p className="text-sm text-gray-400 mt-1">Admin 24–48 hours mein process karega.</p>
+              <p className="text-sm text-gray-400 mt-1">{T("adminProcess24h")}</p>
               <div className="mt-5 bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-5 text-left space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Method</span>
+                  <span className="text-gray-500">{T("paymentMethod")}</span>
                   <span className="font-bold flex items-center gap-1.5"><MethodLogo id={selectedMethod?.id ?? ""}/> {selectedMethod?.label}</span>
                 </div>
                 {selectedMethod?.id === "bank" && (
-                  <div className="flex justify-between text-sm"><span className="text-gray-500">Bank</span><span className="font-bold">{bankName}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">{T("bankName")}</span><span className="font-bold">{bankName}</span></div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{selectedMethod?.id === "bank" ? "Account No." : "Phone"}</span>
+                  <span className="text-gray-500">{selectedMethod?.id === "bank" ? T("accountNumber") : T("phone")}</span>
                   <span className="font-bold">{acNo}</span>
                 </div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name</span><span className="font-bold">{acName}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">{T("accountHolderName")}</span><span className="font-bold">{acName}</span></div>
                 <div className="flex justify-between items-center pt-2 border-t border-green-100">
-                  <span className="text-gray-600 font-semibold">Amount</span>
+                  <span className="text-gray-600 font-semibold">{T("amountLabel")}</span>
                   <span className="text-2xl font-extrabold text-green-600">{fc(Number(amount))}</span>
                 </div>
               </div>
               <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3">
                 <p className="text-xs text-amber-700 flex items-center gap-1.5">
-                  <AlertTriangle size={13} className="flex-shrink-0"/> Aap Wallet page par apni request ka status track kar sakte hain.
+                  <AlertTriangle size={13} className="flex-shrink-0"/> {T("trackRequestStatus")}
                 </p>
               </div>
               <button onClick={() => { onSuccess(); onClose(); }} className="mt-5 w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl text-lg flex items-center justify-center gap-2">
-                <CheckCircle size={20}/> Done
+                <CheckCircle size={20}/> {T("done")}
               </button>
             </div>
           )}
@@ -187,32 +194,32 @@ export default function WithdrawModal({
           {/* CONFIRM */}
           {step === "confirm" && (
             <div className="p-6">
-              <h3 className="text-xl font-extrabold text-gray-800 mb-1">Confirm Withdrawal</h3>
-              <p className="text-sm text-gray-500 mb-5">Submit karne se pehle sab details check karein</p>
+              <h3 className="text-xl font-extrabold text-gray-800 mb-1">{T("confirmWithdrawal")}</h3>
+              <p className="text-sm text-gray-500 mb-5">{T("reviewConfirm")}</p>
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-5 space-y-3 mb-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">Amount</span>
+                  <span className="text-gray-500 text-sm">{T("amountLabel")}</span>
                   <span className="font-extrabold text-green-600 text-3xl">{fc(Number(amount))}</span>
                 </div>
                 <div className="h-px bg-green-100"/>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Method</span>
+                  <span className="text-gray-500">{T("paymentMethod")}</span>
                   <span className="font-bold flex items-center gap-1.5"><MethodLogo id={selectedMethod?.id ?? ""}/> {selectedMethod?.label}</span>
                 </div>
-                {selectedMethod?.id === "bank" && <div className="flex justify-between text-sm"><span className="text-gray-500">Bank</span><span className="font-bold">{bankName}</span></div>}
-                <div className="flex justify-between text-sm"><span className="text-gray-500">{selectedMethod?.id === "bank" ? "Account No." : "Phone"}</span><span className="font-bold font-mono">{acNo}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name</span><span className="font-bold">{acName}</span></div>
-                {note && <div className="flex justify-between text-sm"><span className="text-gray-500">Note</span><span className="font-bold">{note}</span></div>}
+                {selectedMethod?.id === "bank" && <div className="flex justify-between text-sm"><span className="text-gray-500">{T("bankName")}</span><span className="font-bold">{bankName}</span></div>}
+                <div className="flex justify-between text-sm"><span className="text-gray-500">{selectedMethod?.id === "bank" ? T("accountNumber") : T("phone")}</span><span className="font-bold font-mono">{acNo}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">{T("accountHolderName")}</span><span className="font-bold">{acName}</span></div>
+                {note && <div className="flex justify-between text-sm"><span className="text-gray-500">{T("note")}</span><span className="font-bold">{note}</span></div>}
               </div>
               <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-4 flex gap-2">
                 <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-                <p className="text-xs text-amber-700 font-medium">Galat account details se payment fail ho sakti hai. Submit karne ke baad cancel nahi hoga.</p>
+                <p className="text-xs text-amber-700 font-medium">{T("wrongAccountWarning")}</p>
               </div>
               {err && <div className="bg-red-50 rounded-xl px-4 py-2.5 mb-3 flex items-center gap-2"><AlertTriangle size={14} className="text-red-400"/><p className="text-red-500 text-sm font-semibold">{err}</p></div>}
               <div className="flex gap-3">
-                <button onClick={() => { setStep("details"); setErr(""); }} className="flex-1 border-2 border-gray-200 text-gray-600 font-bold rounded-2xl py-3 text-sm flex items-center justify-center gap-1.5"><ArrowLeft size={14}/> Edit</button>
+                <button onClick={() => { setStep("details"); setErr(""); }} className="flex-1 border-2 border-gray-200 text-gray-600 font-bold rounded-2xl py-3 text-sm flex items-center justify-center gap-1.5"><ArrowLeft size={14}/> {T("edit")}</button>
                 <button onClick={() => mut.mutate()} disabled={mut.isPending} className="flex-[2] bg-green-600 text-white font-extrabold rounded-2xl py-3 disabled:opacity-60 text-sm flex items-center justify-center gap-2">
-                  {mut.isPending ? <><Loader2 size={16} className="animate-spin"/> Processing...</> : <><CheckCircle size={16}/> Submit Withdrawal</>}
+                  {mut.isPending ? <><Loader2 size={16} className="animate-spin"/> {T("processing")}</> : <><CheckCircle size={16}/> {T("submitWithdrawal")}</>}
                 </button>
               </div>
             </div>
@@ -221,7 +228,7 @@ export default function WithdrawModal({
           {/* DETAILS */}
           {step === "details" && selectedMethod && (
             <div className="p-6">
-              <button onClick={() => setStep("method")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold"><ArrowLeft size={14}/> Back</button>
+              <button onClick={() => setStep("method")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold"><ArrowLeft size={14}/> {T("back")}</button>
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center">
                   <MethodLogo id={selectedMethod.id}/>
@@ -235,7 +242,7 @@ export default function WithdrawModal({
               {user?.bankName && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between mb-4">
                   <div>
-                    <p className="text-xs font-bold text-blue-700">Saved Account</p>
+                    <p className="text-xs font-bold text-blue-700">{T("savedAccount")}</p>
                     <p className="text-xs text-blue-600 mt-0.5">{user.bankName} · {user.bankAccount}</p>
                   </div>
                   <button onClick={() => {
@@ -250,16 +257,16 @@ export default function WithdrawModal({
               <div className="space-y-3">
                 {selectedMethod.id === "bank" && (
                   <div>
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Bank Name *</p>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">{T("bankNameLabel")} *</p>
                     <select value={bankName} onChange={e => { setBankName(e.target.value); setErr(""); }} className={SELECT}>
-                      <option value="">Bank select karein</option>
+                      <option value="">{T("selectBank")}</option>
                       {TRADITIONAL_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
                   </div>
                 )}
                 <div>
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                    {selectedMethod.id === "bank" ? "Account Number / IBAN *" : "Registered Phone Number *"}
+                    {selectedMethod.id === "bank" ? T("accountNoRequired") : T("phoneRequired")}
                   </p>
                   <input value={acNo} onChange={e => { setAcNo(e.target.value); setErr(""); }}
                     inputMode={selectedMethod.id === "bank" ? "text" : "numeric"}
@@ -267,18 +274,18 @@ export default function WithdrawModal({
                     className={INPUT}/>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Account Holder Name *</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">{T("accountTitleRequired")}</p>
                   <input value={acName} onChange={e => { setAcName(e.target.value); setErr(""); }}
-                    placeholder="Full name as on account" className={INPUT}/>
+                    placeholder={T("accountTitle")} className={INPUT}/>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Note (Optional)</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">{T("noteOptional")}</p>
                   <input value={note} onChange={e => setNote(e.target.value)}
-                    placeholder="Admin ke liye koi note" className={INPUT}/>
+                    placeholder={T("noteOptional")} className={INPUT}/>
                 </div>
                 {err && <div className="bg-red-50 rounded-xl px-4 py-2.5 flex items-center gap-2"><AlertTriangle size={14} className="text-red-400"/><p className="text-red-500 text-sm font-semibold">{err}</p></div>}
                 <button onClick={goToConfirm} className="w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2">
-                  Review & Confirm <ChevronRight size={18}/>
+                  {T("reviewAndConfirm")} <ChevronRight size={18}/>
                 </button>
               </div>
             </div>
@@ -287,11 +294,11 @@ export default function WithdrawModal({
           {/* METHOD SELECTION */}
           {step === "method" && (
             <div className="p-6">
-              <button onClick={() => setStep("amount")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold"><ArrowLeft size={14}/> Back</button>
-              <h3 className="text-xl font-extrabold text-gray-800 mb-1">Select Method</h3>
-              <p className="text-sm text-gray-500 mb-4">Kahan receive karna chahte hain?</p>
+              <button onClick={() => setStep("amount")} className="mb-4 flex items-center gap-1 text-sm text-gray-500 font-semibold"><ArrowLeft size={14}/> {T("back")}</button>
+              <h3 className="text-xl font-extrabold text-gray-800 mb-1">{T("selectMethod")}</h3>
+              <p className="text-sm text-gray-500 mb-4">{T("selectPaymentMethod")}</p>
               <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl px-5 py-4 mb-5 flex items-center justify-between">
-                <span className="text-sm font-semibold text-green-200">Withdrawal Amount</span>
+                <span className="text-sm font-semibold text-green-200">{T("withdrawalAmount")}</span>
                 <span className="text-2xl font-extrabold text-white">{fc(Number(amount))}</span>
               </div>
               {loadingMethods ? (
@@ -299,8 +306,8 @@ export default function WithdrawModal({
               ) : methodsError ? (
                 <div className="bg-red-50 border border-red-100 rounded-2xl p-5 text-center">
                   <AlertTriangle size={28} className="text-red-400 mx-auto mb-2"/>
-                  <p className="text-sm font-bold text-red-700">Payment methods unavailable</p>
-                  <p className="text-xs text-red-500 mt-1">Admin ne koi payment method enable nahi ki hai. Contact support.</p>
+                  <p className="text-sm font-bold text-red-700">{T("paymentMethodsUnavailable")}</p>
+                  <p className="text-xs text-red-500 mt-1">{T("contactSupportForMethods")}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -324,11 +331,11 @@ export default function WithdrawModal({
           {step === "amount" && (
             <div className="p-6">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-xl font-extrabold text-gray-800">Withdraw Funds</h3>
+                <h3 className="text-xl font-extrabold text-gray-800">{T("withdrawFunds")}</h3>
                 <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500"><X size={18}/></button>
               </div>
               <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl p-5 text-white mb-5">
-                <p className="text-sm text-green-200">Available Balance</p>
+                <p className="text-sm text-green-200">{T("availableBalance")}</p>
                 <p className="text-4xl font-extrabold mt-0.5">{fc(balance)}</p>
                 <div className="flex gap-3 mt-3 text-xs text-green-300">
                   <span>Min: {fc(minPayout)}</span>
@@ -336,7 +343,7 @@ export default function WithdrawModal({
                   <span>Max: {fc(maxPayout)}</span>
                 </div>
               </div>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Quick Select</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{T("quickSelect")}</p>
               <div className="flex gap-2 mb-5 flex-wrap">
                 {[500, 1000, 2000, 5000, 10000].filter(v => v <= balance && v >= minPayout).map(v => (
                   <button key={v} onClick={() => { setAmount(String(v)); setErr(""); }}
@@ -353,14 +360,14 @@ export default function WithdrawModal({
               </div>
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount (Rs.) *</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount ({currency}) *</p>
                   <input type="number" inputMode="numeric" value={amount}
                     onChange={e => { setAmount(e.target.value); setErr(""); }}
-                    placeholder="Enter amount" className={INPUT}/>
+                    placeholder={T("enterAmount")} className={INPUT}/>
                 </div>
                 {err && <div className="bg-red-50 rounded-xl px-4 py-2.5 flex items-center gap-2"><AlertTriangle size={14} className="text-red-400"/><p className="text-red-500 text-sm font-semibold">{err}</p></div>}
                 <button onClick={goToMethod} className="w-full h-14 bg-green-600 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2">
-                  Select Method <ChevronRight size={18}/>
+                  {T("selectMethod")} <ChevronRight size={18}/>
                 </button>
               </div>
             </div>

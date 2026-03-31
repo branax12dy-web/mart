@@ -144,7 +144,7 @@ export default function History() {
         </div>
       </div>
 
-      <div className="px-4 py-3 space-y-3 pb-24">
+      <div className="px-4 py-3 space-y-3">
         {isLoading ? (
           [1,2,3,4,5].map(i => <div key={i} className="h-20 bg-white rounded-3xl animate-pulse border border-gray-100"/>)
         ) : filtered.length === 0 ? (

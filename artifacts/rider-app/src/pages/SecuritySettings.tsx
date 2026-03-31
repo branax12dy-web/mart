@@ -207,7 +207,7 @@ export default function SecuritySettings() {
   if (view === "setup" && setupData) {
     const hasBackupCodes = setupData.backupCodes && setupData.backupCodes.length > 0;
     return (
-      <div className="min-h-screen bg-[#F5F6F8] pb-24">
+      <div className="min-h-screen bg-[#F5F6F8]">
         <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <div className="absolute top-[-30%] right-[-15%] w-64 h-64 rounded-full bg-white/[0.02]" />
@@ -259,7 +259,7 @@ export default function SecuritySettings() {
 
   if (view === "verify-disable") {
     return (
-      <div className="min-h-screen bg-[#F5F6F8] pb-24">
+      <div className="min-h-screen bg-[#F5F6F8]">
         <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
           <div className="absolute top-[-30%] right-[-15%] w-64 h-64 rounded-full bg-white/[0.02]" />
@@ -284,7 +284,7 @@ export default function SecuritySettings() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] pb-24">
+    <div className="min-h-screen bg-[#F5F6F8]">
       <div className="bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute top-[-30%] right-[-15%] w-64 h-64 rounded-full bg-white/[0.02]" />

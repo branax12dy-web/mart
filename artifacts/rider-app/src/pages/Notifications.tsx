@@ -17,7 +17,7 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonNotifications() {
   return (
-    <div className="min-h-screen bg-[#F5F6F8] pb-24">
+    <div className="min-h-screen bg-[#F5F6F8]">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
@@ -247,7 +247,7 @@ export default function Notifications() {
   if (isLoading) return <SkeletonNotifications />;
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] pb-24">
+    <div className="min-h-screen bg-[#F5F6F8]">
 
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>

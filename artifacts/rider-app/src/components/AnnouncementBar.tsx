@@ -14,7 +14,7 @@ export function AnnouncementBar({ message }: Props) {
   if (!message || dismissed) return null;
 
   return (
-    <div className="bg-gray-900 text-white px-4 py-2.5 flex items-center justify-between gap-3 z-50 relative shadow-sm">
+    <div className="bg-gray-900 text-white px-4 py-2.5 flex items-center justify-between gap-3 shadow-sm">
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <span className="text-base flex-shrink-0">📢</span>
         <p className="text-sm font-medium truncate">{message}</p>

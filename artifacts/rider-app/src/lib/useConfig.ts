@@ -38,6 +38,7 @@ export interface PlatformConfig {
     commissionPct: number;
     vendorCommissionPct: number;
     minOrderAmount: number;
+    currencySymbol?: string;
   };
   features: {
     mart: boolean;
@@ -100,6 +101,8 @@ export interface PlatformConfig {
     cancellationFee: number;
     riderEarningPct: number;
     counterMaxMultiplier?: number;
+    rickshawMinFare?: number;
+    dabaMinFare?: number;
   };
   finance: {
     gstEnabled: boolean;

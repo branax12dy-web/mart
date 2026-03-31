@@ -75,8 +75,12 @@ function AppRoutes() {
         </div>
       )}
 
-      {/* ── Announcement bar (top, dismissable) ── */}
-      <AnnouncementBar message={config.content.announcement} />
+      {/* ── Sticky header stack: announcement + any future system bars.
+            max-h caps combined height so stacked bars never push content
+            off-screen on small viewports; overflow-y-auto scrolls if needed. ── */}
+      <div className="sticky top-0 z-50 flex flex-col max-h-[30vh] overflow-y-auto">
+        <AnnouncementBar message={config.content.announcement} />
+      </div>
 
       <div className="flex-1" style={{ paddingBottom: "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))" }}>
         <Switch>

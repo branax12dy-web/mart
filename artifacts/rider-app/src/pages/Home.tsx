@@ -16,7 +16,7 @@ import {
   ArrowUpRight, Eye, VolumeX, Volume2, XCircle, Ban, SkipForward,
 } from "lucide-react";
 
-function formatCurrency(n: number) { return `Rs. ${Math.round(n).toLocaleString()}`; }
+function formatCurrency(n: number, currencySymbol = "Rs.") { return `${currencySymbol} ${Math.round(n).toLocaleString()}`; }
 
 function timeAgo(d: string | Date) {
   const diff = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
@@ -97,7 +97,7 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 function SkeletonHome() {
   return (
-    <div className="flex flex-col min-h-screen bg-[#F5F6F8] pb-24">
+    <div className="flex flex-col min-h-screen bg-[#F5F6F8]">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
@@ -127,6 +127,7 @@ export default function Home() {
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
+  const currency = config.platform.currencySymbol ?? "Rs.";
   const qc = useQueryClient();
   const [toggling, setToggling] = useState(false);
   const [tabVisible, setTabVisible] = useState(!document.hidden);
@@ -462,7 +463,7 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
       const p = data?.ignorePenalty ?? data;
       if (p?.penaltyApplied > 0) {
-        showToast(`Ignored — Rs. ${p.penaltyApplied} penalty deducted!${p.restricted ? " Account restricted." : ""}`, "error");
+        showToast(`Ignored — ${currency} ${p.penaltyApplied} penalty deducted!${p.restricted ? " Account restricted." : ""}`, "error");
       } else {
         showToast(`Ride ignored (${p?.dailyIgnores || "?"} today).`, "success");
       }
@@ -501,7 +502,7 @@ export default function Home() {
   })();
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F5F6F8] pb-24 animate-[fadeIn_0.3s_ease-out]">
+    <div className="flex flex-col min-h-screen bg-[#F5F6F8] animate-[fadeIn_0.3s_ease-out]">
 
       {newFlash && (
         <div className="fixed inset-0 z-50 pointer-events-none">
@@ -532,7 +533,7 @@ export default function Home() {
             <Link href="/wallet" className="flex flex-col items-end">
               <div className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-2xl px-3.5 py-2 text-right">
                 <p className="text-white/40 text-[9px] font-bold uppercase tracking-wider">{T("wallet")}</p>
-                <p className="font-extrabold text-lg leading-tight">{formatCurrency(Number(user?.walletBalance) || 0)}</p>
+                <p className="font-extrabold text-lg leading-tight">{formatCurrency(Number(user?.walletBalance) || 0, currency)}</p>
               </div>
             </Link>
           </div>
@@ -601,8 +602,8 @@ export default function Home() {
           <div className="grid grid-cols-4 gap-2 mt-3">
             {[
               { icon: <Package size={15} className="text-indigo-300"/>, label: "Today",  value: String(user?.stats?.deliveriesToday || 0), sub: "deliveries" },
-              { icon: <TrendingUp size={15} className="text-green-300"/>, label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0), sub: "today" },
-              { icon: <Calendar size={15} className="text-blue-300"/>, label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0), sub: "earnings" },
+              { icon: <TrendingUp size={15} className="text-green-300"/>, label: "Earned", value: formatCurrency(user?.stats?.earningsToday || 0, currency), sub: "today" },
+              { icon: <Calendar size={15} className="text-blue-300"/>, label: "Week",   value: formatCurrency(earningsData?.week?.earnings || 0, currency), sub: "earnings" },
               { icon: <Trophy size={15} className="text-amber-300"/>, label: "Total",  value: String(user?.stats?.totalDeliveries || 0), sub: "lifetime" },
             ].map((s, i) => (
               <div key={s.label} className="bg-white/[0.06] backdrop-blur-sm rounded-2xl p-2.5 text-center border border-white/[0.06] animate-[slideUp_0.3s_ease-out]"
@@ -682,7 +683,7 @@ export default function Home() {
                   {cancelStatsData.dailyLimit != null && (
                     <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
                       Limit: {cancelStatsData.dailyLimit}/day · {cancelStatsData.remaining} remaining
-                      {cancelStatsData.penaltyAmount > 0 && ` · Rs. ${Math.round(cancelStatsData.penaltyAmount)} penalty per excess`}
+                      {cancelStatsData.penaltyAmount > 0 && ` · ${currency} ${Math.round(cancelStatsData.penaltyAmount)} penalty per excess`}
                     </p>
                   )}
                 </div>
@@ -715,7 +716,7 @@ export default function Home() {
                   {ignoreStatsData.dailyLimit != null && (
                     <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
                       Limit: {ignoreStatsData.dailyLimit}/day · {ignoreStatsData.remaining} remaining
-                      {ignoreStatsData.penaltyAmount > 0 && ` · Rs. ${Math.round(ignoreStatsData.penaltyAmount)} penalty per excess`}
+                      {ignoreStatsData.penaltyAmount > 0 && ` · ${currency} ${Math.round(ignoreStatsData.penaltyAmount)} penalty per excess`}
                     </p>
                   )}
                 </div>
@@ -738,9 +739,9 @@ export default function Home() {
                 <div className="flex-1">
                   <p className="text-sm font-extrabold text-amber-800">Low Wallet Balance</p>
                   <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-                    Minimum <strong>Rs. {Math.round(minBal)}</strong> required for cash orders.
-                    Your balance: <strong>Rs. {Math.round(curBal)}</strong>.
-                    {shortfall > 0 && <> Need Rs. {Math.round(shortfall)} more.</>}
+                    Minimum <strong>{currency} {Math.round(minBal)}</strong> required for cash orders.
+                    Your balance: <strong>{currency} {Math.round(curBal)}</strong>.
+                    {shortfall > 0 && <> Need {currency} {Math.round(shortfall)} more.</>}
                   </p>
                   <p className="text-[10px] text-amber-600 mt-1.5 font-bold flex items-center gap-1">
                     Tap to deposit <ArrowUpRight size={10}/>
@@ -1047,7 +1048,7 @@ export default function Home() {
                                 <div className="flex items-center justify-between">
                                   <div>
                                     <p className="text-xs font-bold text-orange-700 flex items-center gap-1"><MessageSquare size={11}/> Your Bid Pending</p>
-                                    <p className="text-lg font-extrabold text-orange-600">Rs. {Math.round(r.myBid.fare)}</p>
+                                    <p className="text-lg font-extrabold text-orange-600">{currency} {Math.round(r.myBid.fare)}</p>
                                   </div>
                                   <span className="text-[10px] font-bold px-2.5 py-1 bg-orange-100 text-orange-600 rounded-full animate-pulse border border-orange-200">
                                     WAITING
@@ -1068,14 +1069,14 @@ export default function Home() {
                                     onClick={() => {
                                       const v = Number(counterInputs[r.id] || 0);
                                       const vt = r.vehicleType as string | undefined;
-                                      const minFare = vt === "car" ? (config.rides.carMinFare ?? 80) : (config.rides.bikeMinFare ?? 50);
+                                      const minFare = vt === "car" ? (config.rides.carMinFare ?? 80) : vt === "rickshaw" ? (config.rides.rickshawMinFare ?? 50) : vt === "daba" ? (config.rides.dabaMinFare ?? 60) : (config.rides.bikeMinFare ?? 50);
                                       const maxFare = (r.offeredFare ?? r.fare) * (config.rides.counterMaxMultiplier ?? 3);
                                       if (!v || v < minFare) {
-                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Minimum fare is ${formatCurrency(minFare)}` }));
+                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Minimum fare is ${formatCurrency(minFare, currency)}` }));
                                         return;
                                       }
                                       if (v > maxFare) {
-                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)}` }));
+                                        setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare, currency)}` }));
                                         return;
                                       }
                                       setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
@@ -1109,14 +1110,14 @@ export default function Home() {
                                   onClick={() => {
                                     const v = Number(counterInputs[r.id] || 0);
                                     const vt = r.vehicleType as string | undefined;
-                                    const minFare = vt === "car" ? (config.rides.carMinFare ?? 80) : (config.rides.bikeMinFare ?? 50);
+                                    const minFare = vt === "car" ? (config.rides.carMinFare ?? 80) : vt === "rickshaw" ? (config.rides.rickshawMinFare ?? 50) : vt === "daba" ? (config.rides.dabaMinFare ?? 60) : (config.rides.bikeMinFare ?? 50);
                                     const maxFare = (r.offeredFare ?? r.fare) * (config.rides.counterMaxMultiplier ?? 3);
                                     if (!v || v < minFare) {
-                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Minimum fare is ${formatCurrency(minFare)}` }));
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Minimum fare is ${formatCurrency(minFare, currency)}` }));
                                       return;
                                     }
                                     if (v > maxFare) {
-                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare)}` }));
+                                      setCounterErrors(prev => ({ ...prev, [r.id]: `Cannot exceed ${formatCurrency(maxFare, currency)}` }));
                                       return;
                                     }
                                     setCounterErrors(prev => ({ ...prev, [r.id]: "" }));
