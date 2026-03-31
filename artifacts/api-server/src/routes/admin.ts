@@ -3391,34 +3391,44 @@ router.get("/live-riders", async (_req, res) => {
   /* Single JOIN query — eliminates N+1 per-rider lookups */
   const locs = await db
     .select({
-      userId:      liveLocationsTable.userId,
-      latitude:    liveLocationsTable.latitude,
-      longitude:   liveLocationsTable.longitude,
-      action:      liveLocationsTable.action,
-      updatedAt:   liveLocationsTable.updatedAt,
-      name:        usersTable.name,
-      phone:       usersTable.phone,
-      isOnline:    usersTable.isOnline,
-      vehicleType: usersTable.vehicleType,
+      userId:       liveLocationsTable.userId,
+      latitude:     liveLocationsTable.latitude,
+      longitude:    liveLocationsTable.longitude,
+      action:       liveLocationsTable.action,
+      updatedAt:    liveLocationsTable.updatedAt,
+      batteryLevel: liveLocationsTable.batteryLevel,
+      lastSeen:     liveLocationsTable.lastSeen,
+      onlineSince:  liveLocationsTable.onlineSince,
+      name:         usersTable.name,
+      phone:        usersTable.phone,
+      isOnline:     usersTable.isOnline,
+      vehicleType:  usersTable.vehicleType,
+      city:         usersTable.city,
+      role:         usersTable.role,
     })
     .from(liveLocationsTable)
     .leftJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
-    .where(eq(liveLocationsTable.role, "rider"));
+    .where(or(eq(liveLocationsTable.role, "rider"), eq(liveLocationsTable.role, "service_provider")));
 
   const enriched = locs.map(loc => {
     const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt);
     const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
     const isFresh    = updatedAt >= cutoff;
     return {
-      userId:      loc.userId,
-      name:        loc.name        ?? "Unknown Rider",
-      phone:       loc.phone       ?? null,
-      isOnline:    loc.isOnline    ?? false,
-      vehicleType: loc.vehicleType ?? null,
-      lat:         parseFloat(String(loc.latitude)),
-      lng:         parseFloat(String(loc.longitude)),
-      action:      loc.action      ?? null,
-      updatedAt:   updatedAt.toISOString(),
+      userId:       loc.userId,
+      name:         loc.name        ?? "Unknown Rider",
+      phone:        loc.phone       ?? null,
+      isOnline:     loc.isOnline    ?? false,
+      vehicleType:  loc.vehicleType ?? null,
+      city:         loc.city        ?? null,
+      role:         loc.role        ?? "rider",
+      batteryLevel: loc.batteryLevel ?? null,
+      lastSeen:     loc.lastSeen    instanceof Date ? loc.lastSeen.toISOString()    : (loc.lastSeen    ?? null),
+      onlineSince:  loc.onlineSince instanceof Date ? loc.onlineSince.toISOString() : (loc.onlineSince ?? null),
+      lat:          parseFloat(String(loc.latitude)),
+      lng:          parseFloat(String(loc.longitude)),
+      action:       loc.action      ?? null,
+      updatedAt:    updatedAt.toISOString(),
       ageSeconds,
       isFresh,
     };
@@ -4164,17 +4174,34 @@ router.get("/fleet-analytics", async (req, res) => {
   });
 });
 
-/* ── GET /admin/riders/:userId/route?date=YYYY-MM-DD — fleet history for admin ── */
+/* ── GET /admin/riders/:userId/route?date=YYYY-MM-DD&sinceOnline=true — fleet history for admin ──
+   When sinceOnline=true (or no date), the trail is scoped to the rider's current login session:
+   it uses the rider's live_locations.lastSeen timestamp as the session start boundary,
+   giving "current shift to now" semantics rather than calendar midnight. */
 router.get("/riders/:userId/route", async (req, res) => {
   const { userId } = req.params;
-  const dateParam = req.query["date"] as string | undefined;
+  const dateParam   = req.query["date"]        as string | undefined;
+  const sinceOnline = req.query["sinceOnline"]  === "true";
 
   let startOfDay: Date;
   let endOfDay: Date;
 
   if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    /* Historic date requested — use full calendar day */
     startOfDay = new Date(`${dateParam}T00:00:00.000Z`);
     endOfDay   = new Date(`${dateParam}T23:59:59.999Z`);
+  } else if (sinceOnline) {
+    /* Session-scoped: use onlineSince (set once when rider goes online, never overwritten by heartbeat).
+       This gives stable "current session start" semantics, unlike lastSeen which moves on every heartbeat. */
+    const [liveLoc] = await db
+      .select({ onlineSince: liveLocationsTable.onlineSince })
+      .from(liveLocationsTable)
+      .where(eq(liveLocationsTable.userId, userId))
+      .limit(1);
+    const sessionStart = liveLoc?.onlineSince ? new Date(liveLoc.onlineSince) : null;
+    /* Fallback: 8-hour shift window (covers most shifts even without a logged session start) */
+    startOfDay = sessionStart ?? new Date(Date.now() - 8 * 60 * 60 * 1000);
+    endOfDay   = new Date();
   } else {
     const now = new Date();
     startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);

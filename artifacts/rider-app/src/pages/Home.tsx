@@ -9,6 +9,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { playRequestSound, unlockAudio, silenceFor, isSilenced, unsilence, getSilenceRemaining, getSilenceMode, setSilenceMode } from "../lib/notificationSound";
 import { logRideEvent } from "../lib/rideUtils";
 import { io, type Socket } from "socket.io-client";
+import { enqueue, dequeueAll, clearQueue } from "../lib/gpsQueue";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   AlertTriangle, MapPin, Pin, Bike, Car, Bus, ShoppingBag,
   ShoppingCart, Pill, Package, Banana, Navigation, Wifi,
@@ -61,6 +65,41 @@ function RequestAge({ createdAt }: { createdAt: string }) {
   );
 }
 
+/* Countdown ring shown on request cards — counts down from ACCEPT_TIMEOUT_SEC.
+   After timeout the request fades out naturally (it disappears from the server query). */
+const ACCEPT_TIMEOUT_SEC = 90;
+function AcceptCountdown({ createdAt }: { createdAt: string }) {
+  const [secs, setSecs] = useState(() => {
+    const elapsed = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+    return Math.max(0, ACCEPT_TIMEOUT_SEC - elapsed);
+  });
+  useEffect(() => {
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+      setSecs(Math.max(0, ACCEPT_TIMEOUT_SEC - elapsed));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [createdAt]);
+  const pct = secs / ACCEPT_TIMEOUT_SEC;
+  const r = 14, stroke = 3;
+  const circ = 2 * Math.PI * r;
+  const dashOffset = circ * (1 - pct);
+  const col = secs > 30 ? "#22c55e" : secs > 10 ? "#f59e0b" : "#ef4444";
+  return (
+    <div className="flex-shrink-0 relative flex items-center justify-center" style={{ width: 36, height: 36 }}>
+      <svg width={36} height={36} className={secs <= 10 ? "animate-pulse" : ""}>
+        <circle cx={18} cy={18} r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke}/>
+        <circle cx={18} cy={18} r={r} fill="none" stroke={col} strokeWidth={stroke}
+          strokeDasharray={circ} strokeDashoffset={dashOffset}
+          strokeLinecap="round" transform="rotate(-90 18 18)"
+          style={{ transition: "stroke-dashoffset 0.9s linear, stroke 0.3s" }}
+        />
+      </svg>
+      <span className="absolute text-[9px] font-extrabold tabular-nums" style={{ color: col }}>{secs}</span>
+    </div>
+  );
+}
+
 function OrderTypeIcon({ type }: { type: string }) {
   if (type === "food")     return <ShoppingBag size={20} className="text-orange-500"/>;
   if (type === "mart")     return <ShoppingCart size={20} className="text-blue-500"/>;
@@ -86,6 +125,79 @@ function RideTypeIcon({ type }: { type: string }) {
   if (type === "daba")         return <Bus  size={20} className="text-gray-600"/>;
   if (type === "school_shift") return <Bus  size={20} className="text-green-600"/>;
   return <Bike size={20} className="text-green-600"/>;
+}
+
+/* ── MiniMapFitter: sets bounds so both markers are visible ── */
+function MiniMapFitter({ pickupLat, pickupLng, dropLat, dropLng, hasPick, hasDrop }: {
+  pickupLat: number; pickupLng: number; dropLat: number; dropLng: number;
+  hasPick: boolean; hasDrop: boolean;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (hasPick && hasDrop) {
+      map.fitBounds([[pickupLat, pickupLng], [dropLat, dropLng]], { padding: [20, 20], maxZoom: 15 });
+    } else if (hasPick) {
+      map.setView([pickupLat, pickupLng], 14);
+    } else if (hasDrop) {
+      map.setView([dropLat, dropLng], 14);
+    }
+  }, [pickupLat, pickupLng, dropLat, dropLng, hasPick, hasDrop]);
+  return null;
+}
+
+/* Mini-map: Leaflet map with pickup (green) and drop (red) markers.
+   Lightweight, interactive, and works offline (cached OSM tiles). */
+function MiniMap({ pickupLat, pickupLng, dropLat, dropLng }: {
+  pickupLat?: number | null; pickupLng?: number | null;
+  dropLat?: number | null; dropLng?: number | null;
+}) {
+  const hasPick = pickupLat != null && pickupLng != null;
+  const hasDrop = dropLat != null && dropLng != null;
+  if (!hasPick && !hasDrop) return null;
+
+  const centerLat = hasPick && hasDrop ? (pickupLat! + dropLat!) / 2 : (hasPick ? pickupLat! : dropLat!);
+  const centerLng = hasPick && hasDrop ? (pickupLng! + dropLng!) / 2 : (hasPick ? pickupLng! : dropLng!);
+
+  const pickupIcon = L.divIcon({ html: `<div style="width:14px;height:14px;background:#22c55e;border:2.5px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`, className: "", iconSize: [14, 14], iconAnchor: [7, 7] });
+  const dropIcon   = L.divIcon({ html: `<div style="width:14px;height:14px;background:#ef4444;border:2.5px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`, className: "", iconSize: [14, 14], iconAnchor: [7, 7] });
+
+  return (
+    <div className="w-full h-28 rounded-2xl overflow-hidden bg-gray-100 relative mt-3 shadow-inner border border-gray-100">
+      <MapContainer
+        center={[centerLat!, centerLng!]}
+        zoom={13}
+        style={{ width: "100%", height: "100%" }}
+        zoomControl={false}
+        dragging={false}
+        scrollWheelZoom={false}
+        doubleClickZoom={false}
+        keyboard={false}
+        attributionControl={false}
+      >
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        {hasPick && <Marker position={[pickupLat!, pickupLng!]} icon={pickupIcon} />}
+        {hasDrop  && <Marker position={[dropLat!, dropLng!]} icon={dropIcon} />}
+        <MiniMapFitter
+          pickupLat={pickupLat ?? 0} pickupLng={pickupLng ?? 0}
+          dropLat={dropLat ?? 0} dropLng={dropLng ?? 0}
+          hasPick={hasPick} hasDrop={hasDrop}
+        />
+      </MapContainer>
+      <div className="absolute bottom-1.5 right-1.5 bg-black/40 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded pointer-events-none z-[1000]">
+        © OSM
+      </div>
+      {hasPick && (
+        <div className="absolute top-1.5 left-1.5 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full pointer-events-none z-[1000]">
+          PICKUP
+        </div>
+      )}
+      {hasDrop && (
+        <div className="absolute bottom-1.5 left-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full pointer-events-none z-[1000]">
+          DROP
+        </div>
+      )}
+    </div>
+  );
 }
 
 const SVC_NAMES: Record<string, string> = {
@@ -159,6 +271,33 @@ export default function Home() {
       if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
       document.removeEventListener("click", handler);
       document.removeEventListener("touchstart", handler);
+    };
+  }, []);
+
+  /* ── Socket.io: subscribe to rider:new-request for instant push notification ──
+     When the server dispatches a new order or ride offer to this rider's socket room,
+     we immediately invalidate the requests query — no waiting for the polling interval. */
+  useEffect(() => {
+    let socket: ReturnType<typeof import("socket.io-client")["io"]> | null = null;
+    const token = api.getToken();
+    if (!token) return;
+
+    import("socket.io-client").then(({ io }) => {
+      socket = io(window.location.origin, {
+        path: "/api/socket.io",
+        auth: { token },
+        transports: ["polling", "websocket"],
+        reconnection: true,
+        reconnectionDelay: 3000,
+      });
+
+      socket.on("rider:new-request", () => {
+        qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      });
+    }).catch(() => {});
+
+    return () => {
+      socket?.disconnect();
     };
   }, []);
 
@@ -400,39 +539,84 @@ export default function Home() {
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    /* Read battery level if available */
+    let batteryRef: number | undefined;
+    type BatteryManager = { level: number; addEventListener: (event: string, cb: () => void) => void };
+    (navigator as unknown as { getBattery?: () => Promise<BatteryManager> }).getBattery?.()
+      .then(batt => {
+        batteryRef = batt.level;
+        batt.addEventListener("levelchange", () => { batteryRef = batt.level; });
+      }).catch(() => {});
+
+    /* Drain offline queue on reconnect */
+    const drainQueue = async () => {
+      try {
+        const pings = await dequeueAll();
+        if (!pings.length) return;
+        await api.batchLocation(pings);
+        await clearQueue(pings.map(p => p.id));
+      } catch {}
+    };
+
+    drainQueue();
+
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const now = Date.now();
         const { latitude, longitude, accuracy, speed, heading } = pos.coords;
 
-        if (accuracy !== null && accuracy === 0) {
+        /* Detect client-side mock GPS: accuracy === 0 is impossible with real hardware sensors.
+           We do NOT return early — send the ping with mockProvider: true so server can track violations. */
+        const isMockGps = accuracy !== null && accuracy === 0;
+        if (isMockGps) {
           setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
-          return;
         }
 
-        if (lastLat !== null && lastLng !== null) {
-          const dist = haversineMeters(lastLat, lastLng, latitude, longitude);
-          if (dist < MIN_DISTANCE_METERS && now - lastSentTime < IDLE_INTERVAL_MS * 4) return;
+        if (!isMockGps) {
+          /* Only apply distance/idle throttle for non-spoof pings (spoof pings always get sent) */
+          if (lastLat !== null && lastLng !== null) {
+            const dist = haversineMeters(lastLat, lastLng, latitude, longitude);
+            if (dist < MIN_DISTANCE_METERS && now - lastSentTime < IDLE_INTERVAL_MS * 4) return;
+          }
+          if (now - lastSentTime < IDLE_INTERVAL_MS) return;
         }
-
-        if (now - lastSentTime < IDLE_INTERVAL_MS) return;
         lastSentTime = now;
         lastLat = latitude;
         lastLng = longitude;
-
-        api.updateLocation({
+        const locationData = {
           latitude,
           longitude,
-          accuracy:  accuracy ?? undefined,
-          speed:     speed ?? undefined,
-          heading:   heading ?? undefined,
-          batteryLevel: batteryRef.current,
-        }).then(() => {
+          accuracy:     accuracy ?? undefined,
+          speed:        speed ?? undefined,
+          heading:      heading ?? undefined,
+          batteryLevel: batteryRef,
+          mockProvider: isMockGps,
+        };
+        const queuedPing = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          timestamp: new Date().toISOString(),
+          ...locationData,
+        };
+
+        if (!navigator.onLine) {
+          /* Queue ping for later when offline */
+          enqueue(queuedPing).catch(() => {});
+          return;
+        }
+
+        api.updateLocation(locationData).then(() => {
           if (gpsWarningRef.current) setGpsWarningWithRef(null);
+          drainQueue();
         }).catch((err: Error) => {
           const msg = err.message || "";
-          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("gps");
-          setGpsWarningWithRef(isSpoofError ? `GPS Spoof Detected: ${msg}` : T("gpsLocationError"));
+          const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock");
+          if (isSpoofError) {
+            setGpsWarningWithRef(`GPS Spoof Detected: ${msg}`);
+          } else {
+            /* Enqueue for batch replay on any fetch failure, not just when already offline */
+            enqueue(queuedPing).catch(() => {});
+            setGpsWarningWithRef(T("gpsLocationError"));
+          }
         });
       },
       () => {
@@ -441,8 +625,17 @@ export default function Home() {
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 30_000 },
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    /* Online event: drain the queue when connectivity is restored */
+    const handleOnline = () => drainQueue();
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      window.removeEventListener("online", handleOnline);
+    };
   }, [user?.isOnline, hasActiveTask, user?.id]);
+
+  /* Heartbeat is managed globally in App.tsx so it runs on all pages. */
 
   const orders = allOrders.filter((o: any) => !dismissed.has(o.id));
   const rides  = allRides.filter((r: any) => !dismissed.has(r.id));
@@ -917,14 +1110,18 @@ export default function Home() {
               ) : (
                 <div className="bg-white divide-y divide-gray-100">
 
-                  {orders.map((o: any) => (
-                    <div key={o.id} className="p-4 hover:bg-gray-50/50 transition-colors animate-[slideUp_0.3s_ease-out]">
+                  {orders.map((o: any) => {
+                    const earnings = getDeliveryEarn(o.type);
+                    return (
+                    <div key={o.id} className="p-4 animate-[slideUp_0.3s_ease-out] border-b border-gray-50 last:border-0">
+                      {/* Header row */}
                       <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <AcceptCountdown createdAt={o.createdAt} />
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-center flex-shrink-0 shadow-sm">
                           <OrderTypeIcon type={o.type}/>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <p className="font-extrabold text-gray-900 text-[15px] capitalize tracking-tight">{o.type} Delivery</p>
                             <RequestAge createdAt={o.createdAt} />
                           </div>
@@ -936,26 +1133,47 @@ export default function Home() {
                           <p className="text-xs text-gray-400 truncate mt-0.5 flex items-center gap-1">
                             <Navigation size={10} className="text-gray-300"/> {o.deliveryAddress || "Destination"}
                           </p>
-                          <div className="flex items-center gap-4 mt-2.5">
-                            <div className="bg-green-50 border border-green-100 rounded-xl px-3 py-1.5">
-                              <p className="text-base font-extrabold text-green-600 leading-tight">+{formatCurrency(getDeliveryEarn(o.type))}</p>
-                              <p className="text-[9px] text-green-500 font-semibold">{T("yourEarnings")}</p>
-                            </div>
-                            {o.total && (
-                              <div>
-                                <p className="text-sm font-bold text-gray-700">{formatCurrency(o.total)}</p>
-                                <p className="text-[9px] text-gray-400 font-medium">{T("orderTotal")}</p>
-                              </div>
-                            )}
-                            {o.itemCount && (
-                              <div>
-                                <p className="text-sm font-bold text-gray-700">{o.itemCount} items</p>
-                                <p className="text-[9px] text-gray-400 font-medium">{T("toCollect")}</p>
-                              </div>
-                            )}
-                          </div>
+                        </div>
+                        {/* Earnings chip */}
+                        <div className="bg-green-500 text-white rounded-2xl px-3 py-1.5 flex-shrink-0 text-right shadow-sm shadow-green-200">
+                          <p className="text-base font-extrabold leading-tight">+{formatCurrency(earnings)}</p>
+                          <p className="text-[9px] text-green-100 font-semibold">{T("yourEarnings")}</p>
                         </div>
                       </div>
+
+                      {/* Stats row */}
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
+                        {o.total && (
+                          <div className="bg-gray-50 rounded-xl px-2.5 py-1 border border-gray-100">
+                            <p className="text-xs font-bold text-gray-700">{formatCurrency(o.total)}</p>
+                            <p className="text-[9px] text-gray-400">{T("orderTotal")}</p>
+                          </div>
+                        )}
+                        {o.itemCount && (
+                          <div className="bg-gray-50 rounded-xl px-2.5 py-1 border border-gray-100">
+                            <p className="text-xs font-bold text-gray-700">{o.itemCount} items</p>
+                            <p className="text-[9px] text-gray-400">{T("toCollect")}</p>
+                          </div>
+                        )}
+                        {o.distanceKm && (
+                          <div className="bg-blue-50 rounded-xl px-2.5 py-1 border border-blue-100">
+                            <p className="text-xs font-bold text-blue-700">{parseFloat(o.distanceKm).toFixed(1)} km</p>
+                            <p className="text-[9px] text-blue-400">{T("distance")}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mini-map for order */}
+                      {(o.vendorLat != null && o.vendorLng != null) && (
+                        <MiniMap
+                          pickupLat={o.vendorLat ? parseFloat(o.vendorLat) : null}
+                          pickupLng={o.vendorLng ? parseFloat(o.vendorLng) : null}
+                          dropLat={o.deliveryLat ? parseFloat(o.deliveryLat) : null}
+                          dropLng={o.deliveryLng ? parseFloat(o.deliveryLng) : null}
+                        />
+                      )}
+
+                      {/* Action buttons */}
                       <div className="flex gap-2 mt-3">
                         {o.deliveryAddress && (
                           <a href={buildMapsDeepLink(null, null, o.deliveryAddress)}
@@ -977,7 +1195,8 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {rides.map((r: any) => {
                     const isBargain    = r.status === "bargaining" && r.offeredFare != null;
@@ -993,6 +1212,7 @@ export default function Home() {
                     return (
                       <div key={r.id} className={`p-4 animate-[slideUp_0.3s_ease-out] ${isDispatched ? "border-l-4 border-blue-500 bg-gradient-to-r from-blue-50/50 to-white" : isBargain ? "border-l-4 border-orange-400 bg-gradient-to-r from-orange-50/50 to-white" : "hover:bg-gray-50/50"} transition-colors`}>
                         <div className="flex items-start gap-3">
+                          <AcceptCountdown createdAt={r.createdAt} />
                           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm border ${isDispatched ? "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200" : isBargain ? "bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200" : "bg-gradient-to-br from-green-50 to-emerald-50 border-green-100"}`}>
                             {isBargain ? <MessageSquare size={20} className="text-orange-500"/> : <RideTypeIcon type={r.type}/>}
                           </div>
@@ -1079,6 +1299,16 @@ export default function Home() {
                             )}
                           </div>
                         </div>
+
+                        {/* Ride mini-map */}
+                        {(r.pickupLat != null && r.pickupLng != null) && (
+                          <MiniMap
+                            pickupLat={r.pickupLat != null ? parseFloat(r.pickupLat) : null}
+                            pickupLng={r.pickupLng != null ? parseFloat(r.pickupLng) : null}
+                            dropLat={r.dropLat != null ? parseFloat(r.dropLat) : null}
+                            dropLng={r.dropLng != null ? parseFloat(r.dropLng) : null}
+                          />
+                        )}
 
                         {!isBargain && (
                           <div className="flex gap-2 mt-3">

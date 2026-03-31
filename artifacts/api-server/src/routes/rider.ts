@@ -5,7 +5,7 @@ import { eq, desc, and, or, sql, count, sum, avg, gte, isNull, type InferSelectM
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
-import { emitRiderLocation, emitRiderStatus } from "../lib/socketio.js";
+import { emitRiderLocation, emitRiderStatus, getIO } from "../lib/socketio.js";
 import { z } from "zod";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
@@ -230,24 +230,48 @@ router.patch("/online", async (req, res) => {
         .where(and(eq(locationLogsTable.userId, riderId), eq(locationLogsTable.role, "rider")))
         .orderBy(desc(locationLogsTable.createdAt))
         .limit(1);
+      const now = new Date();
       if (lastLog) {
-        const now = new Date();
         await db.insert(liveLocationsTable).values({
           userId: riderId,
           latitude: lastLog.latitude,
           longitude: lastLog.longitude,
           role: "rider",
           action: null,
+          onlineSince: now,
           updatedAt: now,
         }).onConflictDoUpdate({
           target: liveLocationsTable.userId,
-          set: { latitude: lastLog.latitude, longitude: lastLog.longitude, role: "rider", action: null, updatedAt: now },
+          /* onlineSince is set only here (session start) — heartbeat does NOT overwrite it */
+          set: { latitude: lastLog.latitude, longitude: lastLog.longitude, role: "rider", action: null, onlineSince: now, updatedAt: now },
         });
+      } else {
+        /* No prior GPS log: still set onlineSince so session start is tracked */
+        await db.insert(liveLocationsTable).values({
+          userId: riderId,
+          latitude: "0",
+          longitude: "0",
+          role: "rider",
+          action: null,
+          onlineSince: now,
+          updatedAt: now,
+        }).onConflictDoUpdate({
+          target: liveLocationsTable.userId,
+          set: { onlineSince: now, updatedAt: now },
+        }).catch(() => {});
       }
     } catch { /* non-critical — rider will appear on next GPS ping */ }
   }
 
-  emitRiderStatus({ userId: riderId, isOnline: !!isOnline, updatedAt: new Date().toISOString() });
+  /* Emit real-time status event to admin-fleet */
+  try {
+    emitRiderStatus({
+      userId: riderId,
+      isOnline: !!isOnline,
+      name: riderUser.name ?? undefined,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch { /* non-critical */ }
 
   res.json({ success: true, isOnline: !!isOnline });
 });
@@ -1673,14 +1697,10 @@ router.patch("/location", async (req, res) => {
     }
   }
 
-  /* Accuracy-only spoof signal: reject if accuracy is suspiciously perfect AND high speed.
-     A single bad reading (network glitch, tunnel exit) is tolerated via a consecutive-failure
-     counter stored in memory — only 3+ consecutive suspicious readings trigger a hard reject. */
-  const GPS_SUSPICIOUS_ACCURACY_THRESHOLD_M = 50;
-  const GPS_HIGH_SPEED_WITH_ACCURACY_KMH = 80;
-
-  let accuracySpoofSuspected = false;
-  if (accuracy !== undefined && accuracy > GPS_SUSPICIOUS_ACCURACY_THRESHOLD_M) {
+  /* GPS Spoof Detection — 3-strike auto-offline.
+     Minimum threshold is always 300 km/h (physically impossible for ground transport),
+     or the admin-configured max if it's higher. Mock GPS provider flag is also checked. */
+  if (accuracy !== undefined) {
     const minAccuracyMeters = parseInt(settings["security_gps_accuracy"] ?? "50", 10);
     if (accuracy > minAccuracyMeters) {
       console.warn(`[rider/location] Rider ${riderId} GPS accuracy ${accuracy}m exceeds threshold ${minAccuracyMeters}m`);
@@ -1688,50 +1708,88 @@ router.patch("/location", async (req, res) => {
   }
 
   if (settings["security_spoof_detection"] === "on") {
-    const maxSpeedKmh = parseInt(settings["security_max_speed_kmh"] ?? "120", 10);
+    const configMaxSpeed = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
+    const MAX_ALLOWED_KMH = Math.max(configMaxSpeed, 300); /* never below 300 km/h */
     const [prev] = await db.select().from(liveLocationsTable).where(eq(liveLocationsTable.userId, riderId)).limit(1);
+
+    /* Emulator-signature detection: same logic as /locations/* endpoints */
+    const isEmulatorCoord = (
+      /* Android emulator default: Googleplex, Mountain View */
+      (Math.abs(latitude - 37.4219983) < 0.0001 && Math.abs(longitude - (-122.084)) < 0.0001) ||
+      /* Genymotion default: Paris */
+      (Math.abs(latitude - 48.8534) < 0.0001 && Math.abs(longitude - 2.3488) < 0.0001) ||
+      /* BlueStacks default: San Francisco */
+      (Math.abs(latitude - 37.3861) < 0.0001 && Math.abs(longitude - (-122.0839)) < 0.0001) ||
+      /* Exact 0,0 origin — impossible for a real moving rider */
+      (latitude === 0 && longitude === 0) ||
+      /* Round integer coords with accuracy === 0 — simulator signature */
+      (accuracy === 0 && Number.isInteger(latitude) && Number.isInteger(longitude))
+    );
+
+    const mockFlagged = req.body.mockProvider === true || req.body.mockProvider === "true";
+    const emulatorFlagged = isEmulatorCoord;
+
+    const spoofHitKey = `spoof_hits:${riderId}`;
+    const currentHits: number = locationRateStore.get(spoofHitKey) ?? 0;
+
+    /* Check speed-based spoofing if we have a previous location */
+    let speedSpoofed = false;
+    let detectedSpeedKmh = 0;
     if (prev) {
       const prevLat = parseFloat(String(prev.latitude));
       const prevLon = parseFloat(String(prev.longitude));
-      const { spoofed, speedKmh } = detectGPSSpoof(prevLat, prevLon, prev.updatedAt, latitude, longitude, maxSpeedKmh);
+      const result = detectGPSSpoof(prevLat, prevLon, prev.updatedAt, latitude, longitude, MAX_ALLOWED_KMH);
+      speedSpoofed = result.spoofed;
+      detectedSpeedKmh = result.speedKmh;
+    }
 
-      /* Combined accuracy + speed heuristic: low accuracy (>50m) AND unrealistically fast movement
-         is a strong signal of a mock location app switching between coarse fake positions. */
-      if (accuracy !== undefined && accuracy > GPS_SUSPICIOUS_ACCURACY_THRESHOLD_M && speedKmh > GPS_HIGH_SPEED_WITH_ACCURACY_KMH) {
-        accuracySpoofSuspected = true;
-      }
-
-      const spoofHitKey = `spoof_hits:${riderId}`;
-      const currentHits: number = locationRateStore.get(spoofHitKey) ?? 0;
-
-      if (spoofed || accuracySpoofSuspected) {
+    if (speedSpoofed || mockFlagged || emulatorFlagged) {
         const newHits = currentHits + 1;
         locationRateStore.set(spoofHitKey, newHits);
+
+        const reason = emulatorFlagged
+          ? "Emulator signature detected — known fake GPS coordinates"
+          : mockFlagged
+          ? "Mock GPS provider detected"
+          : `Speed ${detectedSpeedKmh.toFixed(1)} km/h exceeds ${MAX_ALLOWED_KMH} km/h`;
 
         const ip = getClientIp(req);
         addSecurityEvent({
           type: "gps_spoof_detected", ip, userId: riderId,
-          details: `GPS spoof suspected: speed ${speedKmh.toFixed(1)} km/h, accuracy ${accuracy ?? "N/A"}m (hit ${newHits})`,
+          details: `GPS spoof: ${reason} (hit ${newHits})`,
           severity: newHits >= 3 ? "high" : "medium",
         });
 
-        /* Only hard-reject after 3+ consecutive suspicious readings — one bad reading is forgiven */
+        /* 3rd consecutive violation: auto-offline + emit admin alert */
+        let autoOffline = false;
         if (newHits >= 3) {
-          res.status(422).json({
-            error: "GPS location rejected: repeated suspicious movement detected. Please disable mock location apps.",
-            code: "GPS_SPOOF_DETECTED",
-            detectedSpeedKmh: Math.round(speedKmh),
-            maxAllowedKmh: maxSpeedKmh,
-            consecutiveSuspicious: newHits,
-          }); return;
+          locationRateStore.set(spoofHitKey, 0);
+          autoOffline = true;
+          try {
+            await db.update(usersTable)
+              .set({ isOnline: false, updatedAt: new Date() })
+              .where(eq(usersTable.id, riderId));
+          } catch {}
+          const io = getIO();
+          if (io) {
+            io.to("admin-fleet").emit("rider:spoof-alert", {
+              userId: riderId,
+              reason,
+              autoOffline: true,
+              sentAt: new Date().toISOString(),
+            });
+          }
         }
-        /* Soft warning — log but accept the reading on first/second hit */
-        console.warn(`[rider/location] Suspicious GPS reading ${newHits}/3 for rider ${riderId}: ${speedKmh.toFixed(1)} km/h`);
+        /* Reject on ALL spoof hits — never broadcast a spoofed ping */
+        res.status(422).json({
+          error: "GPS location rejected: movement speed is physically impossible or mock GPS detected. Please disable mock location apps.",
+          autoOffline,
+          code: "GPS_SPOOF_DETECTED",
+          hit: newHits,
+        }); return;
       } else if (currentHits > 0) {
-        /* Reset counter on clean reading */
         locationRateStore.set(spoofHitKey, 0);
       }
-    }
   }
 
   const nowDate = new Date();

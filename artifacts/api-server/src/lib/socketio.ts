@@ -3,7 +3,7 @@ import type { Server as HttpServer } from "http";
 import { logger } from "./logger.js";
 import { verifyUserJwt, verifyAdminJwt } from "../middleware/security.js";
 import { db } from "@workspace/db";
-import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable } from "@workspace/db/schema";
+import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable } from "@workspace/db/schema";
 import { eq, or, and } from "drizzle-orm";
 
 let _io: SocketIOServer | null = null;
@@ -233,6 +233,27 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
       }
     }
 
+    /* Heartbeat: rider sends rider:heartbeat with batteryLevel, isOnline status is kept alive.
+       Server relays the heartbeat to admin-fleet AND persists batteryLevel + lastSeen to DB. */
+    socket.on("rider:heartbeat", (payload: { batteryLevel?: number; isOnline?: boolean }) => {
+      if (!userToken) return;
+      const riderPay = verifyUserJwt(userToken);
+      if (!riderPay?.userId || riderPay.role !== "rider") return;
+      const batteryLevel = typeof payload?.batteryLevel === "number" ? payload.batteryLevel : null;
+      const now = new Date();
+      /* Persist battery level and last-seen timestamp to liveLocationsTable (fire-and-forget) */
+      db.update(liveLocationsTable)
+        .set({ batteryLevel: batteryLevel ?? undefined, lastSeen: now })
+        .where(eq(liveLocationsTable.userId, riderPay.userId))
+        .catch(() => {});
+      _io!.to("admin-fleet").emit("rider:heartbeat", {
+        userId: riderPay.userId,
+        batteryLevel,
+        isOnline: payload?.isOnline !== false,
+        sentAt: now.toISOString(),
+      });
+    });
+
     /* SOS relay: rider sends rider:sos event, server broadcasts to admin-fleet */
     socket.on("rider:sos", (payload: { latitude?: number; longitude?: number; rideId?: string | null }) => {
       if (!userToken) return;
@@ -447,5 +468,30 @@ export function emitAdminChatReply(riderId: string, payload: {
 }) {
   if (!_io) return;
   _io.to(`rider:${riderId}`).emit("admin:chat", payload);
+}
+
+export function emitRiderStatus(payload: {
+  userId: string;
+  isOnline: boolean;
+  name?: string;
+  batteryLevel?: number | null;
+  updatedAt: string;
+}) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("rider:status", payload);
+}
+
+/**
+ * Push a `rider:new-request` event directly to a specific rider's socket room
+ * so their Home screen refreshes instantly (no need to wait for polling interval).
+ * Payload mirrors what the rider needs to surface the notification UI.
+ */
+export function emitRiderNewRequest(riderId: string, payload: {
+  type: "order" | "ride" | "parcel";
+  requestId: string;
+  summary?: string;
+}) {
+  if (!_io) return;
+  _io.to(`rider:${riderId}`).emit("rider:new-request", payload);
 }
 

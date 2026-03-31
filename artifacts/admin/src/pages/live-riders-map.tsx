@@ -37,6 +37,8 @@ type Rider = {
   phone: string | null;
   isOnline: boolean;
   vehicleType: string | null;
+  city?: string | null;
+  role?: string | null;
   lat: number;
   lng: number;
   updatedAt: string;
@@ -44,6 +46,7 @@ type Rider = {
   isFresh: boolean;
   action?: string | null;
   batteryLevel?: number | null;
+  lastSeen?: string;
 };
 
 type CustomerLoc = {
@@ -86,8 +89,8 @@ function isGpsStale(rider: Rider, offlineAfterSec: number): boolean {
   return rider.ageSeconds >= offlineAfterSec;
 }
 
-/* ── Vehicle type → icon emoji ── */
-function getVehicleIcon(vehicleType: string | null): string {
+/* ── Vehicle type → emoji label (for text use) ── */
+function getVehicleEmoji(vehicleType: string | null): string {
   const v = (vehicleType ?? "").toLowerCase();
   if (v.includes("bike") || v.includes("motorcycle") || v.includes("moto")) return "🏍️";
   if (v.includes("car") || v.includes("taxi"))  return "🚗";
@@ -98,15 +101,66 @@ function getVehicleIcon(vehicleType: string | null): string {
   return "🏍️";
 }
 
-function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean) {
-  /* Color: Green = online, Red = busy/on-trip, Grey = offline */
-  const color = status === "online" ? "#22c55e" : status === "busy" ? "#ef4444" : "#9ca3af";
-  const size = isSelected ? 40 : 32;
-  const emoji = getVehicleIcon(rider.vehicleType);
-  /* Stale GPS indicator: yellow ring on online riders with stale GPS */
+/* Legacy alias for text display */
+const getVehicleIcon = getVehicleEmoji;
+
+/* ── SVG paths for distinct map icon shapes ── */
+function getVehicleSvgPath(vehicleType: string | null): string {
+  const v = (vehicleType ?? "").toLowerCase();
+  if (v.includes("car") || v.includes("taxi")) {
+    /* Car silhouette */
+    return `<path d="M6 11L7.5 6.5A1.5 1.5 0 0 1 9 5.5h6a1.5 1.5 0 0 1 1.5 1l1.5 4.5" stroke="white" stroke-width="1" fill="none"/><rect x="3" y="11" width="18" height="6" rx="1.5" fill="white" opacity="0.9"/><circle cx="7" cy="18" r="2" fill="white"/><circle cx="17" cy="18" r="2" fill="white"/>`;
+  }
+  if (v.includes("rickshaw")) {
+    /* Three-wheeler shape */
+    return `<path d="M5 14L7 8h8l3 6H5z" fill="white" opacity="0.9"/><circle cx="7" cy="17" r="2" fill="white"/><circle cx="17" cy="17" r="2" fill="white"/><circle cx="12" cy="17" r="1.5" fill="white"/>`;
+  }
+  if (v.includes("van") || v.includes("daba") || v.includes("bus")) {
+    /* Van/bus shape */
+    return `<rect x="3" y="8" width="18" height="9" rx="2" fill="white" opacity="0.9"/><rect x="4" y="9" width="7" height="4" rx="1" fill="rgba(0,0,0,0.3)"/><rect x="13" y="9" width="4" height="4" rx="1" fill="rgba(0,0,0,0.3)"/><circle cx="7" cy="18" r="2" fill="white"/><circle cx="17" cy="18" r="2" fill="white"/>`;
+  }
+  if (v.includes("truck") || v.includes("lori")) {
+    /* Truck shape */
+    return `<rect x="2" y="10" width="12" height="7" rx="1" fill="white" opacity="0.9"/><path d="M14 12l5 0v5h-5z" fill="white" opacity="0.8"/><circle cx="6" cy="18.5" r="2" fill="white"/><circle cx="16" cy="18.5" r="2" fill="white"/>`;
+  }
+  /* Default: motorcycle/bike SVG */
+  return `<ellipse cx="7" cy="17" rx="3" ry="3" stroke="white" stroke-width="1.5" fill="none"/><ellipse cx="17" cy="17" rx="3" ry="3" stroke="white" stroke-width="1.5" fill="none"/><path d="M7 17L10 10l4 0 2 4-3 3" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round"/>`;
+}
+
+/* Service-provider icon: wrench/tool silhouette in distinct purple */
+function makeServiceProviderIcon(status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean) {
+  const color = "#7c3aed"; /* Purple — distinct from rider green/red/gray */
+  const size = isSelected ? 44 : 34;
+  const innerSize = size - 8;
   const staleBorder = stale && status !== "offline" ? "3px solid #f59e0b" : `${isSelected ? "3px" : "2px"} solid white`;
+  /* Wrench/tool SVG path */
+  const svgPath = `<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
   return L.divIcon({
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:${isSelected ? "18px" : "14px"};cursor:pointer;transition:all 0.2s">${emoji}</div>`,
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:${isSelected ? "10px" : "8px"};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.35);cursor:pointer;will-change:transform;transition:background-color 0.3s,border-color 0.3s">
+      <svg width="${innerSize}" height="${innerSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgPath}</svg>
+    </div>`,
+    className: "",
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean) {
+  /* Service providers get a distinct purple wrench icon */
+  const role = (rider.role ?? "rider").toLowerCase();
+  if (role === "service_provider" || role === "provider") {
+    return makeServiceProviderIcon(status, isSelected, stale);
+  }
+  const color = status === "online" ? "#22c55e" : status === "busy" ? "#ef4444" : "#9ca3af";
+  const size = isSelected ? 44 : 34;
+  const innerSize = size - 8;
+  const staleBorder = stale && status !== "offline" ? "3px solid #f59e0b" : `${isSelected ? "3px" : "2px"} solid white`;
+  const svgPath = getVehicleSvgPath(rider.vehicleType);
+  /* Use CSS transform for smooth position updates instead of recreating DOM elements */
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:${isSelected ? "10px" : "50%"};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.35);cursor:pointer;will-change:transform;transition:background-color 0.3s,border-color 0.3s">
+      <svg width="${innerSize}" height="${innerSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgPath}</svg>
+    </div>`,
     className: "",
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -177,6 +231,80 @@ function FitBoundsOnLoad({
   }, [riders.length, customers.length]);
 
   return null;
+}
+
+/* ── RiderTrailOverlay — fetches & renders persisted GPS history for a single rider ──
+   Decoupled component so it can call useRiderRoute per rider without breaking hook rules.
+   Uses session-scoped mode (sinceOnline=true) by default — no date prop needed here.
+   Date is only passed when the admin explicitly picks a historic date in the detail panel. */
+function RiderTrailOverlay({ userId, date }: { userId: string; date?: string }) {
+  const { data } = useRiderRoute(userId, date);
+  const pts: Array<[number, number]> = (data?.route ?? []).map(
+    (p: { latitude: number; longitude: number }) => [p.latitude, p.longitude]
+  );
+  if (pts.length < 2) return null;
+  return (
+    <Polyline
+      positions={pts}
+      pathOptions={{ color: "#6366f1", weight: 2.5, opacity: 0.7, dashArray: "6,4" }}
+    />
+  );
+}
+
+/* ── AnimatedMarker — smoothly interpolates to new lat/lng over ~1.2s via RAF ── */
+function AnimatedMarker({
+  position,
+  icon,
+  children,
+  onClick,
+}: {
+  position: [number, number];
+  icon: L.Icon | L.DivIcon;
+  children?: React.ReactNode;
+  onClick?: () => void;
+}) {
+  const markerRef = useRef<L.Marker | null>(null);
+  const animRef   = useRef<number | null>(null);
+  const prevPos   = useRef<[number, number]>(position);
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return;
+    const [fromLat, fromLng] = prevPos.current;
+    const [toLat, toLng]     = position;
+    if (fromLat === toLat && fromLng === toLng) return;
+
+    const DURATION = 1200; /* ms */
+    const start = performance.now();
+
+    if (animRef.current != null) cancelAnimationFrame(animRef.current);
+
+    const step = (now: number) => {
+      const t = Math.min((now - start) / DURATION, 1);
+      /* Ease-out cubic */
+      const ease = 1 - Math.pow(1 - t, 3);
+      marker.setLatLng([fromLat + (toLat - fromLat) * ease, fromLng + (toLng - fromLng) * ease]);
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(step);
+      } else {
+        prevPos.current = position;
+        animRef.current = null;
+      }
+    };
+    animRef.current = requestAnimationFrame(step);
+    return () => { if (animRef.current != null) cancelAnimationFrame(animRef.current); };
+  }, [position[0], position[1]]);
+
+  return (
+    <Marker
+      ref={(m) => { markerRef.current = m; }}
+      position={position}
+      icon={icon}
+      eventHandlers={{ click: onClick ? () => onClick() : undefined }}
+    >
+      {children}
+    </Marker>
+  );
 }
 
 /* ── Fleet Analytics Tab ── */
@@ -375,16 +503,36 @@ export default function LiveRidersMap() {
   const [secAgo, setSecAgo] = useState(0);
   const [riderOverrides, setRiderOverrides] = useState<Record<string, { lat: number; lng: number; updatedAt: string; action?: string | null }>>({});
   const [customerOverrides, setCustomerOverrides] = useState<Record<string, { lat: number; lng: number; updatedAt: string }>>({});
+  /* Status overrides from rider:status socket events (instant online/offline sync) */
+  const [riderStatusOverrides, setRiderStatusOverrides] = useState<Record<string, { isOnline: boolean; updatedAt: string }>>({});
+  /* Heartbeat data: battery level + last seen time per rider */
+  const [riderHeartbeats, setRiderHeartbeats] = useState<Record<string, { batteryLevel?: number | null; lastSeen: string }>>({});
+  /* Spoof alerts from server anti-spoofing */
+  const [spoofAlerts, setSpoofAlerts] = useState<Array<{ userId: string; reason: string; autoOffline: boolean; sentAt: string }>>([]);
   const [activeTab, setActiveTab] = useState<"map" | "analytics">("map");
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, Array<{ text: string; ts: string; from: "admin" | "rider" }>>>({});
   const [chatInput, setChatInput] = useState("");
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, { isOnline: boolean; updatedAt: string }>>({});
-  const [batteryOverrides, setBatteryOverrides] = useState<Record<string, number>>({});
+  /* Sidebar search + filter (search is debounced 200ms to avoid re-renders on every keystroke) */
   const [sidebarSearch, setSidebarSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "online" | "busy" | "offline">("all");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(sidebarSearch), 200);
+    return () => clearTimeout(t);
+  }, [sidebarSearch]);
+  const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline" | "busy">("all");
   const socketRef = useRef<Socket | null>(null);
+  const [vehicleFilter, setVehicleFilter] = useState<string>("all");
+  const [zoneFilter, setZoneFilter] = useState<string>("all");
+  const [activeRideFilter, setActiveRideFilter] = useState(false);
+  /* Per-rider show-trail toggle: Set of userIds that have trail display enabled */
+  const [trailSet, setTrailSet] = useState<Set<string>>(new Set());
+  const toggleTrail = (uid: string) => setTrailSet(prev => {
+    const next = new Set(prev);
+    if (next.has(uid)) next.delete(uid); else next.add(uid);
+    return next;
+  });
 
   const { data: routeData } = useRiderRoute(selectedId, routeDate);
   const { data: customerData } = useCustomerLocations();
@@ -504,20 +652,33 @@ export default function LiveRidersMap() {
       }));
     });
 
-    socket.on("rider:status", (payload: { userId: string; isOnline: boolean; updatedAt: string }) => {
+    /* Instant online/offline status change (T1) */
+    socket.on("rider:status", (payload: { userId: string; isOnline: boolean; name?: string; batteryLevel?: number | null; updatedAt: string }) => {
       if (typeof payload.userId !== "string") return;
-      setStatusOverrides(prev => ({ ...prev, [payload.userId]: { isOnline: payload.isOnline, updatedAt: payload.updatedAt } }));
+      setRiderStatusOverrides(prev => ({
+        ...prev,
+        [payload.userId]: { isOnline: payload.isOnline, updatedAt: payload.updatedAt },
+      }));
     });
 
-    socket.on("rider:location", (payload: any) => {
-      if (typeof payload?.batteryLevel === "number" && typeof payload?.userId === "string") {
-        setBatteryOverrides(prev => ({ ...prev, [payload.userId]: payload.batteryLevel }));
-      }
+    /* Heartbeat — battery level + last seen refresh (T1, T2) */
+    socket.on("rider:heartbeat", (payload: { userId: string; batteryLevel?: number | null; isOnline?: boolean; sentAt: string }) => {
+      if (typeof payload.userId !== "string") return;
+      setRiderHeartbeats(prev => ({
+        ...prev,
+        [payload.userId]: { batteryLevel: payload.batteryLevel, lastSeen: payload.sentAt },
+      }));
     });
 
-    socket.on("rider:heartbeat", (payload: { userId: string; batteryLevel: number | null }) => {
-      if (typeof payload?.userId === "string" && typeof payload?.batteryLevel === "number") {
-        setBatteryOverrides(prev => ({ ...prev, [payload.userId]: payload.batteryLevel }));
+    /* Anti-spoofing auto-offline alert (T7) */
+    socket.on("rider:spoof-alert", (payload: { userId: string; reason: string; autoOffline: boolean; sentAt: string }) => {
+      if (typeof payload.userId !== "string") return;
+      setSpoofAlerts(prev => [payload, ...prev].slice(0, 20));
+      if (payload.autoOffline) {
+        setRiderStatusOverrides(prev => ({
+          ...prev,
+          [payload.userId]: { isOnline: false, updatedAt: payload.sentAt },
+        }));
       }
     });
 
@@ -552,24 +713,22 @@ export default function LiveRidersMap() {
   const baseRiders: Rider[] = data?.riders || [];
   const offlineAfterSec: number = data?.staleTimeoutSec ?? DEFAULT_OFFLINE_AFTER_SEC;
 
-  /* Merge WebSocket overrides into the rider list */
+  /* Merge WebSocket overrides into the rider list (location + status + heartbeat) */
   const mergedBaseRiders: Rider[] = baseRiders.map(r => {
     const ov = riderOverrides[r.userId];
-    const sov = statusOverrides[r.userId];
-    const bat = batteryOverrides[r.userId];
-    const base = ov ? {
-      ...r,
-      lat: ov.lat,
-      lng: ov.lng,
-      updatedAt: ov.updatedAt,
-      action: ov.action ?? r.action,
-      ageSeconds: Math.floor((Date.now() - new Date(ov.updatedAt).getTime()) / 1000),
-      isFresh: Math.floor((Date.now() - new Date(ov.updatedAt).getTime()) / 1000) < offlineAfterSec,
-    } : r;
+    const statusOv = riderStatusOverrides[r.userId];
+    const hb = riderHeartbeats[r.userId];
+    const base = ov ? { ...r, lat: ov.lat, lng: ov.lng, updatedAt: ov.updatedAt, action: ov.action ?? r.action } : r;
+    const latestTs = ov ? ov.updatedAt : r.updatedAt;
+    const ageSeconds = Math.floor((Date.now() - new Date(latestTs).getTime()) / 1000);
     return {
       ...base,
-      isOnline: sov ? sov.isOnline : base.isOnline,
-      batteryLevel: bat ?? base.batteryLevel ?? null,
+      ageSeconds,
+      isFresh: ageSeconds < offlineAfterSec,
+      /* Status override takes priority for instant online/offline sync */
+      isOnline: statusOv ? statusOv.isOnline : r.isOnline,
+      batteryLevel: hb?.batteryLevel ?? null,
+      lastSeen: hb?.lastSeen ?? r.updatedAt,
     };
   });
 
@@ -578,12 +737,14 @@ export default function LiveRidersMap() {
   const wsOnlyRiders: Rider[] = Object.entries(riderOverrides)
     .filter(([uid]) => !mergedBaseRiderIds.has(uid))
     .map(([uid, ov]) => {
+      const statusOv = riderStatusOverrides[uid];
+      const hb = riderHeartbeats[uid];
       const ageSeconds = Math.floor((Date.now() - new Date(ov.updatedAt).getTime()) / 1000);
       return {
         userId: uid,
         name: "Rider",
         phone: null,
-        isOnline: ageSeconds < offlineAfterSec,
+        isOnline: statusOv ? statusOv.isOnline : ageSeconds < offlineAfterSec,
         vehicleType: null,
         lat: ov.lat,
         lng: ov.lng,
@@ -591,10 +752,31 @@ export default function LiveRidersMap() {
         ageSeconds,
         isFresh: ageSeconds < offlineAfterSec,
         action: ov.action ?? null,
+        batteryLevel: hb?.batteryLevel ?? null,
+        lastSeen: hb?.lastSeen ?? ov.updatedAt,
       };
     });
 
   const riders: Rider[] = [...mergedBaseRiders, ...wsOnlyRiders];
+
+  /* ── Debounced filtered rider set — shared by both map markers AND sidebar list ──
+     Keeps map and sidebar perfectly in sync with the same filter logic. */
+  const filteredRiders = riders.filter(rider => {
+    const status = getRiderStatus(rider);
+    if (statusFilter !== "all" && status !== statusFilter) return false;
+    if (vehicleFilter !== "all") {
+      const vt = (rider.vehicleType ?? "").toLowerCase();
+      const normalized = vt === "bike" || vt === "motorbike" || vt === "moto" ? "motorcycle" : vt;
+      if (normalized !== vehicleFilter) return false;
+    }
+    if (activeRideFilter && status !== "busy") return false;
+    if (zoneFilter !== "all" && (rider.city ?? null) !== zoneFilter) return false;
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase();
+      if (!rider.name?.toLowerCase().includes(q) && !rider.phone?.includes(q)) return false;
+    }
+    return true;
+  });
 
   /* Customer locations */
   type RawCustomer = { userId: string; name?: string; lat?: number; latitude?: number; lng?: number; longitude?: number; updatedAt: string };
@@ -680,6 +862,26 @@ export default function LiveRidersMap() {
 
   return (
     <div className="space-y-5">
+      {/* GPS Spoof Alert Banner */}
+      {spoofAlerts.length > 0 && (
+        <div className="bg-orange-600 text-white rounded-2xl p-3 flex items-start gap-3 shadow-lg shadow-orange-200">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm">⚠ GPS Spoof Detected ({spoofAlerts.length})</p>
+            <div className="mt-1.5 space-y-1">
+              {spoofAlerts.slice(0, 3).map((alert, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs bg-orange-700/50 rounded-xl px-3 py-1.5">
+                  <span className="flex-1">{alert.userId.slice(0, 8)}… — {alert.reason}</span>
+                  {alert.autoOffline && <span className="bg-orange-800 rounded px-1.5 py-0.5 text-[9px] font-bold">AUTO-OFFLINE</span>}
+                  <button onClick={() => setSpoofAlerts(prev => prev.filter((_, j) => j !== i))} className="opacity-70 hover:opacity-100"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button onClick={() => setSpoofAlerts([])} className="opacity-70 hover:opacity-100"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
       {/* SOS Banner — red banner at top when active SOS alerts exist */}
       {sosAlerts.length > 0 && (
         <div className="bg-red-600 text-white rounded-2xl p-4 flex items-start gap-3 shadow-lg shadow-red-200 animate-pulse">
@@ -863,16 +1065,24 @@ export default function LiveRidersMap() {
                       defaultLng={defaultLng}
                     />
 
-                    {/* Rider markers */}
-                    {riders.map(rider => {
+                    {/* Per-rider persisted trail polylines — shown when trail toggle is on */}
+                    {filteredRiders
+                      .filter(r => trailSet.has(r.userId))
+                      .map(r => (
+                        <RiderTrailOverlay key={`trail-${r.userId}`} userId={r.userId} />
+                      ))}
+
+                    {/* Rider markers — AnimatedMarker smoothly tweens position over 1.2s
+                        Uses filteredRiders so map and sidebar list are always in sync */}
+                    {filteredRiders.map(rider => {
                       const status = getRiderStatus(rider);
                       const stale = isGpsStale(rider, offlineAfterSec);
                       return (
-                        <Marker
+                        <AnimatedMarker
                           key={rider.userId}
                           position={[rider.lat, rider.lng]}
                           icon={riderIconMap.get(rider.userId)!}
-                          eventHandlers={{ click: () => setSelectedId(rider.userId) }}
+                          onClick={() => setSelectedId(rider.userId)}
                         >
                           <Popup maxWidth={200}>
                             <div style={{ fontFamily: "sans-serif", minWidth: 160 }}>
@@ -888,7 +1098,7 @@ export default function LiveRidersMap() {
                               )}
                             </div>
                           </Popup>
-                        </Marker>
+                        </AnimatedMarker>
                       );
                     })}
 
@@ -965,37 +1175,88 @@ export default function LiveRidersMap() {
 
             {/* Riders list sidebar */}
             <div className="space-y-2">
-              <div className="flex gap-3 px-1 text-xs text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Online</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Busy</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-300 inline-block" /> Offline</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Customer</span>
-              </div>
-
+              {/* Search + Filter Controls */}
               <div className="space-y-2">
                 <input
                   type="text"
-                  placeholder="Search riders..."
                   value={sidebarSearch}
                   onChange={e => setSidebarSearch(e.target.value)}
-                  className="w-full text-sm border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-green-400"
+                  placeholder="Search by name or phone..."
+                  className="w-full text-xs border border-border/60 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-green-400 bg-white"
                 />
                 <div className="flex gap-1.5 flex-wrap">
                   {(["all", "online", "busy", "offline"] as const).map(f => (
                     <button
                       key={f}
                       onClick={() => setStatusFilter(f)}
-                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg capitalize ${
-                        statusFilter === f ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      className={`px-2.5 py-1 text-[10px] font-bold rounded-full border transition-colors ${
+                        statusFilter === f
+                          ? f === "online" ? "bg-green-600 text-white border-green-600"
+                            : f === "busy" ? "bg-red-600 text-white border-red-600"
+                            : f === "offline" ? "bg-gray-500 text-white border-gray-500"
+                            : "bg-foreground text-background border-foreground"
+                          : "bg-transparent text-muted-foreground border-border/50 hover:bg-muted"
                       }`}
                     >
-                      {f}
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
                     </button>
                   ))}
                 </div>
+                <div className="flex gap-1.5 flex-wrap items-center">
+                  <span className="text-[10px] font-semibold text-muted-foreground">Vehicle:</span>
+                  {(["all", "motorcycle", "car", "rickshaw", "van", "truck"] as const).map(v => (
+                    <button
+                      key={v}
+                      onClick={() => setVehicleFilter(v)}
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-colors ${
+                        vehicleFilter === v
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-transparent text-muted-foreground border-border/50 hover:bg-muted"
+                      }`}
+                    >
+                      {v === "all" ? "All" : `${getVehicleIcon(v)} ${v.charAt(0).toUpperCase() + v.slice(1)}`}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1.5 flex-wrap items-center">
+                  <span className="text-[10px] font-semibold text-muted-foreground">Other:</span>
+                  <button
+                    onClick={() => setActiveRideFilter(p => !p)}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-full border transition-colors ${
+                      activeRideFilter
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-transparent text-muted-foreground border-border/50 hover:bg-muted"
+                    }`}
+                  >
+                    🚗 Active Ride
+                  </button>
+                </div>
+                {/* Zone/city filter — dynamically built from riders' city field */}
+                {(() => {
+                  const cities = ["all", ...Array.from(new Set(riders.map(r => r.city).filter(Boolean) as string[])).sort()];
+                  if (cities.length <= 1) return null;
+                  return (
+                    <div className="flex gap-1.5 flex-wrap items-center">
+                      <span className="text-[10px] font-semibold text-muted-foreground">Zone:</span>
+                      {cities.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setZoneFilter(c)}
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-colors ${
+                            zoneFilter === c
+                              ? "bg-teal-600 text-white border-teal-600"
+                              : "bg-transparent text-muted-foreground border-border/50 hover:bg-muted"
+                          }`}
+                        >
+                          {c === "all" ? "All Zones" : c}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
-              <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden" style={{ maxHeight: 440, overflow: "auto" }}>
+              <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden" style={{ maxHeight: 460, overflow: "auto" }}>
                 {isLoading && riders.length === 0 ? (
                   <div className="p-8 text-center text-muted-foreground text-sm">Loading riders...</div>
                 ) : riders.length === 0 ? (
@@ -1003,26 +1264,31 @@ export default function LiveRidersMap() {
                     <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">No riders tracked yet</p>
                   </div>
-                ) : (() => {
-                  const q = sidebarSearch.toLowerCase();
-                  const filtered = riders.filter(r => {
-                    if (statusFilter !== "all" && getRiderStatus(r) !== statusFilter) return false;
-                    if (q && !(r.name || "").toLowerCase().includes(q) && !(r.phone || "").includes(q) && !(r.vehicleType || "").toLowerCase().includes(q)) return false;
-                    return true;
-                  });
-                  if (filtered.length === 0) return (
-                    <div className="p-6 text-center text-sm text-muted-foreground">No riders match filters</div>
-                  );
-                  return (
-                    <div className="divide-y divide-border/40">
-                      {filtered.map(rider => {
+                ) : (
+                  <div className="divide-y divide-border/40">
+                    {filteredRiders
+                      .slice() /* shallow copy before sort to avoid mutating original */
+                      .sort((a, b) => {
+                        /* Sort: online/busy first, then by last update */
+                        const sa = getRiderStatus(a), sb = getRiderStatus(b);
+                        if (sa !== sb) {
+                          const order = { online: 0, busy: 1, offline: 2 };
+                          return (order[sa] ?? 3) - (order[sb] ?? 3);
+                        }
+                        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+                      })
+                      .map(rider => {
                         const status = getRiderStatus(rider);
                         const stale = isGpsStale(rider, offlineAfterSec);
+                        const battPct = rider.batteryLevel != null ? Math.round(rider.batteryLevel * 100) : null;
+                        const battColor = battPct != null ? (battPct > 50 ? "#22c55e" : battPct > 20 ? "#f59e0b" : "#ef4444") : null;
+                        const hasTrail = trailSet.has(rider.userId);
                         return (
-                          <button
+                          <div
                             key={rider.userId}
+                            role="button"
                             onClick={() => setSelectedId(rider.userId === selectedId ? null : rider.userId)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left ${
+                            className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer ${
                               rider.userId === selectedId ? "bg-green-50 border-l-4 border-green-500" : ""
                             }`}
                           >
@@ -1034,18 +1300,24 @@ export default function LiveRidersMap() {
                               <p className="text-xs text-muted-foreground">
                                 {getVehicleIcon(rider.vehicleType)} {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
                               </p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                {rider.batteryLevel != null && (
-                                  <span className={`text-[10px] font-medium ${rider.batteryLevel <= 20 ? "text-red-500" : rider.batteryLevel <= 50 ? "text-amber-500" : "text-green-600"}`}>
-                                    🔋 {rider.batteryLevel}%
-                                  </span>
-                                )}
-                                {stale && status !== "offline" && (
-                                  <span className="text-[10px] text-amber-500">⚠ GPS stale</span>
-                                )}
-                              </div>
+                              {/* Last Seen */}
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                Last Seen: {fd(rider.lastSeen ?? rider.updatedAt)}
+                              </p>
+                              {stale && status !== "offline" && (
+                                <p className="text-[10px] text-amber-500">⚠ GPS stale</p>
+                              )}
+                              {/* Show Trail toggle */}
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleTrail(rider.userId); }}
+                                className={`mt-1 px-2 py-0.5 text-[9px] font-bold rounded-full border transition-colors ${
+                                  hasTrail ? "bg-indigo-600 text-white border-indigo-600" : "bg-transparent text-muted-foreground border-border/50 hover:bg-muted"
+                                }`}
+                              >
+                                {hasTrail ? "▶ Trail On" : "▶ Trail"}
+                              </button>
                             </div>
-                            <div className="text-right flex-shrink-0">
+                            <div className="text-right flex-shrink-0 space-y-1">
                               <Badge
                                 className={`text-[10px] font-bold ${
                                   status === "busy"
@@ -1057,16 +1329,21 @@ export default function LiveRidersMap() {
                               >
                                 {status === "busy" ? "Busy" : status === "online" ? "Online" : "Offline"}
                               </Badge>
-                              <p className="text-[10px] text-muted-foreground mt-1">
-                                {fd(rider.updatedAt)}
-                              </p>
+                              {/* Battery Level */}
+                              {battPct != null && (
+                                <div className="flex items-center justify-end gap-1">
+                                  <div className="w-10 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                    <div style={{ width: `${battPct}%`, background: battColor ?? "#22c55e" }} className="h-full rounded-full transition-all" />
+                                  </div>
+                                  <span className="text-[9px] font-bold" style={{ color: battColor ?? "#22c55e" }}>{battPct}%</span>
+                                </div>
+                              )}
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
-                  );
-                })()}
+                  )}
               </Card>
             </div>
           </div>
@@ -1088,7 +1365,7 @@ export default function LiveRidersMap() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-sm mb-4">
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Status</p>
                   <p className="font-bold mt-0.5 flex items-center gap-1.5">
@@ -1108,18 +1385,25 @@ export default function LiveRidersMap() {
                   <p className="font-bold mt-0.5">{selectedRider.vehicleType ? `${getVehicleIcon(selectedRider.vehicleType)} ${selectedRider.vehicleType}` : "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Last Update</p>
-                  <p className="font-bold mt-0.5">
-                    {getRiderStatus(selectedRider) === "offline"
-                      ? `Last Seen ${fd(selectedRider.updatedAt)}`
-                      : fd(selectedRider.updatedAt)}
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Last Seen</p>
+                  <p className="font-bold mt-0.5 text-sm">
+                    {fd(selectedRider.lastSeen ?? selectedRider.updatedAt)}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Battery</p>
-                  <p className={`font-bold mt-0.5 ${selectedRider.batteryLevel != null ? (selectedRider.batteryLevel <= 20 ? "text-red-500" : selectedRider.batteryLevel <= 50 ? "text-amber-500" : "text-green-600") : ""}`}>
-                    {selectedRider.batteryLevel != null ? `🔋 ${selectedRider.batteryLevel}%` : "—"}
-                  </p>
+                  {selectedRider.batteryLevel != null ? (() => {
+                    const pct = Math.round(selectedRider.batteryLevel * 100);
+                    const col = pct > 50 ? "#22c55e" : pct > 20 ? "#f59e0b" : "#ef4444";
+                    return (
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <div className="w-16 h-3 bg-gray-200 rounded-full overflow-hidden">
+                          <div style={{ width: `${pct}%`, background: col }} className="h-full rounded-full" />
+                        </div>
+                        <span className="text-xs font-bold" style={{ color: col }}>{pct}%</span>
+                      </div>
+                    );
+                  })() : <p className="font-bold mt-0.5">—</p>}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Coordinates</p>

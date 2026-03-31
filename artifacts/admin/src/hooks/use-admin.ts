@@ -894,13 +894,15 @@ export const useAuditLog = (params?: { page?: number; action?: string; from?: st
   });
 };
 
-export const useRiderRoute = (userId: string | null, date?: string) =>
-  useQuery({
-    queryKey: ["admin-rider-route", userId, date],
-    queryFn: () => fetcher(`/riders/${userId}/route${date ? `?date=${date}` : ""}`),
+export const useRiderRoute = (userId: string | null, date?: string) => {
+  const qs = date ? `?date=${date}` : "?sinceOnline=true";
+  return useQuery({
+    queryKey: ["admin-rider-route", userId, date ?? "session"],
+    queryFn: () => fetcher(`/riders/${userId}/route${qs}`),
     enabled: !!userId,
     staleTime: 30_000,
   });
+};
 
 /* ── Reviews ── */
 export const useAdminReviews = (params?: { status?: string; type?: string; q?: string }) =>

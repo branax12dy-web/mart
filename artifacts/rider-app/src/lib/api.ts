@@ -342,21 +342,10 @@ export const api = {
   getEarnings:  () => apiFetch("/rider/earnings"),
   getMyReviews: () => apiFetch("/rider/reviews"),
 
-  /* Location — queues to IndexedDB when offline, drains on reconnect */
-  updateLocation: async (data: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number; batteryLevel?: number; rideId?: string }) => {
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      await enqueueGpsPing(data);
-      return { success: true, queued: true };
-    }
-    try {
-      const result = await apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) });
-      tryDrainGpsQueue();
-      return result;
-    } catch (e) {
-      await enqueueGpsPing(data);
-      throw e;
-    }
-  },
+  /* Location */
+  updateLocation: (data: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number; batteryLevel?: number; mockProvider?: boolean; rideId?: string }) => apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) }),
+  batchLocation: (pings: Array<{ timestamp: string; latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number; batteryLevel?: number; mockProvider?: boolean; action?: string | null }>) =>
+    apiFetch("/locations/batch", { method: "POST", body: JSON.stringify({ pings }) }),
 
   /* Wallet */
   getWallet:      () => apiFetch("/rider/wallet/transactions"),

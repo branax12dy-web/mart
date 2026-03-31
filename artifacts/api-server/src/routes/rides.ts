@@ -22,6 +22,7 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 }
 import { t, type TranslationKey } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
+import { emitRiderNewRequest } from "../lib/socketio.js";
 
 const router: IRouter = Router();
 
@@ -154,6 +155,13 @@ async function broadcastRide(rideId: string) {
         rideId,
         riderId: r.userId,
       }).catch(() => {});
+
+      /* Push socket event so rider's Home screen refreshes instantly */
+      emitRiderNewRequest(r.userId, {
+        type: "ride",
+        requestId: rideId,
+        summary: `${ride.pickupAddress} → ${ride.dropAddress}`,
+      });
     }
 
     await db.update(ridesTable).set({

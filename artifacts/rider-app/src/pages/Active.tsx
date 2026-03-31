@@ -13,6 +13,7 @@ import { useAuth } from "../lib/auth";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { io } from "socket.io-client";
+import { enqueue, dequeueAll, clearQueue } from "../lib/gpsQueue";
 
 function SkeletonBlock({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-gray-200 rounded-xl ${className || ""}`} />;
@@ -532,6 +533,17 @@ export default function Active() {
         pendingUpdatesRef.current.push(item);
       }));
       refetchRef.current?.();
+      /* Drain IndexedDB GPS queue on reconnect — clear successfully submitted pings */
+      dequeueAll().then(pings => {
+        if (pings.length > 0) {
+          const ids = pings.map(p => p.id);
+          api.batchLocation(pings).then(() => {
+            clearQueue(ids).catch(() => {});
+          }).catch(() => {
+            /* Keep pings in queue on failure so they retry next reconnect */
+          });
+        }
+      }).catch(() => {});
     };
     window.addEventListener("offline", goOffline);
     window.addEventListener("online", goOnline);
@@ -615,31 +627,50 @@ export default function Active() {
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
-        /* Client-side spoof heuristic: exactly zero accuracy is impossible with real GPS.
-           Threshold changed from < 1 to === 0 to avoid false positives on high-end devices
-           that legitimately report sub-meter accuracy (e.g. 0.3m–0.9m). */
-        const accuracy = pos.coords.accuracy;
-        if (accuracy !== null && accuracy === 0) {
-          if (isMountedRef.current) setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
-          return;
+        /* Detect client-side mock GPS: accuracy === 0 is impossible with real hardware sensors.
+           We do NOT return early here — we send the ping WITH mockProvider: true so the server
+           can track violations (spoof detection pipeline) and still process/reject it server-side. */
+        const isMockGps = pos.coords.accuracy !== null && pos.coords.accuracy === 0;
+        if (isMockGps && isMountedRef.current) {
+          setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
         }
-
-        const doUpdate = () => api.updateLocation({
+        const gpsPayload = {
+          latitude:     pos.coords.latitude,
+          longitude:    pos.coords.longitude,
+          accuracy:     pos.coords.accuracy ?? undefined,
+          speed:        pos.coords.speed ?? undefined,
+          heading:      pos.coords.heading ?? undefined,
+          rideId:       data?.ride?.id ?? undefined,
+          mockProvider: isMockGps,
+        };
+        const queuedPing = {
+          id:        `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: new Date().toISOString(),
           latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
-          accuracy:  pos.coords.accuracy,
-          rideId:    data?.ride?.id ?? undefined,
-        }).then(() => {
+          accuracy:  pos.coords.accuracy ?? undefined,
+          speed:     pos.coords.speed ?? undefined,
+          heading:   pos.coords.heading ?? undefined,
+          mockProvider: isMockGps,
+        };
+        const doUpdate = () => api.updateLocation(gpsPayload).then(() => {
           if (isMountedRef.current && gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: unknown) => {
           if (!isMountedRef.current) return;
           const msg = err instanceof Error ? err.message : "";
           const isSpoofError = msg.toLowerCase().includes("spoof") || msg.toLowerCase().includes("mock");
-          setGpsWarningWithRef(isSpoofError
-            ? "Mock location detected — please disable fake GPS apps."
-            : TRef.current?.("gpsLocationError") ?? "Location not being tracked — check GPS permissions");
+          if (isSpoofError) {
+            setGpsWarningWithRef("Mock location detected — please disable fake GPS apps.");
+          } else {
+            /* Enqueue for batch replay even when browser reports "online" —
+               fetch may fail due to transient network issues or proxy hiccups */
+            enqueue(queuedPing).catch(() => {});
+            setGpsWarningWithRef(TRef.current?.("gpsLocationError") ?? "Location not being tracked — check GPS permissions");
+          }
         });
         if (!navigator.onLine) {
+          /* Persist to IndexedDB for later batch replay on reconnect */
+          enqueue(queuedPing).catch(() => {});
           queueUpdate({ kind: "location", run: doUpdate });
         } else {
           doUpdate();

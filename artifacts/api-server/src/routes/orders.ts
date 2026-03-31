@@ -5,7 +5,7 @@ import { eq, and, gte, count, desc, SQL, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
-import { getIO } from "../lib/socketio.js";
+import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
 
 const router: IRouter = Router();
 
@@ -44,6 +44,36 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
   if (!io) return;
   io.to(`user:${userId}`).emit("wallet:update", { balance: newBalance });
 }
+
+/**
+ * After a new order is created, find all online riders (recently active within 10 min)
+ * and push a socket event so their Home screen invalidates the requests query immediately.
+ * This is fire-and-forget — never throws, never blocks the response.
+ */
+async function notifyOnlineRidersOfOrder(orderId: string, orderType: string): Promise<void> {
+  try {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    /* Filter strictly to riders (role='rider') who are marked online — prevents
+       non-rider accounts (customers, vendors, service providers) from receiving
+       rider:new-request events, avoiding cross-role metadata leakage. */
+    const onlineRiders = await db
+      .select({ userId: liveLocationsTable.userId })
+      .from(liveLocationsTable)
+      .innerJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
+      .where(and(
+        eq(liveLocationsTable.role, "rider"),
+        eq(usersTable.role, "rider"),
+        eq(usersTable.isOnline, true),
+        gte(liveLocationsTable.updatedAt, tenMinAgo),
+      ));
+    for (const { userId } of onlineRiders) {
+      emitRiderNewRequest(userId, { type: "order", requestId: orderId, summary: orderType });
+    }
+  } catch {
+    /* intentionally ignored — socket push is best-effort */
+  }
+}
+
 
 function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstAmount?: number, codFee?: number) {
   return {
@@ -591,6 +621,8 @@ router.post("/", customerAuth, async (req, res) => {
       if (updatedUser) broadcastWalletUpdate(userId, parseFloat(updatedUser.walletBalance ?? "0"));
 
       res.status(201).json(mapped);
+      /* Notify online riders via socket so their Home screen refreshes instantly */
+      notifyOnlineRidersOfOrder(order.id, type || "mart").catch(() => {});
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -616,6 +648,8 @@ router.post("/", customerAuth, async (req, res) => {
     idempotencyCache.set(`${userId}:${idempotencyKey}`, { ...mapped, _ts: Date.now() });
   }
   res.status(201).json(mapped);
+  /* Notify online riders via socket so their Home screen refreshes instantly */
+  notifyOnlineRidersOfOrder(order!.id, type || "mart").catch(() => {});
 });
 
 /* ── PATCH /orders/:id/cancel — customer cancel only ────────────────────── */
