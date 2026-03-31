@@ -30,12 +30,12 @@ type SecurityEvent = {
 };
 
 type MfaStatus = {
-  enabled: boolean;
+  mfaEnabled: boolean;
 };
 
 type MfaSetupData = {
   secret: string;
-  qrCode: string;
+  qrCodeDataUrl: string;
 };
 
 const SEC_TABS: { id: SecTab; label: string; emoji: string; active: string; desc: string }[] = [
@@ -75,6 +75,7 @@ export default function SecurityPage() {
   const [secEvents,     setSecEvents]     = useState<SecurityEvent[]>([]);
   const [newBlockIP,    setNewBlockIP]    = useState("");
   const [liveLoading,   setLiveLoading]  = useState(false);
+  const [ipWhitelistError, setIpWhitelistError] = useState<string | null>(null);
 
   /* ── MFA / TOTP State ── */
   const [mfaStatus,    setMfaStatus]    = useState<MfaStatus | null>(null);
@@ -95,6 +96,7 @@ export default function SecurityPage() {
       for (const s of (data.settings || [])) vals[s.key] = s.value;
       setLocalValues(vals);
       setDirtyKeys(new Set());
+      setIpWhitelistError(null);
     } catch (e: unknown) {
       toast({ title: "Failed to load settings", description: (e as Error).message, variant: "destructive" });
     }
@@ -108,17 +110,23 @@ export default function SecurityPage() {
     if (!adminToken) return;
     setLiveLoading(true);
     try {
+      const checkOk = async (r: Response) => {
+        if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
+        return r.json();
+      };
       const [dash, lockoutData, ipsData, eventsData] = await Promise.all([
-        fetch(`${window.location.origin}/api/admin/security-dashboard`, { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/login-lockouts`,     { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/blocked-ips`,        { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/security-events?limit=30`, { headers: apiHeaders }).then(r => r.json()),
+        fetch(`${window.location.origin}/api/admin/security-dashboard`, { headers: apiHeaders }).then(checkOk),
+        fetch(`${window.location.origin}/api/admin/login-lockouts`,     { headers: apiHeaders }).then(checkOk),
+        fetch(`${window.location.origin}/api/admin/blocked-ips`,        { headers: apiHeaders }).then(checkOk),
+        fetch(`${window.location.origin}/api/admin/security-events?limit=30`, { headers: apiHeaders }).then(checkOk),
       ]);
       setSecDash(dash);
       setLockouts(lockoutData.lockouts ?? []);
       setBlockedIPsList(ipsData.blocked ?? []);
       setSecEvents(eventsData.events ?? []);
-    } catch { /* silently ignore — network may be unavailable */ }
+    } catch (e: unknown) {
+      toast({ title: "Failed to load live data", description: (e as Error).message, variant: "destructive" });
+    }
     setLiveLoading(false);
   }, [adminToken]);
 
@@ -160,13 +168,14 @@ export default function SecurityPage() {
   /* ── Lockout management ── */
   const unlockPhone = async (phone: string) => {
     try {
-      await fetch(`${window.location.origin}/api/admin/login-lockouts/${encodeURIComponent(phone)}`, {
+      const r = await fetch(`${window.location.origin}/api/admin/login-lockouts/${encodeURIComponent(phone)}`, {
         method: "DELETE", headers: apiHeaders,
       });
+      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
       toast({ title: "Account Unlocked", description: `${phone} has been unlocked.` });
       fetchLiveData();
-    } catch {
-      toast({ title: "Error", description: "Failed to unlock account", variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Error", description: (e as Error).message || "Failed to unlock account", variant: "destructive" });
     }
   };
 
@@ -181,27 +190,29 @@ export default function SecurityPage() {
       return;
     }
     try {
-      await fetch(`${window.location.origin}/api/admin/blocked-ips`, {
+      const r = await fetch(`${window.location.origin}/api/admin/blocked-ips`, {
         method: "POST", headers: apiHeaders,
         body: JSON.stringify({ ip, reason: "Manual block by admin" }),
       });
+      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
       setNewBlockIP("");
       toast({ title: "IP Blocked", description: `${ip} has been blocked.` });
       fetchLiveData();
-    } catch {
-      toast({ title: "Error", description: "Failed to block IP", variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Error", description: (e as Error).message || "Failed to block IP", variant: "destructive" });
     }
   };
 
   const unblockIP = async (ip: string) => {
     try {
-      await fetch(`${window.location.origin}/api/admin/blocked-ips/${encodeURIComponent(ip)}`, {
+      const r = await fetch(`${window.location.origin}/api/admin/blocked-ips/${encodeURIComponent(ip)}`, {
         method: "DELETE", headers: apiHeaders,
       });
+      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
       toast({ title: "IP Unblocked", description: `${ip} has been unblocked.` });
       fetchLiveData();
-    } catch {
-      toast({ title: "Error", description: "Failed to unblock IP", variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Error", description: (e as Error).message || "Failed to unblock IP", variant: "destructive" });
     }
   };
 
@@ -269,6 +280,33 @@ export default function SecurityPage() {
   const dirty = (k: string)              => dirtyKeys.has(k);
   const tog   = (k: string, def = "off") => (localValues[k] ?? def) === "on";
 
+  const isValidOctet = (s: string) => { const n = parseInt(s, 10); return n >= 0 && n <= 255 && String(n) === s; };
+  const isValidIPv4 = (s: string) => {
+    const parts = s.split(".");
+    return parts.length === 4 && parts.every(isValidOctet);
+  };
+  const isValidIpOrCidr = (entry: string) => {
+    if (entry.includes("/")) {
+      const [ip, prefix] = entry.split("/");
+      const p = parseInt(prefix, 10);
+      return isValidIPv4(ip) && !isNaN(p) && p >= 0 && p <= 32 && String(p) === prefix;
+    }
+    return isValidIPv4(entry);
+  };
+
+  const validateIpWhitelist = (raw: string): string | null => {
+    if (!raw.trim()) return null;
+    const entries = raw.split(",").map(s => s.trim()).filter(Boolean);
+    const invalid = entries.filter(e => !isValidIpOrCidr(e));
+    if (invalid.length > 0) return `Invalid entr${invalid.length === 1 ? "y" : "ies"}: ${invalid.join(", ")}. Use IPv4 or CIDR format (e.g. 192.168.1.1 or 10.0.0.0/8).`;
+    return null;
+  };
+
+  const handleIpWhitelistChange = (v: string) => {
+    handleChange("security_admin_ip_whitelist", v);
+    setIpWhitelistError(validateIpWhitelist(v));
+  };
+
   const T = ({ k, label, sub, danger }: { k: string; label: string; sub?: string; danger?: boolean }) => (
     <Toggle label={label} sub={sub} checked={tog(k, danger ? "off" : "on")}
       onChange={v => handleToggle(k, v)} isDirty={dirty(k)} danger={danger} />
@@ -313,7 +351,7 @@ export default function SecurityPage() {
           <Button variant="outline" onClick={() => { loadSettings(); toast({ title: "Reloaded" }); }} disabled={loading} className="h-9 rounded-xl gap-2">
             <RefreshCw className="w-4 h-4" /> Reset
           </Button>
-          <Button onClick={handleSave} disabled={saving || dirtyKeys.size === 0} className="h-9 rounded-xl gap-2 shadow-sm">
+          <Button onClick={handleSave} disabled={saving || dirtyKeys.size === 0 || !!ipWhitelistError} className="h-9 rounded-xl gap-2 shadow-sm">
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? "Saving..." : `Save${dirtyKeys.size > 0 ? ` (${dirtyKeys.size})` : ""}`}
           </Button>
@@ -411,7 +449,7 @@ export default function SecurityPage() {
             </div>
 
             {/* MFA Active */}
-            {mfaStatus?.enabled ? (
+            {mfaStatus?.mfaEnabled ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-300 rounded-xl">
                   <ShieldCheck className="w-5 h-5 text-green-600 flex-shrink-0" />
@@ -444,7 +482,7 @@ export default function SecurityPage() {
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row gap-5 items-start">
                   <div className="flex-shrink-0 bg-white border-2 border-indigo-200 rounded-xl p-2">
-                    <img src={mfaSetupData.qrCode} alt="MFA QR Code" className="w-36 h-36 rounded" />
+                    <img src={mfaSetupData.qrCodeDataUrl} alt="MFA QR Code" className="w-36 h-36 rounded" />
                   </div>
                   <div className="space-y-2 flex-1">
                     <p className="text-xs font-bold text-foreground">Step 1 — Scan with your authenticator app</p>
@@ -954,8 +992,12 @@ export default function SecurityPage() {
           </SecPanel>
 
           {/* ── Recent Security Events ── */}
-          {secEvents.length > 0 && (
-            <SecPanel title="Recent Security Events" icon={AlertTriangle} color="text-red-700">
+          <SecPanel title="Recent Security Events" icon={AlertTriangle} color="text-red-700">
+            {secEvents.length === 0 ? (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-700">
+                <CheckCircle2 className="w-4 h-4" /> No security events recorded. All clear!
+              </div>
+            ) : (
               <div className="space-y-1.5 max-h-56 overflow-y-auto">
                 {secEvents.slice(0, 20).map((e, i) => (
                   <div key={i} className={`flex items-start gap-2 p-2 rounded-lg text-xs border ${
@@ -978,8 +1020,8 @@ export default function SecurityPage() {
                   </div>
                 ))}
               </div>
-            </SecPanel>
-          )}
+            )}
+          </SecPanel>
 
           {/* Admin Access & Audit Log settings */}
           <SecPanel title="Admin Access & Audit Log" icon={Shield} color="text-red-700">
@@ -987,21 +1029,33 @@ export default function SecurityPage() {
               <T k="security_audit_log"    label="Admin Action Audit Log" sub="Log all admin changes with timestamp & IP" />
               <T k="security_mfa_required" label="Require 2FA for Admin"  sub="TOTP code required at every login" />
             </div>
-            <F k="security_admin_ip_whitelist" label="Admin IP Whitelist (comma-separated, blank = allow all)"
-              placeholder="103.25.0.1, 123.123.123.123" mono
-              hint="Only these IPs can access the admin panel. Leave blank for no restriction." />
-            {val("security_admin_ip_whitelist") ? (
+            <Field
+              label="Admin IP Whitelist (comma-separated, blank = allow all)"
+              value={val("security_admin_ip_whitelist")}
+              onChange={handleIpWhitelistChange}
+              isDirty={dirty("security_admin_ip_whitelist")}
+              placeholder="103.25.0.1, 123.123.123.123"
+              mono
+              hint="Only these IPs can access the admin panel. Leave blank for no restriction."
+            />
+            {ipWhitelistError && (
+              <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 mt-1">
+                <XCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{ipWhitelistError}</span>
+              </div>
+            )}
+            {!ipWhitelistError && val("security_admin_ip_whitelist") ? (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {val("security_admin_ip_whitelist").split(",").map(ip => ip.trim()).filter(Boolean).map(ip => (
                   <span key={ip} className="px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-mono font-bold">{ip}</span>
                 ))}
               </div>
-            ) : (
+            ) : !ipWhitelistError ? (
               <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 mt-2">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                 <span>No IP restriction set — admin panel accessible from any IP.</span>
               </div>
-            )}
+            ) : null}
           </SecPanel>
 
           <SecPanel title="Maintenance Bypass Key" icon={Shield} color="text-red-700">

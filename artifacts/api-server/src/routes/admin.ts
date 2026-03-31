@@ -1527,11 +1527,29 @@ const BOOLEAN_SETTING_KEYS = new Set([
   "feature_pharmacy", "feature_school", "feature_new_users",
   "ride_bargaining_enabled", "ride_surge_enabled", "rider_cash_allowed",
   "cod_enabled", "finance_gst_enabled", "jazzcash_enabled", "easypaisa_enabled",
-  "auth_phone_otp_enabled", "auth_2fa_enabled",
   "security_otp_bypass", "security_phone_verify",
   "user_require_approval", "integration_whatsapp",
   "cod_allowed_rides", "wallet_allowed_rides", "jazzcash_allowed_rides", "easypaisa_allowed_rides",
 ]);
+
+function isValidOctet(s: string): boolean {
+  const n = parseInt(s, 10);
+  return n >= 0 && n <= 255 && String(n) === s;
+}
+
+function isValidIPv4(s: string): boolean {
+  const parts = s.split(".");
+  return parts.length === 4 && parts.every(isValidOctet);
+}
+
+function isValidIpOrCidr(entry: string): boolean {
+  if (entry.includes("/")) {
+    const [ip, prefix] = entry.split("/");
+    const p = parseInt(prefix, 10);
+    return isValidIPv4(ip) && !isNaN(p) && p >= 0 && p <= 32 && String(p) === prefix;
+  }
+  return isValidIPv4(entry);
+}
 
 function validateSettingValue(key: string, value: string): string | null {
   if (NUMERIC_SETTING_KEYS.has(key)) {
@@ -1540,6 +1558,13 @@ function validateSettingValue(key: string, value: string): string | null {
   }
   if (BOOLEAN_SETTING_KEYS.has(key)) {
     if (value !== "on" && value !== "off") return `Setting "${key}" must be "on" or "off" (got: "${value}")`;
+  }
+  if (key === "security_admin_ip_whitelist" && value.trim()) {
+    const entries = value.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const invalid = entries.filter((e: string) => !isValidIpOrCidr(e));
+    if (invalid.length > 0) {
+      return `Invalid IP whitelist entr${invalid.length === 1 ? "y" : "ies"}: ${invalid.join(", ")}. Use IPv4 or CIDR notation (e.g. 192.168.1.1 or 10.0.0.0/8).`;
+    }
   }
   return null;
 }
