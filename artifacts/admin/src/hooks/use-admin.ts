@@ -724,8 +724,27 @@ export const useSchoolSubscriptions = (routeId?: string) => {
 };
 
 
+type LiveRidersResponse = {
+  riders: Array<{
+    userId: string;
+    name: string;
+    phone: string | null;
+    isOnline: boolean;
+    vehicleType: string | null;
+    lat: number;
+    lng: number;
+    updatedAt: string;
+    ageSeconds: number;
+    isFresh: boolean;
+    action?: string | null;
+  }>;
+  total: number;
+  freshCount: number;
+  staleTimeoutSec: number;
+};
+
 export const useLiveRiders = () => {
-  return useQuery({
+  return useQuery<LiveRidersResponse>({
     queryKey: ["admin-live-riders"],
     queryFn: () => fetcher("/live-riders"),
     refetchInterval: 10_000,
@@ -874,3 +893,11 @@ export const useAuditLog = (params?: { page?: number; action?: string; from?: st
     refetchInterval: 30_000,
   });
 };
+
+export const useRiderRoute = (userId: string | null, date?: string) =>
+  useQuery({
+    queryKey: ["admin-rider-route", userId, date],
+    queryFn: () => fetcher(`/riders/${userId}/route${date ? `?date=${date}` : ""}`),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });

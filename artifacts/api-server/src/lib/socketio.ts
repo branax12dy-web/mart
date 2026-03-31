@@ -1,0 +1,312 @@
+import { Server as SocketIOServer } from "socket.io";
+import type { Server as HttpServer } from "http";
+import { logger } from "./logger.js";
+import { verifyUserJwt, verifyAdminJwt } from "../middleware/security.js";
+import { db } from "@workspace/db";
+import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable } from "@workspace/db/schema";
+import { eq, or, and } from "drizzle-orm";
+
+let _io: SocketIOServer | null = null;
+
+/* ── JWT helpers ── */
+function extractBearerToken(header: string | string[] | undefined): string | null {
+  const h = Array.isArray(header) ? header[0] : header;
+  if (!h) return null;
+  return h.startsWith("Bearer ") ? h.slice(7) : null;
+}
+
+function getTokenFromHandshake(
+  headers: Record<string, string | string[] | undefined>,
+  auth: Record<string, unknown>,
+): string | null {
+  return (
+    extractBearerToken(headers["authorization"]) ??
+    (typeof auth["token"] === "string" ? auth["token"] : null)
+  );
+}
+
+/* ── Room authorization ── */
+
+function isAuthorizedForAdminFleet(
+  headers: Record<string, string | string[] | undefined>,
+  query: Record<string, unknown>,
+  auth: Record<string, unknown>,
+): boolean {
+  const candidates: Array<string | undefined> = [
+    query["adminToken"] as string | undefined,
+    auth["adminToken"] as string | undefined,
+    Array.isArray(headers["x-admin-token"]) ? headers["x-admin-token"][0] : headers["x-admin-token"] as string | undefined,
+  ];
+  for (const token of candidates) {
+    if (token && verifyAdminJwt(token)) return true;
+  }
+  const bearer = extractBearerToken(headers["authorization"]);
+  if (bearer) {
+    const payload = verifyUserJwt(bearer);
+    if (payload && (payload.role === "admin" || payload.roles?.includes("admin"))) return true;
+  }
+  return false;
+}
+
+function isAuthorizedForVendorRoom(
+  vendorId: string,
+  headers: Record<string, string | string[] | undefined>,
+  auth: Record<string, unknown>,
+): boolean {
+  const bearer = getTokenFromHandshake(headers, auth);
+  if (!bearer) return false;
+  const payload = verifyUserJwt(bearer);
+  if (!payload) return false;
+  return payload.userId === vendorId && payload.role === "vendor";
+}
+
+/** Verify user is a participant of an order (customer or assigned rider) */
+async function isAuthorizedForOrderRoom(
+  orderId: string,
+  headers: Record<string, string | string[] | undefined>,
+  auth: Record<string, unknown>,
+): Promise<boolean> {
+  const bearer = getTokenFromHandshake(headers, auth);
+  if (!bearer) return false;
+  const payload = verifyUserJwt(bearer);
+  if (!payload) return false;
+  const userId = payload.userId;
+
+  try {
+    /* Check mart/food orders */
+    const [order] = await db
+      .select({ userId: ordersTable.userId, riderId: ordersTable.riderId })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, orderId))
+      .limit(1);
+    if (order && (order.userId === userId || order.riderId === userId)) return true;
+
+    /* Check parcel bookings */
+    const [parcel] = await db
+      .select({ userId: parcelBookingsTable.userId, riderId: parcelBookingsTable.riderId })
+      .from(parcelBookingsTable)
+      .where(eq(parcelBookingsTable.id, orderId))
+      .limit(1);
+    if (parcel && (parcel.userId === userId || parcel.riderId === userId)) return true;
+
+    /* Check pharmacy orders */
+    const [pharmacy] = await db
+      .select({ userId: pharmacyOrdersTable.userId, riderId: pharmacyOrdersTable.riderId })
+      .from(pharmacyOrdersTable)
+      .where(eq(pharmacyOrdersTable.id, orderId))
+      .limit(1);
+    if (pharmacy && (pharmacy.userId === userId || pharmacy.riderId === userId)) return true;
+  } catch {
+    /* DB failure → deny */
+  }
+
+  return false;
+}
+
+/** Verify user is a participant of the ride (customer, assigned rider, or active order rider/vendor) */
+async function isAuthorizedForRideRoom(
+  rideId: string,
+  headers: Record<string, string | string[] | undefined>,
+  auth: Record<string, unknown>,
+): Promise<boolean> {
+  const bearer = getTokenFromHandshake(headers, auth);
+  if (!bearer) return false;
+  const payload = verifyUserJwt(bearer);
+  if (!payload) return false;
+  const userId = payload.userId;
+
+  try {
+    /* Check ride table: booking customer (userId) or assigned rider */
+    const [ride] = await db
+      .select({ userId: ridesTable.userId, riderId: ridesTable.riderId })
+      .from(ridesTable)
+      .where(eq(ridesTable.id, rideId))
+      .limit(1);
+
+    if (ride) {
+      if (ride.userId === userId || ride.riderId === userId) return true;
+    }
+
+    /* Check orders table: rider or vendor for delivery orders that share this ride context */
+    const [order] = await db
+      .select({ riderId: ordersTable.riderId, vendorId: ordersTable.vendorId })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.id, rideId),
+        or(
+          eq(ordersTable.riderId, userId),
+          eq(ordersTable.vendorId, userId),
+        ),
+      ))
+      .limit(1);
+
+    if (order) return true;
+  } catch {
+    /* DB failure → deny */
+  }
+
+  return false;
+}
+
+export function initSocketIO(httpServer: HttpServer): SocketIOServer {
+  _io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+    },
+    path: "/api/socket.io",
+    transports: ["polling", "websocket"],
+  });
+
+  _io.on("connection", (socket) => {
+    const headers = socket.handshake.headers as Record<string, string | string[] | undefined>;
+    const query = socket.handshake.query as Record<string, unknown>;
+    const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
+
+    /* Auto-join non-ride rooms from the connection query string (synchronous auth) */
+    const rooms = query["rooms"] as string | undefined;
+    if (rooms) {
+      const roomList = rooms.split(",").map(r => r.trim()).filter(Boolean);
+      for (const room of roomList) {
+        if (room === "admin-fleet") {
+          if (isAuthorizedForAdminFleet(headers, query, auth)) {
+            socket.join(room);
+          } else {
+            logger.debug({ socketId: socket.id, room }, "Socket denied admin-fleet (unauthorized)");
+          }
+        } else if (room.startsWith("vendor:")) {
+          const vendorId = room.slice("vendor:".length);
+          if (isAuthorizedForVendorRoom(vendorId, headers, auth)) {
+            socket.join(room);
+          } else {
+            logger.debug({ socketId: socket.id, room }, "Socket denied vendor room (unauthorized)");
+          }
+        } else if (room.startsWith("ride:")) {
+          /* Ride rooms require async DB lookup — handled via async join below */
+          const rideId = room.slice("ride:".length);
+          isAuthorizedForRideRoom(rideId, headers, auth).then(ok => {
+            if (ok) {
+              socket.join(room);
+            } else {
+              logger.debug({ socketId: socket.id, room }, "Socket denied ride room (not a participant)");
+            }
+          }).catch(() => {});
+        } else if (room.startsWith("order:")) {
+          const orderId = room.slice("order:".length);
+          isAuthorizedForOrderRoom(orderId, headers, auth).then(ok => {
+            if (ok) {
+              socket.join(room);
+            } else {
+              logger.debug({ socketId: socket.id, room }, "Socket denied order room (not a participant)");
+            }
+          }).catch(() => {});
+        }
+      }
+    }
+
+    /* Join event: client can request additional rooms after connect */
+    socket.on("join", (room: string) => {
+      if (typeof room !== "string") return;
+
+      if (room === "admin-fleet") {
+        if (isAuthorizedForAdminFleet(headers, query, auth)) {
+          socket.join(room);
+          logger.debug({ socketId: socket.id, room }, "Socket joined admin-fleet");
+        } else {
+          logger.debug({ socketId: socket.id, room }, "Socket join denied admin-fleet (unauthorized)");
+        }
+      } else if (room.startsWith("vendor:")) {
+        const vendorId = room.slice("vendor:".length);
+        if (isAuthorizedForVendorRoom(vendorId, headers, auth)) {
+          socket.join(room);
+          logger.debug({ socketId: socket.id, room }, "Socket joined vendor room");
+        } else {
+          logger.debug({ socketId: socket.id, room }, "Socket join denied vendor room (unauthorized)");
+        }
+      } else if (room.startsWith("ride:")) {
+        const rideId = room.slice("ride:".length);
+        isAuthorizedForRideRoom(rideId, headers, auth).then(ok => {
+          if (ok) {
+            socket.join(room);
+            logger.debug({ socketId: socket.id, room }, "Socket joined ride room");
+          } else {
+            logger.debug({ socketId: socket.id, room }, "Socket join denied ride room (not a participant)");
+          }
+        }).catch(() => {});
+      } else if (room.startsWith("order:")) {
+        const orderId = room.slice("order:".length);
+        isAuthorizedForOrderRoom(orderId, headers, auth).then(ok => {
+          if (ok) {
+            socket.join(room);
+            logger.debug({ socketId: socket.id, room }, "Socket joined order room");
+          } else {
+            logger.debug({ socketId: socket.id, room }, "Socket join denied order room (not a participant)");
+          }
+        }).catch(() => {});
+      }
+    });
+
+    socket.on("leave", (room: string) => {
+      socket.leave(room);
+    });
+
+    socket.on("disconnect", () => {
+      logger.debug({ socketId: socket.id }, "Socket disconnected");
+    });
+  });
+
+  logger.info("Socket.io initialized");
+  return _io;
+}
+
+export function getIO(): SocketIOServer | null {
+  return _io;
+}
+
+export function emitRiderLocation(payload: {
+  userId: string;
+  name?: string;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  batteryLevel?: number;
+  action?: string | null;
+  rideId?: string | null;
+  vendorId?: string | null;
+  orderId?: string | null;
+  updatedAt: string;
+}) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("rider:location", payload);
+  if (payload.rideId) {
+    _io.to(`ride:${payload.rideId}`).emit("rider:location", payload);
+  }
+  if (payload.vendorId) {
+    _io.to(`vendor:${payload.vendorId}`).emit("rider:location", payload);
+  }
+  if (payload.orderId) {
+    _io.to(`order:${payload.orderId}`).emit("rider:location", payload);
+  }
+}
+
+export function emitRiderForVendor(vendorId: string, payload: {
+  userId: string;
+  latitude: number;
+  longitude: number;
+  updatedAt: string;
+}) {
+  if (!_io) return;
+  _io.to(`vendor:${vendorId}`).emit("rider:location", payload);
+}
+
+export function emitCustomerLocation(payload: {
+  userId: string;
+  latitude: number;
+  longitude: number;
+  updatedAt: string;
+}) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("customer:location", payload);
+}

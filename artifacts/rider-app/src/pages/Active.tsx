@@ -395,6 +395,7 @@ export default function Active() {
           latitude:  pos.coords.latitude,
           longitude: pos.coords.longitude,
           accuracy:  pos.coords.accuracy,
+          rideId:    data?.ride?.id ?? undefined,
         }).then(() => {
           if (isMountedRef.current && gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: unknown) => {

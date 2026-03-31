@@ -23,6 +23,7 @@ import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
 import { API_BASE } from "@/utils/api";
 import { staticMapUrl } from "@/hooks/useMaps";
+import type { Socket } from "socket.io-client";
 
 const C = Colors.light;
 
@@ -72,6 +73,7 @@ export default function OrderDetailScreen() {
   const [trackFailed, setTrackFailed] = useState(false);
 
   const mountedRef = useRef(true);
+  const socketRef = useRef<Socket | null>(null);
   const isPharmacyType = type === "pharmacy";
 
   // Poll rider live location for all active order types.
@@ -116,6 +118,42 @@ export default function OrderDetailScreen() {
     fetchTrack();
     return () => { if (ivRef !== null) clearInterval(ivRef); };
   }, [order?.status, orderId, token, isParcel, isRide, isPharmacyType]);
+
+  /* Socket.io: real-time rider location for active delivery/parcel/pharmacy orders */
+  useEffect(() => {
+    if (!orderId || !token) return;
+    const isActive = LIVE_TRACKING_STATUSES.includes(order?.status ?? "");
+    if (!isActive) return;
+
+    /* Ride/parcel orders use ride:{orderId}; delivery orders use order:{orderId} */
+    const room = isRide || isParcel ? `ride:${orderId}` : `order:${orderId}`;
+    const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
+    const socketUrl = `https://${domain}`;
+
+    let socket: Socket | null = null;
+    import("socket.io-client").then(({ io }) => {
+      socket = io(socketUrl, {
+        path: "/api/socket.io",
+        query: { rooms: room },
+        auth: { token },
+        extraHeaders: { Authorization: `Bearer ${token}` },
+        transports: ["polling", "websocket"],
+      });
+      socketRef.current = socket;
+      socket.on("connect", () => socket?.emit("join", room));
+      socket.on("rider:location", (payload: { latitude: number; longitude: number }) => {
+        if (mountedRef.current) {
+          setRiderLat(payload.latitude);
+          setRiderLng(payload.longitude);
+        }
+      });
+    });
+
+    return () => {
+      socket?.disconnect();
+      socketRef.current = null;
+    };
+  }, [order?.status, orderId, token, isRide, isParcel]);
 
   useEffect(() => {
     mountedRef.current = true;

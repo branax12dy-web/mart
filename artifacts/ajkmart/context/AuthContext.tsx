@@ -144,7 +144,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, refreshIn);
   };
 
+  const clearCustomerLocation = async (userId: string, userToken: string) => {
+    try {
+      const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+      await fetch(`${API_BASE}/locations/clear`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ userId }),
+      });
+    } catch {}
+  };
+
   const doLogout = async () => {
+    /* Clear customer location before logging out */
+    const tok = token;
+    const u = user;
+    if (u?.role === "customer" && tok) {
+      clearCustomerLocation(u.id, tok).catch(() => {});
+    }
     clearRefreshTimer();
     await AsyncStorage.multiRemove([USER_KEY, TOKEN_KEY, REFRESH_TOKEN_KEY]);
     try {
@@ -211,6 +228,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadAuth();
   }, [registerAuth]);
 
+  const captureCustomerLocation = async (userId: string, userToken: string) => {
+    try {
+      const Location = await import("expo-location");
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+      await fetch(`${API_BASE}/locations/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({
+          userId,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          role: "customer",
+        }),
+      });
+    } catch {}
+  };
+
   const login = async (userData: AppUser, userToken: string, refreshToken?: string) => {
     const pairs: [string, string][] = [
       [USER_KEY, JSON.stringify(userData)],
@@ -223,6 +261,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTwoFactorPending(null);
     registerAuth(userToken, refreshToken ?? null);
     syncToServer(userToken).catch(() => {});
+    /* Capture customer location on login (foreground only) */
+    if (userData.role === "customer") {
+      captureCustomerLocation(userData.id, userToken).catch(() => {});
+    }
   };
 
   const completeTwoFactorLogin = async (userData: AppUser, userToken: string, refreshToken?: string) => {

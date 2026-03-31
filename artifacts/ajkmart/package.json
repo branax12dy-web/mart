@@ -60,12 +60,15 @@
   "dependencies": {
     "@expo-google-fonts/noto-nastaliq-urdu": "^0.4.2",
     "expo-auth-session": "^55.0.10",
+    "expo-battery": "^55.0.9",
     "expo-clipboard": "6.0.3",
     "expo-device": "^8.0.10",
     "expo-file-system": "^19.0.21",
     "expo-local-authentication": "^55.0.9",
     "expo-secure-store": "^55.0.9",
     "expo-sharing": "^14.0.8",
-    "react-native-qrcode-svg": "^6.3.21"
+    "expo-task-manager": "^55.0.10",
+    "react-native-qrcode-svg": "^6.3.21",
+    "socket.io-client": "^4.8.3"
   }
 }

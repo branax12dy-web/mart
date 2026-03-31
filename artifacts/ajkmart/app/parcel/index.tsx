@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { router } from "expo-router";
 import { useMapsAutocomplete, resolveLocation } from "@/hooks/useMaps";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -146,24 +147,49 @@ function ParcelScreenInner() {
 
   const selectedType = PARCEL_TYPES.find(t => t.id === parcelType);
 
-  // Load wizard draft from AsyncStorage on mount
+  // Load wizard draft from AsyncStorage on mount; auto-fill pickup if no draft
   useEffect(() => {
+    let cancelled = false;
     AsyncStorage.getItem(PARCEL_DRAFT_KEY)
-      .then(raw => {
-        if (!raw) return;
-        const d = JSON.parse(raw);
-        if (d.senderName)    setSenderName(d.senderName);
-        if (d.senderPhone)   setSenderPhone(d.senderPhone);
-        if (d.pickupAddress) setPickupAddress(d.pickupAddress);
-        if (d.receiverName)  setReceiverName(d.receiverName);
-        if (d.receiverPhone) setReceiverPhone(d.receiverPhone);
-        if (d.dropAddress)   setDropAddress(d.dropAddress);
-        if (d.parcelType)    setParcelType(d.parcelType);
-        if (d.weight)        setWeight(d.weight);
-        if (d.description)   setDescription(d.description);
-        if (d.step !== undefined) setStep(d.step);
+      .then(async raw => {
+        if (cancelled) return;
+        if (raw) {
+          const d = JSON.parse(raw);
+          if (d.senderName)    setSenderName(d.senderName);
+          if (d.senderPhone)   setSenderPhone(d.senderPhone);
+          if (d.pickupAddress) setPickupAddress(d.pickupAddress);
+          if (d.receiverName)  setReceiverName(d.receiverName);
+          if (d.receiverPhone) setReceiverPhone(d.receiverPhone);
+          if (d.dropAddress)   setDropAddress(d.dropAddress);
+          if (d.parcelType)    setParcelType(d.parcelType);
+          if (d.weight)        setWeight(d.weight);
+          if (d.description)   setDescription(d.description);
+          if (d.step !== undefined) setStep(d.step);
+          /* If draft already has a pickup address, skip GPS auto-fill */
+          if (d.pickupAddress) return;
+        }
+        /* Auto-fill pickup from current GPS */
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== "granted" || cancelled) return;
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (cancelled) return;
+          const { latitude: lat, longitude: lng } = pos.coords;
+          let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          try {
+            const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+            const geoRes = await fetch(`${API_BASE}/maps/geocode?address=${lat},${lng}`);
+            if (geoRes.ok) {
+              const geoData = await geoRes.json() as { formattedAddress?: string };
+              if (geoData?.formattedAddress) address = geoData.formattedAddress;
+            }
+          } catch {}
+          if (cancelled) return;
+          setPickupAddress(address);
+        } catch {}
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   // Persist wizard draft to AsyncStorage whenever key fields change

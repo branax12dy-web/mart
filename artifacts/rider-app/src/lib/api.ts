@@ -274,7 +274,7 @@ export const api = {
   getMyReviews: () => apiFetch("/rider/reviews"),
 
   /* Location */
-  updateLocation: (data: { latitude: number; longitude: number; accuracy?: number }) => apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) }),
+  updateLocation: (data: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number; batteryLevel?: number; rideId?: string }) => apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) }),
 
   /* Wallet */
   getWallet:      () => apiFetch("/rider/wallet/transactions"),

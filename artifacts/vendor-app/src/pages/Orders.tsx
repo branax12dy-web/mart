@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
+import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
 import { fc, fd, CARD, DEFAULT_COMMISSION_PCT } from "../lib/ui";
+import { io, type Socket } from "socket.io-client";
 
 function useNow(intervalMs = 10000) {
   const [now, setNow] = useState(Date.now());
@@ -42,10 +44,19 @@ const STATUS_BADGE: Record<string, string> = {
 
 const ORDER_ICON: Record<string, string> = { food: "🍔", mart: "🛒", pharmacy: "💊", parcel: "📦" };
 
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function Orders() {
   const qc = useQueryClient();
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
+  const { user } = useAuth();
   const T = (key: TranslationKey) => tDual(key, language);
   const orderRules = config.orderRules;
   const vendorKeep = 1 - ((config.platform.vendorCommissionPct ?? DEFAULT_COMMISSION_PCT) / 100);
@@ -64,6 +75,64 @@ export default function Orders() {
   const [pendingOrderIds, setPendingOrderIds] = useState<Set<string>>(new Set());
   const [acceptDialog, setAcceptDialog] = useState<{ id: string; total: number } | null>(null);
   const [rejectDialog, setRejectDialog] = useState<{ id: string } | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const [riderPositions, setRiderPositions] = useState<Record<string, { lat: number; lng: number; updatedAt: string }>>({});
+
+  /* Vendor's own lat/lng — prefer backend-persisted location, fall back to browser */
+  const [vendorLat, setVendorLat] = useState<number | null>(null);
+  const [vendorLng, setVendorLng] = useState<number | null>(null);
+
+  /* Fetch vendor's persisted location from the backend live_locations store */
+  const { data: vendorLocData } = useQuery({
+    queryKey: ["vendor-live-location", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const token = localStorage.getItem("ajkmart_vendor_token") ?? "";
+      const res = await fetch(`${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/api/locations/${user.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ latitude: number; longitude: number } | null>;
+    },
+    enabled: !!user?.id,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+
+  useEffect(() => {
+    if (vendorLocData?.latitude != null && vendorLocData?.longitude != null) {
+      setVendorLat(vendorLocData.latitude);
+      setVendorLng(vendorLocData.longitude);
+    } else if (navigator.geolocation) {
+      /* Fallback: use browser geolocation only when no backend location found */
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { setVendorLat(pos.coords.latitude); setVendorLng(pos.coords.longitude); },
+        () => {},
+      );
+    }
+  }, [vendorLocData]);
+
+  /* Socket.io: subscribe to vendor:{userId} room for rider tracking */
+  useEffect(() => {
+    if (!user?.id) return;
+    const token = localStorage.getItem("ajkmart_vendor_token") ?? "";
+    const socket = io(window.location.origin, {
+      path: "/api/socket.io",
+      query: { rooms: `vendor:${user.id}` },
+      auth: { token },
+      extraHeaders: { Authorization: `Bearer ${token}` },
+      transports: ["polling", "websocket"],
+    });
+    socketRef.current = socket;
+    socket.on("connect", () => socket.emit("join", `vendor:${user.id}`));
+    socket.on("rider:location", (payload: { userId: string; latitude: number; longitude: number; updatedAt: string }) => {
+      setRiderPositions(prev => ({
+        ...prev,
+        [payload.userId]: { lat: payload.latitude, lng: payload.longitude, updatedAt: payload.updatedAt },
+      }));
+    });
+    return () => { socket.disconnect(); socketRef.current = null; };
+  }, [user?.id]);
 
   const apiStatus = tab === "new" ? "pending" : tab;
   const { data, isLoading, refetch } = useQuery({ queryKey: ["vendor-orders", tab], queryFn: () => api.getOrders(apiStatus), refetchInterval: 15000 });
@@ -251,6 +320,19 @@ export default function Orders() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-gray-700 font-semibold">{o.riderName}</p>
                             {o.riderPhone && <p className="text-xs text-gray-400">{o.riderPhone}</p>}
+                            {/* Live distance/ETA badge */}
+                            {o.riderId && riderPositions[o.riderId] && vendorLat !== null && vendorLng !== null && (
+                              (() => {
+                                const rp = riderPositions[o.riderId!]!;
+                                const distKm = haversineKm(rp.lat, rp.lng, vendorLat, vendorLng);
+                                const etaMin = Math.max(1, Math.round(distKm / 0.5));
+                                return (
+                                  <p className="text-xs font-bold text-green-600 mt-0.5">
+                                    📍 {distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)} km`} away · ETA ~{etaMin} min
+                                  </p>
+                                );
+                              })()
+                            )}
                           </div>
                           {o.riderPhone && (
                             <a href={`tel:${o.riderPhone}`} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">📞 Call</a>

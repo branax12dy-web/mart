@@ -25,6 +25,7 @@ import {
   riderPenaltiesTable,
   rideEventLogsTable,
   rideNotifiedRidersTable,
+  locationLogsTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -3282,7 +3283,9 @@ router.get("/school-subscriptions", async (req, res) => {
    "Fresh" = updated within last 5 minutes.
 ══════════════════════════════════════════════════════════ */
 router.get("/live-riders", async (_req, res) => {
-  const STALE_MS = 5 * 60 * 1000; /* 5 minutes */
+  const settings = await getCachedSettings();
+  const staleTimeoutSec = parseInt(settings["gps_stale_timeout_sec"] ?? "300", 10);
+  const STALE_MS = staleTimeoutSec * 1000;
   const cutoff   = new Date(Date.now() - STALE_MS);
 
   const locs = await db.select().from(liveLocationsTable)
@@ -3307,6 +3310,7 @@ router.get("/live-riders", async (_req, res) => {
       vehicleType: user?.vehicleType ?? null,
       lat:         parseFloat(String(loc.latitude)),
       lng:         parseFloat(String(loc.longitude)),
+      action:      loc.action        ?? null,
       updatedAt:   updatedAt.toISOString(),
       ageSeconds,
       isFresh,
@@ -3319,7 +3323,12 @@ router.get("/live-riders", async (_req, res) => {
     return a.ageSeconds - b.ageSeconds;
   });
 
-  res.json({ riders: enriched, total: enriched.length, freshCount: enriched.filter(r => r.isFresh).length });
+  res.json({
+    riders: enriched,
+    total: enriched.length,
+    freshCount: enriched.filter(r => r.isFresh).length,
+    staleTimeoutSec,
+  });
 });
 
 /* ══════════════════════════════════════════════════════════
@@ -3883,6 +3892,52 @@ router.get("/dispatch-monitor", async (_req, res) => {
     })),
     total: activeRides.length,
   });
+});
+
+/* ── GET /admin/riders/:userId/route?date=YYYY-MM-DD — fleet history for admin ── */
+router.get("/riders/:userId/route", async (req, res) => {
+  const { userId } = req.params;
+  const dateParam = req.query["date"] as string | undefined;
+
+  let startOfDay: Date;
+  let endOfDay: Date;
+
+  if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    startOfDay = new Date(`${dateParam}T00:00:00.000Z`);
+    endOfDay   = new Date(`${dateParam}T23:59:59.999Z`);
+  } else {
+    const now = new Date();
+    startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  }
+
+  const logs = await db
+    .select()
+    .from(locationLogsTable)
+    .where(
+      and(
+        eq(locationLogsTable.userId, userId),
+        gte(locationLogsTable.createdAt, startOfDay),
+        lte(locationLogsTable.createdAt, endOfDay),
+      )
+    )
+    .orderBy(asc(locationLogsTable.createdAt));
+
+  const points = logs.map(l => ({
+    latitude:     parseFloat(String(l.latitude)),
+    longitude:    parseFloat(String(l.longitude)),
+    accuracy:     l.accuracy,
+    speed:        l.speed,
+    heading:      l.heading,
+    batteryLevel: l.batteryLevel,
+    isSpoofed:    l.isSpoofed,
+    createdAt:    l.createdAt.toISOString(),
+  }));
+
+  const loginLocation  = points[0] ?? null;
+  const lastLocation   = points[points.length - 1] ?? null;
+
+  res.json({ userId, date: dateParam ?? "today", loginLocation, lastLocation, route: points, total: points.length });
 });
 
 export default router;

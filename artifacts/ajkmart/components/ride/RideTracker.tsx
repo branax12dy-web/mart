@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Image,
   Linking,
   Platform,
   Pressable,
@@ -21,6 +22,7 @@ import type { CancelTarget } from "@/components/CancelModal";
 import { useRideStatus } from "@/hooks/useRideStatus";
 import { NegotiationScreen } from "@/components/ride/NegotiationScreen";
 import { RideStatusSkeleton } from "@/components/ride/Skeletons";
+import { staticMapUrl } from "@/hooks/useMaps";
 import {
   getDispatchStatus,
   retryRideDispatch,
@@ -90,6 +92,41 @@ export function RideTracker({
   } | null>(null);
   const [acceptedAt, setAcceptedAt] = useState<number | null>(null);
   const CANCEL_GRACE_SEC = 180;
+
+  /* ── Live rider location via Socket.io ── */
+  const [riderLivePos, setRiderLivePos] = useState<{ lat: number; lng: number } | null>(null);
+  const socketRef = useRef<{ disconnect: () => void } | null>(null);
+
+  useEffect(() => {
+    const ACTIVE_STATUSES = ["accepted", "arrived", "in_transit", "picked_up", "in_progress"];
+    const isActive = ACTIVE_STATUSES.includes(ride?.status ?? "");
+    if (!isActive || !rideId) return;
+
+    const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
+    const socketUrl = `https://${domain}`;
+    const socketIoPath = "/api/socket.io";
+
+    let socket: import("socket.io-client").Socket | null = null;
+    import("socket.io-client").then(({ io }) => {
+      socket = io(socketUrl, {
+        path: socketIoPath,
+        query: { rooms: `ride:${rideId}` },
+        auth: token ? { token } : {},
+        extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+        transports: ["polling", "websocket"],
+      });
+      socketRef.current = socket;
+      socket.on("connect", () => socket.emit("join", `ride:${rideId}`));
+      socket.on("rider:location", (payload: { latitude: number; longitude: number }) => {
+        setRiderLivePos({ lat: payload.latitude, lng: payload.longitude });
+      });
+    });
+
+    return () => {
+      if (socket) socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [rideId, ride?.status, token]);
 
   useEffect(() => {
     AsyncStorage.getItem(`rated_ride_${rideId}`).then(val => {
@@ -1883,66 +1920,114 @@ export function RideTracker({
                 </View>
               </View>
 
-              {ride.riderLat != null &&
-                ride.riderLng != null &&
-                ride.pickupLat != null &&
-                (status === "accepted" || status === "arrived") &&
+              {(riderLivePos != null || ride.riderLat != null) &&
+                (status === "accepted" || status === "arrived" || status === "in_transit" || status === "picked_up" || status === "in_progress") &&
                 (() => {
-                  const km = haversineKm(
-                    ride.riderLat,
-                    ride.riderLng,
-                    ride.pickupLat,
-                    ride.pickupLng,
-                  );
-                  const nearby = km < 0.2;
-                  const stale =
+                  /* Prefer live socket position, fall back to polling data */
+                  const effLat = riderLivePos?.lat ?? ride.riderLat!;
+                  const effLng = riderLivePos?.lng ?? ride.riderLng!;
+                  if (effLat == null || effLng == null) return null;
+
+                  const km = ride.pickupLat != null
+                    ? haversineKm(effLat, effLng, ride.pickupLat, ride.pickupLng!)
+                    : null;
+                  const nearby = km != null && km < 0.2;
+                  const stale = riderLivePos == null &&
                     ride.riderLocAge != null && ride.riderLocAge > 90;
+                  const isLive = riderLivePos != null;
+
+                  /* Build static map markers: rider (green) + pickup (red) */
+                  const mapMarkers: Array<{ lat: number; lng: number; color: string }> = [
+                    { lat: effLat, lng: effLng, color: "green" },
+                    ...(ride.pickupLat != null
+                      ? [{ lat: ride.pickupLat, lng: ride.pickupLng!, color: "red" }]
+                      : []),
+                  ];
+                  const mapImgUrl = staticMapUrl(mapMarkers, { width: 600, height: 200, zoom: km != null && km < 1 ? 16 : 14 });
+
                   return (
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                        backgroundColor: nearby
-                          ? "#F0FDF4"
-                          : "#EFF6FF",
-                        borderRadius: 12,
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        marginBottom: 14,
-                        borderWidth: 1,
-                        borderColor: nearby ? "#D1FAE5" : "#DBEAFE",
-                      }}
-                    >
-                      <Ionicons
-                        name={nearby ? "location" : "navigate-outline"}
-                        size={16}
-                        color={nearby ? "#10B981" : C.primary}
-                      />
-                      <Text
+                    <>
+                      {/* Live map showing rider position */}
+                      <View
                         style={{
-                          fontFamily: "Inter_600SemiBold",
-                          fontSize: 13,
-                          color: nearby ? "#065F46" : "#1E40AF",
-                          flex: 1,
+                          borderRadius: 14,
+                          overflow: "hidden",
+                          marginBottom: 10,
+                          borderWidth: 1,
+                          borderColor: "#E2E8F0",
                         }}
                       >
-                        {nearby
-                          ? "Driver is nearby!"
-                          : `${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`} away`}
-                      </Text>
-                      {stale && (
-                        <Text
+                        <Image
+                          source={{ uri: mapImgUrl }}
+                          style={{ width: "100%", height: 180 }}
+                          resizeMode="cover"
+                        />
+                        {/* Live indicator overlay */}
+                        <View
                           style={{
-                            fontFamily: "Inter_400Regular",
-                            fontSize: 10,
-                            color: C.textMuted,
+                            position: "absolute",
+                            top: 8,
+                            right: 8,
+                            backgroundColor: isLive ? "#10B981" : "#94A3B8",
+                            borderRadius: 8,
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 4,
                           }}
                         >
-                          stale
-                        </Text>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#fff", opacity: isLive ? 1 : 0.6 }} />
+                          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" }}>
+                            {isLive ? "LIVE" : "LAST KNOWN"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Distance badge */}
+                      {km != null && (
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 8,
+                            backgroundColor: nearby ? "#F0FDF4" : "#EFF6FF",
+                            borderRadius: 12,
+                            paddingHorizontal: 14,
+                            paddingVertical: 10,
+                            marginBottom: 14,
+                            borderWidth: 1,
+                            borderColor: nearby ? "#D1FAE5" : "#DBEAFE",
+                          }}
+                        >
+                          <Ionicons
+                            name={nearby ? "location" : "navigate-outline"}
+                            size={16}
+                            color={nearby ? "#10B981" : C.primary}
+                          />
+                          <Text
+                            style={{
+                              fontFamily: "Inter_600SemiBold",
+                              fontSize: 13,
+                              color: nearby ? "#065F46" : "#1E40AF",
+                              flex: 1,
+                            }}
+                          >
+                            {nearby
+                              ? "Driver is nearby!"
+                              : `${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`} away`}
+                          </Text>
+                          {isLive && (
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }} />
+                          )}
+                          {stale && (
+                            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted }}>
+                              stale
+                            </Text>
+                          )}
+                        </View>
                       )}
-                    </View>
+                    </>
                   );
                 })()}
 

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { liveLocationsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { liveLocationsTable, locationLogsTable, ridesTable, ordersTable } from "@workspace/db/schema";
+import { eq, and, gte, lte, asc, or, desc } from "drizzle-orm";
 import {
   getCachedSettings,
   detectGPSSpoof,
@@ -10,21 +10,42 @@ import {
   verifyUserJwt,
   customerAuth,
 } from "../middleware/security.js";
+import { generateId } from "../lib/id.js";
+import { emitRiderLocation, emitCustomerLocation, emitRiderForVendor } from "../lib/socketio.js";
 
 const router: IRouter = Router();
 
-router.post("/update", async (req, res) => {
-  /* Prefer userId from a valid JWT; fall back to body for riders/vendors that send their own token */
-  let userId: string | undefined = req.body.userId;
-  const authHeader = req.headers.authorization ?? "";
-  if (authHeader.startsWith("Bearer ")) {
-    const payload = verifyUserJwt(authHeader.slice(7));
-    if (payload?.userId) userId = payload.userId;
-  }
+/* Haversine distance in meters */
+function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-  const { latitude, longitude, role, accuracy } = req.body;
-  if (!userId || !latitude || !longitude) {
-    res.status(400).json({ error: "Authentication required (or userId, latitude and longitude are required)" });
+router.post("/update", async (req, res) => {
+  /* Strict JWT auth — userId and role MUST come from the verified JWT.
+     Body identity fields (userId, role) are ignored to prevent IDOR/role-spoofing. */
+  const authHeader = req.headers.authorization ?? "";
+  if (!authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const jwtPayload = verifyUserJwt(authHeader.slice(7));
+  if (!jwtPayload?.userId) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+  const userId = jwtPayload.userId;
+  const effectiveRole = jwtPayload.role || "customer";
+
+  const { latitude, longitude, accuracy, speed, heading, batteryLevel, action } = req.body;
+  if (!latitude || !longitude) {
+    res.status(400).json({ error: "latitude and longitude are required" });
     return;
   }
 
@@ -39,8 +60,8 @@ router.post("/update", async (req, res) => {
 
   const settings = await getCachedSettings();
 
-  /* ── GPS Tracking gate (fail-fast before any DB work) ── */
-  if (settings["security_gps_tracking"] === "off" && role === "rider") {
+  /* ── GPS Tracking gate ── */
+  if (settings["security_gps_tracking"] === "off" && effectiveRole === "rider") {
     res.status(403).json({ error: "GPS tracking is currently disabled by admin." });
     return;
   }
@@ -53,8 +74,10 @@ router.post("/update", async (req, res) => {
     }
   }
 
-  /* ── GPS Spoof Detection (riders only — uses previous stored location) ── */
-  if (settings["security_spoof_detection"] === "on" && role === "rider") {
+  let isSpoofed = false;
+
+  /* ── GPS Spoof Detection (riders only) ── */
+  if (settings["security_spoof_detection"] === "on" && effectiveRole === "rider") {
     const maxSpeedKmh = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
 
     const [prev] = await db
@@ -71,6 +94,7 @@ router.post("/update", async (req, res) => {
       const { spoofed, speedKmh } = detectGPSSpoof(prevLat, prevLon, prevTime, lat, lon, maxSpeedKmh);
 
       if (spoofed) {
+        isSpoofed = true;
         addSecurityEvent({
           type: "gps_spoof_detected",
           ip,
@@ -88,26 +112,136 @@ router.post("/update", async (req, res) => {
     }
   }
 
-  const action: string | null = req.body.action ?? null;
+  /* ── Server-side distance throttling for riders ── */
+  const minDistanceMeters = parseInt(settings["gps_min_distance_meters"] ?? "25", 10);
+  if (effectiveRole === "rider" && minDistanceMeters > 0) {
+    const [prev] = await db
+      .select({ latitude: liveLocationsTable.latitude, longitude: liveLocationsTable.longitude })
+      .from(liveLocationsTable)
+      .where(eq(liveLocationsTable.userId, userId))
+      .limit(1);
 
+    if (prev) {
+      const prevLat = parseFloat(String(prev.latitude));
+      const prevLon = parseFloat(String(prev.longitude));
+      const dist = distanceMeters(prevLat, prevLon, lat, lon);
+      if (dist < minDistanceMeters) {
+        res.json({ success: true, skipped: true, reason: "distance_threshold", updatedAt: new Date().toISOString() });
+        return;
+      }
+    }
+  }
+
+  const now = new Date();
+
+  /* ── Write to location_logs ── */
+  await db.insert(locationLogsTable).values({
+    id: generateId(),
+    userId,
+    role: effectiveRole,
+    latitude: lat.toString(),
+    longitude: lon.toString(),
+    accuracy: accuracy !== undefined ? parseFloat(accuracy) : null,
+    speed: speed !== undefined ? parseFloat(speed) : null,
+    heading: heading !== undefined ? parseFloat(heading) : null,
+    batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : null,
+    isSpoofed,
+    createdAt: now,
+  });
+
+  /* ── Update live_locations ── */
   await db.insert(liveLocationsTable).values({
     userId,
-    latitude:  lat.toString(),
+    latitude: lat.toString(),
     longitude: lon.toString(),
-    role:      role || "customer",
-    action,
-    updatedAt: new Date(),
+    role: effectiveRole,
+    action: action ?? null,
+    updatedAt: now,
   }).onConflictDoUpdate({
     target: liveLocationsTable.userId,
     set: {
-      latitude:  lat.toString(),
+      latitude: lat.toString(),
       longitude: lon.toString(),
-      action,
-      updatedAt: new Date(),
+      action: action ?? null,
+      updatedAt: now,
     },
   });
 
-  res.json({ success: true, updatedAt: new Date().toISOString() });
+  const updatedAt = now.toISOString();
+
+  /* ── Broadcast via Socket.io ── */
+  if (effectiveRole === "rider") {
+    /* Derive rideId and vendorId from DB — never trust client-supplied values
+       to prevent unauthorized injection into arbitrary ride:{rideId} rooms. */
+    let serverRideId: string | null = null;
+    let serverVendorId: string | null = null;
+    let serverOrderId: string | null = null;
+    try {
+      const [activeRide] = await db.select({ id: ridesTable.id })
+        .from(ridesTable)
+        .where(and(
+          eq(ridesTable.riderId, userId),
+          or(
+            eq(ridesTable.status, "accepted"),
+            eq(ridesTable.status, "arrived"),
+            eq(ridesTable.status, "in_transit"),
+            eq(ridesTable.status, "picked_up"),
+            eq(ridesTable.status, "in_progress"),
+          ),
+        ))
+        .orderBy(desc(ridesTable.updatedAt))
+        .limit(1);
+      serverRideId = activeRide?.id ?? null;
+    } catch {}
+    try {
+      const [activeOrder] = await db.select({ id: ordersTable.id, vendorId: ordersTable.vendorId })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.riderId, userId),
+          or(eq(ordersTable.status, "out_for_delivery"), eq(ordersTable.status, "picked_up")),
+        ))
+        .limit(1);
+      serverVendorId = activeOrder?.vendorId ?? null;
+      serverOrderId = activeOrder?.id ?? null;
+    } catch {}
+
+    emitRiderLocation({
+      userId,
+      latitude: lat,
+      longitude: lon,
+      accuracy: accuracy !== undefined ? parseFloat(accuracy) : undefined,
+      speed: speed !== undefined ? parseFloat(speed) : undefined,
+      heading: heading !== undefined ? parseFloat(heading) : undefined,
+      batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : undefined,
+      action: action ?? null,
+      rideId: serverRideId,
+      vendorId: serverVendorId,
+      orderId: serverOrderId,
+      updatedAt,
+    });
+  } else if (effectiveRole === "customer") {
+    emitCustomerLocation({ userId, latitude: lat, longitude: lon, updatedAt });
+  }
+
+  res.json({ success: true, updatedAt });
+});
+
+/* ── DELETE /locations/clear — clear authenticated user's live location on logout ── */
+router.delete("/clear", async (req, res) => {
+  const authHeader = req.headers.authorization ?? "";
+  if (!authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const jwtPayload = verifyUserJwt(authHeader.slice(7));
+  if (!jwtPayload?.userId) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+  const userId = jwtPayload.userId;
+
+  await db.delete(liveLocationsTable).where(eq(liveLocationsTable.userId, userId));
+  res.json({ success: true });
 });
 
 /* ── GET /locations/:userId — fetch current location (auth required) ── */

@@ -25,6 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { useRiderLocation } from "@/context/RiderLocationContext";
 import { tDual } from "@workspace/i18n";
 import {
   SERVICE_REGISTRY,
@@ -457,6 +458,79 @@ function NoServicesState({ onRefresh }: { onRefresh?: () => void }) {
   );
 }
 
+/* ── Rider: Go Online / Go Offline banner ── */
+function RiderOnlineBanner() {
+  const { isOnline, toggleOnline, lastPosition, locationPermission } = useRiderLocation();
+  const [toggling, setToggling] = useState(false);
+
+  const handleToggle = async () => {
+    setToggling(true);
+    try {
+      await toggleOnline();
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  return (
+    <View style={riderStyles.container}>
+      <LinearGradient
+        colors={isOnline ? ["#065F46", "#059669"] : ["#1E3A5F", "#1A56DB"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={riderStyles.card}
+      >
+        <View style={riderStyles.row}>
+          <View style={riderStyles.statusSection}>
+            <View style={[riderStyles.dot, { backgroundColor: isOnline ? "#6EE7B7" : "#93C5FD" }]} />
+            <View>
+              <Text style={riderStyles.statusLabel}>
+                {isOnline ? "You are Online" : "You are Offline"}
+              </Text>
+              <Text style={riderStyles.statusSub}>
+                {isOnline
+                  ? lastPosition
+                    ? `GPS: ${lastPosition.lat.toFixed(4)}, ${lastPosition.lng.toFixed(4)}`
+                    : "Acquiring GPS…"
+                  : "Go online to receive ride requests"}
+              </Text>
+              {locationPermission === "denied" && (
+                <Text style={riderStyles.permDenied}>Location permission denied</Text>
+              )}
+            </View>
+          </View>
+          <Pressable
+            onPress={handleToggle}
+            disabled={toggling}
+            style={[riderStyles.toggleBtn, isOnline ? riderStyles.toggleOff : riderStyles.toggleOn]}
+          >
+            {toggling ? (
+              <Ionicons name="sync" size={14} color="#fff" />
+            ) : (
+              <Text style={riderStyles.toggleTxt}>{isOnline ? "Go Offline" : "Go Online"}</Text>
+            )}
+          </Pressable>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+}
+
+const riderStyles = StyleSheet.create({
+  container: { marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.xs },
+  card: { borderRadius: radii.xl, padding: 14, ...shadows.md },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  statusSection: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  statusLabel: { fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" },
+  statusSub: { fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 1 },
+  permDenied: { fontFamily: "Inter_500Medium", fontSize: 11, color: "#FCA5A5", marginTop: 2 },
+  toggleBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.lg, minWidth: 90, alignItems: "center" },
+  toggleOn: { backgroundColor: "#10B981" },
+  toggleOff: { backgroundColor: "rgba(255,255,255,0.2)" },
+  toggleTxt: { fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" },
+});
+
 function WalletStrip({
   balance,
   onPress,
@@ -807,6 +881,8 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={homeRefreshing} onRefresh={handleHomeRefresh} tintColor={C.primary} />}
       >
+        {user?.role === "rider" && <RiderOnlineBanner />}
+
         <View style={styles.secRow}>
           <Text style={styles.secTitle}>{T("ourServices")}</Text>
           <Text style={styles.secSub}>{T("allInOne")}</Text>

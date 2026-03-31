@@ -214,6 +214,35 @@ All changes are client-side only (`artifacts/ajkmart/`):
 - **Ride State Machine:** `RIDE_STATUS_TRANSITIONS` map in `rider.ts` enforces valid status transitions: `accepted→[arrived,cancelled]`, `arrived→[in_transit,cancelled]`, `in_transit→[completed,cancelled]`. Prevents status jumps (e.g. `accepted→completed` is blocked).
 - **Arrival Proximity Validation:** When a rider marks "arrived", the server validates their GPS distance from the pickup point using Haversine formula against `dispatch_ride_start_proximity_m` (default 500m). Prefers server-stored `live_locations` (trusted) over client-supplied coordinates. Rejects if no location is available or distance exceeds threshold.
 
+### Real-Time Fleet Tracking (Task #5)
+
+**DB layer:**
+- `location_logs` table added (`lib/db/src/schema/location_logs.ts`): userId, role, lat/lng, accuracy, speed, heading, batteryLevel, isSpoofed, createdAt. Compound index on `(user_id, created_at)` for time-range queries. Migrated via `pnpm run push`.
+
+**Backend (`artifacts/api-server/`):**
+- `socket.io` installed; `lib/socketio.ts` initialises Socket.io on the shared `http.Server` at path `/api/socket.io`. Rooms: `admin-fleet`, `ride:{rideId}`, `vendor:{vendorId}`.
+- `routes/locations.ts` upgraded: every `POST /locations/update` pings are logged to `location_logs`, server-side Haversine distance throttle (25m via `gps_min_distance_meters` setting), emits `customer:location` to `admin-fleet`, new `DELETE /locations/clear` endpoint clears a user's live location on logout (authenticated by Bearer JWT).
+- `routes/rider.ts` upgraded: every `PATCH /rider/location` ping logs to `location_logs`, emits `rider:location` to `admin-fleet` + `ride:{rideId}` rooms; `rideId` passed in request body. Fixed duplicate `const now` variable by renaming inner one to `nowDate`.
+- `routes/admin.ts`: `GET /admin/riders/:userId/route?date=YYYY-MM-DD` fleet history API returns hourly buckets from `location_logs`.
+
+**Admin map (`artifacts/admin/src/pages/live-riders-map.tsx`):**
+- Socket.io client (`socket.io-client`) connects to `admin-fleet` room, receives live `rider:location` events.
+- Green (online <2min) / orange (stale 2-10min) / gray (offline >10min) color-coded Leaflet markers.
+- Toggleable blue customer location layer.
+- Breadcrumb polyline for selected rider; time-slider route playback (`useRiderRoute` hook).
+- "Last seen X min ago" shown for offline riders.
+
+**Rider web app (`artifacts/rider-app/`):**
+- `Active.tsx`: `updateLocation` now passes `rideId: data?.ride?.id` so socket room `ride:{rideId}` receives real-time events.
+- `lib/api.ts` `updateLocation` signature extended with optional `rideId`.
+
+**Vendor app (`artifacts/vendor-app/src/pages/Orders.tsx`):**
+- Connects to `vendor:{userId}` socket room on mount; displays live "Rider X km away, ETA ~Y min" badge computed via Haversine distance from vendor's browser geolocation.
+
+**Customer mobile app (`artifacts/ajkmart/`):**
+- `context/AuthContext.tsx`: On login, if role=customer, requests foreground location permission (non-blocking) and posts location to `POST /locations/update`; on logout, calls `DELETE /locations/clear` to remove customer from the live map.
+- `components/ride/RideTracker.tsx`: Socket.io client installed (`socket.io-client` added to ajkmart). While ride is in active status, connects to `ride:{rideId}` room and listens for `rider:location`. Live socket position is preferred over polling data in the distance/ETA badge (green dot indicator when live position is active).
+
 ### Accordion Components
 - **Customer App (Expo):** Custom `Accordion` component at `artifacts/ajkmart/components/Accordion.tsx` with animated chevron rotation, `LayoutAnimation` transitions, icon/badge support. `AccordionGroup` wrapper for grouped sections. Used in: Profile (Help & Support sections), Privacy Modal (Notification/Privacy/Security/Account sections), Orders (expandable item lists on OrderCard and PharmacyCard).
 - **Rider App (React-Vite):** Radix-based `AccordionGroup` component at `artifacts/rider-app/src/components/Accordion.tsx`. Used in: Earnings (breakdown sections), SecuritySettings (info sections).

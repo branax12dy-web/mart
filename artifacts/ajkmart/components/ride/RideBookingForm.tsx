@@ -200,6 +200,26 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const { predictions: dropPreds, loading: dropLoading } =
     useMapsAutocomplete(dropFocus ? drop : "");
 
+  /* Auto-fill pickup from current GPS on form mount */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted" || cancelled) return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (cancelled) return;
+        const { latitude: lat, longitude: lng } = pos.coords;
+        const data = await geocodeAddress({ address: `${lat},${lng}` });
+        if (cancelled) return;
+        const address = data?.formattedAddress ?? `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        setPickup(address);
+        setPickupObj({ lat, lng, address });
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     getRideStops()
       .then((data) => {

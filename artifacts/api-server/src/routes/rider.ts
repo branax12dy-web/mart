@@ -1,10 +1,11 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable, locationLogsTable } from "@workspace/db/schema";
 import { eq, desc, and, or, sql, count, sum, avg, gte, isNull, type InferSelectModel } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
+import { emitRiderLocation } from "../lib/socketio.js";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -97,6 +98,9 @@ const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   accuracy: z.number().optional(),
+  speed: z.number().optional(),
+  heading: z.number().optional(),
+  batteryLevel: z.number().min(0).max(100).optional(),
 });
 
 /* ── Auth Middleware ── */
@@ -1497,12 +1501,32 @@ router.patch("/location", async (req, res) => {
   }
   locationRateStore.set(riderId, now);
 
-  const { latitude, longitude, accuracy } = parsed.data;
+  const { latitude, longitude, accuracy, speed, heading, batteryLevel } = parsed.data;
 
   const settings = await getCachedSettings();
 
   if (settings["security_gps_tracking"] === "off") {
     res.status(403).json({ error: "GPS tracking is currently disabled by admin." }); return;
+  }
+
+  /* ── Server-side distance throttling ── */
+  const minDistanceMeters = parseInt(settings["gps_min_distance_meters"] ?? "25", 10);
+  if (minDistanceMeters > 0) {
+    const [prev] = await db.select({ lat: liveLocationsTable.latitude, lng: liveLocationsTable.longitude })
+      .from(liveLocationsTable).where(eq(liveLocationsTable.userId, riderId)).limit(1);
+    if (prev) {
+      const R = 6371000;
+      const pLat = parseFloat(String(prev.lat));
+      const pLng = parseFloat(String(prev.lng));
+      const dLat = (latitude - pLat) * Math.PI / 180;
+      const dLng = (longitude - pLng) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(pLat * Math.PI / 180) * Math.cos(latitude * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+      const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      if (dist < minDistanceMeters) {
+        res.json({ success: true, skipped: true, reason: "distance_threshold", updatedAt: new Date().toISOString() });
+        return;
+      }
+    }
   }
 
   /* Accuracy-only spoof signal: reject if accuracy is suspiciously perfect AND high speed.
@@ -1566,22 +1590,98 @@ router.patch("/location", async (req, res) => {
     }
   }
 
+  const nowDate = new Date();
+
+  await db.insert(locationLogsTable).values({
+    id: generateId(),
+    userId: riderId,
+    role: "rider",
+    latitude: latitude.toString(),
+    longitude: longitude.toString(),
+    accuracy: accuracy ?? null,
+    speed: speed ?? null,
+    heading: heading ?? null,
+    batteryLevel: batteryLevel ?? null,
+    isSpoofed: false,
+    createdAt: nowDate,
+  });
+
+  const action = req.body.action ?? null;
+
   await db.insert(liveLocationsTable).values({
     userId: riderId,
     latitude: latitude.toString(),
     longitude: longitude.toString(),
     role: "rider",
-    updatedAt: new Date(),
+    action,
+    updatedAt: nowDate,
   }).onConflictDoUpdate({
     target: liveLocationsTable.userId,
     set: {
       latitude: latitude.toString(),
       longitude: longitude.toString(),
-      updatedAt: new Date(),
+      action,
+      updatedAt: nowDate,
     },
   });
 
-  res.json({ success: true, updatedAt: new Date().toISOString() });
+  /* Derive rideId from DB — never trust client-supplied value to prevent
+     unauthorized injection into arbitrary ride:{rideId} Socket.io rooms. */
+  let rideId: string | null = null;
+  let vendorId: string | null = null;
+  try {
+    const [activeRide] = await db.select({ id: ridesTable.id })
+      .from(ridesTable)
+      .where(and(
+        eq(ridesTable.riderId, riderId),
+        or(
+          eq(ridesTable.status, "accepted"),
+          eq(ridesTable.status, "arrived"),
+          eq(ridesTable.status, "in_transit"),
+          eq(ridesTable.status, "picked_up"),
+          eq(ridesTable.status, "in_progress"),
+        ),
+      ))
+      .orderBy(desc(ridesTable.updatedAt))
+      .limit(1);
+    rideId = activeRide?.id ?? null;
+  } catch {}
+
+  /* Look up vendor and orderId for active delivery order */
+  let orderId: string | null = null;
+  try {
+    const [activeOrder] = await db.select({ id: ordersTable.id, vendorId: ordersTable.vendorId })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.riderId, riderId),
+        or(
+          eq(ordersTable.status, "out_for_delivery"),
+          eq(ordersTable.status, "picked_up"),
+        ),
+      ))
+      .limit(1);
+    vendorId = activeOrder?.vendorId ?? null;
+    orderId = activeOrder?.id ?? null;
+  } catch {}
+
+  const updatedAt = nowDate.toISOString();
+
+  emitRiderLocation({
+    userId: riderId,
+    latitude,
+    longitude,
+    accuracy,
+    speed,
+    heading,
+    batteryLevel,
+    action,
+    rideId,
+    vendorId,
+    orderId,
+    updatedAt,
+  });
+
+  res.json({ success: true, updatedAt });
 });
 
 /* ── GET /rider/wallet/deposits — Deposit history ── */

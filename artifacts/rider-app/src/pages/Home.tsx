@@ -341,25 +341,48 @@ export default function Home() {
     if (!navigator?.geolocation) return;
 
     let lastSentTime = 0;
-    const MIN_INTERVAL_MS = 30_000;
+    let lastLat: number | null = null;
+    let lastLng: number | null = null;
+    const MIN_INTERVAL_MS = 15_000;
+    const MIN_DISTANCE_METERS = 25;
+
+    function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const now = Date.now();
-        if (now - lastSentTime < MIN_INTERVAL_MS) return;
-        lastSentTime = now;
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+
         /* Client-side spoof heuristic: implausibly high accuracy (< 1m) is a strong
-           signal of a mock location app on Android. The altitude === 0 check was removed
-           because it caused false positives on desktops and WiFi-only devices. */
-        const accuracy = pos.coords.accuracy;
+           signal of a mock location app on Android. */
         if (accuracy !== null && accuracy < 1) {
           setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
           return;
         }
+
+        /* Distance throttling: skip if rider hasn't moved enough */
+        if (lastLat !== null && lastLng !== null) {
+          const dist = haversineMeters(lastLat, lastLng, latitude, longitude);
+          if (dist < MIN_DISTANCE_METERS && now - lastSentTime < MIN_INTERVAL_MS * 4) return;
+        }
+
+        if (now - lastSentTime < MIN_INTERVAL_MS) return;
+        lastSentTime = now;
+        lastLat = latitude;
+        lastLng = longitude;
+
         api.updateLocation({
-          latitude:  pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy:  pos.coords.accuracy,
+          latitude,
+          longitude,
+          accuracy:  accuracy ?? undefined,
+          speed:     speed ?? undefined,
+          heading:   heading ?? undefined,
         }).then(() => {
           if (gpsWarningRef.current) setGpsWarningWithRef(null);
         }).catch((err: Error) => {
@@ -371,7 +394,7 @@ export default function Home() {
       () => {
         setGpsWarningWithRef(T("gpsNotAvailable"));
       },
-      { enableHighAccuracy: false, maximumAge: 20_000, timeout: 30_000 },
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 30_000 },
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
