@@ -105,8 +105,8 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "order_rating_window_hours", value: "48",    label: "Rating Window After Delivery (hours)",    category: "orders" },
   { key: "order_schedule_enabled",    value: "off",   label: "Allow Advance Order Scheduling",          category: "orders" },
   /* Language */
-  { key: "default_language",    value: "en_roman",                       label: "Default Language",             category: "general" },
-  { key: "enabled_languages",   value: '["en","ur","roman","en_roman","en_ur"]', label: "Enabled Language Modes (JSON array)", category: "general" },
+  { key: "default_language",    value: "en",       label: "Default Language",             category: "general" },
+  { key: "enabled_languages",   value: '["en"]',   label: "Enabled Language Modes (JSON array)", category: "general" },
   /* General */
   { key: "app_name",               value: "AJKMart",                        label: "App Name",                    category: "general" },
   { key: "app_tagline",            value: "Your super app for everything",   label: "App Tagline / Subtitle",      category: "general" },

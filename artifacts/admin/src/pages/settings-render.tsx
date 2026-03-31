@@ -674,12 +674,12 @@ export function renderSection(
               { code: "en_ur",    label: "English + Urdu",       native: "English + اردو",   rtl: false, desc: "English with native Urdu below" },
             ];
 
-            const rawEnabled = localValues["enabled_languages"] ?? '["en","ur","roman","en_roman","en_ur"]';
+            const rawEnabled = localValues["enabled_languages"] ?? '["en"]';
             let enabledSet: Set<string>;
             try { enabledSet = new Set(JSON.parse(rawEnabled) as string[]); }
-            catch { enabledSet = new Set(ALL_LANGS.map(l => l.code)); }
+            catch { enabledSet = new Set(["en"]); }
 
-            const defaultLang = localValues["default_language"] ?? "en_roman";
+            const defaultLang = localValues["default_language"] ?? "en";
 
             const toggleLang = (code: string) => {
               const next = new Set(enabledSet);
@@ -687,7 +687,7 @@ export function renderSection(
                 if (next.size <= 1) return;
                 next.delete(code);
                 if (defaultLang === code) {
-                  const firstEnabled = ALL_LANGS.find(l => next.has(l.code))?.code ?? "en_roman";
+                  const firstEnabled = ALL_LANGS.find(l => next.has(l.code))?.code ?? "en";
                   handleChange("default_language", firstEnabled);
                 }
               } else {

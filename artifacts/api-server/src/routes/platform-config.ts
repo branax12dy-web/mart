@@ -80,11 +80,11 @@ router.get("/", async (req, res) => {
       bargainingMaxRounds:parseInt(s["ride_bargaining_max_rounds"]   ?? "3", 10),
     },
     language: (() => {
-      const defaultLang = s["default_language"] ?? "en_roman";
+      const defaultLang = s["default_language"] ?? "en";
       let enabledLangs: string[];
       try { enabledLangs = JSON.parse(s["enabled_languages"] ?? "[]") as string[]; }
-      catch { enabledLangs = ["en", "ur", "roman", "en_roman", "en_ur"]; }
-      if (!enabledLangs.length) enabledLangs = ["en", "ur", "roman", "en_roman", "en_ur"];
+      catch { enabledLangs = ["en"]; }
+      if (!enabledLangs.length) enabledLangs = ["en"];
       return { defaultLanguage: defaultLang, enabledLanguages: enabledLangs };
     })(),
     platform: {

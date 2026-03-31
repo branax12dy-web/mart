@@ -4,7 +4,7 @@ import { I18nManager } from "react-native";
 import type { Language } from "@workspace/i18n";
 
 const LANG_STORAGE_KEY = "@ajkmart_language";
-const DEFAULT_LANGUAGE: Language = "en_roman";
+const DEFAULT_LANGUAGE: Language = "en";
 
 interface LanguageContextValue {
   language: Language;

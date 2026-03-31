@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
   biometric: false,
   twoFactor: false,
   darkMode: false,
-  language: "en_roman" as const,
+  language: "en" as const,
 };
 
 router.get("/", async (req, res) => {
