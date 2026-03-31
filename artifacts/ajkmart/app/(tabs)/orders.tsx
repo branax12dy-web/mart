@@ -746,32 +746,52 @@ export default function OrdersScreen() {
     }
   }, [martActive, foodActive, ridesActive, pharmActive, parcelActive]);
 
-  const handleReorder = useCallback((order: any) => {
+  const handleReorder = useCallback(async (order: any) => {
     if (!order.items || order.items.length === 0) return;
-    const validItems = order.items.filter((i: any) => i.productId);
+    const validItems = order.items.filter((i: any) => i.productId && i.name && Number(i.price) > 0);
     if (validItems.length === 0) {
       showToast("Items from this order are no longer available", "error");
       return;
     }
+    try {
+      const productsRes = await fetch(`${API_BASE}/products`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (productsRes.ok) {
+        const productsData = await productsRes.json();
+        const productMap = new Map<string, any>((productsData.products || productsData || []).map((p: any) => [p.id, p]));
+        const priceChangedItems: string[] = [];
+        let skippedCount = 0;
+        let addedCount = 0;
+        for (const item of validItems) {
+          const liveProduct = productMap.get(item.productId);
+          if (liveProduct && liveProduct.stock === 0) { skippedCount++; continue; }
+          const livePrice = liveProduct ? liveProduct.price : item.price;
+          if (liveProduct && Number(liveProduct.price) !== Number(item.price)) {
+            priceChangedItems.push(item.name);
+          }
+          addItem({ productId: item.productId, name: item.name, price: livePrice, quantity: item.quantity || 1, image: item.image, type: order.type || "mart" });
+          addedCount++;
+        }
+        if (skippedCount > 0 && priceChangedItems.length > 0) {
+          showToast(`${addedCount} items added. ${skippedCount} out of stock skipped. Prices updated for: ${priceChangedItems.slice(0,2).join(", ")}`, "info");
+        } else if (skippedCount > 0) {
+          showToast(`${addedCount} items added — ${skippedCount} out of stock items skipped`, "info");
+        } else if (priceChangedItems.length > 0) {
+          showToast(`${addedCount} items added. Note: prices have changed for ${priceChangedItems.length} item(s)`, "info");
+        } else {
+          showToast(`${addedCount} items added to cart`, "success");
+        }
+        if (addedCount > 0) router.push("/cart");
+        return;
+      }
+    } catch {}
     let count = 0;
     for (const item of validItems) {
-      addItem({
-        productId: item.productId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity || 1,
-        image: item.image,
-        type: order.type || "mart",
-      });
+      addItem({ productId: item.productId, name: item.name, price: item.price, quantity: item.quantity || 1, image: item.image, type: order.type || "mart" });
       count++;
     }
-    if (validItems.length < order.items.length) {
-      showToast(`${count} items added — ${order.items.length - validItems.length} unavailable items skipped`, "info");
-    } else {
-      showToast(`${count} items added to cart`, "success");
-    }
+    showToast(`${count} items added to cart (prices may have changed)`, "info");
     router.push("/cart");
-  }, [addItem, showToast]);
+  }, [addItem, showToast, token]);
 
   const handleRate = useCallback((order: any) => {
     if (!reviewedIds.has(order.id)) setReviewTarget(order);
@@ -783,6 +803,7 @@ export default function OrdersScreen() {
 
   const [hasActiveItems, setHasActiveItems] = useState(false);
   const pollInterval = hasActiveItems ? 10000 : 30000;
+  const [historyLimit, setHistoryLimit] = useState(5);
 
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
     { userId: user?.id || "" },
@@ -1082,10 +1103,21 @@ export default function OrdersScreen() {
         {anyPast > 0 && (
           <>
             <SectionHeader title={T("historyLabel")} count={anyPast} />
-            {pastOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} serverNow={serverNow} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} />)}
-            {pastRides.map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} />)}
-            {pastPharm.map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} serverNow={serverNow} onRate={handleRate} onCancel={handleCancelPharmacy} />)}
-            {pastParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
+            {pastOrders.slice(0, historyLimit).map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} serverNow={serverNow} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} />)}
+            {pastRides.slice(0, historyLimit).map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} />)}
+            {pastPharm.slice(0, historyLimit).map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} serverNow={serverNow} onRate={handleRate} onCancel={handleCancelPharmacy} />)}
+            {pastParcel.slice(0, historyLimit).map(b => <ParcelCard key={b.id} booking={b} />)}
+            {anyPast > historyLimit && (
+              <Pressable
+                onPress={() => setHistoryLimit(l => l + 5)}
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, backgroundColor: "#F1F5F9", borderRadius: 16, marginTop: 4, borderWidth: 1, borderColor: C.border }}
+              >
+                <Ionicons name="chevron-down" size={16} color={C.primary} />
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.primary }}>
+                  Load More ({anyPast - historyLimit} remaining)
+                </Text>
+              </Pressable>
+            )}
           </>
         )}
         <View style={{ height: TAB_H + insets.bottom + 20 }} />

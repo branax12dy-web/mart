@@ -285,6 +285,18 @@ export default function DepositRequests() {
 
   const deposits: any[] = data?.deposits || [];
 
+  const duplicateTxIds = useMemo(() => {
+    const seen = new Map<string, number>();
+    deposits.forEach(d => {
+      const parsed = parseDesc(d.description || "");
+      const txId = parsed.txId;
+      if (txId && txId !== "—") seen.set(txId, (seen.get(txId) || 0) + 1);
+    });
+    const dups = new Set<string>();
+    seen.forEach((count, txId) => { if (count > 1) dups.add(txId); });
+    return dups;
+  }, [deposits]);
+
   const filtered      = statusFilter === "all" ? deposits : deposits.filter(d => d.status === statusFilter);
   const pendingCount  = deposits.filter(d => d.status === "pending").length;
   const pendingAmt    = deposits.filter(d => d.status === "pending").reduce((s: number, d: any) => s + Number(d.amount), 0);
@@ -477,6 +489,11 @@ export default function DepositRequests() {
                                 </Badge>
                               )}
                               <StatusBadge status={d.status}/>
+                              {duplicateTxIds.has(parseDesc(d.description || "").txId) && (
+                                <Badge className="text-[10px] font-bold bg-red-100 text-red-700 border-red-300 px-1.5" variant="outline">
+                                  ⚠ Duplicate TxID
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {methodIcon(d.paymentMethod)} {parsed.method} · {d.user?.phone} · {fd(d.createdAt)}

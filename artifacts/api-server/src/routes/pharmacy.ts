@@ -144,6 +144,18 @@ router.post("/", customerAuth, async (req, res) => {
     res.status(400).json({ error: "Each item must have a valid positive price and quantity" }); return;
   }
 
+  /* ── Prescription (Rx) enforcement: if any item flagged requires_prescription,
+     the customer must supply a note or photo. The flag is set on the item by the
+     client (populated from the product catalog at browse time). ── */
+  const hasRxItem = (items as any[]).some((it: any) => it.requires_prescription || it.requiresPrescription);
+  if (hasRxItem && !mergedPrescriptionNote) {
+    res.status(400).json({
+      error: "One or more items in your order require a doctor's prescription. Please add a prescription note or upload a photo.",
+      requiresPrescription: true,
+    });
+    return;
+  }
+
   const itemsTotal = (items as { price: number; quantity: number }[]).reduce(
     (sum, item) => sum + item.price * item.quantity,
     0

@@ -29,6 +29,7 @@ import CodRemittances from "@/pages/CodRemittances";
 import DepositRequests from "@/pages/DepositRequests";
 import Security from "@/pages/security";
 import LiveRidersMap from "@/pages/live-riders-map";
+import SosAlerts from "@/pages/sos-alerts";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -101,6 +102,7 @@ function Router() {
       <Route path="/cod-remittances"><ProtectedRoute component={CodRemittances} /></Route>
       <Route path="/deposit-requests"><ProtectedRoute component={DepositRequests} /></Route>
       <Route path="/security"><ProtectedRoute component={Security} /></Route>
+      <Route path="/sos-alerts"><ProtectedRoute component={SosAlerts} /></Route>
       <Route path="/live-riders-map"><ProtectedRoute component={LiveRidersMap} /></Route>
 
       <Route component={NotFound} />

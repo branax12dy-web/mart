@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -69,7 +70,9 @@ export function RideTracker({
   const slideUp = useRef(new Animated.Value(50)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
 
-  const { ride, setRide, connectionType } = useRideStatus(rideId);
+  const { ride, setRide, connectionType, reconnect } = useRideStatus(rideId);
+  const [sosLoading, setSosLoading] = useState(false);
+  const [sosSent, setSosSent] = useState(false);
 
   const [cancelling, setCancelling] = useState(false);
   const [cancelModalTarget, setCancelModalTarget] =
@@ -85,11 +88,24 @@ export function RideTracker({
     cancellationFee?: number;
     cancelReason?: string;
   } | null>(null);
+  const [acceptedAt, setAcceptedAt] = useState<number | null>(null);
+  const CANCEL_GRACE_SEC = 180;
+
+  useEffect(() => {
+    AsyncStorage.getItem(`rated_ride_${rideId}`).then(val => {
+      if (val === "1") setRatingDone(true);
+    }).catch(() => {});
+  }, [rideId]);
 
   useEffect(() => {
     const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const st = ride?.status;
+    if (st === "accepted" && !acceptedAt) setAcceptedAt(Date.now());
+  }, [ride?.status, acceptedAt]);
 
   useEffect(() => {
     const st = ride?.status;
@@ -150,6 +166,12 @@ export function RideTracker({
 
   const rideApiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
+  const graceSecondsLeft = acceptedAt
+    ? Math.max(0, CANCEL_GRACE_SEC - Math.floor((Date.now() - acceptedAt) / 1000))
+    : null;
+  const inGracePeriod = graceSecondsLeft !== null && graceSecondsLeft > 0;
+  const effectiveCancellationFee = inGracePeriod ? 0 : cancellationFee;
+
   const openUnifiedCancelModal = () => {
     const riderAssigned = [
       "accepted",
@@ -200,7 +222,7 @@ export function RideTracker({
         ride={ride}
         setRide={setRide}
         elapsed={elapsed}
-        cancellationFee={cancellationFee}
+        cancellationFee={effectiveCancellationFee}
         token={token}
         broadcastTimeoutSec={ride?.broadcastTimeoutSec ?? 300}
         estimatedFare={ride?.estimatedFare ?? ride?.fare}
@@ -386,15 +408,16 @@ export function RideTracker({
             {cancelling ? (
               <ActivityIndicator color="#EF4444" size="small" />
             ) : (
-              <Text
-                style={{
-                  fontFamily: "Inter_600SemiBold",
-                  fontSize: 15,
-                  color: "#EF4444",
-                }}
-              >
-                Cancel Ride
-              </Text>
+              <>
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#EF4444" }}>
+                  Cancel Ride
+                </Text>
+                {inGracePeriod && graceSecondsLeft !== null && (
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "#16A34A", marginTop: 2 }}>
+                    Free cancel: {Math.floor(graceSecondsLeft / 60)}:{String(graceSecondsLeft % 60).padStart(2, "0")} left
+                  </Text>
+                )}
+              </>
             )}
           </Pressable>
           <Pressable
@@ -424,7 +447,7 @@ export function RideTracker({
         {cancelModalTarget && (
           <CancelModal
             target={cancelModalTarget}
-            cancellationFee={cancellationFee}
+            cancellationFee={effectiveCancellationFee}
             apiBase={rideApiBase}
             token={token}
             onClose={() => setCancelModalTarget(null)}
@@ -666,7 +689,7 @@ export function RideTracker({
         {cancelModalTarget && (
           <CancelModal
             target={cancelModalTarget}
-            cancellationFee={cancellationFee}
+            cancellationFee={effectiveCancellationFee}
             apiBase={rideApiBase}
             token={token}
             onClose={() => setCancelModalTarget(null)}
@@ -1092,6 +1115,7 @@ export function RideTracker({
                           comment: ratingComment || undefined,
                         });
                         setRatingDone(true);
+                        AsyncStorage.setItem(`rated_ride_${rideId}`, "1").catch(() => {});
                       } catch {
                         showToast(
                           "Could not submit rating. Please try again.",
@@ -1586,6 +1610,28 @@ export function RideTracker({
         </View>
       </View>
 
+      {connectionType === "polling" && (
+        <Pressable
+          onPress={reconnect}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            backgroundColor: "#FEF3C7",
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: "#FDE68A",
+          }}
+        >
+          <Ionicons name="wifi-outline" size={15} color="#D97706" />
+          <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>
+            Live updates paused — tap to reconnect
+          </Text>
+          <Ionicons name="refresh-outline" size={15} color="#D97706" />
+        </Pressable>
+      )}
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, gap: 14 }}
@@ -1952,6 +1998,39 @@ export function RideTracker({
                     />
                   </Pressable>
                 )}
+                <Pressable
+                  onPress={async () => {
+                    if (sosSent) return;
+                    setSosLoading(true);
+                    try {
+                      await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                        body: JSON.stringify({ rideId }),
+                      });
+                      setSosSent(true);
+                    } catch {}
+                    setSosLoading(false);
+                  }}
+                  disabled={sosLoading || sosSent}
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 14,
+                    backgroundColor: sosSent ? "#6B7280" : "#EF4444",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: sosSent ? 0.7 : 1,
+                  }}
+                >
+                  {sosLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff", letterSpacing: 0.5 }}>
+                      {sosSent ? "SENT" : "SOS"}
+                    </Text>
+                  )}
+                </Pressable>
               </View>
             </View>
           )}
@@ -2142,7 +2221,7 @@ export function RideTracker({
       {cancelModalTarget && (
         <CancelModal
           target={cancelModalTarget}
-          cancellationFee={cancellationFee}
+          cancellationFee={effectiveCancellationFee}
           apiBase={rideApiBase}
           token={token}
           onClose={() => setCancelModalTarget(null)}

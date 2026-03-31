@@ -192,6 +192,8 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const [debtBalance, setDebtBalance] = useState(0);
   const [debtDismissed, setDebtDismissed] = useState(false);
   const [estimateForType, setEstimateForType] = useState<string | null>(null);
+  const [estimateAt, setEstimateAt] = useState<number | null>(null);
+  const [estimateAgeMinutes, setEstimateAgeMinutes] = useState(0);
 
   const { predictions: pickupPreds, loading: pickupLoading } =
     useMapsAutocomplete(pickupFocus ? pickup : "");
@@ -317,6 +319,8 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
           ) => {
             if (cancelled || !data) return;
             setEstimateForType(data.type ?? rideType);
+            setEstimateAt(Date.now());
+            setEstimateAgeMinutes(0);
             setEstimate({
               fare: data.fare,
               dist: data.distance,
@@ -345,6 +349,14 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
       clearTimeout(timer);
     };
   }, [pickupObj?.lat, pickupObj?.lng, dropObj?.lat, dropObj?.lng, rideType]);
+
+  useEffect(() => {
+    if (!estimateAt) return;
+    const interval = setInterval(() => {
+      setEstimateAgeMinutes(Math.floor((Date.now() - estimateAt) / 60000));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [estimateAt]);
 
   const selectPickup = useCallback(async (pred: MapPrediction) => {
     setPickup(pred.mainText);
@@ -1347,6 +1359,14 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
               </Pressable>
             )}
             <View style={{ padding: 18 }}>
+              {estimateAgeMinutes >= 5 && (
+                <View style={{ backgroundColor: "#FEF9C3", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="time-outline" size={13} color="#CA8A04" />
+                  <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#CA8A04", flex: 1 }}>
+                    Estimate is {estimateAgeMinutes} min old — prices may have changed
+                  </Text>
+                </View>
+              )}
               <View
                 style={{
                   flexDirection: "row",

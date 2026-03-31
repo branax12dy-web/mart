@@ -5,7 +5,7 @@ import {
   MapPinned, ArrowDown, Shield, Navigation, Clock, Zap,
   ChevronRight, Eye, Truck, WifiOff,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, apiFetch } from "../lib/api";
 import { logRideEvent } from "../lib/rideUtils";
 import { useState, useRef, useEffect } from "react";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -135,6 +135,29 @@ function NavButton({ label, lat, lng, address, color = "blue" }: {
       className={`flex items-center justify-center gap-2 bg-gradient-to-r ${styles[color]} text-white text-sm font-bold px-4 py-3 rounded-xl transition-all active:scale-[0.97] shadow-md`}>
       <Navigation size={14}/> {label}
     </a>
+  );
+}
+
+function SosButton({ rideId }: { rideId: string }) {
+  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        if (sent || loading) return;
+        setLoading(true);
+        try {
+          await apiFetch("/sos", { method: "POST", body: JSON.stringify({ rideId }), headers: { "Content-Type": "application/json" } });
+          setSent(true);
+        } catch {}
+        setLoading(false);
+      }}
+      disabled={sent || loading}
+      className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all ${sent ? "bg-gray-200 text-gray-500 cursor-default" : "bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"}`}
+    >
+      <AlertTriangle size={15} />
+      {loading ? "Sending..." : sent ? "SOS Sent" : "SOS — Emergency"}
+    </button>
   );
 }
 
@@ -992,6 +1015,7 @@ export default function Active() {
                 )}
                 <CallButton name={ride.customerName} phone={ride.customerPhone} />
               </div>
+              <SosButton rideId={ride.id} />
 
               <div className="flex gap-2 pt-1">
                 {ride.status === "accepted" && (

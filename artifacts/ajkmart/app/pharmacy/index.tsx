@@ -25,6 +25,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getProducts, createPharmacyOrder } from "@workspace/api-client-react";
 import type { GetProductsType } from "@workspace/api-client-react";
+import { API_BASE } from "@/utils/api";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
 
@@ -126,6 +127,16 @@ function PharmacyScreenInner() {
   const [payMethod, setPayMethod] = useState<"wallet" | "cash">("cash");
 
   const [showPhotoSourceModal, setShowPhotoSourceModal] = useState(false);
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [showAddressPicker, setShowAddressPicker] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/addresses`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.addresses) setSavedAddresses(data.addresses); })
+      .catch(() => {});
+  }, [token]);
 
   const pickPrescriptionPhoto = () => {
     setShowPhotoSourceModal(true);
@@ -245,6 +256,11 @@ function PharmacyScreenInner() {
       showToast(T("addToCart"), "error");
       return;
     }
+    const needsRx = cartItems.some(m => (m as any).requires_prescription);
+    if (needsRx && !prescription.trim() && !prescriptionPhotoUri) {
+      showToast("One or more items require a prescription. Please add a prescription note or attach a photo.", "error");
+      return;
+    }
     if (payMethod === "cash" && cartTotal > config.orderRules.maxCodAmount) {
       showToast(
         `Order total exceeds COD limit (Rs. ${config.orderRules.maxCodAmount.toLocaleString()}). Please use wallet or reduce your order.`,
@@ -285,7 +301,7 @@ function PharmacyScreenInner() {
       }
 
       const data = await createPharmacyOrder({
-        items: cartItems.map(m => ({ id: m.id, name: m.name, price: m.price, quantity: m.qty })),
+        items: cartItems.map(m => ({ id: m.id, name: m.name, price: m.price, quantity: m.qty, requires_prescription: (m as any).requires_prescription ?? false })),
         prescriptionNote: prescription || null,
         prescriptionPhotoUri: prescriptionPhotoUrl || undefined,
         deliveryAddress: address,
@@ -502,7 +518,15 @@ function PharmacyScreenInner() {
 
           <View style={s.section}>
             <Text style={s.sectionTitle}>{T("deliveryDetails")}</Text>
-            <Text style={s.label}>{T("deliveryAddress")} *</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <Text style={s.label}>{T("deliveryAddress")} *</Text>
+              {savedAddresses.length > 0 && (
+                <Pressable onPress={() => setShowAddressPicker(true)} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#EDE9FE", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Ionicons name="bookmark-outline" size={12} color="#7C3AED" />
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#7C3AED" }}>Saved</Text>
+                </Pressable>
+              )}
+            </View>
             <TextInput
               value={address}
               onChangeText={setAddress}
@@ -593,6 +617,28 @@ function PharmacyScreenInner() {
             )}
           </Pressable>
         </ScrollView>
+      </Modal>
+
+      <Modal visible={showAddressPicker} transparent animationType="fade" onRequestClose={() => setShowAddressPicker(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }} onPress={() => setShowAddressPicker(false)}>
+          <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 }}>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 16 }}>Saved Addresses</Text>
+            {savedAddresses.map((sa: any) => (
+              <Pressable
+                key={sa.id}
+                onPress={() => { setAddress(sa.address); setShowAddressPicker(false); }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: "#F5F3FF", borderRadius: 12, marginBottom: 8 }}
+              >
+                <Ionicons name={(sa.icon || "location-outline") as any} size={20} color="#7C3AED" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text }}>{sa.label}</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted }} numberOfLines={1}>{sa.address}</Text>
+                </View>
+                {sa.isDefault && <View style={{ backgroundColor: "#7C3AED", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" }}>Default</Text></View>}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
       </Modal>
 
       <Modal visible={showPhotoSourceModal} transparent animationType="fade" onRequestClose={() => setShowPhotoSourceModal(false)}>

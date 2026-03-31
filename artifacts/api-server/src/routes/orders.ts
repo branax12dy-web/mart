@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable } from "@workspace/db/schema";
-import { eq, and, gte, count, SQL, sql, inArray } from "drizzle-orm";
+import { eq, and, gte, count, desc, SQL, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth } from "../middleware/security.js";
@@ -132,15 +132,33 @@ router.get("/validate-promo", customerAuth, async (req, res) => {
   res.json(result);
 });
 
-/* ── GET /orders?status= ─────────────────────────────────────────── */
+/* ── GET /orders?status=&page=&limit= ───────────────────────────────────── */
 router.get("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const status = req.query["status"] as string;
+  const page   = Math.max(1, parseInt(String(req.query["page"]  || "1"), 10));
+  const limit  = Math.min(50, Math.max(1, parseInt(String(req.query["limit"] || "20"), 10)));
+  const offset = (page - 1) * limit;
 
   const conditions: SQL[] = [eq(ordersTable.userId, userId)];
   if (status) conditions.push(eq(ordersTable.status, status));
-  const orders = await db.select().from(ordersTable).where(and(...conditions));
-  res.json({ orders: orders.map(o => mapOrder(o)), total: orders.length });
+
+  const [countRow] = await db.select({ total: count() }).from(ordersTable).where(and(...conditions));
+  const total = countRow?.total ?? 0;
+
+  const orders = await db.select().from(ordersTable)
+    .where(and(...conditions))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  res.json({
+    orders: orders.map(o => mapOrder(o)),
+    total,
+    page,
+    limit,
+    hasMore: offset + orders.length < total,
+  });
 });
 
 /* ── GET /orders/:id ──────────────────────────────────────────────────────── */

@@ -210,13 +210,21 @@ export default function AuthScreen() {
     }
   };
 
+  const normalizePhone = (raw: string) => {
+    let cleaned = raw.replace(/\D/g, "");
+    if (cleaned.startsWith("92") && cleaned.length === 12) cleaned = cleaned.slice(2);
+    if (cleaned.startsWith("0") && cleaned.length === 11) cleaned = cleaned.slice(1);
+    return cleaned;
+  };
+
   const handleSendPhoneOtp = async () => {
     clearError();
-    if (!phone || phone.length < 10) { setError("Please enter a valid phone number (10 digits)"); return; }
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone || normalizedPhone.length !== 10) { setError("Please enter a valid 10-digit phone number"); return; }
     if (resendCooldown > 0) { setError(`Please wait ${resendCooldown}s before resending.`); return; }
     setLoading(true);
     try {
-      const res = await sendOtp({ phone });
+      const res = await sendOtp({ phone: normalizedPhone });
       if (__DEV__ === true && res.otp) setDevOtp(res.otp);
       setResendCooldown(60);
       slide(); setStep("otp");
@@ -235,7 +243,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const fingerprint = await getDeviceFingerprint();
-      const res = await authPost("/auth/verify-otp", { phone, otp, deviceFingerprint: fingerprint });
+      const res = await authPost("/auth/verify-otp", { phone: normalizePhone(phone), otp, deviceFingerprint: fingerprint });
       await handleLoginResult(res);
     } catch (e: any) { setError(e.message || "Invalid OTP."); }
     setLoading(false);

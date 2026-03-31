@@ -684,6 +684,15 @@ export default function Users() {
   const rejectMutation   = useRejectUser();
   const bulkBanMutation  = useBulkBanUsers();
   const { toast } = useToast();
+  const qc = useQueryClient();
+  const waiveDebtMutation = useMutation({
+    mutationFn: (userId: string) => fetcher(`/admin/users/${userId}/waive-debt`, { method: "PATCH" }),
+    onSuccess: (data: any, userId: string) => {
+      toast({ title: "Debt Waived", description: `Rs. ${data.waived?.toFixed(0) || "0"} cancellation debt cleared.` });
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -1125,6 +1134,17 @@ export default function Users() {
                             <Button variant="outline" size="sm" onClick={() => { setTopupUser(user); setTopupAmount(""); setTopupNote(""); }} className="h-8 rounded-lg text-xs gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 transition-colors">
                               <Wallet className="w-3.5 h-3.5" /> Top Up
                             </Button>
+                            {parseFloat(user.cancellationDebt || "0") > 0 && (
+                              <Button
+                                variant="outline" size="sm"
+                                onClick={() => waiveDebtMutation.mutate(user.id)}
+                                disabled={waiveDebtMutation.isPending}
+                                className="h-8 rounded-lg text-xs gap-1.5 border-orange-200 text-orange-700 hover:bg-orange-50 hover:border-orange-300 transition-colors"
+                                title={`Waive Rs. ${parseFloat(user.cancellationDebt).toFixed(0)} debt`}
+                              >
+                                <span className="text-xs">⚡</span> Waive Debt
+                              </Button>
+                            )}
                             <Button variant="outline" size="sm" onClick={() => setDeleteUser(user)} className="h-8 w-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 p-0 flex items-center justify-center transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>

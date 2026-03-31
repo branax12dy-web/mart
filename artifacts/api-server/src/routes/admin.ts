@@ -3515,6 +3515,25 @@ router.patch("/users/:id/request-correction", async (req, res) => {
   res.json({ success: true, user: stripUser(user) });
 });
 
+/* ── PATCH /admin/users/:id/waive-debt — waive rider's cancellation debt ── */
+router.patch("/users/:id/waive-debt", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone, cancellationDebt: usersTable.cancellationDebt })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  const debt = parseFloat(user.cancellationDebt ?? "0");
+  if (debt <= 0) { res.json({ success: true, message: "No debt to waive" }); return; }
+  await db.update(usersTable).set({ cancellationDebt: "0", updatedAt: new Date() }).where(eq(usersTable.id, userId));
+  addAuditEntry({ action: "debt_waived", ip: getClientIp(req), adminId: (req as any).adminId, details: `Cancelled debt of Rs.${debt.toFixed(0)} for ${user.phone}`, result: "success" });
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId,
+    title: "Cancellation Debt Waived ✅",
+    body: `Your outstanding cancellation fee of Rs. ${debt.toFixed(0)} has been waived by support.`,
+    type: "system", icon: "checkmark-circle-outline",
+  }).catch(() => {});
+  res.json({ success: true, waived: debt });
+});
+
 /* ── PATCH /admin/users/:id/bulk-ban — ban/unban multiple users ── */
 router.patch("/users/bulk-ban", async (req, res) => {
   const { ids, action, reason } = req.body as { ids: string[]; action: "ban" | "unban"; reason?: string };

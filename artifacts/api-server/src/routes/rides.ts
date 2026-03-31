@@ -791,11 +791,30 @@ router.get("/:id", async (req, res) => {
         .orderBy(rideBidsTable.createdAt)
     : [];
 
-  const formattedBids = bids.map(b => ({
-    ...b,
-    fare: parseFloat(b.fare),
-    createdAt: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
-    updatedAt: b.updatedAt instanceof Date ? b.updatedAt.toISOString() : b.updatedAt,
+  const formattedBids = await Promise.all(bids.map(async (b) => {
+    const [riderUser] = await db.select({
+      vehiclePlate: usersTable.vehiclePlate,
+      vehicleType:  usersTable.vehicleType,
+    }).from(usersTable).where(eq(usersTable.id, b.riderId)).limit(1);
+
+    const ratingRows = await db.select({
+      starsAvg: sql<string>`AVG(stars)`,
+      total:    sql<string>`COUNT(*)`,
+    }).from(rideRatingsTable).where(eq(rideRatingsTable.riderId, b.riderId));
+
+    const ratingAvg = ratingRows[0]?.starsAvg ? Math.round(parseFloat(ratingRows[0].starsAvg) * 10) / 10 : null;
+    const totalRides = ratingRows[0]?.total ? parseInt(ratingRows[0].total, 10) : 0;
+
+    return {
+      ...b,
+      fare:         parseFloat(b.fare),
+      vehiclePlate: riderUser?.vehiclePlate ?? null,
+      vehicleType:  riderUser?.vehicleType  ?? null,
+      ratingAvg,
+      totalRides,
+      createdAt: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
+      updatedAt: b.updatedAt instanceof Date ? b.updatedAt.toISOString() : b.updatedAt,
+    };
   }));
 
   let riderLat: number | null = null;

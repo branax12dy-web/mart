@@ -508,6 +508,33 @@ export function NegotiationScreen({
                     >
                       {bid.riderName}
                     </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+                      {bid.ratingAvg != null && (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                          <Ionicons name="star" size={11} color="#FCD34D" />
+                          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#FCD34D" }}>
+                            {bid.ratingAvg.toFixed(1)}
+                          </Text>
+                          {bid.totalRides > 0 && (
+                            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+                              ({bid.totalRides})
+                            </Text>
+                          )}
+                        </View>
+                      )}
+                      {bid.vehiclePlate && (
+                        <View style={{ backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 }}>
+                            {bid.vehiclePlate}
+                          </Text>
+                        </View>
+                      )}
+                      {bid.vehicleType && (
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                          {bid.vehicleType}
+                        </Text>
+                      )}
+                    </View>
                     {bid.note ? (
                       <Text
                         style={{
@@ -520,6 +547,11 @@ export function NegotiationScreen({
                         {bid.note}
                       </Text>
                     ) : null}
+                    {bid.ratingAvg == null && bid.totalRides === 0 && (
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>
+                        New rider
+                      </Text>
+                    )}
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
                     <Text

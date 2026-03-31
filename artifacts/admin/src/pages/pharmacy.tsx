@@ -385,13 +385,27 @@ export default function Pharmacy() {
                 )}
               </div>
 
-              {/* Prescription Note */}
-              {selectedOrder.prescriptionNote && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <p className="text-xs font-bold text-amber-700 mb-1 flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5" /> Prescription Note
+              {/* Prescription Note + Photo */}
+              {(selectedOrder.prescriptionNote || selectedOrder.prescriptionPhotoUri) && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-bold text-amber-700 flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5" /> Prescription
                   </p>
-                  <p className="text-sm text-amber-900">{selectedOrder.prescriptionNote}</p>
+                  {selectedOrder.prescriptionNote && (
+                    <p className="text-sm text-amber-900">{selectedOrder.prescriptionNote}</p>
+                  )}
+                  {selectedOrder.prescriptionPhotoUri && (
+                    <div className="mt-2">
+                      <a href={selectedOrder.prescriptionPhotoUri} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={selectedOrder.prescriptionPhotoUri}
+                          alt="Prescription"
+                          className="w-full max-h-56 object-contain rounded-lg border border-amber-200 cursor-pointer hover:opacity-90 transition-opacity bg-white"
+                        />
+                      </a>
+                      <p className="text-[10px] text-amber-600 mt-1">Click to open full image</p>
+                    </div>
+                  )}
                 </div>
               )}
 

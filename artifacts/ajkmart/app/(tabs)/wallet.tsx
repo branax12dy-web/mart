@@ -734,9 +734,9 @@ export default function WalletScreen() {
 
   const [walletFrozen, setWalletFrozen] = useState(false);
 
-  const { data, isLoading, refetch } = useGetWallet(
+  const { data, isLoading, isError: walletError, refetch } = useGetWallet(
     { userId: user?.id || "" },
-    { query: { enabled: !!user?.id } }
+    { query: { enabled: !!user?.id, retry: 1 } }
   );
 
   useEffect(() => {
@@ -895,6 +895,16 @@ export default function WalletScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
       >
         <View style={{ backgroundColor: "#fff", paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
+          {walletError && !data && (
+            <Pressable onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEE2E2", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "#FCA5A5" }}>
+              <Ionicons name="cloud-offline-outline" size={20} color="#DC2626" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#7F1D1D" }}>No network connection</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#991B1B", marginTop: 2 }}>Showing last known balance. Tap to retry.</Text>
+              </View>
+              <Ionicons name="refresh-outline" size={16} color="#DC2626" />
+            </Pressable>
+          )}
           {walletFrozen && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEF3C7", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "#FDE68A" }}>
               <Ionicons name="lock-closed" size={20} color="#D97706" />
