@@ -169,7 +169,11 @@ router.post("/check-identifier", async (req, res) => {
     return true;
   });
 
-  if (exists) {
+  const profileIncomplete = exists && (!user?.name || user.name === "User" || user.name === "Pending") && !user?.passwordHash;
+
+  if (exists && profileIncomplete) {
+    action = "register";
+  } else if (exists) {
     if (hasGoogle && googleEnabled) {
       action = "force_google";
     } else if (hasFacebook && facebookEnabled && !hasGoogle) {
@@ -206,9 +210,10 @@ router.post("/check-identifier", async (req, res) => {
 
   res.json({
     exists,
-    isNewUser,
+    isNewUser: isNewUser || profileIncomplete,
     registrationOpen,
     action,
+    profileIncomplete: !!profileIncomplete,
     availableMethods: exists ? usableMethods : availableMethods,
     hasGoogle,
     hasFacebook,
