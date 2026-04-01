@@ -89,7 +89,11 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     codFee: codFee ?? 0,
     deliveryAddress: o.deliveryAddress,
     paymentMethod: o.paymentMethod,
+    paymentStatus: o.paymentStatus ?? "pending",
     riderId: o.riderId,
+    riderName: o.riderName ?? null,
+    riderPhone: o.riderPhone ?? null,
+    vendorId: o.vendorId ?? null,
     estimatedTime: o.estimatedTime,
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
@@ -248,7 +252,14 @@ router.get("/:id", customerAuth, async (req, res) => {
 router.get("/:id/track", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const [order] = await db
-    .select({ id: ordersTable.id, userId: ordersTable.userId, riderId: ordersTable.riderId, status: ordersTable.status })
+    .select({
+      id: ordersTable.id,
+      userId: ordersTable.userId,
+      riderId: ordersTable.riderId,
+      riderName: ordersTable.riderName,
+      riderPhone: ordersTable.riderPhone,
+      status: ordersTable.status,
+    })
     .from(ordersTable)
     .where(eq(ordersTable.id, String(req.params["id"])))
     .limit(1);
@@ -261,6 +272,9 @@ router.get("/:id/track", customerAuth, async (req, res) => {
   let riderLng: number | null = null;
   let riderLocAge: number | null = null;
 
+  let riderName = order.riderName ?? null;
+  let riderPhone = order.riderPhone ?? null;
+
   if (order.riderId && TRACKABLE.includes(order.status)) {
     const [loc] = await db
       .select()
@@ -272,12 +286,25 @@ router.get("/:id/track", customerAuth, async (req, res) => {
       riderLng     = parseFloat(String(loc.longitude));
       riderLocAge  = Math.floor((Date.now() - new Date(loc.updatedAt).getTime()) / 1000);
     }
+
+    /* Fall back to users table if riderName/riderPhone not stored directly on order */
+    if (!riderName || !riderPhone) {
+      const [riderUser] = await db
+        .select({ name: usersTable.name, phone: usersTable.phone })
+        .from(usersTable)
+        .where(eq(usersTable.id, order.riderId))
+        .limit(1);
+      riderName  = riderName  ?? riderUser?.name  ?? null;
+      riderPhone = riderPhone ?? riderUser?.phone ?? null;
+    }
   }
 
   res.json({
     id: order.id,
     status: order.status,
     riderId: order.riderId,
+    riderName,
+    riderPhone,
     riderLat,
     riderLng,
     riderLocAge,

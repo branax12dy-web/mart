@@ -3894,7 +3894,7 @@ router.post("/rides/:id/cancel", async (req, res) => {
       }
     });
   } catch (txErr: any) {
-    addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as any).adminId, details: `Ride ${rideId} cancel failed — transaction error: ${txErr.message}`, result: "error" });
+    addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as any).adminId, details: `Ride ${rideId} cancel failed — transaction error: ${txErr.message}`, result: "fail" });
     res.status(500).json({ error: "Cancellation failed: could not complete transaction", detail: txErr.message });
     return;
   }
@@ -4042,7 +4042,7 @@ router.get("/rides/:id/detail", async (req, res) => {
     })),
     bids: bidRows.map(b => ({
       ...b,
-      amount: parseFloat(b.amount),
+      fare: parseFloat(b.fare),
       createdAt: b.createdAt.toISOString(),
       updatedAt: b.updatedAt.toISOString(),
     })),
@@ -4441,7 +4441,7 @@ router.get("/reviews", adminAuth, async (req, res) => {
 /* ── PATCH /admin/reviews/:id/hide — toggle hidden status ── */
 router.patch("/reviews/:id/hide", adminAuth, async (req, res) => {
   const [existing] = await db.select({ id: reviewsTable.id, hidden: reviewsTable.hidden })
-    .from(reviewsTable).where(eq(reviewsTable.id, req.params["id"]!)).limit(1);
+    .from(reviewsTable).where(eq(reviewsTable.id, String(req.params["id"]))).limit(1);
   if (!existing) { res.status(404).json({ error: "Review not found" }); return; }
   const newHidden = !existing.hidden;
   await db.update(reviewsTable).set({ hidden: newHidden }).where(eq(reviewsTable.id, existing.id));
@@ -4452,7 +4452,7 @@ router.patch("/reviews/:id/hide", adminAuth, async (req, res) => {
 router.delete("/reviews/:id", adminAuth, async (req, res) => {
   const adminId = (req as any).adminId ?? "admin";
   const [existing] = await db.select({ id: reviewsTable.id })
-    .from(reviewsTable).where(eq(reviewsTable.id, req.params["id"]!)).limit(1);
+    .from(reviewsTable).where(eq(reviewsTable.id, String(req.params["id"]))).limit(1);
   if (!existing) { res.status(404).json({ error: "Review not found" }); return; }
   await db.update(reviewsTable)
     .set({ deletedAt: new Date(), deletedBy: adminId, hidden: true })
@@ -4463,7 +4463,7 @@ router.delete("/reviews/:id", adminAuth, async (req, res) => {
 /* ── PATCH /admin/ride-ratings/:id/hide — toggle hidden status ── */
 router.patch("/ride-ratings/:id/hide", adminAuth, async (req, res) => {
   const [existing] = await db.select({ id: rideRatingsTable.id, hidden: rideRatingsTable.hidden })
-    .from(rideRatingsTable).where(eq(rideRatingsTable.id, req.params["id"]!)).limit(1);
+    .from(rideRatingsTable).where(eq(rideRatingsTable.id, String(req.params["id"]))).limit(1);
   if (!existing) { res.status(404).json({ error: "Ride rating not found" }); return; }
   const newHidden = !existing.hidden;
   await db.update(rideRatingsTable).set({ hidden: newHidden }).where(eq(rideRatingsTable.id, existing.id));
@@ -4474,7 +4474,7 @@ router.patch("/ride-ratings/:id/hide", adminAuth, async (req, res) => {
 router.delete("/ride-ratings/:id", adminAuth, async (req, res) => {
   const adminId = (req as any).adminId ?? "admin";
   const [existing] = await db.select({ id: rideRatingsTable.id })
-    .from(rideRatingsTable).where(eq(rideRatingsTable.id, req.params["id"]!)).limit(1);
+    .from(rideRatingsTable).where(eq(rideRatingsTable.id, String(req.params["id"]))).limit(1);
   if (!existing) { res.status(404).json({ error: "Ride rating not found" }); return; }
   await db.update(rideRatingsTable)
     .set({ deletedAt: new Date(), deletedBy: adminId, hidden: true })

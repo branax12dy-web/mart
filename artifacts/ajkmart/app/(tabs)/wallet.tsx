@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
@@ -336,7 +337,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
           setSubmittedTxIds(new Set(ids));
         }
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[Wallet] Failed to load submitted tx ids:", err instanceof Error ? err.message : String(err)));
   }, []);
 
   useEffect(() => {
@@ -415,7 +416,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
           const merged = Array.from(new Set([...existing, normalizedTxId])).slice(-100);
           return AsyncStorage.setItem(SUBMITTED_TX_KEY, JSON.stringify(merged));
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[Wallet] Failed to persist submitted tx id:", err instanceof Error ? err.message : String(err)));
       setStep("done");
       onSuccess();
     } catch {
@@ -768,7 +769,7 @@ export default function WalletScreen() {
 
   const { data, isLoading, isError: walletError, error: walletErrorObj, refetch } = useGetWallet(
     { userId: user?.id || "" },
-    { query: { enabled: !!user?.id, retry: 1 } }
+    { query: { enabled: !!user?.id, retry: 2, retryDelay: (attempt: number) => Math.floor(1500 * Math.pow(1.5, attempt - 1)) } }
   );
 
   useEffect(() => {
@@ -806,7 +807,7 @@ export default function WalletScreen() {
             setWalletFrozen(false);
           }
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[Wallet] Frozen-status check failed:", err instanceof Error ? err.message : String(err)));
     }
   }, [token]);
 
@@ -819,7 +820,9 @@ export default function WalletScreen() {
           const d = await r.json().catch(() => ({}));
           if (d.error === "wallet_frozen") { setWalletFrozen(true); setRefreshing(false); return; }
         } else { setWalletFrozen(false); }
-      } catch {}
+      } catch (err) {
+        console.warn("[Wallet] Status check failed:", err instanceof Error ? err.message : String(err));
+      }
     }
     const res = await refetch();
     if (res.data?.balance !== undefined) {
@@ -834,7 +837,7 @@ export default function WalletScreen() {
       fetch(`${API}/wallet/pending-topups`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
         .then(d => setPendingTopups({ count: d.count || 0, total: d.total || 0 }))
-        .catch(() => {});
+        .catch((err) => console.warn("[Wallet] Pending topups fetch failed:", err instanceof Error ? err.message : String(err)));
     }
   }, [token]);
 
@@ -883,7 +886,9 @@ export default function WalletScreen() {
       });
       const data = await res.json();
       setSendReceiverName(data.name || "");
-    } catch {}
+    } catch (err) {
+      console.warn("[Wallet] Receiver lookup failed:", err instanceof Error ? err.message : String(err));
+    }
     setSendLoading(false);
     setSendStep("confirm");
   };
@@ -918,7 +923,7 @@ export default function WalletScreen() {
   const transactions = data?.transactions ?? [];
   const isDebitType  = (t: any) => t.type === "debit" || t.type === "withdrawal" || t.type === "transfer" || t.type === "ride" || t.type === "order" || t.type === "mart" || t.type === "food" || t.type === "pharmacy" || t.type === "parcel";
   const filtered     = txFilter === "all" ? transactions : txFilter === "debit" ? transactions.filter(isDebitType) : transactions.filter(t => t.type === txFilter);
-  const totalIn      = transactions.filter(t => t.type === "credit" || t.type === "refund" || t.type === "cashback" || t.type === "referral" || t.type === "bonus").reduce((s, t) => s + Number(t.amount), 0);
+  const totalIn      = transactions.filter(t => t.type === "credit" || (t.type as string) === "refund" || (t.type as string) === "cashback" || (t.type as string) === "referral" || (t.type as string) === "bonus").reduce((s, t) => s + Number(t.amount), 0);
   const totalOut     = transactions.filter(isDebitType).reduce((s, t) => s + Number(t.amount), 0);
 
   return (
@@ -1068,6 +1073,14 @@ export default function WalletScreen() {
               </View>
               <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text }}>{transactions.length === 0 ? T("noTransactionLabel") : T("filterNoResultsLabel")}</Text>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>{transactions.length === 0 ? T("noTransactionSub") : T("changeFilterLabel")}</Text>
+              {transactions.length === 0 && (
+                <Pressable
+                  onPress={() => router.replace("/(tabs)")}
+                  style={{ marginTop: 8, backgroundColor: C.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 11 }}
+                >
+                  <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Explore Services</Text>
+                </Pressable>
+              )}
             </View>
           ) : (
             <View>

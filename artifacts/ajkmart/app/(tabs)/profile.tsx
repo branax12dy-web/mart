@@ -19,7 +19,7 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
+import * as LegacyFileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
@@ -303,11 +303,12 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
 function NotificationsModal({ visible, userId, token, onClose }: {
   visible: boolean; userId: string; token?: string; onClose: (unread: number) => void;
 }) {
+  const { showToast } = useToast();
   const [notifs,  setNotifs]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState(false);
 
-  const authHdrs = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -316,7 +317,10 @@ function NotificationsModal({ visible, userId, token, onClose }: {
       const r = await fetch(`${API}/notifications`, { headers: authHdrs });
       const d = await r.json();
       setNotifs(d.notifications || []);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn("[Profile] Notifications load failed:", err instanceof Error ? err.message : String(err));
+      showToast("Could not load notifications — tap retry to try again", "error");
+    }
     setLoading(false);
   }, [userId, token]);
 
@@ -440,7 +444,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
   const cfgRef = React.useRef<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState<string | null>(null);
-  const authHdrs = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const [show2FASetup, setShow2FASetup]   = useState(false);
   const [twoFASecret, setTwoFASecret]     = useState("");
@@ -476,9 +480,11 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
     cfgRef.current = upd;
     setCfg(upd);
     try { await fetch(`${API}/settings`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHdrs }, body: JSON.stringify(upd) }); }
-    catch {
+    catch (err) {
+      console.warn("[Profile] Setting update failed, reverting:", err instanceof Error ? err.message : String(err));
       cfgRef.current = snapshot;
       setCfg(snapshot);
+      showToast("Setting could not be saved — changes reverted", "error");
     }
     setSaving(null);
   };
@@ -670,8 +676,8 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                               const exportPayload = data.data ?? data;
                               const jsonStr = JSON.stringify(exportPayload, null, 2);
                               const fileName = `ajkmart-data-${Date.now()}.json`;
-                              const filePath = `${FileSystem.documentDirectory}${fileName}`;
-                              await FileSystem.writeAsStringAsync(filePath, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
+                              const filePath = `${LegacyFileSystem.documentDirectory}${fileName}`;
+                              await LegacyFileSystem.writeAsStringAsync(filePath, jsonStr);
                               const canShare = await Sharing.isAvailableAsync();
                               if (canShare) {
                                 await Sharing.shareAsync(filePath, { mimeType: "application/json", dialogTitle: "Save your AJKMart data" });
@@ -850,13 +856,16 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
   const [editCity,  setEditCity]  = useState("Muzaffarabad");
   const [editSaving, setEditSaving] = useState(false);
 
-  const authHdrs = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try { const r = await fetch(`${API}/addresses`, { headers: authHdrs }); const d = await r.json(); setList(d.addresses || []); }
-    catch { /* ignore */ }
+    catch (err) {
+      console.warn("[Profile] Addresses load failed:", err instanceof Error ? err.message : String(err));
+      showToast("Could not load addresses — tap to refresh", "error");
+    }
     setLoading(false);
   }, [userId, token]);
 
@@ -1081,6 +1090,7 @@ export default function ProfileScreen() {
   const [unread,      setUnread]      = useState(0);
   const [stats,       setStats]       = useState({ orders: 0, rides: 0, spent: 0 });
   const [statsLoading,setStatsLoading]= useState(true);
+  const [statsError,  setStatsError]  = useState(false);
   const [signingOut,        setSigningOut]        = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
@@ -1115,27 +1125,39 @@ export default function ProfileScreen() {
 
   const fetchAll = useCallback(async () => {
     if (!user?.id) return;
-    const hdrs = token ? { Authorization: `Bearer ${token}` } : {};
-    try {
-      const [oR, rR, nR, phR, parR] = await Promise.all([
-        fetch(`${API}/orders`,            { headers: hdrs }),
-        fetch(`${API}/rides`,             { headers: hdrs }),
-        fetch(`${API}/notifications`,     { headers: hdrs }),
-        fetch(`${API}/pharmacy-orders`,   { headers: hdrs }),
-        fetch(`${API}/parcel-bookings`,   { headers: hdrs }),
-      ]);
-      const [oD, rD, nD, phD, parD] = await Promise.all([oR.json(), rR.json(), nR.json(), phR.json().catch(() => ({})), parR.json().catch(() => ({}))]);
-      const orders   = oD.orders   || [];
-      const rides    = rD.rides    || [];
-      const pharmacy = phD.orders  || phD.pharmacyOrders  || [];
-      const parcels  = parD.bookings || parD.parcelBookings || [];
-      const spent    = orders.reduce((s: number, o: any) => s + (parseFloat(o.total) || 0), 0)
-                     + rides.reduce((s: number,  r: any) => s + (parseFloat(r.fare)  || 0), 0)
-                     + pharmacy.reduce((s: number, p: any) => s + (parseFloat(p.total) || 0), 0)
-                     + parcels.reduce((s: number,  p: any) => s + (parseFloat(p.price || p.fare || p.total) || 0), 0);
-      setStats({ orders: orders.length, rides: rides.length, spent: Math.round(spent) });
-      setUnread(nD.unreadCount || 0);
-    } catch { /* ignore */ }
+    const hdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const [oR, rR, nR, phR, parR] = await Promise.all([
+          fetch(`${API}/orders`,            { headers: hdrs }),
+          fetch(`${API}/rides`,             { headers: hdrs }),
+          fetch(`${API}/notifications`,     { headers: hdrs }),
+          fetch(`${API}/pharmacy-orders`,   { headers: hdrs }),
+          fetch(`${API}/parcel-bookings`,   { headers: hdrs }),
+        ]);
+        const [oD, rD, nD, phD, parD] = await Promise.all([oR.json(), rR.json(), nR.json(), phR.json().catch(() => ({})), parR.json().catch(() => ({}))]);
+        const orders   = oD.orders   || [];
+        const rides    = rD.rides    || [];
+        const pharmacy = phD.orders  || phD.pharmacyOrders  || [];
+        const parcels  = parD.bookings || parD.parcelBookings || [];
+        const spent    = orders.reduce((s: number, o: any) => s + (parseFloat(o.total) || 0), 0)
+                       + rides.reduce((s: number,  r: any) => s + (parseFloat(r.fare)  || 0), 0)
+                       + pharmacy.reduce((s: number, p: any) => s + (parseFloat(p.total) || 0), 0)
+                       + parcels.reduce((s: number,  p: any) => s + (parseFloat(p.price || p.fare || p.total) || 0), 0);
+        setStats({ orders: orders.length, rides: rides.length, spent: Math.round(spent) });
+        setUnread(nD.unreadCount || 0);
+        setStatsError(false);
+        break;
+      } catch (err) {
+        console.warn(`[Profile] fetchAll attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
+        if (attempt < maxAttempts) {
+          await new Promise<void>((res) => setTimeout(res, 1500 * attempt));
+        } else {
+          setStatsError(true);
+        }
+      }
+    }
     setStatsLoading(false);
   }, [user?.id]);
 
@@ -1222,6 +1244,11 @@ export default function ProfileScreen() {
           <View style={ph.statsStrip}>
             {statsLoading ? (
               <ActivityIndicator color="rgba(255,255,255,0.8)" />
+            ) : statsError ? (
+              <Pressable onPress={() => { setStatsLoading(true); setStatsError(false); fetchAll(); }} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="refresh-outline" size={16} color="rgba(255,255,255,0.8)" />
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: "rgba(255,255,255,0.8)" }}>Could not load stats — tap to retry</Text>
+              </Pressable>
             ) : (
               <>
                 <View style={ph.stat}>
@@ -1446,9 +1473,9 @@ export default function ProfileScreen() {
       </ScrollView>
 
       <EditProfileModal visible={showEdit} onClose={() => setShowEdit(false)} />
-      <NotificationsModal visible={showNotifs} userId={user?.id || ""} token={token} onClose={count => { setUnread(count); setShowNotifs(false); }} />
-      <PrivacyModal       visible={showPrivacy} userId={user?.id || ""} token={token} onClose={() => setShowPrivacy(false)} />
-      <AddressesModal     visible={showAddrs}  userId={user?.id || ""} token={token} onClose={() => setShowAddrs(false)} />
+      <NotificationsModal visible={showNotifs} userId={user?.id || ""} token={token ?? undefined} onClose={count => { setUnread(count); setShowNotifs(false); }} />
+      <PrivacyModal       visible={showPrivacy} userId={user?.id || ""} token={token ?? undefined} onClose={() => setShowPrivacy(false)} />
+      <AddressesModal     visible={showAddrs}  userId={user?.id || ""} token={token ?? undefined} onClose={() => setShowAddrs(false)} />
 
     </View>
   );

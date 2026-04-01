@@ -19,6 +19,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { API_BASE as API } from "@/utils/api";
+import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
 
 const C = Colors.light;
 
@@ -84,8 +85,8 @@ export default function ForgotPasswordScreen() {
 
   const handleSendResetCode = async () => {
     clearError();
-    if (method === "phone" && (!phone || phone.length < 10)) {
-      setError("Please enter a valid phone number"); return;
+    if (method === "phone" && !isValidPakistaniPhone(phone)) {
+      setError("Please enter a valid Pakistani phone number"); return;
     }
     if (method === "email" && (!email || !email.includes("@"))) {
       setError("Please enter a valid email address"); return;
@@ -95,7 +96,7 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     try {
       const body: any = {};
-      if (method === "phone") body.phone = phone.replace(/^0/, "");
+      if (method === "phone") body.phone = normalizePhone(phone);
       else body.email = email.trim().toLowerCase();
 
       const res = await fetch(`${API}/auth/forgot-password`, {
@@ -105,7 +106,7 @@ export default function ForgotPasswordScreen() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Request fail."); setLoading(false); return; }
-      if (data.otp) setDevOtp(data.otp);
+      if (__DEV__ === true && data.otp) setDevOtp(data.otp);
       setResendCooldown(60);
       setStep("otp");
     } catch (e: any) { setError(e.message || "Please try again."); }
@@ -123,7 +124,7 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     try {
       const body: any = { otp, newPassword };
-      if (method === "phone") body.phone = phone.replace(/^0/, "");
+      if (method === "phone") body.phone = normalizePhone(phone);
       else body.email = email.trim().toLowerCase();
       if (totpCode) body.totpCode = totpCode;
 
@@ -173,7 +174,7 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} style={s.gradient}>
         <View style={[s.topSection, { paddingTop: topPad + 16 }]}>
           <Pressable onPress={() => step === "method" ? router.back() : setStep("method")} style={s.backBtn}>
@@ -191,7 +192,7 @@ export default function ForgotPasswordScreen() {
           </Text>
         </View>
 
-        <ScrollView style={s.card} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView style={s.card} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {step === "method" && (
             <>
               <View style={s.methodTabs}>
@@ -267,7 +268,7 @@ export default function ForgotPasswordScreen() {
                 maxLength={6}
                 autoFocus
               />
-              {devOtp ? (
+              {__DEV__ === true && devOtp ? (
                 <View style={s.devOtpBox}>
                   <Ionicons name="key-outline" size={14} color={C.success} />
                   <Text style={s.devOtpTxt}>Dev OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{devOtp}</Text></Text>
@@ -301,7 +302,7 @@ export default function ForgotPasswordScreen() {
               <PasswordStrength password={newPassword} />
 
               <Text style={s.fieldLabel}>Confirm Password</Text>
-              <View style={[s.inputRow, confirmPassword && newPassword !== confirmPassword && s.inputError]}>
+              <View style={[s.pwdWrapper, confirmPassword && newPassword !== confirmPassword && s.inputError]}>
                 <TextInput
                   style={[s.input, { flex: 1, marginBottom: 0, borderWidth: 0 }]}
                   value={confirmPassword}

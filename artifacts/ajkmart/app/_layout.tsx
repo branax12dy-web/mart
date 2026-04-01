@@ -31,11 +31,19 @@ import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformCon
 import { ToastProvider } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
-setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
+const _domain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
+if (_domain) setBaseUrl(`https://${_domain}`);
 
 SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      retryDelay: (attempt) => Math.floor(1500 * Math.pow(1.5, attempt - 1)),
+    },
+  },
+});
 
 /* ── Auth Guard ──────────────────────────────────────────────
    Watches the auth state inside the router context and
@@ -50,7 +58,7 @@ function AuthGuard() {
     if (isLoading) return; // wait until auth is fully resolved
 
     const inAuthGroup = segments[0] === "auth";
-    const inRootIndex = segments.length === 0;
+    const inRootIndex = (segments as string[]).length === 0;
 
     if (!user && !inAuthGroup) {
       // User logged out or not authenticated → send to auth
@@ -127,7 +135,18 @@ function MagicLinkHandler() {
         });
         const data = await res.json();
         if (!res.ok) {
-          Alert.alert("Magic Link Error", data.error || "Invalid or expired magic link.");
+          const errMsg: string = data.error || data.message || "";
+          let userMessage: string;
+          if (errMsg.toLowerCase().includes("expired") || data.code === "EXPIRED") {
+            userMessage = "This magic link has expired. Please request a new login link.";
+          } else if (errMsg.toLowerCase().includes("used") || data.code === "USED") {
+            userMessage = "This magic link has already been used. Please request a new one.";
+          } else if (errMsg.toLowerCase().includes("invalid") || data.code === "INVALID") {
+            userMessage = "This magic link is invalid. Please request a new login link.";
+          } else {
+            userMessage = errMsg || "Invalid or expired magic link. Please request a new one.";
+          }
+          Alert.alert("Sign-In Failed", userMessage, [{ text: "OK" }]);
           return;
         }
         if (data.requires2FA) {
@@ -150,6 +169,20 @@ function MagicLinkHandler() {
   }, []);
 
   return null;
+}
+
+function MisconfigScreen() {
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: "#0f172a" }}>
+      <Text style={{ fontSize: 48 }}>⚙️</Text>
+      <Text style={{ color: "#f1f5f9", fontSize: 20, fontWeight: "700", marginTop: 16, textAlign: "center" }}>
+        App Not Configured
+      </Text>
+      <Text style={{ color: "#94a3b8", fontSize: 14, marginTop: 10, textAlign: "center", lineHeight: 22 }}>
+        {"EXPO_PUBLIC_DOMAIN is not set.\nPlease configure the environment and rebuild the app."}
+      </Text>
+    </View>
+  );
 }
 
 function RootLayoutNav() {
@@ -259,6 +292,10 @@ export default function RootLayout() {
         <ActivityIndicator size="large" color="#ffffff" />
       </View>
     );
+  }
+
+  if (!_domain) {
+    return <MisconfigScreen />;
   }
 
   return (

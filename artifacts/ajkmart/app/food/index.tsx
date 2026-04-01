@@ -25,14 +25,14 @@ import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 const C = Colors.light;
 
 function FoodCard({ item }: { item: any }) {
-  const { addItem } = useCart();
+  const { addItem, cartType, itemCount, clearCart } = useCart();
   const [added, setAdded] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (addedTimerRef.current) clearTimeout(addedTimerRef.current); }, []);
 
-  const handleAdd = () => {
+  const doAdd = () => {
     addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: "food" });
     setAdded(true);
     Animated.sequence([
@@ -41,6 +41,21 @@ function FoodCard({ item }: { item: any }) {
     ]).start();
     if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
+  };
+
+  const handleAdd = () => {
+    if (itemCount > 0 && cartType !== "food" && cartType !== "none") {
+      Alert.alert(
+        "Switch to Food?",
+        "Your cart has items from another service. Adding this item will clear your current cart.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAdd(); } },
+        ],
+      );
+      return;
+    }
+    doAdd();
   };
 
   return (

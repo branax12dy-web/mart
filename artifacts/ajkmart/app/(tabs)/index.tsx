@@ -60,7 +60,7 @@ function ActiveTrackerStrip({ userId, position, tabBarHeight = 0 }: { userId: st
   const { config: pCfg } = usePlatformConfig();
   const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-  const { data: ordersData, isLoading: ordersLoading, isError: ordersError } = useQuery({
+  const { data: ordersData, isLoading: ordersLoading, isError: ordersError, refetch: refetchOrders } = useQuery({
     queryKey: ["home-active-orders", userId],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/orders?status=active`, { headers: authHdrs });
@@ -72,7 +72,7 @@ function ActiveTrackerStrip({ userId, position, tabBarHeight = 0 }: { userId: st
     staleTime: 8000,
   });
 
-  const { data: ridesData, isLoading: ridesLoading, isError: ridesError } = useQuery({
+  const { data: ridesData, isLoading: ridesLoading, isError: ridesError, refetch: refetchRides } = useQuery({
     queryKey: ["home-active-rides", userId],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/rides?status=active`, { headers: authHdrs });
@@ -107,6 +107,9 @@ function ActiveTrackerStrip({ userId, position, tabBarHeight = 0 }: { userId: st
         <View style={[styles.trackerCard, { backgroundColor: "#FEF3C7", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }]}>
           <Ionicons name="warning-outline" size={14} color="#D97706" />
           <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: "#92400E" }}>Could not load active orders</Text>
+          <Pressable onPress={() => { refetchOrders(); refetchRides(); }} style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "#D97706", borderRadius: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#fff" }}>Retry</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -263,7 +266,7 @@ function ServiceHero({
   const hero = service.heroConfig;
   const displayTitle = service.key === "mart" ? appName : hero.title;
   return (
-    <Tap onPress={() => safeNavigate(service.route)} style={styles.heroWrap} delay={80}>
+    <Tap onPress={() => safeNavigate(String(service.route))} style={styles.heroWrap} delay={80}>
       <LinearGradient
         colors={hero.gradient}
         start={{ x: 0, y: 0 }}
@@ -344,7 +347,7 @@ function SvcCard({
 
   return (
     <Tap
-      onPress={() => safeNavigate(service.route)}
+      onPress={() => safeNavigate(String(service.route))}
       style={[styles.svcWrap, fullWidth ? { width: "100%" } : { width: HALF_W }]}
       delay={delay}
     >
@@ -391,7 +394,7 @@ function SingleServiceHero({
   const hero = service.heroConfig;
   const displayTitle = service.key === "mart" ? appName : hero.title;
   return (
-    <Tap onPress={() => safeNavigate(service.route)} style={styles.singleHeroWrap} delay={80}>
+    <Tap onPress={() => safeNavigate(String(service.route))} style={styles.singleHeroWrap} delay={80}>
       <LinearGradient
         colors={hero.gradient}
         start={{ x: 0, y: 0 }}
@@ -764,7 +767,7 @@ export default function HomeScreen() {
 
   const handleHomeRefresh = useCallback(async () => {
     setHomeRefreshing(true);
-    try { await refreshConfig(); } catch {}
+    try { await refreshConfig(); } catch (err) { console.warn("[Home] Config refresh failed:", err instanceof Error ? err.message : String(err)); }
     setHomeRefreshing(false);
   }, [refreshConfig]);
   const features = platformConfig.features;

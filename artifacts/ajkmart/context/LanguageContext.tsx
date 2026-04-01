@@ -32,7 +32,7 @@ async function fetchPlatformDefaultLanguage(): Promise<Language | null> {
     const data = await res.json();
     const lang = data?.language?.defaultLanguage;
     if (lang && VALID_LANGS.has(lang)) return lang as Language;
-  } catch {}
+  } catch (err) { console.warn("[Language] Platform default language fetch failed:", err instanceof Error ? err.message : String(err)); }
   return null;
 }
 
@@ -45,7 +45,7 @@ async function fetchUserLanguage(token: string): Promise<Language | null> {
     const data = await res.json();
     const lang = data?.language;
     if (lang && VALID_LANGS.has(lang)) return lang as Language;
-  } catch {}
+  } catch (err) { console.warn("[Language] User language fetch failed:", err instanceof Error ? err.message : String(err)); }
   return null;
 }
 
@@ -79,7 +79,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
             applyRTL(platformLang);
           }
         }
-      } catch {}
+      } catch (err) { console.warn("[Language] Bootstrap language load failed:", err instanceof Error ? err.message : String(err)); }
       setLoading(false);
     })();
   }, []);
@@ -100,12 +100,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     applyRTL(lang);
     try {
       await AsyncStorage.setItem(LANG_STORAGE_KEY, lang);
-    } catch {}
+    } catch (err) { console.warn("[Language] Failed to persist language preference:", err instanceof Error ? err.message : String(err)); }
     const token = tokenRef.current;
     if (token) {
       try {
         await putUserLanguage(token, lang);
-      } catch {}
+      } catch (err) { console.warn("[Language] Failed to sync language to server:", err instanceof Error ? err.message : String(err)); }
     }
   }, []);
 
@@ -123,7 +123,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         const langToSave = (currentLang && VALID_LANGS.has(currentLang)) ? currentLang : language;
         await putUserLanguage(token, langToSave as string);
       }
-    } catch {}
+    } catch (err) { console.warn("[Language] syncToServer failed:", err instanceof Error ? err.message : String(err)); }
   }, [language]);
 
   return (

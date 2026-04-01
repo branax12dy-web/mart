@@ -411,7 +411,7 @@ router.get("/vendor/:vendorId", async (req, res) => {
 /* ── POST /reviews/:id/vendor-reply — vendor reply ─────────────────────── */
 router.post("/:id/vendor-reply", vendorAuth, async (req, res) => {
   const vendorId = req.vendorId!;
-  const reviewId = req.params["id"]!;
+  const reviewId = String(req.params["id"]);
   const { reply } = req.body;
 
   if (!reply || typeof reply !== "string" || reply.trim().length === 0) {
@@ -444,7 +444,7 @@ router.post("/:id/vendor-reply", vendorAuth, async (req, res) => {
 /* ── PUT /reviews/:id/vendor-reply — edit vendor reply ──────────────────── */
 router.put("/:id/vendor-reply", vendorAuth, async (req, res) => {
   const vendorId = req.vendorId!;
-  const reviewId = req.params["id"]!;
+  const reviewId = String(req.params["id"]);
   const { reply } = req.body;
 
   if (!reply || typeof reply !== "string" || reply.trim().length === 0) {
@@ -477,7 +477,7 @@ router.put("/:id/vendor-reply", vendorAuth, async (req, res) => {
 /* ── DELETE /reviews/:id/vendor-reply — delete vendor reply ─────────────── */
 router.delete("/:id/vendor-reply", vendorAuth, async (req, res) => {
   const vendorId = req.vendorId!;
-  const reviewId = req.params["id"]!;
+  const reviewId = String(req.params["id"]);
 
   const [review] = await db.select().from(reviewsTable)
     .where(and(eq(reviewsTable.id, reviewId), eq(reviewsTable.vendorId, vendorId)))

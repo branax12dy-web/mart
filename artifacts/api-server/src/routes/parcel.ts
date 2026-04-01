@@ -311,7 +311,7 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     }).catch((err: any) => {
       if (err?.httpStatus) { res.status(err.httpStatus).json({ error: err.message }); }
       else { res.status(500).json({ error: "Cancel failed" }); }
-      return null;
+      return undefined;
     });
     if (!cancelledBooking) return;
     const pRefLang = await getUserLanguage(userId);

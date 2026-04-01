@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Platform,
   Pressable,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -20,65 +22,113 @@ import type { GetProductsType, Product } from "@workspace/api-client-react";
 
 const C = Colors.light;
 
-type ServiceType = "mart" | "food" | "pharmacy";
+type ServiceKey = "mart" | "food" | "pharmacy";
 
 interface SearchResult {
   id: string;
   name: string;
   price: number;
   image?: string;
-  type: ServiceType;
+  type: ServiceKey;
   category?: string;
   originalPrice?: number;
+}
+
+const SERVICE_ROUTES: Record<ServiceKey, "/mart" | "/food" | "/pharmacy"> = {
+  mart: "/mart",
+  food: "/food",
+  pharmacy: "/pharmacy",
+};
+
+const SERVICE_META: Record<ServiceKey, { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }> = {
+  mart:     { label: "Mart",     icon: "basket-outline",   color: "#7C3AED", bg: "#F3E8FF" },
+  food:     { label: "Food",     icon: "restaurant-outline", color: "#D97706", bg: "#FEF3C7" },
+  pharmacy: { label: "Pharmacy", icon: "medical-outline",  color: "#059669", bg: "#D1FAE5" },
+};
+
+function ServiceBadge({ type }: { type: ServiceKey }) {
+  const m = SERVICE_META[type];
+  return (
+    <View style={[s.badge, { backgroundColor: m.bg }]}>
+      <Ionicons name={m.icon} size={11} color={m.color} />
+      <Text style={[s.badgeTxt, { color: m.color }]}>{m.label}</Text>
+    </View>
+  );
 }
 
 export default function UniversalSearchScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const { addItem } = useCart();
+  const { addItem, cartType, itemCount, clearCart } = useCart();
   const { config } = usePlatformConfig();
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [sections, setSections] = useState<Array<{ title: string; data: SearchResult[]; type: ServiceKey }>>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [added, setAdded] = useState<Record<string, boolean>>({});
 
-  const firstEnabledService: ServiceType = config.features.mart
-    ? "mart"
-    : config.features.food
-    ? "food"
-    : "pharmacy";
-  const [service, setService] = useState<ServiceType>(firstEnabledService);
-
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 200);
-  }, []);
+  const enabledServices: ServiceKey[] = [
+    ...(config.features.mart ? ["mart" as ServiceKey] : []),
+    ...(config.features.food ? ["food" as ServiceKey] : []),
+    ...(config.features.pharmacy ? ["pharmacy" as ServiceKey] : []),
+  ];
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) { setResults([]); return; }
-    debounceRef.current = setTimeout(() => fetchResults(query, service), 350);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query, service]);
-
-  const fetchResults = async (q: string, type: ServiceType) => {
+  const fetchResults = useCallback(async (q: string) => {
+    if (!q.trim()) { setSections([]); return; }
     setLoading(true);
     setSearchError(false);
-    try {
-      const params: Parameters<typeof getProducts>[0] & { limit?: number } = { type: type as GetProductsType, search: q, limit: 30 };
-      const data = await getProducts(params as Parameters<typeof getProducts>[0]);
-      const items: SearchResult[] = (data?.products || []).map((p: Product) => ({ id: p.id, name: p.name, price: p.price, image: p.image, category: p.category, originalPrice: p.originalPrice, type }));
-      setResults(items);
-    } catch {
-      setResults([]);
+
+    const results = await Promise.allSettled(
+      enabledServices.map((svc) =>
+        getProducts({ type: svc as GetProductsType, search: q, limit: 20 } as Parameters<typeof getProducts>[0])
+          .then((data) =>
+            (data?.products || []).map((p: Product) => ({
+              id: p.id,
+              name: p.name,
+              price: p.price,
+              image: p.image,
+              category: p.category,
+              originalPrice: p.originalPrice,
+              type: svc,
+            } as SearchResult))
+          )
+      )
+    );
+
+    const newSections: Array<{ title: string; data: SearchResult[]; type: ServiceKey }> = [];
+    let anySuccess = false;
+    results.forEach((result, i) => {
+      const svc = enabledServices[i]!;
+      if (result.status === "fulfilled" && result.value.length > 0) {
+        newSections.push({ title: SERVICE_META[svc].label, data: result.value, type: svc });
+        anySuccess = true;
+      } else if (result.status === "rejected") {
+        console.warn(`[Search] ${svc} fetch failed:`, result.reason instanceof Error ? result.reason.message : String(result.reason));
+      }
+    });
+
+    setSections(newSections);
+    if (!anySuccess && results.every((r) => r.status === "rejected")) {
       setSearchError(true);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
+  }, [enabledServices.join(",")]);
+
+  const onChangeText = (text: string) => {
+    setQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!text.trim()) { setSections([]); return; }
+    debounceRef.current = setTimeout(() => fetchResults(text), 350);
+  };
+
+  const doAddItem = (item: SearchResult) => {
+    addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: item.type as "mart" | "food" });
+    setAdded((prev) => ({ ...prev, [item.id]: true }));
+    setTimeout(() => setAdded((prev) => ({ ...prev, [item.id]: false })), 1500);
   };
 
   const handleAdd = (item: SearchResult) => {
@@ -86,22 +136,22 @@ export default function UniversalSearchScreen() {
       router.push("/pharmacy");
       return;
     }
-    addItem({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: item.type as "mart" | "food" });
-    setAdded(prev => ({ ...prev, [item.id]: true }));
-    setTimeout(() => setAdded(prev => ({ ...prev, [item.id]: false })), 1500);
+    if (itemCount > 0 && cartType !== item.type && cartType !== "none") {
+      const meta = SERVICE_META[item.type];
+      Alert.alert(
+        `Switch to ${meta.label}?`,
+        `Your cart has items from another service. Adding this item will clear your current cart.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAddItem(item); } },
+        ],
+      );
+      return;
+    }
+    doAddItem(item);
   };
 
-  const martEnabled = config.features.mart;
-  const foodEnabled = config.features.food;
-  const pharmacyEnabled = config.features.pharmacy;
-
-  const tabs: { id: ServiceType; label: string; icon: string }[] = [
-    ...(martEnabled ? [{ id: "mart" as ServiceType, label: "Mart", icon: "basket-outline" }] : []),
-    ...(foodEnabled ? [{ id: "food" as ServiceType, label: "Food", icon: "restaurant-outline" }] : []),
-    ...(pharmacyEnabled ? [{ id: "pharmacy" as ServiceType, label: "Pharmacy", icon: "medical-outline" }] : []),
-  ];
-
-  const allServicesText = tabs.map(t => t.label).join(", ");
+  const totalResults = sections.reduce((acc, s) => acc + s.data.length, 0);
 
   return (
     <View style={[s.screen, { paddingTop: topPad }]}>
@@ -115,56 +165,55 @@ export default function UniversalSearchScreen() {
             ref={inputRef}
             style={s.input}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={onChangeText}
             placeholder="Search across all services…"
             placeholderTextColor={C.textMuted}
             returnKeyType="search"
             autoCapitalize="none"
+            autoFocus
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery("")}>
+            <Pressable onPress={() => { setQuery(""); setSections([]); }}>
               <Ionicons name="close-circle" size={18} color={C.textMuted} />
             </Pressable>
           )}
         </View>
       </View>
 
-      {tabs.length > 1 && (
-        <View style={s.tabs}>
-          {tabs.map(tab => (
-            <Pressable
-              key={tab.id}
-              onPress={() => setService(tab.id)}
-              style={[s.tab, service === tab.id && s.tabActive]}
-            >
-              <Ionicons name={tab.icon as any} size={14} color={service === tab.id ? "#fff" : C.primary} />
-              <Text style={[s.tabTxt, service === tab.id && s.tabTxtActive]}>{tab.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
       {loading && (
         <View style={s.center}>
-          <ActivityIndicator color={C.primary} />
+          <ActivityIndicator color={C.primary} size="large" />
+          <Text style={s.emptySub}>Searching all services…</Text>
         </View>
       )}
 
-      {!loading && query.trim() && results.length === 0 && searchError && (
+      {!loading && query.trim() && totalResults === 0 && searchError && (
         <View style={s.center}>
           <Ionicons name="wifi-outline" size={40} color="#EF4444" />
           <Text style={[s.emptyTxt, { color: "#EF4444" }]}>Search failed</Text>
           <Text style={s.emptySub}>Check your connection and try again</Text>
-          <Pressable onPress={() => fetchResults(query, service)} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: C.primary, borderRadius: 10 }}>
-            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" }}>Retry</Text>
+          <Pressable onPress={() => fetchResults(query)} style={s.retryBtn}>
+            <Text style={s.retryBtnTxt}>Retry</Text>
           </Pressable>
         </View>
       )}
-      {!loading && query.trim() && results.length === 0 && !searchError && (
+
+      {!loading && query.trim() && totalResults === 0 && !searchError && (
         <View style={s.center}>
           <Ionicons name="search-outline" size={40} color={C.textMuted} />
           <Text style={s.emptyTxt}>No results for "{query}"</Text>
-          <Text style={s.emptySub}>Try a different keyword or switch service</Text>
+          <Text style={s.emptySub}>Try a different keyword or browse a service</Text>
+          <View style={s.noResultsCtaRow}>
+            {enabledServices.filter((sv) => sv !== "pharmacy").map((sv) => {
+              const m = SERVICE_META[sv];
+              return (
+                <Pressable key={sv} onPress={() => router.push(SERVICE_ROUTES[sv])} style={[s.ctaBtn, { backgroundColor: m.bg }]}>
+                  <Ionicons name={m.icon} size={14} color={m.color} />
+                  <Text style={[s.ctaBtnTxt, { color: m.color }]}>Browse {m.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       )}
 
@@ -172,56 +221,53 @@ export default function UniversalSearchScreen() {
         <View style={s.center}>
           <Ionicons name="search" size={40} color={C.border} />
           <Text style={s.emptyTxt}>Start typing to search</Text>
-          <Text style={s.emptySub}>
-            {tabs.length > 0 ? `Search across ${allServicesText}` : "Search all services"}
-          </Text>
+          <Text style={s.emptySub}>Results from Mart, Food & Pharmacy</Text>
         </View>
       )}
 
-      <FlatList
-        data={results}
-        keyExtractor={item => item.id}
-        contentContainerStyle={s.list}
-        keyboardShouldPersistTaps="always"
-        renderItem={({ item }) => (
-          <View style={s.card}>
-            <View style={s.cardInfo}>
-              <View style={s.cardMeta}>
-                <Text style={s.cardName} numberOfLines={2}>{item.name}</Text>
-                {item.type === "pharmacy" && (
-                  <View style={s.rxBadge}>
-                    <Ionicons name="medical-outline" size={11} color="#7C3AED" />
-                    <Text style={s.rxTxt}>Pharmacy</Text>
+      {!loading && totalResults > 0 && (
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="always"
+          contentContainerStyle={s.list}
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <View style={s.sectionHeader}>
+              <Ionicons name={SERVICE_META[section.type].icon} size={14} color={SERVICE_META[section.type].color} />
+              <Text style={[s.sectionTitle, { color: SERVICE_META[section.type].color }]}>{section.title}</Text>
+              <View style={[s.sectionDivider, { backgroundColor: SERVICE_META[section.type].color + "40" }]} />
+            </View>
+          )}
+          renderItem={({ item }) => (
+            <View style={s.card}>
+              <View style={s.cardInfo}>
+                <View style={s.cardMeta}>
+                  <Text style={s.cardName} numberOfLines={2}>{item.name}</Text>
+                  <ServiceBadge type={item.type} />
+                </View>
+                {item.originalPrice && Number(item.originalPrice) > item.price ? (
+                  <View style={s.priceRow}>
+                    <Text style={s.cardPrice}>Rs. {item.price.toLocaleString()}</Text>
+                    <Text style={s.cardOriginal}>Rs. {Number(item.originalPrice).toLocaleString()}</Text>
                   </View>
+                ) : (
+                  <Text style={s.cardPrice}>Rs. {item.price.toLocaleString()}</Text>
                 )}
               </View>
-              {item.originalPrice && item.originalPrice > item.price ? (
-                <View style={s.priceRow}>
-                  <Text style={s.cardPrice}>Rs. {item.price.toLocaleString()}</Text>
-                  <Text style={s.cardOriginal}>Rs. {(item.originalPrice as number).toLocaleString()}</Text>
-                </View>
+              {item.type === "pharmacy" ? (
+                <Pressable onPress={() => router.push("/pharmacy")} style={s.viewBtn}>
+                  <Ionicons name="arrow-forward" size={16} color="#059669" />
+                </Pressable>
               ) : (
-                <Text style={s.cardPrice}>Rs. {item.price.toLocaleString()}</Text>
+                <Pressable onPress={() => handleAdd(item)} style={[s.addBtn, added[item.id] && s.addBtnDone]}>
+                  <Ionicons name={added[item.id] ? "checkmark" : "add"} size={18} color="#fff" />
+                </Pressable>
               )}
             </View>
-            {item.type === "pharmacy" ? (
-              <Pressable
-                onPress={() => router.push("/pharmacy")}
-                style={s.viewBtn}
-              >
-                <Ionicons name="arrow-forward" size={16} color={C.primary} />
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={() => handleAdd(item)}
-                style={[s.addBtn, added[item.id] && s.addBtnDone]}
-              >
-                <Ionicons name={added[item.id] ? "checkmark" : "add"} size={18} color="#fff" />
-              </Pressable>
-            )}
-          </View>
-        )}
-      />
+          )}
+        />
+      )}
     </View>
   );
 }
@@ -232,25 +278,28 @@ const s = StyleSheet.create({
   backBtn:   { padding: 6 },
   inputWrap: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surfaceSecondary, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   input:     { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", color: C.text },
-  tabs:      { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border },
-  tab:       { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1.5, borderColor: C.primary },
-  tabActive: { backgroundColor: C.primary, borderColor: C.primary },
-  tabTxt:    { fontSize: 13, fontFamily: "Inter_600SemiBold", color: C.primary },
-  tabTxtActive: { color: "#fff" },
-  list:      { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
-  card:      { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border },
+  list:      { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 14, paddingBottom: 6 },
+  sectionTitle:  { fontSize: 12, fontFamily: "Inter_700Bold", letterSpacing: 0.5, textTransform: "uppercase" },
+  sectionDivider: { flex: 1, height: 1, marginLeft: 6 },
+  card:      { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: C.border },
   cardInfo:  { flex: 1 },
-  cardName:  { fontSize: 15, fontFamily: "Inter_500Medium", color: C.text, marginBottom: 4 },
+  cardMeta:  { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4, gap: 8 },
+  cardName:  { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium", color: C.text },
   priceRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
   cardPrice: { fontSize: 14, fontFamily: "Inter_700Bold", color: C.primary },
   cardOriginal: { fontSize: 12, fontFamily: "Inter_400Regular", color: C.textMuted, textDecorationLine: "line-through" },
+  badge:     { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeTxt:  { fontSize: 10, fontFamily: "Inter_600SemiBold" },
   addBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: C.primary, alignItems: "center", justifyContent: "center" },
   addBtnDone:{ backgroundColor: "#10B981" },
-  viewBtn:   { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center" },
-  cardMeta:  { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 },
-  rxBadge:   { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#F3E8FF", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
-  rxTxt:     { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#7C3AED" },
+  viewBtn:   { width: 36, height: 36, borderRadius: 18, backgroundColor: "#D1FAE5", alignItems: "center", justifyContent: "center" },
   center:    { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 60, gap: 8 },
   emptyTxt:  { fontSize: 16, fontFamily: "Inter_600SemiBold", color: C.text, marginTop: 8 },
   emptySub:  { fontSize: 13, fontFamily: "Inter_400Regular", color: C.textMuted },
+  retryBtn:  { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#EF4444", borderRadius: 12 },
+  retryBtnTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
+  noResultsCtaRow: { flexDirection: "row", gap: 10, marginTop: 12, flexWrap: "wrap", justifyContent: "center" },
+  ctaBtn:    { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },
+  ctaBtnTxt: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 });

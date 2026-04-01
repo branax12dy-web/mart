@@ -140,7 +140,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) setItems(parsed);
-      } catch {
+      } catch (parseErr) {
+        console.warn("[Cart] Failed to parse stored cart — clearing:", parseErr instanceof Error ? parseErr.message : String(parseErr));
         AsyncStorage.removeItem("@ajkmart_cart");
       }
       setHasLoaded(true);
@@ -188,7 +189,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         if (messages.length > 0) {
           await new Promise<void>(resolve => {
             Alert.alert("Cart Updated", messages.join("\n\n") + "\n\nPlease review your cart before placing the order.", [
-              { text: "Review Cart", onPress: resolve },
+              { text: "Review Cart", onPress: () => resolve() },
             ]);
           });
         }

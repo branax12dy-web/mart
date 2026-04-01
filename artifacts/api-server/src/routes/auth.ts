@@ -44,6 +44,21 @@ function hashVerificationToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * Canonical Pakistani mobile phone normalizer.
+ * Returns 10-digit format: `3xxxxxxxxx` (no leading zero, no country code).
+ * Accepts: 03..., 3..., +923..., 923...
+ * This matches the client-side normalizePhone() in utils/phone.ts.
+ */
+function canonicalizePhone(raw: string): string {
+  const cleaned = raw.replace(/[\s\-()]/g, "");
+  const e164Match = cleaned.match(/^\+?92(3\d{9})$/);
+  if (e164Match) return e164Match[1]!;
+  const localMatch = cleaned.match(/^0(3\d{9})$/);
+  if (localMatch) return localMatch[1]!;
+  return cleaned;
+}
+
 const router: IRouter = Router();
 
 /* ─────────────────────────────────────────────────────────────
@@ -56,7 +71,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     res.status(400).json({ error: "Phone number is required" });
     return;
   }
-  const phone = rawPhone.replace(/-/g, "");
+  const phone = canonicalizePhone(rawPhone);
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
@@ -187,7 +202,7 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
     res.status(400).json({ error: "Phone and OTP are required" });
     return;
   }
-  const phone = rawPhone.replace(/-/g, "");
+  const phone = canonicalizePhone(rawPhone);
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
@@ -592,7 +607,7 @@ router.post("/check-available", async (req, res) => {
 
   if (username && username.length > 2) {
     const clean = username.toLowerCase().trim();
-    const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, clean)).limit(1);
+    const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${clean}`).limit(1);
     result.username = existing
       ? { available: false, message: "Yeh username pehle se liya hua hai. Koi aur try karein." }
       : { available: true,  message: "Available" };
@@ -834,7 +849,7 @@ router.post("/login/username", verifyCaptcha, async (req, res) => {
     res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.username, clean)).limit(1);
+  const [user] = await db.select().from(usersTable).where(sql`lower(${usersTable.username}) = ${clean}`).limit(1);
   if (!user || !user.passwordHash) {
     recordFailedAttempt(clean, maxAttempts, lockoutMinutes);
     addAuditEntry({ action: "username_login_failed", ip, details: `Username not found or no password: ${clean}`, result: "fail" });
@@ -958,7 +973,7 @@ router.post("/complete-profile", async (req, res) => {
     const clean = username.toLowerCase().replace(/[^a-z0-9_]/g, "").trim();
     if (clean.length < 3) { res.status(400).json({ error: "Username must be at least 3 characters (letters, numbers, underscore only)" }); return; }
     if (clean !== user.username) {
-      const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, clean)).limit(1);
+      const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${clean}`).limit(1);
       if (existing && existing.id !== userId) {
         res.status(409).json({ error: "Yeh username pehle se liya hua hai" }); return;
       }
@@ -1141,7 +1156,7 @@ router.post("/register", verifyCaptcha, async (req, res) => {
     if (!businessName && !storeName) { res.status(400).json({ error: "Business/store name is required for vendor registration" }); return; }
   }
 
-  const normalizedPhone = phone.replace(/-/g, "");
+  const normalizedPhone = canonicalizePhone(phone);
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
   if (existing) {
     res.status(409).json({ error: "An account with this phone number already exists" });
@@ -1160,8 +1175,8 @@ router.post("/register", verifyCaptcha, async (req, res) => {
   let cleanUsername: string | null = null;
   if (username) {
     cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "").slice(0, 20);
-    if (cleanUsername.length >= 3) {
-      const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, cleanUsername)).limit(1);
+    if (cleanUsername !== null && cleanUsername.length >= 3) {
+      const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${cleanUsername}`).limit(1);
       if (existingUsername) {
         res.status(409).json({ error: "This username is already taken" });
         return;
@@ -1255,8 +1270,8 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
 
   let user;
   if (phone) {
-    const rawPhone = phone.replace(/-/g, "");
-    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, rawPhone)).limit(1);
+    const canonPhone = canonicalizePhone(phone);
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, canonPhone)).limit(1);
     user = found;
   } else {
     const normalized = email.toLowerCase().trim();
@@ -1302,7 +1317,7 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
       .set({ otpCode: otp, otpExpiry, otpUsed: false, updatedAt: new Date() })
       .where(eq(usersTable.id, user.id));
 
-    const targetPhone = phone.replace(/-/g, "");
+    const targetPhone = canonicalizePhone(phone);
     await sendOtpSMS(targetPhone, otp, settings, forgotLang);
     if (settings["integration_whatsapp"] === "on") {
       sendWhatsAppOTP(targetPhone, otp, settings, forgotLang).catch(() => {});
@@ -1345,8 +1360,8 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
 
   let user;
   if (phone) {
-    const rawPhone = phone.replace(/-/g, "");
-    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, rawPhone)).limit(1);
+    const canonPhone = canonicalizePhone(phone);
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, canonPhone)).limit(1);
     user = found;
   } else {
     const normalized = email.toLowerCase().trim();
@@ -1479,8 +1494,8 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
   let cleanUsername: string | null = null;
   if (username) {
     cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "").slice(0, 20);
-    if (cleanUsername.length >= 3) {
-      const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, cleanUsername)).limit(1);
+    if (cleanUsername !== null && cleanUsername.length >= 3) {
+      const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${cleanUsername}`).limit(1);
       if (existingUsername) {
         res.status(409).json({ error: "This username is already taken" });
         return;

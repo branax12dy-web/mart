@@ -41,6 +41,9 @@ router.get("/profile", async (req, res) => {
     avatar: user.avatar,
     walletBalance: parseFloat(user.walletBalance ?? "0"),
     isActive: user.isActive,
+    cnic: user.cnic ?? null,
+    city: user.city ?? null,
+    address: user.address ?? null,
     createdAt: user.createdAt.toISOString(),
   });
 });
@@ -101,7 +104,7 @@ router.post("/export-data", async (req, res) => {
       type: r.type,
       status: r.status,
       pickupAddress: r.pickupAddress,
-      dropoffAddress: r.dropoffAddress,
+      dropoffAddress: r.dropAddress,
       fare: parseFloat(r.fare),
       paymentMethod: r.paymentMethod,
       createdAt: r.createdAt.toISOString(),

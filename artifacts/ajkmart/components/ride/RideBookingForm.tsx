@@ -26,6 +26,7 @@ import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useApiCall } from "@/hooks/useApiCall";
 import { API_BASE } from "@/utils/api";
 import { ServiceListSkeleton, FareEstimateSkeleton } from "@/components/ride/Skeletons";
+import { PermissionGuide } from "@/components/PermissionGuide";
 import {
   estimateFare,
   bookRide,
@@ -191,6 +192,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const [subscribing, setSubscribing] = useState(false);
   const [debtBalance, setDebtBalance] = useState(0);
   const [debtDismissed, setDebtDismissed] = useState(false);
+  const [permGuideVisible, setPermGuideVisible] = useState(false);
   const [estimateForType, setEstimateForType] = useState<string | null>(null);
   const [estimateAt, setEstimateAt] = useState<number | null>(null);
   const [estimateAgeMinutes, setEstimateAgeMinutes] = useState(0);
@@ -215,7 +217,9 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
         const address = data?.formattedAddress ?? `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
         setPickup(address);
         setPickupObj({ lat, lng, address });
-      } catch {}
+      } catch (err) {
+        console.warn("[RideBookingForm] GPS auto-fill failed:", err instanceof Error ? err.message : String(err));
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -225,7 +229,9 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
       .then((data) => {
         if (data?.locations?.length) setPopularSpots(data.locations);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[RideBookingForm] Popular spots fetch failed:", err instanceof Error ? err.message : String(err));
+      });
   }, []);
 
   useEffect(() => {
@@ -234,7 +240,9 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
       .then((data) => {
         if (data?.routes?.length) setSchoolRoutes(data.routes);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[RideBookingForm] School routes fetch failed:", err instanceof Error ? err.message : String(err));
+      });
   }, [rideType]);
 
   useEffect(() => {
@@ -271,7 +279,10 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
             : data.services[0]!.key,
         );
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("[RideBookingForm] Ride services fetch failed:", err instanceof Error ? err.message : String(err));
+        showToast("Could not load ride types. Please check your connection and try again.", "error");
+      })
       .finally(() => setServicesLoading(false));
   }, []);
 
@@ -284,7 +295,9 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
       .then((d) => {
         if (d?.debtBalance > 0) setDebtBalance(d.debtBalance);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[RideBookingForm] Debt fetch failed:", err instanceof Error ? err.message : String(err));
+      });
   }, [user?.id]);
 
   const handleMyLocation = async () => {
@@ -294,6 +307,7 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         setLocDenied(true);
+        setPermGuideVisible(true);
         return;
       }
       const pos = await Location.getCurrentPositionAsync({
@@ -329,15 +343,9 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
         type: rideType,
       } as EstimateFareRequest)
         .then(
-          (
-            data: Record<string, unknown> & {
-              fare: number;
-              distance: number;
-              duration: string;
-              type?: string;
-            },
-          ) => {
+          (data) => {
             if (cancelled || !data) return;
+            const ext = data as typeof data & { baseFare?: number; gstAmount?: number; bargainEnabled?: boolean; minOffer?: number };
             setEstimateForType(data.type ?? rideType);
             setEstimateAt(Date.now());
             setEstimateAgeMinutes(0);
@@ -345,11 +353,10 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
               fare: data.fare,
               dist: data.distance,
               dur: data.duration,
-              baseFare: (data.baseFare as number | undefined) ?? data.fare,
-              gstAmount: (data.gstAmount as number | undefined) ?? 0,
-              bargainEnabled:
-                (data.bargainEnabled as boolean | undefined) ?? false,
-              minOffer: (data.minOffer as number | undefined) ?? data.fare,
+              baseFare: ext.baseFare ?? data.fare,
+              gstAmount: ext.gstAmount ?? 0,
+              bargainEnabled: ext.bargainEnabled ?? false,
+              minOffer: ext.minOffer ?? data.fare,
             });
           },
         )
@@ -2665,6 +2672,11 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
           </ScrollView>
         </View>
       </Modal>
+      <PermissionGuide
+        visible={permGuideVisible}
+        type="location"
+        onClose={() => setPermGuideVisible(false)}
+      />
     </View>
   );
 }

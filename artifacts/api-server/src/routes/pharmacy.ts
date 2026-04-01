@@ -86,24 +86,29 @@ router.get("/:id/track", customerAuth, async (req, res) => {
   let riderLat: number | null = null;
   let riderLng: number | null = null;
   let riderLocAge: number | null = null;
+  let riderName: string | null = null;
+  let riderPhone: string | null = null;
 
   if (order.riderId && TRACKABLE.includes(order.status)) {
-    const [loc] = await db
-      .select()
-      .from(liveLocationsTable)
-      .where(eq(liveLocationsTable.userId, order.riderId))
-      .limit(1);
-    if (loc) {
-      riderLat     = parseFloat(String(loc.latitude));
-      riderLng     = parseFloat(String(loc.longitude));
-      riderLocAge  = Math.floor((Date.now() - new Date(loc.updatedAt).getTime()) / 1000);
+    const [loc, riderUser] = await Promise.all([
+      db.select().from(liveLocationsTable).where(eq(liveLocationsTable.userId, order.riderId)).limit(1),
+      db.select({ name: usersTable.name, phone: usersTable.phone }).from(usersTable).where(eq(usersTable.id, order.riderId)).limit(1),
+    ]);
+    if (loc[0]) {
+      riderLat     = parseFloat(String(loc[0].latitude));
+      riderLng     = parseFloat(String(loc[0].longitude));
+      riderLocAge  = Math.floor((Date.now() - new Date(loc[0].updatedAt).getTime()) / 1000);
     }
+    riderName  = riderUser[0]?.name  ?? null;
+    riderPhone = riderUser[0]?.phone ?? null;
   }
 
   res.json({
     id: order.id,
     status: order.status,
     riderId: order.riderId,
+    riderName,
+    riderPhone,
     riderLat,
     riderLng,
     riderLocAge,
@@ -415,7 +420,7 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     }).catch((err: any) => {
       if (err?.httpStatus) { res.status(err.httpStatus).json({ error: err.message }); }
       else { res.status(500).json({ error: "Cancel failed" }); }
-      return null;
+      return undefined;
     });
     if (!cancelledOrder) return;
     const phRefLang = await getUserLanguage(userId);

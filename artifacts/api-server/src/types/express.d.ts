@@ -1,16 +1,16 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type { ridesTable } from "@workspace/db/schema";
+import type { ridesTable, usersTable } from "@workspace/db/schema";
 
 declare global {
   namespace Express {
     interface Request {
       customerId?: string;
       customerPhone?: string;
-      customerUser?: Record<string, unknown>;
+      customerUser?: InferSelectModel<typeof usersTable>;
       vendorId?: string;
-      vendorUser?: Record<string, unknown>;
+      vendorUser?: InferSelectModel<typeof usersTable>;
       riderId?: string;
-      riderUser?: Record<string, unknown>;
+      riderUser?: InferSelectModel<typeof usersTable>;
       adminId?: string;
       adminRole?: string;
       adminName?: string;

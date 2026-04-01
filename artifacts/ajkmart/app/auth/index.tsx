@@ -25,6 +25,7 @@ import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigCont
 import { useToast } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { sendOtp, verifyOtp } from "@workspace/api-client-react";
+import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
 
 const C = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
@@ -210,17 +211,10 @@ export default function AuthScreen() {
     }
   };
 
-  const normalizePhone = (raw: string) => {
-    let cleaned = raw.replace(/\D/g, "");
-    if (cleaned.startsWith("92") && cleaned.length === 12) cleaned = cleaned.slice(2);
-    if (cleaned.startsWith("0") && cleaned.length === 11) cleaned = cleaned.slice(1);
-    return cleaned;
-  };
-
   const handleSendPhoneOtp = async () => {
     clearError();
+    if (!isValidPakistaniPhone(phone)) { setError("Please enter a valid Pakistani phone number"); return; }
     const normalizedPhone = normalizePhone(phone);
-    if (!normalizedPhone || normalizedPhone.length !== 10) { setError("Please enter a valid 10-digit phone number"); return; }
     if (resendCooldown > 0) { setError(`Please wait ${resendCooldown}s before resending.`); return; }
     setLoading(true);
     try {
@@ -447,9 +441,9 @@ export default function AuthScreen() {
 
   if (step === "totp") {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} style={styles.gradient}>
-          <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
             <View style={[styles.topSection, { paddingTop: topPad + 24 }]}>
               <View style={styles.logo}><Ionicons name="shield-checkmark" size={36} color={C.primary} /></View>
               <Text style={styles.appName}>Two-Factor Auth</Text>
@@ -544,9 +538,9 @@ export default function AuthScreen() {
 
   if (step === "complete-profile") {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} style={styles.gradient}>
-          <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
             <View style={[styles.topSection, { paddingTop: topPad + 24 }]}>
               <View style={styles.logo}><Ionicons name="person" size={36} color={C.primary} /></View>
               <Text style={styles.appName}>{T("completeProfileLabel")}</Text>
@@ -607,7 +601,7 @@ export default function AuthScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.gradient}>
         <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
           <View style={styles.logoContainer}>
@@ -617,7 +611,7 @@ export default function AuthScreen() {
           <Text style={styles.tagline}>{appTagline}</Text>
         </View>
 
-        <ScrollView style={styles.card} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView style={styles.card} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {step === "method" && enabledMethods.length > 0 && (
             <View style={styles.tabs}>
               {enabledMethods.map(m => (

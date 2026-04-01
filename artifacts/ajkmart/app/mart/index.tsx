@@ -49,7 +49,7 @@ function AddToCartButton({ onPress, added }: { onPress: () => void; added: boole
 }
 
 function FlashCard({ product }: { product: any }) {
-  const { addItem } = useCart();
+  const { addItem, cartType, itemCount, clearCart } = useCart();
   const [added, setAdded] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const origPrice = Number(product.originalPrice) || 0;
@@ -59,11 +59,26 @@ function FlashCard({ product }: { product: any }) {
 
   useEffect(() => () => { if (addedTimerRef.current) clearTimeout(addedTimerRef.current); }, []);
 
-  const handleAdd = () => {
+  const doAdd = () => {
     addItem({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image, type: "mart" });
     setAdded(true);
     if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
+  };
+
+  const handleAdd = () => {
+    if (itemCount > 0 && cartType !== "mart" && cartType !== "none") {
+      Alert.alert(
+        "Switch to Mart?",
+        "Your cart has items from another service. Adding this item will clear your current cart.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAdd(); } },
+        ],
+      );
+      return;
+    }
+    doAdd();
   };
 
   return (
@@ -96,7 +111,7 @@ function FlashCard({ product }: { product: any }) {
 }
 
 function ProductCard({ product }: { product: any }) {
-  const { addItem } = useCart();
+  const { addItem, cartType, itemCount, clearCart } = useCart();
   const [added, setAdded] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const origPrice = Number(product.originalPrice) || 0;
@@ -106,11 +121,26 @@ function ProductCard({ product }: { product: any }) {
 
   useEffect(() => () => { if (addedTimerRef.current) clearTimeout(addedTimerRef.current); }, []);
 
-  const handleAdd = () => {
+  const doAdd = () => {
     addItem({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image, type: "mart" });
     setAdded(true);
     if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
+  };
+
+  const handleAdd = () => {
+    if (itemCount > 0 && cartType !== "mart" && cartType !== "none") {
+      Alert.alert(
+        "Switch to Mart?",
+        "Your cart has items from another service. Adding this item will clear your current cart.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAdd(); } },
+        ],
+      );
+      return;
+    }
+    doAdd();
   };
 
   return (

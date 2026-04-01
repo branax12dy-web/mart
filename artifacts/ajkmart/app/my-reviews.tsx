@@ -105,7 +105,7 @@ export default function MyReviewsScreen() {
         </View>
       ) : error ? (
         <View style={s.centered}>
-          <Ionicons name="alert-circle-outline" size={48} color={C.error} />
+          <Ionicons name="alert-circle-outline" size={48} color={C.danger} />
           <Text style={s.errText}>{error}</Text>
           <Pressable onPress={refetch} style={s.retryBtn}>
             <Text style={s.retryTxt}>{t("retry")}</Text>
@@ -129,6 +129,14 @@ export default function MyReviewsScreen() {
               <Ionicons name="star-outline" size={56} color="#d1d5db" />
               <Text style={s.emptyTitle}>{t("noReviews")}</Text>
               <Text style={s.emptySub}>{t("reviewsWillAppearHere")}</Text>
+              <Pressable
+                onPress={() => router.replace("/(tabs)")}
+                style={{ marginTop: 16, backgroundColor: C.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 11 }}
+              >
+                <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 14 }}>
+                  Place an Order
+                </Text>
+              </Pressable>
             </View>
           ) : (
             reviews.map(r => (

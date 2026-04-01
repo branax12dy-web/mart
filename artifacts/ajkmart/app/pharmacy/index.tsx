@@ -4,9 +4,11 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 import { router } from "expo-router";
+import { PermissionGuide } from "@/components/PermissionGuide";
 import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   Modal,
@@ -117,6 +119,7 @@ function PharmacyScreenInner() {
   const [search, setSearch] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
 
@@ -131,13 +134,15 @@ function PharmacyScreenInner() {
   const [showPhotoSourceModal, setShowPhotoSourceModal] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [showAddressPicker, setShowAddressPicker] = useState(false);
+  const [permGuideType, setPermGuideType] = useState<"camera" | "gallery" | "location" | "notification" | "microphone">("camera");
+  const [permGuideVisible, setPermGuideVisible] = useState(false);
 
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/addresses`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data?.addresses) setSavedAddresses(data.addresses); })
-      .catch(() => {});
+      .catch((err) => console.warn("[Pharmacy] Saved addresses fetch failed:", err instanceof Error ? err.message : String(err)));
   }, [token]);
 
   const pickPrescriptionPhoto = () => {
@@ -148,7 +153,10 @@ function PharmacyScreenInner() {
     setShowPhotoSourceModal(false);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { showToast("Photo library permission denied", "error"); return; }
+      if (!perm.granted) {
+        setPermGuideType("gallery"); setPermGuideVisible(true);
+        return;
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -165,7 +173,10 @@ function PharmacyScreenInner() {
     setShowPhotoSourceModal(false);
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { showToast("Camera permission denied", "error"); return; }
+      if (!perm.granted) {
+        setPermGuideType("camera"); setPermGuideVisible(true);
+        return;
+      }
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -249,31 +260,26 @@ function PharmacyScreenInner() {
     }
   };
 
-  const uploadPrescriptionAsync = (photoUri: string, refId: string): void => {
-    (async () => {
-      try {
-        const compressed = await ImageManipulator.manipulateAsync(
-          photoUri,
-          [{ resize: { width: 1024 } }],
-          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-        );
-        const base64 = await FileSystem.readAsStringAsync(compressed.uri, { encoding: "base64" as const });
-        const res = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/uploads/prescription`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ file: `data:image/jpeg;base64,${base64}`, mimeType: "image/jpeg", refId }),
-        });
-        if (!res.ok && __DEV__) {
-          const err = await res.json().catch(() => ({}));
-          console.warn("[prescription upload] failed:", res.status, err);
-        }
-      } catch (e) {
-        if (__DEV__) console.warn("[prescription upload] error:", e);
-      }
-    })();
+  const uploadPrescription = async (photoUri: string, refId: string): Promise<void> => {
+    const compressed = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [{ resize: { width: 1024 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    const base64 = await FileSystem.readAsStringAsync(compressed.uri, { encoding: "base64" as const });
+    const res = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/uploads/prescription`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ file: `data:image/jpeg;base64,${base64}`, mimeType: "image/jpeg", refId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      if (__DEV__) console.warn("[prescription upload] failed:", res.status, err);
+      throw new Error(`Upload failed: ${res.status}`);
+    }
   };
 
   const placeOrder = async () => {
@@ -304,19 +310,29 @@ function PharmacyScreenInner() {
         : undefined;
 
       if (prescriptionPhotoUri && prescriptionRefId) {
-        uploadPrescriptionAsync(prescriptionPhotoUri, prescriptionRefId);
+        setIsUploading(true);
+        try {
+          await uploadPrescription(prescriptionPhotoUri, prescriptionRefId);
+        } catch {
+          showToast("Could not upload prescription photo. Please try again.", "error");
+          setIsUploading(false);
+          setLoading(false);
+          return;
+        } finally {
+          setIsUploading(false);
+        }
       }
 
       const data = await createPharmacyOrder({
         items: cartItems.map(m => ({ id: m.id, name: m.name, price: m.price, quantity: m.qty, requires_prescription: (m as any).requires_prescription ?? false })),
         prescriptionNote: prescription || null,
-        prescriptionPhotoUri: prescriptionRefId,
         deliveryAddress: address,
         contactPhone: phone,
         paymentMethod: payMethod as "cash" | "wallet",
-      });
+        ...(prescriptionRefId ? { prescriptionPhotoUri: prescriptionRefId } : {}),
+      } as Parameters<typeof createPharmacyOrder>[0] & { prescriptionPhotoUri?: string });
       if (payMethod === "wallet" && user) {
-        updateUser({ walletBalance: (user.walletBalance ?? 0) - (data.total ?? cartTotal) });
+        updateUser({ walletBalance: (user.walletBalance ?? 0) - cartTotal });
       }
       setConfirmedOrderId(data.id);
       setConfirmed(true);
@@ -636,7 +652,12 @@ function PharmacyScreenInner() {
 
           <Pressable style={[s.placeBtn, loading && { opacity: 0.7 }]} onPress={placeOrder} disabled={loading}>
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <ActivityIndicator color="#fff" />
+                <Text style={[s.placeBtnTxt, { marginLeft: 8 }]}>
+                  {isUploading ? "Uploading Prescription…" : "Placing Order…"}
+                </Text>
+              </View>
             ) : (
               <>
                 <Text style={s.placeBtnTxt}>{T("placeOrder")} • Rs. {cartTotal.toLocaleString()}</Text>
@@ -698,6 +719,11 @@ function PharmacyScreenInner() {
           </View>
         </Pressable>
       </Modal>
+      <PermissionGuide
+        visible={permGuideVisible}
+        type={permGuideType}
+        onClose={() => setPermGuideVisible(false)}
+      />
     </View>
   );
 }

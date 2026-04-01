@@ -102,7 +102,6 @@ function ClassicTabLayout() {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : C.surface,
           borderTopWidth: 0,
-          elevation: 0,
           paddingBottom: insets.bottom,
           ...shadows.lg,
           ...(isWeb ? { height: 72, borderTopWidth: 1, borderTopColor: C.borderLight } : {}),

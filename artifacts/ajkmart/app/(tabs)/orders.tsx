@@ -45,7 +45,7 @@ const ORDER_STATUS: Record<string, { color: string; bg: string; icon: string; la
 const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
   searching:   { color: "#D97706", bg: "#FEF3C7", icon: "search-outline",            labelKey: "searching" },
   bargaining:  { color: "#D97706", bg: "#FEF3C7", icon: "swap-horizontal-outline",   labelKey: "bargaining" },
-  accepted:    { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "accepted" },
+  accepted:    { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "statusAccepted" },
   arrived:    { color: "#7C3AED", bg: "#EDE9FE", icon: "location-outline",          labelKey: "arrived" },
   in_transit: { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
   ongoing:    { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
@@ -55,7 +55,7 @@ const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; lab
 
 const PARCEL_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
   pending:    { color: "#D97706", bg: "#FEF3C7", icon: "time-outline",              labelKey: "pending" },
-  accepted:   { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "accepted" },
+  accepted:   { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "statusAccepted" },
   in_transit: { color: "#059669", bg: "#D1FAE5", icon: "cube-outline",              labelKey: "inTransit" },
   completed:  { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",    labelKey: "delivered" },
   cancelled:  { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",      labelKey: "cancelled" },
@@ -854,7 +854,9 @@ export default function OrdersScreen() {
         if (addedCount > 0) router.push("/cart");
         return;
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[Orders] Reorder live-price fetch failed:", err instanceof Error ? err.message : String(err));
+    }
     let count = 0;
     for (const item of validItems) {
       addItem({ productId: item.productId, name: item.name, price: item.price, quantity: item.quantity || 1, image: item.image, type: order.type || "mart" });
@@ -883,12 +885,15 @@ export default function OrdersScreen() {
 
   const [ridesData, setRidesData] = useState<any>(null);
   const [ridesLoading, setRidesLoading] = useState(false);
+  const [ridesError, setRidesError] = useState(false);
 
   const [pharmData, setPharmData] = useState<any>(null);
   const [pharmLoading, setPharmLoading] = useState(false);
+  const [pharmError, setPharmError] = useState(false);
 
   const [parcelData, setParcelData] = useState<any>(null);
   const [parcelLoading, setParcelLoading] = useState(false);
+  const [parcelError, setParcelError] = useState(false);
   const [serverNow, setServerNow] = useState<number>(Date.now());
 
   const fetchServerTime = useCallback(async () => {
@@ -896,7 +901,9 @@ export default function OrdersScreen() {
       const res = await fetch(`${API_BASE}/platform-config`, { method: "HEAD" });
       const serverDate = res.headers.get("Date");
       if (serverDate) setServerNow(new Date(serverDate).getTime());
-    } catch {}
+    } catch (err) {
+      console.warn("[Orders] Server time sync failed:", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
@@ -942,7 +949,11 @@ export default function OrdersScreen() {
       if (serverDate) setServerNow(new Date(serverDate).getTime());
       const d = await res.json();
       setRidesData(d);
-    } catch {}
+      setRidesError(false);
+    } catch (err) {
+      console.warn("[Orders] Rides fetch failed:", err instanceof Error ? err.message : String(err));
+      setRidesError(true);
+    }
     setRidesLoading(false);
   }, [user?.id, token, ridesActive]);
 
@@ -955,7 +966,11 @@ export default function OrdersScreen() {
       if (serverDate) setServerNow(new Date(serverDate).getTime());
       const d = await res.json();
       setPharmData(d);
-    } catch {}
+      setPharmError(false);
+    } catch (err) {
+      console.warn("[Orders] Pharmacy fetch failed:", err instanceof Error ? err.message : String(err));
+      setPharmError(true);
+    }
     setPharmLoading(false);
   }, [user?.id, token, pharmActive]);
 
@@ -968,7 +983,11 @@ export default function OrdersScreen() {
       if (serverDate) setServerNow(new Date(serverDate).getTime());
       const d = await res.json();
       setParcelData(d);
-    } catch {}
+      setParcelError(false);
+    } catch (err) {
+      console.warn("[Orders] Parcel fetch failed:", err instanceof Error ? err.message : String(err));
+      setParcelError(true);
+    }
     setParcelLoading(false);
   }, [user?.id, token, parcelActive]);
 
@@ -1155,12 +1174,37 @@ export default function OrdersScreen() {
       );
     }
 
+    const showRidesErr  = ridesError  && ridesData  === null && ["all", "rides"].includes(activeTab);
+    const showPharmErr  = pharmError  && pharmData  === null && ["all", "pharmacy"].includes(activeTab);
+    const showParcelErr = parcelError && parcelData === null && ["all", "parcel"].includes(activeTab);
+
     return (
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
         contentContainerStyle={styles.scroll}
       >
+        {showRidesErr && (
+          <Pressable onPress={fetchRides} style={styles.sectionErrBanner}>
+            <Ionicons name="car-outline" size={15} color="#B91C1C" />
+            <Text style={styles.sectionErrTxt}>Could not load ride orders</Text>
+            <Text style={styles.sectionErrRetry}>Tap to retry</Text>
+          </Pressable>
+        )}
+        {showPharmErr && (
+          <Pressable onPress={fetchPharmacy} style={styles.sectionErrBanner}>
+            <Ionicons name="medical-outline" size={15} color="#B91C1C" />
+            <Text style={styles.sectionErrTxt}>Could not load pharmacy orders</Text>
+            <Text style={styles.sectionErrRetry}>Tap to retry</Text>
+          </Pressable>
+        )}
+        {showParcelErr && (
+          <Pressable onPress={fetchParcel} style={styles.sectionErrBanner}>
+            <Ionicons name="cube-outline" size={15} color="#B91C1C" />
+            <Text style={styles.sectionErrTxt}>Could not load parcel bookings</Text>
+            <Text style={styles.sectionErrRetry}>Tap to retry</Text>
+          </Pressable>
+        )}
         {anyActive > 0 && (
           <>
             <SectionHeader title={T("activeLabel")} count={anyActive} active />
@@ -1423,4 +1467,12 @@ const styles = StyleSheet.create({
   },
   rideStepLabel: { fontFamily: "Inter_500Medium", fontSize: 9, color: C.textMuted, textAlign: "center" },
   rideStepLine: { flex: 1, height: 2, backgroundColor: "#E2E8F0", marginTop: 10 },
+
+  sectionErrBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#FEF2F2", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: "#FECACA", marginBottom: 8,
+  },
+  sectionErrTxt: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, color: "#B91C1C" },
+  sectionErrRetry: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#DC2626" },
 });

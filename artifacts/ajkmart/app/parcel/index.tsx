@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -22,10 +23,12 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
+import { PermissionGuide } from "@/components/PermissionGuide";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getPaymentMethods, estimateParcel, createParcelBooking } from "@workspace/api-client-react";
 import type { CreateParcelBookingRequest } from "@workspace/api-client-react";
+import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
 
 interface ParcelBookingPayload extends CreateParcelBookingRequest {
   pickupLat?: number;
@@ -143,6 +146,8 @@ function ParcelScreenInner() {
   ]);
 
   const [estimatedFare, setEstimatedFare] = useState(0);
+  const [permGuideType, setPermGuideType] = useState<"camera" | "gallery" | "location" | "notification" | "microphone">("location");
+  const [permGuideVisible, setPermGuideVisible] = useState(false);
   const [fareLoading, setFareLoading] = useState(false);
 
   const selectedType = PARCEL_TYPES.find(t => t.id === parcelType);
@@ -171,7 +176,11 @@ function ParcelScreenInner() {
         /* Auto-fill pickup from current GPS */
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== "granted" || cancelled) return;
+          if (status !== "granted") {
+            setPermGuideType("location"); setPermGuideVisible(true);
+            return;
+          }
+          if (cancelled) return;
           const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           if (cancelled) return;
           const { latitude: lat, longitude: lng } = pos.coords;
@@ -183,12 +192,18 @@ function ParcelScreenInner() {
               const geoData = await geoRes.json() as { formattedAddress?: string };
               if (geoData?.formattedAddress) address = geoData.formattedAddress;
             }
-          } catch {}
+          } catch (geoErr) {
+            console.warn("[Parcel] Reverse geocode failed:", geoErr instanceof Error ? geoErr.message : String(geoErr));
+          }
           if (cancelled) return;
           setPickupAddress(address);
-        } catch {}
+        } catch (locErr) {
+          console.warn("[Parcel] GPS auto-fill failed:", locErr instanceof Error ? locErr.message : String(locErr));
+        }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[Parcel] Location init effect error:", err instanceof Error ? err.message : String(err));
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -196,7 +211,7 @@ function ParcelScreenInner() {
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (confirmed) {
-      AsyncStorage.removeItem(PARCEL_DRAFT_KEY).catch(() => {});
+      AsyncStorage.removeItem(PARCEL_DRAFT_KEY).catch((err) => console.warn("[Parcel] Failed to clear draft:", err instanceof Error ? err.message : String(err)));
       return;
     }
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
@@ -205,7 +220,7 @@ function ParcelScreenInner() {
         senderName, senderPhone, pickupAddress,
         receiverName, receiverPhone, dropAddress,
         parcelType, weight, description, step,
-      })).catch(() => {});
+      })).catch((err) => console.warn("[Parcel] Failed to save draft:", err instanceof Error ? err.message : String(err)));
     }, 500);
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
   }, [senderName, senderPhone, pickupAddress, receiverName, receiverPhone, dropAddress, parcelType, weight, description, step, confirmed]);
@@ -214,11 +229,11 @@ function ParcelScreenInner() {
     getPaymentMethods()
       .then(data => {
         if (data?.methods?.length) {
-          setPayMethods(data.methods);
+          setPayMethods(data.methods.map(m => ({ ...m, logo: m.logo ?? "", description: m.description ?? "" })));
           setPayMethod(data.methods[0]!.id);
         }
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[Parcel] Payment methods fetch failed:", err instanceof Error ? err.message : String(err)));
   }, []);
 
   useEffect(() => {
@@ -226,23 +241,21 @@ function ParcelScreenInner() {
     setFareLoading(true);
     estimateParcel({ parcelType, weight: chargeableWeight > 0 ? chargeableWeight : undefined })
       .then(data => { if (data.fare) setEstimatedFare(data.fare); })
-      .catch(() => {})
+      .catch((err) => console.warn("[Parcel] Fare estimate failed:", err instanceof Error ? err.message : String(err)))
       .finally(() => setFareLoading(false));
   }, [parcelType, chargeableWeight]);
-
-  const phoneRegex = /^03\d{9}$/;
 
   const validateStep = (s: number): boolean => {
     if (s === 0) {
       if (!senderName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!senderPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
-      if (!phoneRegex.test(senderPhone.replace(/\s/g, ""))) { showToast("Phone must be in format 03XXXXXXXXX", "error"); return false; }
+      if (!isValidPakistaniPhone(senderPhone)) { showToast("Phone must be a valid Pakistani number (03XXXXXXXXX, +923XXXXXXXXX, or 3XXXXXXXXX)", "error"); return false; }
       if (!pickupAddress.trim()) { showToast(T("pickupAddress"), "error"); return false; }
     }
     if (s === 1) {
       if (!receiverName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!receiverPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
-      if (!phoneRegex.test(receiverPhone.replace(/\s/g, ""))) { showToast("Phone must be in format 03XXXXXXXXX", "error"); return false; }
+      if (!isValidPakistaniPhone(receiverPhone)) { showToast("Phone must be a valid Pakistani number (03XXXXXXXXX, +923XXXXXXXXX, or 3XXXXXXXXX)", "error"); return false; }
       if (!dropAddress.trim()) { showToast(T("dropAddress"), "error"); return false; }
     }
     if (s === 2) {
@@ -265,17 +278,20 @@ function ParcelScreenInner() {
       let finalDropLat   = dropLat;
       let finalDropLng   = dropLng;
 
+      const GEOCODE_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
       if (finalPickupLat === undefined || finalPickupLng === undefined) {
         try {
-          const loc = await resolveLocation(pickupAddress);
-          if (loc?.lat && loc?.lng) { finalPickupLat = loc.lat; finalPickupLng = loc.lng; }
-        } catch { /* swallow — will fail validation below */ }
+          const geoRes = await fetch(`${GEOCODE_BASE}/maps/geocode?address=${encodeURIComponent(pickupAddress)}`);
+          const geo = await geoRes.json();
+          if (geo?.lat && geo?.lng) { finalPickupLat = geo.lat; finalPickupLng = geo.lng; }
+        } catch (err) { console.warn("[Parcel] Pickup geocode failed:", err instanceof Error ? err.message : String(err)); }
       }
       if (finalDropLat === undefined || finalDropLng === undefined) {
         try {
-          const loc = await resolveLocation(dropAddress);
-          if (loc?.lat && loc?.lng) { finalDropLat = loc.lat; finalDropLng = loc.lng; }
-        } catch { /* swallow — will fail validation below */ }
+          const geoRes = await fetch(`${GEOCODE_BASE}/maps/geocode?address=${encodeURIComponent(dropAddress)}`);
+          const geo = await geoRes.json();
+          if (geo?.lat && geo?.lng) { finalDropLat = geo.lat; finalDropLng = geo.lng; }
+        } catch (err) { console.warn("[Parcel] Drop geocode failed:", err instanceof Error ? err.message : String(err)); }
       }
 
       // Block booking if either address could not be geocoded
@@ -290,8 +306,8 @@ function ParcelScreenInner() {
 
       const w = chargeableWeight > 0 ? chargeableWeight : (parseFloat(weight) || undefined);
       const payload: ParcelBookingPayload = {
-        senderName, senderPhone, pickupAddress,
-        receiverName, receiverPhone, dropAddress,
+        senderName, senderPhone: normalizePhone(senderPhone), pickupAddress,
+        receiverName, receiverPhone: normalizePhone(receiverPhone), dropAddress,
         parcelType: parcelType!, weight: w,
         description: description || undefined,
         paymentMethod: payMethod as "cash" | "wallet",
@@ -402,7 +418,12 @@ function ParcelScreenInner() {
         <Steps current={step} labels={[T("senderDetails"), T("receiverDetails"), T("parcelDetails"), T("paymentMethods")]} />
       </LinearGradient>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ss.scroll}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={ss.scroll}>
         {step === 0 && (
           <View style={ss.card}>
             <Text style={ss.cardTitle}>📍 {T("senderDetails")}</Text>
@@ -605,6 +626,7 @@ function ParcelScreenInner() {
 
         <View style={{ height: Math.max(insets.bottom + 80, 120) }} />
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={[ss.navBar, { paddingBottom: insets.bottom + 12 }]}>
         {step > 0 && (
@@ -668,6 +690,7 @@ function ParcelScreenInner() {
                 onPress={async () => {
                   try {
                     const loc = await resolveLocation(pred);
+                    if (!loc) throw new Error("location null");
                     const address = loc.address || pred.description;
                     if (showLocPicker === "pickup") {
                       setPickupAddress(address);
@@ -705,6 +728,11 @@ function ParcelScreenInner() {
           </ScrollView>
         </View>
       </Modal>
+      <PermissionGuide
+        visible={permGuideVisible}
+        type={permGuideType}
+        onClose={() => setPermGuideVisible(false)}
+      />
     </View>
   );
 }

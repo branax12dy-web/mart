@@ -4,7 +4,7 @@ import { notificationsTable } from "@workspace/db/schema";
 import { usersTable } from "@workspace/db/schema";
 import { eq, desc, and, ne } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-import { verifyUserJwt, verifyAdminJwt, getCachedSettings } from "../middleware/security.js";
+import { verifyUserJwt, verifyAdminJwt, getCachedSettings, type JwtUserPayload } from "../middleware/security.js";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { emitSosNew, emitSosAcknowledged, emitSosResolved } from "../lib/socketio.js";
@@ -78,7 +78,7 @@ function getAdminFromRequest(req: any): { adminId: string; adminName: string } |
   const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (bearer) {
     const p = verifyUserJwt(bearer);
-    if (p && p.role === "admin") return { adminId: p.userId, adminName: p.name ?? "Admin" };
+    if (p && p.role === "admin") return { adminId: p.userId, adminName: (p as JwtUserPayload & { name?: string }).name ?? "Admin" };
   }
   return null;
 }

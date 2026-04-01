@@ -226,7 +226,9 @@ export default function CartScreen() {
               if (oid) await cancelPendingOrder(oid);
               showToast(d.message || T("paymentNotSuccessful"), "error");
             }
-          } catch {}
+          } catch (err) {
+            console.warn("[Cart] Gateway event processing error:", err instanceof Error ? err.message : String(err));
+          }
         }, 3000);
       }
     });
@@ -250,10 +252,18 @@ export default function CartScreen() {
           setAllPayMethods(methods);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[Cart] Failed to refresh platform config:", err instanceof Error ? err.message : String(err));
+      });
   }, []);
 
-  const rawDeliveryFee = (deliveryFeeConfig as Record<string,number>)[cartType] ?? deliveryFeeConfig.mart;
+  const deliveryFeeByType: Record<string, number> = {
+    mart:     deliveryFeeConfig.mart,
+    food:     deliveryFeeConfig.food,
+    pharmacy: deliveryFeeConfig.pharmacy,
+    parcel:   deliveryFeeConfig.parcel,
+  };
+  const rawDeliveryFee = deliveryFeeByType[cartType] ?? deliveryFeeConfig.mart;
   const deliveryFee = (freeDeliveryEnabled && total >= freeDeliveryAbove) ? 0 : rawDeliveryFee;
   const gstAmount   = finance.gstEnabled ? Math.round(total * finance.gstPct / 100) : 0;
   const cashbackAmt = finance.cashbackEnabled ? Math.min(Math.round(total * finance.cashbackPct / 100), finance.cashbackMaxRs) : 0;
@@ -291,7 +301,10 @@ export default function CartScreen() {
         const def = addrs.find(a => a.isDefault) || addrs[0];
         if (def) setSelectedAddrId(def.id);
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("[Cart] Failed to load addresses:", err instanceof Error ? err.message : String(err));
+        showToast("Could not load saved addresses. Please add one manually.", "error");
+      })
       .finally(() => setAddrLoading(false));
   }, [user?.id]);
 

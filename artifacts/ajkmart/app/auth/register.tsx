@@ -20,6 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
 
 const C = Colors.light;
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
@@ -109,12 +110,7 @@ export default function RegisterScreen() {
 
   const clearError = () => setError("");
 
-  const normalizedPhone = (() => {
-    const digits = phone.replace(/\D/g, "");
-    if (digits.startsWith("0")) return digits.slice(1);
-    if (digits.startsWith("92")) return digits.slice(2);
-    return digits;
-  })();
+  const normalizedPhone = normalizePhone(phone);
 
   const formattedDashPhone = (() => {
     const d = normalizedPhone.startsWith("3") ? `0${normalizedPhone}` : `03${normalizedPhone}`;
@@ -124,7 +120,7 @@ export default function RegisterScreen() {
 
   const handleSendOtp = async () => {
     clearError();
-    if (!phone || normalizedPhone.length < 10) { setError("Please enter a valid phone number (10 digits)"); return; }
+    if (!isValidPakistaniPhone(phone)) { setError("Please enter a valid Pakistani phone number (e.g. 03XX-XXXXXXX)"); return; }
     if (resendCooldown > 0) return;
     setLoading(true);
     try {
@@ -161,7 +157,7 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
-      if (sendOtpData.otp) setDevOtp(sendOtpData.otp);
+      if (__DEV__ === true && sendOtpData.otp) setDevOtp(sendOtpData.otp);
       setResendCooldown(60);
       setOtpSent(true);
     } catch (e: any) {
@@ -308,7 +304,7 @@ export default function RegisterScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} style={s.gradient}>
         <View style={[s.topSection, { paddingTop: topPad + 16 }]}>
           <Pressable onPress={() => step === 1 ? router.back() : setStep((step - 1) as RegStep)} style={s.backBtn}>
@@ -321,7 +317,7 @@ export default function RegisterScreen() {
           {stepIndicator}
         </View>
 
-        <ScrollView style={s.card} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView style={s.card} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {step === 1 && (
             <>
               {!otpSent ? (
