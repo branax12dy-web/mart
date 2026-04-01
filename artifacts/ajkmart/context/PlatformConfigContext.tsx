@@ -103,6 +103,8 @@ export interface PlatformConfig {
     walletMax: number;
     minTopup: number;
     maxTopup: number;
+    minWithdrawal: number;
+    maxWithdrawal: number;
     minTransfer: number;
     maxTransfer: number;
     dailyLimit: number;
@@ -216,7 +218,7 @@ const DEFAULT: PlatformConfig = {
     minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100,
   },
   customer: {
-    walletMax: 50000, minTopup: 100, maxTopup: 25000, minTransfer: 200, maxTransfer: 10000,
+    walletMax: 50000, minTopup: 100, maxTopup: 25000, minWithdrawal: 200, maxWithdrawal: 10000, minTransfer: 200, maxTransfer: 10000,
     dailyLimit: 20000, p2pDailyLimit: 10000, withdrawalProcessingDays: 2, kycRequired: false,
     topupMethods: "jazzcash,easypaisa,bank",
     referralEnabled: true, referralBonus: 100,
@@ -395,6 +397,8 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           walletMax:                raw.customer?.walletMax                ?? DEFAULT.customer.walletMax,
           minTopup:                 raw.customer?.minTopup                 ?? DEFAULT.customer.minTopup,
           maxTopup:                 raw.customer?.maxTopup                 ?? DEFAULT.customer.maxTopup,
+          minWithdrawal:            raw.customer?.minWithdrawal            ?? DEFAULT.customer.minWithdrawal,
+          maxWithdrawal:            raw.customer?.maxWithdrawal            ?? DEFAULT.customer.maxWithdrawal,
           minTransfer:              raw.customer?.minTransfer              ?? DEFAULT.customer.minTransfer,
           maxTransfer:              raw.customer?.maxTransfer              ?? DEFAULT.customer.maxTransfer,
           dailyLimit:               raw.customer?.dailyLimit               ?? DEFAULT.customer.dailyLimit,

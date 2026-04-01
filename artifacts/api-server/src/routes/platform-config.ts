@@ -170,6 +170,8 @@ router.get("/", async (req, res) => {
       walletMax:                parseFloat(s["wallet_max_balance"]          ?? "50000"),
       minTopup:                 parseFloat(s["wallet_min_topup"]            ?? "100"),
       maxTopup:                 parseFloat(s["wallet_max_topup"]            ?? "25000"),
+      minWithdrawal:            parseFloat(s["wallet_min_withdrawal"]       ?? "200"),
+      maxWithdrawal:            parseFloat(s["wallet_max_withdrawal"]       ?? "10000"),
       minTransfer:              parseFloat(s["wallet_min_withdrawal"]       ?? "200"),
       maxTransfer:              parseFloat(s["wallet_max_withdrawal"]       ?? "10000"),
       dailyLimit:               parseFloat(s["wallet_daily_limit"]          ?? "20000"),

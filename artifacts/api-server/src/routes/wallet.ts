@@ -19,8 +19,8 @@ const router: IRouter = Router();
 
 function deriveStatus(reference: string | null): "pending" | "approved" | "rejected" {
   const ref = reference ?? "";
-  if (ref.startsWith("approved:") || ref.startsWith("approved")) return "approved";
-  if (ref.startsWith("rejected:") || ref.startsWith("rejected")) return "rejected";
+  if (ref.startsWith("approved")) return "approved";
+  if (ref.startsWith("rejected")) return "rejected";
   return "pending";
 }
 
@@ -343,11 +343,11 @@ router.post("/send", customerAuth, async (req, res) => {
           gte(walletTransactionsTable.createdAt, todayStart),
         ));
       const todayTotal = parseFloat(String(todayDebits?.total ?? "0")) || 0;
-      if (todayTotal + totalDebit > dailyLimit) {
-        throw new Error(`Daily wallet limit is Rs. ${dailyLimit}. Aaj aap ne Rs. ${todayTotal.toFixed(0)} kharch kiye hain.`);
-      }
       if (todayTotal + totalDebit > p2pDailyLimit) {
         throw new Error(`Daily P2P transfer limit is Rs. ${p2pDailyLimit}. Aaj Rs. ${todayTotal.toFixed(0)} transfer ho chuke hain.`);
+      }
+      if (todayTotal + totalDebit > dailyLimit) {
+        throw new Error(`Daily wallet limit is Rs. ${dailyLimit}. Aaj aap ne Rs. ${todayTotal.toFixed(0)} kharch kiye hain.`);
       }
 
       const [receiver] = await tx.select().from(usersTable).where(eq(usersTable.id, receiverPre.id)).limit(1);
@@ -412,53 +412,12 @@ router.post("/send", customerAuth, async (req, res) => {
   }
 });
 
-/* ── POST /wallet/p2p-topup — Customer requests P2P topup (pending admin approval) ── */
-router.post("/p2p-topup", customerAuth, async (req, res) => {
-  const userId = req.customerId!;
-
-  const [p2pUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (p2pUser && isWalletFrozen(p2pUser)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
-
-  const { senderPhone, amount, note } = req.body;
-
-  if (!senderPhone) { res.status(400).json({ error: "senderPhone required" }); return; }
-  if (!amount) { res.status(400).json({ error: "amount required" }); return; }
-
-  const amt = parseFloat(String(amount));
-  if (isNaN(amt) || amt <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
-
-  const s = await getPlatformSettings();
-  const walletEnabled = (s["feature_wallet"] ?? "on") === "on";
-  const minTopup = parseFloat(s["wallet_min_topup"] ?? "100");
-  const maxTopup = parseFloat(s["wallet_max_topup"] ?? "25000");
-
-  if (!walletEnabled) { res.status(503).json({ error: "Wallet service is currently disabled" }); return; }
-  if (amt < minTopup) { res.status(400).json({ error: `Minimum topup is Rs. ${minTopup}` }); return; }
-  if (amt > maxTopup) { res.status(400).json({ error: `Maximum single topup is Rs. ${maxTopup}` }); return; }
-
-  const txId = generateId();
-  const desc = [
-    `P2P Topup from ${senderPhone}`,
-    note ? `Note: ${note}` : null,
-  ].filter(Boolean).join(" — ");
-
-  await db.insert(walletTransactionsTable).values({
-    id: txId, userId, type: "deposit",
-    amount: amt.toFixed(2),
-    description: desc,
-    reference: "pending",
-    paymentMethod: "p2p",
+/* ── POST /wallet/p2p-topup — DEPRECATED: use /wallet/deposit instead ────── */
+router.post("/p2p-topup", customerAuth, async (_req, res) => {
+  res.status(410).json({
+    error: "This endpoint has been removed. Use POST /wallet/deposit to submit all deposit requests.",
+    useInstead: "/wallet/deposit",
   });
-
-  const p2pLang = await getUserLanguage(userId);
-  await db.insert(notificationsTable).values({
-    id: generateId(), userId,
-    title: t("notifWalletPending", p2pLang),
-    body: t("notifWalletPendingBody", p2pLang).replace("{amount}", amt.toFixed(0)),
-    type: "wallet", icon: "wallet-outline",
-  }).catch(e => console.error("p2p topup notif insert failed:", e));
-
-  res.json({ success: true, txId, status: "pending", amount: amt });
 });
 
 /* ── POST /wallet/withdraw — Customer requests a withdrawal ─────────────── */

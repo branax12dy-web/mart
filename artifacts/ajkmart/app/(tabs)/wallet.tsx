@@ -110,9 +110,13 @@ function TxItem({ tx }: { tx: any }) {
 }
 
 function MethodIcon({ id, size = 24 }: { id: string; size?: number }) {
-  const name = id === "jazzcash" ? "phone-portrait" : id === "easypaisa" ? "phone-portrait" : "business";
-  const color = id === "jazzcash" ? "#E53E3E" : id === "easypaisa" ? "#38A169" : "#2B6CB0";
-  return <Ionicons name={name as any} size={size} color={color} />;
+  if (id === "jazzcash") {
+    return <Ionicons name="phone-portrait" size={size} color="#CE2029" />;
+  }
+  if (id === "easypaisa") {
+    return <Ionicons name="phone-landscape" size={size} color="#1B8E3D" />;
+  }
+  return <Ionicons name="business" size={size} color="#2B6CB0" />;
 }
 
 type WithdrawMethod = "jazzcash" | "easypaisa" | "bank";
@@ -143,6 +147,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
   ];
 
   const handleSubmit = async () => {
+    if (submitting) return;
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
     if (amt < minWithdrawal)               { setErr(`Minimum withdrawal amount is Rs. ${minWithdrawal.toLocaleString()}`); return; }
@@ -163,8 +168,10 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
       }
       setStep("done");
       onSuccess();
-    } catch { setErr("Network error. Please try again."); }
-    setSubmitting(false);
+    } catch {
+      setErr("Network error. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -737,7 +744,6 @@ export default function WalletScreen() {
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showSend,     setShowSend]     = useState(false);
   const [showQR,       setShowQR]       = useState(false);
-  const [showP2PTopup, setShowP2PTopup] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [txFilter,    setTxFilter]    = useState<TxFilter>("all");
 
@@ -749,10 +755,6 @@ export default function WalletScreen() {
   const [sendPhoneError, setSendPhoneError] = useState("");
   const [sendReceiverName, setSendReceiverName] = useState("");
 
-  const [p2pSenderPhone, setP2pSenderPhone] = useState("");
-  const [p2pAmount,      setP2pAmount]      = useState("");
-  const [p2pNote,        setP2pNote]        = useState("");
-  const [p2pLoading,     setP2pLoading]     = useState(false);
   const [pendingTopups,  setPendingTopups]  = useState<{ count: number; total: number }>({ count: 0, total: 0 });
 
   const { config: platformConfig } = usePlatformConfig();
@@ -764,7 +766,7 @@ export default function WalletScreen() {
   const [socketBalance, setSocketBalance] = useState<number | null>(null);
   const prevUserBalanceRef = useRef<number | undefined>(user?.walletBalance);
 
-  const { data, isLoading, isError: walletError, refetch } = useGetWallet(
+  const { data, isLoading, isError: walletError, error: walletErrorObj, refetch } = useGetWallet(
     { userId: user?.id || "" },
     { query: { enabled: !!user?.id, retry: 1 } }
   );
@@ -778,6 +780,20 @@ export default function WalletScreen() {
       }
     }
   }, [user?.walletBalance, data?.balance]);
+
+  useEffect(() => {
+    if (walletErrorObj) {
+      const status =
+        (walletErrorObj instanceof Error && "status" in walletErrorObj && typeof (walletErrorObj as Error & { status?: unknown }).status === "number")
+          ? (walletErrorObj as Error & { status: number }).status
+          : undefined;
+      if (status === 403) {
+        setWalletFrozen(true);
+      }
+    } else if (data) {
+      setWalletFrozen(false);
+    }
+  }, [walletErrorObj, data]);
 
   useEffect(() => {
     if (token) {
@@ -827,35 +843,6 @@ export default function WalletScreen() {
     showToast("Deposit request submitted! It will be approved within 1-2 hours.", "success");
   };
 
-  const handleP2PTopup = async () => {
-    if (!p2pSenderPhone.trim()) { showToast("Please enter sender's phone number", "error"); return; }
-    const amt = parseFloat(p2pAmount);
-    const minTopup = platformConfig.customer.minTopup;
-    const maxTopup = platformConfig.customer.maxTopup;
-    if (!amt || amt < minTopup) { showToast(`Minimum top-up amount is Rs. ${minTopup.toLocaleString()}`, "error"); return; }
-    if (amt > maxTopup) { showToast(`Maximum top-up amount is Rs. ${maxTopup.toLocaleString()}`, "error"); return; }
-    setP2pLoading(true);
-    try {
-      const res = await fetch(`${API}/wallet/p2p-topup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ senderPhone: p2pSenderPhone.trim(), amount: amt, note: p2pNote || null }),
-      });
-      const d = await res.json();
-      if (!res.ok) {
-        if (d.error === "wallet_frozen") { setWalletFrozen(true); setShowP2PTopup(false); setP2pLoading(false); return; }
-        showToast(d.error || "Request failed", "error");
-        setP2pLoading(false); return;
-      }
-      qc.invalidateQueries({ queryKey: ["getWallet"] });
-      setPendingTopups(prev => ({ count: prev.count + 1, total: prev.total + amt }));
-      setShowP2PTopup(false);
-      setP2pSenderPhone(""); setP2pAmount(""); setP2pNote("");
-      showToast("P2P Topup request submitted! It will be credited after admin approval.", "success");
-    } catch { showToast("Network error. Please try again.", "error"); }
-    setP2pLoading(false);
-  };
-
   const openSendFromQR = (phone: string) => {
     setShowQR(false);
     setSendPhone(phone);
@@ -902,6 +889,7 @@ export default function WalletScreen() {
   };
 
   const handleSendConfirm = async () => {
+    if (sendLoading) return;
     const num = parseFloat(sendAmount);
     setSendLoading(true);
     try {
@@ -920,8 +908,10 @@ export default function WalletScreen() {
       qc.invalidateQueries({ queryKey: ["getWallet"] });
       closeSendModal();
       showToast(`Rs. ${num.toLocaleString()} sent to ${data.receiverName || sendPhone}!`, "success");
-    } catch { showToast("Network error. Please try again.", "error"); }
-    setSendLoading(false);
+    } catch {
+      showToast("Network error. Please try again.", "error");
+      setSendLoading(false);
+    }
   };
 
   const balance      = socketBalance ?? data?.balance ?? user?.walletBalance ?? 0;
@@ -938,7 +928,7 @@ export default function WalletScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
       >
         <View style={{ backgroundColor: "#fff", paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
-          {walletError && !data && (
+          {walletError && !data && !walletFrozen && (
             <Pressable onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEE2E2", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "#FCA5A5" }}>
               <Ionicons name="cloud-offline-outline" size={20} color="#DC2626" />
               <View style={{ flex: 1 }}>
@@ -948,69 +938,73 @@ export default function WalletScreen() {
               <Ionicons name="refresh-outline" size={16} color="#DC2626" />
             </Pressable>
           )}
-          {walletFrozen && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEF3C7", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "#FDE68A" }}>
-              <Ionicons name="lock-closed" size={20} color="#D97706" />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#92400E" }}>Wallet Frozen</Text>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", marginTop: 2 }}>Your wallet has been temporarily frozen. Contact support.</Text>
+
+          {walletFrozen ? (
+            <View style={{ alignItems: "center", paddingVertical: 24, gap: 14 }}>
+              <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#FEF3C7", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="lock-closed" size={36} color="#D97706" />
               </View>
-            </View>
-          )}
-          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
-          {isLoading && !data ? (
-            <View style={{ marginBottom: 4 }}>
-              <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "#E2E8F0", opacity: 0.7 }} />
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#92400E" }}>Wallet Frozen</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#92400E", textAlign: "center", lineHeight: 20, maxWidth: 280 }}>
+                Your wallet has been temporarily frozen. Please contact support to resolve this issue.
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#FDE68A", width: "100%", marginTop: 4 }}>
+                <Ionicons name="headset-outline" size={16} color="#D97706" />
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>Contact support to unfreeze your wallet</Text>
+              </View>
             </View>
           ) : (
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
-              {`Rs. ${balance.toLocaleString()}`}
-            </Text>
-          )}
-          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 24 }}>{T("availableBalance")}</Text>
-
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <Pressable onPress={() => setShowDeposit(true)} style={ws.actionCard}>
-              <View style={[ws.actionCardIcon, { backgroundColor: "#D1FAE5" }]}>
-                <Ionicons name="add" size={20} color={C.success} />
-              </View>
-              <Text style={ws.actionCardTxt}>{T("topUp")}</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowWithdraw(true)} style={ws.actionCard} disabled={walletFrozen}>
-              <View style={[ws.actionCardIcon, { backgroundColor: walletFrozen ? "#F3F4F6" : "#FEE2E2" }]}>
-                <Ionicons name="arrow-up-outline" size={18} color={walletFrozen ? C.textMuted : C.danger} />
-              </View>
-              <Text style={[ws.actionCardTxt, walletFrozen && { color: C.textMuted }]}>Withdraw</Text>
-            </Pressable>
-            {p2pEnabled && (
-              <Pressable onPress={() => setShowSend(true)} style={ws.actionCard}>
-                <View style={[ws.actionCardIcon, { backgroundColor: "#EDE9FE" }]}>
-                  <Ionicons name="send-outline" size={18} color="#7C3AED" />
+            <>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
+              {isLoading && !data ? (
+                <View style={{ marginBottom: 4 }}>
+                  <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "#E2E8F0", opacity: 0.7 }} />
                 </View>
-                <Text style={ws.actionCardTxt}>{T("send")}</Text>
-              </Pressable>
-            )}
-            <Pressable onPress={() => setShowQR(true)} style={ws.actionCard}>
-              <View style={[ws.actionCardIcon, { backgroundColor: "#DBEAFE" }]}>
-                <Ionicons name="qr-code-outline" size={18} color={C.primary} />
-              </View>
-              <Text style={ws.actionCardTxt}>{T("receive")}</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowP2PTopup(true)} style={ws.actionCard}>
-              <View style={[ws.actionCardIcon, { backgroundColor: "#FEF3C7" }]}>
-                <Ionicons name="people-outline" size={18} color="#D97706" />
-              </View>
-              <Text style={ws.actionCardTxt}>P2P</Text>
-            </Pressable>
-          </View>
+              ) : (
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
+                  {`Rs. ${balance.toLocaleString()}`}
+                </Text>
+              )}
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 24 }}>{T("availableBalance")}</Text>
 
-          {pendingTopups.count > 0 && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, marginTop: 16, padding: 12, borderWidth: 1, borderColor: "#FDE68A" }}>
-              <Ionicons name="time-outline" size={14} color="#D97706" />
-              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>
-                {pendingTopups.count} pending ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
-              </Text>
-            </View>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable onPress={() => setShowDeposit(true)} style={ws.actionCard}>
+                  <View style={[ws.actionCardIcon, { backgroundColor: "#D1FAE5" }]}>
+                    <Ionicons name="add" size={20} color={C.success} />
+                  </View>
+                  <Text style={ws.actionCardTxt}>{T("topUp")}</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowWithdraw(true)} style={ws.actionCard}>
+                  <View style={[ws.actionCardIcon, { backgroundColor: "#FEE2E2" }]}>
+                    <Ionicons name="arrow-up-outline" size={18} color={C.danger} />
+                  </View>
+                  <Text style={ws.actionCardTxt}>Withdraw</Text>
+                </Pressable>
+                {p2pEnabled && (
+                  <Pressable onPress={() => setShowSend(true)} style={ws.actionCard}>
+                    <View style={[ws.actionCardIcon, { backgroundColor: "#EDE9FE" }]}>
+                      <Ionicons name="send-outline" size={18} color="#7C3AED" />
+                    </View>
+                    <Text style={ws.actionCardTxt}>{T("send")}</Text>
+                  </Pressable>
+                )}
+                <Pressable onPress={() => setShowQR(true)} style={ws.actionCard}>
+                  <View style={[ws.actionCardIcon, { backgroundColor: "#DBEAFE" }]}>
+                    <Ionicons name="qr-code-outline" size={18} color={C.primary} />
+                  </View>
+                  <Text style={ws.actionCardTxt}>{T("receive")}</Text>
+                </Pressable>
+              </View>
+
+              {pendingTopups.count > 0 && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, marginTop: 16, padding: 12, borderWidth: 1, borderColor: "#FDE68A" }}>
+                  <Ionicons name="time-outline" size={14} color="#D97706" />
+                  <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>
+                    {pendingTopups.count} pending ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
 
@@ -1077,7 +1071,7 @@ export default function WalletScreen() {
             </View>
           ) : (
             <View>
-              {[...filtered].reverse().map(tx => <TxItem key={tx.id} tx={tx} />)}
+              {filtered.map(tx => <TxItem key={tx.id} tx={tx} />)}
             </View>
           )}
         </View>
@@ -1100,7 +1094,7 @@ export default function WalletScreen() {
         <WithdrawModal
           token={token}
           balance={balance}
-          minWithdrawal={platformConfig.customer.minTopup}
+          minWithdrawal={platformConfig.customer.minWithdrawal}
           onClose={() => setShowWithdraw(false)}
           onSuccess={() => {
             qc.invalidateQueries({ queryKey: ["getWallet"] });
@@ -1241,57 +1235,6 @@ export default function WalletScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={showP2PTopup} transparent animationType="slide" onRequestClose={() => setShowP2PTopup(false)}>
-        <Pressable style={ws.overlay} onPress={() => setShowP2PTopup(false)}>
-          <Pressable style={ws.sheet} onPress={e => e.stopPropagation()}>
-            <View style={ws.handle} />
-            <Text style={ws.sheetTitle}>P2P Topup Request</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 18 }}>
-              Receive money from someone and get your wallet credited
-            </Text>
-
-            <Text style={ws.sheetLbl}>Sender's Phone Number</Text>
-            <View style={ws.inputWrap}>
-              <View style={ws.phonePrefix}>
-                <Text style={ws.phonePrefixTxt}>+92</Text>
-              </View>
-              <TextInput
-                value={p2pSenderPhone}
-                onChangeText={setP2pSenderPhone}
-                placeholder="3XX XXXXXXX"
-                placeholderTextColor={C.textMuted}
-                style={ws.sendInput}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <Text style={ws.sheetLbl}>Amount (PKR)</Text>
-            <View style={ws.amtWrap}>
-              <Text style={ws.rupee}>Rs.</Text>
-              <TextInput style={ws.amtInput} value={p2pAmount} onChangeText={t => setP2pAmount(t.replace(/[^0-9]/g, ""))} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
-            </View>
-
-            <Text style={ws.sheetLbl}>Note (Optional)</Text>
-            <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-              <TextInput value={p2pNote} onChangeText={setP2pNote} placeholder="e.g. Payment for goods" placeholderTextColor={C.textMuted} style={[ws.sendInput, { paddingVertical: 0 }]} />
-            </View>
-
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, padding: 12, marginTop: 4, marginBottom: 16, borderWidth: 1, borderColor: "#FDE68A" }}>
-              <Ionicons name="alert-circle-outline" size={14} color="#D97706" />
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>Admin will verify and credit your wallet. This may take 1-2 hours.</Text>
-            </View>
-
-            <Pressable onPress={handleP2PTopup} disabled={p2pLoading || !p2pSenderPhone || !p2pAmount} style={[ws.actionBtn, { backgroundColor: C.success }, (!p2pSenderPhone || !p2pAmount || p2pLoading) && { opacity: 0.5 }]}>
-              {p2pLoading ? <ActivityIndicator color="#fff" /> : (
-                <>
-                  <Ionicons name="checkmark-circle" size={17} color="#fff" />
-                  <Text style={ws.actionBtnTxt}>Submit Topup Request</Text>
-                </>
-              )}
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
