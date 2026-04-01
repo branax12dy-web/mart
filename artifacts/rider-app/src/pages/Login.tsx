@@ -181,14 +181,18 @@ export default function Login() {
         const normalized = id.replace(/\D/g, "").replace(/^92/, "").replace(/^0/, "");
         setPhone(normalized);
         setMethod("phone");
-        setStep("otp");
         setLoading(true);
         try {
           const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
           const r = await api.sendOtp(formatPhoneForApi(normalized), captchaToken);
+          if (r.otpRequired === false && r.token) {
+            await doLogin(r as AuthResponse);
+            setLoading(false); return;
+          }
           if (import.meta.env.DEV) setDevOtp(r.otp || "");
           setOtpChannel(r.channel || "sms");
           setFallbackChannels(r.fallbackChannels || []);
+          setStep("otp");
           startCooldown(60);
         } catch (e: unknown) { setError(e instanceof Error ? e.message : "Failed to send OTP"); setStep("input"); }
         setLoading(false); return;
@@ -333,6 +337,10 @@ export default function Login() {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
       const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken, channel);
+      if (res.otpRequired === false && res.token) {
+        await doLogin(res as AuthResponse);
+        setLoading(false); return;
+      }
       if (import.meta.env.DEV) setDevOtp(res.otp || "");
       setOtpChannel(res.channel || "sms");
       setFallbackChannels(res.fallbackChannels || []);

@@ -267,8 +267,9 @@ export default function Register() {
       setError(T("emergencyContactRequired")); return false;
     }
     if (availabilityStatus === "taken") { setError(T("alreadyRegistered")); return false; }
-    if (username && usernameStatus === "taken") { setError(T("usernameTaken")); return false; }
-    if (username && (usernameStatus === "checking" || usernameStatus === "idle")) {
+    if (!username || username.length < 3) { setError(T("usernameRequired") || "Username is required (min 3 characters)"); return false; }
+    if (usernameStatus === "taken") { setError(T("usernameTaken")); return false; }
+    if (usernameStatus === "checking" || usernameStatus === "idle") {
       setError(T("usernameCheckWait")); return false;
     }
     return true;
@@ -371,6 +372,20 @@ export default function Register() {
         } else {
           try {
             const res = await api.registerRider(regData);
+            if (res.otpRequired === false && res.token) {
+              api.storeTokens(res.token, res.refreshToken);
+              if (res.pendingApproval) {
+                setCompleted(true);
+                setLoading(false); return;
+              }
+              let profile: AuthUser | null = res.user ?? null;
+              if (!profile) {
+                try { profile = await api.getMe() as AuthUser; } catch { api.clearTokens(); setCompleted(true); setLoading(false); return; }
+              }
+              authLogin(res.token, profile!, res.refreshToken);
+              navigate("/");
+              setLoading(false); return;
+            }
             if (import.meta.env.DEV && res.otp) setDevOtp(res.otp);
           } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); setLoading(false); return; }
         }
@@ -538,7 +553,7 @@ export default function Register() {
               </div>
               <div>
                 <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1">
-                  <User size={11} /> Username (Optional)
+                  <User size={11} /> Username *
                 </label>
                 <input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
                   placeholder="e.g. rider_ali" className={INPUT} maxLength={20} />

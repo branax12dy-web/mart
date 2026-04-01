@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig, getVendorAuthConfig } from "../lib/useConfig";
@@ -102,6 +102,11 @@ export default function Login() {
     bankName: "", bankAccount: "", bankAccountTitle: "",
   });
   const rf = (k: string, v: string) => setRegForm(p => ({ ...p, [k]: v }));
+
+  const [regUsername, setRegUsername] = useState("");
+  const [regUsernameStatus, setRegUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const regUsernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const regUsernameAbort = useRef<AbortController | null>(null);
 
   const [magicLinkEmail, setMagicLinkEmail] = useState("");
 
@@ -242,6 +247,10 @@ export default function Login() {
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(ph, channel);
+      if (res.otpRequired === false && res.token) {
+        await doLogin(res as AuthResponse);
+        setLoading(false); return;
+      }
       setDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
       setOtpChannel(res.channel || "sms");
       setFallbackChannels(res.fallbackChannels || []);
@@ -271,6 +280,35 @@ export default function Login() {
   }, [resendCooldown]);
 
   const startCooldown = () => setResendCooldown(60);
+
+  useEffect(() => {
+    if (!regUsername || regUsername.length < 3) { setRegUsernameStatus("idle"); return; }
+    if (regUsernameTimer.current) clearTimeout(regUsernameTimer.current);
+    regUsernameTimer.current = setTimeout(async () => {
+      if (regUsernameAbort.current) regUsernameAbort.current.abort();
+      regUsernameAbort.current = new AbortController();
+      setRegUsernameStatus("checking");
+      try {
+        const res = await api.checkAvailable({ username: regUsername }, regUsernameAbort.current!.signal);
+        if (res.username && !res.username.available) setRegUsernameStatus("taken");
+        else setRegUsernameStatus("available");
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        setRegUsernameStatus("taken");
+      }
+    }, 600);
+    return () => {
+      if (regUsernameTimer.current) clearTimeout(regUsernameTimer.current);
+      if (regUsernameAbort.current) regUsernameAbort.current.abort();
+    };
+  }, [regUsername]);
+
+  useEffect(() => {
+    if (regForm.name && !regUsername) {
+      const suggested = regForm.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+      if (suggested.length >= 3) setRegUsername(suggested);
+    }
+  }, [regForm.name]);
 
   interface AuthResponse {
     token: string;
@@ -430,6 +468,11 @@ export default function Login() {
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(regPhone);
+      if (res.otpRequired === false && res.token) {
+        api.storeTokens(res.token, res.refreshToken);
+        setStep("register-info");
+        setLoading(false); return;
+      }
       setRegDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
       setStep("register-otp");
       startCooldown();
@@ -451,9 +494,12 @@ export default function Login() {
   const submitRegistration = async () => {
     if (!regForm.storeName.trim()) { setError("Store name is required"); return; }
     if (!regForm.name.trim()) { setError("Your name is required"); return; }
+    if (!regUsername || regUsername.length < 3) { setError("Username is required (min 3 characters)"); return; }
+    if (regUsernameStatus === "taken") { setError("Username is already taken"); return; }
+    if (regUsernameStatus !== "available") { setError("Please wait for username availability check"); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.vendorRegister({ phone: regPhone, ...regForm });
+      const res = await api.vendorRegister({ phone: regPhone, ...regForm, username: regUsername.trim() });
       if (res.status === "approved") {
         setStep("input");
         setError("Your vendor account is already approved! Please log in.");
@@ -676,6 +722,18 @@ export default function Login() {
                     <div>
                       <label className={LABEL_CLS}>Your Full Name *</label>
                       <input value={regForm.name} onChange={e => rf("name", e.target.value)} placeholder="Muhammad Ali" className={INPUT_CLS} />
+                    </div>
+                    <div>
+                      <label className={LABEL_CLS}>Username *</label>
+                      <div className="relative">
+                        <input value={regUsername}
+                          onChange={e => { setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20)); clearError(); }}
+                          placeholder="e.g. alistore" className={INPUT_CLS + " pr-10"} autoCapitalize="none" autoCorrect="off" />
+                        {regUsernameStatus === "checking" && <span className="absolute right-3 top-3.5 text-gray-400 text-sm animate-spin">⏳</span>}
+                        {regUsernameStatus === "available" && <span className="absolute right-3 top-3.5 text-green-500 text-sm">✓</span>}
+                        {regUsernameStatus === "taken" && <span className="absolute right-3 top-3.5 text-red-500 text-sm">✗</span>}
+                      </div>
+                      {regUsernameStatus === "taken" && <p className="text-[10px] text-red-500 mt-0.5 font-medium">Username already taken</p>}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>

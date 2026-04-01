@@ -875,10 +875,25 @@ router.post("/vendor-register", async (req, res) => {
     return;
   }
 
-  const { storeName, storeCategory, name, cnic, address, city, bankName, bankAccount, bankAccountTitle } = req.body;
+  const { storeName, storeCategory, name, cnic, address, city, bankName, bankAccount, bankAccountTitle, username } = req.body;
   if (!storeName) {
     res.status(400).json({ error: "Store name is required" });
     return;
+  }
+
+  if (username) {
+    const normalizedUsername = String(username).toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+    if (normalizedUsername.length < 3) {
+      res.status(400).json({ error: "Username must be at least 3 characters" });
+      return;
+    }
+    const [existing] = await db.select({ id: usersTable.id }).from(usersTable)
+      .where(sql`lower(${usersTable.username}) = ${normalizedUsername} AND ${usersTable.id} != ${auth.userId}`)
+      .limit(1);
+    if (existing) {
+      res.status(409).json({ error: "Username is already taken" });
+      return;
+    }
   }
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
@@ -914,6 +929,7 @@ router.post("/vendor-register", async (req, res) => {
     storeName,
     storeCategory: storeCategory || null,
     name: name || user.name,
+    username: username ? String(username).toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20) : user.username || null,
     cnic: cnic || user.cnic || null,
     address: address || user.address || null,
     city: city || user.city || null,
