@@ -1,17 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { fetcher } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { io } from "socket.io-client";
 import {
-  useRidesEnriched, useUpdateRide, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
+  useRidesEnriched, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
   usePopularLocations, useCreateLocation, useUpdateLocation, useDeleteLocation,
   useSchoolRoutes, useCreateSchoolRoute, useUpdateSchoolRoute, useDeleteSchoolRoute, useSchoolSubscriptions,
-  useLiveRiders, useCustomerLocations, useUsers,
+  useUsers,
   useAdminCancelRide, useAdminRefundRide, useAdminReassignRide,
   useRideDetail, useRideAuditTrail, useDispatchMonitor,
   usePlatformSettings, useUpdatePlatformSettings,
 } from "@/hooks/use-admin";
-import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -610,12 +609,34 @@ function DispatchMap({ rides }: { rides: any[] }) {
 
 function DispatchMonitor() {
   const { data, isLoading } = useDispatchMonitor();
+  const queryClient = useQueryClient();
   const [, setTick] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => setTick(v => v + 1), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const socket = io(window.location.origin, {
+      path: "/api/socket.io",
+      query: { rooms: "admin-fleet" },
+      auth: { adminToken: token },
+      transports: ["websocket", "polling"],
+    });
+
+    socket.on("ride:dispatch-update", () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-dispatch-monitor"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+    });
+
+    socket.on("connect_error", (err) => {
+      console.warn("[DispatchMonitor] socket connection error:", err.message);
+    });
+
+    return () => { socket.disconnect(); };
+  }, [queryClient]);
 
   const rides: any[] = data?.rides ?? [];
 

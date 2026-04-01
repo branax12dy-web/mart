@@ -5,7 +5,7 @@ import { eq, desc, and, or, sql, count, sum, avg, gte, isNull, type InferSelectM
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
-import { emitRiderLocation, emitRiderStatus, getIO } from "../lib/socketio.js";
+import { emitRiderLocation, emitRiderStatus, emitRideDispatchUpdate, getIO } from "../lib/socketio.js";
 import { z } from "zod";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
@@ -1085,6 +1085,7 @@ router.post("/rides/:id/accept", async (req, res) => {
     type: "ride", icon: updated.type === "bike" ? "bicycle-outline" : "car-outline",
   }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
 
+  emitRideDispatchUpdate({ rideId: updated.id, action: "accepted", status: "accepted" });
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
 
@@ -1220,6 +1221,7 @@ router.patch("/rides/:id/status", async (req, res) => {
     updated = row;
   }
 
+  emitRideDispatchUpdate({ rideId: updated.id, action: "status-change", status });
   res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
 
@@ -1318,6 +1320,7 @@ router.post("/rides/:id/counter", async (req, res) => {
     }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
   }
 
+  emitRideDispatchUpdate({ rideId, action: "bid", status: "bargaining" });
   res.json({ success: true, bid: { ...bid, fare: safeNum(bid!.fare) } });
 });
 

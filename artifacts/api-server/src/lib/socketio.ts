@@ -556,3 +556,12 @@ export function emitSosResolved(payload: SosAlertPayload) {
   _io.to("admin-fleet").emit("sos:resolved", payload);
 }
 
+export function emitRideDispatchUpdate(payload: {
+  rideId: string;
+  action: string;
+  status: string;
+}) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("ride:dispatch-update", payload);
+}
+

@@ -51,7 +51,7 @@ import {
 } from "../middleware/security.js";
 import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri } from "../services/totp.js";
 import { hashPassword, verifyPassword, hashAdminSecret, verifyAdminSecret } from "../services/password.js";
-import { emitSosNew, emitSosAcknowledged, emitSosResolved } from "../lib/socketio.js";
+import { emitSosNew, emitSosAcknowledged, emitSosResolved, emitRideDispatchUpdate } from "../lib/socketio.js";
 
 /* ── Sensitive field stripper — never leak hashes or OTP codes to API responses ── */
 function stripUser(u: Record<string, any>) {
@@ -3969,7 +3969,7 @@ router.post("/rides/:id/cancel", async (req, res) => {
     });
   } catch (txErr: any) {
     addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as any).adminId, details: `Ride ${rideId} cancel failed — transaction error: ${txErr.message}`, result: "fail" });
-    res.status(500).json({ error: "Cancellation failed: could not complete transaction", detail: txErr.message });
+    res.status(500).json({ error: "Cancellation failed: could not complete transaction" });
     return;
   }
 
@@ -3984,6 +3984,7 @@ router.post("/rides/:id/cancel", async (req, res) => {
   }
 
   addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as any).adminId, details: `Admin cancelled ride ${rideId}${reason ? ` — ${reason}` : ""}${refunded ? " (wallet refunded)" : ""}`, result: "success" });
+  emitRideDispatchUpdate({ rideId, action: "cancel", status: "cancelled" });
   res.json({ success: true, rideId, refunded });
 });
 
@@ -3994,19 +3995,26 @@ router.post("/rides/:id/refund", async (req, res) => {
   if (!ride) { res.status(404).json({ error: "Ride not found" }); return; }
 
   const refundAmt = amount ?? parseFloat(ride.fare);
-  if (refundAmt <= 0) { res.status(400).json({ error: "Invalid refund amount" }); return; }
+  if (refundAmt <= 0 || !isFinite(refundAmt)) { res.status(400).json({ error: "Invalid refund amount" }); return; }
 
-  await db.transaction(async (tx) => {
-    await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() }).where(eq(usersTable.id, ride.userId));
-    await tx.insert(walletTransactionsTable).values({
-      id: generateId(), userId: ride.userId, type: "credit",
-      amount: refundAmt.toFixed(2),
-      description: `Admin refund — Ride #${rideId.slice(-6).toUpperCase()}${reason ? ` (${reason})` : ""}`,
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() }).where(eq(usersTable.id, ride.userId));
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: ride.userId, type: "credit",
+        amount: refundAmt.toFixed(2),
+        description: `Admin refund — Ride #${rideId.slice(-6).toUpperCase()}${reason ? ` (${reason})` : ""}`,
+      });
     });
-  });
+  } catch (txErr: any) {
+    addAuditEntry({ action: "ride_refund", ip: getClientIp(req), adminId: (req as any).adminId, details: `Ride ${rideId} refund failed — transaction error: ${txErr.message}`, result: "fail" });
+    res.status(500).json({ error: "Refund failed: could not complete transaction" });
+    return;
+  }
 
   await sendUserNotification(ride.userId, "Ride Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya.`, "ride", "wallet-outline");
   addAuditEntry({ action: "ride_refund", ip: getClientIp(req), adminId: (req as any).adminId, details: `Admin refunded Rs. ${refundAmt} for ride ${rideId}${reason ? ` — ${reason}` : ""}`, result: "success" });
+  emitRideDispatchUpdate({ rideId, action: "refund", status: ride.status });
   res.json({ success: true, rideId, refundedAmount: refundAmt });
 });
 
@@ -4048,6 +4056,7 @@ router.post("/rides/:id/reassign", async (req, res) => {
   await sendUserNotification(ride.userId, "Rider Changed", `Aapki ride ka rider change ho gaya hai${resolvedName ? ` — ${resolvedName}` : ""}.`, "ride", "swap-horizontal-outline");
 
   addAuditEntry({ action: "ride_reassign", ip: getClientIp(req), adminId: (req as any).adminId, details: `Admin reassigned ride ${rideId} from ${oldRiderId ?? "none"} to ${riderId} (${resolvedName})`, result: "success" });
+  emitRideDispatchUpdate({ rideId, action: "reassign", status: updated!.status });
   res.json({ success: true, ride: { ...updated, fare: parseFloat(updated!.fare), distance: parseFloat(updated!.distance) } });
 });
 

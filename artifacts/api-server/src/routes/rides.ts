@@ -21,7 +21,7 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 }
 import { t, type TranslationKey } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
-import { emitRiderNewRequest } from "../lib/socketio.js";
+import { emitRiderNewRequest, emitRideDispatchUpdate } from "../lib/socketio.js";
 
 const router: IRouter = Router();
 
@@ -484,6 +484,7 @@ router.post("/", customerAuth, async (req, res) => {
 
     if (rideRecord) {
       broadcastRide(rideRecord.id);
+      emitRideDispatchUpdate({ rideId: rideRecord.id, action: "new", status: rideRecord.status });
     }
 
     res.status(201).json({
@@ -639,6 +640,7 @@ router.patch("/:id/cancel", customerAuth, requireRideState(["searching", "bargai
     req.log?.info({ rideId: ride.id, cancelReason }, "Ride cancelled with reason");
   }
 
+  emitRideDispatchUpdate({ rideId: ride.id, action: "cancel", status: "cancelled" });
   res.json({
     ...formatRide(cancelResult!),
     cancellationFee: actualCancelFee,
@@ -751,6 +753,7 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
     type: "ride", icon: "checkmark-circle-outline",
   }).catch(() => {});
 
+  emitRideDispatchUpdate({ rideId: rideUpdate!.id, action: "accepted", status: "accepted" });
   res.json({ ...formatRide(rideUpdate!), agreedFare });
 });
 
