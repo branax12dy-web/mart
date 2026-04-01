@@ -184,15 +184,17 @@ router.get("/me", async (req, res) => {
 
   res.json({
     id: user.id, phone: user.phone, name: user.name, email: user.email,
+    username: user.username,
     avatar: user.avatar, isOnline: user.isOnline,
     isRestricted: user.isRestricted ?? (!user.isActive && (user.cancelCount ?? 0) > 0),
     walletBalance: safeNum(user.walletBalance),
-    cnic: user.cnic, address: user.address, city: user.city,
+    cnic: user.cnic, address: user.address, city: user.city, area: user.area,
     emergencyContact: user.emergencyContact,
     vehicleType: user.vehicleType, vehiclePlate: user.vehiclePlate,
     vehicleRegNo: user.vehicleRegNo, drivingLicense: user.drivingLicense,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
     twoFactorEnabled: !!user.totpEnabled,
+    accountLevel: user.accountLevel, kycStatus: user.kycStatus,
     lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
     vehiclePhoto: user.vehiclePhoto,
     /* Document photo URLs parsed from the documents JSON column */
@@ -373,14 +375,16 @@ router.patch("/profile", async (req, res) => {
 
   res.json({
     id: user.id, name: user.name, phone: user.phone, email: user.email,
+    username: user.username,
     avatar: user.avatar,
     role: user.role, isOnline: user.isOnline, walletBalance: safeNum(user.walletBalance),
     approvalStatus: user.approvalStatus,
-    cnic: user.cnic, address: user.address, city: user.city,
+    cnic: user.cnic, address: user.address, city: user.city, area: user.area,
     emergencyContact: user.emergencyContact,
     vehicleType: user.vehicleType, vehiclePlate: user.vehiclePlate,
     vehicleRegNo: user.vehicleRegNo, drivingLicense: user.drivingLicense,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
+    accountLevel: user.accountLevel, kycStatus: user.kycStatus,
     createdAt: user.createdAt, lastLoginAt: user.lastLoginAt,
     vehiclePhoto: user.vehiclePhoto,
     /* Document photo URLs parsed from the documents JSON column */

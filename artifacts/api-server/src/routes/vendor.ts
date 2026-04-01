@@ -67,6 +67,7 @@ function safeNum(v: any, def = 0) { return parseFloat(String(v ?? def)) || def; 
 function formatUser(user: any) {
   return {
     id: user.id, phone: user.phone, name: user.name, email: user.email,
+    username: user.username,
     avatar: user.avatar,
     storeName: user.storeName, storeCategory: user.storeCategory,
     storeBanner: user.storeBanner, storeDescription: user.storeDescription,
@@ -76,10 +77,10 @@ function formatUser(user: any) {
     storeDeliveryTime: user.storeDeliveryTime,
     storeIsOpen: user.storeIsOpen ?? true,
     walletBalance: safeNum(user.walletBalance),
-    // Extended profile
-    cnic: user.cnic, address: user.address, city: user.city,
+    cnic: user.cnic, address: user.address, city: user.city, area: user.area,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
     businessType: user.businessType,
+    accountLevel: user.accountLevel, kycStatus: user.kycStatus,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
   };
