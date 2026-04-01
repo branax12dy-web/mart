@@ -431,7 +431,7 @@ export default function Riders() {
                         <a href={`tel:${r.phone}`} className="flex items-center gap-1 text-xs text-blue-600 font-medium hover:underline">
                           <Phone className="w-3 h-3" /> {r.phone}
                         </a>
-                        <a href={`https://wa.me/92${r.phone.replace(/^(\+92|0)/, "")}`} target="_blank" rel="noopener noreferrer"
+                        <a href={`https://wa.me/92${r.phone.replace(/^(\+92|92|0)/, "")}`} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1 text-xs text-green-600 font-medium hover:underline">
                           💬 WhatsApp
                         </a>

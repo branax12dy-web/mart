@@ -358,7 +358,7 @@ export const api = {
   /* Location */
   updateLocation: (data: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number; batteryLevel?: number; mockProvider?: boolean; rideId?: string }) => apiFetch("/rider/location", { method: "PATCH", body: JSON.stringify(data) }),
   batchLocation: (pings: Array<{ timestamp: string; latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number; batteryLevel?: number; mockProvider?: boolean; action?: string | null }>) =>
-    apiFetch("/locations/batch", { method: "POST", body: JSON.stringify({ pings }) }),
+    apiFetch("/rider/location/batch", { method: "POST", body: JSON.stringify({ locations: pings }) }),
 
   /* Wallet */
   getWallet:      () => apiFetch("/rider/wallet/transactions"),

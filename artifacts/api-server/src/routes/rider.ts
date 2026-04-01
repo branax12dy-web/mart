@@ -157,6 +157,7 @@ router.get("/me", async (req, res) => {
   const [
     ordersTodayStats, ordersAllStats,
     ridesTodayStats,  ridesAllStats,
+    bonusTodayStats,  bonusAllStats,
   ] = await Promise.all([
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable)
       .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, today))),
@@ -166,12 +167,17 @@ router.get("/me", async (req, res) => {
       .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, today))),
     db.select({ c: count(), s: sum(ridesTable.fare) }).from(ridesTable)
       .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"))),
+    /* Per-trip bonus credits (rider_bonus_per_trip wallet transactions) */
+    db.select({ s: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "bonus"), gte(walletTransactionsTable.createdAt, today))),
+    db.select({ s: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "bonus"))),
   ]);
 
   const deliveriesToday = (ordersTodayStats[0]?.c ?? 0) + (ridesTodayStats[0]?.c ?? 0);
-  const earningsToday   = (safeNum(ordersTodayStats[0]?.s) + safeNum(ridesTodayStats[0]?.s)) * riderKeepPct;
+  const earningsToday   = (safeNum(ordersTodayStats[0]?.s) + safeNum(ridesTodayStats[0]?.s)) * riderKeepPct + safeNum(bonusTodayStats[0]?.s);
   const totalDeliveries = (ordersAllStats[0]?.c ?? 0) + (ridesAllStats[0]?.c ?? 0);
-  const totalEarnings   = (safeNum(ordersAllStats[0]?.s) + safeNum(ridesAllStats[0]?.s)) * riderKeepPct;
+  const totalEarnings   = (safeNum(ordersAllStats[0]?.s) + safeNum(ridesAllStats[0]?.s)) * riderKeepPct + safeNum(bonusAllStats[0]?.s);
 
   const [ratingRow] = await db.select({ avg: avg(reviewsTable.rating) }).from(reviewsTable).where(eq(reviewsTable.riderId, riderId));
   const avgRating = ratingRow?.avg ? parseFloat(parseFloat(String(ratingRow.avg)).toFixed(1)) : null;

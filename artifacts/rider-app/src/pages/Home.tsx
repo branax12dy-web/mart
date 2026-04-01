@@ -520,8 +520,12 @@ export default function Home() {
       socket.disconnect();
       socketRef.current = null;
     };
-  /* Re-connect when token changes (covers 15-min expiry) or online status changes */
-  }, [user?.id, user?.isOnline, api.getToken()]);
+  /* Re-connect when user identity or online status changes.
+     Token rotation is handled transparently by apiFetch (auto-refresh),
+     so including api.getToken() as a dep is an anti-pattern — calling a
+     function in a dep array captures the value at render but never drives
+     re-renders itself, causing stale closures after a silent token refresh. */
+  }, [user?.id, user?.isOnline]);
 
   useEffect(() => {
     if (!user?.isOnline || hasActiveTask || !user?.id) return;
