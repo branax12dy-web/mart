@@ -18,6 +18,7 @@ export interface PlatformConfig {
     chat: boolean;
     liveTracking: boolean;
     reviews: boolean;
+    sos: boolean;
   };
   content: {
     trackerBannerEnabled: boolean;
@@ -157,7 +158,7 @@ export interface PlatformConfig {
 
 const DEFAULT: PlatformConfig = {
   appStatus: "active",
-  features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true },
+  features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true, sos: true },
   content: {
     trackerBannerEnabled: true,
     trackerBannerPosition: "top" as const,
@@ -307,6 +308,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           chat:         raw.features?.chat         ?? false,
           liveTracking: raw.features?.liveTracking ?? true,
           reviews:      raw.features?.reviews      ?? true,
+          sos:          raw.features?.sos          ?? true,
         },
         content: {
           trackerBannerEnabled: raw.content?.trackerBannerEnabled ?? true,

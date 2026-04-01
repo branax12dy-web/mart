@@ -1398,7 +1398,9 @@ export default function Active() {
                   riderLat={riderPos.lat} riderLng={riderPos.lng}
                 />
               )}
-              <SosButton rideId={ride.id} riderPos={riderPos} />
+              {config.features?.sos !== false && (
+                <SosButton rideId={ride.id} riderPos={riderPos} />
+              )}
 
               <div className="flex gap-2 pt-1">
                 {ride.status === "accepted" && (

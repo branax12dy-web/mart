@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { notificationsTable, usersTable } from "@workspace/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-import { customerAuth, riderAuth, verifyUserJwt } from "../middleware/security.js";
+import { customerAuth, riderAuth, verifyUserJwt, getCachedSettings } from "../middleware/security.js";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 
@@ -11,6 +11,11 @@ const router: IRouter = Router();
 
 /* ── POST /sos — Customer or rider triggers SOS alert ─────────────────── */
 router.post("/", async (req, res) => {
+  const settings = await getCachedSettings();
+  if ((settings["feature_sos"] ?? "on") !== "on") {
+    res.status(503).json({ error: "SOS feature is currently disabled" }); return;
+  }
+
   const authHeader  = req.headers["authorization"] as string | undefined;
   const tokenHeader = req.headers["x-auth-token"]  as string | undefined;
   const raw = tokenHeader || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);

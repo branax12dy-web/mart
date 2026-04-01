@@ -188,6 +188,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "feature_chat",           value: "off",   label: "In-App Chat / WhatsApp Support",       category: "features" },
   { key: "feature_live_tracking",  value: "on",    label: "Live Order GPS Tracking",              category: "features" },
   { key: "feature_reviews",        value: "on",    label: "Customer Reviews & Ratings",           category: "features" },
+  { key: "feature_sos",            value: "on",    label: "SOS Emergency Alerts",                 category: "features" },
   /* Security & API Keys */
   /* ═══════════════════  Security & API  ═══════════════════ */
   /* Auth & Sessions */

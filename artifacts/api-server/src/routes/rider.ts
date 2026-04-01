@@ -2268,6 +2268,11 @@ const sosSchema = z.object({
 
 /* ── POST /rider/sos — Rider SOS alert ── */
 router.post("/sos", async (req, res) => {
+  const settings = await getCachedSettings();
+  if ((settings["feature_sos"] ?? "on") !== "on") {
+    res.status(503).json({ error: "SOS feature is currently disabled" }); return;
+  }
+
   const parsed = sosSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid SOS data" }); return; }
   const riderId   = req.riderId!;
@@ -2281,6 +2286,22 @@ router.post("/sos", async (req, res) => {
     isFinite(parsedLat) && isFinite(parsedLng) &&
     !(Math.abs(parsedLat) < 0.001 && Math.abs(parsedLng) < 0.001);
 
+  const locationStr = validCoords ? ` · Location: ${parsedLat!.toFixed(5)},${parsedLng!.toFixed(5)}` : "";
+  const rideStr     = rideId ? ` · Ride: #${String(rideId).slice(-8).toUpperCase()}` : "";
+
+  const alertId = generateId();
+  const sosLang = await getUserLanguage(riderId);
+
+  await db.insert(notificationsTable).values({
+    id: alertId,
+    userId: riderId,
+    title: `🆘 ${t("sosAlert", sosLang)} — ${riderUser.name || "Unknown"} (rider)`,
+    body: `Phone: ${riderUser.phone || "N/A"}${rideStr}${locationStr}`,
+    type: "sos",
+    icon: "alert-circle-outline",
+    link: rideId ? `/rides/${rideId}` : `/users/${riderId}`,
+  });
+
   const { emitRiderSOS } = await import("../lib/socketio.js");
   emitRiderSOS({
     userId:    riderId,
@@ -2292,7 +2313,7 @@ router.post("/sos", async (req, res) => {
     sentAt:    new Date().toISOString(),
   });
 
-  res.json({ success: true, sentAt: new Date().toISOString() });
+  res.json({ success: true, alertId, sentAt: new Date().toISOString() });
 });
 
 const osrmQuerySchema = z.object({

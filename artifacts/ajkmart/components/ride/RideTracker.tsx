@@ -28,6 +28,7 @@ import {
   retryRideDispatch,
   rateRide,
 } from "@workspace/api-client-react";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 
 const C = Colors.light;
 
@@ -73,6 +74,8 @@ export function RideTracker({
   const fadeIn = useRef(new Animated.Value(0)).current;
 
   const { ride, setRide, connectionType, reconnect } = useRideStatus(rideId);
+  const { config } = usePlatformConfig();
+  const sosEnabled = config.features?.sos !== false;
   const [sosLoading, setSosLoading] = useState(false);
   const [sosSent, setSosSent] = useState(false);
 
@@ -2097,18 +2100,25 @@ export function RideTracker({
                     />
                   </Pressable>
                 )}
+                {sosEnabled && (
                 <Pressable
                   onPress={async () => {
                     if (sosSent) return;
                     setSosLoading(true);
                     try {
-                      await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
+                      const resp = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                         body: JSON.stringify({ rideId }),
                       });
-                      setSosSent(true);
-                    } catch {}
+                      if (resp.ok) {
+                        setSosSent(true);
+                      } else {
+                        showToast("SOS failed — please call emergency contacts directly");
+                      }
+                    } catch {
+                      showToast("SOS failed — please call emergency contacts directly");
+                    }
                     setSosLoading(false);
                   }}
                   disabled={sosLoading || sosSent}
@@ -2130,6 +2140,7 @@ export function RideTracker({
                     </Text>
                   )}
                 </Pressable>
+                )}
               </View>
             </View>
           )}

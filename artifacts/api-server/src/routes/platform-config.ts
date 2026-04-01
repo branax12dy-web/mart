@@ -133,6 +133,7 @@ router.get("/", async (req, res) => {
       chat:         (s["feature_chat"]          ?? "off") === "on",
       liveTracking: (s["feature_live_tracking"] ?? "on")  === "on",
       reviews:      (s["feature_reviews"]       ?? "on")  === "on",
+      sos:          (s["feature_sos"]           ?? "on")  === "on",
     },
     content: {
       trackerBannerEnabled: (s["content_tracker_banner_enabled"] ?? "on") === "on",

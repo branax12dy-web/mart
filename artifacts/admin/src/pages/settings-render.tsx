@@ -25,7 +25,7 @@ export const TOGGLE_KEYS = new Set([
   "rider_module_wallet","rider_module_earnings","rider_module_history","rider_module_2fa_required",
   "rider_module_gps_tracking","rider_module_profile_edit","rider_module_support_chat",
   "vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
-  "feature_chat","feature_live_tracking","feature_reviews",
+  "feature_chat","feature_live_tracking","feature_reviews","feature_sos",
   "security_otp_bypass","security_mfa_required","security_multi_device","security_gps_tracking",
   "security_geo_fence","security_spoof_detection","security_block_tor","security_block_vpn",
   "security_pwd_strong","security_allow_uploads","security_compress_images","security_scan_uploads",
@@ -251,6 +251,7 @@ export function renderSection(
       { fkey: "feature_chat",          label: "In-App Chat / WhatsApp",  icon: "💬", desc: "Chat icon in customer app — routes to WhatsApp support",          apps: "📱 Customer only",                        enforcement: "client" as const },
       { fkey: "feature_live_tracking", label: "Live GPS Order Tracking",  icon: "📍", desc: "Customer can see rider's real-time location on map while en-route", apps: "📱 Customer  •  🏍️ Rider",             enforcement: "both" as const },
       { fkey: "feature_reviews",       label: "Reviews & Star Ratings",   icon: "⭐", desc: "Star ratings + written reviews on orders and rides",               apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
+      { fkey: "feature_sos",            label: "SOS Emergency Alerts",    icon: "🆘", desc: "Emergency SOS button for riders and customers during active rides", apps: "📱 Customer  •  🏍️ Rider",             enforcement: "both" as const },
     ];
 
     const allOn  = [...coreServices, ...accountFeatures, ...experienceFeatures].every(f => fv(f.fkey));
@@ -269,6 +270,7 @@ export function renderSection(
       { label: "Chat/WhatsApp",       key: "feature_chat",           enforced: "📱 Client" },
       { label: "Live GPS tracking",   key: "feature_live_tracking",  enforced: "✅ API + Client", inverted: false },
       { label: "Reviews & ratings",   key: "feature_reviews",        enforced: "✅ API",          inverted: false },
+      { label: "SOS alerts",          key: "feature_sos",            enforced: "✅ API + Client", inverted: false },
     ] as { label: string; key: string; enforced: string; inverted?: boolean }[];
 
     return (
