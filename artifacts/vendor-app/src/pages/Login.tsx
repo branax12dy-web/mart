@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, getVendorAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
@@ -21,6 +21,14 @@ export default function Login() {
   const appName           = config.platform.appName;
   const businessAddress   = config.platform.businessAddress;
   const vendorEarningsPct = Math.round(100 - (config.platform.vendorCommissionPct ?? 15));
+  const vendorAuth        = getVendorAuthConfig(config);
+
+  const availableMethods: LoginMethod[] = (["phone", "email", "username"] as const).filter(m => {
+    if (m === "phone") return vendorAuth.phoneOtp;
+    if (m === "email") return vendorAuth.emailOtp;
+    if (m === "username") return vendorAuth.usernamePassword;
+    return false;
+  });
 
   const FEATURES = [
     { icon: "📦", titleKey: "orderManagement" as TranslationKey,   descKey: "manageOrdersDesc" as TranslationKey },
@@ -91,6 +99,10 @@ export default function Login() {
       }
       if (data.action === "registration_closed") {
         setError("New registrations are currently closed. Please contact support.");
+        setLoading(false); return;
+      }
+      if (data.action === "no_method") {
+        setError("No login methods are currently available. Please contact support.");
         setLoading(false); return;
       }
       if (data.action === "register") {
@@ -652,8 +664,9 @@ export default function Login() {
               <>
                 <button onClick={() => { setStep("continue"); clearError(); setOtp(""); setEmailOtp(""); setDevOtp(""); setEmailDevOtp(""); }}
                   className="text-orange-500 text-sm font-bold mb-4 flex items-center gap-1">← Change identifier</button>
+                {availableMethods.length > 1 && (
                 <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-5">
-                  {(["phone", "email", "username"] as LoginMethod[]).map(m => (
+                  {availableMethods.map(m => (
                     <button key={m} onClick={() => selectMethod(m)}
                       className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                         method === m ? "bg-white text-orange-600 shadow-sm" : "text-gray-400"
@@ -662,6 +675,7 @@ export default function Login() {
                     </button>
                   ))}
                 </div>
+                )}
               </>
             )}
 

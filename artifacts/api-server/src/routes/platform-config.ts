@@ -259,8 +259,8 @@ router.get("/", async (req, res) => {
       mapsDistanceMatrix:   (s["maps_distance_matrix"]     ?? "on") === "on",
     },
     auth: (() => {
-      function parseAuthToggle(val: string | undefined, fallback: string): Record<string, boolean> | boolean {
-        if (!val) return fallback === "on";
+      function parseAuthToggle(val: string | undefined, _fallback: string): Record<string, boolean> | boolean {
+        if (!val) return false;
         try {
           const parsed = JSON.parse(val) as Record<string, string>;
           return { customer: parsed.customer === "on", rider: parsed.rider === "on", vendor: parsed.vendor === "on" };

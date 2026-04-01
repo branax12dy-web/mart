@@ -92,6 +92,17 @@ export interface PlatformConfig {
     vendorSettleDays: number;
     referralBonus: number;
   };
+  auth?: {
+    phoneOtpEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    emailOtpEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    usernamePasswordEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    googleEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    facebookEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    magicLinkEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
+    captchaEnabled?: boolean;
+    googleClientId?: string;
+    facebookAppId?: string;
+  };
   integrations?: {
     pushNotif: boolean;
     analytics: boolean;
@@ -136,6 +147,38 @@ const DEFAULT_CONFIG: PlatformConfig = {
   deliveryFee: { mart: 80, food: 60, pharmacy: 50, parcel: 100, parcelPerKg: 40, freeEnabled: true, freeDeliveryAbove: 1000 },
   finance: { gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100, invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80, minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100 },
 };
+
+function resolveVendorFlag(
+  perRole: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean } | undefined,
+): boolean {
+  if (typeof perRole === "boolean") return perRole;
+  if (perRole && typeof perRole === "object" && "vendor" in perRole) {
+    return typeof perRole.vendor === "boolean" ? perRole.vendor : false;
+  }
+  return false;
+}
+
+export interface VendorAuthConfig {
+  phoneOtp: boolean;
+  emailOtp: boolean;
+  usernamePassword: boolean;
+  google: boolean;
+  facebook: boolean;
+  magicLink: boolean;
+}
+
+export function getVendorAuthConfig(config: PlatformConfig): VendorAuthConfig {
+  const a = config.auth;
+  if (!a) return { phoneOtp: false, emailOtp: false, usernamePassword: false, google: false, facebook: false, magicLink: false };
+  return {
+    phoneOtp: resolveVendorFlag(a.phoneOtpEnabled),
+    emailOtp: resolveVendorFlag(a.emailOtpEnabled),
+    usernamePassword: resolveVendorFlag(a.usernamePasswordEnabled),
+    google: resolveVendorFlag(a.googleEnabled),
+    facebook: resolveVendorFlag(a.facebookEnabled),
+    magicLink: resolveVendorFlag(a.magicLinkEnabled),
+  };
+}
 
 export function usePlatformConfig() {
   const { data, isLoading } = useQuery<PlatformConfig>({

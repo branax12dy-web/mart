@@ -199,7 +199,7 @@ const DEFAULT_CONFIG: PlatformConfig = {
   deliveryFee: { mart: 80, food: 60, pharmacy: 50, parcel: 100, parcelPerKg: 40, freeEnabled: true, freeDeliveryAbove: 1000 },
   rides: { bikeBaseFare: 15, bikePerKm: 8, bikeMinFare: 50, carBaseFare: 25, carPerKm: 12, carMinFare: 80, surgeEnabled: false, surgeMultiplier: 1.5, cancellationFee: 30, riderEarningPct: 80 },
   finance: { gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100, invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80, minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100 },
-  auth: { phoneOtp: true, emailOtp: true, usernamePassword: true, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 },
+  auth: { phoneOtp: false, emailOtp: false, usernamePassword: false, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 },
   security: { gpsTracking: true, gpsInterval: 30, sessionDays: 30, riderTokenDays: 7 },
 };
 
@@ -231,11 +231,11 @@ function resolveRoleFlag(
 
 export function getRiderAuthConfig(config: PlatformConfig): RiderAuthConfig {
   const a = config.auth;
-  if (!a) return { phoneOtp: true, emailOtp: true, usernamePassword: true, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 };
+  if (!a) return { phoneOtp: false, emailOtp: false, usernamePassword: false, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 };
   return {
-    phoneOtp: resolveRoleFlag(a.phoneOtp, a.phoneOtpEnabled, true),
-    emailOtp: resolveRoleFlag(a.emailOtp, a.emailOtpEnabled, true),
-    usernamePassword: resolveRoleFlag(a.usernamePassword, a.usernamePasswordEnabled, true),
+    phoneOtp: resolveRoleFlag(a.phoneOtp, a.phoneOtpEnabled, false),
+    emailOtp: resolveRoleFlag(a.emailOtp, a.emailOtpEnabled, false),
+    usernamePassword: resolveRoleFlag(a.usernamePassword, a.usernamePasswordEnabled, false),
     google: resolveRoleFlag(a.google, a.googleEnabled, false),
     facebook: resolveRoleFlag(a.facebook, a.facebookEnabled, false),
     magicLink: resolveRoleFlag(a.magicLink, a.magicLinkEnabled, false),

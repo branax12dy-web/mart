@@ -165,6 +165,10 @@ export default function AuthScreen() {
         setError("New registrations are currently closed.");
         setLoading(false); return;
       }
+      if (res.action === "no_method") {
+        setError("No login methods are currently available. Please contact support.");
+        setLoading(false); return;
+      }
       if (res.action === "register") {
         router.push("/auth/register");
         setLoading(false); return;

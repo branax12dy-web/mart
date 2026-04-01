@@ -148,6 +148,10 @@ export default function Login() {
         setError("New registrations are currently closed. Please contact support.");
         setLoading(false); return;
       }
+      if (data.action === "no_method") {
+        setError("No login methods are currently available. Please contact support.");
+        setLoading(false); return;
+      }
       if (data.action === "register") {
         setLoading(false);
         navigate("/register");

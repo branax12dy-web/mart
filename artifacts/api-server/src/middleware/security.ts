@@ -227,9 +227,9 @@ export function signAccessToken(userId: string, phone: string, role: string, rol
   );
 }
 
-export function sign2faChallengeToken(userId: string, phone: string, role: string, roles: string): string {
+export function sign2faChallengeToken(userId: string, phone: string, role: string, roles: string, authMethod?: string): string {
   return jwt.sign(
-    { sub: userId, phone, role, roles, type: "2fa_challenge" },
+    { sub: userId, phone, role, roles, type: "2fa_challenge", authMethod: authMethod ?? undefined },
     JWT_SECRET,
     { algorithm: "HS256", expiresIn: 300 },
   );
@@ -240,6 +240,7 @@ export interface TwoFaChallengePayload {
   phone: string;
   role: string;
   roles: string;
+  authMethod?: string;
 }
 
 export function verify2faChallengeToken(token: string): TwoFaChallengePayload | null {
@@ -252,6 +253,7 @@ export function verify2faChallengeToken(token: string): TwoFaChallengePayload | 
       phone: payload["phone"] as string ?? "",
       role: payload["role"] as string ?? "customer",
       roles: payload["roles"] as string ?? "customer",
+      authMethod: (payload["authMethod"] as string) || undefined,
     };
   } catch {
     return null;

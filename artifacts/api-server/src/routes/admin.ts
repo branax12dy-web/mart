@@ -433,8 +433,8 @@ export const DEFAULT_PLATFORM_SETTINGS = [
 
 
   { key: "auth_phone_otp_enabled",         value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Phone OTP Login Enabled",              category: "auth" },
-  { key: "auth_email_otp_enabled",         value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Email OTP Login Enabled",              category: "auth" },
-  { key: "auth_username_password_enabled", value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Username/Password Login Enabled",     category: "auth" },
+  { key: "auth_email_otp_enabled",         value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }),   label: "Email OTP Login Enabled",              category: "auth" },
+  { key: "auth_username_password_enabled", value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }),   label: "Username/Password Login Enabled",     category: "auth" },
   { key: "auth_google_enabled",            value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Google Social Login Enabled",           category: "auth" },
   { key: "auth_facebook_enabled",          value: JSON.stringify({ customer: "off", rider: "off", vendor: "off" }), label: "Facebook Social Login Enabled",         category: "auth" },
   { key: "auth_email_register_enabled",    value: JSON.stringify({ customer: "on", rider: "on", vendor: "on" }),   label: "Email Registration (no OTP) Enabled",  category: "auth" },
@@ -496,8 +496,16 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "service_cities",                   value: "",     label: "Service Cities (comma-separated, blank=all)",        category: "general" },
 ];
 
+let _authMethodColumnMigrated = false;
+export async function ensureAuthMethodColumn() {
+  if (_authMethodColumnMigrated) return;
+  try {
+    await db.execute(sql`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS auth_method TEXT`);
+  } catch { /* column likely already exists */ }
+  _authMethodColumnMigrated = true;
+}
+
 export async function getPlatformSettings(): Promise<Record<string, string>> {
-  // Always seed missing keys (onConflictDoNothing skips existing ones)
   await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
   const rows = await db.select().from(platformSettingsTable);
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
