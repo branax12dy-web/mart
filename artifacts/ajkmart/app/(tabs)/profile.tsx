@@ -459,19 +459,36 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
   const [exportingData, setExportingData]  = useState(false);
   const [exportCooldown, setExportCooldown] = useState(0);
   const exportCooldownRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [disableTwoFAError, setDisableTwoFAError] = useState("");
 
   useEffect(() => {
-    if (!visible || !userId) return;
+    return () => {
+      if (exportCooldownRef.current) clearInterval(exportCooldownRef.current);
+    };
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    if (!userId) return;
     setLoading(true);
-    fetch(`${API}/settings`, { headers: authHdrs })
-      .then(r => r.json())
-      .then(d => {
-        const loaded = { notifOrders: d.notifOrders, notifWallet: d.notifWallet, notifDeals: d.notifDeals, notifRides: d.notifRides, locationSharing: d.locationSharing, darkMode: d.darkMode };
-        cfgRef.current = loaded;
-        setCfg(loaded);
-      })
-      .finally(() => setLoading(false));
-  }, [visible, userId, token]);
+    setLoadError(false);
+    try {
+      const r = await fetch(`${API}/settings`, { headers: authHdrs });
+      if (!r.ok) throw new Error("Settings load failed");
+      const d = await r.json();
+      const loaded = { notifOrders: d.notifOrders, notifWallet: d.notifWallet, notifDeals: d.notifDeals, notifRides: d.notifRides, locationSharing: d.locationSharing };
+      cfgRef.current = loaded;
+      setCfg(loaded);
+    } catch {
+      setLoadError(true);
+      showToast("Could not load settings — tap retry", "error");
+    }
+    setLoading(false);
+  }, [userId, token]);
+
+  useEffect(() => {
+    if (visible && userId) loadSettings();
+  }, [visible, userId, loadSettings]);
 
   const toggle = async (k: string, v: boolean) => {
     setSaving(k);
@@ -538,8 +555,8 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
   };
 
   const handleDisable2FA = async () => {
-    if (!disableCode || disableCode.length < 6) { setTwoFAError("Enter 6-digit code"); return; }
-    setTwoFALoading(true); setTwoFAError("");
+    if (!disableCode || disableCode.length < 6) { setDisableTwoFAError("Enter 6-digit code"); return; }
+    setTwoFALoading(true); setDisableTwoFAError("");
     try {
       const res = await fetch(`${API}/auth/2fa/disable`, {
         method: "POST", headers: { "Content-Type": "application/json", ...authHdrs },
@@ -548,9 +565,9 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       updateUser({ totpEnabled: false });
-      setShowDisable2FA(false); setDisableCode("");
+      setShowDisable2FA(false); setDisableCode(""); setDisableTwoFAError("");
       showToast("2FA disabled", "success");
-    } catch (e: any) { setTwoFAError(e.message || "Failed to disable 2FA"); }
+    } catch (e: any) { setDisableTwoFAError(e.message || "Failed to disable 2FA"); }
     setTwoFALoading(false);
   };
 
@@ -577,7 +594,16 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
           <Text style={modalHdr.title}>Privacy & Security</Text>
           <Pressable onPress={onClose} style={modalHdr.close}><Ionicons name="close" size={20} color={C.text} /></Pressable>
         </View>
-        {loading ? <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} /> : (
+        {loading ? <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} /> : loadError ? (
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, padding: spacing.xxl }}>
+            <Ionicons name="cloud-offline-outline" size={48} color={C.textMuted} />
+            <Text style={{ ...typography.h3, color: C.text }}>Could not load settings</Text>
+            <Text style={{ ...typography.caption, color: C.textMuted, textAlign: "center" }}>Check your connection and try again</Text>
+            <Pressable onPress={loadSettings} style={[primaryBtn.base, { paddingHorizontal: spacing.xxl }]}>
+              <Text style={primaryBtn.txt}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : (
           <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 40 }}>
             <Accordion title="🌐 Language" icon="language-outline" iconColor={C.primary} iconBg={C.primarySoft}>
               <View style={secCard.wrap}>
@@ -614,7 +640,6 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
             <Accordion title="🔒 Privacy" icon="eye-off-outline" iconColor={C.info} iconBg={C.infoSoft}>
               <View style={secCard.wrap}>
                 <ToggleRow k="locationSharing" label="Location Sharing" sub="For rides and deliveries"  icon="location-outline"     ic={C.success} ib={C.successSoft} />
-                <ToggleRow k="darkMode"        label="Dark Mode"        sub="App appearance"            icon="moon-outline"         ic={C.info}    ib={C.infoSoft} />
               </View>
             </Accordion>
             <Accordion title="🛡️ Security" icon="shield-checkmark-outline" iconColor={C.success} iconBg={C.successSoft}>
@@ -754,9 +779,17 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                     2. Scan the QR code or enter the secret manually{"\n"}
                     3. Enter the 6-digit code to verify
                   </Text>
+                  {twoFAQR ? (
+                    <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
+                      <View style={{ backgroundColor: "#fff", borderRadius: radii.lg, padding: spacing.md, borderWidth: 1, borderColor: C.border }}>
+                        <Image source={{ uri: twoFAQR }} style={{ width: 200, height: 200 }} resizeMode="contain" />
+                      </View>
+                      <Text style={{ ...typography.caption, color: C.textMuted, marginTop: spacing.sm }}>Scan with your authenticator app</Text>
+                    </View>
+                  ) : null}
                   {twoFASecret ? (
                     <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: radii.lg, padding: spacing.lg, borderWidth: 1, borderColor: C.border }}>
-                      <Text style={{ ...typography.captionMedium, color: C.textMuted, marginBottom: spacing.sm }}>Secret Key (manual entry):</Text>
+                      <Text style={{ ...typography.captionMedium, color: C.textMuted, marginBottom: spacing.sm }}>Or enter this secret manually:</Text>
                       <Text style={{ ...typography.subtitle, color: C.text, letterSpacing: 2 }} selectable>{twoFASecret}</Text>
                     </View>
                   ) : null}
@@ -782,25 +815,25 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
           </View>
         </Modal>
 
-        <Modal visible={showDisable2FA} animationType="slide" transparent onRequestClose={() => { setShowDisable2FA(false); setDisableCode(""); setTwoFAError(""); }}>
+        <Modal visible={showDisable2FA} animationType="slide" transparent onRequestClose={() => { setShowDisable2FA(false); setDisableCode(""); setDisableTwoFAError(""); }}>
           <View style={{ flex: 1, backgroundColor: C.overlay, justifyContent: "center", padding: spacing.xxl }}>
             <View style={{ backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.xxl }}>
               <Text style={{ ...typography.h3, color: C.text, marginBottom: spacing.sm }}>Disable 2FA</Text>
               <Text style={{ ...typography.caption, color: C.textMuted, marginBottom: spacing.lg }}>Enter your authenticator code to disable two-factor authentication.</Text>
               <TextInput
                 style={[otpStyle.input, { marginBottom: spacing.md }]}
-                value={disableCode} onChangeText={v => { setDisableCode(v); setTwoFAError(""); }}
+                value={disableCode} onChangeText={v => { setDisableCode(v); setDisableTwoFAError(""); }}
                 placeholder="6-digit code" placeholderTextColor={C.textMuted}
                 keyboardType="number-pad" maxLength={6} autoFocus
               />
-              {twoFAError ? (
+              {disableTwoFAError ? (
                 <View style={[errStyle.box, { marginBottom: spacing.md }]}>
                   <Ionicons name="alert-circle-outline" size={15} color={C.danger} />
-                  <Text style={errStyle.txt}>{twoFAError}</Text>
+                  <Text style={errStyle.txt}>{disableTwoFAError}</Text>
                 </View>
               ) : null}
               <View style={{ flexDirection: "row", gap: 10 }}>
-                <Pressable onPress={() => { setShowDisable2FA(false); setDisableCode(""); setTwoFAError(""); }} style={btnStyles.cancel}>
+                <Pressable onPress={() => { setShowDisable2FA(false); setDisableCode(""); setDisableTwoFAError(""); }} style={btnStyles.cancel}>
                   <Text style={btnStyles.cancelTxt}>Cancel</Text>
                 </Pressable>
                 <Pressable onPress={handleDisable2FA} disabled={twoFALoading}
