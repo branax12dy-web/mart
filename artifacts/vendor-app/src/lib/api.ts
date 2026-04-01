@@ -100,6 +100,14 @@ export const api = {
   refreshToken: () => attemptTokenRefresh(),
   vendorRegister: (data: { phone: string; storeName: string; storeCategory?: string; name?: string; cnic?: string; address?: string; city?: string; bankName?: string; bankAccount?: string; bankAccountTitle?: string }) =>
     apiFetch("/auth/vendor-register", { method: "POST", body: JSON.stringify(data) }),
+  socialGoogle: (data: { idToken: string }) =>
+    apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify(data) }),
+  socialFacebook: (data: { accessToken: string }) =>
+    apiFetch("/auth/social/facebook", { method: "POST", body: JSON.stringify(data) }),
+  magicLinkSend: (email: string) =>
+    apiFetch("/auth/magic-link/send", { method: "POST", body: JSON.stringify({ email }) }),
+  magicLinkVerify: (data: { token: string }) =>
+    apiFetch("/auth/magic-link/verify", { method: "POST", body: JSON.stringify(data) }),
 
   /* Token helpers */
   storeTokens: (token: string, refreshToken?: string) => {
