@@ -162,6 +162,7 @@ export interface PlatformConfig {
     defaultLanguage: string;
     enabledLanguages: string[];
   };
+  cities: string[];
 }
 
 const DEFAULT: PlatformConfig = {
@@ -253,6 +254,17 @@ const DEFAULT: PlatformConfig = {
     googleClientId: "",
     facebookAppId: "",
   },
+  language: {
+    defaultLanguage: "en",
+    enabledLanguages: ["en", "ur", "roman", "en_roman", "en_ur"],
+  },
+  cities: [
+    "Muzaffarabad", "Mirpur", "Rawalakot", "Kotli", "Bagh", "Bhimber",
+    "Islamabad", "Rawalpindi", "Lahore", "Karachi", "Peshawar", "Quetta",
+    "Faisalabad", "Multan", "Sialkot", "Gujranwala", "Hyderabad",
+    "Abbottabad", "Bahawalpur", "Sargodha", "Sukkur", "Mardan",
+    "Mansehra", "Gilgit", "Skardu",
+  ],
 };
 
 function isMethodEnabled(val: boolean | Record<string, boolean> | undefined | null, role = "customer"): boolean {
@@ -460,6 +472,15 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           googleClientId:         raw.auth?.googleClientId         ?? DEFAULT.auth.googleClientId,
           facebookAppId:          raw.auth?.facebookAppId          ?? DEFAULT.auth.facebookAppId,
         },
+        language: {
+          defaultLanguage:  raw.language?.defaultLanguage  ?? DEFAULT.language.defaultLanguage,
+          enabledLanguages: Array.isArray(raw.language?.enabledLanguages) && raw.language.enabledLanguages.length > 0
+            ? raw.language.enabledLanguages
+            : DEFAULT.language.enabledLanguages,
+        },
+        cities: Array.isArray(raw.cities) && raw.cities.length > 0
+          ? raw.cities
+          : DEFAULT.cities,
       };
       _cached = parsed;
       _cachedAt = Date.now();

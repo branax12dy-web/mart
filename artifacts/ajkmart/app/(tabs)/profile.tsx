@@ -63,12 +63,7 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
   const [cnicError, setCnicError] = useState("");
 
   const cityList: string[] = React.useMemo(() => {
-    const raw: any = (platformConfig as any).cities ?? (platformConfig as any).platform?.cities;
-    if (Array.isArray(raw) && raw.length > 0) return raw;
-    if (typeof raw === "string" && raw.trim()) {
-      const parsed = raw.split(",").map((c: string) => c.trim()).filter(Boolean);
-      if (parsed.length > 0) return parsed;
-    }
+    if (platformConfig.cities && platformConfig.cities.length > 0) return platformConfig.cities;
     return FALLBACK_CITIES;
   }, [platformConfig]);
 
@@ -76,7 +71,13 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
     if (visible) {
       setName(user?.name || "");
       setEmail(user?.email || "");
-      setCnic(user?.cnic || "");
+      const rawCnic = user?.cnic || "";
+      const digits = rawCnic.replace(/\D/g, "");
+      if (digits.length === 13) {
+        setCnic(`${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`);
+      } else {
+        setCnic(rawCnic);
+      }
       setCity(user?.city || "");
       setError("");
       // avatarUri and pendingAsset are intentionally NOT reset on reopen —
@@ -163,7 +164,18 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
         body: JSON.stringify({ name: name.trim(), email: email.trim(), cnic: cnic.trim(), city: city.trim() }),
       });
       if (!res.ok) throw new Error();
-      updateUser({ name: name.trim(), email: email.trim(), cnic: cnic.trim(), city: city.trim() });
+      const data = await res.json();
+      updateUser({
+        name: data.name ?? name.trim(),
+        email: data.email ?? email.trim(),
+        cnic: data.cnic ?? cnic.trim(),
+        city: data.city ?? city.trim(),
+        accountLevel: data.accountLevel,
+        kycStatus: data.kycStatus,
+        area: data.area,
+        address: data.address,
+        username: data.username,
+      });
       setAvatarUri(null);
       setPendingAsset(null);
       onClose();
@@ -713,7 +725,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
               <View style={secCard.wrap}>
                 <View style={{ paddingHorizontal: 4, paddingBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>Choose your preferred language</Text>
-                  {LANGUAGE_OPTIONS.map((opt) => {
+                  {LANGUAGE_OPTIONS.filter(opt => config.language.enabledLanguages.includes(opt.value)).map((opt) => {
                     const selected = currentLang === opt.value;
                     const isUrduOpt = opt.value === "ur" || opt.value === "en_ur";
                     return (
@@ -1025,6 +1037,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const add = async () => {
+    if (list.length >= 5) { showToast("Maximum 5 addresses allowed", "error"); return; }
     if (!addr.trim()) { showToast("Address is required", "error"); return; }
     setSaving(true);
     const opt = LABEL_OPTS.find(o => o.label === label)!;
@@ -1086,9 +1099,9 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
         <View style={modalHdr.wrap}>
           <Text style={modalHdr.title}>Saved Addresses</Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <Pressable onPress={() => setShowAdd(v => !v)} style={addrHdr.addBtn} accessibilityRole="button" accessibilityLabel={showAdd ? "Cancel adding address" : "Add new address"}>
+            <Pressable onPress={() => { if (!showAdd && list.length >= 5) { showToast("Maximum 5 addresses allowed", "error"); return; } setShowAdd(v => !v); }} style={[addrHdr.addBtn, !showAdd && list.length >= 5 && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={showAdd ? "Cancel adding address" : list.length >= 5 ? "Maximum 5 addresses reached" : "Add new address"}>
               <Ionicons name={showAdd ? "close" : "add"} size={17} color="#fff" />
-              <Text style={addrHdr.addBtnTxt}>{showAdd ? "Cancel" : "Add New"}</Text>
+              <Text style={addrHdr.addBtnTxt}>{showAdd ? "Cancel" : `Add New${list.length > 0 ? ` (${list.length}/5)` : ""}`}</Text>
             </Pressable>
             <Pressable onPress={onClose} style={modalHdr.close} accessibilityRole="button" accessibilityLabel="Close addresses"><Ionicons name="close" size={20} color={C.text} /></Pressable>
           </View>
@@ -1336,6 +1349,24 @@ export default function ProfileScreen() {
     ? user.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()
     : user?.phone?.slice(-2) || "U";
 
+  const LEVEL_CONFIG: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+    bronze: { color: "#CD7F32", bg: "#FFF3E0", icon: "shield-outline", label: "Bronze" },
+    silver: { color: "#8E8E93", bg: "#F5F5F5", icon: "shield-half-outline", label: "Silver" },
+    gold:   { color: "#FFD700", bg: "#FFFDE7", icon: "shield-checkmark-outline", label: "Gold" },
+  };
+  const accountLevel = user?.accountLevel || "bronze";
+  const levelInfo = LEVEL_CONFIG[accountLevel] || LEVEL_CONFIG.bronze!;
+
+  const profileFields = [
+    { filled: !!user?.name, label: "Name" },
+    { filled: !!user?.email, label: "Email" },
+    { filled: !!user?.city, label: "City" },
+    { filled: !!user?.address, label: "Address" },
+    { filled: !!user?.cnic, label: "CNIC" },
+  ];
+  const filledCount = profileFields.filter(f => f.filled).length;
+  const completionPct = Math.round((filledCount / profileFields.length) * 100);
+
   const SectionCard = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <View style={sec.wrap}>
       <Text style={sec.title}>{title}</Text>
@@ -1383,9 +1414,15 @@ export default function ProfileScreen() {
             <View style={{ flex: 1 }}>
               <Text style={ph.name}>{user?.name || "AJKMart User"}</Text>
               <Text style={ph.phone}>+92 {user?.phone || "—"}</Text>
+              {user?.username ? <Text style={ph.email}>@{user.username}</Text> : null}
               {user?.email ? <Text style={ph.email}>{user.email}</Text> : null}
-              <View style={ph.roleBadge}>
-                <Text style={ph.roleTxt}>{role.label}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <View style={ph.roleBadge}>
+                  <Text style={ph.roleTxt}>{role.label}</Text>
+                </View>
+                <View style={[ph.roleBadge, { backgroundColor: levelInfo.bg }]}>
+                  <Text style={[ph.roleTxt, { color: levelInfo.color }]}>{levelInfo.label}</Text>
+                </View>
               </View>
             </View>
             <Pressable onPress={() => setShowEdit(true)} style={ph.editBtn} accessibilityRole="button" accessibilityLabel="Edit profile">
@@ -1421,6 +1458,114 @@ export default function ProfileScreen() {
             )}
           </View>
         </LinearGradient>
+
+        <View style={lvl.strip}>
+          <View style={[lvl.badge, { backgroundColor: levelInfo.bg, borderColor: levelInfo.color }]}>
+            <Ionicons name={levelInfo.icon} size={16} color={levelInfo.color} />
+            <Text style={[lvl.badgeTxt, { color: levelInfo.color }]}>{levelInfo.label}</Text>
+          </View>
+          <View style={lvl.progressWrap}>
+            <View style={lvl.progressRow}>
+              <Text style={lvl.progressLabel}>Profile {completionPct}%</Text>
+              <Text style={lvl.progressCount}>{filledCount}/{profileFields.length}</Text>
+            </View>
+            <View style={lvl.progressBar}>
+              <View style={[lvl.progressFill, { width: `${completionPct}%`, backgroundColor: completionPct === 100 ? C.success : C.primary }]} />
+            </View>
+            {completionPct < 100 && (
+              <Text style={lvl.progressHint}>
+                Add {profileFields.filter(f => !f.filled).map(f => f.label).join(", ")} to level up
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {user?.kycStatus !== "verified" && (
+          <Pressable onPress={() => setShowEdit(true)} style={kyc.wrap} accessibilityRole="button" accessibilityLabel="Complete KYC verification">
+            <View style={kyc.iconWrap}>
+              <Ionicons name="document-text-outline" size={20} color={user?.kycStatus === "pending" ? C.accent : C.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={kyc.title}>
+                {user?.kycStatus === "pending" ? "KYC Under Review" : "Complete KYC Verification"}
+              </Text>
+              <Text style={kyc.sub}>
+                {user?.kycStatus === "pending"
+                  ? "Your CNIC is being verified — you'll be notified"
+                  : "Add your CNIC to unlock Gold account & higher limits"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+          </Pressable>
+        )}
+
+        {(user?.username || user?.city || user?.area || user?.address || user?.latitude) && (
+          <View style={pi.wrap}>
+            <Text style={sec.title}>PERSONAL INFO</Text>
+            <View style={pi.card}>
+              {user?.username && (
+                <View style={pi.row}>
+                  <View style={[pi.iconWrap, { backgroundColor: C.primarySoft }]}><Ionicons name="at-outline" size={16} color={C.primary} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={pi.label}>Username</Text>
+                    <Text style={pi.value}>@{user.username}</Text>
+                  </View>
+                </View>
+              )}
+              {user?.city && (
+                <View style={pi.row}>
+                  <View style={[pi.iconWrap, { backgroundColor: C.successSoft }]}><Ionicons name="business-outline" size={16} color={C.success} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={pi.label}>City</Text>
+                    <Text style={pi.value}>{user.city}</Text>
+                  </View>
+                </View>
+              )}
+              {user?.area && (
+                <View style={pi.row}>
+                  <View style={[pi.iconWrap, { backgroundColor: C.infoSoft }]}><Ionicons name="map-outline" size={16} color={C.info} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={pi.label}>Area / Locality</Text>
+                    <Text style={pi.value}>{user.area}</Text>
+                  </View>
+                </View>
+              )}
+              {user?.address && (
+                <View style={pi.row}>
+                  <View style={[pi.iconWrap, { backgroundColor: C.accentSoft }]}><Ionicons name="home-outline" size={16} color={C.accent} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={pi.label}>Address</Text>
+                    <Text style={pi.value}>{user.address}</Text>
+                  </View>
+                </View>
+              )}
+              {user?.latitude && user?.longitude && (
+                <View style={pi.row}>
+                  <View style={[pi.iconWrap, { backgroundColor: C.successSoft }]}><Ionicons name="navigate-outline" size={16} color={C.success} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={pi.label}>GPS Location</Text>
+                    <Text style={pi.value}>{user.latitude}, {user.longitude}</Text>
+                  </View>
+                </View>
+              )}
+              {user?.cnic && (
+                <View style={[pi.row, { borderBottomWidth: 0 }]}>
+                  <View style={[pi.iconWrap, { backgroundColor: "#FEF3C7" }]}><Ionicons name="card-outline" size={16} color={C.accent} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={pi.label}>CNIC</Text>
+                    <Text style={pi.value}>{user.cnic.replace(/(\d{5})(\d{7})(\d{1})/, "$1-$2-$3")}</Text>
+                  </View>
+                  {user?.kycStatus === "verified" && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.successSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radii.full }}>
+                      <Ionicons name="checkmark-circle" size={12} color={C.success} />
+                      <Text style={{ ...typography.smallMedium, color: C.success }}>Verified</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         <Pressable onPress={() => router.push("/(tabs)/wallet")} style={wb.wrap} accessibilityRole="button" accessibilityLabel={`${platformCfg.appName} wallet, Rs. ${(user?.walletBalance || 0).toLocaleString()}, tap to manage`}>
           <LinearGradient colors={[C.primaryDark, C.primary]} style={wb.grad}>
@@ -1632,6 +1777,35 @@ export default function ProfileScreen() {
     </View>
   );
 }
+
+const lvl = StyleSheet.create({
+  strip: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.md, borderWidth: 1, borderColor: C.borderLight, ...shadows.sm },
+  badge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radii.full, borderWidth: 1.5 },
+  badgeTxt: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  progressWrap: { flex: 1 },
+  progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  progressLabel: { ...typography.captionMedium, color: C.text },
+  progressCount: { ...typography.small, color: C.textMuted },
+  progressBar: { height: 6, backgroundColor: C.surfaceSecondary, borderRadius: 3, overflow: "hidden" },
+  progressFill: { height: 6, borderRadius: 3 },
+  progressHint: { ...typography.small, color: C.textMuted, marginTop: 3 },
+});
+
+const kyc = StyleSheet.create({
+  wrap: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.sm, backgroundColor: C.primarySoft, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: `${C.primary}30` },
+  iconWrap: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
+  title: { ...typography.subtitle, color: C.text, marginBottom: 2 },
+  sub: { ...typography.caption, color: C.textSecondary, lineHeight: 17 },
+});
+
+const pi = StyleSheet.create({
+  wrap: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  card: { backgroundColor: C.surface, borderRadius: radii.xl, borderWidth: 1, borderColor: C.borderLight, overflow: "hidden", ...shadows.sm },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  iconWrap: { width: 34, height: 34, borderRadius: radii.md, alignItems: "center", justifyContent: "center" },
+  label: { ...typography.small, color: C.textMuted, marginBottom: 1 },
+  value: { ...typography.bodyMedium, color: C.text },
+});
 
 const ph = StyleSheet.create({
   card: { paddingHorizontal: spacing.lg, paddingBottom: 0, overflow: "hidden" },

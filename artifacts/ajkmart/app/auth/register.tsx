@@ -140,12 +140,7 @@ export default function RegisterScreen() {
   };
 
   const cityList: string[] = React.useMemo(() => {
-    const raw: any = (config as any).cities ?? (config as any).platform?.cities;
-    if (Array.isArray(raw) && raw.length > 0) return raw;
-    if (typeof raw === "string" && raw.trim()) {
-      const parsed = raw.split(",").map((c: string) => c.trim()).filter(Boolean);
-      if (parsed.length > 0) return parsed;
-    }
+    if (config.cities && config.cities.length > 0) return config.cities;
     return PAKISTAN_CITIES;
   }, [config]);
 

@@ -24,6 +24,12 @@ export interface AppUser {
   createdAt: string;
   cnic?: string;
   city?: string;
+  area?: string;
+  address?: string;
+  latitude?: string;
+  longitude?: string;
+  accountLevel?: string;
+  kycStatus?: string;
   totpEnabled?: boolean;
 }
 
