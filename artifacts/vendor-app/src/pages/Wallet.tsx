@@ -6,7 +6,7 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fc, fd, CARD, CARD_HEADER, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, BADGE_GREEN, BADGE_RED, BADGE_BLUE, BADGE_GRAY, DEFAULT_COMMISSION_PCT } from "../lib/ui";
+import { fc, fd, CARD, CARD_HEADER, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, BADGE_GREEN, BADGE_RED, BADGE_BLUE, BADGE_GRAY, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 
 const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","Habib Bank","NBP","Faysal Bank","Allied Bank","Other"];
 
@@ -24,7 +24,7 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defa
   const mut = useMutation({
     mutationFn: () => api.withdrawWallet({ amount: Number(amount), bankName: bank, accountNumber: acNo, accountTitle: acName, note }),
     onSuccess: () => setStep("done"),
-    onError: (e: any) => setErr(e.message),
+    onError: (e: Error) => setErr(errMsg(e)),
   });
 
   const validate = () => {

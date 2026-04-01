@@ -44,13 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(t);
       api.getMe().then(u => {
         setUser(u);
-        /* Migrate legacy key to new key on successful load */
         if (!localStorage.getItem("ajkmart_vendor_token")) {
           localStorage.setItem("ajkmart_vendor_token", t);
           localStorage.removeItem("vendor_token");
         }
-      }).catch(() => {
+      }).catch((e: Error & { pendingApproval?: boolean }) => {
         api.clearTokens();
+        setToken(null);
+        setUser(null);
       }).finally(() => setLoading(false));
     } else { setLoading(false); }
 

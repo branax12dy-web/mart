@@ -48,7 +48,7 @@ export function SideNav() {
           <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${user?.storeIsOpen ? "bg-green-400/90 text-white" : "bg-red-400/90 text-white"}`}>
             {user?.storeIsOpen ? `🟢 ${T("openLabel")}` : `🔴 ${T("closedLabel")}`}
           </span>
-          <span className="text-xs text-orange-100 font-medium">85% commission</span>
+          <span className="text-xs text-orange-100 font-medium">{Math.round(100 - (config.platform.vendorCommissionPct ?? 15))}% earnings</span>
         </div>
       </div>
 

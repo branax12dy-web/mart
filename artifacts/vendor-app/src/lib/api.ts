@@ -71,7 +71,12 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
   if (!res.ok) {
     if (res.status === 403) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      /* 403 from role/ban denial — revoke local session and force relogin */
+      if (err.pendingApproval) {
+        throw Object.assign(new Error(err.error || "Pending approval"), { status: 403, pendingApproval: true });
+      }
+      if (err.rejected) {
+        throw Object.assign(new Error(err.error || "Application rejected"), { status: 403, rejected: true, approvalNote: err.approvalNote });
+      }
       clearTokens();
       window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "access_denied" } }));
       throw Object.assign(new Error(err.error || "Access denied"), { status: 403 });
@@ -91,6 +96,8 @@ export const api = {
   loginUsername:(username: string, password: string) => apiFetch("/auth/login/username", { method: "POST", body: JSON.stringify({ username, password }) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
   refreshToken: () => attemptTokenRefresh(),
+  vendorRegister: (data: { phone: string; storeName: string; storeCategory?: string; name?: string; cnic?: string; address?: string; city?: string; bankName?: string; bankAccount?: string; bankAccountTitle?: string }) =>
+    apiFetch("/auth/vendor-register", { method: "POST", body: JSON.stringify(data) }),
 
   /* Token helpers */
   storeTokens: (token: string, refreshToken?: string) => {
@@ -104,7 +111,7 @@ export const api = {
 
   /* Profile */
   getMe:         () => apiFetch("/vendor/me"),
-  updateProfile: (data: any) => apiFetch("/vendor/profile", { method: "PATCH", body: JSON.stringify(data) }),
+  updateProfile: (data: Record<string, string | undefined>) => apiFetch("/vendor/profile", { method: "PATCH", body: JSON.stringify(data) }),
 
   /* Store management */
   getStore:      () => apiFetch("/vendor/store"),

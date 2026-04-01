@@ -6,7 +6,7 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fc, CARD, CARD_HEADER, INPUT, TEXTAREA, BTN_PRIMARY, LABEL } from "../lib/ui";
+import { fc, CARD, CARD_HEADER, INPUT, TEXTAREA, BTN_PRIMARY, LABEL, errMsg } from "../lib/ui";
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
@@ -66,7 +66,7 @@ export default function Store() {
   const storeMut = useMutation({
     mutationFn: () => api.updateStore({ ...sf, storeMinOrder: Number(sf.storeMinOrder) }),
     onSuccess: () => { refreshUser(); showToast("✅ Store info saved!"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const hoursMut = useMutation({
@@ -80,15 +80,15 @@ export default function Store() {
       return api.updateStore({ storeHours: hours });
     },
     onSuccess: () => { setHoursError(""); refreshUser(); showToast("✅ Hours saved!"); },
-    onError: (e: any) => { setHoursError(e.message); showToast("❌ " + e.message); },
+    onError: (e: Error) => { setHoursError(errMsg(e)); showToast("❌ " + errMsg(e)); },
   });
 
   const { data: promoData, isLoading: promoLoad } = useQuery({ queryKey: ["vendor-promos"], queryFn: () => api.getPromos(), enabled: tab === "promos" });
   const promos = promoData?.promos || [];
 
   const [pf, setPf] = useState({ code:"", description:"", discountPct:"", discountFlat:"", minOrderAmount:"", usageLimit:"", expiresAt:"", type:"pct" as "pct"|"flat" });
-  const p = (k: string, v: any) => setPf(x => ({ ...x, [k]: v }));
-  const [editingPromo, setEditingPromo] = useState<any|null>(null);
+  const p = (k: string, v: string) => setPf(x => ({ ...x, [k]: v }));
+  const [editingPromo, setEditingPromo] = useState<Record<string, string | number | null> | null>(null);
   const [hoursError, setHoursError] = useState("");
 
   const discountValue = pf.type === "pct" ? Number(pf.discountPct) : Number(pf.discountFlat);
@@ -107,7 +107,7 @@ export default function Store() {
       });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-promos"] }); setPf({ code:"",description:"",discountPct:"",discountFlat:"",minOrderAmount:"",usageLimit:"",expiresAt:"",type:"pct" }); showToast("✅ Promo created!"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const updatePromoMut = useMutation({
@@ -120,19 +120,19 @@ export default function Store() {
       expiresAt:      pf.expiresAt || null,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-promos"] }); setEditingPromo(null); setPf({ code:"",description:"",discountPct:"",discountFlat:"",minOrderAmount:"",usageLimit:"",expiresAt:"",type:"pct" }); showToast("✅ Promo updated!"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const togglePromoMut = useMutation({
     mutationFn: (id: string) => api.togglePromo(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["vendor-promos"] }),
-    onError: (e: any) => showToast("❌ " + (e.message || "Promo update failed")),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const deletePromoMut = useMutation({
     mutationFn: (id: string) => api.deletePromo(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-promos"] }); showToast("🗑️ Promo deleted"); },
-    onError: (e: any) => showToast("❌ " + (e.message || "Delete failed")),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const TABS = [

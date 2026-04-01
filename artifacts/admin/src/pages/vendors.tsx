@@ -247,7 +247,8 @@ export default function Vendors() {
     const matchStatus =
       statusFilter === "all" ||
       (statusFilter === "active"  && v.isActive && !v.isBanned) ||
-      (statusFilter === "blocked" && !v.isActive && !v.isBanned) ||
+      (statusFilter === "pending" && v.approvalStatus === "pending") ||
+      (statusFilter === "blocked" && !v.isActive && !v.isBanned && v.approvalStatus !== "pending") ||
       (statusFilter === "banned"  && v.isBanned);
     const matchDate = (!dateFrom || new Date(v.createdAt) >= new Date(dateFrom))
                    && (!dateTo   || new Date(v.createdAt) <= new Date(dateTo + "T23:59:59"));
@@ -257,10 +258,12 @@ export default function Vendors() {
   const totalEarnings    = vendors.reduce((s: number, v: any) => s + v.totalRevenue * vendorShare, 0);
   const totalWallet      = vendors.reduce((s: number, v: any) => s + v.walletBalance, 0);
   const activeVendors    = vendors.filter((v: any) => v.isActive && !v.isBanned).length;
-  const suspendedVendors = vendors.filter((v: any) => !v.isActive || v.isBanned).length;
+  const pendingVendors   = vendors.filter((v: any) => v.approvalStatus === "pending").length;
+  const suspendedVendors = vendors.filter((v: any) => (!v.isActive || v.isBanned) && v.approvalStatus !== "pending").length;
 
   const getStatusBadge = (v: any) => {
     if (v.isBanned)   return <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Banned</Badge>;
+    if (v.approvalStatus === "pending") return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-[10px]">Pending Approval</Badge>;
     if (!v.isActive)  return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Blocked</Badge>;
     if (v.storeIsOpen) return <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Open</Badge>;
     return <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-[10px]">Closed</Badge>;
@@ -276,7 +279,7 @@ export default function Vendors() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Vendors</h1>
-            <p className="text-sm text-muted-foreground">{vendors.length} total · {activeVendors} active · {suspendedVendors} suspended</p>
+            <p className="text-sm text-muted-foreground">{vendors.length} total · {activeVendors} active{pendingVendors > 0 ? ` · ${pendingVendors} pending` : ""} · {suspendedVendors} suspended</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -332,6 +335,7 @@ export default function Vendors() {
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="active">✅ Active</SelectItem>
+              <SelectItem value="pending">⏳ Pending Approval</SelectItem>
               <SelectItem value="blocked">⊘ Blocked</SelectItem>
               <SelectItem value="banned">🚫 Banned</SelectItem>
             </SelectContent>

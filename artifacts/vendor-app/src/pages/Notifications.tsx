@@ -4,7 +4,17 @@ import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fd, CARD, CARD_HEADER } from "../lib/ui";
+import { fd, CARD, CARD_HEADER, errMsg } from "../lib/ui";
+
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  icon?: string;
+  isRead?: boolean;
+  createdAt: string;
+}
 
 function typeIcon(type: string) {
   if (type === "order")  return "📦";
@@ -26,7 +36,7 @@ export default function Notifications() {
     refetchInterval: 30000,
   });
 
-  const notifs: any[] = data?.notifications || [];
+  const notifs: Notification[] = data?.notifications || [];
   const unread: number = data?.unread || 0;
 
   const pullY = useRef(0);
@@ -138,7 +148,7 @@ export default function Notifications() {
               {unread > 0 && <span className="text-xs font-bold bg-red-100 text-red-600 px-2.5 py-1 rounded-full">{unread} unread</span>}
             </div>
             <div className="divide-y divide-gray-50">
-              {notifs.map((n: any) => (
+              {notifs.map((n) => (
                 <button
                   key={n.id}
                   className={`w-full px-4 py-4 flex gap-3 transition-colors text-left android-press min-h-0 ${!n.isRead ? "bg-orange-50/40 hover:bg-orange-50/80" : "hover:bg-gray-50"}`}

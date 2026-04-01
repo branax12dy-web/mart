@@ -28,6 +28,14 @@ async function vendorAuth(req: Request, res: Response, next: NextFunction) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
   if (!user) { res.status(401).json({ error: "User not found" }); return; }
   if (!user.isActive) {
+    if (user.approvalStatus === "pending") {
+      writeAuthAuditLog("auth_denied_pending", { userId: user.id, ip, metadata: { url: req.url, role: "vendor" } });
+      res.status(403).json({ error: "Your vendor account is pending admin approval.", pendingApproval: true }); return;
+    }
+    if (user.approvalStatus === "rejected") {
+      writeAuthAuditLog("auth_denied_rejected", { userId: user.id, ip, metadata: { url: req.url, role: "vendor" } });
+      res.status(403).json({ error: "Your vendor application was rejected. Contact support for details.", rejected: true, approvalNote: user.approvalNote }); return;
+    }
     writeAuthAuditLog("auth_denied_inactive", { userId: user.id, ip, metadata: { url: req.url, role: "vendor" } });
     res.status(403).json({ error: "Account suspended by admin" }); return;
   }

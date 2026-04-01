@@ -5,7 +5,7 @@ import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { PageHeader } from "../components/PageHeader";
-import { fc, CARD, INPUT, BTN_PRIMARY, LABEL } from "../lib/ui";
+import { fc, CARD, INPUT, BTN_PRIMARY, LABEL, errMsg } from "../lib/ui";
 import { useLanguage } from "../lib/useLanguage";
 import { LANGUAGE_OPTIONS, tDual, type Language, type TranslationKey } from "@workspace/i18n";
 import {
@@ -84,15 +84,15 @@ export default function Profile() {
     setSaving(true);
     try {
       if (section === "personal") {
-        await api.updateProfile({ name, email, cnic, city, address, businessType } as any);
+        await api.updateProfile({ name, email, cnic, city, address, businessType });
       } else if (section === "bank") {
-        await api.updateProfile({ bankName, bankAccount, bankAccountTitle } as any);
+        await api.updateProfile({ bankName, bankAccount, bankAccountTitle });
       }
       await refreshUser();
       setEditing(null);
       showToast("✅ Changes saved successfully!");
-    } catch (e: any) {
-      showToast("❌ " + (e.message || "Failed to save"));
+    } catch (e) {
+      showToast("❌ " + errMsg(e));
     }
     setSaving(false);
   };

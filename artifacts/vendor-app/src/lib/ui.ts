@@ -38,3 +38,6 @@ export function fc(n: number): string { return `Rs. ${Math.round(n).toLocaleStri
 export function fd(d: string | Date): string {
   return new Date(d).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
+export function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : "Something went wrong";
+}

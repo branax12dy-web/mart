@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { PageHeader } from "../components/PageHeader";
 
 function StarBar({ starValue, count, total }: { starValue: number; count: number; total: number }) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
@@ -110,11 +111,12 @@ export default function Reviews() {
   };
 
   return (
-    <div className="px-4 py-5 max-w-2xl mx-auto">
-      <div className="mb-5">
-        <h1 className="text-2xl font-extrabold text-gray-900">{T("reviews")}</h1>
-        <p className="text-sm text-gray-400 mt-0.5">{T("customerFeedback")}</p>
-      </div>
+    <div className="bg-gray-50 md:bg-transparent">
+      <PageHeader
+        title={T("reviews")}
+        subtitle={avgRating !== null ? `${avgRating.toFixed(1)} ★ · ${total} ${T("reviews")}` : T("customerFeedback")}
+      />
+      <div className="px-4 py-4 md:px-0 md:py-4 max-w-2xl mx-auto md:max-w-none">
 
       {/* Rating summary card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-5">
@@ -318,6 +320,7 @@ export default function Reviews() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }

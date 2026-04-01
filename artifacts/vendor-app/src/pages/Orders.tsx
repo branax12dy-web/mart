@@ -6,7 +6,7 @@ import { useLanguage } from "../lib/useLanguage";
 import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fc, fd, CARD, DEFAULT_COMMISSION_PCT } from "../lib/ui";
+import { fc, fd, CARD, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 import { io, type Socket } from "socket.io-client";
 
 function useNow(intervalMs = 10000) {
@@ -210,9 +210,9 @@ export default function Orders() {
       const msg: Record<string, string> = { confirmed: "✅ " + T("orderAccepted"), preparing: "🍳 " + T("preparingStarted"), ready: "📦 " + T("markedReady"), cancelled: "❌ " + T("orderCancelled") };
       showToast(msg[status] || "✅ " + T("done"));
     },
-    onError: (e: any, { id }) => {
+    onError: (e: Error, { id }) => {
       setPendingOrderIds(s => { const n = new Set(s); n.delete(id); return n; });
-      showToast("❌ " + e.message);
+      showToast("❌ " + errMsg(e));
     },
   });
 

@@ -7,7 +7,7 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
 import { useState, useRef } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { fc, CARD, STAT_VAL, STAT_LBL, DEFAULT_COMMISSION_PCT } from "../lib/ui";
+import { fc, CARD, STAT_VAL, STAT_LBL, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 
 function VendorNoticeBanner({ message }: { message: string }) {
   const key = `vendor_notice_dismissed_${message.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)}`;
@@ -57,7 +57,7 @@ export default function Dashboard() {
   const toggleMut = useMutation({
     mutationFn: (isOpen: boolean) => api.updateStore({ storeIsOpen: isOpen }),
     onSuccess: () => { refreshUser(); qc.invalidateQueries({ queryKey: ["vendor-stats"] }); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const orderActionMut = useMutation({
@@ -71,9 +71,9 @@ export default function Dashboard() {
       qc.invalidateQueries({ queryKey: ["vendor-stats"] });
       showToast(status === "confirmed" ? "✅ Order confirmed!" : "❌ Order cancelled");
     },
-    onError: (e: any, { orderId }) => {
+    onError: (e: Error, { orderId }) => {
       setPendingOrderIds(s => { const n = new Set(s); n.delete(orderId); return n; });
-      showToast("❌ " + e.message);
+      showToast("❌ " + errMsg(e));
     },
   });
 

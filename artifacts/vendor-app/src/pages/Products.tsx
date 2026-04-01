@@ -5,7 +5,7 @@ import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
-import { fc, CARD, INPUT, SELECT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, LABEL } from "../lib/ui";
+import { fc, CARD, INPUT, SELECT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, LABEL, errMsg } from "../lib/ui";
 
 const EMPTY = { name:"", description:"", price:"", originalPrice:"", category:"", unit:"", stock:"", image:"", type:"mart" };
 const EMPTY_ROW = { name:"", price:"", description:"", image:"", category:"", unit:"", stock:"", type:"mart" };
@@ -60,25 +60,25 @@ export default function Products() {
       return api.createProduct({ ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined, stock: form.stock !== "" ? Number(form.stock) : undefined });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); qc.invalidateQueries({ queryKey: ["vendor-products-all"] }); setShowAdd(false); setForm({ ...EMPTY }); showToast("✅ Product added!"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const updateMut = useMutation({
     mutationFn: () => api.updateProduct(editProd.id, { ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : null, stock: form.stock !== "" ? Number(form.stock) : null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); qc.invalidateQueries({ queryKey: ["vendor-products-all"] }); setEditProd(null); setShowAdd(false); showToast("✅ Updated!"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.deleteProduct(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); qc.invalidateQueries({ queryKey: ["vendor-products-all"] }); showToast("🗑️ Deleted"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const toggleMut = useMutation({
     mutationFn: ({ id, inStock }: { id: string; inStock: boolean }) => api.updateProduct(id, { inStock }),
     onSuccess: (_, { inStock }) => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); showToast(inStock ? "✅ Marked In Stock" : "📦 Marked Out of Stock"); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const [pasteText, setPasteText] = useState("");
@@ -143,10 +143,11 @@ export default function Products() {
       })));
     },
     onSuccess: (res) => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); qc.invalidateQueries({ queryKey: ["vendor-products-all"] }); setView("list"); setBulkRows([{...EMPTY_ROW},{...EMPTY_ROW},{...EMPTY_ROW}]); setBulkCat(""); showToast(`✅ ${res.inserted} products added!`); },
-    onError: (e: any) => showToast("❌ " + e.message),
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
-  const openEdit = (p: any) => {
+  interface Product { id: string; name: string; description?: string | null; price: number; originalPrice?: number | null; category?: string | null; unit?: string | null; stock?: number | null; image?: string | null; type?: string | null; inStock?: boolean }
+  const openEdit = (p: Product) => {
     setEditProd(p);
     setForm({ name: p.name, description: p.description||"", price: String(p.price), originalPrice: p.originalPrice ? String(p.originalPrice) : "", category: p.category||"", unit: p.unit||"", stock: p.stock != null ? String(p.stock) : "", image: p.image||"", type: p.type||"mart" });
     setShowAdd(true);

@@ -857,31 +857,24 @@ router.get("/users", async (req, res) => {
 
 router.patch("/users/:id", async (req, res) => {
   const { role, isActive, walletBalance } = req.body;
-  const updates: Partial<typeof usersTable.$inferInsert> = {};
+  const updates: Partial<typeof usersTable.$inferInsert> & { tokenVersion?: ReturnType<typeof sql> } = {};
   if (role !== undefined) { updates.role = role; updates.roles = role; }
   if (isActive !== undefined) updates.isActive = isActive;
   if (walletBalance !== undefined) updates.walletBalance = String(walletBalance);
 
-  /* ── Auto-approve: when role is assigned to vendor/rider and admin
-     hasn't explicitly set isActive, use vendor_auto_approve / rider_auto_approve
-     to decide whether the account is immediately active ── */
-  if (role && isActive === undefined) {
-    const s = await getPlatformSettings();
-    if (role === "vendor") {
-      updates.isActive = (s["vendor_auto_approve"] ?? "off") === "on";
-    } else if (role === "rider") {
-      updates.isActive = (s["rider_auto_approve"] ?? "off") === "on";
-    }
+  if (role === "vendor" || role === "rider") {
+    updates.isActive = true;
+    updates.approvalStatus = "approved";
   }
 
   const [user] = await db
     .update(usersTable)
-    .set({ ...updates, updatedAt: new Date() })
+    .set({ ...(updates as typeof usersTable.$inferInsert), updatedAt: new Date() })
     .where(eq(usersTable.id, req.params["id"]!))
     .returning();
 
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  /* Revoke sessions on role or status change */
+  /* Revoke sessions on role or status change so user re-authenticates with new role */
   if (role !== undefined || isActive === false) {
     revokeAllUserSessions(req.params["id"]!).catch(() => {});
   }
@@ -1796,35 +1789,38 @@ async function revokeAllUserSessions(userId: string): Promise<void> {
 /* ── User Security Management ── */
 router.patch("/users/:id/security", async (req, res) => {
   const { id } = req.params;
-  const body = req.body as any;
-  const updates: Record<string, any> = { updatedAt: new Date() };
+  const body = req.body as Record<string, unknown>;
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (body.isActive     !== undefined) updates.isActive     = body.isActive;
   if (body.isBanned     !== undefined) updates.isBanned     = body.isBanned;
-  if (body.banReason    !== undefined) updates.banReason    = body.banReason || null;
+  if (body.banReason    !== undefined) updates.banReason    = (body.banReason as string) || null;
 
-  /* Decouple roles and role — update each field independently without cross-writing */
+  const willBeBanned = body.isBanned === true;
+  const currentUser = await db.select({ isBanned: usersTable.isBanned }).from(usersTable).where(eq(usersTable.id, id!)).limit(1).then(r => r[0]);
+  const alreadyBanned = currentUser?.isBanned ?? false;
+  const canAutoApprove = !willBeBanned && !alreadyBanned;
+
   if (body.roles !== undefined) {
     const rolesValue = String(body.roles).trim();
     const roleList = rolesValue.split(",").map((r: string) => r.trim()).filter(Boolean);
     if (!roleList.length) { res.status(400).json({ error: "At least one role must be assigned" }); return; }
     updates.roles = roleList.join(",");
-    /* Derive and sync the primary role field to prevent stale legacy-role drift */
     updates.role = roleList.includes("vendor") ? "vendor" : roleList.includes("rider") ? "rider" : roleList[0];
 
-    /* Auto-approve: when rider or vendor role is included, activate unless user is banned.
-       Override isActive only when the new role set includes rider/vendor.
-       We do NOT check body.isActive === undefined because the frontend always sends isActive. */
-    const willBeBanned = body.isBanned === true;
-    const currentUser = await db.select({ isBanned: usersTable.isBanned }).from(usersTable).where(eq(usersTable.id, id!)).limit(1).then(r => r[0]);
-    const alreadyBanned = currentUser?.isBanned ?? false;
-    if (!willBeBanned && !alreadyBanned && (roleList.includes("rider") || roleList.includes("vendor"))) {
+    if (canAutoApprove && (roleList.includes("rider") || roleList.includes("vendor"))) {
       updates.isActive = true;
       updates.approvalStatus = "approved";
     }
   }
   if (body.role !== undefined) {
     const roleValue = String(body.role).trim();
-    if (roleValue) updates.role = roleValue;
+    if (roleValue) {
+      updates.role = roleValue;
+      if (canAutoApprove && (roleValue === "vendor" || roleValue === "rider")) {
+        updates.isActive = true;
+        updates.approvalStatus = "approved";
+      }
+    }
   }
 
   if (body.blockedServices !== undefined) updates.blockedServices = body.blockedServices;
@@ -1837,7 +1833,7 @@ router.patch("/users/:id/security", async (req, res) => {
     revokeAllUserSessions(id!).catch(() => {});
   }
   if (body.isBanned && body.notify) {
-    await sendUserNotification(id!, "Account Suspended ⚠️", body.banReason || "Your account has been suspended. Contact support.", "warning", "warning-outline");
+    await sendUserNotification(id!, "Account Suspended ⚠️", String(body.banReason || "Your account has been suspended. Contact support."), "warning", "warning-outline");
   }
   res.json({ ...user, walletBalance: parseFloat(String(user.walletBalance)) });
 });
@@ -2132,6 +2128,7 @@ router.get("/vendors", async (_req, res) => {
         storeIsOpen: v.storeIsOpen, storeDescription: v.storeDescription,
         walletBalance: parseFloat(v.walletBalance ?? "0"),
         isActive: v.isActive, isBanned: v.isBanned,
+        approvalStatus: v.approvalStatus, approvalNote: v.approvalNote,
         roles: v.roles, role: v.role,
         createdAt: v.createdAt.toISOString(),
         lastLoginAt: v.lastLoginAt ? v.lastLoginAt.toISOString() : null,

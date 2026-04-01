@@ -6,7 +6,11 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
 type LoginMethod = "phone" | "email" | "username";
-type Step = "input" | "otp" | "pending";
+type Step = "input" | "otp" | "pending" | "register" | "register-otp" | "register-info" | "register-submitted";
+
+const STORE_CATS = ["Grocery","Restaurant","Bakery","Pharmacy","Electronics","Clothing","General Store","Fast Food","Fruits & Vegetables","Dairy","Meat & Poultry","Other"];
+const CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Jhelum","Rawalpindi","Islamabad","Lahore","Other"];
+const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Other"];
 
 export default function Login() {
   const { login } = useAuth();
@@ -43,6 +47,15 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd]   = useState(false);
 
+  const [regPhone, setRegPhone] = useState("");
+  const [regOtp, setRegOtp]     = useState("");
+  const [regDevOtp, setRegDevOtp] = useState("");
+  const [regForm, setRegForm] = useState({
+    storeName: "", storeCategory: "", name: "", cnic: "", address: "", city: "",
+    bankName: "", bankAccount: "", bankAccountTitle: "",
+  });
+  const rf = (k: string, v: string) => setRegForm(p => ({ ...p, [k]: v }));
+
   const clearError = () => setError("");
 
   useEffect(() => {
@@ -53,7 +66,14 @@ export default function Login() {
 
   const startCooldown = () => setResendCooldown(30);
 
-  const checkVendorRole = (res: any): boolean => {
+  interface AuthResponse {
+    token: string;
+    refreshToken?: string;
+    pendingApproval?: boolean;
+    user?: { roles?: string; role?: string; status?: string };
+  }
+
+  const checkVendorRole = (res: AuthResponse): boolean => {
     const raw = res.user?.roles ?? res.user?.role ?? "";
     const roles = Array.isArray(raw) ? raw : String(raw).split(",").map((r: string) => r.trim());
     if (!roles.includes("vendor")) {
@@ -68,12 +88,17 @@ export default function Login() {
     return true;
   };
 
-  const doLogin = async (res: any) => {
+  const doLogin = async (res: AuthResponse) => {
     if (!checkVendorRole(res)) return;
     if (res.pendingApproval) { setStep("pending"); return; }
     api.storeTokens(res.token, res.refreshToken);
-    const profile = await api.getMe();
-    login(res.token, profile, res.refreshToken);
+    try {
+      const profile = await api.getMe();
+      login(res.token, profile, res.refreshToken);
+    } catch (e) {
+      api.clearTokens();
+      setError(e instanceof Error ? e.message : "Failed to load vendor profile. Please try again.");
+    }
   };
 
   const sendPhoneOtp = async () => {
@@ -84,14 +109,14 @@ export default function Login() {
       setDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
       setStep("otp");
       startCooldown();
-    } catch(e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
     setLoading(false);
   };
 
   const verifyPhoneOtp = async () => {
     if (!otp || otp.length < 6) { setError(T("enterOtp")); return; }
     setLoading(true); clearError();
-    try { await doLogin(await api.verifyOtp(phone, otp)); } catch(e: any) { setError(e.message); }
+    try { await doLogin(await api.verifyOtp(phone, otp)); } catch (e) { setError(e instanceof Error ? e.message : "Verification failed"); }
     setLoading(false);
   };
 
@@ -103,14 +128,14 @@ export default function Login() {
       setEmailDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
       setStep("otp");
       startCooldown();
-    } catch(e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
     setLoading(false);
   };
 
   const verifyEmailOtp = async () => {
     if (!emailOtp || emailOtp.length < 6) { setError(T("enterOtp")); return; }
     setLoading(true); clearError();
-    try { await doLogin(await api.verifyEmailOtp(email, emailOtp)); } catch(e: any) { setError(e.message); }
+    try { await doLogin(await api.verifyEmailOtp(email, emailOtp)); } catch (e) { setError(e instanceof Error ? e.message : "Verification failed"); }
     setLoading(false);
   };
 
@@ -118,7 +143,7 @@ export default function Login() {
     if (!username || username.length < 3) { setError(T("enterUsername")); return; }
     if (!password || password.length < 6) { setError(T("enterPassword")); return; }
     setLoading(true); clearError();
-    try { await doLogin(await api.loginUsername(username, password)); } catch(e: any) { setError(e.message); }
+    try { await doLogin(await api.loginUsername(username, password)); } catch (e) { setError(e instanceof Error ? e.message : "Login failed"); }
     setLoading(false);
   };
 
@@ -132,6 +157,49 @@ export default function Login() {
     setMethod(m); setStep("input"); clearError();
     setOtp(""); setEmailOtp(""); setDevOtp(""); setEmailDevOtp("");
   };
+
+  const sendRegOtp = async () => {
+    if (!regPhone || regPhone.length < 10) { setError("Enter a valid phone number"); return; }
+    setLoading(true); clearError();
+    try {
+      const res = await api.sendOtp(regPhone);
+      setRegDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
+      setStep("register-otp");
+      startCooldown();
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
+    setLoading(false);
+  };
+
+  const verifyRegOtp = async () => {
+    if (!regOtp || regOtp.length < 6) { setError(T("enterOtp")); return; }
+    setLoading(true); clearError();
+    try {
+      const res = await api.verifyOtp(regPhone, regOtp);
+      if (res.token) api.storeTokens(res.token, res.refreshToken);
+      setStep("register-info");
+    } catch (e) { setError(e instanceof Error ? e.message : "Verification failed"); }
+    setLoading(false);
+  };
+
+  const submitRegistration = async () => {
+    if (!regForm.storeName.trim()) { setError("Store name is required"); return; }
+    if (!regForm.name.trim()) { setError("Your name is required"); return; }
+    setLoading(true); clearError();
+    try {
+      const res = await api.vendorRegister({ phone: regPhone, ...regForm });
+      if (res.status === "approved") {
+        setStep("input");
+        setError("Your vendor account is already approved! Please log in.");
+      } else {
+        setStep("register-submitted");
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : "Registration failed"); }
+    setLoading(false);
+  };
+
+  const INPUT_CLS = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all";
+  const SELECT_CLS = "w-full h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all appearance-none";
+  const LABEL_CLS = "text-xs font-extrabold text-gray-400 mb-1.5 block uppercase tracking-wider";
 
   if (step === "pending") {
     return (
@@ -150,6 +218,238 @@ export default function Login() {
           <button onClick={() => setStep("input")} className="w-full h-11 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors text-sm">
             ← {T("backToLogin")}
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "register-submitted") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-500 to-amber-600 p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+            <span className="text-4xl">✅</span>
+          </div>
+          <h2 className="text-2xl font-extrabold text-gray-800 mb-3">Application Submitted!</h2>
+          <p className="text-gray-500 text-sm leading-relaxed mb-5">
+            Your vendor registration for <strong className="text-gray-700">{regForm.storeName}</strong> has been submitted successfully. Admin will review and approve your account.
+          </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-left space-y-1">
+            <p className="text-blue-700 text-xs font-medium">📋 What happens next:</p>
+            <p className="text-blue-600 text-xs">1. Admin reviews your application</p>
+            <p className="text-blue-600 text-xs">2. You'll be notified once approved</p>
+            <p className="text-blue-600 text-xs">3. Login with your phone to start selling</p>
+          </div>
+          <button onClick={() => { setStep("input"); setRegPhone(""); setRegOtp(""); setRegDevOtp(""); setRegForm({ storeName:"", storeCategory:"", name:"", cnic:"", address:"", city:"", bankName:"", bankAccount:"", bankAccountTitle:"" }); }}
+            className="w-full h-11 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors text-sm">
+            ← Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "register" || step === "register-otp" || step === "register-info") {
+    return (
+      <div className="min-h-screen flex flex-col md:flex-row" style={{ paddingTop: "env(safe-area-inset-top,0px)" }}>
+        <div className="hidden md:flex md:w-1/2 lg:w-3/5 bg-gradient-to-br from-orange-500 to-amber-600 flex-col justify-between p-10 relative overflow-hidden">
+          <div className="absolute -top-24 -right-24 w-80 h-80 bg-white/10 rounded-full pointer-events-none" />
+          <div className="absolute -bottom-16 -left-16 w-64 h-64 bg-white/10 rounded-full pointer-events-none" />
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg"><span className="text-2xl">🏪</span></div>
+              <div>
+                <p className="text-white font-extrabold text-xl leading-tight">{appName}</p>
+                <p className="text-orange-100 text-sm font-medium">Vendor Registration</p>
+              </div>
+            </div>
+          </div>
+          <div className="relative z-10">
+            <h1 className="text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4">
+              Start Selling on<br/><span className="text-amber-200">{appName}</span>
+            </h1>
+            <p className="text-orange-100 text-lg font-medium mb-10 leading-relaxed">
+              Register your store and reach thousands of customers. Manage orders, products, and earnings — all in one place.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              {FEATURES.map(f => (
+                <div key={f.titleKey} className="bg-white/15 backdrop-blur-sm rounded-2xl p-4">
+                  <span className="text-2xl mb-2 block">{f.icon}</span>
+                  <p className="text-white font-bold text-sm">{T(f.titleKey)}</p>
+                  <p className="text-orange-100 text-xs mt-0.5">{T(f.descKey)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="relative z-10">
+            <p className="text-orange-200 text-sm">© 2025 {appName} · {businessAddress} · {vendorEarningsPct}% earnings</p>
+          </div>
+        </div>
+
+        <div className="flex-1 bg-gradient-to-br from-orange-500 to-amber-600 md:bg-none md:bg-gray-50 flex flex-col items-center justify-center px-5 py-12 md:px-12 relative overflow-y-auto">
+          <div className="md:hidden absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -translate-y-16 translate-x-16 pointer-events-none" />
+
+          <div className="w-full max-w-sm relative z-10">
+            <div className="text-center mb-6 md:hidden">
+              <div className="w-16 h-16 bg-white rounded-[20px] flex items-center justify-center mx-auto mb-3 shadow-2xl"><span className="text-3xl">🏪</span></div>
+              <h1 className="text-2xl font-extrabold text-white">Become a Vendor</h1>
+              <p className="text-orange-100 mt-1 font-medium text-sm">{appName} Business Partner</p>
+            </div>
+
+            <div className="hidden md:block mb-6">
+              <h2 className="text-2xl font-extrabold text-gray-900">Register Your Store</h2>
+              <p className="text-gray-500 mt-1 text-sm">
+                {step === "register" ? "Step 1: Verify your phone number" :
+                 step === "register-otp" ? "Step 1: Enter OTP to verify" :
+                 "Step 2: Fill your store details"}
+              </p>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex gap-1">
+                  <div className={`w-8 h-1.5 rounded-full ${step === "register" || step === "register-otp" ? "bg-orange-500" : "bg-green-500"}`} />
+                  <div className={`w-8 h-1.5 rounded-full ${step === "register-info" ? "bg-orange-500" : step === "register" || step === "register-otp" ? "bg-gray-200" : "bg-green-500"}`} />
+                </div>
+                <span className="text-xs text-gray-400 font-medium">
+                  {step === "register" || step === "register-otp" ? "Step 1 of 2" : "Step 2 of 2"}
+                </span>
+              </div>
+
+              {step === "register" && (
+                <>
+                  <h2 className="text-lg font-extrabold text-gray-800 mb-1">Verify Phone Number</h2>
+                  <p className="text-sm text-gray-500 mb-4">We'll send an OTP to verify your number</p>
+                  <label className={LABEL_CLS}>Phone Number</label>
+                  <div className="flex gap-2 mb-4">
+                    <div className="h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-sm font-bold text-gray-600 flex-shrink-0">+92</div>
+                    <input type="tel" placeholder="3XX XXXXXXX" value={regPhone} onChange={e => setRegPhone(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && sendRegOtp()}
+                      className={INPUT_CLS} autoFocus inputMode="tel" />
+                  </div>
+                </>
+              )}
+
+              {step === "register-otp" && (
+                <>
+                  <button onClick={() => { setStep("register"); clearError(); setRegDevOtp(""); }}
+                    className="text-orange-500 text-sm font-bold mb-3 flex items-center gap-1">← Back</button>
+                  <h2 className="text-lg font-extrabold text-gray-800 mb-1">{T("enterOtp")}</h2>
+                  <p className="text-sm text-gray-500 mb-1">{T("sentTo_")} <strong className="text-gray-700">+92{regPhone}</strong></p>
+                  {regDevOtp && <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 mb-3">
+                    <p className="text-xs text-orange-600 font-bold uppercase tracking-wide mb-0.5">{T("devOtp")}</p>
+                    <p className="text-orange-700 font-extrabold text-xl tracking-[0.4em]">{regDevOtp}</p>
+                  </div>}
+                  <input type="text" inputMode="numeric" placeholder="• • • • • •" value={regOtp}
+                    onChange={e => setRegOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onKeyDown={e => e.key === "Enter" && verifyRegOtp()}
+                    className="w-full h-16 px-4 mb-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-center text-3xl font-extrabold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all" maxLength={6} autoFocus />
+                </>
+              )}
+
+              {step === "register-info" && (
+                <>
+                  <button onClick={() => { setStep("register"); clearError(); }}
+                    className="text-orange-500 text-sm font-bold mb-3 flex items-center gap-1">← Back</button>
+                  <h2 className="text-lg font-extrabold text-gray-800 mb-1">Store Information</h2>
+                  <p className="text-sm text-gray-500 mb-4">Fill in your store details to complete registration</p>
+
+                  <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                    <div>
+                      <label className={LABEL_CLS}>Store Name *</label>
+                      <input value={regForm.storeName} onChange={e => rf("storeName", e.target.value)} placeholder="e.g. Ali's Grocery Store" className={INPUT_CLS} />
+                    </div>
+                    <div>
+                      <label className={LABEL_CLS}>Store Category</label>
+                      <select value={regForm.storeCategory} onChange={e => rf("storeCategory", e.target.value)} className={SELECT_CLS}>
+                        <option value="">Select category...</option>
+                        {STORE_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={LABEL_CLS}>Your Full Name *</label>
+                      <input value={regForm.name} onChange={e => rf("name", e.target.value)} placeholder="Muhammad Ali" className={INPUT_CLS} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={LABEL_CLS}>CNIC Number</label>
+                        <input value={regForm.cnic} onChange={e => rf("cnic", e.target.value)} placeholder="xxxxx-xxxxxxx-x" className={INPUT_CLS} inputMode="numeric" />
+                      </div>
+                      <div>
+                        <label className={LABEL_CLS}>City</label>
+                        <select value={regForm.city} onChange={e => rf("city", e.target.value)} className={SELECT_CLS}>
+                          <option value="">Select...</option>
+                          {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={LABEL_CLS}>Store Address</label>
+                      <input value={regForm.address} onChange={e => rf("address", e.target.value)} placeholder="Full address..." className={INPUT_CLS} />
+                    </div>
+                    <div className="border-t border-gray-100 pt-3">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Bank / Wallet Details (Optional)</p>
+                      <div className="space-y-3">
+                        <div>
+                          <label className={LABEL_CLS}>Bank / Wallet</label>
+                          <select value={regForm.bankName} onChange={e => rf("bankName", e.target.value)} className={SELECT_CLS}>
+                            <option value="">Select...</option>
+                            {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={LABEL_CLS}>Account Number</label>
+                            <input value={regForm.bankAccount} onChange={e => rf("bankAccount", e.target.value)} placeholder="Account #" className={INPUT_CLS} />
+                          </div>
+                          <div>
+                            <label className={LABEL_CLS}>Account Title</label>
+                            <input value={regForm.bankAccountTitle} onChange={e => rf("bankAccountTitle", e.target.value)} placeholder="Account holder" className={INPUT_CLS} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {error && <div className="mb-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl"><p className="text-red-600 text-sm font-medium">{error}</p></div>}
+
+              {step === "register" && (
+                <button onClick={sendRegOtp} disabled={loading}
+                  className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base mt-2">
+                  {loading ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Please wait...</> : "Send OTP →"}
+                </button>
+              )}
+
+              {step === "register-otp" && (
+                <>
+                  <button onClick={verifyRegOtp} disabled={loading}
+                    className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base">
+                    {loading ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Verifying...</> : "Verify & Continue →"}
+                  </button>
+                  <button
+                    onClick={() => { if (resendCooldown > 0) return; sendRegOtp(); }}
+                    disabled={resendCooldown > 0}
+                    className="w-full mt-3 text-sm text-gray-400 hover:text-orange-500 font-medium py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    {resendCooldown > 0 ? `${T("resendOtp")} (${resendCooldown}s)` : T("resendOtp")}
+                  </button>
+                </>
+              )}
+
+              {step === "register-info" && (
+                <button onClick={submitRegistration} disabled={loading || !regForm.storeName.trim() || !regForm.name.trim()}
+                  className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base mt-4">
+                  {loading ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Submitting...</> : "Submit Application ✓"}
+                </button>
+              )}
+
+              <button onClick={() => { setStep("input"); clearError(); }}
+                className="w-full mt-3 text-sm text-gray-400 hover:text-orange-500 font-medium py-2 transition-colors">
+                ← Already have an account? Login
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -313,6 +613,13 @@ export default function Login() {
                 {resendCooldown > 0 ? `${T("resendOtp")} (${resendCooldown}s)` : T("resendOtp")}
               </button>
             )}
+
+            <div className="border-t border-gray-100 mt-5 pt-4">
+              <button onClick={() => { setStep("register"); clearError(); }}
+                className="w-full h-11 border-2 border-orange-200 text-orange-600 font-bold rounded-xl transition-all hover:bg-orange-50 text-sm flex items-center justify-center gap-2">
+                🏪 Become a Vendor / Register
+              </button>
+            </div>
 
             <p className="text-center text-xs text-gray-400 mt-4">{T("onlyVendorsAccess")}</p>
           </div>

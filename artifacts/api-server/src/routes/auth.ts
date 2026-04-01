@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import crypto from "crypto";
 import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable } from "@workspace/db/schema";
@@ -252,8 +252,9 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
 
   /* ── Inactive check ──
      Pending-approval accounts are isActive=false but should NOT be blocked here;
-     they need to pass OTP validation and receive the pendingApproval=true response. ── */
-  const isPendingApproval = (settings["user_require_approval"] ?? "off") === "on" && user.approvalStatus === "pending";
+     they need to pass OTP validation and receive the pendingApproval=true response.
+     Check approvalStatus directly — the setting only controls NEW users, not existing pending ones. ── */
+  const isPendingApproval = user.approvalStatus === "pending";
   if (!user.isActive && !isPendingApproval) {
     res.status(403).json({ error: "Your account is currently inactive. Please contact support." });
     return;
@@ -366,15 +367,15 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
   const [freshUser] = await db.select().from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
   const u = freshUser ?? user;
 
-  /* ── Admin approval check ── */
-  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
-  if (requireApproval && u.approvalStatus === "pending") {
+  /* ── Admin approval check ──
+     approvalStatus is the source of truth; the setting only controls NEW user creation. ── */
+  if (u.approvalStatus === "pending") {
     addAuditEntry({ action: "user_login_pending", ip, details: `Pending approval login for phone: ${phone}`, result: "pending" });
     const token = signAccessToken(u.id, phone, u.role ?? "customer", u.roles ?? "customer", u.tokenVersion ?? 0);
     res.json({
       token, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai. Approve hone par aap login kar sakenge.",
-      user: { id: u.id, phone: u.phone, name: u.name, role: u.role, approvalStatus: "pending" },
+      user: { id: u.id, phone: u.phone, name: u.name, role: u.role, roles: u.roles, approvalStatus: "pending" },
     });
     return;
   }
@@ -434,6 +435,104 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
       totpEnabled:   u.totpEnabled ?? false,
       createdAt:     u.createdAt.toISOString(),
     },
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────
+   POST /auth/vendor-register
+   Vendor signup: after phone OTP verified, submit store info
+   and register as a vendor pending admin approval.
+───────────────────────────────────────────────────────────── */
+router.post("/vendor-register", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) {
+    res.status(401).json({ error: "Authentication required. Please verify your phone via OTP first." });
+    return;
+  }
+
+  const { storeName, storeCategory, name, cnic, address, city, bankName, bankAccount, bankAccountTitle } = req.body;
+  if (!storeName) {
+    res.status(400).json({ error: "Store name is required" });
+    return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
+  if (!user) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+
+  if (!user.phoneVerified) {
+    res.status(403).json({ error: "Phone number not verified. Please verify OTP first." });
+    return;
+  }
+
+  const existingRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim()).filter(Boolean);
+  if (existingRoles.includes("vendor")) {
+    if (user.approvalStatus === "pending") {
+      res.json({ success: true, status: "pending", message: "Your vendor application is already pending admin approval." });
+      return;
+    }
+    if (user.approvalStatus === "approved") {
+      res.json({ success: true, status: "approved", message: "You are already approved as a vendor." });
+      return;
+    }
+  }
+
+  const newRoles = existingRoles.includes("vendor") ? existingRoles : [...existingRoles, "vendor"];
+  const settings = await getCachedSettings();
+  const autoApprove = (settings["vendor_auto_approve"] ?? "off") === "on";
+
+  await db.update(usersTable).set({
+    roles: newRoles.join(","),
+    role: "vendor",
+    storeName,
+    storeCategory: storeCategory || null,
+    name: name || user.name,
+    cnic: cnic || user.cnic || null,
+    address: address || user.address || null,
+    city: city || user.city || null,
+    bankName: bankName || user.bankName || null,
+    bankAccount: bankAccount || user.bankAccount || null,
+    bankAccountTitle: bankAccountTitle || user.bankAccountTitle || null,
+    approvalStatus: autoApprove ? "approved" : "pending",
+    isActive: autoApprove ? true : false,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, user.id));
+
+  await db.insert(notificationsTable).values({
+    id: generateId(),
+    userId: user.id,
+    title: autoApprove ? "Welcome, Vendor! 🎉" : "Application Submitted ⏳",
+    body: autoApprove
+      ? "Your vendor account is approved! Start adding products and manage your store."
+      : "Your vendor registration is pending admin approval. We'll notify you once approved.",
+    type: "system",
+    icon: autoApprove ? "checkmark-circle-outline" : "time-outline",
+  }).catch(() => {});
+
+  if (!autoApprove) {
+    const admins = await db.select({ id: usersTable.id }).from(usersTable)
+      .where(or(eq(usersTable.role, "admin"), sql`${usersTable.roles} LIKE '%admin%'`));
+    const adminNotifs = admins.map(a => ({
+      id: generateId(),
+      userId: a.id,
+      title: "New Vendor Application 📋",
+      body: `${name || user.name || user.phone} has applied to become a vendor with store "${storeName}". Review and approve in the admin panel.`,
+      type: "system" as const,
+      icon: "storefront-outline",
+    }));
+    if (adminNotifs.length) {
+      db.insert(notificationsTable).values(adminNotifs).catch(() => {});
+    }
+  }
+
+  res.json({
+    success: true,
+    status: autoApprove ? "approved" : "pending",
+    message: autoApprove
+      ? "Your vendor account is approved! You can now log in."
+      : "Your application has been submitted. Admin will review and approve your account.",
   });
 });
 
@@ -790,8 +889,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     }
   }
 
-  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
-  const isPendingApproval = requireApproval && user.approvalStatus === "pending";
+  const isPendingApproval = user.approvalStatus === "pending";
 
   /* Issue short-lived access token + refresh token (consistent with OTP flow) */
   const accessToken = signAccessToken(user.id, user.phone ?? normalized, user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
@@ -801,7 +899,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     res.json({
       token: accessToken, expiresAt, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai.",
-      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, approvalStatus: "pending" },
+      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, roles: user.roles, approvalStatus: "pending" },
     });
     return;
   }
@@ -896,7 +994,7 @@ router.post("/login/username", verifyCaptcha, async (req, res) => {
     }
   }
 
-  const isPendingApproval = (settings["user_require_approval"] ?? "off") === "on" && user.approvalStatus === "pending";
+  const isPendingApproval = user.approvalStatus === "pending";
 
   const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
   const expiresAt   = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -905,7 +1003,7 @@ router.post("/login/username", verifyCaptcha, async (req, res) => {
     res.json({
       token: accessToken, expiresAt, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai.",
-      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, approvalStatus: "pending" },
+      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, roles: user.roles, approvalStatus: "pending" },
     });
     return;
   }
@@ -1629,7 +1727,7 @@ router.get("/verify-email", async (req, res) => {
 /* ══════════════════════════════════════════════════════════════
    HELPER: Extract authenticated user from JWT (Authorization header)
 ══════════════════════════════════════════════════════════════ */
-function extractAuthUser(req: any): { userId: string; phone: string; role: string } | null {
+function extractAuthUser(req: Request): { userId: string; phone: string; role: string } | null {
   const authHeader = req.headers["authorization"] as string | undefined;
   const raw = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : (req.body?.token ?? null);
   if (!raw) return null;
