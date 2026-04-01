@@ -86,7 +86,7 @@ function FoodCard({ item }: { item: any }) {
 function FoodScreenInner() {
   const insets = useSafeAreaInsets();
   const { itemCount, cartType, clearCart } = useCart();
-  const showCartBanner = itemCount > 0 && cartType === "mart";
+  const showCartBanner = itemCount > 0 && cartType !== "food" && cartType !== "none";
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
   const topPad = Math.max(insets.top, 12);
@@ -142,13 +142,13 @@ function FoodScreenInner() {
         <View style={{ backgroundColor: "#E0E7FF", flexDirection: "row", alignItems: "center", padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: "#C7D2FE" }}>
           <Ionicons name="warning-outline" size={18} color="#4F46E5" />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#3730A3" }}>Mart cart active</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#3730A3" }}>Adding Food items will clear your mart cart</Text>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#3730A3" }}>{cartType === "pharmacy" ? "Pharmacy cart active" : cartType === "mart" ? "Mart cart active" : "Another cart active"}</Text>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#3730A3" }}>Adding Food items will clear your existing cart</Text>
           </View>
           <Pressable
             onPress={() => Alert.alert(
-              "Clear Mart Cart?",
-              "Your mart cart will be cleared so you can order food. Continue?",
+              "Clear Cart?",
+              "Your existing cart will be cleared so you can order food. Continue?",
               [
                 { text: "Cancel", style: "cancel" },
                 { text: "Clear & Continue", style: "destructive", onPress: () => clearCart() },

@@ -465,17 +465,17 @@ export default function OrderDetailScreen() {
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Distance</Text>
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, marginTop: 2 }}>{parseFloat(order.distance).toFixed(1)} km</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, marginTop: 2 }}>{Number.isFinite(parseFloat(order.distance)) ? parseFloat(order.distance).toFixed(1) : "—"} km</Text>
                   </View>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Fare</Text>
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#D97706", marginTop: 2 }}>Rs. {parseFloat(order.fare || 0).toLocaleString()}</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#D97706", marginTop: 2 }}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
                   </View>
                 </View>
               ) : (
                 <View style={s.totalRow}>
                   <Text style={s.totalLabel}>Fare</Text>
-                  <Text style={s.totalAmount}>Rs. {parseFloat(order.fare || 0).toLocaleString()}</Text>
+                  <Text style={s.totalAmount}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
                 </View>
               )}
             </View>
@@ -522,7 +522,7 @@ export default function OrderDetailScreen() {
 
             <View style={s.totalRow}>
               <Text style={s.totalLabel}>Total</Text>
-              <Text style={s.totalAmount}>Rs. {order.total?.toLocaleString()}</Text>
+              <Text style={s.totalAmount}>Rs. {(order.total != null && Number.isFinite(Number(order.total)) ? Number(order.total) : 0).toLocaleString()}</Text>
             </View>
           </View>
         )}

@@ -372,7 +372,7 @@ function NotificationsModal({ visible, userId, token, onClose }: {
         <View style={modalHdr.wrap}>
           <View>
             <Text style={modalHdr.title}>Notifications</Text>
-            {unread > 0 && <Text style={modalHdr.sub}>{unread} naye</Text>}
+            {unread > 0 && <Text style={modalHdr.sub}>{unread} new</Text>}
           </View>
           <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
             {unread > 0 && (

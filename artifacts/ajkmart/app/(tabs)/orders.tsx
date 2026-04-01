@@ -293,8 +293,8 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
           <Text style={[styles.statusText, { color: cfg.color }]}>{T(cfg.labelKey)}</Text>
         </View>
         <View style={styles.totalWrap}>
-          <Text style={styles.totalLabel}>{ride.distance ? `${ride.distance} km` : T("fare")}</Text>
-          <Text style={styles.totalAmount}>Rs. {ride.fare?.toLocaleString()}</Text>
+          <Text style={styles.totalLabel}>{ride.distance && Number.isFinite(parseFloat(String(ride.distance))) ? `${parseFloat(String(ride.distance)).toFixed(1)} km` : T("fare")}</Text>
+          <Text style={styles.totalAmount}>Rs. {(ride.fare != null && Number.isFinite(Number(ride.fare)) ? Number(ride.fare) : 0).toLocaleString()}</Text>
         </View>
       </View>
 
@@ -455,7 +455,7 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
         </View>
         <View style={styles.totalWrap}>
           <Text style={styles.totalLabel}>{T("total")}</Text>
-          <Text style={styles.totalAmount}>Rs. {order.total?.toLocaleString()}</Text>
+          <Text style={styles.totalAmount}>Rs. {(order.total != null && Number.isFinite(Number(order.total)) ? Number(order.total) : 0).toLocaleString()}</Text>
         </View>
       </View>
 
@@ -525,7 +525,7 @@ function ParcelCard({ booking }: { booking: any }) {
         </View>
         <View style={styles.totalWrap}>
           <Text style={styles.totalLabel}>{T("fare")}</Text>
-          <Text style={styles.totalAmount}>Rs. {(booking.fare || booking.estimatedFare)?.toLocaleString()}</Text>
+          <Text style={styles.totalAmount}>Rs. {((booking.fare || booking.estimatedFare) != null && Number.isFinite(Number(booking.fare || booking.estimatedFare)) ? Number(booking.fare || booking.estimatedFare) : 0).toLocaleString()}</Text>
         </View>
       </View>
 
