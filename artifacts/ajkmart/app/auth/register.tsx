@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -31,7 +33,15 @@ import {
 
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
-type RegStep = 1 | 2 | 3 | 4;
+type RegStep = 1 | 2 | 3 | 4 | 5;
+
+const PAKISTAN_CITIES = [
+  "Muzaffarabad", "Mirpur", "Rawalakot", "Kotli", "Bagh", "Bhimber",
+  "Islamabad", "Rawalpindi", "Lahore", "Karachi", "Peshawar", "Quetta",
+  "Faisalabad", "Multan", "Sialkot", "Gujranwala", "Hyderabad",
+  "Abbottabad", "Bahawalpur", "Sargodha", "Sukkur", "Mardan",
+  "Mansehra", "Gilgit", "Skardu",
+];
 
 function formatCnic(raw: string): string {
   const digits = raw.replace(/\D/g, "").slice(0, 13);
@@ -39,6 +49,12 @@ function formatCnic(raw: string): string {
   if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
   return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
 }
+
+const LEVEL_CONFIG: Record<string, { color: string; bg: string; icon: string; label: string; desc: string }> = {
+  bronze: { color: "#CD7F32", bg: "#FFF3E0", icon: "shield-outline", label: "Bronze", desc: "Complete your profile to unlock more features" },
+  silver: { color: "#C0C0C0", bg: "#F5F5F5", icon: "shield-half-outline", label: "Silver", desc: "Add CNIC to upgrade to Gold" },
+  gold:   { color: "#FFD700", bg: "#FFFDE7", icon: "shield-checkmark-outline", label: "Gold", desc: "Full access to all features" },
+};
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
@@ -62,8 +78,18 @@ export default function RegisterScreen() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [cnic, setCnic] = useState("");
 
+  const [city, setCity] = useState("");
+  const [citySearch, setCitySearch] = useState("");
+  const [showCityPicker, setShowCityPicker] = useState(false);
+  const [area, setArea] = useState("");
+  const [address, setAddress] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState("");
+
+  const [cnic, setCnic] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -81,6 +107,50 @@ export default function RegisterScreen() {
   const clearError = () => setError("");
 
   const normalizedPhone = normalizePhone(phone);
+
+  const filteredCities = PAKISTAN_CITIES.filter(c =>
+    c.toLowerCase().includes(citySearch.toLowerCase())
+  );
+
+  const handleGetLocation = async () => {
+    setGpsLoading(true);
+    setGpsStatus("");
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setGpsStatus("Location permission denied");
+        setGpsLoading(false);
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setLatitude(loc.coords.latitude.toFixed(6));
+      setLongitude(loc.coords.longitude.toFixed(6));
+
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+        if (geo) {
+          if (geo.city) {
+            const matchedCity = PAKISTAN_CITIES.find(
+              c => c.toLowerCase() === geo.city!.toLowerCase()
+            );
+            if (matchedCity) setCity(matchedCity);
+          }
+          if (geo.district || geo.subregion) setArea(geo.district || geo.subregion || "");
+          const parts = [geo.streetNumber, geo.street, geo.name].filter(Boolean);
+          if (parts.length > 0) setAddress(parts.join(", "));
+          setGpsStatus("Location captured successfully");
+        }
+      } catch {
+        setGpsStatus("Coordinates captured (address lookup unavailable)");
+      }
+    } catch (e: any) {
+      setGpsStatus(e.message || "Could not get location");
+    }
+    setGpsLoading(false);
+  };
 
   const handleSendOtp = async () => {
     clearError();
@@ -199,11 +269,16 @@ export default function RegisterScreen() {
       setError("Please enter a valid email address");
       return;
     }
-    if (cnic && !/^\d{5}-\d{7}-\d{1}$/.test(cnic)) { setError("CNIC format: XXXXX-XXXXXXX-X"); return; }
     setStep(3);
   };
 
-  const handleStep3 = async () => {
+  const handleStep3 = () => {
+    clearError();
+    if (!city) { setError("Please select your city"); return; }
+    setStep(4);
+  };
+
+  const handleStep4 = async () => {
     clearError();
     if (!password || password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (!/[A-Z]/.test(password)) { setError("Password must contain at least 1 uppercase letter"); return; }
@@ -233,6 +308,11 @@ export default function RegisterScreen() {
           name: name.trim(),
           ...(email && { email: email.trim().toLowerCase() }),
           ...(cnic && { cnic: cnic.trim() }),
+          ...(city && { city }),
+          ...(area && { area: area.trim() }),
+          ...(address && { address: address.trim() }),
+          ...(latitude && { latitude }),
+          ...(longitude && { longitude }),
           password,
         }),
       });
@@ -248,7 +328,7 @@ export default function RegisterScreen() {
       if (profileData.refreshToken) setAuthRefreshToken(profileData.refreshToken);
       if (profileData.user) setAuthUser(profileData.user);
 
-      setStep(4);
+      setStep(5);
     } catch (e: any) { setError(e.message || "Could not save profile."); }
     setLoading(false);
   };
@@ -286,7 +366,7 @@ export default function RegisterScreen() {
     setLoading(false);
   };
 
-  const stepLabels = ["Verify", "Details", "Security", "Done"];
+  const stepLabels = ["Verify", "Details", "Address", "Security", "Done"];
 
   const handleBack = () => {
     clearError();
@@ -297,7 +377,10 @@ export default function RegisterScreen() {
     }
   };
 
-  if (step === 4) {
+  const accountLevel = authUser?.accountLevel || "bronze";
+  const levelInfo = LEVEL_CONFIG[accountLevel] || LEVEL_CONFIG.bronze;
+
+  if (step === 5) {
     return (
       <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} style={s.gradient}>
         <ScrollView contentContainerStyle={s.successScroll}>
@@ -311,6 +394,15 @@ export default function RegisterScreen() {
             <Text style={s.successSub}>
               Welcome to {config.platform.appName}! Your account is ready.
             </Text>
+
+            <View style={[s.levelBadge, { backgroundColor: levelInfo.bg, borderColor: levelInfo.color }]}>
+              <Ionicons name={levelInfo.icon as any} size={28} color={levelInfo.color} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[s.levelTitle, { color: levelInfo.color }]}>{levelInfo.label} Account</Text>
+                <Text style={s.levelDesc}>{levelInfo.desc}</Text>
+              </View>
+            </View>
+
             {signupBonus > 0 && (
               <View style={s.bonusBanner}>
                 <View style={s.bonusIconWrap}>
@@ -322,12 +414,29 @@ export default function RegisterScreen() {
                 </View>
               </View>
             )}
+
+            {accountLevel !== "gold" && (
+              <View style={s.kycPrompt}>
+                <Ionicons name="document-text-outline" size={20} color={C.primary} />
+                <Text style={s.kycText}>
+                  Complete KYC verification to unlock Gold benefits and higher limits
+                </Text>
+              </View>
+            )}
+
             <AuthButton label="Start Shopping" onPress={handleFinish} loading={loading} icon="cart-outline" />
           </View>
         </ScrollView>
       </LinearGradient>
     );
   }
+
+  const stepSubtitles: Record<number, string> = {
+    1: "Verify your phone number",
+    2: "Tell us about yourself",
+    3: "Where should we deliver?",
+    4: "Secure your account",
+  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -342,12 +451,10 @@ export default function RegisterScreen() {
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </Pressable>
           <Text style={s.headerTitle}>Create Account</Text>
-          <Text style={s.headerSub}>
-            {step === 1 ? "Verify your phone number" : step === 2 ? "Tell us about yourself" : "Set your password"}
-          </Text>
+          <Text style={s.headerSub}>{stepSubtitles[step]}</Text>
 
           <View style={s.progressRow}>
-            <StepProgress total={4} current={step} />
+            <StepProgress total={5} current={step} />
           </View>
           <View style={s.stepLabels}>
             {stepLabels.map((label, i) => (
@@ -427,6 +534,103 @@ export default function RegisterScreen() {
                 autoCapitalize="none"
                 error={!!error && !!email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())}
               />
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <Pressable
+                onPress={handleGetLocation}
+                disabled={gpsLoading}
+                style={s.gpsButton}
+                accessibilityRole="button"
+                accessibilityLabel="Use GPS to fill address"
+              >
+                {gpsLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="navigate" size={20} color="#fff" />
+                )}
+                <Text style={s.gpsButtonText}>
+                  {gpsLoading ? "Getting Location..." : "Use My Current Location"}
+                </Text>
+              </Pressable>
+              {!!gpsStatus && (
+                <Text style={[s.gpsStatusText, gpsStatus.includes("denied") && { color: C.danger }]}>
+                  {gpsStatus}
+                </Text>
+              )}
+              {!!(latitude && longitude) && (
+                <View style={s.coordsRow}>
+                  <Ionicons name="location" size={14} color={C.success} />
+                  <Text style={s.coordsText}>{latitude}, {longitude}</Text>
+                </View>
+              )}
+
+              <View style={s.dividerRow}>
+                <View style={s.dividerLine} />
+                <Text style={s.dividerText}>or enter manually</Text>
+                <View style={s.dividerLine} />
+              </View>
+
+              <Text style={s.fieldLabel}>City *</Text>
+              <Pressable
+                onPress={() => setShowCityPicker(!showCityPicker)}
+                style={[s.pickerButton, !city && !!error && s.pickerError]}
+              >
+                <Text style={[s.pickerButtonText, !city && { color: C.textMuted }]}>
+                  {city || "Select your city"}
+                </Text>
+                <Ionicons name={showCityPicker ? "chevron-up" : "chevron-down"} size={20} color={C.textMuted} />
+              </Pressable>
+              {showCityPicker && (
+                <View style={s.cityDropdown}>
+                  <View style={s.citySearchWrap}>
+                    <Ionicons name="search" size={16} color={C.textMuted} />
+                    <InputField
+                      value={citySearch}
+                      onChangeText={setCitySearch}
+                      placeholder="Search city..."
+                    />
+                  </View>
+                  <ScrollView style={s.cityList} nestedScrollEnabled>
+                    {filteredCities.map(c => (
+                      <Pressable
+                        key={c}
+                        onPress={() => { setCity(c); setShowCityPicker(false); setCitySearch(""); clearError(); }}
+                        style={[s.cityItem, city === c && s.cityItemSelected]}
+                      >
+                        <Text style={[s.cityItemText, city === c && s.cityItemTextSelected]}>{c}</Text>
+                        {city === c && <Ionicons name="checkmark-circle" size={18} color={C.primary} />}
+                      </Pressable>
+                    ))}
+                    {filteredCities.length === 0 && (
+                      <Text style={s.noCityText}>No cities found</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+
+              <InputField
+                label="Area / Locality"
+                value={area}
+                onChangeText={v => { setArea(v); clearError(); }}
+                placeholder="e.g. Satellite Town, Block B"
+                autoCapitalize="words"
+              />
+              <InputField
+                label="Full Address"
+                value={address}
+                onChangeText={v => { setAddress(v); clearError(); }}
+                placeholder="House/flat no, street, landmark"
+                autoCapitalize="sentences"
+                multiline
+              />
+            </>
+          )}
+
+          {step === 4 && (
+            <>
               <View>
                 <Text style={s.fieldLabel}>CNIC / National ID</Text>
                 <InputField
@@ -437,13 +641,9 @@ export default function RegisterScreen() {
                   maxLength={15}
                   error={!!error && !!cnic && !/^\d{5}-\d{7}-\d{1}$/.test(cnic)}
                 />
-                <Text style={s.fieldHint}>Optional — for identity verification</Text>
+                <Text style={s.fieldHint}>Optional — for KYC verification and Gold account</Text>
               </View>
-            </>
-          )}
 
-          {step === 3 && (
-            <>
               <InputField
                 label="Password *"
                 value={password}
@@ -452,7 +652,6 @@ export default function RegisterScreen() {
                 secureTextEntry={!showPwd}
                 rightIcon={showPwd ? "eye-off-outline" : "eye-outline"}
                 onRightIconPress={() => setShowPwd(v => !v)}
-                autoFocus
               />
               <PasswordStrengthBar password={password} />
 
@@ -494,15 +693,19 @@ export default function RegisterScreen() {
             label={
               step === 1
                 ? otpSent ? "Verify OTP" : "Send OTP"
-                : step === 2 ? "Continue" : "Create Account"
+                : step === 2 ? "Continue"
+                : step === 3 ? "Continue"
+                : "Create Account"
             }
             onPress={
               step === 1
                 ? otpSent ? handleVerifyOtp : handleSendOtp
-                : step === 2 ? handleStep2 : handleStep3
+                : step === 2 ? handleStep2
+                : step === 3 ? handleStep3
+                : handleStep4
             }
             loading={loading}
-            icon={step === 3 ? "shield-checkmark-outline" : step === 1 && !otpSent ? "send-outline" : undefined}
+            icon={step === 4 ? "shield-checkmark-outline" : step === 1 && !otpSent ? "send-outline" : step === 3 ? "location-outline" : undefined}
           />
 
           {step === 1 && (
@@ -515,6 +718,12 @@ export default function RegisterScreen() {
               <Text style={s.loginLinkText}>
                 Already have an account? <Text style={{ fontFamily: "Inter_700Bold" }}>Login</Text>
               </Text>
+            </Pressable>
+          )}
+
+          {step === 3 && (
+            <Pressable onPress={() => setStep(4)} style={s.skipLink} accessibilityRole="link">
+              <Text style={s.skipLinkText}>Skip for now</Text>
             </Pressable>
           )}
         </ScrollView>
@@ -536,7 +745,7 @@ const s = StyleSheet.create({
   headerTitle: { fontFamily: "Inter_700Bold", fontSize: 26, color: "#fff", marginBottom: 4 },
   headerSub: { ...typography.body, color: "rgba(255,255,255,0.85)", marginBottom: spacing.lg },
   progressRow: { marginBottom: 8 },
-  stepLabels: { flexDirection: "row", justifyContent: "center", gap: 24 },
+  stepLabels: { flexDirection: "row", justifyContent: "center", gap: 16 },
   stepLabel: { ...typography.small, color: "rgba(255,255,255,0.4)" },
   stepLabelActive: { color: "rgba(255,255,255,0.9)" },
 
@@ -553,6 +762,49 @@ const s = StyleSheet.create({
   resendDisabled: { opacity: 0.5 },
   resendText: { ...typography.bodyMedium, color: C.primary },
 
+  gpsButton: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: C.primary, borderRadius: radii.lg, paddingVertical: 14,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  gpsButtonText: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" },
+  gpsStatusText: { ...typography.caption, color: C.success, textAlign: "center", marginBottom: spacing.sm },
+  coordsRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, marginBottom: spacing.md },
+  coordsText: { ...typography.small, color: C.textMuted },
+
+  dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: spacing.lg, gap: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: C.border },
+  dividerText: { ...typography.small, color: C.textMuted },
+
+  pickerButton: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg, paddingVertical: 14,
+    backgroundColor: C.inputBg || "#F8F9FA",
+    marginBottom: spacing.md,
+  },
+  pickerError: { borderColor: C.danger },
+  pickerButtonText: { ...typography.body, color: C.text },
+
+  cityDropdown: {
+    borderWidth: 1, borderColor: C.border, borderRadius: radii.lg,
+    backgroundColor: C.surface, marginTop: -8, marginBottom: spacing.md,
+    maxHeight: 220, overflow: "hidden",
+    ...shadows.sm,
+  },
+  citySearchWrap: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, gap: 8 },
+  cityList: { maxHeight: 170 },
+  cityItem: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 0.5, borderBottomColor: C.border,
+  },
+  cityItemSelected: { backgroundColor: `${C.primary}10` },
+  cityItemText: { ...typography.body, color: C.text },
+  cityItemTextSelected: { color: C.primary, fontFamily: "Inter_600SemiBold" },
+  noCityText: { ...typography.caption, color: C.textMuted, textAlign: "center", paddingVertical: 16 },
+
   termsRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: spacing.sm, marginBottom: spacing.md },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: C.border, alignItems: "center", justifyContent: "center", marginTop: 1 },
   checkboxChecked: { backgroundColor: C.primary, borderColor: C.primary },
@@ -561,15 +813,34 @@ const s = StyleSheet.create({
   mismatchText: { ...typography.caption, color: C.danger, marginTop: -8, marginBottom: spacing.md, paddingLeft: 4 },
   loginLink: { alignItems: "center", marginTop: spacing.xl },
   loginLinkText: { ...typography.bodyMedium, color: C.primary },
+  skipLink: { alignItems: "center", marginTop: spacing.md },
+  skipLinkText: { ...typography.bodyMedium, color: C.textMuted, textDecorationLine: "underline" },
 
   successScroll: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: spacing.xxl },
   successCard: { backgroundColor: C.surface, borderRadius: radii.xxl, padding: spacing.xxxl, alignItems: "center", width: "100%", ...shadows.lg },
   successIconWrap: { marginBottom: spacing.xl },
   successIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: C.success, alignItems: "center", justifyContent: "center" },
   successTitle: { ...typography.h2, color: C.text, marginBottom: spacing.sm, textAlign: "center" },
-  successSub: { ...typography.body, color: C.textMuted, textAlign: "center", marginBottom: spacing.xxl, lineHeight: 22 },
-  bonusBanner: { flexDirection: "row", alignItems: "center", backgroundColor: C.accentSoft, borderRadius: radii.lg, padding: spacing.lg, marginBottom: spacing.xxl, borderWidth: 1, borderColor: "#FFD580", width: "100%" },
+  successSub: { ...typography.body, color: C.textMuted, textAlign: "center", marginBottom: spacing.xl, lineHeight: 22 },
+
+  levelBadge: {
+    flexDirection: "row", alignItems: "center",
+    borderRadius: radii.lg, padding: spacing.lg,
+    borderWidth: 1.5, marginBottom: spacing.lg, width: "100%",
+  },
+  levelTitle: { fontFamily: "Inter_700Bold", fontSize: 16, marginBottom: 2 },
+  levelDesc: { ...typography.caption, color: C.textSecondary },
+
+  bonusBanner: { flexDirection: "row", alignItems: "center", backgroundColor: C.accentSoft, borderRadius: radii.lg, padding: spacing.lg, marginBottom: spacing.lg, borderWidth: 1, borderColor: "#FFD580", width: "100%" },
   bonusIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#FFF4E5", alignItems: "center", justifyContent: "center", marginRight: 12 },
   bonusTitle: { ...typography.subtitle, color: C.text, marginBottom: 2 },
   bonusSub: { ...typography.caption, color: C.textSecondary },
+
+  kycPrompt: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: `${C.primary}08`, borderRadius: radii.md,
+    padding: spacing.md, marginBottom: spacing.xl, width: "100%",
+    borderWidth: 1, borderColor: `${C.primary}20`,
+  },
+  kycText: { flex: 1, ...typography.caption, color: C.primary, lineHeight: 18 },
 });

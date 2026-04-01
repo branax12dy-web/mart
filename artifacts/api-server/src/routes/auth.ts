@@ -1534,7 +1534,7 @@ router.post("/complete-profile", async (req, res) => {
   /* Accept token from body OR Authorization: Bearer header */
   const authHeader = req.headers["authorization"] as string | undefined;
   const rawToken = req.body?.token || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
-  const { name, email, username, password, currentPassword, cnic } = req.body;
+  const { name, email, username, password, currentPassword, cnic, address, city, area, latitude, longitude } = req.body;
   if (!rawToken) { res.status(401).json({ error: "Token required" }); return; }
 
   /* Verify JWT to get userId */
@@ -1587,6 +1587,22 @@ router.post("/complete-profile", async (req, res) => {
     }
   }
 
+  if (address && typeof address === "string" && address.trim()) {
+    updates.address = address.trim();
+  }
+  if (city && typeof city === "string" && city.trim()) {
+    updates.city = city.trim();
+  }
+  if (area && typeof area === "string" && area.trim()) {
+    updates.area = area.trim();
+  }
+  if (latitude && typeof latitude === "string") {
+    updates.latitude = latitude;
+  }
+  if (longitude && typeof longitude === "string") {
+    updates.longitude = longitude;
+  }
+
   if (password && password.length >= 8) {
     const isNewRegistration = !user.name || user.name === "User" || user.name === "Pending";
     if (user.passwordHash && !isNewRegistration) {
@@ -1601,6 +1617,18 @@ router.post("/complete-profile", async (req, res) => {
     if (!check.ok) { res.status(400).json({ error: check.message }); return; }
     updates.passwordHash = hashPassword(password);
   }
+
+  const hasName = updates.name || user.name;
+  const hasEmail = updates.email || user.email;
+  const hasAddress = updates.address || user.address;
+  const hasCity = updates.city || user.city;
+  const hasCnic = updates.cnic || user.cnic;
+  const hasPassword = updates.passwordHash || user.passwordHash;
+  const filledCount = [hasName, hasEmail, hasAddress, hasCity, hasCnic, hasPassword].filter(Boolean).length;
+  let newLevel = "bronze";
+  if (filledCount >= 5 && hasCnic) newLevel = "gold";
+  else if (filledCount >= 3) newLevel = "silver";
+  updates.accountLevel = newLevel;
 
   if (Object.keys(updates).length === 1) {
     res.status(400).json({ error: "Koi update nahi kiya — name, email, username ya password provide karein" }); return;
@@ -1629,7 +1657,7 @@ router.post("/complete-profile", async (req, res) => {
     message: "Profile update ho gaya",
     token: accessToken,
     refreshToken: refreshRaw,
-    user: { id: updated!.id, phone: updated!.phone, name: updated!.name, email: updated!.email, username: updated!.username, role: updated!.role, roles: updated!.roles, avatar: updated!.avatar, cnic: updated!.cnic, city: updated!.city, totpEnabled: updated!.totpEnabled ?? false, emailVerified: updated!.emailVerified, phoneVerified: updated!.phoneVerified, walletBalance: parseFloat(updated!.walletBalance ?? "0"), isActive: updated!.isActive, createdAt: updated!.createdAt.toISOString() },
+    user: { id: updated!.id, phone: updated!.phone, name: updated!.name, email: updated!.email, username: updated!.username, role: updated!.role, roles: updated!.roles, avatar: updated!.avatar, cnic: updated!.cnic, city: updated!.city, area: updated!.area, address: updated!.address, latitude: updated!.latitude, longitude: updated!.longitude, kycStatus: updated!.kycStatus, accountLevel: updated!.accountLevel, totpEnabled: updated!.totpEnabled ?? false, emailVerified: updated!.emailVerified, phoneVerified: updated!.phoneVerified, walletBalance: parseFloat(updated!.walletBalance ?? "0"), isActive: updated!.isActive, createdAt: updated!.createdAt.toISOString() },
   });
 });
 
