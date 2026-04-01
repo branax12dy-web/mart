@@ -78,6 +78,9 @@ export default function RegisterScreen() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<"" | "checking" | "available" | "taken">("");
+  const [usernameTimer, setUsernameTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const [city, setCity] = useState("");
   const [citySearch, setCitySearch] = useState("");
@@ -107,6 +110,35 @@ export default function RegisterScreen() {
   const clearError = () => setError("");
 
   const normalizedPhone = normalizePhone(phone);
+
+  const handleUsernameChange = (val: string) => {
+    const clean = val.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+    setUsername(clean);
+    clearError();
+    setUsernameStatus("");
+    if (usernameTimer) clearTimeout(usernameTimer);
+    if (clean.length >= 3) {
+      const t = setTimeout(async () => {
+        setUsernameStatus("checking");
+        try {
+          const res = await fetch(`${API}/auth/check-available`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: clean }),
+          });
+          const data = await res.json();
+          if (data?.username?.available) {
+            setUsernameStatus("available");
+          } else {
+            setUsernameStatus("taken");
+          }
+        } catch {
+          setUsernameStatus("");
+        }
+      }, 500);
+      setUsernameTimer(t);
+    }
+  };
 
   const filteredCities = PAKISTAN_CITIES.filter(c =>
     c.toLowerCase().includes(citySearch.toLowerCase())
@@ -265,6 +297,9 @@ export default function RegisterScreen() {
   const handleStep2 = () => {
     clearError();
     if (!name.trim() || name.trim().length < 2) { setError("Please enter your name (at least 2 characters)"); return; }
+    if (!username || username.length < 3) { setError("Username is required (at least 3 characters)"); return; }
+    if (usernameStatus === "taken") { setError("This username is already taken. Please choose another."); return; }
+    if (usernameStatus === "checking") { setError("Please wait — checking username availability"); return; }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Please enter a valid email address");
       return;
@@ -306,6 +341,7 @@ export default function RegisterScreen() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${activeToken}` },
         body: JSON.stringify({
           name: name.trim(),
+          username: username.trim(),
           ...(email && { email: email.trim().toLowerCase() }),
           ...(cnic && { cnic: cnic.trim() }),
           ...(city && { city }),
@@ -525,6 +561,39 @@ export default function RegisterScreen() {
                 autoFocus
                 error={!!error && !name.trim()}
               />
+              <View>
+                <InputField
+                  label="Username *"
+                  value={username}
+                  onChangeText={handleUsernameChange}
+                  placeholder="e.g. ahmed_khan92"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={20}
+                  error={usernameStatus === "taken" || (!!error && username.length < 3)}
+                  rightIcon={
+                    usernameStatus === "available" ? "checkmark-circle" :
+                    usernameStatus === "taken" ? "close-circle" :
+                    undefined
+                  }
+                  rightIconColor={usernameStatus === "available" ? C.success : C.danger}
+                />
+                {usernameStatus === "checking" && (
+                  <View style={s.usernameCheckRow}>
+                    <ActivityIndicator size="small" color={C.primary} />
+                    <Text style={s.usernameCheckText}>Checking availability...</Text>
+                  </View>
+                )}
+                {usernameStatus === "available" && (
+                  <Text style={[s.usernameHint, { color: C.success }]}>Username is available!</Text>
+                )}
+                {usernameStatus === "taken" && (
+                  <Text style={[s.usernameHint, { color: C.danger }]}>Username already taken</Text>
+                )}
+                {!usernameStatus && (
+                  <Text style={s.fieldHint}>Letters, numbers, underscore only. Min 3 characters.</Text>
+                )}
+              </View>
               <InputField
                 label="Email (optional)"
                 value={email}
@@ -815,6 +884,10 @@ const s = StyleSheet.create({
   loginLinkText: { ...typography.bodyMedium, color: C.primary },
   skipLink: { alignItems: "center", marginTop: spacing.md },
   skipLinkText: { ...typography.bodyMedium, color: C.textMuted, textDecorationLine: "underline" },
+
+  usernameCheckRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: -8, marginBottom: spacing.md, paddingLeft: 2 },
+  usernameCheckText: { ...typography.small, color: C.primary },
+  usernameHint: { ...typography.small, marginTop: -8, marginBottom: spacing.md, paddingLeft: 2 },
 
   successScroll: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: spacing.xxl },
   successCard: { backgroundColor: C.surface, borderRadius: radii.xxl, padding: spacing.xxxl, alignItems: "center", width: "100%", ...shadows.lg },

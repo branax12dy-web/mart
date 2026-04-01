@@ -342,6 +342,7 @@ export function InputField({
   onChangeText,
   error,
   rightIcon,
+  rightIconColor,
   onRightIconPress,
   containerStyle,
   ...inputProps
@@ -349,6 +350,7 @@ export function InputField({
   label?: string;
   error?: boolean;
   rightIcon?: keyof typeof Ionicons.glyphMap;
+  rightIconColor?: string;
   onRightIconPress?: () => void;
   containerStyle?: StyleProp<ViewStyle>;
 } & TextInputProps) {
@@ -366,7 +368,7 @@ export function InputField({
         />
         {rightIcon && (
           <Pressable onPress={onRightIconPress} style={fieldS.iconBtn} accessibilityLabel="Toggle visibility">
-            <Ionicons name={rightIcon} size={20} color={C.textMuted} />
+            <Ionicons name={rightIcon} size={20} color={rightIconColor || C.textMuted} />
           </Pressable>
         )}
       </View>
