@@ -96,7 +96,15 @@ function triggerLogout(reason: string) {
   } catch {}
 }
 
+let _refreshPromise: Promise<boolean> | null = null;
+
 async function attemptTokenRefresh(): Promise<boolean> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = _doRefresh();
+  try { return await _refreshPromise; } finally { _refreshPromise = null; }
+}
+
+async function _doRefresh(): Promise<boolean> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
   try {
@@ -112,7 +120,6 @@ async function attemptTokenRefresh(): Promise<boolean> {
     const data = await res.json();
     if (data.token) {
       sessionSet(data.token);
-      /* Ensure no stale access token copy remains in localStorage */
       try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem("rider_token"); } catch {}
     }
     if (data.refreshToken) localSet(data.refreshToken);
@@ -220,6 +227,11 @@ async function drainGpsQueue(): Promise<void> {
     const db = await openGpsQueueDB();
     const tx = db.transaction(GPS_QUEUE_STORE, "readonly");
     const store = tx.objectStore(GPS_QUEUE_STORE);
+    const allKeys: IDBValidKey[] = await new Promise((res, rej) => {
+      const req = store.getAllKeys();
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
     const all: any[] = await new Promise((res, rej) => {
       const req = store.getAll();
       req.onsuccess = () => res(req.result);
@@ -240,7 +252,8 @@ async function drainGpsQueue(): Promise<void> {
 
     const clearDb = await openGpsQueueDB();
     const clearTx = clearDb.transaction(GPS_QUEUE_STORE, "readwrite");
-    clearTx.objectStore(GPS_QUEUE_STORE).clear();
+    const clearStore = clearTx.objectStore(GPS_QUEUE_STORE);
+    for (const key of allKeys) clearStore.delete(key);
     await new Promise<void>((res, rej) => { clearTx.oncomplete = () => res(); clearTx.onerror = () => rej(clearTx.error); });
     clearDb.close();
   } catch { /* drain failed — will retry next time */ }

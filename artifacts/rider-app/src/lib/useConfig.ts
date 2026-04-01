@@ -274,7 +274,7 @@ export function usePlatformConfig() {
     queryKey: ["platform-config"],
     queryFn: () => apiFetch("/platform-config"),
     staleTime: 60_000,
-    refetchInterval: 5 * 60_000,
+    refetchInterval: 2 * 60_000,
     retry: 2,
   });
   return { config: data ?? DEFAULT_CONFIG, isLoading };

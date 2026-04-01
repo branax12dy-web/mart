@@ -1192,9 +1192,36 @@ async function runDispatchCycle() {
         const elapsedSec = (Date.now() - createdMs) / 1000;
 
         if (elapsedSec > totalTimeoutSec) {
-          await db.update(ridesTable)
-            .set({ status: "expired", updatedAt: new Date() })
-            .where(and(eq(ridesTable.id, ride.id), isNull(ridesTable.riderId)));
+          await db.transaction(async (tx) => {
+            const [upd] = await tx.update(ridesTable)
+              .set({ status: "expired", updatedAt: new Date() })
+              .where(and(eq(ridesTable.id, ride.id), isNull(ridesTable.riderId)))
+              .returning({ id: ridesTable.id });
+            if (!upd) return;
+
+            if (ride.paymentMethod === "wallet") {
+              const rideRef = `ride:${ride.id}`;
+              const [debitTx] = await tx.select({ id: walletTransactionsTable.id })
+                .from(walletTransactionsTable)
+                .where(and(
+                  eq(walletTransactionsTable.userId, ride.userId),
+                  eq(walletTransactionsTable.type, "debit"),
+                  eq(walletTransactionsTable.reference, rideRef),
+                )).limit(1);
+              if (debitTx) {
+                const refundAmt = parseFloat(ride.fare!);
+                await tx.update(usersTable)
+                  .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+                  .where(eq(usersTable.id, ride.userId));
+                await tx.insert(walletTransactionsTable).values({
+                  id: generateId(), userId: ride.userId, type: "credit",
+                  amount: refundAmt.toFixed(2),
+                  description: `Ride expired — auto-refund #${ride.id.slice(-6).toUpperCase()}`,
+                  reference: rideRef,
+                });
+              }
+            }
+          });
 
           const expLang = await getUserLanguage(ride.userId);
           await db.insert(notificationsTable).values({
@@ -1216,9 +1243,36 @@ async function runDispatchCycle() {
         const loopCount = ride.dispatchLoopCount ?? 0;
 
         if (currentRound >= MAX_DISPATCH_ROUNDS && loopCount >= MAX_DISPATCH_ROUNDS) {
-          await db.update(ridesTable)
-            .set({ status: "no_riders", updatedAt: new Date() })
-            .where(and(eq(ridesTable.id, ride.id), isNull(ridesTable.riderId)));
+          await db.transaction(async (tx) => {
+            const [upd] = await tx.update(ridesTable)
+              .set({ status: "no_riders", updatedAt: new Date() })
+              .where(and(eq(ridesTable.id, ride.id), isNull(ridesTable.riderId)))
+              .returning({ id: ridesTable.id });
+            if (!upd) return;
+
+            if (ride.paymentMethod === "wallet") {
+              const rideRef = `ride:${ride.id}`;
+              const [debitTx] = await tx.select({ id: walletTransactionsTable.id })
+                .from(walletTransactionsTable)
+                .where(and(
+                  eq(walletTransactionsTable.userId, ride.userId),
+                  eq(walletTransactionsTable.type, "debit"),
+                  eq(walletTransactionsTable.reference, rideRef),
+                )).limit(1);
+              if (debitTx) {
+                const refundAmt = parseFloat(ride.fare!);
+                await tx.update(usersTable)
+                  .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+                  .where(eq(usersTable.id, ride.userId));
+                await tx.insert(walletTransactionsTable).values({
+                  id: generateId(), userId: ride.userId, type: "credit",
+                  amount: refundAmt.toFixed(2),
+                  description: `No riders found — auto-refund #${ride.id.slice(-6).toUpperCase()}`,
+                  reference: rideRef,
+                });
+              }
+            }
+          });
           const noRiderLang = await getUserLanguage(ride.userId);
           await db.insert(notificationsTable).values({
             id: generateId(), userId: ride.userId,

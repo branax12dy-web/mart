@@ -920,7 +920,22 @@ router.get("/users/2fa-enabled", async (_req, res) => {
 
 /* ── Approve User ── */
 router.post("/users/:id/approve", async (req, res) => {
-  const { note } = req.body;
+  const { note, skipDocCheck } = req.body;
+  const [target] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
+  if (!target) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (target.role === "rider" && !skipDocCheck) {
+    const hasCnic = !!target.cnic;
+    const hasLicense = !!target.drivingLicense;
+    const missing: string[] = [];
+    if (!hasCnic) missing.push("CNIC");
+    if (!hasLicense) missing.push("Driving License");
+    if (missing.length > 0) {
+      res.status(400).json({ error: `Missing required documents: ${missing.join(", ")}. Pass skipDocCheck=true to override.` });
+      return;
+    }
+  }
+
   const [user] = await db.update(usersTable)
     .set({ approvalStatus: "approved", approvalNote: note || null, isActive: true, updatedAt: new Date() })
     .where(eq(usersTable.id, req.params["id"]!))

@@ -258,9 +258,9 @@ router.patch("/online", async (req, res) => {
         }).onConflictDoUpdate({
           target: liveLocationsTable.userId,
           set: { onlineSince: now, updatedAt: now },
-        }).catch(() => {});
+        }).catch((e: any) => { console.warn("[rider] live_location seed failed:", e?.message); });
       }
-    } catch { /* non-critical — rider will appear on next GPS ping */ }
+    } catch (e: any) { console.warn("[rider] live_location seed failed:", e?.message); }
   }
 
   /* Emit real-time status event to admin-fleet */
@@ -339,7 +339,19 @@ router.patch("/profile", async (req, res) => {
     updates.isOnline = false;
   }
 
-  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, riderId)).returning();
+  let user: typeof usersTable.$inferSelect;
+  try {
+    const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, riderId)).returning();
+    user = updated;
+  } catch (dbErr: any) {
+    const msg = dbErr?.message || "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ error: "A profile field conflicts with an existing record (e.g. duplicate CNIC)" });
+    } else {
+      res.status(500).json({ error: "Failed to update profile. Please try again." });
+    }
+    return;
+  }
 
   if (cnicChanged || drivingLicenseChanged) {
     const reVerifyLang = await getUserLanguage(riderId);
@@ -991,7 +1003,6 @@ router.post("/rides/:id/accept", async (req, res) => {
 
       /* Deduct wallet only if this rider won the accept race */
       if (isBargaining && targetRide.paymentMethod === "wallet") {
-        /* DB floor guard — prevents negative balance under concurrent ride accepts */
         const [walletDeducted] = await tx.update(usersTable)
           .set({ walletBalance: sql`wallet_balance - ${fareAmt}`, updatedAt: new Date() })
           .where(and(eq(usersTable.id, targetRide.userId), gte(usersTable.walletBalance, fareAmt.toFixed(2))))
@@ -1003,6 +1014,11 @@ router.post("/rides/:id/accept", async (req, res) => {
           description: `Ride payment (bargained) — #${targetRide.id.slice(-6).toUpperCase()}`,
         });
       }
+
+      await tx.update(rideBidsTable)
+        .set({ status: "rejected", updatedAt: new Date() })
+        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
+
       return accepted;
     });
   } catch (err: unknown) {
@@ -1017,11 +1033,6 @@ router.post("/rides/:id/accept", async (req, res) => {
   if (!updated) {
     res.status(409).json({ error: "Ride already taken by another rider" }); return;
   }
-
-  /* Reject any pending bids on this ride (InDrive multi-bid cleanup) */
-  await db.update(rideBidsTable)
-    .set({ status: "rejected", updatedAt: new Date() })
-    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
 
   const rideAssignLang = await getUserLanguage(updated.userId);
   await db.insert(notificationsTable).values({
@@ -1294,16 +1305,17 @@ router.get("/history", async (req, res) => {
   const rawOffset = parseInt(String(req.query["offset"] || "0"),  10);
   const limitParam  = Math.min(isNaN(rawLimit)  || rawLimit  < 1  ? 50  : rawLimit,  200);
   const offsetParam = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
+  const fetchCount = limitParam + offsetParam;
   const [orders, rides] = await Promise.all([
-    db.select().from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"))).orderBy(desc(ordersTable.updatedAt)).limit(limitParam).offset(offsetParam),
-    db.select().from(ridesTable).where(and(eq(ridesTable.riderId, riderId), or(eq(ridesTable.status, "completed"), eq(ridesTable.status, "cancelled")))).orderBy(desc(ridesTable.updatedAt)).limit(limitParam).offset(offsetParam),
+    db.select().from(ordersTable).where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"))).orderBy(desc(ordersTable.updatedAt)).limit(fetchCount),
+    db.select().from(ridesTable).where(and(eq(ridesTable.riderId, riderId), or(eq(ridesTable.status, "completed"), eq(ridesTable.status, "cancelled")))).orderBy(desc(ridesTable.updatedAt)).limit(fetchCount),
   ]);
 
   const combined = [
     ...orders.map(o => ({ kind: "order" as const, id: o.id, status: o.status, amount: safeNum(o.total), earnings: parseFloat((safeNum(o.total) * riderKeepPct).toFixed(2)), address: o.deliveryAddress, type: o.type, createdAt: o.createdAt })),
     ...rides.map(r => ({ kind: "ride" as const, id: r.id, status: r.status, amount: safeNum(r.fare), earnings: parseFloat((safeNum(r.fare) * riderKeepPct).toFixed(2)), address: r.dropAddress, type: r.type, createdAt: r.createdAt })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-   .slice(0, limitParam);  /* Cap combined result to the requested limit */
+   .slice(offsetParam, offsetParam + limitParam);
 
   res.json({ history: combined });
 });
@@ -2021,40 +2033,39 @@ async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: num
   let penaltyApplied = 0;
   let restricted = false;
 
-  /* Increment the rider's lifetime ignore counter on the user record */
-  await db.update(usersTable)
-    .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
-    .where(eq(usersTable.id, riderId));
+  await db.transaction(async (tx) => {
+    await tx.update(usersTable)
+      .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
+      .where(eq(usersTable.id, riderId));
 
-  await db.insert(riderPenaltiesTable).values({
-    id: generateId(), riderId, type: "ignore",
-    amount: "0",
-    reason: `Ignore #${dailyIgnores} today`,
-  });
+    await tx.insert(riderPenaltiesTable).values({
+      id: generateId(), riderId, type: "ignore",
+      amount: "0",
+      reason: `Ignore #${dailyIgnores} today`,
+    });
 
-  if (dailyIgnores > limit) {
-    penaltyApplied = penaltyAmt;
-    await db.transaction(async (tx) => {
+    if (dailyIgnores > limit) {
+      penaltyApplied = penaltyAmt;
       await tx.update(usersTable)
         .set({ walletBalance: sql`wallet_balance - ${penaltyAmt}`, updatedAt: new Date() })
         .where(eq(usersTable.id, riderId));
-      /* Insert wallet ledger entry so the rider can see the deduction in their transaction history.
-         Note: the riderPenaltiesTable "ignore" row is already inserted above this transaction
-         so we do NOT insert a second penalties row here — only the wallet ledger + notification. */
       await tx.insert(walletTransactionsTable).values({
         id: generateId(), userId: riderId, type: "ignore_penalty",
         amount: penaltyAmt.toFixed(2),
         description: `Ignore penalty (${dailyIgnores}/${limit} today) — Rs. ${penaltyAmt}`,
         reference: `ignore_penalty:${Date.now()}`,
       });
-    });
 
-    if (restrictEnabled) {
-      await db.update(usersTable)
-        .set({ isRestricted: true, updatedAt: new Date() })
-        .where(eq(usersTable.id, riderId));
-      restricted = true;
+      if (restrictEnabled) {
+        await tx.update(usersTable)
+          .set({ isRestricted: true, updatedAt: new Date() })
+          .where(eq(usersTable.id, riderId));
+        restricted = true;
+      }
     }
+  });
+
+  if (dailyIgnores > limit) {
 
     const ignorePenaltyLang = await getUserLanguage(riderId);
     await db.insert(notificationsTable).values({

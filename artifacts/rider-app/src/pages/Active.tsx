@@ -177,7 +177,9 @@ function SosButton({ rideId, riderPos }: { rideId?: string | null; riderPos?: { 
             });
           }
           setSent(true);
-        } catch { /* silently accept failure to not block UI */ }
+        } catch {
+          alert("SOS request failed — please call emergency contacts directly");
+        }
         setLoading(false);
       }}
       disabled={sent || loading}

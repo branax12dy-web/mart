@@ -103,13 +103,12 @@ function AppRoutes() {
     </Switch>
   );
 
+  if (config.platform.appStatus === "maintenance") {
+    return <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />;
+  }
+
   return (
     <div className="max-w-md mx-auto relative flex flex-col min-h-screen">
-      {/* ── Maintenance overlay (fullscreen) ── */}
-      {config.platform.appStatus === "maintenance" && (
-        <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />
-      )}
-
       {/* ── Subtle sync-failure toast ── */}
       {refreshFailToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg pointer-events-none">

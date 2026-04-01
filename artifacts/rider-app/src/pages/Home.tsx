@@ -455,6 +455,9 @@ export default function Home() {
       if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
     }
     prevIdsRef.current = currentIds;
+    return () => {
+      if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
+    };
   }, [currentIdsSig]);
 
   useEffect(() => {
@@ -1337,8 +1340,8 @@ export default function Home() {
                             </a>
                             {isDispatched ? (
                               <button onClick={() => ignoreRideMut.mutate(r.id)}
-                                disabled={ignoreRideMut.isPending}
-                                className="border border-amber-300 text-amber-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-amber-50 transition-colors flex items-center gap-1">
+                                disabled={ignoreRideMut.isPending || acceptRideMut.isPending || acceptOrderMut.isPending}
+                                className="border border-amber-300 text-amber-600 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-amber-50 transition-colors flex items-center gap-1 disabled:opacity-60">
                                 <SkipForward size={14}/> Ignore
                               </button>
                             ) : (
@@ -1349,7 +1352,7 @@ export default function Home() {
                               </button>
                             )}
                             <button onClick={() => acceptRideMut.mutate(r.id)}
-                              disabled={acceptRideMut.isPending || acceptOrderMut.isPending || !!user?.isRestricted}
+                              disabled={acceptRideMut.isPending || acceptOrderMut.isPending || ignoreRideMut.isPending || !!user?.isRestricted}
                               className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-extrabold py-2.5 rounded-xl text-sm disabled:opacity-60 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
                               <CheckCircle size={15}/>
                               {acceptRideMut.isPending ? T("accepting") : T("acceptRide")}

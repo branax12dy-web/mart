@@ -48,6 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(t);
     const controller = new AbortController();
     api.getMe(controller.signal).then(u => {
+      if (u.role && u.role !== "rider") {
+        api.clearTokens();
+        setToken(null);
+        return;
+      }
       setUser(u);
       refreshFailCountRef.current = 0;
     }).catch((err: unknown) => {
@@ -76,6 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (t: string, u: AuthUser, refreshToken?: string) => {
+    if (u.role && u.role !== "rider") {
+      throw new Error("This app is for riders only");
+    }
     api.storeTokens(t, refreshToken);
     setToken(t);
     setUser(u);
