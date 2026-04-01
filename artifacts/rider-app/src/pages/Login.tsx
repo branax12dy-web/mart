@@ -70,6 +70,8 @@ export default function Login() {
   const [error, setError] = useState("");
 
   const [identifier, setIdentifier] = useState("");
+  const [otpChannel, setOtpChannel] = useState("");
+  const [fallbackChannels, setFallbackChannels] = useState<string[]>([]);
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -157,9 +159,17 @@ export default function Login() {
         navigate("/register");
         return;
       }
-      if (data.action === "force_google" && auth.google) {
-        setMethod("google");
-        setStep("input");
+      if (data.action === "force_google") {
+        if (auth.google) {
+          setMethod("google");
+          setStep("input");
+        } else {
+          setError("This account is linked to Google. Please sign in with Google.");
+        }
+        setLoading(false); return;
+      }
+      if (data.action === "force_facebook") {
+        setError("This account is linked to Facebook. Please sign in with Facebook.");
         setLoading(false); return;
       }
       if (data.action === "send_phone_otp") {
@@ -172,6 +182,8 @@ export default function Login() {
           const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
           const r = await api.sendOtp(formatPhoneForApi(normalized), captchaToken);
           if (import.meta.env.DEV) setDevOtp(r.otp || "");
+          setOtpChannel(r.channel || "sms");
+          setFallbackChannels(r.fallbackChannels || []);
           startCooldown(60);
         } catch (e: unknown) { setError(e instanceof Error ? e.message : "Failed to send OTP"); setStep("input"); }
         setLoading(false); return;
@@ -185,6 +197,8 @@ export default function Login() {
           const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_email_otp");
           const r = await api.sendEmailOtp(id, captchaToken);
           if (import.meta.env.DEV) setEmailDevOtp(r.otp || "");
+          setOtpChannel("email");
+          setFallbackChannels([]);
           startCooldown(60);
         } catch (e: unknown) { setError(e instanceof Error ? e.message : "Failed to send OTP"); setStep("input"); }
         setLoading(false); return;
@@ -307,14 +321,16 @@ export default function Login() {
   const [phoneFallbackEmail, setPhoneFallbackEmail] = useState("");
   const [showEmailFallback, setShowEmailFallback] = useState(false);
 
-  const sendPhoneOtp = async () => {
+  const sendPhoneOtp = async (channel?: string) => {
     if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return; }
     setLoading(true); clearError(); setShowEmailFallback(false);
     try {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
-      const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken);
+      const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken, channel);
       if (import.meta.env.DEV) setDevOtp(res.otp || "");
+      setOtpChannel(res.channel || "sms");
+      setFallbackChannels(res.fallbackChannels || []);
       setStep("otp");
       startCooldown(60);
     } catch (e: unknown) {
@@ -632,6 +648,20 @@ export default function Login() {
             <>
               <h2 className="text-xl font-bold text-gray-800 mb-1">{T("enterOtp")}</h2>
               <p className="text-sm text-gray-500 mb-1">+92{phone}</p>
+              {otpChannel && (
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                  <span className="text-xs font-semibold text-gray-400">
+                    via {otpChannel === "whatsapp" ? "📱 WhatsApp" : otpChannel === "email" ? "✉️ Email" : "💬 SMS"}
+                  </span>
+                  {fallbackChannels.length > 0 && fallbackChannels.map(ch => (
+                    <button key={ch} onClick={() => { if (otpCooldown <= 0) sendPhoneOtp(ch); }}
+                      disabled={otpCooldown > 0}
+                      className="text-xs text-gray-900 hover:text-gray-700 font-bold disabled:opacity-40">
+                      · Send via {ch === "whatsapp" ? "WhatsApp" : ch === "email" ? "Email" : "SMS"}
+                    </button>
+                  ))}
+                </div>
+              )}
               {import.meta.env.DEV && devOtp && <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 text-sm text-gray-700"><strong>{T("devOtp")}:</strong> {devOtp}</div>}
               <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 className="w-full h-14 px-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-2xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-gray-900 mb-3" maxLength={6} autoFocus />

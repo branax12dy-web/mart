@@ -6,7 +6,24 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
 type LoginMethod = "phone" | "email" | "username";
-type Step = "continue" | "input" | "otp" | "pending" | "register" | "register-otp" | "register-info" | "register-submitted" | "forgot" | "forgot-otp" | "forgot-reset" | "forgot-done";
+type Step = "continue" | "input" | "otp" | "pending" | "2fa" | "register" | "register-otp" | "register-info" | "register-submitted" | "forgot" | "forgot-otp" | "forgot-reset" | "forgot-done";
+
+function getDeviceFingerprint(): string {
+  const stored = sessionStorage.getItem("_dfp");
+  if (stored) return stored;
+  const fp = [
+    navigator.userAgent,
+    navigator.language,
+    screen.width + "x" + screen.height,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    navigator.hardwareConcurrency ?? "",
+  ].filter(Boolean).join("|");
+  let hash = 0;
+  for (let i = 0; i < fp.length; i++) { hash = ((hash << 5) - hash + fp.charCodeAt(i)) | 0; }
+  const id = "web_" + Math.abs(hash).toString(36);
+  sessionStorage.setItem("_dfp", id);
+  return id;
+}
 
 const STORE_CATS = ["Grocery","Restaurant","Bakery","Pharmacy","Electronics","Clothing","General Store","Fast Food","Fruits & Vegetables","Dairy","Meat & Poultry","Other"];
 const CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Jhelum","Rawalpindi","Islamabad","Lahore","Other"];
@@ -43,6 +60,8 @@ export default function Login() {
   const [error, setError]   = useState("");
 
   const [identifier, setIdentifier] = useState("");
+  const [otpChannel, setOtpChannel] = useState("");
+  const [fallbackChannels, setFallbackChannels] = useState<string[]>([]);
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp]     = useState("");
@@ -52,6 +71,12 @@ export default function Login() {
   const [email, setEmail]     = useState("");
   const [emailOtp, setEmailOtp] = useState("");
   const [emailDevOtp, setEmailDevOtp] = useState("");
+
+  const [totpTempToken, setTotpTempToken] = useState("");
+  const [totpUserId, setTotpUserId] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [backupCode, setBackupCode] = useState("");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -82,10 +107,11 @@ export default function Login() {
     if (!id) { setError("Please enter your phone, email, or username"); return; }
     setLoading(true); clearError();
     try {
+      const deviceId = getDeviceFingerprint();
       const res = await fetch(`${BASE}/api/auth/check-identifier`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: id, role: "vendor" }),
+        body: JSON.stringify({ identifier: id, role: "vendor", deviceId }),
       });
       const data = await res.json();
 
@@ -103,6 +129,14 @@ export default function Login() {
       }
       if (data.action === "no_method") {
         setError("No login methods are currently available. Please contact support.");
+        setLoading(false); return;
+      }
+      if (data.action === "force_google") {
+        setError("This account is linked to Google. Please sign in with Google.");
+        setLoading(false); return;
+      }
+      if (data.action === "force_facebook") {
+        setError("This account is linked to Facebook. Please sign in with Facebook.");
         setLoading(false); return;
       }
       if (data.action === "register") {
@@ -128,6 +162,12 @@ export default function Login() {
         setTimeout(() => sendEmailOtpDirect(id), 0);
         return;
       }
+      if (data.action === "login_password") {
+        setUsername(id);
+        setMethod("username");
+        setStep("input");
+        setLoading(false); return;
+      }
       setMethod("username");
       setUsername(id);
       setStep("input");
@@ -135,11 +175,13 @@ export default function Login() {
     setLoading(false);
   };
 
-  const sendPhoneOtpDirect = async (ph: string) => {
+  const sendPhoneOtpDirect = async (ph: string, channel?: string) => {
     setLoading(true); clearError();
     try {
-      const res = await api.sendOtp(ph);
+      const res = await api.sendOtp(ph, channel);
       setDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
+      setOtpChannel(res.channel || "sms");
+      setFallbackChannels(res.fallbackChannels || []);
       setStep("otp");
       startCooldown();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
@@ -151,6 +193,8 @@ export default function Login() {
     try {
       const res = await api.sendEmailOtp(em);
       setEmailDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
+      setOtpChannel("email");
+      setFallbackChannels([]);
       setStep("otp");
       startCooldown();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
@@ -163,16 +207,20 @@ export default function Login() {
     return () => clearTimeout(id);
   }, [resendCooldown]);
 
-  const startCooldown = () => setResendCooldown(30);
+  const startCooldown = () => setResendCooldown(60);
 
   interface AuthResponse {
     token: string;
     refreshToken?: string;
     pendingApproval?: boolean;
+    requires2FA?: boolean;
+    tempToken?: string;
+    userId?: string;
     user?: { roles?: string; role?: string; status?: string };
   }
 
   const checkVendorRole = (res: AuthResponse): boolean => {
+    if (res.requires2FA) return true;
     const raw = res.user?.roles ?? res.user?.role ?? "";
     const roles = Array.isArray(raw) ? raw : String(raw).split(",").map((r: string) => r.trim());
     if (!roles.includes("vendor")) {
@@ -189,6 +237,12 @@ export default function Login() {
 
   const doLogin = async (res: AuthResponse) => {
     if (!checkVendorRole(res)) return;
+    if (res.requires2FA && res.tempToken) {
+      setTotpTempToken(res.tempToken);
+      setTotpUserId(res.userId || "");
+      setStep("2fa");
+      return;
+    }
     if (res.pendingApproval) { setStep("pending"); return; }
     api.storeTokens(res.token, res.refreshToken);
     try {
@@ -200,12 +254,35 @@ export default function Login() {
     }
   };
 
-  const sendPhoneOtp = async () => {
+  const verify2FA = async () => {
+    const code = useBackupCode ? backupCode.trim() : totpCode.trim();
+    if (!code) { setError("Please enter verification code"); return; }
+    setLoading(true); clearError();
+    try {
+      const endpoint = useBackupCode ? "/auth/2fa/backup-verify" : "/auth/2fa/verify";
+      const body = useBackupCode
+        ? { tempToken: totpTempToken, backupCode: code }
+        : { tempToken: totpTempToken, totpCode: code };
+      const res = await fetch(`${BASE}/api${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "2FA verification failed");
+      await doLogin(data);
+    } catch (e) { setError(e instanceof Error ? e.message : "2FA verification failed"); }
+    setLoading(false);
+  };
+
+  const sendPhoneOtp = async (channel?: string) => {
     if (!phone || phone.length < 10) { setError(T("enterPhoneNumber")); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.sendOtp(phone);
+      const res = await api.sendOtp(phone, channel);
       setDevOtp(import.meta.env.DEV ? (res.otp || "") : "");
+      setOtpChannel(res.channel || "sms");
+      setFallbackChannels(res.fallbackChannels || []);
       setStep("otp");
       startCooldown();
     } catch (e) { setError(e instanceof Error ? e.message : "Failed to send OTP"); }
@@ -340,6 +417,46 @@ export default function Login() {
             <p className="text-amber-700 text-xs font-medium">💡 {T("alreadyApproved")}</p>
           </div>
           <button onClick={() => setStep("continue")} className="w-full h-11 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors text-sm">
+            ← {T("backToLogin")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "2fa") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-500 to-amber-600 p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl">
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🔐</span>
+          </div>
+          <h2 className="text-xl font-extrabold text-gray-800 mb-1 text-center">Two-Factor Authentication</h2>
+          <p className="text-gray-500 text-sm text-center mb-5">
+            {useBackupCode ? "Enter a backup code" : "Enter code from your authenticator app"}
+          </p>
+          {!useBackupCode ? (
+            <input type="text" inputMode="numeric" placeholder="6-digit code" value={totpCode}
+              onChange={e => { setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6)); clearError(); }}
+              onKeyDown={e => e.key === "Enter" && verify2FA()}
+              className="w-full h-14 px-4 mb-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-center text-2xl font-extrabold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-orange-500" maxLength={6} autoFocus />
+          ) : (
+            <input type="text" placeholder="Enter backup code" value={backupCode}
+              onChange={e => { setBackupCode(e.target.value); clearError(); }}
+              onKeyDown={e => e.key === "Enter" && verify2FA()}
+              className={INPUT_CLS + " mb-3"} autoFocus autoCapitalize="off" />
+          )}
+          {error && <p className="text-red-500 text-sm mb-3 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          <button onClick={verify2FA} disabled={loading}
+            className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center">
+            {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Verify"}
+          </button>
+          <button onClick={() => { setUseBackupCode(!useBackupCode); setBackupCode(""); setTotpCode(""); clearError(); }}
+            className="w-full text-sm text-orange-500 hover:text-orange-600 font-bold mt-3 py-1">
+            {useBackupCode ? "Use authenticator app" : "Use a backup code"}
+          </button>
+          <button onClick={() => { setStep("continue"); setTotpCode(""); setBackupCode(""); clearError(); }}
+            className="w-full text-sm text-gray-400 hover:text-gray-600 mt-1 py-1 flex items-center justify-center gap-1">
             ← {T("backToLogin")}
           </button>
         </div>
@@ -703,6 +820,20 @@ export default function Login() {
               <>
                 <h2 className="text-xl font-extrabold text-gray-800 mb-1">{T("enterOtp")}</h2>
                 <p className="text-sm text-gray-500 mb-1">{T("sentTo_")} <strong className="text-gray-700">+92{phone}</strong></p>
+                {otpChannel && (
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="text-xs font-bold text-gray-400">
+                      via {otpChannel === "whatsapp" ? "📱 WhatsApp" : otpChannel === "email" ? "✉️ Email" : "💬 SMS"}
+                    </span>
+                    {fallbackChannels.length > 0 && fallbackChannels.map(ch => (
+                      <button key={ch} onClick={() => { if (resendCooldown <= 0) sendPhoneOtp(ch); }}
+                        disabled={resendCooldown > 0}
+                        className="text-xs text-orange-500 hover:text-orange-600 font-bold disabled:opacity-40">
+                        · Send via {ch === "whatsapp" ? "WhatsApp" : ch === "email" ? "Email" : "SMS"}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {devOtp && <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 mb-3">
                   <p className="text-xs text-orange-600 font-bold uppercase tracking-wide mb-0.5">{T("devOtp")}</p>
                   <p className="text-orange-700 font-extrabold text-xl tracking-[0.4em]">{devOtp}</p>

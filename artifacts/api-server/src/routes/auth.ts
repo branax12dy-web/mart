@@ -189,6 +189,16 @@ router.post("/check-identifier", async (req, res) => {
     action = registrationOpen ? "register" : "registration_closed";
   }
 
+  const whatsappOn = settings["integration_whatsapp"] === "on";
+  const smsOn      = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveCheckRole);
+  const emailOn    = isAuthMethodEnabled(settings, "auth_email_otp_enabled", effectiveCheckRole);
+  const otpChannels: string[] = [];
+  if (whatsappOn)  otpChannels.push("whatsapp");
+  if (smsOn)       otpChannels.push("sms");
+  if (emailOn && user?.email) otpChannels.push("email");
+
+  const canMerge = isNewUser && !exists && (looksLikePhone || looksLikeEmail);
+
   res.json({
     exists,
     isNewUser,
@@ -197,10 +207,14 @@ router.post("/check-identifier", async (req, res) => {
     availableMethods: exists ? usableMethods : availableMethods,
     hasGoogle,
     hasFacebook,
+    hasPhone: !!user?.phone,
+    hasEmail: !!user?.email,
     requiresPhoneVerification: exists && !user?.phoneVerified,
     deviceFlagged,
     isBanned:  false,
     isLocked:  false,
+    otpChannels,
+    canMerge,
   });
 });
 
@@ -211,6 +225,7 @@ router.post("/check-identifier", async (req, res) => {
 router.post("/send-otp", verifyCaptcha, async (req, res) => {
   const rawPhone = req.body?.phone;
   const deviceId: string | undefined = typeof req.body?.deviceId === "string" ? req.body.deviceId : undefined;
+  const preferredChannel: string | undefined = req.body?.preferredChannel;
   if (!rawPhone) {
     res.status(400).json({ error: "Phone number is required" });
     return;
@@ -338,20 +353,64 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   const otpUserId = existingUser[0]?.id;
   const otpLang = otpUserId ? await getUserLanguage(otpUserId) : await getPlatformDefaultLanguage();
 
-  /* ── Send OTP via SMS ── */
-  const smsResult = await sendOtpSMS(phone, otp, settings, otpLang);
+  /* ── Dynamic OTP Routing: WhatsApp → SMS → Email failover ── */
+  const whatsappEnabled = settings["integration_whatsapp"] === "on";
+  const emailEnabled    = isAuthMethodEnabled(settings, "auth_email_otp_enabled", effectiveRole);
+  const userEmail       = existingUser[0]?.email;
 
-  /* ── Also try WhatsApp as a fallback / parallel channel ── */
-  if (settings["integration_whatsapp"] === "on") {
-    sendWhatsAppOTP(phone, otp, settings, otpLang).catch(err =>
-      req.log.warn({ err: err.message }, "WhatsApp OTP send failed (non-fatal)")
-    );
+  let deliveryChannel = "none";
+  let deliverySuccess = false;
+  const smsEnabled = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveRole);
+  const availableChannels: string[] = [];
+  if (whatsappEnabled) availableChannels.push("whatsapp");
+  if (smsEnabled) availableChannels.push("sms");
+  if (emailEnabled && userEmail) availableChannels.push("email");
+
+  const channelOrder: string[] = [];
+  if (preferredChannel && availableChannels.includes(preferredChannel)) {
+    channelOrder.push(preferredChannel);
+    for (const ch of availableChannels) { if (ch !== preferredChannel) channelOrder.push(ch); }
+  } else {
+    if (whatsappEnabled) channelOrder.push("whatsapp");
+    channelOrder.push("sms");
+    if (emailEnabled && userEmail) channelOrder.push("email");
+  }
+
+  for (const channel of channelOrder) {
+    if (channel === "whatsapp") {
+      const waResult = await sendWhatsAppOTP(phone, otp, settings, otpLang);
+      if (waResult.sent) { deliveryChannel = "whatsapp"; deliverySuccess = true; break; }
+      req.log.warn({ err: waResult.error }, "WhatsApp OTP failed, trying next channel");
+    } else if (channel === "sms") {
+      const smsResult = await sendOtpSMS(phone, otp, settings, otpLang);
+      if (smsResult.sent) { deliveryChannel = "sms"; deliverySuccess = true; break; }
+      req.log.warn({ err: smsResult.error }, "SMS OTP failed, trying next channel");
+    } else if (channel === "email" && userEmail) {
+      const emailLang = otpUserId ? await getUserLanguage(otpUserId) : await getPlatformDefaultLanguage();
+      const emailResult = await sendPasswordResetEmail(userEmail, otp, existingUser[0]?.name ?? undefined, emailLang);
+      if (emailResult.sent) { deliveryChannel = "email"; deliverySuccess = true; break; }
+      req.log.warn({ err: emailResult.reason }, "Email OTP failed");
+    }
   }
 
   const isDev = process.env.NODE_ENV !== "production";
+
+  if (!deliverySuccess) {
+    if (isDev) {
+      deliveryChannel = "console";
+      req.log.warn({ phone }, "All OTP delivery channels failed — returning OTP in dev mode");
+    } else {
+      req.log.error({ phone }, "All OTP delivery channels failed");
+      res.status(502).json({ error: "Could not deliver OTP. Please try again or use an alternative login method.", fallbackChannels: availableChannels });
+      return;
+    }
+  }
+
+  const fallbackChannels = availableChannels.filter(ch => ch !== deliveryChannel);
   res.json({
     message: "OTP sent successfully",
-    channel: smsResult.sent ? smsResult.provider : "console",
+    channel: deliveryChannel,
+    fallbackChannels,
     ...(isDev ? { otp } : {}),
   });
 });

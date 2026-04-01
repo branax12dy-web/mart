@@ -80,6 +80,8 @@ export default function AuthScreen() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [devOtp, setDevOtp] = useState("");
+  const [otpChannel, setOtpChannel] = useState("");
+  const [fallbackChannels, setFallbackChannels] = useState<string[]>([]);
 
   const [email, setEmail] = useState("");
   const [emailOtp, setEmailOtp] = useState("");
@@ -173,9 +175,17 @@ export default function AuthScreen() {
         router.push("/auth/register");
         setLoading(false); return;
       }
-      if (res.action === "force_google" && isMethodEnabled(authCfg.googleEnabled)) {
-        setMethod("google");
-        setStep("method");
+      if (res.action === "force_google") {
+        if (isMethodEnabled(authCfg.googleEnabled)) {
+          setMethod("google");
+          setStep("method");
+        } else {
+          setError("This account is linked to Google. Please sign in with Google.");
+        }
+        setLoading(false); return;
+      }
+      if (res.action === "force_facebook") {
+        setError("This account is linked to Facebook. Please sign in with Facebook.");
         setLoading(false); return;
       }
       if (res.action === "send_phone_otp") {
@@ -183,9 +193,11 @@ export default function AuthScreen() {
         setPhone(normalized);
         setMethod("phone");
         setLoading(false);
-        const r = await sendOtp({ phone: `0${normalized}` }).catch((e: any) => { setError(e.message || "Failed to send OTP"); return null; });
+        const r = await authPost("/auth/send-otp", { phone: `0${normalized}` }).catch((e: any) => { setError(e.message || "Failed to send OTP"); return null; });
         if (r) {
           if (__DEV__ === true && r.otp) setDevOtp(r.otp);
+          setOtpChannel(r.channel || "sms");
+          setFallbackChannels(r.fallbackChannels || []);
           setResendCooldown(60);
           animateTransition(() => setStep("otp"));
         }
@@ -198,6 +210,8 @@ export default function AuthScreen() {
         const r = await authPost("/auth/send-email-otp", { email: id }).catch((e: any) => { setError(e.message || "Failed to send OTP"); return null; });
         if (r) {
           if (__DEV__ === true && r.otp) setEmailDevOtp(r.otp);
+          setOtpChannel("email");
+          setFallbackChannels([]);
           setEmailResendCooldown(60);
           animateTransition(() => setStep("otp"));
         }
@@ -293,15 +307,19 @@ export default function AuthScreen() {
     }
   };
 
-  const handleSendPhoneOtp = async () => {
+  const handleSendPhoneOtp = async (preferredChannel?: string) => {
     clearError();
     if (!isValidPakistaniPhone(phone)) { setError("Please enter a valid Pakistani phone number"); return; }
     const normalizedPhone = normalizePhone(phone);
     if (resendCooldown > 0) { setError(`Please wait ${resendCooldown}s before resending.`); return; }
     setLoading(true);
     try {
-      const res = await sendOtp({ phone: normalizedPhone });
+      const body: any = { phone: normalizedPhone };
+      if (preferredChannel) body.preferredChannel = preferredChannel;
+      const res = await authPost("/auth/send-otp", body);
       if (__DEV__ === true && res.otp) setDevOtp(res.otp);
+      setOtpChannel(res.channel || "sms");
+      setFallbackChannels(res.fallbackChannels || []);
       setResendCooldown(60);
       animateTransition(() => setStep("otp"));
     } catch (e: any) {
@@ -766,6 +784,20 @@ export default function AuthScreen() {
               </Pressable>
               <Text style={styles.cardTitle}>{T("enterOtp")}</Text>
               <Text style={styles.cardSubtitle}>{T("otpSentToPhone")}{phone}</Text>
+              {otpChannel ? (
+                <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: C.textMuted, fontFamily: "Inter_600SemiBold" }}>
+                    via {otpChannel === "whatsapp" ? "WhatsApp" : otpChannel === "email" ? "Email" : "SMS"}
+                  </Text>
+                  {fallbackChannels.map(ch => (
+                    <Pressable key={ch} onPress={() => { if (resendCooldown <= 0) handleSendPhoneOtp(ch); }} disabled={resendCooldown > 0}>
+                      <Text style={{ fontSize: 12, color: resendCooldown > 0 ? C.textMuted : C.primary, fontFamily: "Inter_700Bold" }}>
+                        Send via {ch === "whatsapp" ? "WhatsApp" : ch === "email" ? "Email" : "SMS"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
               <TextInput style={[styles.input, styles.otpInput, error ? styles.inputError : null]}
                 value={otp} onChangeText={v => { setOtp(v); clearError(); }}
                 placeholder="6-digit OTP" placeholderTextColor={C.textMuted}
@@ -776,7 +808,7 @@ export default function AuthScreen() {
                   <Text style={styles.devOtpTxt}>Dev OTP: <Text style={{ fontFamily: "Inter_700Bold", letterSpacing: 4 }}>{devOtp}</Text></Text>
                 </View>
               ) : null}
-              <Pressable onPress={handleSendPhoneOtp} style={[styles.resendBtn, resendCooldown > 0 && { opacity: 0.4 }]} disabled={resendCooldown > 0}>
+              <Pressable onPress={() => handleSendPhoneOtp()} style={[styles.resendBtn, resendCooldown > 0 && { opacity: 0.4 }]} disabled={resendCooldown > 0}>
                 <Text style={styles.resendText}>{resendCooldown > 0 ? `${T("otpResendIn")} (${resendCooldown}s)` : T("otpResend")}</Text>
               </Pressable>
             </>
