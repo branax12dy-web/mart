@@ -1647,7 +1647,7 @@ function isAuthMethodEnabledStrict(settings: Record<string, string>, newKey: str
 }
 
 const CNIC_REGEX = /^\d{5}-\d{7}-\d{1}$/;
-const PHONE_REGEX = /^03\d{2}-\d{7}$/;
+const PHONE_REGEX = /^0?3\d{9}$/;
 
 router.post("/register", verifyCaptcha, async (req, res) => {
   const { phone, password, name, role, cnic, nationalId, email, username,
@@ -1673,8 +1673,9 @@ router.post("/register", verifyCaptcha, async (req, res) => {
     res.status(400).json({ error: "Phone number is required" });
     return;
   }
-  if (!PHONE_REGEX.test(phone)) {
-    res.status(400).json({ error: "Phone format must be 03XX-XXXXXXX" });
+  const cleanedPhone = phone.replace(/[\s\-()]/g, "");
+  if (!PHONE_REGEX.test(cleanedPhone)) {
+    res.status(400).json({ error: "Invalid phone number. Use format: 03XXXXXXXXX" });
     return;
   }
 

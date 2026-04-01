@@ -155,6 +155,8 @@ export interface PlatformConfig {
     twoFactorEnabled: boolean | Record<string, boolean>;
     magicLinkEnabled: boolean | Record<string, boolean>;
     captchaSiteKey: string;
+    googleClientId: string;
+    facebookAppId: string;
   };
 }
 
@@ -244,6 +246,8 @@ const DEFAULT: PlatformConfig = {
     twoFactorEnabled: false,
     magicLinkEnabled: false,
     captchaSiteKey: "",
+    googleClientId: "",
+    facebookAppId: "",
   },
 };
 
@@ -449,6 +453,8 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           twoFactorEnabled:       raw.auth?.twoFactorEnabled       ?? DEFAULT.auth.twoFactorEnabled,
           magicLinkEnabled:       raw.auth?.magicLinkEnabled       ?? DEFAULT.auth.magicLinkEnabled,
           captchaSiteKey:         raw.auth?.captchaSiteKey         ?? DEFAULT.auth.captchaSiteKey,
+          googleClientId:         raw.auth?.googleClientId         ?? DEFAULT.auth.googleClientId,
+          facebookAppId:          raw.auth?.facebookAppId          ?? DEFAULT.auth.facebookAppId,
         },
       };
       _cached = parsed;

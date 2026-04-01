@@ -438,8 +438,8 @@ export default function AuthScreen() {
     try {
       const redirectUri = Linking.createURL("auth/callback");
       const WebBrowser = await import("expo-web-browser");
-      const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
-      const fbAppId = process.env.EXPO_PUBLIC_FB_APP_ID;
+      const googleClientId = authCfg.googleClientId || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+      const fbAppId = authCfg.facebookAppId || process.env.EXPO_PUBLIC_FB_APP_ID;
 
       if (provider === "google") {
         if (!googleClientId) {
@@ -805,6 +805,58 @@ export default function AuthScreen() {
 
               <AuthButton label="Continue" onPress={checkIdentifier} loading={loading} icon="arrow-forward" />
 
+              {(socialMethods.length > 0 || showMagicLink) && (
+                <>
+                  <Divider />
+
+                  {socialMethods.map(sm => {
+                    const isConfigured = sm.key === "google"
+                      ? !!(authCfg.googleClientId || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID)
+                      : !!(authCfg.facebookAppId || process.env.EXPO_PUBLIC_FB_APP_ID);
+                    return (
+                      <SocialButton
+                        key={sm.key}
+                        provider={sm.label}
+                        label={isConfigured ? `Continue with ${sm.label}` : `${sm.label} (Not Available)`}
+                        icon={sm.icon}
+                        color={sm.color}
+                        onPress={() => handleSocialLogin(sm.key as "google" | "facebook")}
+                        disabled={!isConfigured}
+                      />
+                    );
+                  })}
+
+                  {showMagicLink && (
+                    <>
+                      {!magicSent ? (
+                        <View style={{ marginTop: 4 }}>
+                          <InputField
+                            value={magicEmail}
+                            onChangeText={setMagicEmail}
+                            placeholder="Email for magic link"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                          />
+                          <SocialButton
+                            provider="Magic Link"
+                            label="Send Magic Link"
+                            icon="link"
+                            color={C.info}
+                            onPress={handleMagicLink}
+                          />
+                        </View>
+                      ) : (
+                        <AlertBox
+                          type="success"
+                          message={`Magic link sent! Check your email.${magicCooldown > 0 ? ` Resend in ${magicCooldown}s` : ""}`}
+                          icon="checkmark-circle"
+                        />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
               <Pressable
                 onPress={() => router.push("/auth/register")}
                 style={styles.linkBtn}
@@ -1016,8 +1068,8 @@ export default function AuthScreen() {
 
                     {socialMethods.map(sm => {
                       const isConfigured = sm.key === "google"
-                        ? !!process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
-                        : !!process.env.EXPO_PUBLIC_FB_APP_ID;
+                        ? !!(authCfg.googleClientId || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID)
+                        : !!(authCfg.facebookAppId || process.env.EXPO_PUBLIC_FB_APP_ID);
                       return (
                         <SocialButton
                           key={sm.key}
