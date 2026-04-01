@@ -370,10 +370,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
 
-  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled")) {
-    res.status(403).json({ error: "Phone OTP login is currently disabled." });
-    return;
-  }
+  const otpEnabled = isAuthMethodEnabled(settings, "auth_phone_otp_enabled");
 
   /* ── Check if new-user registration is allowed ── */
   const existingUser = await db
@@ -383,10 +380,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     .limit(1);
 
   const effectiveRole = existingUser[0]?.role ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
-  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveRole)) {
-    res.status(403).json({ error: "Phone OTP login is currently disabled for your account type." });
-    return;
-  }
+  const otpEnabledForRole = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveRole);
 
   if (existingUser.length === 0 && settings["feature_new_users"] === "off") {
     res.status(403).json({ error: "New user registration is currently disabled. Please contact support." });
@@ -430,9 +424,80 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     return;
   }
 
-  /* ── Per-phone OTP resend cooldown (60 s) — prevents SMS bombing ──
-     OTP expiry is set to now+10 min; if it's still >9 min away the
-     code was issued less than 60 seconds ago — block the resend. ── */
+  /* ── Determine approval status for NEW users ── */
+  const isNewUser = existingUser.length === 0;
+  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
+  const newUserApprovalStatus = isNewUser && requireApproval ? "pending" : "approved";
+
+  /* ══ OTP DISABLED — bypass OTP, upsert user, issue tokens directly ══ */
+  if (!otpEnabled || !otpEnabledForRole) {
+    const now = new Date();
+    const userId = existingUser[0]?.id ?? generateId();
+
+    if (isNewUser) {
+      await db.insert(usersTable).values({
+        id: userId,
+        phone,
+        role: "customer",
+        roles: "customer",
+        walletBalance: "0",
+        isActive: !requireApproval,
+        approvalStatus: newUserApprovalStatus,
+        phoneVerified: true,
+        lastLoginAt: now,
+        ...(deviceId ? { deviceId } : {}),
+      }).onConflictDoUpdate({
+        target: usersTable.phone,
+        set: { phoneVerified: true, lastLoginAt: now, updatedAt: now },
+      });
+    } else {
+      await db.update(usersTable)
+        .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now })
+        .where(eq(usersTable.phone, phone));
+    }
+
+    const [u] = await db.select().from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
+    if (!u) { res.status(500).json({ error: "User creation failed" }); return; }
+
+    const signupBonus = parseFloat(settings["customer_signup_bonus"] ?? "0");
+    if (isNewUser && signupBonus > 0) {
+      await db.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${signupBonus}` })
+        .where(eq(usersTable.id, u.id));
+      await db.insert(walletTransactionsTable).values({
+        id: generateId(), userId: u.id, type: "bonus",
+        amount: signupBonus.toFixed(2),
+        description: `Welcome bonus — Thanks for joining AJKMart!`,
+      });
+    }
+
+    writeAuthAuditLog("otp_bypass_login", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, reason: "otp_disabled" } });
+
+    const accessToken = signAccessToken(u.id, phone, u.role ?? "customer", u.roles ?? u.role ?? "customer", u.tokenVersion ?? 0);
+    const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
+    const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+    await db.insert(refreshTokensTable).values({
+      id: generateId(), userId: u.id, tokenHash: refreshHash,
+      authMethod: "phone_otp_bypass", expiresAt: refreshExpiresAt,
+    });
+
+    res.json({
+      otpRequired: false,
+      message: "OTP verification skipped — phone registered directly",
+      token: accessToken,
+      refreshToken: refreshRaw,
+      user: {
+        id: u.id, phone: u.phone, name: u.name, email: u.email,
+        username: u.username, role: u.role, roles: u.roles,
+        avatar: u.avatar, walletBalance: parseFloat(u.walletBalance ?? "0"),
+        isActive: u.isActive, cnic: u.cnic, city: u.city,
+        totpEnabled: u.totpEnabled ?? false, createdAt: u.createdAt.toISOString(),
+      },
+    });
+    return;
+  }
+
+  /* ── Per-phone OTP resend cooldown (60 s) — prevents SMS bombing ── */
   const otpCooldownMs = parseInt(settings["security_otp_cooldown_sec"] ?? "60", 10) * 1000;
   const existingOtpExpiry = existingUser[0]?.otpExpiry;
   if (existingOtpExpiry) {
@@ -446,16 +511,9 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     }
   }
 
-  /* ── Determine approval status for NEW users ── */
-  const isNewUser = existingUser.length === 0;
-  const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
-  const newUserApprovalStatus = isNewUser && requireApproval ? "pending" : "approved";
-
   const otp       = generateSecureOtp();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-  /* Atomic upsert — any previously issued OTP is overwritten (invalidated),
-     so it cannot be used after a new OTP is requested. */
   await db
     .insert(usersTable)
     .values({
@@ -484,11 +542,9 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   writeAuthAuditLog("otp_sent", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
   req.log.info({ phone, otp }, "OTP sent");
 
-  /* ── Resolve language for outbound messages ── */
   const otpUserId = existingUser[0]?.id;
   const otpLang = otpUserId ? await getUserLanguage(otpUserId) : await getPlatformDefaultLanguage();
 
-  /* ── Dynamic OTP Routing: WhatsApp → SMS → Email failover ── */
   const whatsappEnabled = settings["integration_whatsapp"] === "on";
   const emailEnabled    = isAuthMethodEnabled(settings, "auth_email_otp_enabled", effectiveRole);
   const userEmail       = existingUser[0]?.email;
@@ -543,6 +599,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
 
   const fallbackChannels = availableChannels.filter(ch => ch !== deliveryChannel);
   res.json({
+    otpRequired: true,
     message: "OTP sent successfully",
     channel: deliveryChannel,
     fallbackChannels,

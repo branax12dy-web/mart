@@ -273,6 +273,11 @@ export default function AuthScreen() {
           return null;
         });
         if (r) {
+          if (r.otpRequired === false && r.token) {
+            await handleLoginResult(r);
+            setLoading(false);
+            return;
+          }
           if (__DEV__ === true && r.otp) setDevOtp(r.otp);
           setOtpChannel(r.channel || "sms");
           setFallbackChannels(r.fallbackChannels || []);
@@ -337,6 +342,11 @@ export default function AuthScreen() {
       const body: any = { phone: normalizedPhone };
       if (preferredChannel) body.preferredChannel = preferredChannel;
       const res = await authPost("/auth/send-otp", body);
+      if (res.otpRequired === false && res.token) {
+        await handleLoginResult(res);
+        setLoading(false);
+        return;
+      }
       if (__DEV__ === true && res.otp) setDevOtp(res.otp);
       setOtpChannel(res.channel || "sms");
       setFallbackChannels(res.fallbackChannels || []);

@@ -145,6 +145,18 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
+      if (sendOtpData.otpRequired === false && sendOtpData.token) {
+        setAuthToken(sendOtpData.token);
+        if (sendOtpData.refreshToken) setAuthRefreshToken(sendOtpData.refreshToken);
+        if (sendOtpData.user) setAuthUser(sendOtpData.user);
+        try {
+          const SecureStore = await import("expo-secure-store");
+          await SecureStore.setItemAsync("ajkmart_reg_token", sendOtpData.token);
+        } catch {}
+        setStep(2);
+        setLoading(false);
+        return;
+      }
       if (__DEV__ === true && sendOtpData.otp) setDevOtp(sendOtpData.otp);
       setResendCooldown(60);
       setOtpSent(true);
