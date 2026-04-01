@@ -72,7 +72,9 @@ export default function RegisterScreen() {
   const [cnic, setCnic] = useState("");
 
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
 
   const signupBonus = config.customer.signupBonus;
@@ -110,6 +112,8 @@ export default function RegisterScreen() {
           return;
         }
         if (regData.userId) setUserId(regData.userId);
+      /* FIX 13: Mark as registered immediately so retries skip re-registration */
+      setOtpSent(true);
       }
 
       const sendOtpRes = await fetch(`${API}/auth/send-otp`, {
@@ -178,6 +182,8 @@ export default function RegisterScreen() {
     if (!password || password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (!/[A-Z]/.test(password)) { setError("Password must contain at least 1 uppercase letter"); return; }
     if (!/[0-9]/.test(password)) { setError("Password must contain at least 1 number"); return; }
+    /* FIX 12: Require password confirmation to prevent typos */
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
     if (!termsAccepted) { setError("Please accept the Terms & Conditions"); return; }
 
     setLoading(true);
@@ -415,6 +421,21 @@ export default function RegisterScreen() {
               />
               <PasswordStrengthBar password={password} />
 
+              {/* FIX 12: Confirm password field to catch typos */}
+              <InputField
+                label="Confirm Password *"
+                value={confirmPassword}
+                onChangeText={v => { setConfirmPassword(v); clearError(); }}
+                placeholder="Re-enter your password"
+                secureTextEntry={!showConfirmPwd}
+                rightIcon={showConfirmPwd ? "eye-off-outline" : "eye-outline"}
+                onRightIconPress={() => setShowConfirmPwd(v => !v)}
+                error={!!confirmPassword && password !== confirmPassword}
+              />
+              {!!confirmPassword && password !== confirmPassword && (
+                <Text style={s.mismatchText}>Passwords do not match</Text>
+              )}
+
               <Pressable
                 onPress={() => setTermsAccepted(!termsAccepted)}
                 style={s.termsRow}
@@ -503,6 +524,7 @@ const s = StyleSheet.create({
   checkboxChecked: { backgroundColor: C.primary, borderColor: C.primary },
   termsText: { flex: 1, ...typography.caption, color: C.textSecondary, lineHeight: 19 },
 
+  mismatchText: { ...typography.caption, color: C.danger, marginTop: -8, marginBottom: spacing.md, paddingLeft: 4 },
   loginLink: { alignItems: "center", marginTop: spacing.xl },
   loginLinkText: { ...typography.bodyMedium, color: C.primary },
 

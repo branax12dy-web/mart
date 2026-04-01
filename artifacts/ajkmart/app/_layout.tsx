@@ -49,6 +49,7 @@ function AuthGuard() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
 
+  /* FIX 16: Include segments in deps so guard re-runs on navigation changes */
   useEffect(() => {
     if (isLoading) return;
     const inAuthGroup = segments[0] === "auth";
@@ -59,7 +60,7 @@ function AuthGuard() {
     } else if (user && (inAuthGroup || inRootIndex)) {
       router.replace("/(tabs)");
     }
-  }, [user, isLoading]);
+  }, [user, isLoading, segments]);
 
   return null;
 }

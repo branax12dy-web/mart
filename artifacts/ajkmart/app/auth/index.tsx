@@ -211,26 +211,8 @@ export default function AuthScreen() {
   };
   loginResultRef.current = handleLoginResult;
 
-  useEffect(() => {
-    const handleUrl = async (event: { url: string }) => {
-      try {
-        const parsed = Linking.parse(event.url);
-        const magicToken = parsed.queryParams?.token as string | undefined;
-        if (!magicToken) return;
-        setLoading(true);
-        try {
-          const res = await authPost("/auth/magic-link/verify", { token: magicToken });
-          if (loginResultRef.current) await loginResultRef.current(res);
-        } catch (e: any) {
-          setError(e.message || "Magic link verification failed.");
-        }
-        setLoading(false);
-      } catch {}
-    };
-    const subscription = Linking.addEventListener("url", handleUrl);
-    Linking.getInitialURL().then(url => { if (url) handleUrl({ url }); }).catch(() => {});
-    return () => subscription.remove();
-  }, []);
+  /* FIX 2: Magic link is handled centrally in _layout.tsx MagicLinkHandler.
+     Duplicate listener removed to prevent double API calls and race conditions. */
 
   const checkIdentifier = async () => {
     const id = identifier.trim();
@@ -388,7 +370,8 @@ export default function AuthScreen() {
 
   const handleSendEmailOtp = async () => {
     clearError();
-    if (!email || !email.includes("@")) { setError("Please enter a valid email address"); return; }
+    /* FIX 15: Proper email regex validation */
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError("Please enter a valid email address"); return; }
     if (emailResendCooldown > 0) {
       const msg = `Please wait ${emailResendCooldown}s before requesting another OTP`;
       setError(msg);
@@ -447,7 +430,15 @@ export default function AuthScreen() {
           setLoading(false);
           return;
         }
-        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(googleClientId)}&response_type=id_token&redirect_uri=${encodeURIComponent(redirectUri)}&scope=openid%20email%20profile&nonce=${Date.now()}`;
+        /* FIX 5: Use cryptographically random nonce instead of predictable Date.now() */
+        const nonceBytes = new Uint8Array(16);
+        if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+          crypto.getRandomValues(nonceBytes);
+        } else {
+          nonceBytes.forEach((_, i) => { nonceBytes[i] = Math.floor(Math.random() * 256); });
+        }
+        const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(googleClientId)}&response_type=id_token&redirect_uri=${encodeURIComponent(redirectUri)}&scope=openid%20email%20profile&nonce=${nonce}`;
         const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
         if (result.type === "success" && result.url) {
           const params = new URL(result.url).hash.slice(1).split("&").reduce<Record<string, string>>((a, p) => {
@@ -491,7 +482,8 @@ export default function AuthScreen() {
 
   const handleMagicLink = async () => {
     clearError();
-    if (!magicEmail || !magicEmail.includes("@")) { setError("Please enter a valid email"); return; }
+    /* FIX 15: Proper email regex validation */
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(magicEmail.trim())) { setError("Please enter a valid email"); return; }
     if (magicCooldown > 0) return;
     setLoading(true);
     try {
@@ -559,7 +551,8 @@ export default function AuthScreen() {
     if (!profileName || profileName.trim().length < 2) { setError("Please enter your name"); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${API}/auth/complete-profile`, {
+      /* FIX 11: Split fetch + json so we can inspect status and always show errors */
+      const rawRes = await fetch(`${API}/auth/complete-profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${pendingToken}` },
         body: JSON.stringify({
@@ -568,14 +561,18 @@ export default function AuthScreen() {
           ...(profileUsername && { username: profileUsername }),
           ...(profilePassword && profilePassword.length >= 8 && { password: profilePassword }),
         }),
-      }).then(r => r.json());
-      if (res.user) {
-        const completeUser: AppUser = {
-          walletBalance: 0, isActive: true, createdAt: new Date().toISOString(), ...res.user,
-        };
-        await login(completeUser, res.token ?? pendingToken, res.refreshToken ?? pendingRefreshToken);
-        router.replace("/(tabs)");
+      });
+      const res = await rawRes.json();
+      if (!rawRes.ok || !res.user) {
+        setError(res.error || res.message || "Could not save profile. Please try again.");
+        setLoading(false);
+        return;
       }
+      const completeUser: AppUser = {
+        walletBalance: 0, isActive: true, createdAt: new Date().toISOString(), ...res.user,
+      };
+      await login(completeUser, res.token ?? pendingToken, res.refreshToken ?? pendingRefreshToken);
+      router.replace("/(tabs)");
     } catch (e: any) { setError(e.message || "Could not save profile."); }
     setLoading(false);
   };

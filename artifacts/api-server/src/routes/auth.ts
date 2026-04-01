@@ -1903,6 +1903,72 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/verify-reset-otp
+   Pre-verify the OTP before allowing the user to set a new password.
+   Body: { phone?, email?, otp }
+   Returns: { valid: true } or 400/422 with error
+══════════════════════════════════════════════════════════════ */
+router.post("/verify-reset-otp", verifyCaptcha, async (req, res) => {
+  let { phone, email, otp } = req.body;
+  const ip = getClientIp(req);
+
+  if (!otp || typeof otp !== "string") {
+    res.status(400).json({ error: "OTP is required" });
+    return;
+  }
+  if (!phone && !email) {
+    res.status(400).json({ error: "Phone or email is required" });
+    return;
+  }
+
+  let user: (typeof usersTable.$inferSelect) | undefined;
+  if (phone) {
+    const canonPhone = canonicalizePhone(phone);
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, canonPhone)).limit(1);
+    user = found;
+  } else {
+    const normalized = (email as string).toLowerCase().trim();
+    const [found] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
+    user = found;
+  }
+
+  if (!user) {
+    res.status(422).json({ error: "Invalid or expired code" });
+    return;
+  }
+
+  const hashed = hashOtp(otp);
+  const now = new Date();
+
+  if (phone) {
+    if (!user.otpCode || user.otpCode !== hashed) {
+      res.status(422).json({ error: "Invalid verification code" });
+      return;
+    }
+    if (!user.otpExpiry || user.otpExpiry < now) {
+      res.status(422).json({ error: "Verification code has expired. Please request a new one." });
+      return;
+    }
+    if (user.otpUsed) {
+      res.status(422).json({ error: "This code has already been used. Please request a new one." });
+      return;
+    }
+  } else {
+    if (!user.emailOtpCode || user.emailOtpCode !== hashed) {
+      res.status(422).json({ error: "Invalid verification code" });
+      return;
+    }
+    if (!user.emailOtpExpiry || user.emailOtpExpiry < now) {
+      res.status(422).json({ error: "Verification code has expired. Please request a new one." });
+      return;
+    }
+  }
+
+  writeAuthAuditLog("verify_reset_otp", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
+  res.json({ valid: true });
+});
+
 router.post("/reset-password", verifyCaptcha, async (req, res) => {
   let { phone, email, identifier, otp, newPassword, totpCode } = req.body;
   const ip = getClientIp(req);

@@ -89,6 +89,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { syncToServer, setAuthToken } = useLanguage();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /* FIX 4: Refs so callbacks always see the latest user/token without stale closure */
+  const userRef  = useRef<AppUser | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  useEffect(() => { userRef.current  = user;  }, [user]);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+
+  /* Ref to doLogout so registerAuth (empty-deps useCallback) can always call latest version */
+  const doLogoutRef = useRef<() => Promise<void>>(async () => {});
+
   const clearRefreshTimer = () => {
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -106,7 +115,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
         if (!refreshToken) {
-          doLogout();
+          /* FIX 4: Use ref so we always call the latest doLogout */
+          await doLogoutRef.current();
           return;
         }
         const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
@@ -116,12 +126,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
-          doLogout();
+          await doLogoutRef.current();
           return;
         }
         const data = await res.json() as { token?: string; refreshToken?: string };
         if (!data.token) {
-          doLogout();
+          await doLogoutRef.current();
           return;
         }
         const meRes = await fetch(`${base}/api/users/profile`, {
@@ -142,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthTokenGetter(() => data.token!);
         scheduleProactiveRefresh(data.token!);
       } catch {
-        doLogout();
+        await doLogoutRef.current();
       }
     }, refreshIn);
   };
@@ -159,9 +169,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const doLogout = async () => {
-    /* Clear customer location before logging out */
-    const tok = token;
-    const u = user;
+    /* FIX 4: Use refs to always read current values, not stale closure */
+    const tok = tokenRef.current;
+    const u   = userRef.current;
     if (u?.role === "customer" && tok) {
       clearCustomerLocation(u.id, tok).catch(() => {});
     }
@@ -183,6 +193,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setOnUnauthorized(null);
   };
 
+  /* FIX 4: Keep doLogoutRef always pointing to the latest doLogout */
+  useEffect(() => { doLogoutRef.current = doLogout; });
+
   const registerAuth = useCallback((tok: string, refreshTok: string | null) => {
     setAuthTokenGetter(() => tok);
     setRefreshTokenGetter(refreshTok ? () => refreshTok : null);
@@ -198,13 +211,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       scheduleProactiveRefresh(newToken);
     });
 
-    setOnUnauthorized((statusCode?: number, errorMsg?: string) => {
+    /* FIX 4 + FIX 8: Use doLogoutRef so we always call the latest doLogout, and await it */
+    setOnUnauthorized(async (statusCode?: number, errorMsg?: string) => {
       if (statusCode === 403) {
         setIsSuspended(true);
         setSuspendedMessage(errorMsg || "Your account has been suspended. Contact support.");
         return;
       }
-      doLogout();
+      await doLogoutRef.current();
     });
 
     scheduleProactiveRefresh(tok);
@@ -332,7 +346,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         disableDeviceFallback: false,
       });
       if (!result.success) {
-        await setBiometricEnabled(false);
+        /* FIX 7: Only permanently disable biometric on actual hardware/lockout failures.
+           User cancel or fallback should NOT disable it. */
+        const nonFatalErrors = ["user_cancel", "system_cancel", "user_fallback", "app_cancel"];
+        const isFatal = !result.error || !nonFatalErrors.includes(result.error as string);
+        if (isFatal) {
+          await setBiometricEnabled(false);
+        }
         return false;
       }
 

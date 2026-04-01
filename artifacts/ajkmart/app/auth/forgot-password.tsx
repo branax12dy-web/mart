@@ -77,7 +77,8 @@ export default function ForgotPasswordScreen() {
       setError("Please enter a valid Pakistani phone number");
       return;
     }
-    if (method === "email" && (!email || !email.includes("@"))) {
+    /* FIX 15: Proper email regex validation */
+    if (method === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Please enter a valid email address");
       return;
     }
@@ -103,10 +104,31 @@ export default function ForgotPasswordScreen() {
     setLoading(false);
   };
 
-  const handleVerifyOtp = () => {
+  /* FIX 1: Actually verify OTP against the server before proceeding to password step */
+  const handleVerifyOtp = async () => {
     clearError();
     if (!otp || otp.length < 6) { setError("Please enter the 6-digit code"); return; }
-    setStep("newPassword");
+    setLoading(true);
+    try {
+      const body: Record<string, string> = { otp };
+      if (method === "phone") body.phone = normalizePhone(phone);
+      else body.email = email.trim().toLowerCase();
+      const res = await fetch(`${API}/auth/verify-reset-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Invalid verification code. Please try again.");
+        setLoading(false);
+        return;
+      }
+      setStep("newPassword");
+    } catch (e: any) {
+      setError(e.message || "Verification failed. Please try again.");
+    }
+    setLoading(false);
   };
 
   const handleResetPassword = async () => {
