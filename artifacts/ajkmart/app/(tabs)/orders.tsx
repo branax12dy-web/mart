@@ -200,6 +200,13 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
         </View>
       )}
 
+      {isDelivered && order.paymentMethod !== "cash" && order.paymentMethod !== "cod" && !order.refundStatus && (
+        <Pressable style={styles.refundRequestBtn} onPress={() => router.push(`/order?orderId=${order.id}&action=refund`)}>
+          <Ionicons name="return-down-back-outline" size={14} color="#7C3AED" />
+          <Text style={styles.refundRequestBtnText}>{T("requestRefund") || "Request Refund"}</Text>
+        </Pressable>
+      )}
+
       {(isDelivered || isCancelled) && onReorder && order.items?.length > 0 && (
         <Pressable style={styles.reorderBtn} onPress={() => onReorder(order)}>
           <Ionicons name="refresh-outline" size={14} color={C.primary} />
@@ -207,7 +214,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
         </Pressable>
       )}
 
-      {isCancelled && order.paymentMethod !== "cash" && refundDays > 0 && (
+      {isCancelled && order.paymentMethod !== "cash" && order.paymentMethod !== "cod" && refundDays > 0 && (
         <View style={styles.refundBar}>
           <Ionicons name="return-down-back-outline" size={12} color="#059669" />
           <Text style={styles.refundText}>{T("refundInfo").replace("{n}", String(refundDays))}</Text>
@@ -314,6 +321,36 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
           )}
         </View>
       )}
+
+      {isCompleted && ride.distance > 0 && (() => {
+        const totalFare = ride.fare != null ? Number(ride.fare) : 0;
+        const gst = ride.fareBreakdown?.gstAmount ?? Math.round(totalFare * 0.05);
+        const baseFare = ride.fareBreakdown?.baseFare ?? (totalFare - gst);
+        return (
+          <View style={styles.fareBreakdownBar}>
+            <View style={styles.fareRow}>
+              <Text style={styles.fareLabel}>Base Fare</Text>
+              <Text style={styles.fareValue}>Rs. {baseFare.toLocaleString()}</Text>
+            </View>
+            <View style={styles.fareRow}>
+              <Text style={styles.fareLabel}>{T("distance") || "Distance"}</Text>
+              <Text style={styles.fareValue}>{parseFloat(String(ride.distance)).toFixed(1)} km</Text>
+            </View>
+            <View style={styles.fareRow}>
+              <Text style={styles.fareLabel}>GST</Text>
+              <Text style={styles.fareValue}>Rs. {gst.toLocaleString()}</Text>
+            </View>
+            <View style={[styles.fareRow, { borderTopWidth: 1, borderTopColor: C.borderLight, paddingTop: 6, marginTop: 2 }]}>
+              <Text style={[styles.fareLabel, { fontFamily: "Inter_700Bold", color: C.text }]}>{T("fare")}</Text>
+              <Text style={[styles.fareValue, { fontFamily: "Inter_700Bold" }]}>Rs. {totalFare.toLocaleString()}</Text>
+            </View>
+            <View style={styles.fareRow}>
+              <Text style={styles.fareLabel}>{T("paymentMethod") || "Payment"}</Text>
+              <Text style={styles.fareValue}>{ride.paymentMethod === "wallet" ? T("wallet") : ride.paymentMethod === "jazzcash" ? T("jazzcash") : ride.paymentMethod === "easypaisa" ? T("easypaisa") : T("cash")}</Text>
+            </View>
+          </View>
+        );
+      })()}
 
       {isActive && (
         <View style={styles.etaBar}>
@@ -1416,6 +1453,10 @@ const styles = StyleSheet.create({
   payBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   payText: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
 
+  fareBreakdownBar: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight, gap: 6 },
+  fareRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" } as const,
+  fareLabel: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
+  fareValue: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.text },
   riderBar: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight },
   riderIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" },
   riderName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text },
@@ -1445,6 +1486,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#ECFDF5", borderWidth: 1, borderColor: "#A7F3D0",
   },
   refundText: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#047857" },
+  refundRequestBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: "#F5F3FF",
+    borderWidth: 1.5, borderColor: "#DDD6FE",
+  },
+  refundRequestBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#7C3AED" },
   reorderBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: "#EFF6FF",

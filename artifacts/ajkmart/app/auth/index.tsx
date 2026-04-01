@@ -130,8 +130,18 @@ export default function AuthScreen() {
     return () => clearTimeout(t);
   }, [magicCooldown]);
 
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const slide = () => Animated.timing(slideAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideXAnim = useRef(new Animated.Value(0)).current;
+  const animateTransition = (cb: () => void) => {
+    Animated.timing(fadeAnim, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      cb();
+      slideXAnim.setValue(30);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.timing(slideXAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start();
+    });
+  };
   const clearError = () => setError("");
 
   const enabledMethods: { key: LoginMethod; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [];
@@ -221,7 +231,7 @@ export default function AuthScreen() {
       const res = await sendOtp({ phone: normalizedPhone });
       if (__DEV__ === true && res.otp) setDevOtp(res.otp);
       setResendCooldown(60);
-      slide(); setStep("otp");
+      animateTransition(() => setStep("otp"));
     } catch (e: any) {
       const msg: string = e.message || "Could not send OTP.";
       setError(msg);
@@ -233,7 +243,7 @@ export default function AuthScreen() {
 
   const handleVerifyPhoneOtp = async () => {
     clearError();
-    if (!otp || otp.length < 4) { setError("Please enter the OTP"); return; }
+    if (!otp || otp.length < 6) { setError("Please enter the 6-digit OTP"); return; }
     setLoading(true);
     try {
       const fingerprint = await getDeviceFingerprint();
@@ -257,7 +267,7 @@ export default function AuthScreen() {
       const res = await authPost("/auth/send-email-otp", { email });
       if (__DEV__ === true && res.otp) setEmailDevOtp(res.otp);
       setEmailResendCooldown(60);
-      slide(); setStep("otp");
+      animateTransition(() => setStep("otp"));
     } catch (e: any) { setError(e.message || "Could not send OTP."); }
     setLoading(false);
   };
@@ -434,9 +444,12 @@ export default function AuthScreen() {
   };
 
   const selectMethod = (m: LoginMethod) => {
-    setMethod(m); clearError();
-    setOtp(""); setEmailOtp(""); setDevOtp(""); setEmailDevOtp("");
-    setMagicSent(false);
+    if (m === method) return;
+    animateTransition(() => {
+      setMethod(m); clearError();
+      setOtp(""); setEmailOtp(""); setDevOtp(""); setEmailDevOtp("");
+      setMagicSent(false);
+    });
   };
 
   if (step === "totp") {
@@ -611,7 +624,7 @@ export default function AuthScreen() {
           <Text style={styles.tagline}>{appTagline}</Text>
         </View>
 
-        <ScrollView style={styles.card} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.cardScroll} contentContainerStyle={styles.cardContent} keyboardShouldPersistTaps="handled">
           {step === "method" && enabledMethods.length > 0 && (
             <View style={styles.tabs}>
               {enabledMethods.map(m => (
@@ -623,13 +636,14 @@ export default function AuthScreen() {
             </View>
           )}
 
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideXAnim }] }}>
           {method === "phone" && step === "method" && (
             <>
               <Text style={styles.cardTitle}>{T("phoneNumber")}</Text>
               <Text style={styles.cardSubtitle}>{T("verificationCodeSent")}</Text>
               <View style={styles.inputWrapper}>
                 <View style={styles.countryCode}><Text style={styles.countryCodeText}>+92</Text></View>
-                <TextInput style={styles.input} value={phone} onChangeText={v => { setPhone(v); clearError(); }}
+                <TextInput style={styles.phoneInput} value={phone} onChangeText={v => { setPhone(v); clearError(); }}
                   placeholder="3XX XXX XXXX" placeholderTextColor={C.textMuted} keyboardType="phone-pad" maxLength={11} />
               </View>
             </>
@@ -772,7 +786,7 @@ export default function AuthScreen() {
                       >
                         <Ionicons name={sm.icon} size={20} color={isConfigured ? sm.color : C.textMuted} />
                         <Text style={[styles.socialBtnText, !isConfigured && { color: C.textMuted }]}>
-                          {isConfigured ? `Continue with ${sm.label}` : `${sm.label} (Coming Soon)`}
+                          {isConfigured ? `Continue with ${sm.label}` : `${sm.label} (Not Available)`}
                         </Text>
                       </Pressable>
                     );
@@ -825,6 +839,7 @@ export default function AuthScreen() {
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>{T("verifyAndContinueBtn")}</Text>}
             </Pressable>
           )}
+          </Animated.View>
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
@@ -844,7 +859,8 @@ const styles = StyleSheet.create({
   appName: { fontFamily: "Inter_700Bold", fontSize: 32, color: "#fff", marginBottom: 6 },
   tagline: { ...typography.body, color: "rgba(255,255,255,0.85)" },
 
-  card: { backgroundColor: C.surface, borderTopLeftRadius: radii.xxl + 4, borderTopRightRadius: radii.xxl + 4, padding: spacing.xxl, flex: 1 },
+  cardScroll: { backgroundColor: C.surface, borderTopLeftRadius: radii.xxl + 4, borderTopRightRadius: radii.xxl + 4, flex: 1 },
+  cardContent: { padding: spacing.xxl, paddingBottom: 40, flexGrow: 1 },
   pendingCard: { backgroundColor: C.surface, borderRadius: radii.xxl, padding: 28, alignItems: "center", width: "100%" },
   pendingIcon: { width: 84, height: 84, borderRadius: 42, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 },
   pendingTitle: { ...typography.h2, color: C.text, marginBottom: 12, textAlign: "center" },
@@ -852,8 +868,8 @@ const styles = StyleSheet.create({
   pendingInfo: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.surfaceSecondary, borderRadius: radii.md, padding: 12, marginBottom: 24, width: "100%" },
   pendingInfoTxt: { ...typography.caption, color: C.textMuted, flex: 1 },
 
-  tabs: { flexDirection: "row", backgroundColor: C.surfaceSecondary, borderRadius: radii.lg, padding: 3, marginBottom: spacing.xl, gap: 2 },
-  tab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 10, borderRadius: radii.md },
+  tabs: { flexDirection: "row", backgroundColor: C.surfaceSecondary, borderRadius: radii.lg, padding: 3, marginBottom: spacing.xl },
+  tab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: radii.md },
   tabActive: { backgroundColor: C.surface, ...shadows.sm },
   tabText: { ...typography.captionMedium, color: C.textMuted },
   tabTextActive: { color: C.text, fontFamily: "Inter_600SemiBold" },
@@ -861,9 +877,10 @@ const styles = StyleSheet.create({
   cardTitle: { ...typography.h3, color: C.text, marginBottom: 5 },
   cardSubtitle: { ...typography.caption, color: C.textMuted, marginBottom: spacing.xl },
 
-  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, overflow: "hidden", marginBottom: spacing.sm, backgroundColor: C.surfaceSecondary },
-  countryCode: { paddingHorizontal: 14, paddingVertical: 16, backgroundColor: C.surface, borderRightWidth: 1, borderRightColor: C.border },
+  inputWrapper: { flexDirection: "row", alignItems: "stretch", borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, overflow: "hidden", marginBottom: spacing.sm, backgroundColor: C.surfaceSecondary },
+  countryCode: { paddingHorizontal: 14, justifyContent: "center", backgroundColor: C.surface, borderRightWidth: 1, borderRightColor: C.border },
   countryCodeText: { ...typography.subtitle, color: C.text },
+  phoneInput: { flex: 1, paddingHorizontal: 16, paddingVertical: 15, ...typography.bodyMedium, color: C.text },
   input: { flex: 1, paddingHorizontal: 16, paddingVertical: 15, ...typography.bodyMedium, color: C.text, borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, backgroundColor: C.surfaceSecondary },
   input2: { paddingHorizontal: 16, paddingVertical: 14, ...typography.bodyMedium, color: C.text, borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, marginBottom: 12, backgroundColor: C.surfaceSecondary },
   otpInput: { textAlign: "center", letterSpacing: 8, ...typography.otp },

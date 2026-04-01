@@ -436,6 +436,109 @@ function NotificationsModal({ visible, userId, token, onClose }: {
   );
 }
 
+function DeleteAccountRow({ token }: { token?: string }) {
+  const { showToast } = useToast();
+  const { logout } = useAuth();
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  const handleDelete = async () => {
+    if (confirmText.toLowerCase() !== "delete") {
+      showToast("Please type DELETE to confirm", "error");
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API}/users/delete-account`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Could not delete account");
+      }
+      showToast("Account deleted successfully", "success");
+      await logout();
+    } catch (e: any) {
+      showToast(e.message || "Could not delete account. Please try again.", "error");
+    }
+    setDeleting(false);
+    setConfirmVisible(false);
+    setConfirmText("");
+  };
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setConfirmVisible(true)}
+        style={[privRow.wrap, { borderBottomWidth: 0 }]}
+      >
+        <View style={[privRow.icon, { backgroundColor: C.dangerSoft }]}>
+          <Ionicons name="trash-outline" size={17} color={C.danger} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[privRow.label, { color: C.danger }]}>Delete Account</Text>
+          <Text style={privRow.sub}>Permanently remove your account and data</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={15} color={C.textMuted} />
+      </Pressable>
+
+      <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => { setConfirmVisible(false); setConfirmText(""); }}>
+        <View style={{ flex: 1, backgroundColor: C.overlay, justifyContent: "center", padding: spacing.xxl }}>
+          <View style={{ backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.xl }}>
+            <View style={{ alignItems: "center", marginBottom: spacing.lg }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.dangerSoft, alignItems: "center", justifyContent: "center", marginBottom: spacing.md }}>
+                <Ionicons name="warning-outline" size={28} color={C.danger} />
+              </View>
+              <Text style={{ ...typography.h3, color: C.danger, textAlign: "center" }}>Delete Account?</Text>
+              <Text style={{ ...typography.caption, color: C.textSecondary, textAlign: "center", marginTop: spacing.sm }}>
+                This action is permanent and cannot be undone. All your data including orders, ride history, wallet balance, and saved addresses will be permanently deleted.
+              </Text>
+            </View>
+            <Text style={{ ...typography.captionMedium, color: C.text, marginBottom: spacing.xs }}>Type DELETE to confirm:</Text>
+            <TextInput
+              value={confirmText}
+              onChangeText={setConfirmText}
+              placeholder="DELETE"
+              placeholderTextColor={C.textMuted}
+              autoCapitalize="characters"
+              style={{
+                borderWidth: 1.5, borderColor: confirmText.toLowerCase() === "delete" ? C.danger : C.border,
+                borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+                fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text, textAlign: "center",
+                marginBottom: spacing.lg,
+              }}
+            />
+            <Pressable
+              onPress={handleDelete}
+              disabled={deleting || confirmText.toLowerCase() !== "delete"}
+              style={{
+                backgroundColor: confirmText.toLowerCase() === "delete" ? C.danger : C.border,
+                borderRadius: radii.md, paddingVertical: spacing.md, alignItems: "center", marginBottom: spacing.sm,
+                opacity: deleting ? 0.7 : 1,
+              }}
+            >
+              {deleting
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Delete My Account</Text>}
+            </Pressable>
+            <Pressable
+              onPress={() => { setConfirmVisible(false); setConfirmText(""); }}
+              style={{ borderRadius: radii.md, paddingVertical: spacing.md, alignItems: "center", backgroundColor: C.surfaceSecondary }}
+            >
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.textSecondary }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; userId: string; token?: string; onClose: () => void }) {
   const { showToast } = useToast();
   const { biometricEnabled, setBiometricEnabled, user, updateUser } = useAuth();
@@ -747,6 +850,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                   <View style={{ flex: 1 }}><Text style={privRow.label}>Download My Data</Text><Text style={privRow.sub}>{exportingData ? "Requesting export…" : exportCooldown > 0 ? `Available in ${exportCooldown}s` : "Export all your data"}</Text></View>
                   {!exportingData && <Ionicons name="chevron-forward" size={15} color={C.textMuted} />}
                 </Pressable>
+                <DeleteAccountRow token={token} />
               </View>
             </Accordion>
           </ScrollView>
@@ -1387,16 +1491,16 @@ export default function ProfileScreen() {
 
         {user?.role === "vendor" && (
           <SectionCard title="VENDOR DASHBOARD">
-            <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => showToast("Product management coming soon!", "info")} iconColor={C.mart} iconBg={C.martLight} />
-            <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue & sales"     onPress={() => showToast("Analytics coming soon!", "info")}           iconColor={C.primary} iconBg={C.primarySoft} />
-            <Row icon="receipt-outline"    label="Incoming Orders" sub="View new orders"     onPress={() => showToast("Order management coming soon!", "info")}    iconColor={C.accent} iconBg={C.accentSoft} />
+            <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)} iconColor={C.mart} iconBg={C.martLight} />
+            <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue & sales"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)}           iconColor={C.primary} iconBg={C.primarySoft} />
+            <Row icon="receipt-outline"    label="Incoming Orders" sub="View new orders"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)}    iconColor={C.accent} iconBg={C.accentSoft} />
           </SectionCard>
         )}
         {user?.role === "rider" && (
           <SectionCard title="RIDER DASHBOARD">
-            <Row icon="bicycle-outline" label="Active Deliveries" sub="Current deliveries"    onPress={() => showToast("Active deliveries feature coming soon!", "info")}     iconColor={C.success} iconBg={C.successSoft} />
-            <Row icon="cash-outline"    label="My Earnings"       sub="Daily/monthly earnings" onPress={() => showToast("Earnings tracking coming soon!", "info")}      iconColor={C.accent}    iconBg={C.accentSoft} />
-            <Row icon="star-outline"    label="My Rating"         sub="4.9 ⭐ • 250+ trips"   onPress={() => showToast("Rating: ⭐⭐⭐⭐⭐ 4.9/5.0 • 250+ trips completed", "success")} iconColor={C.accent} iconBg={C.accentSoft} />
+            <Row icon="bicycle-outline" label="Active Deliveries" sub="Current deliveries"    onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/rider/`)}     iconColor={C.success} iconBg={C.successSoft} />
+            <Row icon="cash-outline"    label="My Earnings"       sub="Daily/monthly earnings" onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/rider/`)}      iconColor={C.accent}    iconBg={C.accentSoft} />
+            <Row icon="star-outline"    label="My Rating"         sub="Your rider performance"   onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/rider/`)} iconColor={C.accent} iconBg={C.accentSoft} />
           </SectionCard>
         )}
 

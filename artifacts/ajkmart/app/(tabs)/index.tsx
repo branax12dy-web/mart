@@ -68,8 +68,8 @@ function ActiveTrackerStrip({ userId, position, tabBarHeight = 0 }: { userId: st
       return r.json();
     },
     enabled: !!userId && !!token,
-    refetchInterval: 10000,
-    staleTime: 8000,
+    refetchInterval: 5000,
+    staleTime: 4000,
   });
 
   const { data: ridesData, isLoading: ridesLoading, isError: ridesError, refetch: refetchRides } = useQuery({
@@ -80,8 +80,8 @@ function ActiveTrackerStrip({ userId, position, tabBarHeight = 0 }: { userId: st
       return r.json();
     },
     enabled: !!userId && !!token,
-    refetchInterval: 10000,
-    staleTime: 8000,
+    refetchInterval: 5000,
+    staleTime: 4000,
   });
 
   if (!pCfg.content.trackerBannerEnabled) return null;

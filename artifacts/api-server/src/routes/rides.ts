@@ -802,8 +802,19 @@ router.patch("/:id/customer-counter", customerAuth, requireRideState(["bargainin
 router.get("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const rides = await db.select().from(ridesTable).where(eq(ridesTable.userId, userId)).orderBy(ridesTable.createdAt);
+  const formatted = await Promise.all(rides.map(async (r) => {
+    const base = formatRide(r);
+    let fareBreakdown: { baseFare: number; gstAmount: number } | null = null;
+    if (r.distance && r.type && ["completed", "dropped_off"].includes(r.status)) {
+      try {
+        const computed = await calcFare(parseFloat(String(r.distance)), r.type);
+        fareBreakdown = { baseFare: computed.baseFare, gstAmount: computed.gstAmount };
+      } catch {}
+    }
+    return { ...base, fareBreakdown };
+  }));
   res.json({
-    rides: rides.map(formatRide).reverse(),
+    rides: formatted.reverse(),
     total: rides.length,
   });
 });
@@ -907,7 +918,15 @@ router.get("/:id", async (req, res) => {
     riderAvgRating = ratingRows[0]?.starsAvg ? Math.round(parseFloat(ratingRows[0].starsAvg) * 10) / 10 : null;
   }
 
-  res.json({ ...formatRide(ride), riderName, riderPhone, bids: formattedBids, riderLat, riderLng, riderLocAge, riderAvgRating });
+  let fareBreakdown: { baseFare: number; gstAmount: number } | null = null;
+  if (ride.distance && ride.type) {
+    try {
+      const computed = await calcFare(parseFloat(String(ride.distance)), ride.type);
+      fareBreakdown = { baseFare: computed.baseFare, gstAmount: computed.gstAmount };
+    } catch {}
+  }
+
+  res.json({ ...formatRide(ride), riderName, riderPhone, bids: formattedBids, riderLat, riderLng, riderLocAge, riderAvgRating, fareBreakdown });
 });
 
 router.get("/:id/track", async (req, res) => {
@@ -1142,7 +1161,7 @@ router.get("/:id/dispatch-status", customerAuth, loadRide(), requireRideOwner("u
   });
 });
 
-router.post("/:id/retry", customerAuth, requireRideState(["no_riders", "expired"]), requireRideOwner("userId"), async (req, res) => {
+router.post("/:id/retry", customerAuth, requireRideState(["no_riders", "expired", "bargaining", "searching"]), requireRideOwner("userId"), async (req, res) => {
   const ride = req.ride!;
   const rideId = ride.id;
 

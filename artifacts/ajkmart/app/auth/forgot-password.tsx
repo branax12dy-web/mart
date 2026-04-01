@@ -115,7 +115,7 @@ export default function ForgotPasswordScreen() {
 
   const handleVerifyAndReset = async () => {
     clearError();
-    if (!otp || otp.length < 4) { setError("Please enter the OTP"); return; }
+    if (!otp || otp.length < 6) { setError("Please enter the 6-digit OTP"); return; }
     if (!newPassword || newPassword.length < 8) { setError("New password must be at least 8 characters"); return; }
     if (!/[A-Z]/.test(newPassword)) { setError("Password must contain an uppercase letter"); return; }
     if (!/[0-9]/.test(newPassword)) { setError("Password must contain a number"); return; }

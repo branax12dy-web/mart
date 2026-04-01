@@ -90,6 +90,7 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     deliveryAddress: o.deliveryAddress,
     paymentMethod: o.paymentMethod,
     paymentStatus: o.paymentStatus ?? "pending",
+    refundStatus: o.refundedAt ? "refunded" : o.paymentStatus === "refund_requested" ? "requested" : null,
     riderId: o.riderId,
     riderName: o.riderName ?? null,
     riderPhone: o.riderPhone ?? null,
@@ -761,6 +762,46 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Could not cancel order" });
+  }
+});
+
+router.post("/:id/refund-request", customerAuth, async (req, res) => {
+  const orderId = req.params.id;
+  const userId = req.customerId!;
+
+  try {
+    const [order] = await db.select().from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.userId, userId)))
+      .limit(1);
+
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+    if (!["delivered", "completed"].includes(order.status)) {
+      res.status(400).json({ error: "Refund can only be requested for delivered orders" });
+      return;
+    }
+
+    if (order.paymentMethod === "cod" || order.paymentMethod === "cash") {
+      res.status(400).json({ error: "Cash orders are not eligible for refund" });
+      return;
+    }
+
+    if (order.paymentStatus === "refund_requested" || order.refundedAt) {
+      res.status(400).json({ error: "Refund has already been requested for this order" });
+      return;
+    }
+
+    const now = new Date();
+    await db.update(ordersTable)
+      .set({ paymentStatus: "refund_requested", updatedAt: now })
+      .where(eq(ordersTable.id, orderId));
+
+    const updatedOrder = { ...order, paymentStatus: "refund_requested" as typeof order.paymentStatus };
+    broadcastOrderUpdate(mapOrder(updatedOrder), order.vendorId);
+
+    res.json({ success: true, message: "Refund request submitted", refundStatus: "requested" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Could not process refund request" });
   }
 });
 

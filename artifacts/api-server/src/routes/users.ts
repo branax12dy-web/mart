@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { usersTable, ordersTable, walletTransactionsTable, ridesTable } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, count, sql } from "drizzle-orm";
 import { customerAuth } from "../middleware/security.js";
 import { randomUUID } from "crypto";
 import { writeFile, mkdir } from "fs/promises";
@@ -211,6 +211,55 @@ router.put("/profile", async (req, res) => {
     address: user.address,
     createdAt: user.createdAt.toISOString(),
   });
+});
+
+router.delete("/delete-account", async (req, res) => {
+  const userId = req.customerId!;
+
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+    const activeOrders = await db.select({ c: count() }).from(ordersTable)
+      .where(and(
+        eq(ordersTable.userId, userId),
+        sql`${ordersTable.status} NOT IN ('delivered', 'cancelled', 'completed')`,
+      ));
+
+    if (activeOrders[0] && activeOrders[0].c > 0) {
+      res.status(400).json({ error: "Cannot delete account with active orders. Please wait for all orders to complete." });
+      return;
+    }
+
+    const activeRides = await db.select({ c: count() }).from(ridesTable)
+      .where(and(
+        eq(ridesTable.userId, userId),
+        sql`${ridesTable.status} NOT IN ('completed', 'cancelled')`,
+      ));
+
+    if (activeRides[0] && activeRides[0].c > 0) {
+      res.status(400).json({ error: "Cannot delete account with active rides. Please wait for all rides to complete." });
+      return;
+    }
+
+    const now = new Date();
+    await db.update(usersTable)
+      .set({
+        isActive: false,
+        isBanned: true,
+        name: "Deleted User",
+        email: null,
+        avatar: null,
+        cnic: null,
+        address: null,
+        updatedAt: now,
+      })
+      .where(eq(usersTable.id, userId));
+
+    res.json({ success: true, message: "Account has been deleted" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Could not delete account" });
+  }
 });
 
 export default router;

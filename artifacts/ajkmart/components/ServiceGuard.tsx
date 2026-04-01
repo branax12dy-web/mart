@@ -27,9 +27,9 @@ function ServiceUnavailableScreen({ serviceKey }: { serviceKey: ServiceKey }) {
         <View style={s.iconWrap}>
           <Ionicons name="time-outline" size={56} color="#94A3B8" />
         </View>
-        <Text style={s.title}>Coming Soon</Text>
+        <Text style={s.title}>Not Available Yet</Text>
         <Text style={s.desc}>
-          {serviceLabel} is coming soon to your area.{"\n"}Stay tuned for updates!
+          {serviceLabel} is not yet available in your area.{"\n"}We'll notify you when it launches!
         </Text>
         <Pressable onPress={() => router.replace("/")} style={s.homeBtn}>
           <Ionicons name="home-outline" size={18} color="#fff" />

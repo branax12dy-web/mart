@@ -127,6 +127,7 @@ function ParcelScreenInner() {
   const [dropAddress, setDropAddress] = useState("");
   const [dropLat, setDropLat] = useState<number | undefined>(undefined);
   const [dropLng, setDropLng] = useState<number | undefined>(undefined);
+  const [geoError, setGeoError] = useState<"pickup" | "drop" | null>(null);
 
   const [parcelType, setParcelType] = useState<string>("");
   const [weight, setWeight] = useState("");
@@ -296,13 +297,18 @@ function ParcelScreenInner() {
 
       // Block booking if either address could not be geocoded
       if (finalPickupLat === undefined || finalPickupLng === undefined) {
+        setGeoError("pickup");
         showToast("Could not locate pickup address. Please select from suggestions or enter a more specific address.", "error");
+        setLoading(false);
         return;
       }
       if (finalDropLat === undefined || finalDropLng === undefined) {
+        setGeoError("drop");
         showToast("Could not locate drop-off address. Please select from suggestions or enter a more specific address.", "error");
+        setLoading(false);
         return;
       }
+      setGeoError(null);
 
       const w = chargeableWeight > 0 ? chargeableWeight : (parseFloat(weight) || undefined);
       const payload: ParcelBookingPayload = {
@@ -442,12 +448,17 @@ function ParcelScreenInner() {
             <Text style={ss.label}>{T("orTypeManually")}</Text>
             <TextInput
               value={pickupAddress}
-              onChangeText={v => { setPickupAddress(v); setPickupLat(undefined); setPickupLng(undefined); }}
+              onChangeText={v => { setPickupAddress(v); setPickupLat(undefined); setPickupLng(undefined); if (geoError === "pickup") setGeoError(null); }}
               placeholder="e.g. Chowk Adalat, Muzaffarabad"
               placeholderTextColor={C.textMuted}
-              style={ss.input}
+              style={[ss.input, geoError === "pickup" && { borderColor: C.danger, borderWidth: 1.5 }]}
               multiline
             />
+            {geoError === "pickup" && (
+              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: C.danger, marginTop: 4 }}>
+                Could not locate this address. Try a more specific address or use the map selector.
+              </Text>
+            )}
           </View>
         )}
 
@@ -469,12 +480,17 @@ function ParcelScreenInner() {
             <Text style={ss.label}>{T("orTypeManually")}</Text>
             <TextInput
               value={dropAddress}
-              onChangeText={v => { setDropAddress(v); setDropLat(undefined); setDropLng(undefined); }}
+              onChangeText={v => { setDropAddress(v); setDropLat(undefined); setDropLng(undefined); if (geoError === "drop") setGeoError(null); }}
               placeholder="e.g. Commercial Area, Mirpur"
               placeholderTextColor={C.textMuted}
-              style={ss.input}
+              style={[ss.input, geoError === "drop" && { borderColor: C.danger, borderWidth: 1.5 }]}
               multiline
             />
+            {geoError === "drop" && (
+              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: C.danger, marginTop: 4 }}>
+                Could not locate this address. Try a more specific address or use the map selector.
+              </Text>
+            )}
           </View>
         )}
 

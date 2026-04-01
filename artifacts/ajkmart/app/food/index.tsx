@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useEffect, useState, useRef } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   Platform,
@@ -21,6 +20,7 @@ import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
+import { CartSwitchModal } from "@/components/CartSwitchModal";
 
 const C = Colors.light;
 
@@ -43,16 +43,11 @@ function FoodCard({ item }: { item: any }) {
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
   };
 
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
+
   const handleAdd = () => {
     if (itemCount > 0 && cartType !== "food" && cartType !== "none") {
-      Alert.alert(
-        "Switch to Food?",
-        "Your cart has items from another service. Adding this item will clear your current cart.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAdd(); } },
-        ],
-      );
+      setShowSwitchModal(true);
       return;
     }
     doAdd();
@@ -60,6 +55,13 @@ function FoodCard({ item }: { item: any }) {
 
   return (
     <View style={styles.foodCard}>
+      <CartSwitchModal
+        visible={showSwitchModal}
+        targetService="Food"
+        currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "mart" ? "Mart" : "Another service"}
+        onCancel={() => setShowSwitchModal(false)}
+        onConfirm={() => { setShowSwitchModal(false); clearCart(); doAdd(); }}
+      />
       <View style={styles.foodImageBox}>
         {item.image
           ? <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -102,6 +104,7 @@ function FoodScreenInner() {
   const insets = useSafeAreaInsets();
   const { itemCount, cartType, clearCart } = useCart();
   const showCartBanner = itemCount > 0 && cartType !== "food" && cartType !== "none";
+  const [clearBannerConfirm, setClearBannerConfirm] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
   const topPad = Math.max(insets.top, 12);
@@ -161,20 +164,21 @@ function FoodScreenInner() {
             <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#3730A3" }}>Adding Food items will clear your existing cart</Text>
           </View>
           <Pressable
-            onPress={() => Alert.alert(
-              "Clear Cart?",
-              "Your existing cart will be cleared so you can order food. Continue?",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Clear & Continue", style: "destructive", onPress: () => clearCart() },
-              ]
-            )}
+            onPress={() => setClearBannerConfirm(true)}
             style={{ backgroundColor: "#4F46E5", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
           >
             <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" }}>Clear Cart</Text>
           </Pressable>
         </View>
       )}
+
+      <CartSwitchModal
+        visible={clearBannerConfirm}
+        currentService={cartType === "mart" ? "Mart" : cartType === "pharmacy" ? "Pharmacy" : "Current"}
+        targetService="Food"
+        onConfirm={() => { clearCart(); setClearBannerConfirm(false); }}
+        onCancel={() => setClearBannerConfirm(false)}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>

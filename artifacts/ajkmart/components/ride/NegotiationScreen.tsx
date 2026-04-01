@@ -63,6 +63,8 @@ export function NegotiationScreen({
     useState<CancelTarget | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [offerError, setOfferError] = useState("");
+  const [connectionLost, setConnectionLost] = useState(false);
+  const consecutiveFailsRef = useRef(0);
 
   const rideApiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
@@ -114,6 +116,36 @@ export function NegotiationScreen({
       a3.stop();
     };
   }, []);
+
+  useEffect(() => {
+    const HEARTBEAT_MS = 15000;
+    const FAIL_THRESHOLD = 2;
+    const interval = setInterval(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`${rideApiBase}/rides/${rideId}`, {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          consecutiveFailsRef.current = 0;
+          setConnectionLost(false);
+        } else {
+          consecutiveFailsRef.current++;
+        }
+      } catch {
+        clearTimeout(timeout);
+        consecutiveFailsRef.current++;
+      }
+      if (consecutiveFailsRef.current >= FAIL_THRESHOLD) {
+        setConnectionLost(true);
+      }
+    }, HEARTBEAT_MS);
+    return () => clearInterval(interval);
+  }, [rideId, token, rideApiBase]);
 
   const offeredFare = ride?.offeredFare ?? 0;
   const bids: any[] = ride?.bids ?? [];
@@ -435,6 +467,60 @@ export function NegotiationScreen({
             >
               Riders are reviewing your offer. You'll see bids appear here.
             </Text>
+            {connectionLost && (
+              <View style={{
+                flexDirection: "row", alignItems: "center", gap: 8,
+                backgroundColor: "rgba(239,68,68,0.15)", borderRadius: 12,
+                paddingHorizontal: 14, paddingVertical: 8, marginTop: 12,
+                borderWidth: 1, borderColor: "rgba(239,68,68,0.25)",
+              }}>
+                <Ionicons name="cloud-offline-outline" size={16} color="#EF4444" />
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#FCA5A5" }}>
+                  Connection lost — tap below to reconnect
+                </Text>
+              </View>
+            )}
+            {(remaining <= 0 || connectionLost) && (
+              <Pressable
+                onPress={async () => {
+                  try {
+                    const res = await fetch(`${rideApiBase}/rides/${rideId}/retry`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                    });
+                    if (res.ok) {
+                      setConnectionLost(false);
+                      showToast("Searching for more riders...", "success");
+                    } else {
+                      showToast("Could not refresh. Please try again.", "error");
+                    }
+                  } catch {
+                    setConnectionLost(true);
+                    showToast("Connection issue. Please try again.", "error");
+                  }
+                }}
+                style={{
+                  marginTop: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  backgroundColor: "rgba(251,191,36,0.2)",
+                  borderRadius: 14,
+                  paddingHorizontal: 20,
+                  paddingVertical: 12,
+                  borderWidth: 1,
+                  borderColor: "rgba(251,191,36,0.3)",
+                }}
+              >
+                <Ionicons name="refresh-outline" size={18} color="#FCD34D" />
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#FCD34D" }}>
+                  {connectionLost ? "Reconnect & Search Again" : "Refresh & Search Again"}
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
 

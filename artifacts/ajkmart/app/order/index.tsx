@@ -35,7 +35,7 @@ const LIVE_TRACKING_STATUSES = ["picked_up", "out_for_delivery", "in_transit", "
 export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Math.max(insets.top, 12);
-  const { orderId, type } = useLocalSearchParams<{ orderId: string; type?: string }>();
+  const { orderId, type, action } = useLocalSearchParams<{ orderId: string; type?: string; action?: string }>();
   const isParcel = type === "parcel";
   const isRide = type === "ride";
   const { token } = useAuth();
@@ -67,6 +67,8 @@ export default function OrderDetailScreen() {
   const [serverNow, setServerNow] = useState<number>(Date.now());
   const [loading, setLoading] = useState(true);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
+  const [refundRequesting, setRefundRequesting] = useState(false);
+  const [refundRequested, setRefundRequested] = useState(false);
   const [riderLat, setRiderLat] = useState<number | null>(null);
   const [riderLng, setRiderLng] = useState<number | null>(null);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
@@ -320,6 +322,29 @@ export default function OrderDetailScreen() {
     : isRide
     ? ["searching", "bargaining", "accepted", "arrived"].includes(order.status)
     : ["pending", "confirmed"].includes(order.status) && minutesSincePlaced <= cancelWindowMin;
+
+  const isDelivered = order.status === "delivered" || order.status === "completed";
+  const isCashOrder = order.paymentMethod === "cod" || order.paymentMethod === "cash";
+  const hasExistingRefund = order.refundStatus === "requested" || order.refundStatus === "approved" || order.refundStatus === "refunded";
+  const canRequestRefund = isDelivered && !isCashOrder && !refundRequested && !hasExistingRefund;
+
+  const handleRefundRequest = async () => {
+    setRefundRequesting(true);
+    try {
+      const res = await fetch(`${API_BASE}/orders/${orderId}/refund-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Refund request failed");
+      setRefundRequested(true);
+      showToast(T("requestRefund") + " — submitted successfully", "success");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Refund request failed";
+      showToast(msg, "error");
+    }
+    setRefundRequesting(false);
+  };
 
   return (
     <View style={[s.root, { paddingTop: topPad }]}>
@@ -609,6 +634,36 @@ export default function OrderDetailScreen() {
           </Pressable>
         )}
 
+        {canRequestRefund && (
+          <View style={s.refundSection}>
+            <Text style={s.refundTitle}>{T("requestRefund")}</Text>
+            <Text style={s.refundDesc}>Submit a refund request for this order. Refunds are typically processed within 3-5 business days.</Text>
+            <Pressable
+              style={[s.refundBtn, refundRequesting && { opacity: 0.6 }]}
+              onPress={handleRefundRequest}
+              disabled={refundRequesting}
+            >
+              {refundRequesting ? <ActivityIndicator color="#fff" size="small" /> : (
+                <>
+                  <Ionicons name="return-down-back-outline" size={16} color="#fff" />
+                  <Text style={s.refundBtnText}>{T("requestRefund")}</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        )}
+
+        {(refundRequested || hasExistingRefund) && (
+          <View style={s.refundSuccessBox}>
+            <Ionicons name="checkmark-circle" size={20} color="#059669" />
+            <Text style={s.refundSuccessText}>
+              {order.refundStatus === "approved" || order.refundStatus === "refunded"
+                ? "Refund has been processed."
+                : "Refund request submitted. You'll receive an update soon."}
+            </Text>
+          </View>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -687,4 +742,21 @@ const s = StyleSheet.create({
     borderWidth: 1.5, borderColor: "#FECACA",
   },
   cancelOrderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#DC2626" },
+  refundSection: {
+    backgroundColor: "#FFF7ED", borderRadius: 16, padding: 18,
+    borderWidth: 1.5, borderColor: "#FED7AA", gap: 8,
+  },
+  refundTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#9A3412" },
+  refundDesc: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#9A3412", lineHeight: 20 },
+  refundBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 12, borderRadius: 12, backgroundColor: "#EA580C", marginTop: 4,
+  },
+  refundBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" },
+  refundSuccessBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#D1FAE5", borderRadius: 16, padding: 16,
+    borderWidth: 1.5, borderColor: "#A7F3D0",
+  },
+  refundSuccessText: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#065F46", flex: 1 },
 });

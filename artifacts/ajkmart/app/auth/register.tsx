@@ -168,7 +168,7 @@ export default function RegisterScreen() {
 
   const handleVerifyOtp = async () => {
     clearError();
-    if (!otp || otp.length < 4) { setError("Please enter the OTP"); return; }
+    if (!otp || otp.length < 6) { setError("Please enter the 6-digit OTP"); return; }
     setLoading(true);
     try {
       const res = await fetch(`${API}/auth/verify-otp`, {
@@ -179,7 +179,13 @@ export default function RegisterScreen() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Invalid OTP."); setLoading(false); return; }
       if (data.user?.id) setUserId(data.user.id);
-      if (data.token) setAuthToken(data.token);
+      if (data.token) {
+        setAuthToken(data.token);
+        try {
+          const SecureStore = await import("expo-secure-store");
+          await SecureStore.setItemAsync("ajkmart_reg_token", data.token);
+        } catch {}
+      }
       if (data.refreshToken) setAuthRefreshToken(data.refreshToken);
       if (data.user) setAuthUser(data.user);
       setStep(2);
@@ -207,7 +213,14 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      if (!authToken) {
+      let activeToken = authToken;
+      if (!activeToken) {
+        try {
+          const SecureStore = await import("expo-secure-store");
+          activeToken = await SecureStore.getItemAsync("ajkmart_reg_token") || "";
+        } catch {}
+      }
+      if (!activeToken) {
         setError("Session expired. Please go back and verify OTP again.");
         setLoading(false);
         return;
@@ -215,7 +228,7 @@ export default function RegisterScreen() {
 
       const profileRes = await fetch(`${API}/auth/complete-profile`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${activeToken}` },
         body: JSON.stringify({
           name: name.trim(),
           ...(email && { email: email.trim().toLowerCase() }),
@@ -243,20 +256,31 @@ export default function RegisterScreen() {
   const handleFinish = async () => {
     setLoading(true);
     try {
-      if (authToken && authUser) {
+      let finalToken = authToken;
+      if (!finalToken) {
+        try {
+          const SecureStore = await import("expo-secure-store");
+          finalToken = await SecureStore.getItemAsync("ajkmart_reg_token") || "";
+        } catch {}
+      }
+      if (finalToken && authUser) {
         const userData = {
           ...authUser,
           walletBalance: authUser.walletBalance ?? 0,
           isActive: authUser.isActive ?? true,
           createdAt: authUser.createdAt ?? new Date().toISOString(),
         };
-        await login(userData, authToken, authRefreshToken || undefined);
+        await login(userData, finalToken, authRefreshToken || undefined);
+        try {
+          const SecureStore = await import("expo-secure-store");
+          await SecureStore.deleteItemAsync("ajkmart_reg_token");
+        } catch {}
         router.replace("/(tabs)");
       } else {
         router.replace("/auth");
       }
-    } catch (e: any) {
-      console.warn("Login after registration failed:", e.message);
+    } catch (e: unknown) {
+      console.warn("Login after registration failed:", e instanceof Error ? e.message : e);
       router.replace("/auth");
     }
     setLoading(false);

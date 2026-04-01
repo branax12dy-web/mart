@@ -120,6 +120,7 @@ function PharmacyScreenInner() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadFailed, setUploadFailed] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
 
@@ -311,16 +312,27 @@ function PharmacyScreenInner() {
 
       if (prescriptionPhotoUri && prescriptionRefId) {
         setIsUploading(true);
-        try {
-          await uploadPrescription(prescriptionPhotoUri, prescriptionRefId);
-        } catch {
-          showToast("Could not upload prescription photo. Please try again.", "error");
-          setIsUploading(false);
+        const MAX_UPLOAD_RETRIES = 3;
+        let uploadSuccess = false;
+        for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+          try {
+            await uploadPrescription(prescriptionPhotoUri, prescriptionRefId);
+            uploadSuccess = true;
+            break;
+          } catch {
+            if (attempt < MAX_UPLOAD_RETRIES) {
+              await new Promise<void>(r => setTimeout(r, 1000 * attempt));
+            }
+          }
+        }
+        setIsUploading(false);
+        if (!uploadSuccess) {
+          setUploadFailed(true);
+          showToast("Could not upload prescription photo. Tap 'Retry Upload' to try again.", "error");
           setLoading(false);
           return;
-        } finally {
-          setIsUploading(false);
         }
+        setUploadFailed(false);
       }
 
       const data = await createPharmacyOrder({
@@ -650,6 +662,16 @@ function PharmacyScreenInner() {
             </View>
           </View>
 
+          {uploadFailed && (
+            <View style={{ backgroundColor: "#FEF2F2", borderRadius: 14, padding: 14, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: "#FECACA" }}>
+              <Ionicons name="cloud-offline-outline" size={18} color="#DC2626" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#991B1B" }}>Prescription upload failed</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#B91C1C", marginTop: 2 }}>Check your connection and tap below to retry</Text>
+              </View>
+            </View>
+          )}
+
           <Pressable style={[s.placeBtn, loading && { opacity: 0.7 }]} onPress={placeOrder} disabled={loading}>
             {loading ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -660,8 +682,8 @@ function PharmacyScreenInner() {
               </View>
             ) : (
               <>
-                <Text style={s.placeBtnTxt}>{T("placeOrder")} • Rs. {cartTotal.toLocaleString()}</Text>
-                <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                <Text style={s.placeBtnTxt}>{uploadFailed ? "Retry Upload & Place Order" : `${T("placeOrder")} • Rs. ${cartTotal.toLocaleString()}`}</Text>
+                <Ionicons name={uploadFailed ? "refresh-outline" : "checkmark-circle"} size={18} color="#fff" />
               </>
             )}
           </Pressable>

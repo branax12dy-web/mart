@@ -3,7 +3,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState, useRef, useEffect } from "react";
 import {
-  Alert,
   Animated,
   Dimensions,
   Image,
@@ -22,6 +21,7 @@ import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
+import { CartSwitchModal } from "@/components/CartSwitchModal";
 
 const C = Colors.light;
 const { width } = Dimensions.get("window");
@@ -66,16 +66,11 @@ function FlashCard({ product }: { product: any }) {
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
   };
 
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
+
   const handleAdd = () => {
     if (itemCount > 0 && cartType !== "mart" && cartType !== "none") {
-      Alert.alert(
-        "Switch to Mart?",
-        "Your cart has items from another service. Adding this item will clear your current cart.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAdd(); } },
-        ],
-      );
+      setShowSwitchModal(true);
       return;
     }
     doAdd();
@@ -83,6 +78,13 @@ function FlashCard({ product }: { product: any }) {
 
   return (
     <View style={[styles.flashCard, { width: FLASH_CARD_W }]}>
+      <CartSwitchModal
+        visible={showSwitchModal}
+        targetService="Mart"
+        currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : "Another service"}
+        onCancel={() => setShowSwitchModal(false)}
+        onConfirm={() => { setShowSwitchModal(false); clearCart(); doAdd(); }}
+      />
       <View style={styles.flashImg}>
         {product.image
           ? <Image source={{ uri: product.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -128,16 +130,11 @@ function ProductCard({ product }: { product: any }) {
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
   };
 
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
+
   const handleAdd = () => {
     if (itemCount > 0 && cartType !== "mart" && cartType !== "none") {
-      Alert.alert(
-        "Switch to Mart?",
-        "Your cart has items from another service. Adding this item will clear your current cart.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAdd(); } },
-        ],
-      );
+      setShowSwitchModal(true);
       return;
     }
     doAdd();
@@ -145,6 +142,13 @@ function ProductCard({ product }: { product: any }) {
 
   return (
     <View style={[styles.productCard, { width: PRODUCT_CARD_W }]}>
+      <CartSwitchModal
+        visible={showSwitchModal}
+        targetService="Mart"
+        currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : "Another service"}
+        onCancel={() => setShowSwitchModal(false)}
+        onConfirm={() => { setShowSwitchModal(false); clearCart(); doAdd(); }}
+      />
       <View style={styles.productImg}>
         {product.image
           ? <Image source={{ uri: product.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -176,6 +180,7 @@ function MartScreenInner() {
   const insets = useSafeAreaInsets();
   const { itemCount, cartType, clearCart } = useCart();
   const showCartBanner = itemCount > 0 && cartType !== "mart" && cartType !== "none";
+  const [clearBannerConfirm, setClearBannerConfirm] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
   const topPad = Math.max(insets.top, 12);
@@ -249,20 +254,21 @@ function MartScreenInner() {
             <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E" }}>Adding Mart items will clear your existing cart</Text>
           </View>
           <Pressable
-            onPress={() => Alert.alert(
-              "Clear Cart?",
-              "Your existing cart will be cleared so you can shop from Mart. Continue?",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Clear & Continue", style: "destructive", onPress: () => clearCart() },
-              ]
-            )}
+            onPress={() => setClearBannerConfirm(true)}
             style={{ backgroundColor: "#D97706", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
           >
             <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" }}>Clear Cart</Text>
           </Pressable>
         </View>
       )}
+
+      <CartSwitchModal
+        visible={clearBannerConfirm}
+        currentService={cartType === "food" ? "Food" : cartType === "pharmacy" ? "Pharmacy" : "Current"}
+        targetService="Mart"
+        onConfirm={() => { clearCart(); setClearBannerConfirm(false); }}
+        onCancel={() => setClearBannerConfirm(false)}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingTop: 14 }} contentContainerStyle={styles.catRow}>
