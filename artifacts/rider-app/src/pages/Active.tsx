@@ -121,7 +121,7 @@ function buildMapsDeepLink(lat: number, lng: number): string {
 function NavButton({ label, lat, lng, address, color = "blue" }: {
   label: string; lat?: number | null; lng?: number | null; address?: string | null; color?: "blue" | "green" | "orange";
 }) {
-  const href = lat && lng
+  const href = lat != null && lng != null
     ? buildMapsDeepLink(lat, lng)
     : address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
@@ -491,10 +491,9 @@ export default function Active() {
      token) whenever the session changes — e.g. after a token rotation or logout. */
   useEffect(() => {
     /* Read the token fresh at effect-run time, not at mount time, so that a
-       rotated access-token is always used for the (re-)connection handshake. */
-    const token = sessionStorage.getItem("ajkmart_rider_token")
-      ?? localStorage.getItem("ajkmart_rider_token")
-      ?? "";
+       rotated access-token is always used for the (re-)connection handshake.
+       Uses api.getToken() to include legacy migration logic (rider_token key). */
+    const token = api.getToken();
     if (!token || !user?.id) return;
     const socket = io(window.location.origin, {
       path: "/api/socket.io",

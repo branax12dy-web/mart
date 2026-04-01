@@ -160,11 +160,11 @@ router.get("/me", async (req, res) => {
     bonusTodayStats,  bonusAllStats,
   ] = await Promise.all([
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable)
-      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, today))),
+      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.updatedAt, today))),
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable)
       .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"))),
     db.select({ c: count(), s: sum(ridesTable.fare) }).from(ridesTable)
-      .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, today))),
+      .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, today))),
     db.select({ c: count(), s: sum(ridesTable.fare) }).from(ridesTable)
       .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"))),
     /* Per-trip bonus credits (rider_bonus_per_trip wallet transactions) */
@@ -719,6 +719,15 @@ router.get("/cancel-stats", async (req, res) => {
   const weekCount   = weekRow[0]?.c   ?? 0;
   const monthCount  = monthRow[0]?.c  ?? 0;
 
+  const [monthDeliveredRow, monthCompletedRow] = await Promise.all([
+    db.select({ c: count() }).from(ordersTable)
+      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), gte(ordersTable.updatedAt, monthAgo))),
+    db.select({ c: count() }).from(ridesTable)
+      .where(and(eq(ridesTable.riderId, riderId), eq(ridesTable.status, "completed"), gte(ridesTable.updatedAt, monthAgo))),
+  ]);
+  const monthTrips = (monthDeliveredRow[0]?.c ?? 0) + (monthCompletedRow[0]?.c ?? 0) + monthCount;
+  const cancelRate = monthTrips > 0 ? parseFloat(((monthCount / monthTrips) * 100).toFixed(1)) : null;
+
   res.json({
     today:        { cancels: todayCount  },
     week:         { cancels: weekCount   },
@@ -728,6 +737,7 @@ router.get("/cancel-stats", async (req, res) => {
     penaltyAmount: penaltyAmt,
     remaining:     Math.max(0, dailyLimit - todayCount),
     restrictEnabled,
+    cancelRate,
   });
 });
 
@@ -2111,19 +2121,20 @@ async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: num
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  const [countRow] = await db.select({ c: count() })
-    .from(riderPenaltiesTable)
-    .where(and(
-      eq(riderPenaltiesTable.riderId, riderId),
-      eq(riderPenaltiesTable.type, "ignore"),
-      gte(riderPenaltiesTable.createdAt, today),
-    ));
-  const dailyIgnores = (countRow?.c ?? 0) + 1;
-
   let penaltyApplied = 0;
   let restricted = false;
+  let dailyIgnores = 0;
 
   await db.transaction(async (tx) => {
+    const [countRow] = await tx.select({ c: count() })
+      .from(riderPenaltiesTable)
+      .where(and(
+        eq(riderPenaltiesTable.riderId, riderId),
+        eq(riderPenaltiesTable.type, "ignore"),
+        gte(riderPenaltiesTable.createdAt, today),
+      ));
+    dailyIgnores = (countRow?.c ?? 0) + 1;
+
     await tx.update(usersTable)
       .set({ ignoreCount: sql`ignore_count + 1`, updatedAt: new Date() })
       .where(eq(usersTable.id, riderId));
