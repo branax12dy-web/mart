@@ -1801,8 +1801,32 @@ router.patch("/users/:id/security", async (req, res) => {
   if (body.isActive     !== undefined) updates.isActive     = body.isActive;
   if (body.isBanned     !== undefined) updates.isBanned     = body.isBanned;
   if (body.banReason    !== undefined) updates.banReason    = body.banReason || null;
-  if (body.roles        !== undefined) { updates.roles = body.roles; updates.role = body.roles; }
-  if (body.role         !== undefined) { updates.role  = body.role;  updates.roles = body.role; }
+
+  /* Decouple roles and role — update each field independently without cross-writing */
+  if (body.roles !== undefined) {
+    const rolesValue = String(body.roles).trim();
+    const roleList = rolesValue.split(",").map((r: string) => r.trim()).filter(Boolean);
+    if (!roleList.length) { res.status(400).json({ error: "At least one role must be assigned" }); return; }
+    updates.roles = roleList.join(",");
+    /* Derive and sync the primary role field to prevent stale legacy-role drift */
+    updates.role = roleList.includes("vendor") ? "vendor" : roleList.includes("rider") ? "rider" : roleList[0];
+
+    /* Auto-approve: when rider or vendor role is included, activate unless user is banned.
+       Override isActive only when the new role set includes rider/vendor.
+       We do NOT check body.isActive === undefined because the frontend always sends isActive. */
+    const willBeBanned = body.isBanned === true;
+    const currentUser = await db.select({ isBanned: usersTable.isBanned }).from(usersTable).where(eq(usersTable.id, id!)).limit(1).then(r => r[0]);
+    const alreadyBanned = currentUser?.isBanned ?? false;
+    if (!willBeBanned && !alreadyBanned && (roleList.includes("rider") || roleList.includes("vendor"))) {
+      updates.isActive = true;
+      updates.approvalStatus = "approved";
+    }
+  }
+  if (body.role !== undefined) {
+    const roleValue = String(body.role).trim();
+    if (roleValue) updates.role = roleValue;
+  }
+
   if (body.blockedServices !== undefined) updates.blockedServices = body.blockedServices;
   if (body.securityNote !== undefined) updates.securityNote = body.securityNote || null;
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id!)).returning();

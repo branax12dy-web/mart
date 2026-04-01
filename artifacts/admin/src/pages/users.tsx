@@ -245,12 +245,29 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
   const [banReason,       setBanReason]       = useState<string>(user.banReason || "");
   const [blockedServices, setBlockedServices] = useState<string[]>(blockedSvc);
   const [securityNote,    setSecurityNote]    = useState<string>(user.securityNote || "");
+  const [totpEnabled,     setTotpEnabled]     = useState<boolean>(user.totpEnabled || false);
 
   const securityMutation = useMutation({
     mutationFn: (body: any) => fetcher(`/users/${user.id}/security`, { method: "PATCH", body: JSON.stringify(body) }),
-    onSuccess: () => {
+    onSuccess: (_data, vars: any) => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
-      toast({ title: "Security settings saved" });
+      const changedParts: string[] = [];
+      const origRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim()).filter(Boolean);
+      const newRoles  = (vars.roles || "customer").split(",").map((r: string) => r.trim()).filter(Boolean);
+      if (newRoles.sort().join(",") !== origRoles.sort().join(",")) {
+        const roleLabels = newRoles.map((r: string) => r.charAt(0).toUpperCase() + r.slice(1)).join(" + ");
+        changedParts.push(`Roles: ${roleLabels}`);
+      }
+      if (vars.isActive !== user.isActive || vars.isBanned !== (user.isBanned || false)) {
+        const statusLabel = vars.isBanned ? "Banned" : vars.isActive ? "Active" : "Blocked";
+        changedParts.push(`Status: ${statusLabel}`);
+      }
+      if (vars.securityNote !== (user.securityNote || "")) changedParts.push("Security note updated");
+      if (vars.blockedServices !== (user.blockedServices || "")) changedParts.push("Service restrictions updated");
+      toast({
+        title: "Security settings saved",
+        description: changedParts.length ? changedParts.join(" · ") : undefined,
+      });
       onClose();
     },
     onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
@@ -262,21 +279,39 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const disable2faMutation = useMutation({
+    mutationFn: () => fetcher(`/users/${user.id}/2fa/disable`, { method: "POST", body: "{}" }),
+    onSuccess: () => {
+      setTotpEnabled(false);
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      toast({ title: "2FA disabled", description: "Two-factor authentication has been turned off for this user." });
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
   const toggleRole = (r: string) => {
-    setRoles(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
+    setRoles(prev => {
+      if (prev.includes(r)) {
+        if (prev.length <= 1) {
+          toast({ title: "At least one role required", description: "A user must have at least one role assigned.", variant: "destructive" });
+          return prev;
+        }
+        return prev.filter(x => x !== r);
+      }
+      return [...prev, r];
+    });
   };
   const toggleService = (s: string) => {
     setBlockedServices(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
 
   const handleSave = () => {
-    const primaryRole = roles.includes("vendor") ? "vendor" : roles.includes("rider") ? "rider" : "customer";
+    const newRoles = roles.length > 0 ? roles : ["customer"];
     securityMutation.mutate({
       isActive,
       isBanned,
       banReason: isBanned ? banReason : null,
-      roles: roles.join(",") || "customer",
-      role: primaryRole,
+      roles: newRoles.join(","),
       blockedServices: blockedServices.join(","),
       securityNote,
       notify: isBanned && !user.isBanned,
@@ -438,6 +473,25 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
               {resetOtpMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Clearing...</> : "Reset OTP"}
             </Button>
           </div>
+
+          {totpEnabled && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center gap-3">
+              <Shield className="w-5 h-5 text-purple-600 flex-shrink-0"/>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-purple-800">Two-Factor Authentication</p>
+                <p className="text-xs text-purple-700">User has 2FA enabled — disable only if they lost access</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-purple-300 text-purple-700 hover:bg-purple-100 rounded-lg text-xs"
+                onClick={() => disable2faMutation.mutate()}
+                disabled={disable2faMutation.isPending}
+              >
+                {disable2faMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Disabling...</> : "Disable 2FA"}
+              </Button>
+            </div>
+          )}
 
           {isBanned && !user.isBanned && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2">
@@ -766,7 +820,11 @@ export default function Users() {
       (u.name?.toLowerCase() || "").includes(search.toLowerCase()) ||
       (u.phone || "").includes(search) ||
       (u.email?.toLowerCase() || "").includes(search.toLowerCase());
-    const matchRole = roleFilter === "all" || u.role === roleFilter || (u.roles || "").includes(roleFilter);
+    const allUserRoles = new Set([
+      ...(u.roles || "").split(",").map((r: string) => r.trim()).filter(Boolean),
+      ...(u.role  || "").split(",").map((r: string) => r.trim()).filter(Boolean),
+    ]);
+    const matchRole = roleFilter === "all" || allUserRoles.has(roleFilter);
     const matchStatus = statusFilter === "all"
       || (statusFilter === "active"   && u.isActive && !u.isBanned)
       || (statusFilter === "blocked"  && !u.isActive && !u.isBanned)
