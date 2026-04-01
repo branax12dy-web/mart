@@ -1380,12 +1380,29 @@ router.post("/register", verifyCaptcha, async (req, res) => {
 });
 
 router.post("/forgot-password", verifyCaptcha, async (req, res) => {
-  const { phone, email } = req.body;
+  let { phone, email, identifier } = req.body;
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
 
+  if (identifier && !phone && !email) {
+    const resolved = await findUserByIdentifier(identifier);
+    if (resolved.user) {
+      if (resolved.idType === "phone") {
+        phone = resolved.user.phone;
+      } else if (resolved.idType === "email") {
+        email = resolved.user.email;
+      } else if (resolved.idType === "username") {
+        if (resolved.user.email) {
+          email = resolved.user.email;
+        } else if (resolved.user.phone) {
+          phone = resolved.user.phone;
+        }
+      }
+    }
+  }
+
   if (!phone && !email) {
-    res.status(400).json({ error: "Phone or email is required" });
+    res.status(400).json({ error: "Phone, email, or username is required" });
     return;
   }
 
@@ -1404,7 +1421,7 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
     const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, canonPhone)).limit(1);
     user = found;
   } else {
-    const normalized = email.toLowerCase().trim();
+    const normalized = email!.toLowerCase().trim();
     const [found] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
     user = found;
   }
@@ -1469,7 +1486,7 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
 });
 
 router.post("/reset-password", verifyCaptcha, async (req, res) => {
-  const { phone, email, otp, newPassword, totpCode } = req.body;
+  let { phone, email, identifier, otp, newPassword, totpCode } = req.body;
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
 
@@ -1477,8 +1494,26 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
     res.status(400).json({ error: "OTP and new password are required" });
     return;
   }
+
+  if (identifier && !phone && !email) {
+    const resolved = await findUserByIdentifier(identifier);
+    if (resolved.user) {
+      if (resolved.idType === "phone") {
+        phone = resolved.user.phone;
+      } else if (resolved.idType === "email") {
+        email = resolved.user.email;
+      } else if (resolved.idType === "username") {
+        if (resolved.user.email) {
+          email = resolved.user.email;
+        } else if (resolved.user.phone) {
+          phone = resolved.user.phone;
+        }
+      }
+    }
+  }
+
   if (!phone && !email) {
-    res.status(400).json({ error: "Phone or email is required" });
+    res.status(400).json({ error: "Phone, email, or username is required" });
     return;
   }
 
@@ -1494,7 +1529,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
     const [found] = await db.select().from(usersTable).where(eq(usersTable.phone, canonPhone)).limit(1);
     user = found;
   } else {
-    const normalized = email.toLowerCase().trim();
+    const normalized = email!.toLowerCase().trim();
     const [found] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
     user = found;
   }

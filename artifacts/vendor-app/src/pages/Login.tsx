@@ -6,7 +6,7 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
 type LoginMethod = "phone" | "email" | "username";
-type Step = "input" | "otp" | "pending" | "register" | "register-otp" | "register-info" | "register-submitted";
+type Step = "input" | "otp" | "pending" | "register" | "register-otp" | "register-info" | "register-submitted" | "forgot" | "forgot-otp" | "forgot-reset" | "forgot-done";
 
 const STORE_CATS = ["Grocery","Restaurant","Bakery","Pharmacy","Electronics","Clothing","General Store","Fast Food","Fruits & Vegetables","Dairy","Meat & Poultry","Other"];
 const CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Jhelum","Rawalpindi","Islamabad","Lahore","Other"];
@@ -46,6 +46,13 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd]   = useState(false);
+
+  const [forgotIdentifier, setForgotIdentifier] = useState("");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [forgotDevOtp, setForgotDevOtp] = useState("");
+  const [forgotNewPwd, setForgotNewPwd] = useState("");
+  const [forgotConfirmPwd, setForgotConfirmPwd] = useState("");
+  const [showForgotPwd, setShowForgotPwd] = useState(false);
 
   const [regPhone, setRegPhone] = useState("");
   const [regOtp, setRegOtp]     = useState("");
@@ -156,6 +163,31 @@ export default function Login() {
   const selectMethod = (m: LoginMethod) => {
     setMethod(m); setStep("input"); clearError();
     setOtp(""); setEmailOtp(""); setDevOtp(""); setEmailDevOtp("");
+  };
+
+  const sendForgotOtp = async () => {
+    if (!forgotIdentifier || forgotIdentifier.length < 3) { setError("Enter your phone, email, or username"); return; }
+    setLoading(true); clearError();
+    try {
+      const res = await api.forgotPassword({ identifier: forgotIdentifier.trim() });
+      if (res.otp) setForgotDevOtp(res.otp);
+      setStep("forgot-otp");
+    } catch (e) { setError(e instanceof Error ? e.message : "Request failed"); }
+    setLoading(false);
+  };
+
+  const resetForgotPassword = async () => {
+    if (!forgotOtp || forgotOtp.length < 4) { setError("Enter the OTP code"); return; }
+    if (!forgotNewPwd || forgotNewPwd.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (!/[A-Z]/.test(forgotNewPwd)) { setError("Password must contain an uppercase letter"); return; }
+    if (!/[0-9]/.test(forgotNewPwd)) { setError("Password must contain a number"); return; }
+    if (forgotNewPwd !== forgotConfirmPwd) { setError("Passwords do not match"); return; }
+    setLoading(true); clearError();
+    try {
+      await api.resetPassword({ identifier: forgotIdentifier.trim(), otp: forgotOtp, newPassword: forgotNewPwd });
+      setStep("forgot-done");
+    } catch (e) { setError(e instanceof Error ? e.message : "Reset failed"); }
+    setLoading(false);
   };
 
   const sendRegOtp = async () => {
@@ -583,27 +615,84 @@ export default function Login() {
                 <input type="text" placeholder="Phone, email, or username" value={username} onChange={e => setUsername(e.target.value.trim())} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                   className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 mb-3 transition-all" autoFocus autoCapitalize="none" />
                 <label className="text-xs font-extrabold text-gray-400 mb-1.5 block uppercase tracking-wider">{T("passwordLabel")}</label>
-                <div className="relative mb-4">
+                <div className="relative mb-2">
                   <input type={showPwd ? "text" : "password"} placeholder="Your password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                     className="w-full h-12 px-4 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all" />
                   <button onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 text-sm">{showPwd ? "🙈" : "👁️"}</button>
+                </div>
+                <button onClick={() => { setStep("forgot"); clearError(); setForgotIdentifier(username); }} className="text-sm text-orange-500 hover:text-orange-600 font-medium mb-3 self-end ml-auto block text-right">
+                  Forgot Password?
+                </button>
+              </>
+            )}
+
+            {step === "forgot" && (
+              <>
+                <button onClick={() => { setStep("input"); clearError(); }} className="text-sm text-gray-400 hover:text-orange-500 mb-3">← Back to Login</button>
+                <h2 className="text-xl font-extrabold text-gray-800 mb-1">Reset Password</h2>
+                <p className="text-sm text-gray-500 mb-4">Enter your phone, email, or username</p>
+                <input type="text" placeholder="Phone, email, or username" value={forgotIdentifier} onChange={e => setForgotIdentifier(e.target.value.trim())} onKeyDown={e => e.key === "Enter" && sendForgotOtp()}
+                  className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 mb-4 transition-all" autoFocus autoCapitalize="none" />
+              </>
+            )}
+
+            {step === "forgot-otp" && (
+              <>
+                <button onClick={() => { setStep("forgot"); clearError(); }} className="text-sm text-gray-400 hover:text-orange-500 mb-3">← Back</button>
+                <h2 className="text-xl font-extrabold text-gray-800 mb-1">Enter Reset Code</h2>
+                <p className="text-sm text-gray-500 mb-1">A code was sent to your phone or email</p>
+                {forgotDevOtp && <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 mb-3">
+                  <p className="text-xs text-orange-600 font-bold uppercase tracking-wide mb-0.5">DEV OTP</p>
+                  <p className="text-orange-700 font-extrabold text-xl tracking-[0.4em]">{forgotDevOtp}</p>
+                </div>}
+                <input type="text" inputMode="numeric" placeholder="• • • • • •" value={forgotOtp} onChange={e => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && setStep("forgot-reset")}
+                  className="w-full h-16 px-4 mb-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-center text-3xl font-extrabold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all" maxLength={6} autoFocus />
+                <label className="text-xs font-extrabold text-gray-400 mb-1.5 block uppercase tracking-wider">New Password</label>
+                <div className="relative mb-3">
+                  <input type={showForgotPwd ? "text" : "password"} placeholder="Min 8 chars, 1 uppercase, 1 number" value={forgotNewPwd} onChange={e => setForgotNewPwd(e.target.value)}
+                    className="w-full h-12 px-4 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all" />
+                  <button onClick={() => setShowForgotPwd(v => !v)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 text-sm">{showForgotPwd ? "🙈" : "👁️"}</button>
+                </div>
+                <label className="text-xs font-extrabold text-gray-400 mb-1.5 block uppercase tracking-wider">Confirm Password</label>
+                <input type="password" placeholder="Re-enter password" value={forgotConfirmPwd} onChange={e => setForgotConfirmPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && resetForgotPassword()}
+                  className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 mb-4 transition-all" />
+              </>
+            )}
+
+            {step === "forgot-done" && (
+              <>
+                <div className="text-center py-6">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">✓</span>
+                  </div>
+                  <h2 className="text-xl font-extrabold text-gray-800 mb-2">Password Reset!</h2>
+                  <p className="text-sm text-gray-500 mb-4">Your password has been changed successfully. You can now log in.</p>
+                  <button onClick={() => { setStep("input"); setMethod("username"); clearError(); }} className="text-orange-500 font-bold hover:text-orange-600">← Back to Login</button>
                 </div>
               </>
             )}
 
             {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl"><p className="text-red-600 text-sm font-medium">{error}</p></div>}
 
-            <button onClick={handleSubmit} disabled={loading}
-              className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base">
-              {loading
-                ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> {T("pleaseWait")}</>
-                : method === "phone"
-                  ? (step === "input" ? `${T("sendOtp")} →` : `${T("verifyLogin")} ✓`)
-                  : method === "email"
-                  ? (step === "input" ? `${T("sendOtp")} →` : `${T("verifyLogin")} ✓`)
-                  : `${T("login")} →`
-              }
-            </button>
+            {step !== "forgot-done" && (
+              <button onClick={
+                step === "forgot" ? sendForgotOtp
+                : step === "forgot-otp" ? resetForgotPassword
+                : handleSubmit
+              } disabled={loading}
+                className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base">
+                {loading
+                  ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> {T("pleaseWait")}</>
+                  : step === "forgot" ? "Send Reset Code →"
+                  : step === "forgot-otp" ? "Reset Password ✓"
+                  : method === "phone"
+                    ? (step === "input" ? `${T("sendOtp")} →` : `${T("verifyLogin")} ✓`)
+                    : method === "email"
+                    ? (step === "input" ? `${T("sendOtp")} →` : `${T("verifyLogin")} ✓`)
+                    : `${T("login")} →`
+                }
+              </button>
+            )}
 
             {step === "otp" && (
               <button
