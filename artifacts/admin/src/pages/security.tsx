@@ -63,6 +63,7 @@ function SecPanel({ title, icon: Icon, color, children }: { title: string; icon:
 export default function SecurityPage() {
   const { toast } = useToast();
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const [savedValues, setSavedValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
@@ -95,6 +96,7 @@ export default function SecurityPage() {
       const vals: Record<string, string> = {};
       for (const s of (data.settings || [])) vals[s.key] = s.value;
       setLocalValues(vals);
+      setSavedValues(vals);
       setDirtyKeys(new Set());
       setIpWhitelistError(null);
     } catch (e: unknown) {
@@ -148,15 +150,52 @@ export default function SecurityPage() {
   /* ── Platform settings handlers ── */
   const handleChange = (key: string, value: string) => {
     setLocalValues(prev => ({ ...prev, [key]: value }));
-    setDirtyKeys(prev => { const n = new Set(prev); n.add(key); return n; });
+    setDirtyKeys(prev => {
+      const n = new Set(prev);
+      if (value === savedValues[key]) { n.delete(key); } else { n.add(key); }
+      return n;
+    });
   };
   const handleToggle = (key: string, v: boolean) => handleChange(key, v ? "on" : "off");
 
   const handleSave = async () => {
+    if (ipWhitelistError) {
+      toast({ title: "Validation Error", description: `IP Whitelist: ${ipWhitelistError}`, variant: "destructive" });
+      return;
+    }
+    const numericBounds: Record<string, { min: number; max: number; label: string }> = {
+      security_jwt_rotation_days:   { min: 1,   max: 365,    label: "JWT Rotation Days" },
+      security_admin_token_hrs:     { min: 1,   max: 720,    label: "Admin Token Expiry" },
+      security_session_days:        { min: 1,   max: 365,    label: "Customer Session Duration" },
+      security_rider_token_days:    { min: 1,   max: 365,    label: "Rider Token Expiry" },
+      security_max_speed_kmh:       { min: 10,  max: 500,    label: "Max Plausible Speed" },
+      security_rate_limit:          { min: 1,   max: 10000,  label: "Customer API Rate Limit" },
+      security_rate_rider:          { min: 1,   max: 10000,  label: "Rider API Rate Limit" },
+      security_rate_vendor:         { min: 1,   max: 10000,  label: "Vendor API Rate Limit" },
+      security_rate_admin:          { min: 1,   max: 10000,  label: "Admin Rate Limit" },
+      security_lockout_threshold:   { min: 1,   max: 100,    label: "Lockout Threshold" },
+      security_lockout_minutes:     { min: 1,   max: 1440,   label: "Lockout Duration" },
+    };
+    for (const key of dirtyKeys) {
+      const bounds = numericBounds[key];
+      if (bounds) {
+        const raw = localValues[key] ?? "";
+        const num = Number(raw);
+        if (raw === "" || isNaN(num) || !Number.isInteger(num) || num < bounds.min || num > bounds.max) {
+          toast({ title: "Validation Error", description: `${bounds.label} must be a whole number between ${bounds.min} and ${bounds.max}.`, variant: "destructive" });
+          return;
+        }
+      }
+    }
     setSaving(true);
     try {
       const changed = Array.from(dirtyKeys).map(key => ({ key, value: localValues[key] ?? "" }));
       await fetcher("/platform-settings", { method: "PUT", body: JSON.stringify({ settings: changed }) });
+      setSavedValues(prev => {
+        const updated = { ...prev };
+        for (const c of changed) updated[c.key] = c.value;
+        return updated;
+      });
       setDirtyKeys(new Set());
       toast({ title: "Security settings saved ✅", description: `${changed.length} change(s) applied instantly.` });
     } catch (e: unknown) {

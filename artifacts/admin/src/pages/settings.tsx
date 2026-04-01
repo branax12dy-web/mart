@@ -21,7 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { Toggle, Field, SecretInput, SLabel, ModeBtn } from "@/components/AdminShared";
 import { PaymentSection } from "./settings-payment";
 import { IntegrationsSection } from "./settings-integrations";
-import { SecuritySection } from "./settings-security";
 import { SystemSection } from "./settings-system";
 import { renderSection, Setting, CatKey, TEXT_KEYS } from "./settings-render";
 
@@ -67,6 +66,7 @@ export default function SettingsPage() {
   const [, setLocation] = useLocation();
   const [settings, setSettings] = useState<Setting[]>([]);
   const [localValues, setLocalValues] = useState<Record<string,string>>({});
+  const [savedValues, setSavedValues] = useState<Record<string,string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
@@ -92,6 +92,7 @@ export default function SettingsPage() {
       const vals: Record<string,string> = {};
       for (const s of data.settings || []) vals[s.key] = s.value;
       setLocalValues(vals);
+      setSavedValues(vals);
       setDirtyKeys(new Set());
     } catch (e: any) {
       toast({ title: "Failed to load settings", description: e.message, variant: "destructive" });
@@ -103,7 +104,11 @@ export default function SettingsPage() {
 
   const handleChange = (key: string, value: string) => {
     setLocalValues(prev => ({ ...prev, [key]: value }));
-    setDirtyKeys(prev => { const n = new Set(prev); n.add(key); return n; });
+    setDirtyKeys(prev => {
+      const n = new Set(prev);
+      if (value === savedValues[key]) { n.delete(key); } else { n.add(key); }
+      return n;
+    });
   };
   const handleToggle = (key: string, val: boolean) => handleChange(key, val ? "on" : "off");
 
@@ -112,6 +117,11 @@ export default function SettingsPage() {
     try {
       const changed = Array.from(dirtyKeys).map(key => ({ key, value: localValues[key] ?? "" }));
       await fetcher("/platform-settings", { method: "PUT", body: JSON.stringify({ settings: changed }) });
+      setSavedValues(prev => {
+        const updated = { ...prev };
+        for (const c of changed) updated[c.key] = c.value;
+        return updated;
+      });
       setDirtyKeys(new Set());
       toast({ title: "Settings saved ✅", description: `${changed.length} change(s) applied instantly.` });
     } catch (e: any) {

@@ -490,6 +490,10 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "wallet_allowed_parcel",             value: "on",   label: "Wallet Available for Parcel",                       category: "payment" },
   { key: "wallet_allowed_rides",              value: "on",   label: "Wallet Available for Rides",                        category: "payment" },
   { key: "cod_allowed_rides",                 value: "on",   label: "COD Available for Rides",                           category: "payment" },
+  { key: "wallet_p2p_fee_pct",               value: "0",    label: "P2P Transfer Fee (%)",                              category: "payment" },
+  { key: "wallet_deposit_auto_approve",      value: "0",    label: "Auto-Approve Deposits Up To (Rs.)",                 category: "payment" },
+  { key: "security_lockout_enabled",         value: "on",   label: "Login Lockout Policy Enabled",                      category: "security" },
+  { key: "service_cities",                   value: "",     label: "Service Cities (comma-separated, blank=all)",        category: "general" },
 ];
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {

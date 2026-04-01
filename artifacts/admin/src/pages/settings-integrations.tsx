@@ -77,7 +77,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
 
   const val = (k: string) => localValues[k] ?? "";
   const dirty = (k: string) => dirtyKeys.has(k);
-  const tog = (k: string) => (localValues[k] ?? "off") === "on";
+  const tog = (k: string, def: string = "off") => (localValues[k] ?? def) === "on";
 
   const F = ({ label, k, placeholder, mono, hint }: { label: string; k: string; placeholder?: string; mono?: boolean; hint?: string }) => (
     <Field label={label} value={val(k)} onChange={v => handleChange(k, v)} isDirty={dirty(k)} placeholder={placeholder} mono={mono} hint={hint} />
@@ -85,8 +85,8 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   const S = ({ label, k, placeholder }: { label: string; k: string; placeholder?: string }) => (
     <SecretInput label={label} value={val(k)} onChange={v => handleChange(k, v)} isDirty={dirty(k)} placeholder={placeholder} />
   );
-  const T = ({ label, k, sub }: { label: string; k: string; sub?: string }) => (
-    <Toggle label={label} checked={tog(k)} onChange={v => handleToggle(k, v)} isDirty={dirty(k)} sub={sub} />
+  const T = ({ label, k, sub, def = "off" }: { label: string; k: string; sub?: string; def?: string }) => (
+    <Toggle label={label} checked={tog(k, def)} onChange={v => handleToggle(k, v)} isDirty={dirty(k)} sub={sub} />
   );
 
   /* ── Firebase ── */
@@ -156,7 +156,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   { k: "notif_ride_request", label: "New Ride Request", sub: "Rider receives" },
                   { k: "notif_promo", label: "Promotional Notifications", sub: "Customer receives" },
                 ].map(({ k, label, sub }) => (
-                  <Toggle key={k} label={label} sub={sub} checked={(localValues[k] ?? "on") === "on"}
+                  <Toggle key={k} label={label} sub={sub} checked={tog(k, "on")}
                     onChange={v => handleToggle(k, v)} isDirty={dirty(k)} />
                 ))}
               </div>
@@ -181,7 +181,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   { id: "zong",    label: "Zong/CM.com",   emoji: "🇵🇰", desc: "AJK / Pakistan" },
                 ].map(p => (
                   <button key={p.id} onClick={() => handleChange("sms_provider", p.id)}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${smsProvider === p.id ? "border-blue-500 bg-blue-50" : "border-border hover:bg-muted/30"}`}>
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${smsProvider === p.id ? "border-blue-500 bg-blue-50" : "border-border hover:bg-muted/30"} ${dirty("sms_provider") ? "ring-1 ring-amber-300" : ""}`}>
                     <div className="text-xl mb-1">{p.emoji}</div>
                     <div className="text-xs font-bold">{p.label}</div>
                     <div className="text-[10px] text-muted-foreground mt-0.5">{p.desc}</div>
@@ -268,11 +268,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
               </div>
               {/* Encryption quick select */}
               <div className="mt-3">
-                <label className="text-xs font-semibold text-foreground">Encryption Mode</label>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-foreground">Encryption Mode</label>
+                  {dirty("smtp_secure") && <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+                </div>
                 <div className="flex gap-2 mt-1.5">
                   {["tls","ssl","none"].map(mode => (
                     <button key={mode} onClick={() => handleChange("smtp_secure", mode)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${val("smtp_secure") === mode ? "bg-teal-600 text-white border-teal-600" : "border-border hover:bg-muted/30"}`}>
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${val("smtp_secure") === mode ? "bg-teal-600 text-white border-teal-600" : "border-border hover:bg-muted/30"} ${dirty("smtp_secure") ? "ring-1 ring-amber-300" : ""}`}>
                       {mode.toUpperCase()}
                     </button>
                   ))}
@@ -364,14 +367,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
               <SLabel icon={ToggleRight}>Notification Channels</SLabel>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 {[
-                  { k: "wa_send_otp",         label: "OTP / Login Verification",  sub: "Customer receives" },
-                  { k: "wa_send_order_update", label: "Order Status Updates",      sub: "Customer receives" },
-                  { k: "wa_send_ride_update",  label: "Ride Status Updates",       sub: "Customer receives" },
-                  { k: "wa_send_promo",        label: "Promotional Messages",      sub: "Marketing opt-in required" },
-                  { k: "wa_send_rider_notif",  label: "Rider Assignment Alerts",   sub: "Rider receives" },
-                  { k: "wa_send_vendor_notif", label: "New Order to Vendor",       sub: "Vendor receives" },
-                ].map(({ k, label, sub }) => (
-                  <Toggle key={k} label={label} sub={sub} checked={(localValues[k] ?? "off") === "on"}
+                  { k: "wa_send_otp",         label: "OTP / Login Verification",  sub: "Customer receives",   def: "on" },
+                  { k: "wa_send_order_update", label: "Order Status Updates",      sub: "Customer receives",   def: "on" },
+                  { k: "wa_send_ride_update",  label: "Ride Status Updates",       sub: "Customer receives",   def: "on" },
+                  { k: "wa_send_promo",        label: "Promotional Messages",      sub: "Marketing opt-in required", def: "off" },
+                  { k: "wa_send_rider_notif",  label: "Rider Assignment Alerts",   sub: "Rider receives",      def: "on" },
+                  { k: "wa_send_vendor_notif", label: "New Order to Vendor",       sub: "Vendor receives",     def: "on" },
+                ].map(({ k, label, sub, def }) => (
+                  <Toggle key={k} label={label} sub={sub} checked={tog(k, def)}
                     onChange={v => handleToggle(k, v)} isDirty={dirty(k)} />
                 ))}
               </div>
@@ -396,7 +399,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   { id: "amplitude", emoji: "📈", label: "Amplitude",       desc: "Product analytics" },
                 ].map(p => (
                   <button key={p.id} onClick={() => handleChange("analytics_platform", p.id)}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${analyticsPlatform === p.id ? "border-purple-500 bg-purple-50" : "border-border hover:bg-muted/30"}`}>
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${analyticsPlatform === p.id ? "border-purple-500 bg-purple-50" : "border-border hover:bg-muted/30"} ${dirty("analytics_platform") ? "ring-1 ring-amber-300" : ""}`}>
                     <div className="text-xl mb-1">{p.emoji}</div>
                     <div className="text-xs font-bold">{p.label}</div>
                     <div className="text-[10px] text-muted-foreground">{p.desc}</div>
@@ -435,14 +438,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
               <SLabel icon={CheckCircle2}>Events to Track</SLabel>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 {[
-                  { k: "track_order_placed",   label: "Order Placed",           sub: "With value & category" },
-                  { k: "track_ride_booked",    label: "Ride Booked",            sub: "With distance & fare" },
-                  { k: "track_user_signup",    label: "User Signup",            sub: "Registration funnel" },
-                  { k: "track_wallet_topup",   label: "Wallet Top-Up",          sub: "Payment amounts" },
-                  { k: "track_screen_views",   label: "Screen Views",           sub: "Page hit tracking" },
-                  { k: "track_search_queries", label: "Search Queries",         sub: "What users search" },
-                ].map(({ k, label, sub }) => (
-                  <Toggle key={k} label={label} sub={sub} checked={(localValues[k] ?? "on") === "on"}
+                  { k: "track_order_placed",   label: "Order Placed",           sub: "With value & category", def: "on" },
+                  { k: "track_ride_booked",    label: "Ride Booked",            sub: "With distance & fare", def: "on" },
+                  { k: "track_user_signup",    label: "User Signup",            sub: "Registration funnel",  def: "on" },
+                  { k: "track_wallet_topup",   label: "Wallet Top-Up",          sub: "Payment amounts",      def: "on" },
+                  { k: "track_screen_views",   label: "Screen Views",           sub: "Page hit tracking",    def: "on" },
+                  { k: "track_search_queries", label: "Search Queries",         sub: "What users search",    def: "off" },
+                ].map(({ k, label, sub, def }) => (
+                  <Toggle key={k} label={label} sub={sub} checked={tog(k, def)}
                     onChange={v => handleToggle(k, v)} isDirty={dirty(k)} />
                 ))}
               </div>
@@ -470,11 +473,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
               <SLabel icon={Globe}>Environment & Sampling</SLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
                 <div>
-                  <label className="text-xs font-semibold text-foreground">Environment</label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold text-foreground">Environment</label>
+                    {dirty("sentry_environment") && <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+                  </div>
                   <div className="flex gap-2 mt-1.5">
                     {["production","staging","development"].map(env => (
                       <button key={env} onClick={() => handleChange("sentry_environment", env)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${val("sentry_environment") === env ? "bg-red-600 text-white border-red-600" : "border-border hover:bg-muted/30"}`}>
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${val("sentry_environment") === env ? "bg-red-600 text-white border-red-600" : "border-border hover:bg-muted/30"} ${dirty("sentry_environment") ? "ring-1 ring-amber-300" : ""}`}>
                         {env}
                       </button>
                     ))}
@@ -495,14 +501,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
               <SLabel icon={Shield}>Capture Targets</SLabel>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 {[
-                  { k: "sentry_capture_api",     label: "API Server Errors",       sub: "Express 5xx errors" },
-                  { k: "sentry_capture_admin",    label: "Admin Panel Errors",      sub: "React frontend" },
-                  { k: "sentry_capture_vendor",   label: "Vendor App Errors",       sub: "React frontend" },
-                  { k: "sentry_capture_rider",    label: "Rider App Errors",        sub: "React frontend" },
-                  { k: "sentry_capture_unhandled",label: "Unhandled Rejections",    sub: "Promise failures" },
-                  { k: "sentry_capture_perf",     label: "Performance Monitoring",  sub: "Slow API traces" },
-                ].map(({ k, label, sub }) => (
-                  <Toggle key={k} label={label} sub={sub} checked={(localValues[k] ?? "on") === "on"}
+                  { k: "sentry_capture_api",     label: "API Server Errors",       sub: "Express 5xx errors",  def: "on" },
+                  { k: "sentry_capture_admin",    label: "Admin Panel Errors",      sub: "React frontend",     def: "on" },
+                  { k: "sentry_capture_vendor",   label: "Vendor App Errors",       sub: "React frontend",     def: "off" },
+                  { k: "sentry_capture_rider",    label: "Rider App Errors",        sub: "React frontend",     def: "off" },
+                  { k: "sentry_capture_unhandled",label: "Unhandled Rejections",    sub: "Promise failures",   def: "on" },
+                  { k: "sentry_capture_perf",     label: "Performance Monitoring",  sub: "Slow API traces",    def: "on" },
+                ].map(({ k, label, sub, def }) => (
+                  <Toggle key={k} label={label} sub={sub} checked={tog(k, def)}
                     onChange={v => handleToggle(k, v)} isDirty={dirty(k)} />
                 ))}
               </div>
@@ -529,21 +535,21 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
             <div>
               <SLabel icon={ToggleRight}>Enabled APIs</SLabel>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                <T label="Distance Matrix API" k="maps_distance_matrix" sub="Fare calculation & ETAs" />
-                <T label="Places Autocomplete API" k="maps_places_autocomplete" sub="Address search for customers" />
-                <T label="Geocoding API" k="maps_geocoding" sub="Convert addresses to coordinates" />
+                <T label="Distance Matrix API" k="maps_distance_matrix" sub="Fare calculation & ETAs" def="on" />
+                <T label="Places Autocomplete API" k="maps_places_autocomplete" sub="Address search for customers" def="on" />
+                <T label="Geocoding API" k="maps_geocoding" sub="Convert addresses to coordinates" def="on" />
               </div>
             </div>
             <div>
               <SLabel icon={Car}>Maps Usage</SLabel>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 {[
-                  { k: "maps_use_customer_app", label: "Customer App Map",     sub: "Show map on order/ride screens" },
-                  { k: "maps_use_rider_app",    label: "Rider Navigation Map", sub: "Live route for riders" },
-                  { k: "maps_use_vendor_app",   label: "Vendor Area Map",      sub: "Delivery zone visualization" },
-                  { k: "maps_live_tracking",    label: "Live Order Tracking",  sub: "Customer tracks rider in real time" },
-                ].map(({ k, label, sub }) => (
-                  <Toggle key={k} label={label} sub={sub} checked={(localValues[k] ?? "off") === "on"}
+                  { k: "maps_use_customer_app", label: "Customer App Map",     sub: "Show map on order/ride screens", def: "on" },
+                  { k: "maps_use_rider_app",    label: "Rider Navigation Map", sub: "Live route for riders",       def: "on" },
+                  { k: "maps_use_vendor_app",   label: "Vendor Area Map",      sub: "Delivery zone visualization", def: "off" },
+                  { k: "maps_live_tracking",    label: "Live Order Tracking",  sub: "Customer tracks rider in real time", def: "on" },
+                ].map(({ k, label, sub, def }) => (
+                  <Toggle key={k} label={label} sub={sub} checked={tog(k, def)}
                     onChange={v => handleToggle(k, v)} isDirty={dirty(k)} />
                 ))}
               </div>
