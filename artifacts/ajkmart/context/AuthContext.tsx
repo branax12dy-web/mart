@@ -305,10 +305,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const clearSuspended = () => {
+  const clearSuspended = async () => {
     setIsSuspended(false);
     setSuspendedMessage("");
-    doLogout();
+    await doLogout();
   };
 
   const setBiometricEnabled = async (enabled: boolean) => {

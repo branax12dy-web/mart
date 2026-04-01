@@ -124,6 +124,29 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 **Offline GPS Queue (Rider App `api.ts`):**
 - IndexedDB-based offline GPS ping queue (`enqueueGpsPing`/`drainGpsQueue`). Location updates queue when offline, drain via `POST /rider/location/batch` on reconnect.
 
+### Auth Security Hardening (Customer Mobile App Audit)
+
+**Files modified:** `context/AuthContext.tsx`, `app/_layout.tsx`, `app/auth/index.tsx`, `app/auth/register.tsx`, `app/auth/forgot-password.tsx`, `api-server/src/routes/auth.ts`
+
+**Critical Security Fixes:**
+1. Server-side OTP verification before password reset — new `POST /auth/verify-reset-otp` endpoint validates OTP against server before allowing password step (was client-only check)
+2. Duplicate magic link listener removed from `auth/index.tsx` — centralized in `_layout.tsx` `MagicLinkHandler` to prevent double API calls and race conditions
+3. Cryptographically secure nonce for Google OAuth — uses `crypto.getRandomValues(Uint8Array(16))` instead of predictable `Date.now()`
+4. Stale closure fixes in `AuthContext` — `userRef`/`tokenRef`/`doLogoutRef` pattern ensures callbacks always see latest state
+
+**Medium Fixes:**
+5. All `doLogout()` calls properly awaited (unauthorized handler, proactive refresh, `clearSuspended`)
+6. Biometric cancel vs fatal failure — only hardware/lockout failures disable biometric; user cancel/system cancel/fallback do NOT
+7. Proactive token refresh uses `doLogoutRef.current()` to always call latest logout implementation
+8. `handleCompleteProfile` loading state fix — proper error handling prevents infinite spinner
+9. `setOtpSent(true)` placement in register flow — set inside registration block to prevent half-registered state on retry
+
+**UI/UX Fixes:**
+10. Confirm password fields added to both register (Step 3) and forgot-password flows with real-time mismatch feedback
+11. Email regex validation (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`) applied consistently across all auth screens
+12. `AuthGuard` segments dependency — effect now includes `segments` in deps for proper re-evaluation on navigation
+13. Unused imports cleaned up (`TextInput`, `ActivityIndicator`, dead `loginResultRef`)
+
 ### Live Fleet Tracking — Complete System (Task #3)
 
 **API Server:**

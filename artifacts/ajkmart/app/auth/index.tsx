@@ -10,7 +10,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -118,8 +117,6 @@ export default function AuthScreen() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [emailResendCooldown, setEmailResendCooldown] = useState(0);
 
-  const loginResultRef = useRef<((res: any) => Promise<void>) | null>(null);
-
   useEffect(() => {
     if (twoFactorPending) {
       setTotpTempToken(twoFactorPending.tempToken);
@@ -209,8 +206,6 @@ export default function AuthScreen() {
       router.replace("/(tabs)");
     }
   };
-  loginResultRef.current = handleLoginResult;
-
   /* FIX 2: Magic link is handled centrally in _layout.tsx MagicLinkHandler.
      Duplicate listener removed to prevent double API calls and race conditions. */
 
