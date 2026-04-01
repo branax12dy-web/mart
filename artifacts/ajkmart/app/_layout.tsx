@@ -227,6 +227,26 @@ export default function RootLayout() {
         Inter_700Bold,
       };
 
+      if (Platform.OS === "web") {
+        const suppressFontRejection = (e: PromiseRejectionEvent) => {
+          const msg = String(e.reason?.message || e.reason || "").toLowerCase();
+          const stack = String(e.reason?.stack || "").toLowerCase();
+          const isFontError =
+            msg.includes("fontfaceobserver") ||
+            msg.includes("fontface") ||
+            msg.includes("is not loaded after waiting") ||
+            (msg.includes("timeout") && (msg.includes("font") || msg.includes("nastaliq"))) ||
+            stack.includes("fontfaceobserver");
+          if (isFontError) {
+            e.preventDefault();
+          }
+        };
+        window.addEventListener("unhandledrejection", suppressFontRejection);
+        cleanupFontHandler = () => {
+          window.removeEventListener("unhandledrejection", suppressFontRejection);
+        };
+      }
+
       try {
         await Font.loadAsync(coreFonts);
       } catch {
@@ -245,20 +265,6 @@ export default function RootLayout() {
       };
 
       if (Platform.OS === "web") {
-        const suppressFontRejection = (e: PromiseRejectionEvent) => {
-          const msg = String(e.reason?.message || e.reason || "").toLowerCase();
-          const isFontTimeout =
-            (msg.includes("timeout") && (msg.includes("font") || msg.includes("nastaliq"))) ||
-            msg.includes("fontfaceobserver") ||
-            msg.includes("fontface");
-          if (isFontTimeout) {
-            e.preventDefault();
-          }
-        };
-        window.addEventListener("unhandledrejection", suppressFontRejection);
-        cleanupFontHandler = () => {
-          window.removeEventListener("unhandledrejection", suppressFontRejection);
-        };
         try {
           await Promise.race([
             Font.loadAsync(urduFonts),
@@ -269,7 +275,7 @@ export default function RootLayout() {
         setTimeout(() => {
           cleanupFontHandler?.();
           cleanupFontHandler = null;
-        }, 5000);
+        }, 15000);
       } else {
         try {
           await Font.loadAsync(urduFonts);
