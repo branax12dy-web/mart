@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
   NativeScrollEvent,
+  useWindowDimensions,
   NativeSyntheticEvent,
   Platform,
   Pressable,
