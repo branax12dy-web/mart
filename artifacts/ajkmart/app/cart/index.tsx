@@ -694,7 +694,6 @@ export default function CartScreen() {
       let gwLastError: Error | null = null;
       let order: any = null;
       const gwIdemKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      setPendingAck(true);
       for (let attempt = 0; attempt < GW_MAX_RETRIES; attempt++) {
         try {
           order = await createOrder({
@@ -721,11 +720,10 @@ export default function CartScreen() {
         }
       }
       if (gwLastError || !order) {
-        setPendingAck(false);
         throw gwLastError ?? new Error("Order creation failed after retries");
       }
       const realOrderId = (order as any).id;
-      if (!realOrderId) { setPendingAck(false); throw new Error("Could not create order"); }
+      if (!realOrderId) { throw new Error("Could not create order"); }
 
       const r = await fetch(`${API_BASE}/payments/initiate`, {
         method: "POST",
@@ -749,7 +747,6 @@ export default function CartScreen() {
     } catch (e: any) {
       showToast(e.message || T("paymentFailed"), "error");
       setGwStep("input");
-      setPendingAck(false);
     }
     setGwPaying(false);
   };
