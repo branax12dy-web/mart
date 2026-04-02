@@ -510,7 +510,11 @@ router.post("/reconcile", adminAuth, async (req, res) => {
     return;
   }
 
-  const newPaymentStatus = forcedStatus === "success" ? "success" : forcedStatus === "failed" ? "failed" : "success";
+  if (!forcedStatus || !["success", "failed"].includes(forcedStatus)) {
+    res.status(400).json({ error: "status is required and must be 'success' or 'failed'" });
+    return;
+  }
+  const newPaymentStatus = forcedStatus as "success" | "failed";
   const updates: Record<string, unknown> = {
     paymentStatus: newPaymentStatus,
     updatedAt: new Date(),
