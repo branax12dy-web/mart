@@ -176,7 +176,13 @@ router.post("/check-identifier", async (req, res) => {
   const profileIncomplete = exists && (!user?.name || user.name === "User" || user.name === "Pending") && !user?.passwordHash;
 
   if (exists && profileIncomplete) {
-    action = "register";
+    if (looksLikePhone && phoneOtpEnabled) {
+      action = "send_phone_otp";
+    } else if (looksLikeEmail && emailOtpEnabled) {
+      action = "send_email_otp";
+    } else {
+      action = "register";
+    }
   } else if (exists) {
     if (hasGoogle && googleEnabled) {
       action = "force_google";
@@ -214,7 +220,7 @@ router.post("/check-identifier", async (req, res) => {
 
   res.json({
     exists,
-    isNewUser: isNewUser || profileIncomplete,
+    isNewUser,
     registrationOpen,
     action,
     profileIncomplete: !!profileIncomplete,
