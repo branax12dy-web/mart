@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -32,7 +32,6 @@ import {
   SERVICE_REGISTRY,
   getActiveServices,
   getActiveBanners,
-  getActiveQuickActions,
   type ServiceDefinition,
 } from "@/constants/serviceRegistry";
 import {
@@ -40,6 +39,9 @@ import {
   SectionHeader,
   SkeletonBlock,
   EmptyState,
+  CategoryPill,
+  CountdownTimer,
+  SearchHeader,
 } from "@/components/user-shared";
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
@@ -158,49 +160,6 @@ function ActiveTrackerStrip({ userId, position, tabBarHeight = 0 }: { userId: st
   );
 }
 
-function ServiceHero({ service, appName = "AJKMart" }: { service: ServiceDefinition; appName?: string }) {
-  const hero = service.heroConfig;
-  const displayTitle = service.key === "mart" ? appName : hero.title;
-  return (
-    <AnimatedPressable
-      onPress={() => safeNavigate(String(service.route))}
-      style={styles.heroWrap}
-      delay={80}
-      accessibilityLabel={`${displayTitle}. ${hero.subtitle}`}
-    >
-      <LinearGradient colors={hero.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
-        <View style={[styles.blob, { width: 200, height: 200, top: -60, right: -40, opacity: 0.08 }]} />
-        <View style={[styles.blob, { width: 80, height: 80, bottom: 10, right: 80, opacity: 0.06 }]} />
-        <View style={styles.heroL}>
-          <View style={styles.heroBadge}>
-            <Ionicons name={hero.badgeIcon} size={11} color="#fff" />
-            <Text style={styles.heroBadgeTxt}>{hero.badgeLabel}</Text>
-          </View>
-          <Text style={styles.heroTitle}>{displayTitle}</Text>
-          <Text style={styles.heroSub}>{hero.subtitle}</Text>
-          <View style={styles.heroStats}>
-            {hero.stats.map((st, i) => (
-              <View key={i} style={styles.heroStat}>
-                <Ionicons name={st.icon} size={11} color="rgba(255,255,255,0.85)" />
-                <Text style={styles.heroStatTxt}>{st.label}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.heroBtn}>
-            <Text style={styles.heroBtnTxt}>{hero.cta}</Text>
-            <Ionicons name="arrow-forward" size={13} color={C.primary} />
-          </View>
-        </View>
-        <View style={styles.heroR}>
-          <View style={styles.heroRing}>
-            <Ionicons name={service.iconFocused} size={44} color="#fff" />
-          </View>
-        </View>
-      </LinearGradient>
-    </AnimatedPressable>
-  );
-}
-
 function SvcCard({ service, delay, fullWidth, T }: { service: ServiceDefinition; delay: number; fullWidth?: boolean; T: (key: Parameters<typeof tDual>[0]) => string }) {
   const labelMap: Record<string, Parameters<typeof tDual>[0]> = { food: "foodDelivery", rides: "bikeCarRide", pharmacy: "pharmacy", parcel: "parcel" };
   const subMap: Record<string, Parameters<typeof tDual>[0]> = { food: "restaurantsNearYou", rides: "safeBooking", pharmacy: "medicinesDelivered", parcel: "parcelsAnywhere" };
@@ -225,47 +184,6 @@ function SvcCard({ service, delay, fullWidth, T }: { service: ServiceDefinition;
         <View style={[styles.svcTag, { backgroundColor: service.tagBg }]}>
           <Ionicons name={service.tagIcon} size={11} color={service.tagColor} />
           <Text style={[styles.svcTagTxt, { color: service.tagColor }]}>{tag}</Text>
-        </View>
-      </LinearGradient>
-    </AnimatedPressable>
-  );
-}
-
-function SingleServiceHero({ service, appName }: { service: ServiceDefinition; appName: string }) {
-  const hero = service.heroConfig;
-  const displayTitle = service.key === "mart" ? appName : hero.title;
-  return (
-    <AnimatedPressable
-      onPress={() => safeNavigate(String(service.route))}
-      style={styles.singleHeroWrap}
-      delay={80}
-      accessibilityLabel={`${displayTitle}. ${hero.subtitle}`}
-    >
-      <LinearGradient colors={hero.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.singleHeroCard}>
-        <View style={[styles.blob, { width: 280, height: 280, top: -80, right: -60, opacity: 0.08 }]} />
-        <View style={[styles.blob, { width: 120, height: 120, bottom: 20, left: -30, opacity: 0.06 }]} />
-        <View style={styles.singleHeroContent}>
-          <View style={styles.singleHeroIconWrap}>
-            <Ionicons name={service.iconFocused} size={64} color="#fff" />
-          </View>
-          <View style={styles.heroBadge}>
-            <Ionicons name={hero.badgeIcon} size={11} color="#fff" />
-            <Text style={styles.heroBadgeTxt}>{hero.badgeLabel}</Text>
-          </View>
-          <Text style={styles.singleHeroTitle}>{displayTitle}</Text>
-          <Text style={styles.singleHeroSub}>{hero.subtitle}</Text>
-          <View style={styles.singleHeroStats}>
-            {hero.stats.map((st, i) => (
-              <View key={i} style={styles.singleHeroStat}>
-                <Ionicons name={st.icon} size={14} color="rgba(255,255,255,0.85)" />
-                <Text style={styles.singleHeroStatTxt}>{st.label}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.singleHeroCta}>
-            <Text style={styles.singleHeroCtaTxt}>{hero.cta}</Text>
-            <Ionicons name="arrow-forward" size={16} color={C.primary} />
-          </View>
         </View>
       </LinearGradient>
     </AnimatedPressable>
@@ -371,26 +289,36 @@ function WalletStrip({ balance, onPress, appName = "AJKMart" }: { balance: numbe
   );
 }
 
-function QuickActionPill({ icon, label, color, bg, onPress, delay }: {
-  icon: keyof typeof Ionicons.glyphMap; label: string; color: string; bg: string; onPress: () => void; delay: number;
-}) {
-  const op = useRef(new Animated.Value(0)).current;
-  const ty = useRef(new Animated.Value(16)).current;
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(op, { toValue: 1, duration: 300, delay, useNativeDriver: true }),
-      Animated.timing(ty, { toValue: 0, duration: 300, delay, useNativeDriver: true }),
-    ]).start();
-  }, []);
+function CategoryStrip({ services, T }: { services: ServiceDefinition[]; T: (key: Parameters<typeof tDual>[0]) => string }) {
+  const labelMap: Record<string, Parameters<typeof tDual>[0]> = { food: "foodDelivery", rides: "bikeCarRide", pharmacy: "pharmacy", parcel: "parcel" };
+  const categories = services.map(svc => ({
+    key: svc.key,
+    icon: svc.iconFocused,
+    label: labelMap[svc.key] ? T(labelMap[svc.key]) : svc.label,
+    color: svc.color,
+    bg: svc.colorLight,
+    route: String(svc.route),
+  }));
+
+  if (categories.length === 0) return null;
+
   return (
-    <Animated.View style={{ opacity: op, transform: [{ translateY: ty }] }}>
-      <Pressable onPress={onPress} style={styles.pill} accessibilityRole="button" accessibilityLabel={label}>
-        <View style={[styles.pillIcon, { backgroundColor: bg }]}>
-          <Ionicons name={icon} size={20} color={color} />
-        </View>
-        <Text style={styles.pillLbl}>{label}</Text>
-      </Pressable>
-    </Animated.View>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.catRow}
+    >
+      {categories.map((cat) => (
+        <CategoryPill
+          key={cat.key}
+          icon={cat.icon}
+          label={cat.label}
+          color={cat.color}
+          bg={cat.bg}
+          onPress={() => safeNavigate(cat.route)}
+        />
+      ))}
+    </ScrollView>
   );
 }
 
@@ -400,6 +328,7 @@ function BannerCarousel({ features }: { features: Record<string, boolean> }) {
   const [active, setActive] = useState(0);
   const { width: windowWidth } = useWindowDimensions();
   const BANNER_W = windowWidth - H_PAD * 2;
+  const dotWidths = useRef(banners.map((_, i) => new Animated.Value(i === 0 ? 24 : 6))).current;
 
   useEffect(() => {
     if (banners.length <= 1) return;
@@ -409,9 +338,20 @@ function BannerCarousel({ features }: { features: Record<string, boolean> }) {
         scrollRef.current?.scrollTo({ x: next * BANNER_W, animated: true });
         return next;
       });
-    }, 3200);
+    }, 3500);
     return () => clearInterval(timer);
   }, [BANNER_W, banners.length]);
+
+  useEffect(() => {
+    dotWidths.forEach((dw, i) => {
+      Animated.spring(dw, {
+        toValue: i === active ? 24 : 6,
+        useNativeDriver: false,
+        friction: 8,
+        tension: 100,
+      }).start();
+    });
+  }, [active]);
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -471,11 +411,20 @@ function BannerCarousel({ features }: { features: Record<string, boolean> }) {
             <Pressable
               key={i}
               onPress={() => { setActive(i); scrollRef.current?.scrollTo({ x: i * BANNER_W, animated: true }); }}
-              style={[styles.dot, active === i && styles.dotActive]}
               accessibilityRole="button"
               accessibilityLabel={`Banner ${i + 1} of ${banners.length}`}
               accessibilityState={{ selected: active === i }}
-            />
+            >
+              <Animated.View
+                style={[
+                  styles.dot,
+                  {
+                    width: dotWidths[i],
+                    backgroundColor: active === i ? C.primary : C.border,
+                  },
+                ]}
+              />
+            </Pressable>
           ))}
         </View>
       )}
@@ -483,16 +432,73 @@ function BannerCarousel({ features }: { features: Record<string, boolean> }) {
   );
 }
 
+function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => string }) {
+  const flashTarget = useMemo(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 6);
+    return d;
+  }, []);
+
+  const deals = [
+    { icon: "leaf-outline" as const, name: "Fresh Fruits", discount: "20% OFF", color: "#059669", bg: "#ECFDF5" },
+    { icon: "nutrition-outline" as const, name: "Dairy Items", discount: "15% OFF", color: "#D97706", bg: "#FFFBEB" },
+    { icon: "water-outline" as const, name: "Beverages", discount: "10% OFF", color: "#2563EB", bg: "#EFF6FF" },
+    { icon: "fish-outline" as const, name: "Meat & Fish", discount: "25% OFF", color: "#DC2626", bg: "#FEF2F2" },
+  ];
+
+  return (
+    <View style={styles.flashSection}>
+      <View style={styles.flashHeader}>
+        <View style={styles.flashHeaderLeft}>
+          <Ionicons name="flash" size={18} color={C.danger} />
+          <Text style={styles.flashTitle}>{T("todaysDeals")}</Text>
+        </View>
+        <CountdownTimer targetTime={flashTarget} />
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.flashRow}
+      >
+        {deals.map((deal, i) => (
+          <Pressable
+            key={i}
+            onPress={() => safeNavigate("/mart")}
+            style={styles.flashCard}
+            accessibilityLabel={`${deal.name} ${deal.discount}`}
+          >
+            <View style={[styles.flashIconWrap, { backgroundColor: deal.bg }]}>
+              <Ionicons name={deal.icon} size={26} color={deal.color} />
+            </View>
+            <Text style={styles.flashName} numberOfLines={1}>{deal.name}</Text>
+            <View style={[styles.flashBadge, { backgroundColor: deal.bg }]}>
+              <Text style={[styles.flashDiscount, { color: deal.color }]}>{deal.discount}</Text>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 function HomeSkeleton() {
   return (
     <View style={{ paddingHorizontal: H_PAD, gap: spacing.md, marginTop: spacing.md }}>
-      <SkeletonBlock w="100%" h={165} r={radii.xxl} />
+      <SkeletonBlock w="100%" h={150} r={radii.xxl} />
+      <View style={{ flexDirection: "row", gap: spacing.md }}>
+        {Array.from({ length: 5 }, (_, i) => (
+          <View key={i} style={{ alignItems: "center", gap: 6 }}>
+            <SkeletonBlock w={56} h={56} r={28} />
+            <SkeletonBlock w={40} h={10} r={4} />
+          </View>
+        ))}
+      </View>
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         <SkeletonBlock w={HALF_W} h={178} r={radii.xl} />
         <SkeletonBlock w={HALF_W} h={178} r={radii.xl} />
       </View>
       <SkeletonBlock w="100%" h={60} r={radii.xl} />
-      <SkeletonBlock w="100%" h={135} r={radii.xl} />
+      <SkeletonBlock w="100%" h={100} r={radii.xl} />
     </View>
   );
 }
@@ -541,7 +547,6 @@ export default function HomeScreen() {
   }, []);
 
   const activeServices = getActiveServices(features);
-  const quickActions = getActiveQuickActions(features);
   const noServicesActive = activeServices.length === 0;
 
   return (
@@ -588,25 +593,23 @@ export default function HomeScreen() {
                 <Text style={styles.locTxt}>{platformConfig.platform.businessAddress}</Text>
               </View>
             </View>
-            <Pressable onPress={() => router.push("/cart")} style={styles.cartBtn} accessibilityRole="button" accessibilityLabel={`Shopping cart${itemCount > 0 ? `, ${itemCount} items` : ""}`}>
-              <Ionicons name="bag-outline" size={20} color="#fff" />
-              {itemCount > 0 && (
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeTxt}>{itemCount > 9 ? "9+" : itemCount}</Text>
-                </View>
-              )}
-            </Pressable>
+            <View style={styles.hdrActions}>
+              <Pressable onPress={() => router.push("/cart")} style={styles.cartBtn} accessibilityRole="button" accessibilityLabel={`Shopping cart${itemCount > 0 ? `, ${itemCount} items` : ""}`}>
+                <Ionicons name="bag-outline" size={20} color="#fff" />
+                {itemCount > 0 && (
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeTxt}>{itemCount > 9 ? "9+" : itemCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
           </View>
 
-          <Pressable onPress={() => router.push("/search")} style={styles.searchBar} accessibilityRole="search" accessibilityLabel="Search products and services">
-            <View style={styles.searchIcon}>
-              <Ionicons name="search" size={16} color={C.primary} />
-            </View>
-            <Text style={urduText(styles.searchTxt)}>{T("search")}</Text>
-            <View style={styles.searchFilter}>
-              <Ionicons name="options-outline" size={16} color={C.textMuted} />
-            </View>
-          </Pressable>
+          <SearchHeader
+            placeholder={T("search")}
+            onPress={() => router.push("/search")}
+            onFilterPress={() => router.push("/search")}
+          />
         </LinearGradient>
       </Animated.View>
 
@@ -617,8 +620,6 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scroll}
       >
         {user?.role === "rider" && <RiderOnlineBanner />}
-
-        <SectionHeader title={T("ourServices")} subtitle={T("allInOne")} />
 
         {contentBanner ? (
           <View style={styles.announceBanner}>
@@ -639,51 +640,10 @@ export default function HomeScreen() {
           />
         ) : (
           <>
-            {activeServices.length === 1 ? (
-              <View style={styles.grid}>
-                <SingleServiceHero service={activeServices[0]} appName={appName} />
-                {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
+            {activeServices.length > 0 && (
+              <View style={styles.catSection}>
+                <CategoryStrip services={activeServices} T={T} />
               </View>
-            ) : activeServices.length === 2 ? (
-              <View style={styles.grid}>
-                {activeServices.map((svc) => (<ServiceHero key={svc.key} service={svc} appName={appName} />))}
-                {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
-              </View>
-            ) : (
-              <View style={styles.grid}>
-                {(() => {
-                  const elements: React.ReactNode[] = [];
-                  const first = activeServices[0];
-                  const rest = activeServices.slice(1);
-                  elements.push(<ServiceHero key={first.key} service={first} appName={appName} />);
-                  for (let i = 0; i < rest.length; i += 2) {
-                    const pair = rest.slice(i, i + 2);
-                    if (pair.length === 2) {
-                      elements.push(
-                        <View key={`row-${i}`} style={styles.halfRow}>
-                          <SvcCard service={pair[0]} delay={160 + i * 40} T={T} />
-                          <SvcCard service={pair[1]} delay={200 + i * 40} T={T} />
-                        </View>
-                      );
-                    } else {
-                      elements.push(<SvcCard key={`single-${i}`} service={pair[0]} delay={160 + i * 40} fullWidth T={T} />);
-                    }
-                  }
-                  return elements;
-                })()}
-                {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
-              </View>
-            )}
-
-            {quickActions.length > 0 && (
-              <>
-                <SectionHeader title={T("quickAccess")} />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
-                  {quickActions.map((q, i) => (
-                    <QuickActionPill key={`${q.label}-${i}`} icon={q.icon} label={q.label} color={q.color} bg={q.bg} onPress={() => router.push(q.route as Href)} delay={70 + i * 50} />
-                  ))}
-                </ScrollView>
-              </>
             )}
 
             {platformConfig.content.showBanner && (
@@ -694,6 +654,31 @@ export default function HomeScreen() {
                 </View>
               </>
             )}
+
+            <FlashDealsSection T={T} />
+
+            <SectionHeader title={T("ourServices")} subtitle={T("allInOne")} />
+
+            <View style={styles.grid}>
+              {(() => {
+                const elements: React.ReactNode[] = [];
+                for (let i = 0; i < activeServices.length; i += 2) {
+                  const pair = activeServices.slice(i, i + 2);
+                  if (pair.length === 2) {
+                    elements.push(
+                      <View key={`row-${i}`} style={styles.halfRow}>
+                        <SvcCard service={pair[0]} delay={100 + i * 40} T={T} />
+                        <SvcCard service={pair[1]} delay={140 + i * 40} T={T} />
+                      </View>
+                    );
+                  } else {
+                    elements.push(<SvcCard key={`single-${i}`} service={pair[0]} delay={100 + i * 40} fullWidth T={T} />);
+                  }
+                }
+                return elements;
+              })()}
+              {features.wallet && <WalletStrip balance={user?.walletBalance || 0} onPress={() => router.push("/(tabs)/wallet")} appName={appName} />}
+            </View>
           </>
         )}
 
@@ -753,6 +738,7 @@ const styles = StyleSheet.create({
 
   header: { paddingHorizontal: H_PAD, paddingBottom: spacing.lg },
   hdrRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.lg },
+  hdrActions: { flexDirection: "row", gap: spacing.sm },
   greeting: { ...typography.caption, color: "rgba(255,255,255,0.8)", marginBottom: 2 },
   hdrTitle: { ...typography.h2, color: "#fff", marginBottom: Platform.OS === "web" ? 2 : 5 },
   locRow: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -782,33 +768,6 @@ const styles = StyleSheet.create({
     borderColor: "#fff",
   },
   cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#fff" },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#fff",
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 11,
-    ...shadows.sm,
-  },
-  searchIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.sm,
-    backgroundColor: C.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  searchTxt: { flex: 1, ...typography.body, color: C.textMuted },
-  searchFilter: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.sm,
-    backgroundColor: C.surfaceSecondary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 
   announceBar: {
     backgroundColor: C.primary,
@@ -834,7 +793,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     marginHorizontal: H_PAD,
-    marginBottom: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
     backgroundColor: C.primarySoft,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
@@ -845,104 +805,11 @@ const styles = StyleSheet.create({
   announceBannerTxt: { flex: 1, ...typography.captionMedium, color: C.primary },
 
   scroll: { paddingBottom: 0 },
+  catSection: { marginTop: spacing.lg },
+  catRow: { paddingHorizontal: H_PAD, gap: spacing.sm },
+
   grid: { paddingHorizontal: H_PAD, gap: spacing.md },
   halfRow: { flexDirection: "row", gap: spacing.md },
-
-  heroWrap: { borderRadius: radii.xxl, overflow: "hidden" },
-  heroCard: {
-    borderRadius: radii.xxl,
-    padding: spacing.xl,
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 165,
-    overflow: "hidden",
-  },
-  heroL: { flex: 1, gap: 7 },
-  heroBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-  },
-  heroBadgeTxt: { ...typography.smallMedium, color: "#fff" },
-  heroTitle: { fontFamily: "Inter_700Bold", fontSize: 28, color: "#fff", lineHeight: 32 },
-  heroSub: { ...typography.caption, color: "rgba(255,255,255,0.85)", lineHeight: 17 },
-  heroStats: { flexDirection: "row", gap: 14, marginTop: 2 },
-  heroStat: { flexDirection: "row", alignItems: "center", gap: 4 },
-  heroStatTxt: { ...typography.small, color: "rgba(255,255,255,0.85)" },
-  heroBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#fff",
-    alignSelf: "flex-start",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.full,
-    marginTop: 4,
-  },
-  heroBtnTxt: { ...typography.buttonSmall, color: C.primary },
-  heroR: { alignItems: "center", marginLeft: 10 },
-  heroRing: {
-    width: 78,
-    height: 78,
-    borderRadius: radii.xxl,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-
-  singleHeroWrap: { borderRadius: radii.xxl, overflow: "hidden" },
-  singleHeroCard: {
-    borderRadius: radii.xxl,
-    padding: spacing.xxl,
-    alignItems: "center",
-    minHeight: 320,
-    overflow: "hidden",
-    justifyContent: "center",
-  },
-  singleHeroContent: { alignItems: "center", gap: 10 },
-  singleHeroIconWrap: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.2)",
-    marginBottom: 8,
-  },
-  singleHeroTitle: { fontFamily: "Inter_700Bold", fontSize: 34, color: "#fff", textAlign: "center" },
-  singleHeroSub: { ...typography.body, color: "rgba(255,255,255,0.85)", textAlign: "center", lineHeight: 22 },
-  singleHeroStats: { flexDirection: "row", gap: 20, marginTop: 4 },
-  singleHeroStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-  },
-  singleHeroStatTxt: { ...typography.captionMedium, color: "rgba(255,255,255,0.9)" },
-  singleHeroCta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#fff",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: radii.full,
-    marginTop: 8,
-  },
-  singleHeroCtaTxt: { ...typography.button, color: C.primary },
 
   svcWrap: { borderRadius: radii.xl, overflow: "hidden", height: 178 },
   svcCard: { flex: 1, borderRadius: radii.xl, padding: spacing.lg, overflow: "hidden", gap: 5 },
@@ -992,17 +859,12 @@ const styles = StyleSheet.create({
   },
   walletTopUpTxt: { ...typography.captionMedium, color: C.primary },
 
-  pillsRow: { paddingHorizontal: H_PAD, gap: spacing.md },
-  pill: { alignItems: "center", gap: 7, width: 68 },
-  pillIcon: { width: 56, height: 56, borderRadius: radii.xl, alignItems: "center", justifyContent: "center" },
-  pillLbl: { ...typography.smallMedium, color: C.textSecondary, textAlign: "center" },
-
   carouselWrap: { paddingHorizontal: H_PAD, overflow: "hidden" },
 
   bannerCard: {
     borderRadius: radii.xl,
     padding: spacing.xl,
-    minHeight: 135,
+    minHeight: 150,
     flexDirection: "row",
     alignItems: "center",
     overflow: "hidden",
@@ -1016,7 +878,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   bannerTagTxt: { ...typography.smallMedium, color: "#fff" },
-  bannerTitle: { fontFamily: "Inter_700Bold", fontSize: 19, color: "#fff", marginBottom: 5 },
+  bannerTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff", marginBottom: 5 },
   bannerDesc: { ...typography.caption, color: "rgba(255,255,255,0.9)", lineHeight: 17, marginBottom: spacing.md },
   bannerCta: {
     flexDirection: "row",
@@ -1024,7 +886,7 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: "rgba(255,255,255,0.2)",
     alignSelf: "flex-start",
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: radii.full,
   },
@@ -1032,8 +894,63 @@ const styles = StyleSheet.create({
   bannerIconWrap: { marginLeft: spacing.sm },
 
   dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: spacing.md },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.border },
-  dotActive: { width: 22, borderRadius: 3, backgroundColor: C.primary },
+  dot: { height: 6, borderRadius: 3 },
+
+  flashSection: {
+    marginHorizontal: H_PAD,
+    marginTop: spacing.xl,
+    backgroundColor: C.surface,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    ...shadows.sm,
+  },
+  flashHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  flashHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  flashTitle: {
+    ...typography.h3,
+    color: C.text,
+  },
+  flashRow: {
+    gap: spacing.md,
+  },
+  flashCard: {
+    width: 100,
+    alignItems: "center",
+    backgroundColor: C.surfaceSecondary,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: 6,
+  },
+  flashIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 2,
+  },
+  flashName: {
+    ...typography.captionMedium,
+    color: C.text,
+    textAlign: "center",
+  },
+  flashBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.full,
+  },
+  flashDiscount: {
+    ...typography.smallMedium,
+  },
 
   blob: { position: "absolute", borderRadius: 999, backgroundColor: "#fff" },
 });

@@ -780,12 +780,17 @@ export default function AuthScreen() {
       >
         <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
           <View style={styles.logoWrap}>
+            <View style={styles.logoRing} />
             <View style={styles.logo}>
               <Ionicons name="cart" size={38} color={C.primary} />
             </View>
           </View>
           <Text style={styles.heroTitle}>{appName}</Text>
           <Text style={styles.heroSubtitle}>{appTagline}</Text>
+          <View style={styles.secureBadge}>
+            <Ionicons name="shield-checkmark" size={12} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.secureBadgeText}>Secure Login</Text>
+          </View>
         </View>
 
         <ScrollView style={styles.cardScroll} contentContainerStyle={styles.cardContent} keyboardShouldPersistTaps="handled">
@@ -1153,12 +1158,35 @@ const styles = StyleSheet.create({
   scrollGrow: { flexGrow: 1 },
 
   topSection: { alignItems: "center", paddingBottom: spacing.xxxl },
-  logoWrap: { marginBottom: spacing.lg },
+  logoWrap: { marginBottom: spacing.lg, position: "relative" },
+  logoRing: {
+    position: "absolute",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.12)",
+    top: -12,
+    left: -12,
+  },
   logo: {
     width: 76, height: 76, borderRadius: radii.xxl,
     backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
     ...shadows.lg,
   },
+  secureBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: radii.full,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  secureBadgeText: { ...typography.small, color: "rgba(255,255,255,0.9)" },
   heroIcon: {
     width: 76, height: 76, borderRadius: radii.xxl,
     backgroundColor: "#fff", alignItems: "center", justifyContent: "center",

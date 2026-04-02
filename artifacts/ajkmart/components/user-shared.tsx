@@ -373,6 +373,140 @@ export function CardSurface({
   return content;
 }
 
+export function SearchHeader({
+  placeholder = "Search products & services",
+  onPress,
+  onFilterPress,
+  style,
+}: {
+  placeholder?: string;
+  onPress?: () => void;
+  onFilterPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[us.searchBar, style]}
+      accessibilityRole="search"
+      accessibilityLabel={placeholder}
+    >
+      <View style={us.searchIcon}>
+        <Ionicons name="search" size={16} color={C.primary} />
+      </View>
+      <Text style={us.searchText}>{placeholder}</Text>
+      {onFilterPress && (
+        <Pressable onPress={onFilterPress} style={us.searchFilter} accessibilityLabel="Filter">
+          <Ionicons name="options-outline" size={16} color={C.textMuted} />
+        </Pressable>
+      )}
+    </Pressable>
+  );
+}
+
+export function CategoryPill({
+  icon,
+  label,
+  color,
+  bg,
+  onPress,
+  isActive,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  bg: string;
+  onPress?: () => void;
+  isActive?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={us.catPill}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: isActive }}
+    >
+      <View style={[us.catPillIcon, { backgroundColor: isActive ? color : bg }]}>
+        <Ionicons name={icon} size={22} color={isActive ? "#fff" : color} />
+      </View>
+      <Text style={[us.catPillLabel, isActive && { color, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+export function CountdownTimer({
+  targetTime,
+  label = "Ends in",
+  style,
+}: {
+  targetTime: Date;
+  label?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const [timeLeft, setTimeLeft] = React.useState({ h: 0, m: 0, s: 0 });
+
+  React.useEffect(() => {
+    const update = () => {
+      const diff = Math.max(0, targetTime.getTime() - Date.now());
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft({ h, m, s });
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [targetTime]);
+
+  const pad = (n: number) => n.toString().padStart(2, "0");
+
+  return (
+    <View style={[us.countdown, style]}>
+      <Ionicons name="time-outline" size={14} color={C.danger} />
+      <Text style={us.countdownLabel}>{label}</Text>
+      <View style={us.countdownBox}>
+        <Text style={us.countdownDigit}>{pad(timeLeft.h)}</Text>
+      </View>
+      <Text style={us.countdownSep}>:</Text>
+      <View style={us.countdownBox}>
+        <Text style={us.countdownDigit}>{pad(timeLeft.m)}</Text>
+      </View>
+      <Text style={us.countdownSep}>:</Text>
+      <View style={us.countdownBox}>
+        <Text style={us.countdownDigit}>{pad(timeLeft.s)}</Text>
+      </View>
+    </View>
+  );
+}
+
+export function SkeletonLoader({
+  rows = 3,
+  style,
+}: {
+  rows?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[{ gap: spacing.md }, style]}>
+      <SkeletonBlock w="100%" h={160} r={radii.xxl} />
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        {Array.from({ length: 5 }, (_, i) => (
+          <View key={i} style={{ alignItems: "center", gap: 6 }}>
+            <SkeletonBlock w={56} h={56} r={28} />
+            <SkeletonBlock w={40} h={10} r={4} />
+          </View>
+        ))}
+      </View>
+      {Array.from({ length: rows }, (_, i) => (
+        <SkeletonBlock key={i} w="100%" h={80} r={radii.lg} />
+      ))}
+    </View>
+  );
+}
+
 const us = StyleSheet.create({
   secRow: {
     flexDirection: "row",
@@ -493,5 +627,80 @@ const us = StyleSheet.create({
     ...shadows.sm,
     marginHorizontal: spacing.lg,
     overflow: "hidden",
+  },
+
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#fff",
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 11,
+    ...shadows.sm,
+  },
+  searchIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.sm,
+    backgroundColor: C.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchText: { flex: 1, ...typography.body, color: C.textMuted },
+  searchFilter: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.sm,
+    backgroundColor: C.surfaceSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  catPill: {
+    alignItems: "center",
+    gap: 6,
+    width: 72,
+  },
+  catPillIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  catPillLabel: {
+    ...typography.small,
+    color: C.textSecondary,
+    textAlign: "center",
+  },
+
+  countdown: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  countdownLabel: {
+    ...typography.captionMedium,
+    color: C.danger,
+    marginRight: 4,
+  },
+  countdownBox: {
+    backgroundColor: C.dangerSoft,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    minWidth: 28,
+    alignItems: "center",
+  },
+  countdownDigit: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+    color: C.danger,
+  },
+  countdownSep: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+    color: C.danger,
   },
 });

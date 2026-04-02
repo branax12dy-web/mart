@@ -245,10 +245,13 @@ export default function RootLayout() {
         if (Platform.OS === "web") {
           await Promise.race([
             Font.loadAsync(allFonts),
-            new Promise<void>((resolve) => setTimeout(resolve, 8000)),
+            new Promise<void>((resolve) => setTimeout(resolve, 3000)),
           ]);
         } else {
-          await Font.loadAsync(allFonts);
+          await Promise.race([
+            Font.loadAsync(allFonts),
+            new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+          ]);
         }
       } catch {
       }

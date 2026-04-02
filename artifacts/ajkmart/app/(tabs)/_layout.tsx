@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors, { radii, shadows, typography } from "@/constants/colors";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual } from "@workspace/i18n";
 import { getActiveServices } from "@/constants/serviceRegistry";
@@ -86,11 +87,31 @@ function NativeTabLayout() {
   );
 }
 
+function TabIconWithBadge({ name, focusedName, color, focused, badgeCount }: {
+  name: keyof typeof Ionicons.glyphMap;
+  focusedName: keyof typeof Ionicons.glyphMap;
+  color: string;
+  focused: boolean;
+  badgeCount?: number;
+}) {
+  return (
+    <View style={focused ? tabStyles.activeIconWrap : tabStyles.iconWrap}>
+      <Ionicons name={focused ? focusedName : name} size={22} color={color} />
+      {(badgeCount ?? 0) > 0 && (
+        <View style={tabStyles.badge}>
+          <Text style={tabStyles.badgeText}>{badgeCount! > 9 ? "9+" : badgeCount}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function ClassicTabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
   const insets = useSafeAreaInsets();
   const tabConfig = useAdaptiveTabConfig();
+  const { itemCount } = useCart();
 
   return (
     <Tabs
@@ -129,9 +150,7 @@ function ClassicTabLayout() {
             isIOS ? (
               <SymbolView name="house" tintColor={color} size={size} />
             ) : (
-              <View style={focused ? tabStyles.activeIconWrap : undefined}>
-                <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
-              </View>
+              <TabIconWithBadge name="home-outline" focusedName="home" color={color} focused={focused} />
             ),
         }}
       />
@@ -144,9 +163,7 @@ function ClassicTabLayout() {
             isIOS ? (
               <SymbolView name="bag" tintColor={color} size={size} />
             ) : (
-              <View style={focused ? tabStyles.activeIconWrap : undefined}>
-                <Ionicons name={focused ? "bag" : "bag-outline"} size={22} color={color} />
-              </View>
+              <TabIconWithBadge name="bag-outline" focusedName="bag" color={color} focused={focused} badgeCount={itemCount} />
             ),
         }}
       />
@@ -159,9 +176,7 @@ function ClassicTabLayout() {
             isIOS ? (
               <SymbolView name="creditcard" tintColor={color} size={size} />
             ) : (
-              <View style={focused ? tabStyles.activeIconWrap : undefined}>
-                <Ionicons name={focused ? "wallet" : "wallet-outline"} size={22} color={color} />
-              </View>
+              <TabIconWithBadge name="wallet-outline" focusedName="wallet" color={color} focused={focused} />
             ),
         }}
       />
@@ -173,9 +188,7 @@ function ClassicTabLayout() {
             isIOS ? (
               <SymbolView name="person" tintColor={color} size={size} />
             ) : (
-              <View style={focused ? tabStyles.activeIconWrap : undefined}>
-                <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
-              </View>
+              <TabIconWithBadge name="person-outline" focusedName="person" color={color} focused={focused} />
             ),
         }}
       />
@@ -184,11 +197,34 @@ function ClassicTabLayout() {
 }
 
 const tabStyles = StyleSheet.create({
+  iconWrap: {
+    position: "relative",
+  },
   activeIconWrap: {
+    position: "relative",
     backgroundColor: C.primarySoft,
     borderRadius: radii.md,
     paddingHorizontal: 14,
     paddingVertical: 4,
+  },
+  badge: {
+    position: "absolute",
+    top: -6,
+    right: -10,
+    backgroundColor: C.accent,
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#fff",
+  },
+  badgeText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 9,
+    color: "#fff",
   },
 });
 

@@ -498,6 +498,11 @@ export default function RegisterScreen() {
           >
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </Pressable>
+          <View style={s.headerLogoRow}>
+            <View style={s.headerLogo}>
+              <Ionicons name="person-add" size={24} color={C.primary} />
+            </View>
+          </View>
           <Text style={s.headerTitle}>Create Account</Text>
           <Text style={s.headerSub}>{stepSubtitles[step]}</Text>
 
@@ -823,6 +828,12 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center", justifyContent: "center",
   },
+  headerLogoRow: { marginBottom: spacing.md },
+  headerLogo: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
+    ...shadows.md,
+  },
   headerTitle: { fontFamily: "Inter_700Bold", fontSize: 26, color: "#fff", marginBottom: 4 },
   headerSub: { ...typography.body, color: "rgba(255,255,255,0.85)", marginBottom: spacing.lg },
   progressRow: { marginBottom: 8 },
@@ -862,7 +873,7 @@ const s = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg,
     paddingHorizontal: spacing.lg, paddingVertical: 14,
-    backgroundColor: C.inputBg,
+    backgroundColor: C.surfaceSecondary,
     marginBottom: spacing.md,
   },
   pickerError: { borderColor: C.danger },
