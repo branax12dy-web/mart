@@ -1,4 +1,4 @@
-const BASE = "/api";
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "") + "/api";
 
 function getToken(): string | null {
   return localStorage.getItem("customer_token");
@@ -41,6 +41,49 @@ export const api = {
 
   getMe: () => apiFetch("/auth/me"),
 
+  /* ── Profile ── */
+  getProfile: () => apiFetch("/users/profile"),
+
+  updateProfile: (data: { name?: string; email?: string; cnic?: string; city?: string; address?: string }) =>
+    apiFetch("/users/profile", { method: "PUT", body: JSON.stringify(data) }),
+
+  uploadAvatar: async (file: File): Promise<{ avatarUrl: string }> => {
+    const token = getToken();
+    const form = new FormData();
+    form.append("avatar", file);
+    const res = await fetch(`${BASE}/users/avatar`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || "Avatar upload failed");
+    return body;
+  },
+
+  /* ── Settings ── */
+  getSettings: () => apiFetch("/settings"),
+
+  updateSettings: (data: Partial<{
+    language: string;
+    notifOrders: boolean;
+    notifWallet: boolean;
+    notifDeals: boolean;
+    notifRides: boolean;
+    darkMode: boolean;
+  }>) => apiFetch("/settings", { method: "PUT", body: JSON.stringify(data) }),
+
+  /* ── Security ── */
+  setPassword: (password: string, currentPassword?: string) =>
+    apiFetch("/auth/set-password", {
+      method: "POST",
+      body: JSON.stringify({ password, ...(currentPassword ? { currentPassword } : {}) }),
+    }),
+
+  /* ── Platform config (public) ── */
+  getPlatformConfig: () => apiFetch("/platform-config"),
+
+  /* ── Rides ── */
   estimate: (data: {
     pickupLat: number; pickupLng: number;
     dropLat: number; dropLng: number;

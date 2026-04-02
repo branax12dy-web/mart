@@ -155,10 +155,15 @@ export default function Booking() {
             <p className="text-xs text-gray-400">Hi, {user?.name || user?.phone}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button onClick={() => nav("/wallet")} className="text-xs font-bold text-green-600 px-3 py-1.5 rounded-xl bg-green-50">💰 Wallet</button>
           <button onClick={() => nav("/history")} className="text-xs font-bold text-gray-500 px-3 py-1.5 rounded-xl bg-gray-100">History</button>
-          <button onClick={logout} className="text-xs font-bold text-red-500 px-3 py-1.5 rounded-xl bg-red-50">Out</button>
+          <button onClick={() => nav("/profile")} className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition" title="Profile">
+            {user?.avatar
+              ? <img src={user.avatar} alt="" className="w-8 h-8 rounded-xl object-cover" />
+              : <span className="text-sm font-bold text-gray-600">{(user?.name ?? user?.phone ?? "?")[0].toUpperCase()}</span>
+            }
+          </button>
         </div>
       </div>
 

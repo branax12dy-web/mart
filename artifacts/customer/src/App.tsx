@@ -11,6 +11,7 @@ import Tracking from "./pages/Tracking";
 import Completed from "./pages/Completed";
 import History from "./pages/History";
 import Wallet from "./pages/Wallet";
+import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,7 @@ function ProtectedRouter() {
         </Route>
         <Route path="/history" component={History} />
         <Route path="/wallet" component={Wallet} />
+        <Route path="/profile" component={Profile} />
         <Route>
           {() => {
             window.location.href = import.meta.env.BASE_URL;
