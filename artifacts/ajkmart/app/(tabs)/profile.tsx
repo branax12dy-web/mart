@@ -1342,8 +1342,8 @@ export default function ProfileScreen() {
 
   const roleMap: Record<string, { label: string; colors: [string, string] }> = {
     customer: { label: "Customer",        colors: [C.primaryDark, C.primary] },
-    rider:    { label: "Delivery Rider",  colors: [C.success, C.mintGreen] },
-    vendor:   { label: "Store Vendor",    colors: [C.accent, C.goldWarm] },
+    rider:    { label: "Delivery Rider",  colors: [C.primaryDark, C.primary] },
+    vendor:   { label: "Store Vendor",    colors: [C.primaryDark, C.primary] },
   };
   const role = roleMap[user?.role || "customer"] || roleMap.customer!;
   const initials = user?.name

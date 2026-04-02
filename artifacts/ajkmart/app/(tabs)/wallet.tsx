@@ -933,7 +933,7 @@ export default function WalletScreen() {
         lastUpdated={lastRefreshed}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ backgroundColor: C.surface, paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
+        <LinearGradient colors={[C.primaryDark, C.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28 }}>
           {walletError && !data && !walletFrozen && (
             <Pressable onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="No network connection, tap to retry">
               <Ionicons name="cloud-offline-outline" size={20} color={C.red} />
@@ -961,44 +961,44 @@ export default function WalletScreen() {
             </View>
           ) : (
             <>
-              <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
+              <Text style={{ ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 4 }}>{appName} {T("wallet")}</Text>
               {isLoading && !data ? (
                 <View style={{ marginBottom: 4 }}>
-                  <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: C.border, opacity: 0.7 }} />
+                  <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.2)", opacity: 0.7 }} />
                 </View>
               ) : (
-                <Text style={{ fontFamily: Font.bold, fontSize: 40, color: C.text, marginBottom: 4 }}>
+                <Text style={{ fontFamily: Font.bold, fontSize: 40, color: "#FFFFFF", marginBottom: 4 }}>
                   {`Rs. ${balance.toLocaleString()}`}
                 </Text>
               )}
-              <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, marginBottom: 24 }}>{T("availableBalance")}</Text>
+              <Text style={{ ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 24 }}>{T("availableBalance")}</Text>
 
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <Pressable onPress={() => setShowDeposit(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("topUp")}>
-                  <View style={[ws.actionCardIcon, { backgroundColor: C.emeraldSoft }]}>
-                    <Ionicons name="add" size={20} color={C.success} />
+                  <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                    <Ionicons name="add" size={20} color="#FFFFFF" />
                   </View>
-                  <Text style={ws.actionCardTxt}>{T("topUp")}</Text>
+                  <Text style={[ws.actionCardTxt, { color: "rgba(255,255,255,0.9)" }]}>{T("topUp")}</Text>
                 </Pressable>
                 <Pressable onPress={() => setShowWithdraw(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel="Withdraw money">
-                  <View style={[ws.actionCardIcon, { backgroundColor: C.redSoft }]}>
-                    <Ionicons name="arrow-up-outline" size={18} color={C.danger} />
+                  <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                    <Ionicons name="arrow-up-outline" size={18} color="#FFFFFF" />
                   </View>
-                  <Text style={ws.actionCardTxt}>Withdraw</Text>
+                  <Text style={[ws.actionCardTxt, { color: "rgba(255,255,255,0.9)" }]}>Withdraw</Text>
                 </Pressable>
                 {p2pEnabled && (
                   <Pressable onPress={() => setShowSend(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("send")}>
-                    <View style={[ws.actionCardIcon, { backgroundColor: C.purpleSoft }]}>
-                      <Ionicons name="send-outline" size={18} color={C.purple} />
+                    <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                      <Ionicons name="send-outline" size={18} color="#FFFFFF" />
                     </View>
-                    <Text style={ws.actionCardTxt}>{T("send")}</Text>
+                    <Text style={[ws.actionCardTxt, { color: "rgba(255,255,255,0.9)" }]}>{T("send")}</Text>
                   </Pressable>
                 )}
                 <Pressable onPress={() => setShowQR(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("receive")}>
-                  <View style={[ws.actionCardIcon, { backgroundColor: C.brandBlueSoft }]}>
-                    <Ionicons name="qr-code-outline" size={18} color={C.primary} />
+                  <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                    <Ionicons name="qr-code-outline" size={18} color="#FFFFFF" />
                   </View>
-                  <Text style={ws.actionCardTxt}>{T("receive")}</Text>
+                  <Text style={[ws.actionCardTxt, { color: "rgba(255,255,255,0.9)" }]}>{T("receive")}</Text>
                 </Pressable>
               </View>
 
@@ -1012,7 +1012,7 @@ export default function WalletScreen() {
               )}
             </>
           )}
-        </View>
+        </LinearGradient>
 
         <View style={{ flexDirection: "row", paddingHorizontal: 20, gap: 10, marginTop: 16 }}>
           <View style={ws.statCard}>
