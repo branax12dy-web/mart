@@ -42,6 +42,10 @@ router.get("/", async (req, res) => {
 
   let categories = type === "food" ? FOOD_CATEGORIES : type === "mart" ? MART_CATEGORIES : [...MART_CATEGORIES, ...FOOD_CATEGORIES];
 
+  const typeFilter = type === "mart" ? eq(productsTable.type, "mart")
+    : type === "food" ? eq(productsTable.type, "food")
+    : undefined;
+
   const countRows = await db
     .select({
       category: productsTable.category,
@@ -52,6 +56,7 @@ router.get("/", async (req, res) => {
       and(
         eq(productsTable.inStock, true),
         eq(productsTable.approvalStatus, "approved"),
+        ...(typeFilter ? [typeFilter] : []),
       )
     )
     .groupBy(productsTable.category);
