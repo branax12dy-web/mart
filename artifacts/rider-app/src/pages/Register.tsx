@@ -826,7 +826,7 @@ export default function Register() {
                           captchaToken = await executeCaptcha("resend_email_otp", config.auth?.captchaSiteKey || "");
                         }
                         const emailRes = await api.sendEmailOtp(email.trim(), captchaToken);
-                        if (import.meta.env.DEV && emailRes.otp) setDevOtp(emailRes.otp);
+                        if (emailRes.otp) setDevOtp(emailRes.otp);
                         setOtpSendFailed(false);
                       } catch (e: unknown) {
                         setError(e instanceof Error ? e.message : "Failed to resend OTP");
@@ -838,9 +838,10 @@ export default function Register() {
                   </button>
                 </div>
               )}
-              {devOtp && import.meta.env.DEV && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700">
-                  <strong>{T("devOtp")}:</strong> {devOtp}
+              {devOtp && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 mb-2">
+                  <p className="text-xs text-orange-600 font-bold uppercase tracking-wide mb-0.5">{T("devOtp")}</p>
+                  <p className="text-orange-700 font-extrabold text-xl tracking-[0.4em]">{devOtp}</p>
                 </div>
               )}
               <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={T("enterOtpDigits")} value={otp} onChange={e => setOtp(e.target.value)}
