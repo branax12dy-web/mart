@@ -684,13 +684,21 @@ export default function HomeScreen() {
                 <Text style={styles.locTxt}>{platformConfig.platform.businessAddress}</Text>
               </View>
             </View>
-            {user?.id && (
-              <View style={styles.hdrActions}>
-                <Pressable onPress={() => router.push("/search" as Href)} style={styles.cartBtn} accessibilityRole="button" accessibilityLabel="Search">
-                  <Ionicons name="search-outline" size={20} color={C.textInverse} />
-                </Pressable>
-              </View>
-            )}
+            <View style={styles.hdrActions}>
+              <Pressable
+                onPress={() => router.push("/cart" as Href)}
+                style={styles.cartBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Cart"
+              >
+                <Ionicons name="cart-outline" size={22} color={C.textInverse} />
+                {itemCount > 0 && (
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeTxt}>{itemCount > 99 ? "99+" : itemCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
           </View>
 
           <SearchHeader
