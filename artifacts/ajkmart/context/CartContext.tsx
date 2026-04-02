@@ -79,6 +79,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const resetAckState = useCallback(() => {
     if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
     if (ackFallbackTimerRef.current) { clearTimeout(ackFallbackTimerRef.current); ackFallbackTimerRef.current = null; }
+    if (ackFallbackIvRef.current) { clearInterval(ackFallbackIvRef.current); ackFallbackIvRef.current = null; }
     pendingOrderIdRef.current = null;
     pendingOrderDataRef.current = null;
     setPendingAck(false);
@@ -296,43 +297,68 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     pendingOrderDataRef.current = data ?? null;
   };
 
+  const ackFallbackIvRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const resolveOrderAck = (oid: string) => {
+    const data = pendingOrderDataRef.current;
+    if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
+    if (ackFallbackTimerRef.current) { clearTimeout(ackFallbackTimerRef.current); ackFallbackTimerRef.current = null; }
+    if (ackFallbackIvRef.current) { clearInterval(ackFallbackIvRef.current); ackFallbackIvRef.current = null; }
+    pendingOrderIdRef.current = null;
+    pendingOrderDataRef.current = null;
+    setAckStuck(false);
+    clearCartOnAck();
+    if (data) setOrderSuccess(data);
+  };
+
+  const tryHttpFallback = async (): Promise<boolean> => {
+    const oid = pendingOrderIdRef.current;
+    if (!oid) return false;
+    try {
+      const tkn = authTokenRef.current;
+      const res = await fetch(`${API_BASE}/orders/${oid}`, {
+        headers: tkn ? { Authorization: `Bearer ${tkn}` } : {},
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const order = d.order || d;
+        if (order && order.id) {
+          resolveOrderAck(oid);
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  };
+
   const startAckStuckTimer = (delayMs: number) => {
     if (ackStuckTimerRef.current) clearTimeout(ackStuckTimerRef.current);
     if (ackFallbackTimerRef.current) clearTimeout(ackFallbackTimerRef.current);
+    if (ackFallbackIvRef.current) clearInterval(ackFallbackIvRef.current);
 
-    ackFallbackTimerRef.current = setTimeout(async () => {
-      const oid = pendingOrderIdRef.current;
-      if (!oid) return;
-      try {
-        const tkn = authTokenRef.current;
-        const res = await fetch(`${API_BASE}/orders/${oid}`, {
-          headers: tkn ? { Authorization: `Bearer ${tkn}` } : {},
-        });
-        if (res.ok) {
-          const d = await res.json();
-          const order = d.order || d;
-          if (order && order.id) {
-            const data = pendingOrderDataRef.current;
-            if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
-            pendingOrderIdRef.current = null;
-            pendingOrderDataRef.current = null;
-            setAckStuck(false);
-            clearCartOnAck();
-            if (data) setOrderSuccess(data);
-            return;
-          }
+    ackFallbackTimerRef.current = setTimeout(() => {
+      let attempts = 0;
+      ackFallbackIvRef.current = setInterval(async () => {
+        attempts++;
+        const resolved = await tryHttpFallback();
+        if (resolved || attempts >= 6) {
+          if (ackFallbackIvRef.current) { clearInterval(ackFallbackIvRef.current); ackFallbackIvRef.current = null; }
         }
-      } catch {}
+      }, 5000);
+      tryHttpFallback();
     }, 10000);
 
-    ackStuckTimerRef.current = setTimeout(() => {
-      if (pendingOrderIdRef.current) setAckStuck(true);
+    ackStuckTimerRef.current = setTimeout(async () => {
+      if (!pendingOrderIdRef.current) return;
+      const resolved = await tryHttpFallback();
+      if (!resolved && pendingOrderIdRef.current) setAckStuck(true);
     }, delayMs);
   };
 
   const cancelAckStuckTimer = () => {
     if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
     if (ackFallbackTimerRef.current) { clearTimeout(ackFallbackTimerRef.current); ackFallbackTimerRef.current = null; }
+    if (ackFallbackIvRef.current) { clearInterval(ackFallbackIvRef.current); ackFallbackIvRef.current = null; }
   };
 
   const clearOrderSuccess = () => setOrderSuccess(null);

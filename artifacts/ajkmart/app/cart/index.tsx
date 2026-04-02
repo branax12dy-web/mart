@@ -874,10 +874,9 @@ export default function CartScreen() {
   );
 
   useEffect(() => {
-    if (pendingAck && ackStuck && !orderSuccess) {
-      dismissAck();
-      router.replace("/(tabs)/orders");
-    }
+    if (!pendingAck || !ackStuck || orderSuccess) return;
+    dismissAck();
+    router.replace("/(tabs)/orders");
   }, [pendingAck, ackStuck, orderSuccess]);
 
   if (pendingAck && !orderSuccess && !ackStuck) {
