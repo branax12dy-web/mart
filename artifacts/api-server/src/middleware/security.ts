@@ -37,7 +37,7 @@ if (!_adminJwtSecret || _adminJwtSecret.length < 32) {
   process.exit(1);
 }
 export const ADMIN_JWT_SECRET: string = _adminJwtSecret;
-export const ADMIN_TOKEN_TTL_HRS = 4;
+export const ADMIN_TOKEN_TTL_HRS = 24;
 
 /* ══════════════════════════════════════════════════════════════
    TOR EXIT NODE DETECTION
