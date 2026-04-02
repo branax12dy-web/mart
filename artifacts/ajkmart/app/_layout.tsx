@@ -25,7 +25,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
-import { RiderLocationProvider } from "@/context/RiderLocationContext";
 import { LanguageProvider, useLanguage } from "@/context/LanguageContext";
 import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformConfigContext";
 import { ToastProvider } from "@/context/ToastContext";
@@ -309,13 +308,11 @@ export default function RootLayout() {
               <PlatformConfigProvider>
                 <LanguageProvider>
                   <AuthProvider>
-                    <RiderLocationProvider>
-                      <CartProvider>
-                        <ToastProvider>
-                          <RootLayoutNav />
-                        </ToastProvider>
-                      </CartProvider>
-                    </RiderLocationProvider>
+                    <CartProvider>
+                      <ToastProvider>
+                        <RootLayoutNav />
+                      </ToastProvider>
+                    </CartProvider>
                   </AuthProvider>
                 </LanguageProvider>
               </PlatformConfigProvider>

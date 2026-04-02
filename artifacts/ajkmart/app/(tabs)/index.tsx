@@ -25,7 +25,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
-import { useRiderLocation } from "@/context/RiderLocationContext";
 import { tDual } from "@workspace/i18n";
 import {
   SERVICE_REGISTRY,
@@ -190,85 +189,6 @@ function SvcCard({ service, delay, fullWidth, T }: { service: ServiceDefinition;
   );
 }
 
-function RiderOnlineBanner({ isOnline, toggleOnline, lastPosition, locationPermission }: {
-  isOnline: boolean;
-  toggleOnline: () => Promise<string | undefined>;
-  lastPosition: { lat: number; lng: number } | null;
-  locationPermission: string | null;
-}) {
-  const [toggling, setToggling] = useState(false);
-
-  const handleToggle = async () => {
-    setToggling(true);
-    try {
-      const result = await toggleOnline();
-      if (result === "permission_denied") {
-        Alert.alert("GPS Permission Required", "Please allow location access to go online and receive ride requests. Go to your phone Settings → Apps → AJKMart → Permissions → Location → Allow all the time.", [{ text: "OK" }]);
-      } else if (result === "tracking_failed") {
-        Alert.alert("GPS Failed to Start", "Location tracking could not be started. Please make sure GPS is enabled in your device settings and try again.", [{ text: "OK" }]);
-      }
-    } finally {
-      setToggling(false);
-    }
-  };
-
-  return (
-    <View style={riderS.container}>
-      <LinearGradient
-        colors={isOnline ? [C.emeraldDeep, C.emerald] : [C.navyDark, C.brandBlue]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={riderS.card}
-      >
-        <View style={riderS.row}>
-          <View style={riderS.statusSection}>
-            <View style={[riderS.dot, { backgroundColor: isOnline ? C.emeraldMid : C.blueMist }]} />
-            <View>
-              <Text style={riderS.statusLabel}>{isOnline ? "You are Online" : "You are Offline"}</Text>
-              <Text style={riderS.statusSub}>
-                {isOnline
-                  ? lastPosition ? `GPS: ${lastPosition.lat.toFixed(4)}, ${lastPosition.lng.toFixed(4)}` : "Acquiring GPS…"
-                  : "Go online to receive ride requests"}
-              </Text>
-              {locationPermission === "denied" && (
-                <Text style={riderS.permDenied}>Location permission denied</Text>
-              )}
-            </View>
-          </View>
-          <Pressable
-            onPress={handleToggle}
-            disabled={toggling}
-            style={[riderS.toggleBtn, isOnline ? riderS.toggleOff : riderS.toggleOn]}
-            accessibilityRole="button"
-            accessibilityLabel={isOnline ? "Go offline" : "Go online"}
-            accessibilityState={{ disabled: toggling }}
-          >
-            {toggling ? (
-              <Ionicons name="sync" size={14} color={C.textInverse} />
-            ) : (
-              <Text style={riderS.toggleTxt}>{isOnline ? "Go Offline" : "Go Online"}</Text>
-            )}
-          </Pressable>
-        </View>
-      </LinearGradient>
-    </View>
-  );
-}
-
-const riderS = StyleSheet.create({
-  container: { marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.xs },
-  card: { borderRadius: radii.xl, padding: 14, ...shadows.md },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  statusSection: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  statusLabel: { ...Typ.buttonSmall, fontFamily: Font.bold, color: C.textInverse },
-  statusSub: { ...Typ.small, color: C.overlayLight75, marginTop: 1 },
-  permDenied: { ...Typ.smallMedium, color: C.redMist, marginTop: 2 },
-  toggleBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.lg, minWidth: 90, alignItems: "center" },
-  toggleOn: { backgroundColor: C.emeraldDot },
-  toggleOff: { backgroundColor: C.overlayLight20 },
-  toggleTxt: { ...Typ.captionBold, color: C.textInverse },
-});
 
 function WalletStrip({ balance, onPress, appName = "AJKMart" }: { balance: number; onPress: () => void; appName?: string }) {
   return (
@@ -561,9 +481,6 @@ export default function HomeScreen() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const { config: platformConfig, loading: configLoading, refresh: refreshConfig } = usePlatformConfig();
-  const isRiderUser = user?.role === "rider";
-  const riderLocation = useRiderLocation();
-  const showRiderBanner = isRiderUser && platformConfig?.features?.rides && riderLocation.locationPermission !== "denied";
 
   const handleHomeRefresh = useCallback(async () => {
     try { await refreshConfig(); } catch (err) { console.warn("[Home] Config refresh failed:", err instanceof Error ? err.message : String(err)); }
@@ -670,15 +587,6 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {showRiderBanner && (
-          <RiderOnlineBanner
-            isOnline={riderLocation.isOnline}
-            toggleOnline={riderLocation.toggleOnline}
-            lastPosition={riderLocation.lastPosition}
-            locationPermission={riderLocation.locationPermission}
-          />
-        )}
-
         {contentBanner ? (
           <View style={styles.announceBanner}>
             <Ionicons name="megaphone-outline" size={14} color={C.primary} />
