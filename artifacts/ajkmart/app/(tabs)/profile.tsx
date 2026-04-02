@@ -1306,11 +1306,19 @@ export default function ProfileScreen() {
         const rides    = rD.rides    || [];
         const pharmacy = phD.orders  || phD.pharmacyOrders  || [];
         const parcels  = parD.bookings || parD.parcelBookings || [];
-        const spent    = orders.reduce((s: number, o: any) => s + (parseFloat(o.total) || 0), 0)
-                       + rides.reduce((s: number,  r: any) => s + (parseFloat(r.fare)  || 0), 0)
-                       + pharmacy.reduce((s: number, p: any) => s + (parseFloat(p.total) || 0), 0)
-                       + parcels.reduce((s: number,  p: any) => s + (parseFloat(p.price || p.fare || p.total) || 0), 0);
-        setStats({ orders: orders.length, rides: rides.length, spent: Math.round(spent) });
+
+        const CANCELLED = "cancelled";
+        const activeOrders   = orders.filter((o: any)   => o.status   !== CANCELLED);
+        const activeRides    = rides.filter((r: any)    => r.status   !== CANCELLED);
+        const activePharmacy = pharmacy.filter((p: any) => p.status   !== CANCELLED);
+        const activeParcels  = parcels.filter((p: any)  => p.status   !== CANCELLED);
+
+        const spent = activeOrders.reduce((s: number, o: any)   => s + (parseFloat(o.total) || 0), 0)
+                    + activeRides.reduce((s: number,  r: any)   => s + (parseFloat(r.fare)  || 0), 0)
+                    + activePharmacy.reduce((s: number, p: any) => s + (parseFloat(p.total) || 0), 0)
+                    + activeParcels.reduce((s: number,  p: any) => s + (parseFloat(p.price || p.fare || p.total) || 0), 0);
+
+        setStats({ orders: activeOrders.length, rides: activeRides.length, spent: Math.round(spent) });
         setUnread(nD.unreadCount || 0);
         setStatsError(false);
         break;
