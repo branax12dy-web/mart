@@ -545,7 +545,7 @@ export default function HomeScreen() {
 
       <Animated.View style={{ opacity: hdOp }}>
         <LinearGradient
-          colors={["#141820", "#0B0E11"]}
+          colors={[C.primaryDark, C.primary, C.primaryLight]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.header, { paddingTop: topPad + 8 }]}
@@ -563,7 +563,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.hdrActions}>
               <Pressable onPress={() => router.push("/cart")} style={styles.cartBtn} accessibilityRole="button" accessibilityLabel={`Shopping cart${itemCount > 0 ? `, ${itemCount} items` : ""}`}>
-                <Ionicons name="bag-outline" size={20} color={C.text} />
+                <Ionicons name="bag-outline" size={20} color={C.textInverse} />
                 {itemCount > 0 && (
                   <View style={styles.cartBadge}>
                     <Text style={styles.cartBadgeTxt}>{itemCount > 9 ? "9+" : itemCount}</Text>

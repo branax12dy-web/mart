@@ -1369,7 +1369,7 @@ export default function OrdersScreen() {
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
       <LinearGradient
-        colors={["#141820", "#0B0E11"]}
+        colors={[C.brandBlueDark, C.brandBlue, C.brandBlueMid]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: topPad + 12 }]}

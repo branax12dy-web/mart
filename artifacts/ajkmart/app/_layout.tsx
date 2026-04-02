@@ -16,7 +16,6 @@ import * as Font from "expo-font";
 import * as Linking from "expo-linking";
 import { router, Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -280,20 +279,18 @@ export default function RootLayout() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#0B0E11", alignItems: "center", justifyContent: "center", gap: 20 }}>
+      <View style={{ flex: 1, backgroundColor: "#0047B3", alignItems: "center", justifyContent: "center", gap: 20 }}>
         <View style={{
           width: 72,
           height: 72,
           borderRadius: 20,
-          backgroundColor: "rgba(240,185,11,0.12)",
-          borderWidth: 1.5,
-          borderColor: "rgba(240,185,11,0.35)",
+          backgroundColor: "rgba(255,255,255,0.15)",
           alignItems: "center",
           justifyContent: "center",
         }}>
           <Text style={{ fontSize: 36 }}>🛒</Text>
         </View>
-        <ActivityIndicator size="large" color="#F0B90B" />
+        <ActivityIndicator size="large" color="#ffffff" />
       </View>
     );
   }
@@ -304,7 +301,6 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>

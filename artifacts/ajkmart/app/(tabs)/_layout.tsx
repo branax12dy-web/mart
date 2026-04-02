@@ -117,22 +117,21 @@ function ClassicTabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: C.tabIconSelected,
+        tabBarActiveTintColor: C.primary,
         tabBarInactiveTintColor: C.tabIconDefault,
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : "#0B0E11",
-          borderTopWidth: 1,
-          borderTopColor: "rgba(234,236,239,0.08)",
+          backgroundColor: isIOS ? "transparent" : C.surface,
+          borderTopWidth: 0,
           paddingBottom: insets.bottom,
           ...shadows.lg,
-          ...(isWeb ? { height: 72 } : {}),
+          ...(isWeb ? { height: 72, borderTopWidth: 1, borderTopColor: C.borderLight } : {}),
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={95} tint="light" style={StyleSheet.absoluteFill} />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: "#0B0E11" }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: C.surface }]} />
           ) : null,
         tabBarLabelStyle: {
           ...typography.tabLabel,
