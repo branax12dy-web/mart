@@ -124,19 +124,15 @@ export default function Login() {
 
   const clearError = () => setError("");
 
-  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-
   const checkIdentifier = async () => {
     const id = identifier.trim();
     if (!id) { setError("Please enter your phone, email, or username"); return; }
     setLoading(true); clearError();
     try {
-      const res = await fetch(`${BASE}/api/auth/check-identifier`, {
+      const data = await apiFetch("/auth/check-identifier", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: id, role: "rider", deviceId: getDeviceFingerprint() }),
       });
-      const data = await res.json();
 
       if (data.action === "blocked" || data.isBanned) {
         setError("This account has been suspended. Please contact support.");

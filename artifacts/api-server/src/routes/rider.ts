@@ -186,6 +186,7 @@ router.get("/me", async (req, res) => {
   res.json({
     id: user.id, phone: user.phone, name: user.name, email: user.email,
     username: user.username,
+    role: user.role, roles: user.roles,
     avatar: user.avatar, isOnline: user.isOnline,
     isRestricted: user.isRestricted ?? (!user.isActive && (user.cancelCount ?? 0) > 0),
     walletBalance: safeNum(user.walletBalance),
