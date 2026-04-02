@@ -112,6 +112,8 @@ async function broadcastRide(rideId: string) {
       .where(eq(rideNotifiedRidersTable.rideId, rideId));
     const alreadySet = new Set(alreadyNotified.map(r => r.riderId));
 
+    let notifiedCount = 0;
+
     for (const r of onlineRiders) {
       if (alreadySet.has(r.userId)) continue;
       const rLat = parseFloat(String(r.latitude));
@@ -123,9 +125,6 @@ async function broadcastRide(rideId: string) {
       const [user] = await db.select({ isActive: usersTable.isActive, isBanned: usersTable.isBanned, isRestricted: usersTable.isRestricted, vehicleType: usersTable.vehicleType })
         .from(usersTable).where(eq(usersTable.id, r.userId)).limit(1);
       if (!user || !user.isActive || user.isBanned || user.isRestricted) continue;
-      // Strict vehicle-type matching: when a ride specifies a type, only notify riders
-      // who have that exact vehicleType registered. Riders without a vehicleType set
-      // are excluded to avoid dispatching to unqualified vehicles.
       if (ride.type) {
         const vt = (user.vehicleType ?? "").trim();
         if (!vt || vt !== ride.type) continue;
@@ -155,12 +154,23 @@ async function broadcastRide(rideId: string) {
         riderId: r.userId,
       }).catch(() => {});
 
-      /* Push socket event so rider's Home screen refreshes instantly */
       emitRiderNewRequest(r.userId, {
         type: "ride",
         requestId: rideId,
         summary: `${ride.pickupAddress} → ${ride.dropAddress}`,
       });
+
+      notifiedCount++;
+    }
+
+    if (notifiedCount === 0 && alreadySet.size === 0) {
+      console.warn(`[broadcast] NO_RIDERS_AVAILABLE for ride ${rideId} — no eligible riders within ${radiusKm}km`);
+      await db.insert(notificationsTable).values({
+        id: generateId(), userId: ride.userId,
+        title: "No riders available",
+        body: "No riders are currently available in your area. We'll keep searching — you'll be notified as soon as a rider accepts.",
+        type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
+      }).catch(() => {});
     }
 
     await db.update(ridesTable).set({
@@ -406,7 +416,7 @@ router.post("/", customerAuth, async (req, res) => {
     validatedOffer = offeredFare;
     const minOffer = Math.ceil(platformFare * (bargainMinPct / 100));
     if (validatedOffer < minOffer) {
-      res.status(400).json({ error: `Minimum offer allowed is Rs. ${minOffer} (${bargainMinPct}% of platform fare)` }); return;
+      res.status(400).json({ error: `Minimum offer allowed is Rs. ${minOffer} (${bargainMinPct}% of platform fare)`, code: "FARE_OUT_OF_RANGE" }); return;
     }
     isBargaining = validatedOffer < platformFare;
   }

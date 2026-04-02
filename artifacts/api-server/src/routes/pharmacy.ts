@@ -12,18 +12,37 @@ import { prescriptionRefMap } from "./uploads.js";
 
 const router: IRouter = Router();
 
-function mapOrder(o: typeof pharmacyOrdersTable.$inferSelect) {
-  // Parse merged prescriptionNote: text note + optional "[photo: url]" line
+async function resolveAndPersistRxPhoto(orderId: string, refId: string): Promise<string | null> {
+  const resolvedUrl = prescriptionRefMap.get(refId);
+  if (!resolvedUrl) return null;
+  const currentNote = await db
+    .select({ prescriptionNote: pharmacyOrdersTable.prescriptionNote })
+    .from(pharmacyOrdersTable)
+    .where(eq(pharmacyOrdersTable.id, orderId))
+    .limit(1);
+  if (currentNote[0]?.prescriptionNote?.includes(refId)) {
+    const updatedNote = currentNote[0].prescriptionNote.replace(refId, resolvedUrl);
+    await db.update(pharmacyOrdersTable)
+      .set({ prescriptionNote: updatedNote, updatedAt: new Date() })
+      .where(eq(pharmacyOrdersTable.id, orderId));
+  }
+  return resolvedUrl;
+}
+
+function mapOrder(o: typeof pharmacyOrdersTable.$inferSelect, resolvedPhotoOverride?: string | null) {
   let noteText = o.prescriptionNote ?? null;
   let prescriptionPhotoUrl: string | null = null;
   if (noteText) {
     const photoMatch = noteText.match(/\[photo:\s*([^\]]+)\]/);
     if (photoMatch) {
       const raw = photoMatch[1]!.trim();
-      // If stored value is still a refId (upload was in-flight at order creation), try to resolve now
-      prescriptionPhotoUrl = (raw.startsWith("rx-") && prescriptionRefMap.has(raw))
-        ? prescriptionRefMap.get(raw)!
-        : raw.startsWith("rx-") ? null : raw;
+      if (resolvedPhotoOverride) {
+        prescriptionPhotoUrl = resolvedPhotoOverride;
+      } else if (raw.startsWith("rx-")) {
+        prescriptionPhotoUrl = prescriptionRefMap.get(raw) ?? null;
+      } else {
+        prescriptionPhotoUrl = raw;
+      }
       noteText = noteText.replace(/\n?\[photo:\s*[^\]]+\]/, "").trim() || null;
     }
   }
@@ -67,7 +86,16 @@ router.get("/:id", customerAuth, async (req, res) => {
     return;
   }
   if (idorGuard(res, order.userId, userId)) return;
-  res.json(mapOrder(order));
+
+  let resolvedPhoto: string | null = null;
+  if (order.prescriptionNote) {
+    const refMatch = order.prescriptionNote.match(/\[photo:\s*(rx-[^\]]+)\]/);
+    if (refMatch) {
+      resolvedPhoto = await resolveAndPersistRxPhoto(order.id, refMatch[1]!.trim());
+    }
+  }
+
+  res.json(mapOrder(order, resolvedPhoto));
 });
 
 /* ── GET /pharmacy-orders/:id/track — Live rider location for active pharmacy orders ── */

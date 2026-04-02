@@ -485,6 +485,56 @@ router.post("/verify-manual", adminAuth, async (req, res) => {
   res.json({ success: true, orderId, gateway, transactionId, message: "Manual payment verified — order confirmed ✅" });
 });
 
+router.post("/reconcile", adminAuth, async (req, res) => {
+  const { orderId, txnRef, status: forcedStatus, gateway, notes } = req.body;
+  if (!orderId && !txnRef) {
+    res.status(400).json({ error: "orderId or txnRef is required" });
+    return;
+  }
+
+  const whereClause = orderId
+    ? eq(ordersTable.id, orderId)
+    : eq(ordersTable.txnRef, txnRef);
+
+  const [order] = await db.select({
+    id: ordersTable.id,
+    status: ordersTable.status,
+    paymentStatus: ordersTable.paymentStatus,
+    paymentMethod: ordersTable.paymentMethod,
+    txnRef: ordersTable.txnRef,
+    total: ordersTable.total,
+  }).from(ordersTable).where(whereClause).limit(1);
+
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+
+  const newPaymentStatus = forcedStatus === "success" ? "success" : forcedStatus === "failed" ? "failed" : "success";
+  const updates: Record<string, unknown> = {
+    paymentStatus: newPaymentStatus,
+    updatedAt: new Date(),
+  };
+
+  if (newPaymentStatus === "success" && order.status === "pending") {
+    updates["status"] = "confirmed";
+  }
+
+  await db.update(ordersTable).set(updates).where(eq(ordersTable.id, order.id));
+
+  res.json({
+    success: true,
+    orderId: order.id,
+    txnRef: order.txnRef,
+    previousPaymentStatus: order.paymentStatus,
+    newPaymentStatus,
+    orderStatus: updates["status"] ?? order.status,
+    gateway: gateway ?? order.paymentMethod,
+    notes: notes ?? null,
+    message: `Payment reconciled — ${newPaymentStatus} ✅`,
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GET /api/payments/simulate/:gateway/:txnRef/:orderId
 //  Sandbox simulation — marks order confirmed (ONLY in sandbox/dev mode)

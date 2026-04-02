@@ -3675,19 +3675,26 @@ router.get("/search", async (req, res) => {
 
   const pattern = `%${q}%`;
 
-  const errors: Array<{ source: string; message: string }> = [];
+  type UserResult = { id: string; name: string | null; phone: string; email: string | null; role: string; createdAt: Date };
+  type RideResult = { id: string; type: string; status: string; pickupAddress: string; dropAddress: string; fare: string | null; offeredFare: string | null; riderName: string | null; createdAt: Date };
+  type OrderResult = { id: string; status: string; type: string; total: string; deliveryAddress: string; createdAt: Date };
+  type PharmacyResult = { id: string; status: string; total: string; deliveryAddress: string; createdAt: Date };
+  type SearchError = { source: string; message: string };
 
-  const safeQuery = async <T>(source: string, fn: () => Promise<T>): Promise<T | []> => {
+  const errors: SearchError[] = [];
+
+  async function safeSearchQuery<R>(source: string, fn: () => Promise<R[]>): Promise<R[]> {
     try {
       return await fn();
-    } catch (err: any) {
-      errors.push({ source, message: err.message ?? "Unknown error" });
-      return [] as unknown as T;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      errors.push({ source, message });
+      return [];
     }
-  };
+  }
 
   const [users, rides, orders, pharmacy] = await Promise.all([
-    safeQuery("users", () =>
+    safeSearchQuery<UserResult>("users", () =>
       db.select({
         id:    usersTable.id,
         name:  usersTable.name,
@@ -3702,7 +3709,7 @@ router.get("/search", async (req, res) => {
       .limit(5)
     ),
 
-    safeQuery("rides", () =>
+    safeSearchQuery<RideResult>("rides", () =>
       db.select({
         id:            ridesTable.id,
         type:          ridesTable.type,
@@ -3726,7 +3733,7 @@ router.get("/search", async (req, res) => {
       .limit(5)
     ),
 
-    safeQuery("orders", () =>
+    safeSearchQuery<OrderResult>("orders", () =>
       db.select({
         id:              ordersTable.id,
         status:          ordersTable.status,
@@ -3745,7 +3752,7 @@ router.get("/search", async (req, res) => {
       .limit(5)
     ),
 
-    safeQuery("pharmacy", () =>
+    safeSearchQuery<PharmacyResult>("pharmacy", () =>
       db.select({
         id:              pharmacyOrdersTable.id,
         status:          pharmacyOrdersTable.status,
