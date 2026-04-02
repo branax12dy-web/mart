@@ -991,9 +991,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           <View
             style={{
               marginBottom: 14,
-              backgroundColor: "#FEF2F2",
+              backgroundColor: C.redBg,
               borderWidth: 1,
-              borderColor: "#FEE2E2",
+              borderColor: C.redBorder,
               borderRadius: 16,
               padding: 16,
               gap: 10,
@@ -1019,7 +1019,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    backgroundColor: "#FEE2E2",
+                    backgroundColor: C.redBorder,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -1031,7 +1031,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     style={{
                       fontFamily: Font.bold,
                       fontSize: 14,
-                      color: "#991B1B",
+                      color: C.redDeepest,
                     }}
                   >
                     Outstanding Balance: Rs. {debtBalance}
@@ -1040,7 +1040,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     style={{
                       fontFamily: Font.regular,
                       fontSize: 12,
-                      color: "#B91C1C",
+                      color: C.redDark,
                       marginTop: 2,
                     }}
                   >
@@ -1052,7 +1052,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 onPress={() => setDebtDismissed(true)}
                 hitSlop={8}
               >
-                <Ionicons name="close" size={16} color="#991B1B" />
+                <Ionicons name="close" size={16} color={C.redDeepest} />
               </Pressable>
             </View>
             <Pressable
@@ -1136,9 +1136,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
             onPress={() => setShowSchoolModal(true)}
             style={{
               marginBottom: 14,
-              backgroundColor: "#EFF6FF",
+              backgroundColor: C.blueSoft,
               borderWidth: 1,
-              borderColor: "#DBEAFE",
+              borderColor: C.blueBorder,
               borderRadius: 16,
               padding: 16,
               flexDirection: "row",
@@ -1151,7 +1151,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 width: 44,
                 height: 44,
                 borderRadius: 14,
-                backgroundColor: "#DBEAFE",
+                backgroundColor: C.blueBorder,
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -1163,7 +1163,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 style={{
                   fontSize: 14,
                   fontFamily: Font.bold,
-                  color: "#1D4ED8",
+                  color: C.navyDeep,
                 }}
               >
                 School Shift Subscribe
@@ -1172,14 +1172,14 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 style={{
                   fontSize: 12,
                   fontFamily: Font.regular,
-                  color: "#3B82F6",
+                  color: C.royalBlue,
                   marginTop: 2,
                 }}
               >
                 Monthly school transport
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
+            <Ionicons name="chevron-forward" size={18} color={C.royalBlue} />
           </Pressable>
         )}
 
@@ -1187,9 +1187,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           <View
             style={{
               marginBottom: 14,
-              backgroundColor: "#FFF7ED",
+              backgroundColor: C.orangeBg,
               borderWidth: 1,
-              borderColor: "#FED7AA",
+              borderColor: C.orangeBorder,
               borderRadius: 14,
               padding: 14,
               flexDirection: "row",
@@ -1202,19 +1202,19 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                backgroundColor: "#FFEDD5",
+                backgroundColor: C.orangeSoft,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Ionicons name="flash" size={18} color="#EA580C" />
+              <Ionicons name="flash" size={18} color={C.orangeBrand} />
             </View>
             <View style={{ flex: 1 }}>
               <Text
                 style={{
                   fontSize: 13,
                   fontFamily: Font.bold,
-                  color: "#C2410C",
+                  color: C.orangeDark,
                 }}
               >
                 Surge Active x{rideCfg.surgeMultiplier}
@@ -1223,7 +1223,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 style={{
                   fontSize: 11,
                   fontFamily: Font.regular,
-                  color: "#9A3412",
+                  color: C.orangeDark,
                 }}
               >
                 Fares are {Math.round((rideCfg.surgeMultiplier - 1) * 100)}%
@@ -1398,9 +1398,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
             )}
             <View style={{ padding: 18 }}>
               {estimateAgeMinutes >= 5 && (
-                <View style={{ backgroundColor: "#FEF9C3", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Ionicons name="time-outline" size={13} color="#CA8A04" />
-                  <Text style={{ fontFamily: Font.medium, fontSize: 12, color: "#CA8A04", flex: 1 }}>
+                <View style={{ backgroundColor: C.yellowLightBg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="time-outline" size={13} color={C.amberBrown} />
+                  <Text style={{ fontFamily: Font.medium, fontSize: 12, color: C.amberBrown, flex: 1 }}>
                     Estimate is {estimateAgeMinutes} min old — prices may have changed
                   </Text>
                 </View>
@@ -1433,7 +1433,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 4,
-                    backgroundColor: "#EFF6FF",
+                    backgroundColor: C.blueSoft,
                     paddingHorizontal: 10,
                     paddingVertical: 5,
                     borderRadius: 10,
@@ -1442,12 +1442,12 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   <Ionicons
                     name="navigate-outline"
                     size={12}
-                    color="#4285F4"
+                    color={C.royalBlue}
                   />
                   <Text
                     style={{
                       fontSize: 11,
-                      color: "#4285F4",
+                      color: C.royalBlue,
                       fontFamily: Font.semiBold,
                     }}
                   >
@@ -1575,9 +1575,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-                backgroundColor: showBargain ? "#FFF7ED" : C.textInverse,
+                backgroundColor: showBargain ? C.orangeBg : C.textInverse,
                 borderWidth: 1.5,
-                borderColor: showBargain ? "#FB923C" : C.border,
+                borderColor: showBargain ? C.goldWarm : C.border,
                 borderRadius: 16,
                 padding: 16,
               }}
@@ -1595,7 +1595,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     height: 40,
                     borderRadius: 12,
                     backgroundColor: showBargain
-                      ? "#FFEDD5"
+                      ? C.orangeSoft
                       : C.surfaceSecondary,
                     alignItems: "center",
                     justifyContent: "center",
@@ -1604,7 +1604,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   <Ionicons
                     name="chatbubble-ellipses-outline"
                     size={20}
-                    color={showBargain ? "#EA580C" : C.textSecondary}
+                    color={showBargain ? C.orangeBrand : C.textSecondary}
                   />
                 </View>
                 <View>
@@ -1612,7 +1612,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     style={{
                       fontFamily: Font.bold,
                       fontSize: 14,
-                      color: showBargain ? "#C2410C" : C.text,
+                      color: showBargain ? C.orangeDark : C.text,
                     }}
                   >
                     {showBargain ? "Bargaining ON" : "Make an Offer"}
@@ -1621,7 +1621,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     style={{
                       fontFamily: Font.regular,
                       fontSize: 11,
-                      color: showBargain ? "#EA580C" : C.textMuted,
+                      color: showBargain ? C.orangeBrand : C.textMuted,
                     }}
                   >
                     {showBargain
@@ -1633,16 +1633,16 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               <Ionicons
                 name={showBargain ? "chevron-up" : "chevron-down"}
                 size={18}
-                color={showBargain ? "#EA580C" : C.textMuted}
+                color={showBargain ? C.orangeBrand : C.textMuted}
               />
             </Pressable>
 
             {showBargain && (
               <View
                 style={{
-                  backgroundColor: "#FFF7ED",
+                  backgroundColor: C.orangeBg,
                   borderWidth: 1,
-                  borderColor: "#FED7AA",
+                  borderColor: C.orangeBorder,
                   borderTopWidth: 0,
                   borderBottomLeftRadius: 16,
                   borderBottomRightRadius: 16,
@@ -1654,7 +1654,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   style={{
                     fontFamily: Font.medium,
                     fontSize: 12,
-                    color: "#92400E",
+                    color: C.amberBrown,
                   }}
                 >
                   Platform fare: Rs. {estimate.fare} · Min: Rs.{" "}
@@ -1666,7 +1666,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     alignItems: "center",
                     backgroundColor: C.surface,
                     borderWidth: 1.5,
-                    borderColor: "#FB923C",
+                    borderColor: C.goldWarm,
                     borderRadius: 14,
                     paddingHorizontal: 14,
                     paddingVertical: 4,
@@ -1687,7 +1687,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     onChangeText={setOfferedFare}
                     keyboardType="numeric"
                     placeholder={String(estimate.minOffer)}
-                    placeholderTextColor="#D1D5DB"
+                    placeholderTextColor={C.silverBg}
                     style={{
                       flex: 1,
                       fontFamily: Font.bold,
@@ -1701,7 +1701,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                       <Ionicons
                         name="close-circle"
                         size={18}
-                        color="#D1D5DB"
+                        color={C.silverBg}
                       />
                     </Pressable>
                   )}
@@ -1710,11 +1710,11 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   value={bargainNote}
                   onChangeText={setBargainNote}
                   placeholder="Note (optional)"
-                  placeholderTextColor="#D1D5DB"
+                  placeholderTextColor={C.silverBg}
                   style={{
                     backgroundColor: C.surface,
                     borderWidth: 1,
-                    borderColor: "#FED7AA",
+                    borderColor: C.orangeBorder,
                     borderRadius: 12,
                     padding: 12,
                     fontFamily: Font.regular,
@@ -1725,7 +1725,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 <Text
                   style={{
                     fontSize: 11,
-                    color: "#9A3412",
+                    color: C.orangeDark,
                     lineHeight: 16,
                     fontFamily: Font.regular,
                   }}
@@ -1763,8 +1763,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               (user?.walletBalance ?? 0) < (offeredFare ? parseFloat(offeredFare) : estimate.fare);
             const pmLabel = pm.label || pm.name || pmId;
             const pmIcon: string = isCash ? "cash-outline" : isWallet ? "wallet-outline" : isJazzcash ? "phone-portrait-outline" : isEasypaisa ? "phone-portrait-outline" : "card-outline";
-            const pmColor = isCash ? C.success : isWallet ? C.primary : isJazzcash ? "#E53E3E" : isEasypaisa ? "#38A169" : C.primary;
-            const pmBg = isCash ? "#D1FAE5" : isWallet ? "#DBEAFE" : isJazzcash ? "#FEE2E2" : isEasypaisa ? "#D1FAE5" : "#DBEAFE";
+            const pmColor = isCash ? C.success : isWallet ? C.primary : isJazzcash ? C.red : isEasypaisa ? C.emerald : C.primary;
+            const pmBg = isCash ? C.greenLightBg : isWallet ? C.blueBorder : isJazzcash ? C.redBorder : isEasypaisa ? C.greenLightBg : C.blueBorder;
             const pmSubtext = isCash ? "Pay on arrival" : isWallet ? `Rs. ${(user?.walletBalance ?? 0).toLocaleString()}` : `Pay via ${pmLabel}`;
             return (
               <Pressable
@@ -1800,8 +1800,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 <Text
                   style={{
                     fontFamily: active
-                      ? "Inter_700Bold"
-                      : "Inter_600SemiBold",
+                      ? Font.bold
+                      : Font.semiBold,
                     fontSize: 13,
                     color: active ? C.text : C.textSecondary,
                   }}
@@ -1876,23 +1876,23 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
             alignItems: "center",
             gap: 8,
             marginBottom: 18,
-            backgroundColor: "#F0FDF4",
+            backgroundColor: C.greenBg,
             padding: 12,
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: "#D1FAE5",
+            borderColor: C.greenLightBg,
           }}
         >
           <Ionicons
             name="shield-checkmark-outline"
             size={15}
-            color="#059669"
+            color={C.emerald}
           />
           <Text
             style={{
               fontFamily: Font.regular,
               fontSize: 12,
-              color: "#065F46",
+              color: C.greenDeep,
             }}
           >
             All rides insured · Verified drivers · GPS tracked
@@ -1909,7 +1909,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               justifyContent: "center",
               gap: 10,
               backgroundColor:
-                showBargain && offeredFare ? "#EA580C" : C.primary,
+                showBargain && offeredFare ? C.orangeBrand : C.primary,
               borderRadius: 16,
               paddingVertical: 18,
               opacity: booking || !estimate ? 0.6 : 1,
@@ -2123,10 +2123,10 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                       style={{
                         backgroundColor:
                           ride.status === "completed"
-                            ? "#D1FAE5"
+                            ? C.greenLightBg
                             : ride.status === "cancelled"
-                              ? "#FEE2E2"
-                              : "#FEF3C7",
+                              ? C.redBorder
+                              : C.yellowLightBg,
                         paddingHorizontal: 8,
                         paddingVertical: 3,
                         borderRadius: 8,
@@ -2138,10 +2138,10 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                           fontSize: 10,
                           color:
                             ride.status === "completed"
-                              ? "#059669"
+                              ? C.emerald
                               : ride.status === "cancelled"
                                 ? C.red
-                                : "#D97706",
+                                : C.amberBrown,
                         }}
                       >
                         {(
@@ -2297,7 +2297,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                         width: 44,
                         height: 44,
                         borderRadius: 14,
-                        backgroundColor: "#DBEAFE",
+                        backgroundColor: C.blueBorder,
                         alignItems: "center",
                         justifyContent: "center",
                       }}
@@ -2345,7 +2345,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                       >
                         <View
                           style={{
-                            backgroundColor: "#D1FAE5",
+                            backgroundColor: C.greenLightBg,
                             borderRadius: 8,
                             paddingHorizontal: 8,
                             paddingVertical: 3,
@@ -2355,7 +2355,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                             style={{
                               fontSize: 11,
                               fontFamily: Font.bold,
-                              color: "#16A34A",
+                              color: C.greenBright,
                             }}
                           >
                             Rs. {r.monthlyPrice?.toLocaleString()}/mo
@@ -2535,7 +2535,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                             borderWidth: 1.5, borderColor: schoolShift === s ? C.primary : C.border,
                           }}
                         >
-                          <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: schoolShift === s ? "#fff" : C.textSecondary, textTransform: "capitalize" }}>{s}</Text>
+                          <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: schoolShift === s ? C.textInverse : C.textSecondary, textTransform: "capitalize" }}>{s}</Text>
                         </Pressable>
                       ))}
                     </View>
@@ -2628,18 +2628,18 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 </View>
                 <View
                   style={{
-                    backgroundColor: "#FEF3C7",
+                    backgroundColor: C.yellowLightBg,
                     borderRadius: 14,
                     padding: 14,
                     borderWidth: 1,
-                    borderColor: "#FDE68A",
+                    borderColor: C.amberBorder,
                     marginTop: 4,
                   }}
                 >
                   <Text
                     style={{
                       fontSize: 12,
-                      color: "#92400E",
+                      color: C.amberBrown,
                       fontFamily: Font.medium,
                     }}
                   >
@@ -2657,7 +2657,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   disabled={subscribing}
                   style={{
                     backgroundColor: subscribing
-                      ? "#93C5FD"
+                      ? C.blueMist
                       : C.primary,
                     borderRadius: 16,
                     padding: 16,

@@ -85,7 +85,7 @@ function AddressPickerModal({
                     style={[styles.addrOpt, isSel && styles.addrOptSel]}
                   >
                     <View style={[styles.addrOptIcon, { backgroundColor: isSel ? C.brandBlueSoft : C.surfaceSecondary }]}>
-                      <Ionicons name={(addr.icon as any) || "location-outline"} size={20} color={isSel ? C.primary : C.textSecondary} />
+                      <Ionicons name={(addr.icon as keyof typeof Ionicons.glyphMap) || "location-outline"} size={20} color={isSel ? C.primary : C.textSecondary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

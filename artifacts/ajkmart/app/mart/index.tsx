@@ -319,7 +319,7 @@ function MartScreenInner() {
               onPress={() => setSelectedCat(selectedCat === cat.id ? undefined : cat.id)}
               style={[styles.catChip, selectedCat === cat.id && styles.catChipActive]}
             >
-              <Ionicons name={cat.icon as any} size={14} color={selectedCat === cat.id ? C.textInverse : C.primary} />
+              <Ionicons name={cat.icon as keyof typeof Ionicons.glyphMap} size={14} color={selectedCat === cat.id ? C.textInverse : C.primary} />
               <Text style={[styles.catChipTxt, selectedCat === cat.id && styles.catChipTxtActive]}>{cat.name}</Text>
             </Pressable>
           ))}

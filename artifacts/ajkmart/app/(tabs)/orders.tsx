@@ -161,7 +161,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
 
       <View style={styles.cardFooter}>
         <View style={[styles.statusChip, { backgroundColor: cfg.bg }]}>
-          <Ionicons name={cfg.icon as any} size={13} color={cfg.color} />
+          <Ionicons name={cfg.icon as keyof typeof Ionicons.glyphMap} size={13} color={cfg.color} />
           <Text style={[styles.statusText, { color: cfg.color }]}>{T(cfg.labelKey)}</Text>
         </View>
         <View style={styles.totalWrap}>
@@ -324,7 +324,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
 
       <View style={styles.cardFooter}>
         <View style={[styles.statusChip, { backgroundColor: cfg.bg }]}>
-          <Ionicons name={cfg.icon as any} size={13} color={cfg.color} />
+          <Ionicons name={cfg.icon as keyof typeof Ionicons.glyphMap} size={13} color={cfg.color} />
           <Text style={[styles.statusText, { color: cfg.color }]}>{T(cfg.labelKey)}</Text>
         </View>
         <View style={styles.totalWrap}>
@@ -539,7 +539,7 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
 
       <View style={styles.cardFooter}>
         <View style={[styles.statusChip, { backgroundColor: cfg.bg }]}>
-          <Ionicons name={cfg.icon as any} size={13} color={cfg.color} />
+          <Ionicons name={cfg.icon as keyof typeof Ionicons.glyphMap} size={13} color={cfg.color} />
           <Text style={[styles.statusText, { color: cfg.color }]}>{T(cfg.labelKey)}</Text>
         </View>
         <View style={styles.totalWrap}>
@@ -614,7 +614,7 @@ function ParcelCard({ booking }: { booking: any }) {
 
       <View style={styles.cardFooter}>
         <View style={[styles.statusChip, { backgroundColor: cfg.bg }]}>
-          <Ionicons name={cfg.icon as any} size={13} color={cfg.color} />
+          <Ionicons name={cfg.icon as keyof typeof Ionicons.glyphMap} size={13} color={cfg.color} />
           <Text style={[styles.statusText, { color: cfg.color }]}>{T(cfg.labelKey)}</Text>
         </View>
         <View style={styles.totalWrap}>
@@ -1402,7 +1402,7 @@ export default function OrdersScreen() {
                 accessibilityState={{ selected: isActive }}
               >
                 <Ionicons
-                  name={tab.icon as any}
+                  name={tab.icon as keyof typeof Ionicons.glyphMap}
                   size={14}
                   color={isActive ? C.textInverse : C.textSecondary}
                 />

@@ -95,7 +95,7 @@ function TxItem({ tx }: { tx: any }) {
   return (
     <View style={ws.txRow} accessibilityLabel={`${tx.description}, ${prefix}Rs. ${Number(tx.amount).toLocaleString()}${suffix}, ${date}`}>
       <View style={[ws.txIcon, { backgroundColor: bgColor }]}>
-        <Ionicons name={iconName as any} size={18} color={iconColor} />
+        <Ionicons name={iconName as keyof typeof Ionicons.glyphMap} size={18} color={iconColor} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={ws.txDesc} numberOfLines={1}>{tx.description}</Text>
@@ -674,7 +674,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                   </View>
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                     <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
-                    <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.text, fontVariant: ["tabular-nums"] as any }}>{txId}</Text>
+                    <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.text, fontVariant: ["tabular-nums"] }}>{txId}</Text>
                   </View>
                   {senderAcNo ? (
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>

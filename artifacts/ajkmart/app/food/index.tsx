@@ -207,7 +207,7 @@ function FoodScreenInner() {
           </Pressable>
           {categories.map(c => (
             <Pressable key={c.id} onPress={() => setSelectedCat(selectedCat === c.id ? undefined : c.id)} style={[styles.catChip, selectedCat === c.id && styles.catChipActive]}>
-              <Ionicons name={c.icon as any} size={14} color={selectedCat === c.id ? C.textInverse : C.food} />
+              <Ionicons name={c.icon as keyof typeof Ionicons.glyphMap} size={14} color={selectedCat === c.id ? C.textInverse : C.food} />
               <Text style={[styles.catChipText, selectedCat === c.id && styles.catChipTextActive]}>{c.name}</Text>
             </Pressable>
           ))}
