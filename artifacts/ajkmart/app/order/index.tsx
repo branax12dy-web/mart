@@ -45,19 +45,19 @@ export default function OrderDetailScreen() {
   const T = (key: TranslationKey) => tDual(key, language);
 
   const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: string; label: string }> = {
-    pending:          { color: "#D97706", bg: "#FEF3C7", icon: "time-outline",             label: T("pending") },
+    pending:          { color: C.amber, bg: C.amberSoft, icon: "time-outline",             label: T("pending") },
     confirmed:        { color: "#2563EB", bg: "#DBEAFE", icon: "checkmark-circle-outline", label: T("confirmed") },
     preparing:        { color: "#7C3AED", bg: "#EDE9FE", icon: "flame-outline",             label: T("preparing") },
     ready:            { color: "#6366F1", bg: "#E0E7FF", icon: "bag-check-outline",        label: T("statusReady") },
     picked_up:        { color: "#0891B2", bg: "#CFFAFE", icon: "cube-outline",             label: T("pickedUp") },
     out_for_delivery: { color: "#059669", bg: "#D1FAE5", icon: "bicycle-outline",          label: T("onTheWay") },
     delivered:        { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",   label: T("delivered") },
-    cancelled:        { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",     label: T("cancelled") },
+    cancelled:        { color: C.red, bg: C.redSoft, icon: "close-circle-outline",     label: T("cancelled") },
     accepted:         { color: "#059669", bg: "#D1FAE5", icon: "checkmark-circle-outline", label: T("statusAccepted") },
     arrived:          { color: "#0891B2", bg: "#CFFAFE", icon: "location-outline",         label: T("arrived") },
     in_transit:       { color: "#7C3AED", bg: "#EDE9FE", icon: "car-outline",              label: T("inTransit") },
     completed:        { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",   label: T("completed") },
-    searching:        { color: "#D97706", bg: "#FEF3C7", icon: "search-outline",           label: T("searching") },
+    searching:        { color: C.amber, bg: C.amberSoft, icon: "search-outline",           label: T("searching") },
     bargaining:       { color: "#2563EB", bg: "#DBEAFE", icon: "chatbubbles-outline",      label: T("bargaining") },
   };
 
@@ -365,7 +365,7 @@ export default function OrderDetailScreen() {
           <Text style={s.orderId}>#{(order.id || orderId || "").slice(-8).toUpperCase()}</Text>
           {isActive && order.estimatedTime && (
             <View style={s.etaChip}>
-              <Ionicons name="time-outline" size={13} color="#D97706" />
+              <Ionicons name="time-outline" size={13} color={C.amber} />
               <Text style={s.etaText}>ETA: {order.estimatedTime}</Text>
             </View>
           )}
@@ -375,8 +375,8 @@ export default function OrderDetailScreen() {
           <View style={[s.card, { backgroundColor: "#ECFDF5", borderColor: "#6EE7B7", padding: 0, overflow: "hidden" }]}>
             {/* Tracking failure banner */}
             {trackFailed && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderBottomWidth: 1, borderBottomColor: "#FDE68A", paddingHorizontal: 14, paddingVertical: 10 }}>
-                <Ionicons name="warning-outline" size={15} color="#D97706" />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderBottomWidth: 1, borderBottomColor: "#FDE68A", paddingHorizontal: 14, paddingVertical: 10 }}>
+                <Ionicons name="warning-outline" size={15} color={C.amber} />
                 <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>Live tracking is temporarily unavailable. Your order is still on the way.</Text>
               </View>
             )}
@@ -466,9 +466,9 @@ export default function OrderDetailScreen() {
         {isRide ? (
           <View style={s.card}>
             <View style={s.cardHeader}>
-              <View style={[s.typeChip, { backgroundColor: "#FEF3C7" }]}>
-                <Ionicons name="car-outline" size={13} color="#D97706" />
-                <Text style={[s.typeChipText, { color: "#D97706" }]}>Ride · {(order.type || "").charAt(0).toUpperCase() + (order.type || "").slice(1)}</Text>
+              <View style={[s.typeChip, { backgroundColor: C.amberSoft }]}>
+                <Ionicons name="car-outline" size={13} color={C.amber} />
+                <Text style={[s.typeChipText, { color: C.amber }]}>Ride · {(order.type || "").charAt(0).toUpperCase() + (order.type || "").slice(1)}</Text>
               </View>
             </View>
             <View style={{ gap: 12, marginTop: 8 }}>
@@ -494,7 +494,7 @@ export default function OrderDetailScreen() {
                   </View>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Fare</Text>
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#D97706", marginTop: 2 }}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: C.amber, marginTop: 2 }}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
                   </View>
                 </View>
               ) : (
@@ -519,9 +519,9 @@ export default function OrderDetailScreen() {
                   <Text style={[s.typeChipText, { color: "#059669" }]}>Parcel</Text>
                 </View>
               ) : (
-                <View style={[s.typeChip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
-                  <Ionicons name={isFood ? "restaurant-outline" : "storefront-outline"} size={13} color={isFood ? "#D97706" : "#1A56DB"} />
-                  <Text style={[s.typeChipText, { color: isFood ? "#D97706" : "#1A56DB" }]}>{isFood ? "Food" : "Mart"}</Text>
+                <View style={[s.typeChip, { backgroundColor: isFood ? C.amberSoft : C.blueSoft }]}>
+                  <Ionicons name={isFood ? "restaurant-outline" : "storefront-outline"} size={13} color={isFood ? C.amber : "#1A56DB"} />
+                  <Text style={[s.typeChipText, { color: isFood ? C.amber : "#1A56DB" }]}>{isFood ? "Food" : "Mart"}</Text>
                 </View>
               )}
               {order.vendorName && <Text style={s.vendorName}>{order.vendorName}</Text>}
@@ -556,7 +556,7 @@ export default function OrderDetailScreen() {
           <View style={s.card}>
             <Text style={s.sectionTitle}>Delivery Address</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center" }}>
+              <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center" }}>
                 <Ionicons name="location-outline" size={18} color={C.primary} />
               </View>
               <Text style={s.addressText}>{order.deliveryAddress}</Text>
@@ -629,7 +629,7 @@ export default function OrderDetailScreen() {
               });
             }}
           >
-            <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
+            <Ionicons name="close-circle-outline" size={16} color={C.red} />
             <Text style={s.cancelOrderBtnText}>{isRide ? "Cancel Ride" : isParcelType ? "Cancel Booking" : "Cancel Order"}</Text>
           </Pressable>
         ) : isActive && !isDelivered && (
@@ -714,7 +714,7 @@ const s = StyleSheet.create({
   statusIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   statusLabel: { fontFamily: "Inter_700Bold", fontSize: 20 },
   orderId: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.textMuted },
-  etaChip: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FEF3C7", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginTop: 4 },
+  etaChip: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.amberSoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginTop: 4 },
   etaText: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#92400E" },
   stepperCard: { backgroundColor: "#fff", borderRadius: 20, padding: 18, borderWidth: 1, borderColor: C.border },
   sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.text, marginBottom: 14 },
@@ -741,7 +741,7 @@ const s = StyleSheet.create({
   totalAmount: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.success },
   addressText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, lineHeight: 20 },
   riderRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  riderAvatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center" },
+  riderAvatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center" },
   riderInitial: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.primary },
   riderName: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text },
   riderPhone: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 },
@@ -752,7 +752,7 @@ const s = StyleSheet.create({
     paddingVertical: 14, borderRadius: 16, backgroundColor: "#FEF2F2",
     borderWidth: 1.5, borderColor: "#FECACA",
   },
-  cancelOrderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#DC2626" },
+  cancelOrderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.red },
   refundSection: {
     backgroundColor: "#FFF7ED", borderRadius: 16, padding: 18,
     borderWidth: 1.5, borderColor: "#FED7AA", gap: 8,

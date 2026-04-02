@@ -88,9 +88,12 @@ type BookedRide = {
 
 type RideBookingFormProps = {
   onBooked: (ride: BookedRide) => void;
+  prefillPickup?: string;
+  prefillDrop?: string;
+  prefillType?: string;
 };
 
-export function RideBookingForm({ onBooked }: RideBookingFormProps) {
+export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillType }: RideBookingFormProps) {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { width: screenWidth } = useWindowDimensions();
@@ -202,8 +205,15 @@ export function RideBookingForm({ onBooked }: RideBookingFormProps) {
   const { predictions: dropPreds, loading: dropLoading } =
     useMapsAutocomplete(dropFocus ? drop : "");
 
+  useEffect(() => {
+    if (prefillPickup) setPickup(prefillPickup);
+    if (prefillDrop) setDrop(prefillDrop);
+    if (prefillType) setRideType(prefillType);
+  }, []);
+
   /* Auto-fill pickup from current GPS on form mount */
   useEffect(() => {
+    if (prefillPickup) return;
     let cancelled = false;
     (async () => {
       try {

@@ -14,6 +14,12 @@ const warning = "#FF9500";
 const warningSoft = "#FFF4E5";
 const info = "#5856D6";
 const infoSoft = "#EEEEFF";
+const amber = "#D97706";
+const amberSoft = "#FEF3C7";
+const red = "#DC2626";
+const redSoft = "#FEE2E2";
+const blueSoft = "#EFF6FF";
+const blueBorder = "#BFDBFE";
 
 export const spacing = {
   xs: 4,
@@ -143,6 +149,12 @@ export default {
     rideLight: "#E8F1FF",
     wallet: "#5856D6",
     walletLight: "#EEEEFF",
+    amber,
+    amberSoft,
+    red,
+    redSoft,
+    blueSoft,
+    blueBorder,
     pharmacy: "#AF52DE",
     pharmacyLight: "#F5E6FF",
     parcel: "#FF6B35",

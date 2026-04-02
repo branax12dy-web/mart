@@ -27,7 +27,7 @@ function RideScreenInner() {
   const rideCfg = config.rides;
   const ridesEnabled = config.features.rides;
   const inMaintenance = config.appStatus === "maintenance";
-  const { rideId: urlRideId } = useLocalSearchParams<{ rideId?: string }>();
+  const { rideId: urlRideId, prefillPickup, prefillDrop, prefillType } = useLocalSearchParams<{ rideId?: string; prefillPickup?: string; prefillDrop?: string; prefillType?: string }>();
 
   const [booked, setBooked] = useState<any>(null);
   const [rideLoadError, setRideLoadError] = useState(false);
@@ -299,7 +299,7 @@ function RideScreenInner() {
     );
   }
 
-  return <RideBookingForm onBooked={(ride) => setBooked(ride)} />;
+  return <RideBookingForm onBooked={(ride) => setBooked(ride)} prefillPickup={prefillPickup} prefillDrop={prefillDrop} prefillType={prefillType} />;
 }
 
 export default withServiceGuard("rides", RideScreenInner);

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useMapsAutocomplete, resolveLocation } from "@/hooks/useMaps";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useRef, useState } from "react";
@@ -92,6 +92,7 @@ const PARCEL_DRAFT_KEY = "parcel_wizard_draft";
 function ParcelScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Math.max(insets.top, 12);
+  const { prefillPickup: pPickup, prefillDrop: pDrop, prefillType: pType } = useLocalSearchParams<{ prefillPickup?: string; prefillDrop?: string; prefillType?: string }>();
   const { user, updateUser, token } = useAuth();
   const { showToast } = useToast();
   const { config: platformConfig } = usePlatformConfig();
@@ -153,8 +154,20 @@ function ParcelScreenInner() {
 
   const selectedType = PARCEL_TYPES.find(t => t.id === parcelType);
 
-  // Load wizard draft from AsyncStorage on mount; auto-fill pickup if no draft
+  const hasPrefill = !!(pPickup || pDrop || pType);
+
   useEffect(() => {
+    if (!hasPrefill) return;
+    let cancelled = false;
+    AsyncStorage.removeItem(PARCEL_DRAFT_KEY).catch(() => {});
+    if (pPickup) setPickupAddress(pPickup);
+    if (pDrop) setDropAddress(pDrop);
+    if (pType) setParcelType(pType);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (hasPrefill) return;
     let cancelled = false;
     AsyncStorage.getItem(PARCEL_DRAFT_KEY)
       .then(async raw => {
@@ -171,7 +184,6 @@ function ParcelScreenInner() {
           if (d.weight)        setWeight(d.weight);
           if (d.description)   setDescription(d.description);
           if (d.step !== undefined) setStep(d.step);
-          /* If draft already has a pickup address, skip GPS auto-fill */
           if (d.pickupAddress) return;
         }
         /* Auto-fill pickup from current GPS */

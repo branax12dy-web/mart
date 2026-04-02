@@ -70,7 +70,7 @@ function FoodCard({ item }: { item: any }) {
       <View style={styles.foodImageBox}>
         {item.image
           ? <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          : <Ionicons name="restaurant-outline" size={32} color="#D97706" />}
+          : <Ionicons name="restaurant-outline" size={32} color={C.amber} />}
         {item.deliveryTime && (
           <View style={styles.timeBadge}>
             <Ionicons name="time-outline" size={10} color="#fff" />
@@ -97,11 +97,11 @@ function FoodCard({ item }: { item: any }) {
           {qtyInCart > 0 ? (
             <View style={styles.stepperRow}>
               <Pressable onPress={(e) => { e?.stopPropagation?.(); qtyInCart <= 1 ? removeItem(item.id) : updateQuantity(item.id, qtyInCart - 1); }} style={styles.stepperBtn}>
-                <Ionicons name={qtyInCart <= 1 ? "trash-outline" : "remove"} size={14} color="#DC2626" />
+                <Ionicons name={qtyInCart <= 1 ? "trash-outline" : "remove"} size={14} color={C.red} />
               </Pressable>
               <Text style={styles.stepperQty}>{qtyInCart}</Text>
               <Pressable onPress={(e) => { e?.stopPropagation?.(); updateQuantity(item.id, qtyInCart + 1); }} style={[styles.stepperBtn, { backgroundColor: "#FFF4E5" }]}>
-                <Ionicons name="add" size={14} color="#D97706" />
+                <Ionicons name="add" size={14} color={C.amber} />
               </Pressable>
             </View>
           ) : (
@@ -135,7 +135,7 @@ function FoodScreenInner() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={["#92400E", "#D97706", "#F59E0B"]}
+        colors={["#92400E", C.amber, "#F59E0B"]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: topPad + 12 }]}
       >
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
   cartBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  cartBadge: { position: "absolute", top: -4, right: -4, backgroundColor: "#DC2626", borderRadius: 9, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 2, borderColor: "#D97706" },
+  cartBadge: { position: "absolute", top: -4, right: -4, backgroundColor: C.red, borderRadius: 9, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 2, borderColor: C.amber },
   cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff" },
   searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
   searchInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text, padding: 0 },

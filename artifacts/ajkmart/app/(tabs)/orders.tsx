@@ -38,33 +38,33 @@ import {
 const C = Colors.light;
 
 const ORDER_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  pending:          { color: "#D97706", bg: "#FEF3C7", icon: "time-outline",            labelKey: "pending" },
+  pending:          { color: C.amber, bg: C.amberSoft, icon: "time-outline",            labelKey: "pending" },
   confirmed:        { color: "#2563EB", bg: "#DBEAFE", icon: "checkmark-circle-outline", labelKey: "confirmed" },
   preparing:        { color: "#7C3AED", bg: "#EDE9FE", icon: "flame-outline",            labelKey: "preparing" },
   ready:            { color: "#6366F1", bg: "#E0E7FF", icon: "bag-check-outline",       labelKey: "readyForPickup" },
   picked_up:        { color: "#0891B2", bg: "#CFFAFE", icon: "cube-outline",            labelKey: "onTheWay" },
   out_for_delivery: { color: "#059669", bg: "#D1FAE5", icon: "bicycle-outline",          labelKey: "onTheWay" },
   delivered:        { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",   labelKey: "delivered" },
-  cancelled:        { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",     labelKey: "cancelled" },
+  cancelled:        { color: C.red, bg: C.redSoft, icon: "close-circle-outline",     labelKey: "cancelled" },
 };
 
 const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  searching:   { color: "#D97706", bg: "#FEF3C7", icon: "search-outline",            labelKey: "searching" },
-  bargaining:  { color: "#D97706", bg: "#FEF3C7", icon: "swap-horizontal-outline",   labelKey: "bargaining" },
+  searching:   { color: C.amber, bg: C.amberSoft, icon: "search-outline",            labelKey: "searching" },
+  bargaining:  { color: C.amber, bg: C.amberSoft, icon: "swap-horizontal-outline",   labelKey: "bargaining" },
   accepted:    { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "statusAccepted" },
   arrived:    { color: "#7C3AED", bg: "#EDE9FE", icon: "location-outline",          labelKey: "arrived" },
   in_transit: { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
   ongoing:    { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
   completed:  { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",    labelKey: "completed" },
-  cancelled:  { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",      labelKey: "cancelled" },
+  cancelled:  { color: C.red, bg: C.redSoft, icon: "close-circle-outline",      labelKey: "cancelled" },
 };
 
 const PARCEL_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  pending:    { color: "#D97706", bg: "#FEF3C7", icon: "time-outline",              labelKey: "pending" },
+  pending:    { color: C.amber, bg: C.amberSoft, icon: "time-outline",              labelKey: "pending" },
   accepted:   { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "statusAccepted" },
   in_transit: { color: "#059669", bg: "#D1FAE5", icon: "cube-outline",              labelKey: "inTransit" },
   completed:  { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",    labelKey: "delivered" },
-  cancelled:  { color: "#DC2626", bg: "#FEE2E2", icon: "close-circle-outline",      labelKey: "cancelled" },
+  cancelled:  { color: C.red, bg: C.redSoft, icon: "close-circle-outline",      labelKey: "cancelled" },
 };
 
 const TABS = [
@@ -123,13 +123,13 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       accessibilityLabel={`${isFood ? T("food") : T("mart")} order ${order.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${order.total?.toLocaleString()}`}
     >
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: isFood ? "#FEF3C7" : "#EFF6FF" }]}>
+        <View style={[styles.chip, { backgroundColor: isFood ? C.amberSoft : C.blueSoft }]}>
           <Ionicons
             name={isFood ? "restaurant-outline" : "storefront-outline"}
             size={13}
-            color={isFood ? "#D97706" : "#1A56DB"}
+            color={isFood ? C.amber : "#1A56DB"}
           />
-          <Text style={[styles.chipText, { color: isFood ? "#D97706" : "#1A56DB" }]}>
+          <Text style={[styles.chipText, { color: isFood ? C.amber : "#1A56DB" }]}>
             {isFood ? T("food") : T("mart")}
           </Text>
         </View>
@@ -184,15 +184,15 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       )}
 
       {!liveTracking && isActive && (
-        <View style={[styles.etaBar, { backgroundColor: "#FEF3C7", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0, marginTop: 12 }]}>
-          <Ionicons name="navigate-circle-outline" size={13} color="#D97706" />
+        <View style={[styles.etaBar, { backgroundColor: C.amberSoft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0, marginTop: 12 }]}>
+          <Ionicons name="navigate-circle-outline" size={13} color={C.amber} />
           <Text style={[styles.etaText, { color: "#92400E" }]}>{T("liveTrackingUnavailable")}</Text>
         </View>
       )}
 
       {canCancel ? (
         <Pressable style={styles.cancelBtn} onPress={() => onCancel(order)} accessibilityRole="button" accessibilityLabel={`${T("cancelOrder")}, ${cancelMinsLeft} minutes left`}>
-          <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
+          <Ionicons name="close-circle-outline" size={14} color={C.red} />
           <Text style={styles.cancelBtnText}>{T("cancelOrder")} ({cancelMinsLeft}m left)</Text>
         </Pressable>
       ) : isActive && (
@@ -390,7 +390,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
 
       {canCancel && (
         <Pressable style={styles.cancelBtn} onPress={() => onCancel(ride)} accessibilityRole="button" accessibilityLabel={["accepted", "arrived"].includes(ride.status) ? T("cancelRideFee") : T("cancelRide")}>
-          <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
+          <Ionicons name="close-circle-outline" size={14} color={C.red} />
           <Text style={styles.cancelBtnText}>
             {["accepted", "arrived"].includes(ride.status) ? T("cancelRideFee") : T("cancelRide")}
           </Text>
@@ -549,7 +549,7 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
 
       {canCancel && (
         <Pressable style={styles.cancelBtn} onPress={() => onCancel(order)} accessibilityRole="button" accessibilityLabel={`${T("cancelOrder")}, ${cancelMinsLeft} minutes left`}>
-          <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
+          <Ionicons name="close-circle-outline" size={14} color={C.red} />
           <Text style={styles.cancelBtnText}>{T("cancelOrder")} ({cancelMinsLeft}m left)</Text>
         </Pressable>
       )}
@@ -592,9 +592,9 @@ function ParcelCard({ booking }: { booking: any }) {
       accessibilityLabel={`Parcel ${parcelLabel} ${booking.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}`}
     >
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: "#FEF3C7" }]}>
-          <Ionicons name="cube-outline" size={13} color="#D97706" />
-          <Text style={[styles.chipText, { color: "#D97706" }]}>{T("parcel")} · {parcelLabel}</Text>
+        <View style={[styles.chip, { backgroundColor: C.amberSoft }]}>
+          <Ionicons name="cube-outline" size={13} color={C.amber} />
+          <Text style={[styles.chipText, { color: C.amber }]}>{T("parcel")} · {parcelLabel}</Text>
         </View>
         <Text style={styles.cardId}>#{booking.id.slice(-8).toUpperCase()}</Text>
       </View>
@@ -631,7 +631,7 @@ function ParcelCard({ booking }: { booking: any }) {
 
       {isActive && booking.estimatedTime && (
         <View style={styles.etaBar}>
-          <Ionicons name="time-outline" size={12} color="#D97706" />
+          <Ionicons name="time-outline" size={12} color={C.amber} />
           <Text style={[styles.etaText, { color: "#92400E" }]}>ETA: {booking.estimatedTime}</Text>
           <View style={styles.payBadge}>
             <Ionicons
@@ -1191,7 +1191,7 @@ export default function OrdersScreen() {
               </Pressable>
             )}
             {foodActive && (
-              <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: "#D97706" }]}>
+              <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: C.amber }]}>
                 <Ionicons name="restaurant-outline" size={15} color="#fff" />
                 <Text style={styles.emptyBtnText}>Food</Text>
               </Pressable>
@@ -1479,7 +1479,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
   loadingText: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted },
 
-  emptyIcon: { width: 96, height: 96, borderRadius: 28, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  emptyIcon: { width: 96, height: 96, borderRadius: 28, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   emptyFilterIcon: { width: 72, height: 72, borderRadius: 22, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   emptyTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center" },
   emptyText: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center" },
@@ -1548,7 +1548,7 @@ const styles = StyleSheet.create({
     marginTop: 12, paddingVertical: 10, borderRadius: 14, backgroundColor: "#FEF2F2",
     borderWidth: 1.5, borderColor: "#FECACA",
   },
-  cancelBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#DC2626" },
+  cancelBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.red },
   rateBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     marginTop: 12, paddingVertical: 10, borderRadius: 14, backgroundColor: "#FFFBEB",
@@ -1574,8 +1574,8 @@ const styles = StyleSheet.create({
   refundRequestBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#7C3AED" },
   reorderBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: "#EFF6FF",
-    borderWidth: 1.5, borderColor: "#BFDBFE",
+    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: C.blueSoft,
+    borderWidth: 1.5, borderColor: C.blueBorder,
   },
   reorderBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
   cancelDisabledBar: {
@@ -1586,8 +1586,8 @@ const styles = StyleSheet.create({
   cancelDisabledText: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, flex: 1 },
   bookAgainBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: "#EFF6FF",
-    borderWidth: 1.5, borderColor: "#BFDBFE",
+    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: C.blueSoft,
+    borderWidth: 1.5, borderColor: C.blueBorder,
   },
   bookAgainBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
 
@@ -1613,5 +1613,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "#FECACA", marginBottom: 8,
   },
   sectionErrTxt: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, color: "#B91C1C" },
-  sectionErrRetry: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#DC2626" },
+  sectionErrRetry: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.red },
 });

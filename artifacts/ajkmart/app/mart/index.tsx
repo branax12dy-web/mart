@@ -280,15 +280,15 @@ function MartScreenInner() {
       </LinearGradient>
 
       {showCartBanner && (
-        <View style={{ backgroundColor: "#FEF3C7", flexDirection: "row", alignItems: "center", padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: "#FDE68A" }}>
-          <Ionicons name="warning-outline" size={18} color="#D97706" />
+        <View style={{ backgroundColor: C.amberSoft, flexDirection: "row", alignItems: "center", padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: "#FDE68A" }}>
+          <Ionicons name="warning-outline" size={18} color={C.amber} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#92400E" }}>{cartType === "pharmacy" ? "Pharmacy cart active" : cartType === "food" ? "Food cart active" : "Another cart active"}</Text>
             <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E" }}>Adding Mart items will clear your existing cart</Text>
           </View>
           <Pressable
             onPress={() => setClearBannerConfirm(true)}
-            style={{ backgroundColor: "#D97706", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+            style={{ backgroundColor: C.amber, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
           >
             <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" }}>Clear Cart</Text>
           </Pressable>
@@ -361,7 +361,7 @@ function MartScreenInner() {
                     <Text style={styles.secTitle}>Flash Deals</Text>
                   </View>
                   <View style={styles.timerBadge}>
-                    <Ionicons name="time-outline" size={11} color="#DC2626" />
+                    <Ionicons name="time-outline" size={11} color={C.red} />
                     <Text style={styles.timerTxt}>Today only</Text>
                   </View>
                 </View>
@@ -422,24 +422,24 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text, padding: 0 },
 
   catRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 4 },
-  catChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22, backgroundColor: "#EFF6FF", borderWidth: 1.5, borderColor: "#DBEAFE" },
+  catChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22, backgroundColor: C.blueSoft, borderWidth: 1.5, borderColor: "#DBEAFE" },
   catChipActive: { backgroundColor: C.primary, borderColor: C.primary },
   catChipTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary },
   catChipTxtActive: { color: "#fff" },
 
   secRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 20, marginBottom: 12 },
   flashLabel: { flexDirection: "row", alignItems: "center", gap: 8 },
-  flashIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: "#FEF3C7", alignItems: "center", justifyContent: "center" },
+  flashIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center" },
   secTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text },
   itemCountBadge: { backgroundColor: C.primary, borderRadius: 10, minWidth: 24, height: 24, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   itemCountTxt: { fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff" },
   timerBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FEE2E2", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  timerTxt: { fontFamily: "Inter_700Bold", fontSize: 11, color: "#DC2626" },
+  timerTxt: { fontFamily: "Inter_700Bold", fontSize: 11, color: C.red },
 
   flashGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16, gap: 12, marginBottom: 8 },
   flashCard: { backgroundColor: C.surface, borderRadius: 18, overflow: "hidden", borderWidth: 1.5, borderColor: "#FED7AA", shadowColor: "#F59E0B", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
   flashImg: { height: 100, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  flashBadge: { position: "absolute", top: 8, left: 8, backgroundColor: "#DC2626", paddingHorizontal: 7, paddingVertical: 4, borderRadius: 10, alignItems: "center" },
+  flashBadge: { position: "absolute", top: 8, left: 8, backgroundColor: C.red, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 10, alignItems: "center" },
   flashBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff" },
   flashBadgeSub: { fontFamily: "Inter_700Bold", fontSize: 8, color: "#fff", marginTop: -1 },
   flashBody: { padding: 12 },
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
   flashUnit: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginBottom: 8 },
   flashFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
   flashOrigPrice: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, textDecorationLine: "line-through" },
-  flashPrice: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#DC2626" },
+  flashPrice: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.red },
 
   productsGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16, paddingTop: 4, gap: 12 },
   productCard: { backgroundColor: C.surface, borderRadius: 18, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
