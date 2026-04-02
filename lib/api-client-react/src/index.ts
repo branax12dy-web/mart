@@ -10,3 +10,8 @@ export {
 } from "./custom-fetch";
 export type { AuthTokenGetter } from "./custom-fetch";
 export { rateRide, getDispatchStatus, retryRideDispatch } from "./ride-dispatch";
+export {
+  getBanners, getTrending, getForYou, getSimilar,
+  trackInteraction, getProductVariants,
+} from "./discovery";
+export type { Banner, RecommendationProduct } from "./discovery";

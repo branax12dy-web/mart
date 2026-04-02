@@ -9,6 +9,7 @@ import {
   Image,
   Platform,
   Pressable,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -24,6 +25,15 @@ import { getProducts, type GetProductsType, type Product } from "@workspace/api-
 const C = Colors.light;
 const HISTORY_KEY = "@ajkmart_search_history";
 const MAX_HISTORY = 8;
+
+type SortOption = "relevance" | "price_asc" | "price_desc" | "rating" | "newest";
+const SORT_OPTIONS: { key: SortOption; label: string }[] = [
+  { key: "relevance", label: "Relevance" },
+  { key: "price_asc", label: "Price: Low" },
+  { key: "price_desc", label: "Price: High" },
+  { key: "rating", label: "Top Rated" },
+  { key: "newest", label: "Newest" },
+];
 
 type ServiceKey = "mart" | "food" | "pharmacy";
 
@@ -76,6 +86,11 @@ export default function UniversalSearchScreen() {
   const [suggestions] = useState<string[]>([
     "Milk", "Rice", "Chicken", "Bread", "Eggs", "Butter", "Oil", "Sugar",
   ]);
+  const [sortBy, setSortBy] = useState<SortOption>("relevance");
+  const [showFilters, setShowFilters] = useState(false);
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [minRating, setMinRating] = useState("");
 
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,9 +133,15 @@ export default function UniversalSearchScreen() {
     setSearchError(false);
     if (fromExplicit) saveToHistory(q);
 
+    const extraParams: Record<string, string> = {};
+    if (sortBy !== "relevance") extraParams.sort = sortBy;
+    if (minPrice) extraParams.minPrice = minPrice;
+    if (maxPrice) extraParams.maxPrice = maxPrice;
+    if (minRating) extraParams.minRating = minRating;
+
     const results = await Promise.allSettled(
       enabledServices.map((svc) =>
-        getProducts({ type: svc as GetProductsType, search: q })
+        getProducts({ type: svc as GetProductsType, search: q, ...extraParams } as any)
           .then((data) =>
             (data?.products || []).map((p: Product) => ({
               id: p.id,
@@ -152,7 +173,7 @@ export default function UniversalSearchScreen() {
       setSearchError(true);
     }
     setLoading(false);
-  }, [enabledServices.join(","), saveToHistory]);
+  }, [enabledServices.join(","), saveToHistory, sortBy, minPrice, maxPrice, minRating]);
 
   const onChangeText = (text: string) => {
     setQuery(text);
@@ -215,6 +236,43 @@ export default function UniversalSearchScreen() {
             </Pressable>
           )}
         </View>
+      </View>
+
+      <View style={s.filterBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingHorizontal: 12 }}>
+          {SORT_OPTIONS.map((opt) => (
+            <Pressable
+              key={opt.key}
+              onPress={() => { setSortBy(opt.key); if (query.trim()) fetchResults(query); }}
+              style={[s.sortChip, sortBy === opt.key && s.sortChipActive]}
+            >
+              <Text style={[s.sortChipTxt, sortBy === opt.key && s.sortChipTxtActive]}>{opt.label}</Text>
+            </Pressable>
+          ))}
+          <Pressable onPress={() => setShowFilters(!showFilters)} style={[s.sortChip, showFilters && s.sortChipActive]}>
+            <Ionicons name="options-outline" size={13} color={showFilters ? "#fff" : C.textSecondary} />
+            <Text style={[s.sortChipTxt, showFilters && s.sortChipTxtActive]}>Filters</Text>
+          </Pressable>
+        </ScrollView>
+        {showFilters && (
+          <View style={s.filterRow}>
+            <View style={s.filterField}>
+              <Text style={s.filterLabel}>Min Rs.</Text>
+              <TextInput style={s.filterInput} value={minPrice} onChangeText={setMinPrice} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
+            </View>
+            <View style={s.filterField}>
+              <Text style={s.filterLabel}>Max Rs.</Text>
+              <TextInput style={s.filterInput} value={maxPrice} onChangeText={setMaxPrice} keyboardType="numeric" placeholder="Any" placeholderTextColor={C.textMuted} />
+            </View>
+            <View style={s.filterField}>
+              <Text style={s.filterLabel}>Min Rating</Text>
+              <TextInput style={s.filterInput} value={minRating} onChangeText={setMinRating} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
+            </View>
+            <Pressable onPress={() => { if (query.trim()) fetchResults(query); }} style={s.filterApply}>
+              <Text style={s.filterApplyTxt}>Apply</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {loading && (
@@ -455,4 +513,16 @@ const s = StyleSheet.create({
   browseCard: { flex: 1, borderRadius: 16, padding: 16, alignItems: "center", gap: 10 },
   browseIconWrap: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   browseLabel: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+
+  filterBar: { backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border, paddingVertical: 8 },
+  sortChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.surfaceSecondary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: C.border },
+  sortChipActive: { backgroundColor: C.primary, borderColor: C.primary },
+  sortChipTxt: { fontSize: 12, fontFamily: "Inter_500Medium", color: C.textSecondary },
+  sortChipTxtActive: { color: "#fff" },
+  filterRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingTop: 8 },
+  filterField: { flex: 1 },
+  filterLabel: { fontSize: 10, fontFamily: "Inter_500Medium", color: C.textMuted, marginBottom: 2 },
+  filterInput: { backgroundColor: C.surfaceSecondary, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 13, fontFamily: "Inter_400Regular", color: C.text, borderWidth: 1, borderColor: C.border },
+  filterApply: { backgroundColor: C.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, marginTop: 12 },
+  filterApplyTxt: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#fff" },
 });

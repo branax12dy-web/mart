@@ -21,7 +21,8 @@ import { T as Typ, Font } from "@/constants/typography";
 import { useCart } from "@/context/CartContext";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
-import { useGetProduct, useGetProducts, type Product } from "@workspace/api-client-react";
+import { useGetProduct, useGetProducts, getProductVariants, trackInteraction, type Product } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 
 const C = Colors.light;
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -71,6 +72,20 @@ export default function ProductDetailScreen() {
     })
     .slice(0, 4);
 
+  const { data: variants } = useQuery({
+    queryKey: ["product-variants", id],
+    queryFn: () => getProductVariants(id || ""),
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (id) {
+      trackInteraction({ productId: id, type: "view" }).catch(() => {});
+    }
+  }, [id]);
+
   useEffect(() => {
     return () => {
       if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
@@ -88,10 +103,12 @@ export default function ProductDetailScreen() {
   const doAdd = useCallback(() => {
     if (!product) return;
     const type = productType === "food" ? "food" : productType === "pharmacy" ? "pharmacy" : "mart";
+    const variantPrice = selectedVariant ? selectedVariant.price : product.price;
+    const variantLabel = selectedVariant ? ` (${selectedVariant.label})` : "";
     addItem({
       productId: product.id,
-      name: product.name,
-      price: product.price,
+      name: product.name + variantLabel,
+      price: variantPrice,
       quantity: 1,
       image: product.image,
       type,
@@ -106,7 +123,7 @@ export default function ProductDetailScreen() {
       setAdded(false);
       addedTimerRef.current = null;
     }, 2000);
-  }, [product, productType, addItem, scale]);
+  }, [product, productType, addItem, scale, selectedVariant]);
 
   const handleAdd = useCallback(() => {
     if (!product) return;
@@ -296,6 +313,29 @@ export default function ProductDetailScreen() {
               {product.reviewCount != null && (
                 <Text style={styles.reviewCount}>({product.reviewCount} reviews)</Text>
               )}
+            </View>
+          )}
+
+          {variants && variants.length > 0 && (
+            <View style={variantStyles.section}>
+              <Text style={variantStyles.title}>Available Options</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {variants.map((v: any) => {
+                  const isSelected = selectedVariant === v.id;
+                  const vPrice = Number(v.price) || price;
+                  return (
+                    <Pressable
+                      key={v.id}
+                      onPress={() => setSelectedVariant(isSelected ? null : v.id)}
+                      style={[variantStyles.chip, isSelected && variantStyles.chipSelected, !v.inStock && variantStyles.chipOos]}
+                    >
+                      <Text style={[variantStyles.chipName, isSelected && variantStyles.chipNameSelected]}>{v.label}</Text>
+                      <Text style={[variantStyles.chipPrice, isSelected && variantStyles.chipPriceSelected]}>Rs. {vPrice.toLocaleString()}</Text>
+                      {!v.inStock && <Text style={variantStyles.oosLabel}>Out of Stock</Text>}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
             </View>
           )}
 
@@ -596,4 +636,17 @@ const styles = StyleSheet.create({
   errorSub: { ...Typ.body, fontSize: 13, color: C.textMuted },
   retryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 4 },
   retryBtnTxt: { ...Typ.body, fontFamily: Font.bold, color: C.textInverse },
+});
+
+const variantStyles = StyleSheet.create({
+  section: { marginTop: 12, marginBottom: 4 },
+  title: { ...Typ.h3, fontSize: 15, color: C.text, marginBottom: 10 },
+  chip: { backgroundColor: C.surfaceSecondary, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1.5, borderColor: C.border, minWidth: 90, alignItems: "center" },
+  chipSelected: { borderColor: C.primary, backgroundColor: C.primarySoft },
+  chipOos: { opacity: 0.5 },
+  chipName: { ...Typ.captionBold, color: C.text, marginBottom: 2 },
+  chipNameSelected: { color: C.primary },
+  chipPrice: { ...Typ.small, color: C.textSecondary },
+  chipPriceSelected: { color: C.primary },
+  oosLabel: { ...Typ.tiny, color: C.danger, marginTop: 2 },
 });

@@ -7,6 +7,7 @@ import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, writeAuthAuditLog, getClientIp } from "../middleware/security.js";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
+import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
 
 const router: IRouter = Router();
 
@@ -272,6 +273,31 @@ router.patch("/orders/:id/status", async (req, res) => {
 
   if (msgs[status]) {
     await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title: msgs[status]!.title, body: msgs[status]!.body, type: "order", icon: "bag-outline" }).catch(()=>{});
+  }
+
+  const io = getIO();
+  if (io) {
+    const mapped = { ...updated, total: safeNum(updated.total) };
+    io.to("admin-fleet").emit("order:update", mapped);
+    io.to(`vendor:${vendorId}`).emit("order:update", mapped);
+    if (updated.riderId) io.to(`rider:${updated.riderId}`).emit("order:update", mapped);
+  }
+
+  if (status === "ready" && !updated.riderId) {
+    (async () => {
+      try {
+        const onlineRiders = await db
+          .select({ id: usersTable.id })
+          .from(usersTable)
+          .where(and(
+            eq(usersTable.role, "rider"),
+            eq(usersTable.isOnline, true),
+          ));
+        for (const { id: riderId } of onlineRiders) {
+          emitRiderNewRequest(riderId, { type: "order_ready", requestId: orderId, summary: `Order ready for pickup` });
+        }
+      } catch {}
+    })();
   }
 
   res.json({ ...updated, total: safeNum(updated.total) });

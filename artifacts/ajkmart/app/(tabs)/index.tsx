@@ -44,6 +44,8 @@ import {
   CountdownTimer,
   SearchHeader,
 } from "@/components/user-shared";
+import { getBanners, getTrending, type Banner, type RecommendationProduct } from "@workspace/api-client-react";
+import { Image, FlatList } from "react-native";
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
@@ -486,6 +488,131 @@ function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => str
   );
 }
 
+function DynamicBannerCarousel() {
+  const { data: banners } = useQuery({
+    queryKey: ["dynamic-banners", "home"],
+    queryFn: () => getBanners({ placement: "home" }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const scrollRef = useRef<ScrollView>(null);
+  const [active, setActive] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
+  const BANNER_W = windowWidth - H_PAD * 2;
+
+  const items = banners ?? [];
+  if (items.length === 0) return null;
+
+  return (
+    <View style={{ marginTop: spacing.md }}>
+      <SectionHeader title="Featured" subtitle="Promotions & offers" />
+      <View style={styles.carouselWrap}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled={false}
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          snapToInterval={BANNER_W}
+          snapToAlignment="start"
+          style={{ width: BANNER_W }}
+          onScroll={(e) => setActive(Math.round(e.nativeEvent.contentOffset.x / BANNER_W))}
+          scrollEventThrottle={16}
+        >
+          {items.map((b) => (
+            <Pressable
+              key={b.id}
+              onPress={() => b.linkUrl && router.push(b.linkUrl as Href)}
+              style={{ width: BANNER_W }}
+            >
+              <LinearGradient
+                colors={[b.gradient1 || C.primary, b.gradient2 || C.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.bannerCard}
+              >
+                <View style={[styles.blob, { width: 130, height: 130, top: -30, right: 60, opacity: 0.12 }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bannerTitle}>{b.title}</Text>
+                  {b.subtitle ? <Text style={styles.bannerDesc}>{b.subtitle}</Text> : null}
+                  <View style={styles.bannerCta}>
+                    <Text style={styles.bannerCtaTxt}>Shop Now</Text>
+                    <Ionicons name="arrow-forward" size={13} color={C.textInverse} />
+                  </View>
+                </View>
+                <View style={styles.bannerIconWrap}>
+                  <Ionicons name={(b.icon as any) || "pricetag"} size={56} color={C.overlayLight15} />
+                </View>
+              </LinearGradient>
+            </Pressable>
+          ))}
+        </ScrollView>
+        {items.length > 1 && (
+          <View style={styles.dotsRow}>
+            {items.map((_, i) => (
+              <View key={i} style={[styles.dot, { width: active === i ? 24 : 6, backgroundColor: active === i ? C.primary : C.border }]} />
+            ))}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function TrendingSection() {
+  const { data: trending } = useQuery({
+    queryKey: ["trending-products"],
+    queryFn: () => getTrending({ limit: 8 }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const items = trending ?? [];
+  if (items.length === 0) return null;
+
+  return (
+    <View style={{ marginTop: spacing.lg }}>
+      <SectionHeader title="Trending Now" subtitle="Popular in Muzaffarabad" />
+      <FlatList
+        horizontal
+        data={items}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: H_PAD, gap: spacing.md }}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => router.push(`/product/${item.id}` as Href)}
+            style={trendS.card}
+          >
+            {item.image ? (
+              <Image source={{ uri: item.image }} style={trendS.img} />
+            ) : (
+              <View style={[trendS.img, { backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }]}>
+                <Ionicons name="cube-outline" size={28} color={C.textMuted} />
+              </View>
+            )}
+            <Text style={trendS.name} numberOfLines={2}>{item.name}</Text>
+            <Text style={trendS.price}>Rs. {Number(item.price).toLocaleString()}</Text>
+            {item.rating ? (
+              <View style={trendS.ratingRow}>
+                <Ionicons name="star" size={11} color={C.gold} />
+                <Text style={trendS.ratingTxt}>{Number(item.rating).toFixed(1)}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        )}
+      />
+    </View>
+  );
+}
+
+const trendS = StyleSheet.create({
+  card: { width: 140, backgroundColor: C.surface, borderRadius: radii.lg, ...shadows.sm, overflow: "hidden" },
+  img: { width: 140, height: 120, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg },
+  name: { ...Typ.caption, color: C.text, paddingHorizontal: spacing.sm, paddingTop: spacing.sm, height: 36 },
+  price: { ...Typ.captionBold, color: C.primary, paddingHorizontal: spacing.sm, paddingBottom: spacing.xs },
+  ratingRow: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
+  ratingTxt: { ...Typ.tiny, color: C.textSecondary },
+});
+
 function HomeSkeleton() {
   return (
     <View style={{ paddingHorizontal: H_PAD, gap: spacing.md, marginTop: spacing.md }}>
@@ -671,6 +798,9 @@ export default function HomeScreen() {
             )}
 
             <FlashDealsSection T={T} />
+
+            <DynamicBannerCarousel />
+            <TrendingSection />
 
             <SectionHeader title={T("ourServices")} subtitle={T("allInOne")} />
 

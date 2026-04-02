@@ -25,6 +25,9 @@ import mapsRouter from "./maps.js";
 import schoolRouter from "./school.js";
 import uploadsRouter from "./uploads.js";
 import sosRouter from "./sos.js";
+import recommendationsRouter from "./recommendations.js";
+import bannersRouter from "./banners.js";
+import variantsRouter from "./variants.js";
 
 const router: IRouter = Router();
 
@@ -54,5 +57,8 @@ router.use("/maps", mapsRouter);
 router.use("/school", schoolRouter);
 router.use("/uploads", uploadsRouter);
 router.use("/sos", sosRouter);
+router.use("/recommendations", recommendationsRouter);
+router.use("/banners", bannersRouter);
+router.use("/variants", variantsRouter);
 
 export default router;

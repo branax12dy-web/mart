@@ -7,13 +7,18 @@
  */
 
 import { Router, type IRouter } from "express";
-import crypto from "crypto";
 import { db } from "@workspace/db";
 import { ordersTable, usersTable, walletTransactionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { getPlatformSettings, adminAuth } from "./admin.js";
 import { generateId } from "../lib/id.js";
 import { customerAuth } from "../middleware/security.js";
+import {
+  buildJazzCashHash, buildEasyPaisaHash,
+  txnDateTime, txnExpiry,
+  getProviderConfig, validatePaymentAmount,
+  isSupportedGateway, SUPPORTED_GATEWAYS,
+} from "../lib/payment-providers.js";
 
 const router: IRouter = Router();
 
@@ -33,42 +38,6 @@ async function resolvePayment(txnRef: string, status: "success" | "failed") {
     .where(eq(ordersTable.txnRef, txnRef));
 }
 
-// ─── Crypto Helpers ───────────────────────────────────────────────────────────
-
-function hmacSHA256(key: string, data: string): string {
-  return crypto.createHmac("sha256", key).update(data).digest("hex");
-}
-
-function sha256(data: string): string {
-  return crypto.createHash("sha256").update(data).digest("hex");
-}
-
-function txnDateTime(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-}
-
-function txnExpiry(minutes = 15): string {
-  const exp = new Date(Date.now() + minutes * 60 * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${exp.getFullYear()}${pad(exp.getMonth()+1)}${pad(exp.getDate())}${pad(exp.getHours())}${pad(exp.getMinutes())}${pad(exp.getSeconds())}`;
-}
-
-function buildJazzCashHash(params: Record<string, string>, salt: string): string {
-  const sorted = Object.keys(params)
-    .filter(k => params[k] !== "" && k !== "pp_SecureHash")
-    .sort()
-    .map(k => params[k])
-    .join("&");
-  return hmacSHA256(salt, `${salt}&${sorted}`).toUpperCase();
-}
-
-function buildEasyPaisaHash(fields: string[], hashKey: string): string {
-  return sha256(`${hashKey}&${fields.join("&")}`);
-}
-
-// ─── Internal helper: update order to confirmed ────────────────────────────────
 async function confirmOrder(orderId: string): Promise<void> {
   await db.update(ordersTable)
     .set({ status: "confirmed", updatedAt: new Date() })
@@ -275,6 +244,10 @@ router.post("/initiate", customerAuth, async (req, res) => {
     res.status(400).json({ error: "gateway, amount and orderId are required" }); return;
   }
 
+  if (!isSupportedGateway(gateway)) {
+    res.status(400).json({ error: `Unsupported gateway. Supported: ${SUPPORTED_GATEWAYS.join(", ")}` }); return;
+  }
+
   /* Verify the order belongs to the authenticated user */
   const [order] = await db.select({ userId: ordersTable.userId })
     .from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
@@ -284,20 +257,15 @@ router.post("/initiate", customerAuth, async (req, res) => {
   const s = await getPlatformSettings();
   const amountPaisa = Math.round(parseFloat(amount) * 100);
 
+  const providerCfg = getProviderConfig(s, gateway);
+
   /* ── JazzCash ── */
   if (gateway === "jazzcash") {
-    if ((s["jazzcash_enabled"] ?? "off") !== "on") {
-      res.status(503).json({ error: "JazzCash is currently disabled" }); return;
+    const amountErr = providerCfg ? validatePaymentAmount(providerCfg, parseFloat(amount), "JazzCash") : "JazzCash is not configured";
+    if (amountErr) {
+      res.status(providerCfg?.enabled === false ? 503 : 400).json({ error: amountErr }); return;
     }
-    const jcMin = parseFloat(s["jazzcash_min_amount"] ?? "10");
-    const jcMax = parseFloat(s["jazzcash_max_amount"] ?? "100000");
-    if (parseFloat(amount) < jcMin) {
-      res.status(400).json({ error: `Minimum JazzCash payment is Rs. ${jcMin}` }); return;
-    }
-    if (parseFloat(amount) > jcMax) {
-      res.status(400).json({ error: `Maximum JazzCash payment is Rs. ${jcMax}` }); return;
-    }
-    const jcType = s["jazzcash_type"] ?? "manual";
+    const jcType = providerCfg!.type;
 
     if (jcType === "manual") {
       res.json({
@@ -376,18 +344,11 @@ router.post("/initiate", customerAuth, async (req, res) => {
 
   /* ── EasyPaisa ── */
   if (gateway === "easypaisa") {
-    if ((s["easypaisa_enabled"] ?? "off") !== "on") {
-      res.status(503).json({ error: "EasyPaisa is currently disabled" }); return;
+    const amountErr = providerCfg ? validatePaymentAmount(providerCfg, parseFloat(amount), "EasyPaisa") : "EasyPaisa is not configured";
+    if (amountErr) {
+      res.status(providerCfg?.enabled === false ? 503 : 400).json({ error: amountErr }); return;
     }
-    const epMin = parseFloat(s["easypaisa_min_amount"] ?? "10");
-    const epMax = parseFloat(s["easypaisa_max_amount"] ?? "100000");
-    if (parseFloat(amount) < epMin) {
-      res.status(400).json({ error: `Minimum EasyPaisa payment is Rs. ${epMin}` }); return;
-    }
-    if (parseFloat(amount) > epMax) {
-      res.status(400).json({ error: `Maximum EasyPaisa payment is Rs. ${epMax}` }); return;
-    }
-    const epType = s["easypaisa_type"] ?? "manual";
+    const epType = providerCfg!.type;
 
     if (epType === "manual") {
       res.json({

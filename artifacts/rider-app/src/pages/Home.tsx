@@ -627,6 +627,18 @@ export default function Home() {
     },
   });
 
+  const rejectOrderMut = useMutation({
+    mutationFn: (id: string) => api.rejectOrder(id),
+    onSuccess: (_, id) => {
+      dismiss(id);
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
+      showToast("Order rejected.", "success");
+    },
+    onError: (e: any) => {
+      showToast(e.message || "Could not reject order", "error");
+    },
+  });
+
   const acceptRideMut = useMutation({
     mutationFn: (id: string) => api.acceptRide(id),
     onSuccess: (_, id) => {
@@ -1141,6 +1153,12 @@ export default function Home() {
                             <MapPin size={14}/>
                           </a>
                         )}
+                        <button onClick={() => rejectOrderMut.mutate(o.id)}
+                          disabled={rejectOrderMut.isPending}
+                          className="border border-red-200 text-red-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-red-50 transition-colors flex items-center gap-1 disabled:opacity-60"
+                          title="Reject">
+                          <XCircle size={14}/> Reject
+                        </button>
                         <button onClick={() => dismiss(o.id)}
                           className="border border-gray-200 text-gray-400 font-bold px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors flex items-center"
                           title="Ignore">

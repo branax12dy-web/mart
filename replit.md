@@ -55,6 +55,13 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - **Location Services:** Integration with mapping services for autocomplete, geocoding, distance matrix calculations, and real-time location tracking for rides/deliveries.
 - **Security:** Implementation of signed JWTs for authentication, input validation using Zod schemas, and role-based access control for API endpoints. Admin endpoints use a separate `ADMIN_JWT_SECRET` (required env var, minimum 32 chars enforced at startup, server will not start without it). `JWT_SECRET` also enforced to ≥32 chars. Server-side price verification on order placement. Deposit TxID duplicate protection with normalized case-insensitive matching. OTP bypass is only allowed when `NODE_ENV` is explicitly `"development"` or `"test"` (never when unset). TOTP secrets encrypted at rest using AES-256-GCM. `GET /rides/:id/event-logs` uses timing-safe secret comparison. Route shadowing fixed: `/admin/system` router is mounted before `/admin` router. Platform settings PUT/PATCH endpoints validate numeric and boolean keys before persisting. Email delivery via nodemailer. **Critical Bug Fixes (Task #4):** Admin cannot cancel/refund delivered/completed orders (free-goods exploit closed). Rider order status transitions enforced via `ORDER_RIDER_TRANSITIONS` state machine (prevents skipping states like confirmed→delivered). Ride/order delivery financial operations (rider earnings, platform fees) are now atomic — status update and wallet operations in ONE database transaction (prevents "completed but unpaid" state). All wallet deductions in rides.ts use atomic SQL (`wallet_balance - X` with `gte` floor guard) instead of JavaScript math (eliminates double-spending race conditions). Cancel-fee deduction verifies row-update success before inserting ledger entry.
 
+- **Payment Provider Abstraction:** Centralized payment SDK in `api-server/src/lib/payment-providers.ts` with `getProviderConfig()`, `validatePaymentAmount()`, hash builders for JazzCash/EasyPaisa, and `SUPPORTED_GATEWAYS` type. Payments route refactored to use abstraction layer.
+- **Rider Order Rejection:** Riders can reject delivery orders via `POST /rider/orders/:id/reject` with reason. Rider app Home has Reject button alongside Accept/Ignore on order request cards.
+- **Order Ready Notifications:** When vendor marks order "ready", socket broadcasts `order:update` to admin/vendor/rider rooms and notifies all online riders of available pickups via `rider:new-request`.
+- **AI/ML Recommendations:** API endpoints at `/api/recommendations/trending`, `/for-you`, `/similar/:productId`, `/frequently-bought`. Interaction tracking via `POST /recommendations/track`. Customer app home screen shows "Trending Now" horizontal product carousel. Product detail auto-tracks views.
+- **Dynamic Banner Management:** Admin CRUD at `/api/banners` with placement (home/mart/food), gradient colors, date ranges, sort order. Customer app home screen renders dynamic banners from API with auto-scroll carousel.
+- **Product Variant System:** DB schema `product_variants` (label, sku, price, stock, attributes JSONB). API endpoints at `/api/variants/product/:productId`. Product detail page shows variant selector chips with price/stock info. Search page enhanced with sort options (price, rating, newest) and price/rating filter bar.
+
 **Database Schema Highlights:**
 - `usersTable`: Stores user details, including auth-related fields (nationalId, googleId, facebookId, totpSecret, totpEnabled, backupCodes, trustedDevices, biometricEnabled), rider fields (vehicleRegNo, drivingLicense), vendor fields (businessName, storeAddress, ntn), approval status, and roles.
 - `magicLinkTokensTable`: Stores magic link tokens for passwordless login (id, userId, tokenHash unique, expiresAt, usedAt, createdAt).
@@ -65,6 +72,9 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - `riderPenaltiesTable`: Tracks rider ignore/cancel penalties with daily limits and wallet deductions.
 - `popularLocationsTable`: Admin-managed points of interest for quick selection.
 - `schoolRoutesTable`, `schoolSubscriptionsTable`: For managing school transport services.
+- `productVariantsTable`: Product variants with label, SKU, price, stock, attributes (JSONB), and inStock flag.
+- `bannersTable`: Dynamic promotional banners with placement, service targeting, gradient colors, date ranges, and sort order.
+- `userInteractionsTable`: Tracks user product interactions (view/cart/purchase/wishlist) for recommendation engine.
 
 ### Shared Auth Utilities (`@workspace/auth-utils`)
 - **Location:** `lib/auth-utils/`

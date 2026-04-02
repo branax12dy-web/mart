@@ -1,16 +1,15 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable } from "@workspace/db/schema";
-import { eq, ilike, and, SQL } from "drizzle-orm";
+import { productsTable, productVariantsTable } from "@workspace/db/schema";
+import { eq, ilike, and, SQL, gte, lte, desc, asc, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { adminAuth, getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
 router.get("/", async (req, res) => {
-  const { category, search, type } = req.query;
+  const { category, search, type, minPrice, maxPrice, minRating, sort, vendor } = req.query;
 
-  // Feature flag check: if a specific type is requested, verify that service is enabled
   if (type && typeof type === "string") {
     try {
       const s = await getPlatformSettings();
@@ -23,7 +22,6 @@ router.get("/", async (req, res) => {
     } catch {}
   }
 
-  /* Public endpoint: only serve approved, in-stock products */
   const conditions: SQL[] = [
     eq(productsTable.approvalStatus, "approved"),
     eq(productsTable.inStock, true),
@@ -31,7 +29,22 @@ router.get("/", async (req, res) => {
   if (type) conditions.push(eq(productsTable.type, type as string));
   if (category) conditions.push(eq(productsTable.category, category as string));
   if (search) conditions.push(ilike(productsTable.name, `%${search}%`));
-  const products = await db.select().from(productsTable).where(and(...conditions));
+  if (vendor) conditions.push(eq(productsTable.vendorId, vendor as string));
+  if (minPrice) conditions.push(gte(productsTable.price, String(minPrice)));
+  if (maxPrice) conditions.push(lte(productsTable.price, String(maxPrice)));
+  if (minRating) conditions.push(gte(productsTable.rating, String(minRating)));
+
+  let orderBy;
+  switch (sort) {
+    case "price_asc": orderBy = asc(productsTable.price); break;
+    case "price_desc": orderBy = desc(productsTable.price); break;
+    case "rating": orderBy = desc(productsTable.rating); break;
+    case "newest": orderBy = desc(productsTable.createdAt); break;
+    case "popular": orderBy = desc(productsTable.reviewCount); break;
+    default: orderBy = desc(productsTable.createdAt);
+  }
+
+  const products = await db.select().from(productsTable).where(and(...conditions)).orderBy(orderBy);
   res.json({
     products: products.map(p => ({
       ...p,
@@ -49,7 +62,6 @@ router.get("/:id", async (req, res) => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  // Feature flag check: verify the product's service type is enabled
   if (product.type) {
     try {
       const s = await getPlatformSettings();
@@ -60,11 +72,27 @@ router.get("/:id", async (req, res) => {
       }
     } catch {}
   }
+
+  const variants = await db
+    .select()
+    .from(productVariantsTable)
+    .where(and(
+      eq(productVariantsTable.productId, product.id),
+      eq(productVariantsTable.inStock, true),
+    ))
+    .orderBy(asc(productVariantsTable.sortOrder));
+
   res.json({
     ...product,
     price: parseFloat(product.price),
     originalPrice: product.originalPrice ? parseFloat(product.originalPrice) : undefined,
     rating: product.rating ? parseFloat(product.rating) : 4.0,
+    variants: variants.map(v => ({
+      ...v,
+      price: parseFloat(v.price),
+      originalPrice: v.originalPrice ? parseFloat(v.originalPrice) : undefined,
+      attributes: v.attributes ? JSON.parse(v.attributes) : null,
+    })),
   });
 });
 

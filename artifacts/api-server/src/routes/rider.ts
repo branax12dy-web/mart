@@ -611,6 +611,30 @@ router.post("/orders/:id/accept", async (req, res) => {
   res.json({ ...updated, total: safeNum(updated.total) });
 });
 
+/* ── POST /rider/orders/:id/reject — Rider explicitly rejects/skips an order ──
+   Records the rejection server-side so the dispatch engine can skip this rider
+   for future broadcasts of the same order. No penalty is applied. */
+router.post("/orders/:id/reject", async (req, res) => {
+  const paramParsed = idParamSchema.safeParse(req.params);
+  if (!paramParsed.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  const riderId = req.riderId!;
+  const orderId = paramParsed.data.id;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 200) : "skipped";
+
+  const [order] = await db.select({ id: ordersTable.id, status: ordersTable.status })
+    .from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: riderId,
+    title: "Order skipped",
+    body: `You skipped order ${orderId.slice(-6).toUpperCase()} — ${reason}`,
+    type: "system", icon: "close-circle-outline",
+  }).catch(() => {});
+
+  res.json({ success: true, orderId, reason });
+});
+
 /* ── Cancellation penalty helper ──
    Fully atomic: count read, base record, cancel-count increment, optional
    penalty deduction, and optional restriction are all inside ONE transaction

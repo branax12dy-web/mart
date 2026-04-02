@@ -514,7 +514,7 @@ export function emitRiderStatus(payload: {
  * Payload mirrors what the rider needs to surface the notification UI.
  */
 export function emitRiderNewRequest(riderId: string, payload: {
-  type: "order" | "ride" | "parcel";
+  type: "order" | "ride" | "parcel" | "order_ready";
   requestId: string;
   summary?: string;
 }) {
