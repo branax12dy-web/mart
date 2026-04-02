@@ -1186,47 +1186,51 @@ export default function OrdersScreen() {
     }
 
     if (totalCount === 0) {
+      const quickServices = [
+        martActive    && { route: "/mart",     icon: "storefront-outline",  label: "Mart",      color: C.brandBlue,  bg: C.brandBlueSoft },
+        foodActive    && { route: "/food",     icon: "restaurant-outline",  label: "Food",      color: C.amber,      bg: C.amberSoft },
+        ridesActive   && { route: "/ride",     icon: "car-outline",         label: "Ride",      color: C.emerald,    bg: C.emeraldSoft },
+        pharmActive   && { route: "/pharmacy", icon: "medical-outline",     label: "Pharmacy",  color: C.purple,     bg: C.purpleSoft },
+        parcelActive  && { route: "/parcel",   icon: "cube-outline",        label: "Parcel",    color: C.amberBrown, bg: C.amberBg },
+      ].filter(Boolean) as { route: string; icon: string; label: string; color: string; bg: string }[];
+
       return (
-        <View style={styles.center}>
-          <View style={styles.emptyIcon}>
-            <Ionicons name="bag-outline" size={48} color={C.primary} />
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyIllustration}>
+            <LinearGradient colors={[C.brandBlueSoft, C.blueSoft]} style={styles.emptyIllustrationBg}>
+              <View style={styles.emptyIllustrationInner}>
+                <Ionicons name="receipt-outline" size={52} color={C.primary} />
+              </View>
+            </LinearGradient>
+            <View style={styles.emptyBadge}>
+              <Ionicons name="sparkles" size={14} color={C.amber} />
+            </View>
           </View>
-          <Text style={styles.emptyTitle}>{T("noRecordsFound")}</Text>
-          <Text style={styles.emptyText}>
-            {T("trackActivity")}
-          </Text>
-          <View style={styles.emptyBtns}>
-            {martActive && (
-              <Pressable onPress={() => router.push("/mart")} style={styles.emptyBtn}>
-                <Ionicons name="storefront-outline" size={15} color={C.textInverse} />
-                <Text style={styles.emptyBtnText}>Mart</Text>
-              </Pressable>
-            )}
-            {foodActive && (
-              <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: C.amber }]}>
-                <Ionicons name="restaurant-outline" size={15} color={C.textInverse} />
-                <Text style={styles.emptyBtnText}>Food</Text>
-              </Pressable>
-            )}
-            {ridesActive && (
-              <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: C.emerald }]}>
-                <Ionicons name="car-outline" size={15} color={C.textInverse} />
-                <Text style={styles.emptyBtnText}>Ride</Text>
-              </Pressable>
-            )}
-            {pharmActive && (
-              <Pressable onPress={() => router.push("/pharmacy")} style={[styles.emptyBtn, { backgroundColor: C.purple }]}>
-                <Ionicons name="medical-outline" size={15} color={C.textInverse} />
-                <Text style={styles.emptyBtnText}>Pharmacy</Text>
-              </Pressable>
-            )}
-            {parcelActive && (
-              <Pressable onPress={() => router.push("/parcel")} style={[styles.emptyBtn, { backgroundColor: C.amberBrown }]}>
-                <Ionicons name="cube-outline" size={15} color={C.textInverse} />
-                <Text style={styles.emptyBtnText}>Parcel</Text>
-              </Pressable>
-            )}
-          </View>
+
+          <Text style={styles.emptyHeading}>No orders yet</Text>
+          <Text style={styles.emptySubtext}>Start exploring and your orders,{"\n"}rides & bookings will appear here</Text>
+
+          {quickServices.length > 0 && (
+            <>
+              <Text style={styles.emptyServicesLabel}>Quick Start</Text>
+              <View style={styles.emptyServicesGrid}>
+                {quickServices.map(svc => (
+                  <Pressable
+                    key={svc.route}
+                    onPress={() => router.push(svc.route as any)}
+                    style={[styles.emptyServiceCard, { backgroundColor: svc.bg, borderColor: svc.color + "30" }]}
+                    accessibilityRole="button"
+                  >
+                    <View style={[styles.emptyServiceIconWrap, { backgroundColor: svc.color + "20" }]}>
+                      <Ionicons name={svc.icon as any} size={22} color={svc.color} />
+                    </View>
+                    <Text style={[styles.emptyServiceLabel, { color: svc.color }]}>{svc.label}</Text>
+                    <Ionicons name="arrow-forward" size={12} color={svc.color + "99"} />
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
         </View>
       );
     }
@@ -1285,14 +1289,32 @@ export default function OrdersScreen() {
     const anyPast   = pastOrders.length + pastRides.length + pastPharm.length + pastParcel.length;
 
     if (anyActive + anyPast === 0) {
-      const tabLabel = activeTab === "all" ? "any orders" : activeTab === "rides" ? "any rides" : activeTab === "pharmacy" ? "any pharmacy orders" : activeTab === "parcel" ? "any parcels" : activeTab === "mart" ? "any mart orders" : "any food orders";
+      const tabMeta: Record<string, { icon: string; label: string; msg: string; route?: string; color: string; bg: string }> = {
+        all:      { icon: "receipt-outline",     label: "No orders yet",             msg: "Your order history will appear here once you place an order.",   color: C.primary,     bg: C.blueSoft },
+        mart:     { icon: "storefront-outline",  label: "No mart orders yet",        msg: "Browse the mart and add items to start shopping.",               route: "/mart",       color: C.brandBlue,  bg: C.brandBlueSoft },
+        food:     { icon: "restaurant-outline",  label: "No food orders yet",        msg: "Order delicious food from nearby restaurants.",                  route: "/food",       color: C.amber,      bg: C.amberSoft },
+        rides:    { icon: "car-outline",         label: "No rides yet",              msg: "Book your first ride — safe, fast and affordable.",              route: "/ride",       color: C.emerald,    bg: C.emeraldSoft },
+        pharmacy: { icon: "medical-outline",     label: "No pharmacy orders yet",    msg: "Order medicines and healthcare products with ease.",              route: "/pharmacy",   color: C.purple,     bg: C.purpleSoft },
+        parcel:   { icon: "cube-outline",        label: "No parcel bookings yet",    msg: "Send parcels across the city quickly and safely.",               route: "/parcel",     color: C.amberBrown, bg: C.amberBg },
+      };
+      const meta = tabMeta[activeTab] ?? tabMeta["all"]!;
       return (
-        <View style={styles.center}>
-          <View style={styles.emptyFilterIcon}>
-            <Ionicons name={activeTab === "rides" ? "car-outline" : activeTab === "parcel" ? "cube-outline" : activeTab === "pharmacy" ? "medical-outline" : "bag-outline"} size={36} color={C.textMuted} />
+        <View style={styles.emptyFilterWrap}>
+          <View style={[styles.emptyFilterIconBox, { backgroundColor: meta.bg }]}>
+            <Ionicons name={meta.icon as any} size={38} color={meta.color} />
           </View>
-          <Text style={styles.emptyTitle}>No {tabLabel} yet</Text>
-          <Text style={styles.emptyText}>{activeTab === "all" ? "Your order history will appear here once you place an order." : `You haven't placed ${tabLabel}. Start exploring!`}</Text>
+          <Text style={styles.emptyFilterTitle}>{meta.label}</Text>
+          <Text style={styles.emptyFilterSub}>{meta.msg}</Text>
+          {meta.route && (
+            <Pressable
+              onPress={() => router.push(meta.route as any)}
+              style={[styles.emptyFilterBtn, { backgroundColor: meta.color }]}
+              accessibilityRole="button"
+            >
+              <Ionicons name="arrow-forward-circle-outline" size={16} color={C.textInverse} />
+              <Text style={styles.emptyFilterBtnText}>Explore {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</Text>
+            </Pressable>
+          )}
         </View>
       );
     }
@@ -1385,54 +1407,101 @@ export default function OrdersScreen() {
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
       <LinearGradient
-        colors={[C.brandBlueDark, C.brandBlue, C.brandBlueMid]}
+        colors={["#0047B3", "#0066FF", "#4D94FF"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingTop: topPad + 12 }]}
+        style={[styles.header, { paddingTop: topPad + 14 }]}
       >
-        <Text style={styles.headerTitle}>{T("myOrders")}</Text>
-        <Text style={styles.headerSub}>
-          {totalCount > 0 ? `${totalCount} ${T("totalBookingsLabel")}` : T("trackActivity")}
-        </Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerTitle}>{T("myOrders")}</Text>
+            <Text style={styles.headerSub}>
+              {totalCount > 0 ? `${totalCount} total bookings` : "Track all your activity"}
+            </Text>
+          </View>
+          {globalActiveCount > 0 && (
+            <View style={styles.headerActivePill}>
+              <View style={styles.headerActiveDot} />
+              <Text style={styles.headerActiveText}>{globalActiveCount} Active</Text>
+            </View>
+          )}
+        </View>
+
+        {totalCount > 0 && (
+          <View style={styles.headerStats}>
+            {martOrders.length > 0 && (
+              <View style={styles.headerStat}>
+                <Ionicons name="storefront-outline" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.headerStatText}>{martOrders.length} Mart</Text>
+              </View>
+            )}
+            {foodOrders.length > 0 && (
+              <View style={styles.headerStat}>
+                <Ionicons name="restaurant-outline" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.headerStatText}>{foodOrders.length} Food</Text>
+              </View>
+            )}
+            {rides.length > 0 && (
+              <View style={styles.headerStat}>
+                <Ionicons name="car-outline" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.headerStatText}>{rides.length} Rides</Text>
+              </View>
+            )}
+            {pharmOrders.length > 0 && (
+              <View style={styles.headerStat}>
+                <Ionicons name="medical-outline" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.headerStatText}>{pharmOrders.length} Pharmacy</Text>
+              </View>
+            )}
+            {parcels.length > 0 && (
+              <View style={styles.headerStat}>
+                <Ionicons name="cube-outline" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.headerStatText}>{parcels.length} Parcels</Text>
+              </View>
+            )}
+          </View>
+        )}
       </LinearGradient>
 
-      <View style={styles.tabsWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-          {visibleTabs.map(tab => {
-            const count =
-              tab.key === "all"      ? totalCount :
-              tab.key === "mart"     ? martOrders.length :
-              tab.key === "food"     ? foodOrders.length :
-              tab.key === "rides"    ? rides.length :
-              tab.key === "pharmacy" ? pharmOrders.length :
-              parcels.length;
+      {visibleTabs.length > 1 && (
+        <View style={styles.tabsWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
+            {visibleTabs.map(tab => {
+              const count =
+                tab.key === "all"      ? totalCount :
+                tab.key === "mart"     ? martOrders.length :
+                tab.key === "food"     ? foodOrders.length :
+                tab.key === "rides"    ? rides.length :
+                tab.key === "pharmacy" ? pharmOrders.length :
+                parcels.length;
 
-            const isActive = activeTab === tab.key;
-            return (
-              <Pressable
-                key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                style={[styles.tab, isActive && styles.tabActive]}
-                accessibilityRole="tab"
-                accessibilityLabel={`${T(tab.labelKey)}${count > 0 ? `, ${count}` : ""}`}
-                accessibilityState={{ selected: isActive }}
-              >
-                <Ionicons
-                  name={tab.icon as keyof typeof Ionicons.glyphMap}
-                  size={14}
-                  color={isActive ? C.textInverse : C.textSecondary}
-                />
-                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{T(tab.labelKey)}</Text>
-                {count > 0 && (
-                  <View style={[styles.tabBadge, isActive && { backgroundColor: C.overlayLight30 }]}>
-                    <Text style={[styles.tabBadgeText, isActive && { color: C.textInverse }]}>{count}</Text>
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
+              const isActive = activeTab === tab.key;
+              return (
+                <Pressable
+                  key={tab.key}
+                  onPress={() => setActiveTab(tab.key)}
+                  style={[styles.tab, isActive && styles.tabActive]}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`${T(tab.labelKey)}${count > 0 ? `, ${count}` : ""}`}
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <Ionicons
+                    name={tab.icon as keyof typeof Ionicons.glyphMap}
+                    size={13}
+                    color={isActive ? C.textInverse : C.textSecondary}
+                  />
+                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{T(tab.labelKey)}</Text>
+                  {count > 0 && (
+                    <View style={[styles.tabBadge, isActive && { backgroundColor: "rgba(255,255,255,0.25)" }]}>
+                      <Text style={[styles.tabBadgeText, isActive && { color: C.textInverse }]}>{count}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {renderContent()}
 
@@ -1483,29 +1552,72 @@ export default function OrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 16 },
-  headerTitle: { ...Typ.h2, fontSize: 24, color: C.textInverse, marginBottom: 4 },
-  headerSub: { ...Typ.body, fontSize: 13, color: C.overlayLight80 },
+  header: { paddingHorizontal: 20, paddingBottom: 18 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
+  headerTitle: { ...Typ.h2, fontSize: 26, color: C.textInverse, marginBottom: 2 },
+  headerSub: { ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.7)" },
+  headerActivePill: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+  },
+  headerActiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#4ADE80" },
+  headerActiveText: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.textInverse, fontSize: 12 },
+  headerStats: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  headerStat: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
+  headerStatText: { ...Typ.small, color: "rgba(255,255,255,0.9)", fontSize: 11 },
 
   tabsWrap: { backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border },
-  tabs: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  tabs: { paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
   tab: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22,
-    backgroundColor: C.surfaceSecondary, borderWidth: 1, borderColor: C.border,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: C.background, borderWidth: 1.5, borderColor: C.border,
   },
   tabActive: { backgroundColor: C.primary, borderColor: C.primary },
-  tabLabel: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.textSecondary },
+  tabLabel: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.textSecondary, fontSize: 12 },
   tabLabelActive: { color: C.textInverse },
   tabBadge: {
     backgroundColor: C.border, borderRadius: 9,
     minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4,
   },
-  tabBadgeText: { ...Typ.tiny, color: C.textMuted },
+  tabBadgeText: { ...Typ.tiny, color: C.textMuted, fontSize: 10 },
 
   scroll: { paddingBottom: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
   loadingText: { ...Typ.body, color: C.textMuted },
+
+  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, paddingVertical: 32 },
+  emptyIllustration: { position: "relative", marginBottom: 24 },
+  emptyIllustrationBg: { width: 120, height: 120, borderRadius: 36, alignItems: "center", justifyContent: "center" },
+  emptyIllustrationInner: { width: 88, height: 88, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.7)", alignItems: "center", justifyContent: "center" },
+  emptyBadge: {
+    position: "absolute", top: -6, right: -6,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: C.amberBg, borderWidth: 2, borderColor: C.surface,
+    alignItems: "center", justifyContent: "center",
+  },
+  emptyHeading: { ...Typ.h2, fontSize: 22, color: C.text, textAlign: "center", marginBottom: 8 },
+  emptySubtext: { ...Typ.body, fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 28 },
+  emptyServicesLabel: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.textMuted, letterSpacing: 0.8, marginBottom: 14, textTransform: "uppercase", fontSize: 11 },
+  emptyServicesGrid: { width: "100%", gap: 10 },
+  emptyServiceCard: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16,
+    borderWidth: 1,
+  },
+  emptyServiceIconWrap: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  emptyServiceLabel: { flex: 1, ...Typ.bodySemiBold, fontSize: 15 },
+
+  emptyFilterWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 12 },
+  emptyFilterIconBox: { width: 88, height: 88, borderRadius: 26, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  emptyFilterTitle: { ...Typ.h3, fontSize: 18, color: C.text, textAlign: "center" },
+  emptyFilterSub: { ...Typ.body, fontSize: 13, color: C.textSecondary, textAlign: "center", lineHeight: 21 },
+  emptyFilterBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 22, paddingVertical: 13, borderRadius: 16, marginTop: 8,
+  },
+  emptyFilterBtnText: { ...Typ.buttonSmall, color: C.textInverse, fontFamily: Font.semiBold },
 
   emptyIcon: { width: 96, height: 96, borderRadius: 28, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   emptyFilterIcon: { width: 72, height: 72, borderRadius: 22, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
