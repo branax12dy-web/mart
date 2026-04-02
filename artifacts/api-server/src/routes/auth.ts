@@ -586,11 +586,12 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   }
 
   const isDev = process.env.NODE_ENV !== "production";
+  const userDevOtp = existingUser[0]?.devOtpEnabled === true;
 
   if (!deliverySuccess) {
-    if (isDev) {
-      deliveryChannel = "console";
-      req.log.warn({ phone }, "All OTP delivery channels failed — returning OTP in dev mode");
+    if (isDev || userDevOtp) {
+      deliveryChannel = "dev";
+      req.log.warn({ phone }, "All OTP delivery channels failed — returning OTP in dev/devOtp mode");
     } else {
       req.log.error({ phone }, "All OTP delivery channels failed");
       res.status(502).json({ error: "Could not deliver OTP. Please try again or use an alternative login method.", fallbackChannels: availableChannels });
@@ -599,12 +600,19 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   }
 
   const fallbackChannels = availableChannels.filter(ch => ch !== deliveryChannel);
-  res.json({
+  const response: Record<string, unknown> = {
     otpRequired: true,
     message: "OTP sent successfully",
     channel: deliveryChannel,
     fallbackChannels,
-  });
+  };
+
+  if (userDevOtp) {
+    response.otp = otp;
+    response.devMode = true;
+  }
+
+  res.json(response);
 });
 
 /* ─────────────────────────────────────────────────────────────

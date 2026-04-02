@@ -278,7 +278,7 @@ export default function AuthScreen() {
             setLoading(false);
             return;
           }
-          if (__DEV__ === true && r.otp) setDevOtp(r.otp);
+          if (r.otp) setDevOtp(r.otp);
           setOtpChannel(r.channel || "sms");
           setFallbackChannels(r.fallbackChannels || []);
           setResendCooldown(60);
@@ -296,7 +296,7 @@ export default function AuthScreen() {
           return null;
         });
         if (r) {
-          if (__DEV__ === true && r.otp) setEmailDevOtp(r.otp);
+          if (r.otp) setEmailDevOtp(r.otp);
           setOtpChannel("email");
           setFallbackChannels([]);
           setEmailResendCooldown(60);
@@ -347,7 +347,7 @@ export default function AuthScreen() {
         setLoading(false);
         return;
       }
-      if (__DEV__ === true && res.otp) setDevOtp(res.otp);
+      if (res.otp) setDevOtp(res.otp);
       setOtpChannel(res.channel || "sms");
       setFallbackChannels(res.fallbackChannels || []);
       setResendCooldown(60);
@@ -386,7 +386,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const res = await authPost("/auth/send-email-otp", { email });
-      if (__DEV__ === true && res.otp) setEmailDevOtp(res.otp);
+      if (res.otp) setEmailDevOtp(res.otp);
       setOtpChannel("email");
       setFallbackChannels([]);
       setEmailResendCooldown(60);
@@ -946,7 +946,7 @@ export default function AuthScreen() {
                   onComplete={() => handleVerifyPhoneOtp()}
                 />
 
-                <DevOtpBanner otp={__DEV__ === true ? devOtp : ""} />
+                <DevOtpBanner otp={devOtp} />
 
                 <Pressable
                   onPress={() => handleSendPhoneOtp()}
@@ -999,7 +999,7 @@ export default function AuthScreen() {
                   onComplete={() => handleVerifyEmailOtp()}
                 />
 
-                <DevOtpBanner otp={__DEV__ === true ? emailDevOtp : ""} />
+                <DevOtpBanner otp={emailDevOtp} />
 
                 <Pressable
                   onPress={handleSendEmailOtp}

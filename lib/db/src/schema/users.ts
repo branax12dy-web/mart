@@ -92,6 +92,8 @@ export const usersTable = pgTable("users", {
   deviceId:        text("device_id"),
   /* ── Token version — incremented on logout/ban/role change to invalidate access JWTs ── */
   tokenVersion:    integer("token_version").notNull().default(0),
+  /* ── Dev OTP mode — admin-controlled per-user OTP display in response ── */
+  devOtpEnabled:   boolean("dev_otp_enabled").notNull().default(false),
   /* ── Auto-suspension tracking ── */
   autoSuspendedAt: timestamp("auto_suspended_at"),
   autoSuspendReason: text("auto_suspend_reason"),

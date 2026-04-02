@@ -269,7 +269,7 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
-      if (__DEV__ === true && sendOtpData.otp) setDevOtp(sendOtpData.otp);
+      if (sendOtpData.otp) setDevOtp(sendOtpData.otp);
       setResendCooldown(60);
       setOtpSent(true);
     } catch (e: any) {
@@ -549,7 +549,7 @@ export default function RegisterScreen() {
                     onComplete={() => handleVerifyOtp()}
                   />
 
-                  <DevOtpBanner otp={__DEV__ === true ? devOtp : ""} />
+                  <DevOtpBanner otp={devOtp} />
 
                   <Pressable
                     onPress={handleSendOtp}

@@ -1840,6 +1840,7 @@ router.patch("/users/:id/security", async (req, res) => {
 
   if (body.blockedServices !== undefined) updates.blockedServices = body.blockedServices;
   if (body.securityNote !== undefined) updates.securityNote = body.securityNote || null;
+  if (body.devOtpEnabled !== undefined) updates.devOtpEnabled = body.devOtpEnabled === true;
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id!)).returning();
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 

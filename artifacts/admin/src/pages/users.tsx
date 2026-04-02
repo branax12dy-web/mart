@@ -246,6 +246,7 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
   const [blockedServices, setBlockedServices] = useState<string[]>(blockedSvc);
   const [securityNote,    setSecurityNote]    = useState<string>(user.securityNote || "");
   const [totpEnabled,     setTotpEnabled]     = useState<boolean>(user.totpEnabled || false);
+  const [devOtpEnabled,   setDevOtpEnabled]   = useState<boolean>(user.devOtpEnabled || false);
 
   const [editUsername, setEditUsername] = useState<string>(user.username || "");
   const [editEmail,   setEditEmail]    = useState<string>(user.email || "");
@@ -336,6 +337,7 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
       roles: newRoles.join(","),
       blockedServices: blockedServices.join(","),
       securityNote,
+      devOtpEnabled,
       notify: isBanned && !user.isBanned,
     });
   };
@@ -504,6 +506,20 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
               onChange={e => setSecurityNote(e.target.value)}
               className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1A56DB]/30"
             />
+          </div>
+
+          <div
+            onClick={() => setDevOtpEnabled(!devOtpEnabled)}
+            className={`rounded-xl p-3 flex items-center gap-3 border cursor-pointer transition-all ${devOtpEnabled ? "bg-emerald-50 border-emerald-300 shadow-sm" : "bg-muted/30 border-border hover:border-emerald-200"}`}
+          >
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${devOtpEnabled ? "bg-emerald-500 border-emerald-500" : "border-gray-300"}`}>
+              {devOtpEnabled && <span className="text-white text-xs font-bold">✓</span>}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold">Dev OTP Mode</p>
+              <p className="text-xs text-muted-foreground">OTP will be returned in API response instead of sent via SMS — for testing only</p>
+            </div>
+            {devOtpEnabled && <Badge variant="outline" className="ml-auto text-[10px] bg-emerald-50 text-emerald-600 border-emerald-200">ENABLED</Badge>}
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">

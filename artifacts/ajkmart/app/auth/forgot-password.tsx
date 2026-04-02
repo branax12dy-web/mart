@@ -97,7 +97,7 @@ export default function ForgotPasswordScreen() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Request failed."); setLoading(false); return; }
-      if (__DEV__ === true && data.otp) setDevOtp(data.otp);
+      if (data.otp) setDevOtp(data.otp);
       setResendCooldown(60);
       setStep("otp");
     } catch (e: any) { setError(e.message || "Please try again."); }
@@ -300,7 +300,7 @@ export default function ForgotPasswordScreen() {
                 onComplete={() => handleVerifyOtp()}
               />
 
-              <DevOtpBanner otp={__DEV__ === true ? devOtp : ""} />
+              <DevOtpBanner otp={devOtp} />
 
               <Pressable
                 onPress={handleSendResetCode}
