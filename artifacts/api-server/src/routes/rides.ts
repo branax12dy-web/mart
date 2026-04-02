@@ -171,6 +171,11 @@ async function broadcastRide(rideId: string) {
         body: "No riders are currently available in your area. We'll keep searching — you'll be notified as soon as a rider accepts.",
         type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
       }).catch(() => {});
+      emitRideDispatchUpdate({
+        rideId,
+        action: "NO_RIDERS_AVAILABLE",
+        status: "searching",
+      });
     }
 
     await db.update(ridesTable).set({
