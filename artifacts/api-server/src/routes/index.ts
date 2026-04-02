@@ -28,6 +28,7 @@ import sosRouter from "./sos.js";
 import recommendationsRouter from "./recommendations.js";
 import bannersRouter from "./banners.js";
 import variantsRouter from "./variants.js";
+import pushRouter from "./push.js";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use("/sos", sosRouter);
 router.use("/recommendations", recommendationsRouter);
 router.use("/banners", bannersRouter);
 router.use("/variants", variantsRouter);
+router.use("/push", pushRouter);
 
 export default router;

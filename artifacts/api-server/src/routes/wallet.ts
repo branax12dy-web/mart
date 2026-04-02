@@ -493,6 +493,58 @@ router.post("/withdraw", customerAuth, async (req, res) => {
   res.json({ success: true, txId, status: "pending", amount: amt });
 });
 
+/* ── POST /wallet/simulate-topup — Customer self-service simulated top-up
+   For demo/testing purposes. Allowed amounts: 500, 1000, 2000, 5000 PKR.
+   Daily limit: Rs. 10,000. Labeled clearly as simulated.
+──────────────────────────────────────────────────────────────────────── */
+const SIMULATE_ALLOWED = [500, 1000, 2000, 5000];
+const SIMULATE_DAILY_LIMIT = 10000;
+
+router.post("/simulate-topup", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const amount = parseInt(String(req.body["amount"] ?? ""), 10);
+
+  if (!SIMULATE_ALLOWED.includes(amount)) {
+    res.status(400).json({ error: `Invalid amount. Choose from: ${SIMULATE_ALLOWED.join(", ")}` }); return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (isWalletFrozen(user)) { res.status(403).json(WALLET_FROZEN_RESPONSE); return; }
+
+  /* Check daily simulated topup total */
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayTxns = await db.select({ s: sum(walletTransactionsTable.amount) })
+    .from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.userId, userId),
+      eq(walletTransactionsTable.type, "simulated_topup"),
+      gte(walletTransactionsTable.createdAt, todayStart),
+    ));
+  const todayTotal = parseFloat(todayTxns[0]?.s ?? "0") || 0;
+  if (todayTotal + amount > SIMULATE_DAILY_LIMIT) {
+    res.status(429).json({ error: `Daily simulation limit is Rs. ${SIMULATE_DAILY_LIMIT}. You have Rs. ${SIMULATE_DAILY_LIMIT - todayTotal} remaining today.` }); return;
+  }
+
+  const newBalance = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(usersTable)
+      .set({ walletBalance: sql`wallet_balance + ${amount}`, updatedAt: new Date() })
+      .where(eq(usersTable.id, userId))
+      .returning({ walletBalance: usersTable.walletBalance });
+    await tx.insert(walletTransactionsTable).values({
+      id: generateId(), userId, type: "simulated_topup",
+      amount: amount.toFixed(2),
+      description: `Simulated top-up — Rs. ${amount} (Demo Mode)`,
+      reference: `sim:${Date.now()}`,
+      paymentMethod: "simulation",
+    });
+    return parseFloat(updated?.walletBalance ?? "0");
+  });
+
+  broadcastWalletUpdate(userId, newBalance);
+  res.json({ success: true, amount, newBalance });
+});
+
 /* ── GET /wallet/pending-topups — Customer pending topup count ────────── */
 router.get("/pending-topups", customerAuth, async (req, res) => {
   const userId = req.customerId!;

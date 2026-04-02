@@ -1,17 +1,29 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { SocketProvider } from "./lib/socket";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { registerPush } from "./lib/push";
 import Login from "./pages/Login";
 import Booking from "./pages/Booking";
 import Tracking from "./pages/Tracking";
 import Completed from "./pages/Completed";
 import History from "./pages/History";
+import Wallet from "./pages/Wallet";
 
 const queryClient = new QueryClient();
 
 function ProtectedRouter() {
   const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      Notification.requestPermission().then(perm => {
+        if (perm === "granted") registerPush().catch(() => {});
+      }).catch(() => {});
+    }
+  }, [user]);
 
   if (loading) {
     return (
@@ -37,6 +49,7 @@ function ProtectedRouter() {
           {(params: { id: string }) => <Completed rideId={params.id} />}
         </Route>
         <Route path="/history" component={History} />
+        <Route path="/wallet" component={Wallet} />
         <Route>
           {() => {
             window.location.href = import.meta.env.BASE_URL;
@@ -50,13 +63,15 @@ function ProtectedRouter() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-        <AuthProvider>
-          <ProtectedRouter />
-        </AuthProvider>
-      </WouterRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <AuthProvider>
+            <ProtectedRouter />
+          </AuthProvider>
+        </WouterRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

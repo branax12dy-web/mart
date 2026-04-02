@@ -6,6 +6,8 @@ import { usePlatformConfig, getRiderModules } from "./lib/useConfig";
 import { useLanguage, LanguageProvider } from "./lib/useLanguage";
 import { SocketProvider } from "./lib/socket";
 import { registerDrainHandler, type QueuedPing } from "./lib/gpsQueue";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { registerPush } from "./lib/push";
 import { api } from "./lib/api";
 import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
@@ -36,6 +38,14 @@ function AppRoutes() {
       await api.batchLocation(pings.map(({ id, ...rest }) => rest));
     });
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      Notification.requestPermission().then(perm => {
+        if (perm === "granted") registerPush().catch(() => {});
+      }).catch(() => {});
+    }
+  }, [user]);
 
   /* Show a subtle toast whenever refreshUser fails persistently */
   const [refreshFailToast, setRefreshFailToast] = useState(false);
@@ -111,17 +121,19 @@ function AppRoutes() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <LanguageProvider>
-        <AuthProvider>
-          <SocketProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <AppRoutes />
-            </WouterRouter>
-          </SocketProvider>
-        </AuthProvider>
-      </LanguageProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <LanguageProvider>
+          <AuthProvider>
+            <SocketProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <AppRoutes />
+              </WouterRouter>
+            </SocketProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

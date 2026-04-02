@@ -75,7 +75,64 @@ export default function Orders() {
   const [pendingOrderIds, setPendingOrderIds] = useState<Set<string>>(new Set());
   const [acceptDialog, setAcceptDialog] = useState<{ id: string; total: number } | null>(null);
   const [rejectDialog, setRejectDialog] = useState<{ id: string } | null>(null);
+  const [assignModal, setAssignModal] = useState<{ orderId: string } | null>(null);
   const socketRef = useRef<Socket | null>(null);
+
+  const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  const vendorToken = () => localStorage.getItem("ajkmart_vendor_token") ?? "";
+
+  const { data: availableRidersData, isLoading: ridersLoading } = useQuery({
+    queryKey: ["vendor-available-riders", vendorLat, vendorLng],
+    queryFn: async () => {
+      if (vendorLat === null || vendorLng === null) return { riders: [] };
+      const r = await fetch(`${BASE}/api/vendor/orders/available-riders?lat=${vendorLat}&lng=${vendorLng}&maxKm=10`, {
+        headers: { Authorization: `Bearer ${vendorToken()}` },
+      });
+      if (!r.ok) return { riders: [] };
+      return r.json() as Promise<{ riders: { id: string; name: string; phone: string; distanceKm: number; walletBalance: number }[] }>;
+    },
+    enabled: !!assignModal && vendorLat !== null && vendorLng !== null,
+    staleTime: 30_000,
+  });
+
+  const assignRiderMut = useMutation({
+    mutationFn: async ({ orderId, riderId }: { orderId: string; riderId: string }) => {
+      const r = await fetch(`${BASE}/api/vendor/orders/${orderId}/assign-rider`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${vendorToken()}` },
+        body: JSON.stringify({ riderId }),
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || "Assignment failed"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendor-orders"] });
+      setAssignModal(null);
+      showToast("✅ Rider assigned successfully!");
+    },
+    onError: (e: Error) => showToast("❌ " + e.message),
+  });
+
+  const autoAssignMut = useMutation({
+    mutationFn: async (orderId: string) => {
+      if (vendorLat === null || vendorLng === null) throw new Error("Vendor location not available");
+      const r = await fetch(`${BASE}/api/vendor/orders/${orderId}/auto-assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${vendorToken()}` },
+        body: JSON.stringify({ vendorLat, vendorLng }),
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error || "Auto-assign failed"); }
+      return r.json();
+    },
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["vendor-orders"] });
+      setAssignModal(null);
+      showToast(`✅ Auto-assigned to ${d.riderName || "nearest rider"}!`);
+    },
+    onError: (e: Error) => {
+      showToast("❌ " + e.message);
+    },
+  });
   const [riderPositions, setRiderPositions] = useState<Record<string, { lat: number; lng: number; updatedAt: string }>>({});
 
   /* Vendor's own lat/lng — prefer backend-persisted location, fall back to browser */
@@ -410,6 +467,16 @@ export default function Orders() {
                           )}
                         </div>
                       )}
+                      {/* Assign Rider button — show for ready/preparing orders with no rider yet */}
+                      {(o.status === "ready" || o.status === "preparing") && !o.riderId && (
+                        <div className="px-4 pb-4 pt-1 flex gap-2">
+                          <button
+                            onClick={() => setAssignModal({ orderId: o.id })}
+                            className="flex-1 h-10 bg-indigo-600 text-white font-bold rounded-xl text-sm android-press flex items-center justify-center gap-1.5">
+                            🏍️ Assign Rider
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -457,6 +524,77 @@ export default function Orders() {
                 ✕ Confirm Reject
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Rider Modal */}
+      {assignModal && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setAssignModal(null)}>
+          <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-extrabold text-gray-900">Assign Delivery Rider</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Order #{assignModal.orderId.slice(-6).toUpperCase()}</p>
+              </div>
+              <button onClick={() => setAssignModal(null)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-sm font-bold">✕</button>
+            </div>
+
+            {/* Auto-assign button */}
+            <div className="px-5 py-3 border-b border-gray-50">
+              <button
+                disabled={autoAssignMut.isPending || vendorLat === null}
+                onClick={() => autoAssignMut.mutate(assignModal.orderId)}
+                className="w-full h-11 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                {autoAssignMut.isPending ? (
+                  <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Auto-assigning...</>
+                ) : (
+                  <>⚡ Auto-Assign Nearest Rider</>
+                )}
+              </button>
+              {vendorLat === null && (
+                <p className="text-xs text-amber-600 text-center mt-1.5">⚠️ Enable location to use auto-assign</p>
+              )}
+            </div>
+
+            {/* Manual rider list */}
+            <div className="px-5 py-3">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Or choose manually</p>
+              {ridersLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map(i => <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />)}
+                </div>
+              ) : !availableRidersData?.riders?.length ? (
+                <div className="py-8 text-center">
+                  <p className="text-3xl mb-2">🏍️</p>
+                  <p className="text-sm font-semibold text-gray-600">No available riders nearby</p>
+                  <p className="text-xs text-gray-400 mt-1">Try again in a few minutes</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {availableRidersData.riders.map((rider) => (
+                    <button
+                      key={rider.id}
+                      disabled={assignRiderMut.isPending}
+                      onClick={() => assignRiderMut.mutate({ orderId: assignModal.orderId, riderId: rider.id })}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl text-left transition-colors disabled:opacity-50">
+                      <div className="w-9 h-9 bg-indigo-100 rounded-full flex items-center justify-center text-sm flex-shrink-0">🏍️</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-800 truncate">{rider.name}</p>
+                        <p className="text-xs text-gray-400">{rider.phone}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs font-bold text-indigo-600">{rider.distanceKm.toFixed(1)} km</p>
+                        <p className="text-[10px] text-green-600 font-semibold">Rs. {rider.walletBalance.toFixed(0)}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="h-4" />
           </div>
         </div>
       )}

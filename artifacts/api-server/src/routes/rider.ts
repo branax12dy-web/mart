@@ -6,6 +6,7 @@ import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
 import { emitRiderLocation, emitRiderStatus, emitRideDispatchUpdate, emitRideOtp, getIO } from "../lib/socketio.js";
+import { sendPushToUser } from "../lib/webpush.js";
 import { z } from "zod";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
@@ -1220,6 +1221,7 @@ router.patch("/rides/:id/status", async (req, res) => {
     if (isCashRide) {
       const platformFee = parseFloat((fareAmt * platformFeePct).toFixed(2));
       const riderShare  = parseFloat((fareAmt - platformFee).toFixed(2));
+      let newRiderBalance = 0;
       updated = await db.transaction(async (tx) => {
         const [statusRow] = await tx.update(ridesTable).set({ status, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
         if (!statusRow) throw new Error("Ride not found or already updated");
@@ -1230,9 +1232,11 @@ router.patch("/rides/:id/status", async (req, res) => {
           reference: `ride:${ride.id}`,
           paymentMethod: "cash",
         });
-        await tx.update(usersTable)
-          .set({ walletBalance: sql`wallet_balance - ${platformFee}`, updatedAt: new Date() })
-          .where(eq(usersTable.id, riderId));
+        const [riderAfter] = await tx.update(usersTable)
+          .set({ walletBalance: sql`GREATEST(0, wallet_balance - ${platformFee})`, updatedAt: new Date() })
+          .where(eq(usersTable.id, riderId))
+          .returning({ walletBalance: usersTable.walletBalance });
+        newRiderBalance = safeNum(riderAfter?.walletBalance);
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "platform_fee",
           amount: platformFee.toFixed(2),
@@ -1246,6 +1250,7 @@ router.patch("/rides/:id/status", async (req, res) => {
             amount: bonusPerTrip.toFixed(2),
             description: `Per-trip bonus — Ride #${ride.id.slice(-6).toUpperCase()}`,
           });
+          newRiderBalance += bonusPerTrip;
         }
         return statusRow;
       });
@@ -1255,6 +1260,11 @@ router.patch("/rides/:id/status", async (req, res) => {
         title: t("rideCompleted", rideCashLang), body: t("notifCashFeeDeductedBody", rideCashLang).replace("{fee}", String(platformFee)).replace("{cash}", fareAmt.toFixed(0)),
         type: "wallet", icon: "wallet-outline",
       }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
+      /* Auto-offline if balance hits zero */
+      if (newRiderBalance <= 0) {
+        await db.update(usersTable).set({ isOnline: false, updatedAt: new Date() }).where(eq(usersTable.id, riderId)).catch(() => {});
+        sendPushToUser(riderId, { title: "Wallet Empty — You are now Offline", body: "Your wallet balance is 0. Top up to go online and accept rides.", tag: "wallet-empty" }).catch(() => {});
+      }
     } else {
       const earnings = parseFloat((fareAmt * riderKeepPct).toFixed(2));
       const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
@@ -1290,6 +1300,19 @@ router.patch("/rides/:id/status", async (req, res) => {
       title: t("rideCompleted", custRideCompleteLang) + " ✅", body: t("notifRideCompletedBody", custRideCompleteLang),
       type: "ride", icon: "checkmark-circle-outline",
     }).catch(e => console.error("customer notif insert failed:", e));
+    /* Web Push: trip completed */
+    sendPushToUser(ride.userId, {
+      title: "Trip Completed ✅",
+      body: `Your ride has been completed. Fare: Rs. ${safeNum(ride.fare).toFixed(0)}`,
+      tag: "ride-completed",
+      data: { rideId: ride.id },
+    }).catch(() => {});
+    sendPushToUser(riderId, {
+      title: "Trip Completed 🎉",
+      body: `You've completed a trip. Check your wallet for earnings.`,
+      tag: "ride-completed-rider",
+      data: { rideId: ride.id },
+    }).catch(() => {});
   } else {
     const now = new Date();
     const timestampFields =
@@ -1302,6 +1325,15 @@ router.patch("/rides/:id/status", async (req, res) => {
       .returning();
     if (!row) { res.status(404).json({ error: "Ride not found or not yours" }); return; }
     updated = row;
+    /* Web Push: rider arrived at pickup */
+    if (status === "arrived") {
+      sendPushToUser(ride.userId, {
+        title: "Rider Has Arrived 📍",
+        body: "Your rider is at the pickup location. Share your OTP to start the trip.",
+        tag: "rider-arrived",
+        data: { rideId: ride.id },
+      }).catch(() => {});
+    }
   }
 
   emitRideDispatchUpdate({ rideId: updated.id, action: "status-change", status });

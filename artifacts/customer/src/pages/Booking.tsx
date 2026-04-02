@@ -156,6 +156,7 @@ export default function Booking() {
           </div>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => nav("/wallet")} className="text-xs font-bold text-green-600 px-3 py-1.5 rounded-xl bg-green-50">💰 Wallet</button>
           <button onClick={() => nav("/history")} className="text-xs font-bold text-gray-500 px-3 py-1.5 rounded-xl bg-gray-100">History</button>
           <button onClick={logout} className="text-xs font-bold text-red-500 px-3 py-1.5 rounded-xl bg-red-50">Out</button>
         </div>

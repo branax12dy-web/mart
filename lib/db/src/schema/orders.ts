@@ -22,6 +22,8 @@ export const ordersTable = pgTable("orders", {
   paymentStatus: text("payment_status").default("pending"),
   refundedAt: timestamp("refunded_at"),
   refundedAmount: decimal("refunded_amount", { precision: 10, scale: 2 }),
+  assignedRiderId: text("assigned_rider_id"),
+  assignedAt: timestamp("assigned_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

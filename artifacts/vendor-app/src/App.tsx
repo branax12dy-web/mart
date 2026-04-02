@@ -1,9 +1,10 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ReactNode, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { usePlatformConfig } from "./lib/useConfig";
 import { useLanguage } from "./lib/useLanguage";
+import { registerPush } from "./lib/push";
 import { BottomNav } from "./components/BottomNav";
 import { SideNav } from "./components/SideNav";
 import { BOTTOM_PADDING } from "./lib/ui";
@@ -59,6 +60,14 @@ function AppRoutes() {
   const { user, loading } = useAuth();
   const { config } = usePlatformConfig();
   useLanguage(); /* initialises RTL + language from API on mount */
+
+  useEffect(() => {
+    if (user) {
+      Notification.requestPermission().then(perm => {
+        if (perm === "granted") registerPush().catch(() => {});
+      }).catch(() => {});
+    }
+  }, [user]);
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">

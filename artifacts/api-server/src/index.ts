@@ -1,10 +1,15 @@
 import http from "http";
+import cron from "node-cron";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startDispatchEngine } from "./routes/rides.js";
 import { migrateAdminSecrets } from "./services/adminSecretMigration.js";
 import { initSocketIO } from "./lib/socketio.js";
 import { ensureAuthMethodColumn } from "./routes/admin.js";
+import { initVapid } from "./lib/webpush.js";
+import { db } from "@workspace/db";
+import { locationLogsTable } from "@workspace/db/schema";
+import { lt } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
 
@@ -22,6 +27,18 @@ if (Number.isNaN(port) || port <= 0) {
 
 const httpServer = http.createServer(app);
 initSocketIO(httpServer);
+initVapid();
+
+/* ── Cron: archive location_logs older than 30 days (runs at midnight) ── */
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const result = await db.delete(locationLogsTable).where(lt(locationLogsTable.createdAt, cutoff));
+    logger.info({ cutoff, result }, "[cron] location_logs cleanup complete");
+  } catch (e) {
+    logger.error({ err: e }, "[cron] location_logs cleanup failed");
+  }
+}, { timezone: "Asia/Karachi" });
 
 ensureAuthMethodColumn()
   .then(() => {

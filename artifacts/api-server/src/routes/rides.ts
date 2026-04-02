@@ -22,8 +22,20 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 import { t, type TranslationKey } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { emitRiderNewRequest, emitRideDispatchUpdate, emitRideOtp } from "../lib/socketio.js";
+import { sendPushToUser, sendPushToUsers } from "../lib/webpush.js";
+import rateLimit from "express-rate-limit";
 
 const router: IRouter = Router();
+
+/* ── Rate limiters ─────────────────────────────────────────────────────── */
+const bargainLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many bargain requests. Please wait a minute before trying again." },
+  validate: { xForwardedForHeader: false },
+});
 
 const coordinateSchema = z.number().min(-180).max(180);
 const latitudeSchema = z.number().min(-90).max(90);
@@ -164,6 +176,13 @@ async function broadcastRide(rideId: string) {
         requestId: rideId,
         summary: `${ride.pickupAddress} → ${ride.dropAddress}`,
       });
+
+      sendPushToUser(r.userId, {
+        title: "🚗 New Ride Request",
+        body: `${ride.pickupAddress} → ${ride.dropAddress} · Rs. ${fareStr}`,
+        tag: `ride-request-${rideId}`,
+        data: { rideId },
+      }).catch(() => {});
 
       notifiedCount++;
     }
@@ -870,12 +889,18 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
     body: t("notifRideAcceptedBody", bidLang).replace("{fare}", agreedFare.toFixed(0)),
     type: "ride", icon: "checkmark-circle-outline",
   }).catch(() => {});
+  sendPushToUser(bid.riderId, {
+    title: "Offer Accepted! 🎉",
+    body: `Your offer of Rs. ${agreedFare.toFixed(0)} was accepted. Head to the pickup point now.`,
+    tag: `offer-accepted-${rideUpdate!.id}`,
+    data: { rideId: rideUpdate!.id },
+  }).catch(() => {});
 
   emitRideDispatchUpdate({ rideId: rideUpdate!.id, action: "accepted", status: "accepted" });
   res.json({ ...formatRide(rideUpdate!), agreedFare, tripOtp: otp });
 });
 
-router.patch("/:id/customer-counter", customerAuth, requireRideState(["bargaining"]), requireRideOwner("userId"), async (req, res) => {
+router.patch("/:id/customer-counter", bargainLimiter, customerAuth, requireRideState(["bargaining"]), requireRideOwner("userId"), async (req, res) => {
   const parsed = customerCounterSchema.safeParse(req.body);
   if (!parsed.success) {
     const msg = parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ");

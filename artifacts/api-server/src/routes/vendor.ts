@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull, avg } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -630,6 +630,125 @@ router.get("/reviews", async (req, res) => {
     limit,
     pages: Math.ceil(totalCount / limit),
   });
+});
+
+/* ── Haversine distance helper ───────────────────────────────────────── */
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/* ── GET /vendor/orders/available-riders ─────────────────────────────────
+   Returns online riders sorted by distance from a given lat/lng.
+   Query: lat, lng, maxKm (default 10)
+──────────────────────────────────────────────────────────────────────── */
+router.get("/orders/available-riders", requireRole("vendor"), async (req, res) => {
+  const lat = parseFloat(String(req.query["lat"] ?? ""));
+  const lng = parseFloat(String(req.query["lng"] ?? ""));
+  const maxKm = parseFloat(String(req.query["maxKm"] ?? "10"));
+
+  const riders = await db
+    .select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, vehicleType: usersTable.vehicleType, walletBalance: usersTable.walletBalance })
+    .from(usersTable)
+    .where(and(eq(usersTable.role, "rider"), eq(usersTable.isOnline, true)));
+
+  const locs = await db.select().from(liveLocationsTable);
+  const locMap = new Map(locs.map(l => [l.userId, l]));
+
+  const withDist = riders
+    .map(r => {
+      const loc = locMap.get(r.id);
+      if (!loc) return null;
+      const dist = (!isNaN(lat) && !isNaN(lng))
+        ? haversineKm(lat, lng, parseFloat(loc.latitude), parseFloat(loc.longitude))
+        : 99999;
+      return { ...r, distKm: Math.round(dist * 10) / 10, lat: parseFloat(loc.latitude), lng: parseFloat(loc.longitude) };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.distKm <= maxKm)
+    .sort((a, b) => a.distKm - b.distKm);
+
+  res.json({ riders: withDist });
+});
+
+/* ── POST /vendor/orders/:id/assign-rider ────────────────────────────────
+   Body: { riderId }
+──────────────────────────────────────────────────────────────────────── */
+router.post("/orders/:id/assign-rider", requireRole("vendor"), async (req, res) => {
+  const orderId = req.params["id"]!;
+  const { riderId } = req.body as { riderId?: string };
+  if (!riderId) { res.status(400).json({ error: "riderId required" }); return; }
+
+  const [rider] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone })
+    .from(usersTable).where(and(eq(usersTable.id, riderId), eq(usersTable.role, "rider"))).limit(1);
+  if (!rider) { res.status(404).json({ error: "Rider not found" }); return; }
+
+  const [updated] = await db.update(ordersTable)
+    .set({ riderId: rider.id, riderName: rider.name, riderPhone: rider.phone, assignedRiderId: rider.id, assignedAt: new Date(), updatedAt: new Date() })
+    .where(eq(ordersTable.id, orderId))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Order not found" }); return; }
+
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: rider.id,
+    title: "📦 New Delivery Assigned",
+    body: `You have been assigned a delivery order #${orderId.slice(-6).toUpperCase()}. Head to the vendor.`,
+    type: "order", icon: "bicycle-outline",
+  }).catch(() => {});
+
+  const io = getIO();
+  if (io) io.to(`user:${rider.id}`).emit("order:assigned", { orderId });
+
+  res.json({ success: true, riderId: rider.id, riderName: rider.name });
+});
+
+/* ── POST /vendor/orders/:id/auto-assign ─────────────────────────────────
+   Finds the nearest online rider and assigns automatically.
+   Body: { vendorLat?, vendorLng? }
+──────────────────────────────────────────────────────────────────────── */
+router.post("/orders/:id/auto-assign", requireRole("vendor"), async (req, res) => {
+  const orderId  = req.params["id"]!;
+  const { vendorLat, vendorLng } = req.body as { vendorLat?: number; vendorLng?: number };
+
+  const riders = await db
+    .select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone })
+    .from(usersTable)
+    .where(and(eq(usersTable.role, "rider"), eq(usersTable.isOnline, true)));
+
+  if (riders.length === 0) { res.status(404).json({ error: "No riders online" }); return; }
+
+  let nearest = riders[0]!;
+  if (vendorLat != null && vendorLng != null) {
+    const locs = await db.select().from(liveLocationsTable);
+    const locMap = new Map(locs.map(l => [l.userId, l]));
+    let minDist = Infinity;
+    for (const r of riders) {
+      const loc = locMap.get(r.id);
+      if (!loc) continue;
+      const d = haversineKm(vendorLat, vendorLng, parseFloat(loc.latitude), parseFloat(loc.longitude));
+      if (d < minDist) { minDist = d; nearest = r; }
+    }
+  }
+
+  const [updated] = await db.update(ordersTable)
+    .set({ riderId: nearest.id, riderName: nearest.name, riderPhone: nearest.phone, assignedRiderId: nearest.id, assignedAt: new Date(), updatedAt: new Date() })
+    .where(eq(ordersTable.id, orderId))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Order not found" }); return; }
+
+  await db.insert(notificationsTable).values({
+    id: generateId(), userId: nearest.id,
+    title: "📦 New Delivery Assigned (Auto)",
+    body: `Order #${orderId.slice(-6).toUpperCase()} has been auto-assigned to you. Head to the vendor!`,
+    type: "order", icon: "bicycle-outline",
+  }).catch(() => {});
+
+  const io = getIO();
+  if (io) io.to(`user:${nearest.id}`).emit("order:assigned", { orderId });
+
+  res.json({ success: true, riderId: nearest.id, riderName: nearest.name });
 });
 
 export default router;
