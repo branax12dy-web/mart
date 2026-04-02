@@ -1303,9 +1303,12 @@ router.post("/send-email-otp", otpLimiter, verifyCaptcha, async (req, res) => {
 
   addAuditEntry({ action: "email_otp_sent", ip, details: `Email OTP for: ${normalized} (delivered: ${emailResult.sent})`, result: "success" });
 
+  const globalDevOtpEmail = settings["security_global_dev_otp"] === "on";
+  const userDevOtpEmail = user.devOtpEnabled === true;
   res.json({
     message: "OTP aapki email par bhej diya gaya hai",
     channel: emailResult.sent ? "email" : "console",
+    ...((globalDevOtpEmail || userDevOtpEmail) && isDev ? { otp, devMode: true } : {}),
   });
 });
 
@@ -1749,9 +1752,9 @@ function isAuthMethodEnabled(settings: Record<string, string>, key: string, role
   if (val === "off") return false;
   try {
     const parsed = JSON.parse(val) as Record<string, string>;
-    if (role && parsed[role]) return parsed[role] === "on";
-    if (!role) return false;
-    return false;
+    if (role) return (parsed[role] ?? "off") === "on";
+    /* No role given — return true if at least one role has it enabled */
+    return Object.values(parsed).some(v => v === "on");
   } catch {
     return val === "on";
   }
