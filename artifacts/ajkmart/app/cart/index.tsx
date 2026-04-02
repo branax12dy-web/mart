@@ -327,75 +327,33 @@ export default function CartScreen() {
         if (mountedRef.current) setGwBackgrounded(true);
       } else if (nextState === "active" && gwBackgrounded) {
         setGwBackgrounded(false);
-        const txn = gwTxnRef.current;
         const oid = gwOrderId.current;
-        if (!txn) return;
-        const checkAndResume = async () => {
+        if (!oid) return;
+        (async () => {
           try {
-            const r = await fetch(`${API_BASE}/payments/status/${encodeURIComponent(txn)}`);
+            const r = await fetch(`${API_BASE}/payments/${encodeURIComponent(oid)}/status`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
             const d = await r.json() as any;
             if (!mountedRef.current) return;
             if (d.status === "completed" || d.status === "success") {
-              if (oid) {
-                const successData = { id: oid.slice(-6).toUpperCase(), time: "30-45 min", payMethod };
-                setPendingOrderId(oid, successData);
-                setPendingAck(true);
-                startAckStuckTimer(60000);
-              }
+              const successData = { id: oid.slice(-6).toUpperCase(), time: "30-45 min", payMethod };
+              setPendingOrderId(oid, successData);
+              setPendingAck(true);
+              startAckStuckTimer(60000);
               setGwStep("done");
               setShowGwModal(false);
             } else if (d.status === "failed" || d.status === "expired") {
               setGwStep("input");
-              if (oid) await cancelPendingOrder(oid);
+              await cancelPendingOrder(oid);
               showToast(d.message || T("paymentNotSuccessful"), "error");
             } else {
-              gwPollRef.current.active = true;
-              const resumeStart = Date.now();
-              gwPollRef.current.intervalId = setInterval(async () => {
-                if (!gwPollRef.current.active || !mountedRef.current) {
-                  if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
-                  return;
-                }
-                if (Date.now() - resumeStart >= 120000) {
-                  gwPollRef.current.active = false;
-                  if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
-                  if (oid) await cancelPendingOrder(oid);
-                  if (mountedRef.current) {
-                    setGwStep("input");
-                    showToast("Payment timeout — please check your account or contact support", "error");
-                  }
-                  return;
-                }
-                try {
-                  const sr = await fetch(`${API_BASE}/payments/status/${encodeURIComponent(txn)}`);
-                  const sd = await sr.json() as any;
-                  if (!mountedRef.current) return;
-                  if (sd.status === "completed" || sd.status === "success") {
-                    gwPollRef.current.active = false;
-                    if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
-                    if (oid) {
-                      const successData = { id: oid.slice(-6).toUpperCase(), time: "30-45 min", payMethod };
-                      setPendingOrderId(oid, successData);
-                      setPendingAck(true);
-                      startAckStuckTimer(60000);
-                    }
-                    setGwStep("done");
-                    setShowGwModal(false);
-                  } else if (sd.status === "failed" || sd.status === "expired") {
-                    gwPollRef.current.active = false;
-                    if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
-                    setGwStep("input");
-                    if (oid) await cancelPendingOrder(oid);
-                    showToast(sd.message || T("paymentNotSuccessful"), "error");
-                  }
-                } catch {}
-              }, 4000);
+              showToast(T("paymentPending") || "Payment still processing — approve in your JazzCash/EasyPaisa app, then return here", "info");
             }
           } catch {
             showToast(T("paymentServerError") || "Could not check payment status", "error");
           }
-        };
-        checkAndResume();
+        })();
       }
     });
     return () => sub.remove();
@@ -623,7 +581,7 @@ export default function CartScreen() {
 
     if (orderId) {
       setPendingOrderId(orderId, successData);
-      startAckStuckTimer(socket ? 60000 : 10000);
+      startAckStuckTimer(socket ? 60000 : 20000);
     } else {
       clearCartOnAck();
     }
@@ -731,7 +689,6 @@ export default function CartScreen() {
     setGwPaying(true);
     setGwStep("waiting");
     setGwBackgrounded(false);
-    let orderRegistered = false;
     try {
       const GW_MAX_RETRIES = 3;
       let gwLastError: Error | null = null;
@@ -787,74 +744,12 @@ export default function CartScreen() {
         throw new Error(data.error || "Could not initiate payment");
       }
 
-      const txnRef = data.txnRef || data.transactionRef || realOrderId;
-      gwTxnRef.current  = txnRef;
       gwOrderId.current = realOrderId;
-      const POLL_INTERVAL = 4000;
-      const MAX_POLL_TIME = 120000;
-      const startTime = Date.now();
-      gwPollRef.current.active = true;
-
-      await new Promise<void>((resolve, reject) => {
-        const intervalId = setInterval(async () => {
-          if (!gwPollRef.current.active) {
-            clearInterval(intervalId);
-            gwPollRef.current.intervalId = undefined;
-            resolve();
-            return;
-          }
-          if (Date.now() - startTime >= MAX_POLL_TIME) {
-            clearInterval(intervalId);
-            gwPollRef.current.active = false;
-            gwPollRef.current.intervalId = undefined;
-            await cancelPendingOrder(realOrderId);
-            reject(new Error("Payment timeout — no response in 2 minutes. Please check your account or contact support if charged."));
-            return;
-          }
-          try {
-            const statusRes = await fetch(`${API_BASE}/payments/status/${encodeURIComponent(txnRef)}`);
-            const statusData = await statusRes.json() as any;
-            if (statusData.status === "completed" || statusData.status === "success") {
-              clearInterval(intervalId);
-              gwPollRef.current.active = false;
-              gwPollRef.current.intervalId = undefined;
-              if (!mountedRef.current) { resolve(); return; }
-              {
-                const successData = {
-                  id: realOrderId.slice(-6).toUpperCase(),
-                  time: (order as any).estimatedTime || "30-45 min",
-                  payMethod,
-                };
-                setPendingOrderId(realOrderId, successData);
-                setPendingAck(true);
-                startAckStuckTimer(60000);
-                orderRegistered = true;
-              }
-              setGwStep("done");
-              setShowGwModal(false);
-              resolve();
-            } else if (statusData.status === "failed" || statusData.status === "expired") {
-              clearInterval(intervalId);
-              gwPollRef.current.active = false;
-              gwPollRef.current.intervalId = undefined;
-              await cancelPendingOrder(realOrderId);
-              reject(new Error(statusData.message || "Payment failed"));
-            }
-          } catch (pollErr: any) {
-            if (pollErr.message && pollErr.message !== "Failed to fetch") {
-              clearInterval(intervalId);
-              gwPollRef.current.active = false;
-              gwPollRef.current.intervalId = undefined;
-              reject(pollErr);
-            }
-          }
-        }, POLL_INTERVAL);
-        gwPollRef.current.intervalId = intervalId;
-      });
+      gwTxnRef.current = data.txnRef || data.transactionRef || realOrderId;
     } catch (e: any) {
       showToast(e.message || T("paymentFailed"), "error");
       setGwStep("input");
-      if (!orderRegistered) setPendingAck(false);
+      setPendingAck(false);
     }
     setGwPaying(false);
   };

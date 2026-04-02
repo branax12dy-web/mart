@@ -3,6 +3,7 @@ import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Image,
   Linking,
   Platform,
@@ -252,6 +253,48 @@ export default function OrderDetailScreen() {
       if (ivRef !== null) clearInterval(ivRef);
     };
   }, [orderId, isParcel, isRide]);
+
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!orderId || !token || isParcel || isRide) return;
+    if (isPharmacyType) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/payments/${encodeURIComponent(orderId)}/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const d = await res.json();
+          if (mountedRef.current && d.status) {
+            setPaymentStatus(d.status);
+          }
+        }
+      } catch {}
+    })();
+  }, [orderId, token, isParcel, isRide, isPharmacyType]);
+
+  useEffect(() => {
+    if (!orderId || !token || isParcel || isRide || isPharmacyType) return;
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        (async () => {
+          try {
+            const res = await fetch(`${API_BASE}/payments/${encodeURIComponent(orderId)}/status`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              const d = await res.json();
+              if (mountedRef.current && d.status) {
+                setPaymentStatus(d.status);
+              }
+            }
+          } catch {}
+        })();
+      }
+    });
+    return () => sub.remove();
+  }, [orderId, token, isParcel, isRide, isPharmacyType]);
 
   const mapUrl = useMemo(() => {
     if (riderLat === null || riderLng === null) return null;
@@ -601,15 +644,30 @@ export default function OrderDetailScreen() {
                 color={C.emerald}
               />
             </View>
-            <Text style={s.paymentText}>
-              {order.paymentMethod === "wallet"
-                ? "Wallet"
-                : order.paymentMethod === "jazzcash"
-                ? "JazzCash"
-                : order.paymentMethod === "easypaisa"
-                ? "EasyPaisa"
-                : "Cash on Delivery"}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.paymentText}>
+                {order.paymentMethod === "wallet"
+                  ? "Wallet"
+                  : order.paymentMethod === "jazzcash"
+                  ? "JazzCash"
+                  : order.paymentMethod === "easypaisa"
+                  ? "EasyPaisa"
+                  : "Cash on Delivery"}
+              </Text>
+              {paymentStatus && paymentStatus !== "pending" && (
+                <Text style={{
+                  ...Typ.small, marginTop: 2,
+                  color: paymentStatus === "completed" || paymentStatus === "success" ? C.emerald
+                    : paymentStatus === "failed" || paymentStatus === "expired" ? C.red
+                    : C.textMuted,
+                }}>
+                  {paymentStatus === "completed" || paymentStatus === "success" ? "Payment confirmed"
+                    : paymentStatus === "failed" ? "Payment failed"
+                    : paymentStatus === "expired" ? "Payment expired"
+                    : `Status: ${paymentStatus}`}
+                </Text>
+              )}
+            </View>
           </View>
         </View>
 
