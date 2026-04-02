@@ -16,10 +16,32 @@ const info = "#5856D6";
 const infoSoft = "#EEEEFF";
 const amber = "#D97706";
 const amberSoft = "#FEF3C7";
+const amberDark = "#92400E";
 const red = "#DC2626";
 const redSoft = "#FEE2E2";
 const blueSoft = "#EFF6FF";
 const blueBorder = "#BFDBFE";
+const brandBlue = "#1A56DB";
+const brandBlueDark = "#0D3B93";
+const brandBlueMid = "#3B82F6";
+const brandBlueSoft = "#DBEAFE";
+const emerald = "#059669";
+const emeraldSoft = "#D1FAE5";
+const emeraldDark = "#047857";
+const emeraldDot = "#10B981";
+const gold = "#F59E0B";
+const goldSoft = "#FBBF24";
+const purple = "#7C3AED";
+const purpleSoft = "#EDE9FE";
+const purpleBg = "#F5F3FF";
+const indigo = "#6366F1";
+const indigoSoft = "#E0E7FF";
+const cyan = "#0891B2";
+const cyanSoft = "#CFFAFE";
+const gray = "#6B7280";
+const graySoft = "#F3F4F6";
+const slate = "#CBD5E1";
+const slateBorder = "#E2E8F0";
 
 export const spacing = {
   xs: 4,
@@ -151,10 +173,32 @@ export default {
     walletLight: "#EEEEFF",
     amber,
     amberSoft,
+    amberDark,
     red,
     redSoft,
     blueSoft,
     blueBorder,
+    brandBlue,
+    brandBlueDark,
+    brandBlueMid,
+    brandBlueSoft,
+    emerald,
+    emeraldSoft,
+    emeraldDark,
+    emeraldDot,
+    gold,
+    goldSoft,
+    purple,
+    purpleSoft,
+    purpleBg,
+    indigo,
+    indigoSoft,
+    cyan,
+    cyanSoft,
+    gray,
+    graySoft,
+    slate,
+    slateBorder,
     pharmacy: "#AF52DE",
     pharmacyLight: "#F5E6FF",
     parcel: "#FF6B35",

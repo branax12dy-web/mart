@@ -46,19 +46,19 @@ export default function OrderDetailScreen() {
 
   const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: string; label: string }> = {
     pending:          { color: C.amber, bg: C.amberSoft, icon: "time-outline",             label: T("pending") },
-    confirmed:        { color: "#2563EB", bg: "#DBEAFE", icon: "checkmark-circle-outline", label: T("confirmed") },
-    preparing:        { color: "#7C3AED", bg: "#EDE9FE", icon: "flame-outline",             label: T("preparing") },
-    ready:            { color: "#6366F1", bg: "#E0E7FF", icon: "bag-check-outline",        label: T("statusReady") },
-    picked_up:        { color: "#0891B2", bg: "#CFFAFE", icon: "cube-outline",             label: T("pickedUp") },
-    out_for_delivery: { color: "#059669", bg: "#D1FAE5", icon: "bicycle-outline",          label: T("onTheWay") },
-    delivered:        { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",   label: T("delivered") },
+    confirmed:        { color: C.brandBlue, bg: C.brandBlueSoft, icon: "checkmark-circle-outline", label: T("confirmed") },
+    preparing:        { color: C.purple, bg: C.purpleSoft, icon: "flame-outline",             label: T("preparing") },
+    ready:            { color: C.indigo, bg: C.indigoSoft, icon: "bag-check-outline",        label: T("statusReady") },
+    picked_up:        { color: C.cyan, bg: C.cyanSoft, icon: "cube-outline",             label: T("pickedUp") },
+    out_for_delivery: { color: C.emerald, bg: C.emeraldSoft, icon: "bicycle-outline",          label: T("onTheWay") },
+    delivered:        { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",   label: T("delivered") },
     cancelled:        { color: C.red, bg: C.redSoft, icon: "close-circle-outline",     label: T("cancelled") },
-    accepted:         { color: "#059669", bg: "#D1FAE5", icon: "checkmark-circle-outline", label: T("statusAccepted") },
-    arrived:          { color: "#0891B2", bg: "#CFFAFE", icon: "location-outline",         label: T("arrived") },
-    in_transit:       { color: "#7C3AED", bg: "#EDE9FE", icon: "car-outline",              label: T("inTransit") },
-    completed:        { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",   label: T("completed") },
+    accepted:         { color: C.emerald, bg: C.emeraldSoft, icon: "checkmark-circle-outline", label: T("statusAccepted") },
+    arrived:          { color: C.cyan, bg: C.cyanSoft, icon: "location-outline",         label: T("arrived") },
+    in_transit:       { color: C.purple, bg: C.purpleSoft, icon: "car-outline",              label: T("inTransit") },
+    completed:        { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",   label: T("completed") },
     searching:        { color: C.amber, bg: C.amberSoft, icon: "search-outline",           label: T("searching") },
-    bargaining:       { color: "#2563EB", bg: "#DBEAFE", icon: "chatbubbles-outline",      label: T("bargaining") },
+    bargaining:       { color: C.brandBlue, bg: C.brandBlueSoft, icon: "chatbubbles-outline",      label: T("bargaining") },
   };
 
   const STEP_LABELS = [T("statusPlaced"), T("confirmed"), T("preparing"), T("statusOnWay"), T("delivered")];
@@ -390,7 +390,7 @@ export default function OrderDetailScreen() {
             ) : null}
             <View style={{ padding: 14 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: riderLat ? 10 : 0 }}>
-                <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: "#059669", alignItems: "center", justifyContent: "center" }}>
+                <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: C.emerald, alignItems: "center", justifyContent: "center" }}>
                   <Ionicons name="navigate-outline" size={20} color="#fff" />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -401,7 +401,7 @@ export default function OrderDetailScreen() {
                     {etaMinutes !== null ? `ETA: ~${etaMinutes} min` : "Your delivery is heading your way"}
                   </Text>
                 </View>
-                <View style={{ backgroundColor: "#059669", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                <View style={{ backgroundColor: C.emerald, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
                   <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff" }}>LIVE</Text>
                 </View>
               </View>
@@ -418,11 +418,11 @@ export default function OrderDetailScreen() {
                   }}
                   style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: "#A7F3D0" }}
                 >
-                  <Ionicons name="location-outline" size={16} color="#059669" />
+                  <Ionicons name="location-outline" size={16} color={C.emerald} />
                   <Text style={{ flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: "#065F46" }} numberOfLines={1}>
                     {order.deliveryAddress}
                   </Text>
-                  <Ionicons name="open-outline" size={14} color="#059669" />
+                  <Ionicons name="open-outline" size={14} color={C.emerald} />
                 </Pressable>
               ) : null}
             </View>
@@ -510,18 +510,18 @@ export default function OrderDetailScreen() {
             <View style={s.cardHeader}>
               {isPharmacy ? (
                 <View style={[s.typeChip, { backgroundColor: "#F3E8FF" }]}>
-                  <Ionicons name="medical-outline" size={13} color="#7C3AED" />
-                  <Text style={[s.typeChipText, { color: "#7C3AED" }]}>Pharmacy</Text>
+                  <Ionicons name="medical-outline" size={13} color={C.purple} />
+                  <Text style={[s.typeChipText, { color: C.purple }]}>Pharmacy</Text>
                 </View>
               ) : isParcelType ? (
                 <View style={[s.typeChip, { backgroundColor: "#ECFDF5" }]}>
-                  <Ionicons name="cube-outline" size={13} color="#059669" />
-                  <Text style={[s.typeChipText, { color: "#059669" }]}>Parcel</Text>
+                  <Ionicons name="cube-outline" size={13} color={C.emerald} />
+                  <Text style={[s.typeChipText, { color: C.emerald }]}>Parcel</Text>
                 </View>
               ) : (
                 <View style={[s.typeChip, { backgroundColor: isFood ? C.amberSoft : C.blueSoft }]}>
-                  <Ionicons name={isFood ? "restaurant-outline" : "storefront-outline"} size={13} color={isFood ? C.amber : "#1A56DB"} />
-                  <Text style={[s.typeChipText, { color: isFood ? C.amber : "#1A56DB" }]}>{isFood ? "Food" : "Mart"}</Text>
+                  <Ionicons name={isFood ? "restaurant-outline" : "storefront-outline"} size={13} color={isFood ? C.amber : C.brandBlue} />
+                  <Text style={[s.typeChipText, { color: isFood ? C.amber : C.brandBlue }]}>{isFood ? "Food" : "Mart"}</Text>
                 </View>
               )}
               {order.vendorName && <Text style={s.vendorName}>{order.vendorName}</Text>}
@@ -529,7 +529,7 @@ export default function OrderDetailScreen() {
 
             {isPharmacy && order.prescriptionNote ? (
               <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#F3E8FF", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "#DDD6FE" }}>
-                <Ionicons name="document-text-outline" size={16} color="#7C3AED" style={{ marginTop: 1 }} />
+                <Ionicons name="document-text-outline" size={16} color={C.purple} style={{ marginTop: 1 }} />
                 <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#5B21B6", flex: 1, lineHeight: 19 }}>{order.prescriptionNote}</Text>
               </View>
             ) : null}
@@ -587,7 +587,7 @@ export default function OrderDetailScreen() {
         <View style={s.card}>
           <Text style={s.sectionTitle}>Payment</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: "#D1FAE5", alignItems: "center", justifyContent: "center" }}>
+            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: C.emeraldSoft, alignItems: "center", justifyContent: "center" }}>
               <Ionicons
                 name={
                   order.paymentMethod === "wallet"
@@ -597,7 +597,7 @@ export default function OrderDetailScreen() {
                     : "cash-outline"
                 }
                 size={18}
-                color="#059669"
+                color={C.emerald}
               />
             </View>
             <Text style={s.paymentText}>
@@ -666,7 +666,7 @@ export default function OrderDetailScreen() {
 
         {(refundRequested || hasExistingRefund) && (
           <View style={s.refundSuccessBox}>
-            <Ionicons name="checkmark-circle" size={20} color="#059669" />
+            <Ionicons name="checkmark-circle" size={20} color={C.emerald} />
             <Text style={s.refundSuccessText}>
               {order.refundStatus === "approved" || order.refundStatus === "refunded"
                 ? "Refund has been processed."
@@ -766,7 +766,7 @@ const s = StyleSheet.create({
   refundBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#fff" },
   refundSuccessBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#D1FAE5", borderRadius: 16, padding: 16,
+    backgroundColor: C.emeraldSoft, borderRadius: 16, padding: 16,
     borderWidth: 1.5, borderColor: "#A7F3D0",
   },
   refundSuccessText: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#065F46", flex: 1 },

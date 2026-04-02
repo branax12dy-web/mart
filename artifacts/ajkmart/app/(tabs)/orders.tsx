@@ -39,31 +39,31 @@ const C = Colors.light;
 
 const ORDER_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
   pending:          { color: C.amber, bg: C.amberSoft, icon: "time-outline",            labelKey: "pending" },
-  confirmed:        { color: "#2563EB", bg: "#DBEAFE", icon: "checkmark-circle-outline", labelKey: "confirmed" },
-  preparing:        { color: "#7C3AED", bg: "#EDE9FE", icon: "flame-outline",            labelKey: "preparing" },
-  ready:            { color: "#6366F1", bg: "#E0E7FF", icon: "bag-check-outline",       labelKey: "readyForPickup" },
-  picked_up:        { color: "#0891B2", bg: "#CFFAFE", icon: "cube-outline",            labelKey: "onTheWay" },
-  out_for_delivery: { color: "#059669", bg: "#D1FAE5", icon: "bicycle-outline",          labelKey: "onTheWay" },
-  delivered:        { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",   labelKey: "delivered" },
+  confirmed:        { color: C.brandBlue, bg: C.brandBlueSoft, icon: "checkmark-circle-outline", labelKey: "confirmed" },
+  preparing:        { color: C.purple, bg: C.purpleSoft, icon: "flame-outline",            labelKey: "preparing" },
+  ready:            { color: C.indigo, bg: C.indigoSoft, icon: "bag-check-outline",       labelKey: "readyForPickup" },
+  picked_up:        { color: C.cyan, bg: C.cyanSoft, icon: "cube-outline",            labelKey: "onTheWay" },
+  out_for_delivery: { color: C.emerald, bg: C.emeraldSoft, icon: "bicycle-outline",          labelKey: "onTheWay" },
+  delivered:        { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",   labelKey: "delivered" },
   cancelled:        { color: C.red, bg: C.redSoft, icon: "close-circle-outline",     labelKey: "cancelled" },
 };
 
 const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
   searching:   { color: C.amber, bg: C.amberSoft, icon: "search-outline",            labelKey: "searching" },
   bargaining:  { color: C.amber, bg: C.amberSoft, icon: "swap-horizontal-outline",   labelKey: "bargaining" },
-  accepted:    { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "statusAccepted" },
-  arrived:    { color: "#7C3AED", bg: "#EDE9FE", icon: "location-outline",          labelKey: "arrived" },
-  in_transit: { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
-  ongoing:    { color: "#059669", bg: "#D1FAE5", icon: "car-outline",               labelKey: "inTransit" },
-  completed:  { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",    labelKey: "completed" },
+  accepted:    { color: C.brandBlue, bg: C.brandBlueSoft, icon: "person-outline",            labelKey: "statusAccepted" },
+  arrived:    { color: C.purple, bg: C.purpleSoft, icon: "location-outline",          labelKey: "arrived" },
+  in_transit: { color: C.emerald, bg: C.emeraldSoft, icon: "car-outline",               labelKey: "inTransit" },
+  ongoing:    { color: C.emerald, bg: C.emeraldSoft, icon: "car-outline",               labelKey: "inTransit" },
+  completed:  { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",    labelKey: "completed" },
   cancelled:  { color: C.red, bg: C.redSoft, icon: "close-circle-outline",      labelKey: "cancelled" },
 };
 
 const PARCEL_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
   pending:    { color: C.amber, bg: C.amberSoft, icon: "time-outline",              labelKey: "pending" },
-  accepted:   { color: "#2563EB", bg: "#DBEAFE", icon: "person-outline",            labelKey: "statusAccepted" },
-  in_transit: { color: "#059669", bg: "#D1FAE5", icon: "cube-outline",              labelKey: "inTransit" },
-  completed:  { color: "#6B7280", bg: "#F3F4F6", icon: "checkmark-done-outline",    labelKey: "delivered" },
+  accepted:   { color: C.brandBlue, bg: C.brandBlueSoft, icon: "person-outline",            labelKey: "statusAccepted" },
+  in_transit: { color: C.emerald, bg: C.emeraldSoft, icon: "cube-outline",              labelKey: "inTransit" },
+  completed:  { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",    labelKey: "delivered" },
   cancelled:  { color: C.red, bg: C.redSoft, icon: "close-circle-outline",      labelKey: "cancelled" },
 };
 
@@ -127,9 +127,9 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
           <Ionicons
             name={isFood ? "restaurant-outline" : "storefront-outline"}
             size={13}
-            color={isFood ? C.amber : "#1A56DB"}
+            color={isFood ? C.amber : C.brandBlue}
           />
-          <Text style={[styles.chipText, { color: isFood ? C.amber : "#1A56DB" }]}>
+          <Text style={[styles.chipText, { color: isFood ? C.amber : C.brandBlue }]}>
             {isFood ? T("food") : T("mart")}
           </Text>
         </View>
@@ -186,7 +186,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       {!liveTracking && isActive && (
         <View style={[styles.etaBar, { backgroundColor: C.amberSoft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0, marginTop: 12 }]}>
           <Ionicons name="navigate-circle-outline" size={13} color={C.amber} />
-          <Text style={[styles.etaText, { color: "#92400E" }]}>{T("liveTrackingUnavailable")}</Text>
+          <Text style={[styles.etaText, { color: C.amberDark }]}>{T("liveTrackingUnavailable")}</Text>
         </View>
       )}
 
@@ -210,21 +210,21 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
 
       {canRate && (
         <Pressable style={styles.rateBtn} onPress={() => onRate(order)} accessibilityRole="button" accessibilityLabel={T("rateOrder")}>
-          <Ionicons name="star-outline" size={14} color="#F59E0B" />
+          <Ionicons name="star-outline" size={14} color={C.gold} />
           <Text style={styles.rateBtnText}>{T("rateOrder")}</Text>
         </Pressable>
       )}
 
       {order._reviewed && (
         <View style={styles.reviewedBadge}>
-          <Ionicons name="star" size={13} color="#F59E0B" />
+          <Ionicons name="star" size={13} color={C.gold} />
           <Text style={styles.reviewedText}>{T("reviewedThanks")}</Text>
         </View>
       )}
 
       {isDelivered && order.paymentMethod !== "cash" && order.paymentMethod !== "cod" && !order.refundStatus && (
         <Pressable style={styles.refundRequestBtn} onPress={() => router.push(`/order?orderId=${order.id}&action=refund`)} accessibilityRole="button" accessibilityLabel="Request refund for this order">
-          <Ionicons name="return-down-back-outline" size={14} color="#7C3AED" />
+          <Ionicons name="return-down-back-outline" size={14} color={C.purple} />
           <Text style={styles.refundRequestBtnText}>{T("requestRefund") || "Request Refund"}</Text>
         </Pressable>
       )}
@@ -238,7 +238,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
 
       {isCancelled && order.paymentMethod !== "cash" && order.paymentMethod !== "cod" && refundDays > 0 && (
         <View style={styles.refundBar}>
-          <Ionicons name="return-down-back-outline" size={12} color="#059669" />
+          <Ionicons name="return-down-back-outline" size={12} color={C.emerald} />
           <Text style={styles.refundText}>{T("refundInfo").replace("{n}", String(refundDays))}</Text>
         </View>
       )}
@@ -287,7 +287,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
       accessibilityLabel={`${ride.type || "car"} ride ${ride.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${(ride.fare != null ? Number(ride.fare) : 0).toLocaleString()}`}
     >
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: "#ECFDF5" }]}>
+        <View style={[styles.chip, { backgroundColor: C.emeraldSoft }]}>
           <Ionicons
             name={
               ride.type === "bike" ? "bicycle-outline" :
@@ -296,9 +296,9 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
               ride.type === "school_shift" ? "school-outline" :
               "car-outline"
             }
-            size={13} color="#059669"
+            size={13} color={C.emerald}
           />
-          <Text style={[styles.chipText, { color: "#059669" }]}>
+          <Text style={[styles.chipText, { color: C.emerald }]}>
             {ride.type === "bike" ? T("bikeRide") :
              ride.type === "rickshaw" ? "Rickshaw" :
              ride.type === "daba" ? "Daba" :
@@ -311,12 +311,12 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
 
       <View style={styles.rideRoute}>
         <View style={styles.ridePoint}>
-          <View style={[styles.routeDot, { backgroundColor: "#10B981" }]} />
+          <View style={[styles.routeDot, { backgroundColor: C.emeraldDot }]} />
           <Text style={styles.rideAddr} numberOfLines={1}>{ride.pickupAddress || T("pickup")}</Text>
         </View>
         <View style={styles.routeLine} />
         <View style={styles.ridePoint}>
-          <View style={[styles.routeDot, { backgroundColor: "#EF4444" }]} />
+          <View style={[styles.routeDot, { backgroundColor: C.red }]} />
           <Text style={styles.rideAddr} numberOfLines={1}>{ride.dropAddress || T("drop")}</Text>
         </View>
       </View>
@@ -335,7 +335,7 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
       {hasRider && ride.riderName && (
         <View style={styles.riderBar}>
           <View style={styles.riderIconWrap}>
-            <Ionicons name="person-outline" size={14} color="#2563EB" />
+            <Ionicons name="person-outline" size={14} color={C.brandBlue} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.riderName}>{ride.riderName}</Text>
@@ -399,14 +399,14 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
 
       {reviews && isCompleted && !ride._reviewed && (
         <Pressable style={styles.rateBtn} onPress={() => onRate({ ...ride, _type: "ride" })} accessibilityRole="button" accessibilityLabel="Rate this ride">
-          <Ionicons name="star-outline" size={14} color="#F59E0B" />
+          <Ionicons name="star-outline" size={14} color={C.gold} />
           <Text style={styles.rateBtnText}>Rate this ride</Text>
         </Pressable>
       )}
 
       {ride._reviewed && (
         <View style={styles.reviewedBadge}>
-          <Ionicons name="star" size={13} color="#F59E0B" />
+          <Ionicons name="star" size={13} color={C.gold} />
           <Text style={styles.reviewedText}>{T("reviewedThanks")}</Text>
         </View>
       )}
@@ -442,19 +442,19 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
                   <View style={styles.rideStepItem}>
                     <View style={[
                       styles.rideStepDot,
-                      done && { backgroundColor: active ? cfg.color : "#10B981" },
+                      done && { backgroundColor: active ? cfg.color : C.emeraldDot },
                       active && { shadowColor: cfg.color, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
                     ]}>
                       {done
                         ? <Ionicons name="checkmark" size={10} color="#fff" />
-                        : <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#CBD5E1" }} />}
+                        : <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: C.slate }} />}
                     </View>
                     <Text style={[styles.rideStepLabel, done && { color: C.text }, active && { fontFamily: "Inter_700Bold" }]}>
                       {RIDE_STEP_LABELS[i]}
                     </Text>
                   </View>
                   {!isLast && (
-                    <View style={[styles.rideStepLine, rideStepIdx > i && { backgroundColor: "#10B981" }]} />
+                    <View style={[styles.rideStepLine, rideStepIdx > i && { backgroundColor: C.emeraldDot }]} />
                   )}
                 </React.Fragment>
               );
@@ -501,15 +501,15 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
     >
       <View style={styles.cardTop}>
         <View style={[styles.chip, { backgroundColor: "#F3E8FF" }]}>
-          <Ionicons name="medical-outline" size={13} color="#7C3AED" />
-          <Text style={[styles.chipText, { color: "#7C3AED" }]}>{T("pharmacy")}</Text>
+          <Ionicons name="medical-outline" size={13} color={C.purple} />
+          <Text style={[styles.chipText, { color: C.purple }]}>{T("pharmacy")}</Text>
         </View>
         <Text style={styles.cardId}>#{order.id.slice(-8).toUpperCase()}</Text>
       </View>
 
       {order.prescriptionNote && (
         <View style={styles.noteRow}>
-          <Ionicons name="document-text-outline" size={14} color="#7C3AED" />
+          <Ionicons name="document-text-outline" size={14} color={C.purple} />
           <Text style={styles.noteText} numberOfLines={2}>{order.prescriptionNote}</Text>
         </View>
       )}
@@ -556,14 +556,14 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
 
       {reviews && isDelivered && !order._reviewed && (
         <Pressable style={styles.rateBtn} onPress={() => onRate({ ...order, _type: "pharmacy" })} accessibilityRole="button" accessibilityLabel={T("rateOrder")}>
-          <Ionicons name="star-outline" size={14} color="#F59E0B" />
+          <Ionicons name="star-outline" size={14} color={C.gold} />
           <Text style={styles.rateBtnText}>{T("rateOrder")}</Text>
         </Pressable>
       )}
 
       {order._reviewed && (
         <View style={styles.reviewedBadge}>
-          <Ionicons name="star" size={13} color="#F59E0B" />
+          <Ionicons name="star" size={13} color={C.gold} />
           <Text style={styles.reviewedText}>{T("reviewedThanks")}</Text>
         </View>
       )}
@@ -601,12 +601,12 @@ function ParcelCard({ booking }: { booking: any }) {
 
       <View style={styles.rideRoute}>
         <View style={styles.ridePoint}>
-          <View style={[styles.routeDot, { backgroundColor: "#10B981" }]} />
+          <View style={[styles.routeDot, { backgroundColor: C.emeraldDot }]} />
           <Text style={styles.rideAddr} numberOfLines={1}>{booking.pickupAddress || T("pickup")}</Text>
         </View>
         <View style={styles.routeLine} />
         <View style={styles.ridePoint}>
-          <View style={[styles.routeDot, { backgroundColor: "#EF4444" }]} />
+          <View style={[styles.routeDot, { backgroundColor: C.red }]} />
           <Text style={styles.rideAddr} numberOfLines={1}>{booking.dropAddress || T("drop")}</Text>
         </View>
       </View>
@@ -632,7 +632,7 @@ function ParcelCard({ booking }: { booking: any }) {
       {isActive && booking.estimatedTime && (
         <View style={styles.etaBar}>
           <Ionicons name="time-outline" size={12} color={C.amber} />
-          <Text style={[styles.etaText, { color: "#92400E" }]}>ETA: {booking.estimatedTime}</Text>
+          <Text style={[styles.etaText, { color: C.amberDark }]}>ETA: {booking.estimatedTime}</Text>
           <View style={styles.payBadge}>
             <Ionicons
               name={booking.paymentMethod === "wallet" ? "wallet-outline" : "cash-outline"}
@@ -680,7 +680,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
           <Ionicons
             name={s <= value ? "star" : "star-outline"}
             size={36}
-            color={s <= value ? "#F59E0B" : "#E2E8F0"}
+            color={s <= value ? C.gold : C.slateBorder}
           />
         </Pressable>
       ))}
@@ -777,7 +777,7 @@ function ReviewModal({ target, userId, apiBase, token, language, onClose, onDone
           <View style={rm.handle} />
 
           <View style={rm.headerIconWrap}>
-            <LinearGradient colors={["#F59E0B", "#FBBF24"]} style={rm.headerIcon}>
+            <LinearGradient colors={[C.gold, C.goldSoft]} style={rm.headerIcon}>
               <Ionicons name="star" size={24} color="#fff" />
             </LinearGradient>
           </View>
@@ -866,7 +866,7 @@ const rm = StyleSheet.create({
     padding: 14, fontFamily: "Inter_400Regular", fontSize: 14, color: C.text,
     minHeight: 72, textAlignVertical: "top", marginTop: 8, marginBottom: 8, backgroundColor: C.surfaceSecondary,
   },
-  error:    { fontFamily: "Inter_400Regular", fontSize: 13, color: "#EF4444", textAlign: "center", marginBottom: 8 },
+  error:    { fontFamily: "Inter_400Regular", fontSize: 13, color: C.red, textAlign: "center", marginBottom: 8 },
   btns:     { flexDirection: "row", gap: 12, marginTop: 8 },
   cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, paddingVertical: 15, alignItems: "center" },
   cancelText:{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary },
@@ -1197,13 +1197,13 @@ export default function OrdersScreen() {
               </Pressable>
             )}
             {ridesActive && (
-              <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: "#059669" }]}>
+              <Pressable onPress={() => router.push("/ride")} style={[styles.emptyBtn, { backgroundColor: C.emerald }]}>
                 <Ionicons name="car-outline" size={15} color="#fff" />
                 <Text style={styles.emptyBtnText}>Ride</Text>
               </Pressable>
             )}
             {pharmActive && (
-              <Pressable onPress={() => router.push("/pharmacy")} style={[styles.emptyBtn, { backgroundColor: "#7C3AED" }]}>
+              <Pressable onPress={() => router.push("/pharmacy")} style={[styles.emptyBtn, { backgroundColor: C.purple }]}>
                 <Ionicons name="medical-outline" size={15} color="#fff" />
                 <Text style={styles.emptyBtnText}>Pharmacy</Text>
               </Pressable>
@@ -1357,7 +1357,7 @@ export default function OrdersScreen() {
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
       <LinearGradient
-        colors={["#0D3B93", "#1A56DB", "#3B82F6"]}
+        colors={["#0D3B93", C.brandBlue, "#3B82F6"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: topPad + 12 }]}
@@ -1488,7 +1488,7 @@ const styles = StyleSheet.create({
   emptyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
 
   secRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12 },
-  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.emeraldDot },
   secTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, flex: 1 },
   countBadge: { borderRadius: 10, minWidth: 24, height: 24, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   countText: { fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff" },
@@ -1512,7 +1512,7 @@ const styles = StyleSheet.create({
   moreItems: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.primary },
   expandRow: { flexDirection: "row", alignItems: "center", gap: 4, marginLeft: 14, paddingVertical: 4 },
 
-  noteRow: { flexDirection: "row", gap: 8, alignItems: "flex-start", marginBottom: 12, padding: 10, backgroundColor: "#F5F3FF", borderRadius: 12, borderWidth: 1, borderColor: "#EDE9FE" },
+  noteRow: { flexDirection: "row", gap: 8, alignItems: "flex-start", marginBottom: 12, padding: 10, backgroundColor: C.purpleBg, borderRadius: 12, borderWidth: 1, borderColor: C.purpleSoft },
   noteText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 12, color: "#5B21B6" },
 
   rideRoute: { marginBottom: 12, gap: 4 },
@@ -1538,10 +1538,10 @@ const styles = StyleSheet.create({
   fareLabel: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   fareValue: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.text },
   riderBar: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight },
-  riderIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" },
+  riderIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.brandBlueSoft, alignItems: "center", justifyContent: "center" },
   riderName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text },
   riderPhone: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 1 },
-  callBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center" },
+  callBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.brandBlue, alignItems: "center", justifyContent: "center" },
 
   cancelBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
@@ -1559,19 +1559,19 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.borderLight,
   },
-  reviewedText: { fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E" },
+  reviewedText: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.amberDark },
   refundBar: {
     flexDirection: "row", alignItems: "center", gap: 6,
     marginTop: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12,
-    backgroundColor: "#ECFDF5", borderWidth: 1, borderColor: "#A7F3D0",
+    backgroundColor: C.emeraldSoft, borderWidth: 1, borderColor: "#A7F3D0",
   },
-  refundText: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#047857" },
+  refundText: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.emeraldDark },
   refundRequestBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: "#F5F3FF",
+    marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: C.purpleBg,
     borderWidth: 1.5, borderColor: "#DDD6FE",
   },
-  refundRequestBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#7C3AED" },
+  refundRequestBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.purple },
   reorderBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     marginTop: 10, paddingVertical: 10, borderRadius: 14, backgroundColor: C.blueSoft,
@@ -1601,11 +1601,11 @@ const styles = StyleSheet.create({
   rideStepperRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center" },
   rideStepItem: { alignItems: "center", width: 56 },
   rideStepDot: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: "#E2E8F0",
+    width: 22, height: 22, borderRadius: 11, backgroundColor: C.slateBorder,
     alignItems: "center", justifyContent: "center", marginBottom: 4,
   },
   rideStepLabel: { fontFamily: "Inter_500Medium", fontSize: 9, color: C.textMuted, textAlign: "center" },
-  rideStepLine: { flex: 1, height: 2, backgroundColor: "#E2E8F0", marginTop: 10 },
+  rideStepLine: { flex: 1, height: 2, backgroundColor: C.slateBorder, marginTop: 10 },
 
   sectionErrBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,

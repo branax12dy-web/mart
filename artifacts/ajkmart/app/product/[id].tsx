@@ -63,7 +63,11 @@ export default function ProductDetailScreen() {
   );
   const relatedProducts = (relatedData?.products || [])
     .filter((p: Product) => p.id !== id)
-    .sort((a: Product, b: Product) => (b.rating ?? 0) - (a.rating ?? 0))
+    .sort((a: Product, b: Product) => {
+      const popA = (a.reviewCount ?? 0) + (a.rating ?? 0) * 10;
+      const popB = (b.reviewCount ?? 0) + (b.rating ?? 0) * 10;
+      return popB - popA;
+    })
     .slice(0, 4);
 
   useEffect(() => {

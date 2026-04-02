@@ -103,7 +103,8 @@ export function SectionHeader({
   );
 }
 
-export { SkeletonBlock } from "@/components/ui/SkeletonBlock";
+import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
+export { SkeletonBlock };
 
 export function SkeletonRows({ count = 3 }: { count?: number }) {
   return (

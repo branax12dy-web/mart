@@ -619,7 +619,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {user?.role === "rider" && user?.isActive && <RiderOnlineBanner />}
+        {user?.role === "rider" && <RiderOnlineBanner />}
 
         {contentBanner ? (
           <View style={styles.announceBanner}>
