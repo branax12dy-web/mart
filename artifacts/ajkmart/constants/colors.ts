@@ -1,19 +1,19 @@
 import { Platform } from "react-native";
 
-const primary = "#F97316";
-const primaryLight = "#FB923C";
-const primaryDark = "#EA580C";
-const primarySoft = "#FFF7ED";
-const accent = "#FF9500";
-const accentSoft = "#FFF4E5";
-const success = "#00C48C";
-const successSoft = "#E5F9F2";
-const danger = "#FF3B30";
-const dangerSoft = "#FFE5E3";
-const warning = "#FF9500";
-const warningSoft = "#FFF4E5";
-const info = "#5856D6";
-const infoSoft = "#EEEEFF";
+const primary = "#F0B90B";
+const primaryLight = "#F5CF46";
+const primaryDark = "#D4A309";
+const primarySoft = "#1C1700";
+const accent = "#F97316";
+const accentSoft = "#1A0A00";
+const success = "#03C087";
+const successSoft = "#061A12";
+const danger = "#F6465D";
+const dangerSoft = "#1C0509";
+const warning = "#F0B90B";
+const warningSoft = "#1C1700";
+const info = "#2EBD85";
+const infoSoft = "#061412";
 const amber = "#D97706";
 const amberSoft = "#FEF3C7";
 const amberDark = "#92400E";
@@ -201,14 +201,14 @@ export function getFontFamily(language: string) {
 
 const _mkShadow = (yOff: number, blur: number, opacity: number, elev: number) =>
   Platform.OS === "web"
-    ? { boxShadow: `0 ${yOff}px ${blur}px rgba(15,23,42,${opacity})` }
-    : { shadowColor: "#0F172A", shadowOffset: { width: 0, height: yOff }, shadowOpacity: opacity, shadowRadius: blur, elevation: elev };
+    ? { boxShadow: `0 ${yOff}px ${blur}px rgba(0,0,0,${opacity})` }
+    : { shadowColor: "#000000", shadowOffset: { width: 0, height: yOff }, shadowOpacity: opacity, shadowRadius: blur, elevation: elev };
 
 export const shadows = {
-  sm: _mkShadow(1, 3, 0.04, 1),
-  md: _mkShadow(2, 8, 0.06, 3),
-  lg: _mkShadow(4, 16, 0.08, 6),
-  xl: _mkShadow(8, 24, 0.12, 10),
+  sm: _mkShadow(1, 4, 0.35, 2),
+  md: _mkShadow(2, 8, 0.45, 5),
+  lg: _mkShadow(4, 16, 0.55, 8),
+  xl: _mkShadow(8, 28, 0.65, 12),
 } as const;
 
 export default {
@@ -227,19 +227,19 @@ export default {
     warningSoft,
     info,
     infoSoft,
-    text: "#0F172A",
-    textSecondary: "#475569",
-    textMuted: "#94A3B8",
-    textInverse: "#FFFFFF",
-    background: "#0F1923",
-    surface: "#FFFFFF",
-    surfaceSecondary: "#F8FAFC",
-    surfaceElevated: "#FFFFFF",
-    border: "#E2E8F0",
-    borderLight: "#1F2937",
-    inputBg: "#F8F9FA",
+    text: "#EAECEF",
+    textSecondary: "#848E9C",
+    textMuted: "#474D57",
+    textInverse: "#181A20",
+    background: "#0B0E11",
+    surface: "#1E2329",
+    surfaceSecondary: "#2B3139",
+    surfaceElevated: "#2B3139",
+    border: "rgba(234,236,239,0.1)",
+    borderLight: "rgba(234,236,239,0.06)",
+    inputBg: "#2B3139",
     tint: primary,
-    tabIconDefault: "#6B7280",
+    tabIconDefault: "#474D57",
     tabIconSelected: primary,
     shadow: "rgba(0, 0, 0, 0.25)",
     overlay: "rgba(0, 0, 0, 0.6)",

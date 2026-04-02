@@ -596,7 +596,7 @@ export default function AuthScreen() {
   if (step === "totp") {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
-        <LinearGradient colors={["#0F1923", "#1A0D06", "#2A1505"]} style={styles.flex}>
+        <LinearGradient colors={["#141820", "#0B0E11"]} style={styles.flex}>
           <ScrollView contentContainerStyle={styles.scrollGrow} keyboardShouldPersistTaps="handled">
             <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
               <View style={styles.heroIcon}>
@@ -674,7 +674,7 @@ export default function AuthScreen() {
 
   if (step === "pending") {
     return (
-      <LinearGradient colors={["#0F1923", "#1A0D06", "#2A1505"]} style={styles.flex}>
+      <LinearGradient colors={["#141820", "#0B0E11"]} style={styles.flex}>
         <View style={[styles.centeredContainer, { paddingTop: topPad + 40 }]}>
           <View style={styles.pendingCard}>
             <View style={styles.pendingIconWrap}>
@@ -703,7 +703,7 @@ export default function AuthScreen() {
   if (step === "complete-profile") {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
-        <LinearGradient colors={["#111827", "#1F2937", "#374151"]} style={styles.flex}>
+        <LinearGradient colors={["#141820", "#0B0E11"]} style={styles.flex}>
           <ScrollView contentContainerStyle={styles.scrollGrow} keyboardShouldPersistTaps="handled">
             <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
               <View style={styles.heroIcon}>
@@ -773,9 +773,9 @@ export default function AuthScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
       <LinearGradient
-        colors={["#0F1923", "#1A0D06", "#2A1505"]}
+        colors={["#141820", "#0B0E11"]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
+        end={{ x: 0, y: 1 }}
         style={styles.flex}
       >
         <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
@@ -1165,40 +1165,40 @@ const styles = StyleSheet.create({
     height: 104,
     borderRadius: 52,
     borderWidth: 2,
-    borderColor: "rgba(249,115,22,0.45)",
+    borderColor: "rgba(240,185,11,0.5)",
     top: -14,
     left: -14,
   },
   logo: {
     width: 76, height: 76, borderRadius: radii.xxl,
     backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
-    shadowColor: "#F97316", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.45, shadowRadius: 18, elevation: 10,
+    shadowColor: "#F0B90B", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 12,
   },
   secureBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(249,115,22,0.12)",
+    backgroundColor: "rgba(240,185,11,0.1)",
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: radii.full,
     marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: "rgba(249,115,22,0.35)",
+    borderColor: "rgba(240,185,11,0.35)",
   },
-  secureBadgeText: { ...typography.small, color: "rgba(249,115,22,0.95)", fontFamily: "Inter_600SemiBold" },
+  secureBadgeText: { ...typography.small, color: "rgba(240,185,11,0.95)", fontFamily: "Inter_600SemiBold" },
   heroIcon: {
     width: 76, height: 76, borderRadius: radii.xxl,
-    backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
-    shadowColor: "#F97316", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 8,
+    backgroundColor: "#1E2329", alignItems: "center", justifyContent: "center",
+    shadowColor: "#F0B90B", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 8,
     marginBottom: 14,
   },
   heroTitle: { fontFamily: "Inter_700Bold", fontSize: 32, color: "#fff", marginBottom: 8, textAlign: "center", letterSpacing: -0.5 },
   heroSubtitle: { ...typography.body, color: "rgba(255,255,255,0.7)", textAlign: "center", paddingHorizontal: spacing.xl },
 
-  cardScroll: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, flex: 1, borderTopWidth: 2, borderTopColor: "#F97316" },
+  cardScroll: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1, borderTopWidth: 1.5, borderTopColor: "#F0B90B" },
   cardContent: { padding: spacing.xxl, paddingBottom: 40, flexGrow: 1 },
-  card: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.xxl, paddingBottom: 40, flex: 1, borderTopWidth: 2, borderTopColor: "#F97316" },
+  card: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.xxl, paddingBottom: 40, flex: 1, borderTopWidth: 1.5, borderTopColor: "#F0B90B" },
 
   centeredContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
   pendingCard: { backgroundColor: C.surface, borderRadius: radii.xxl, padding: 28, alignItems: "center", width: "100%", ...shadows.lg },
