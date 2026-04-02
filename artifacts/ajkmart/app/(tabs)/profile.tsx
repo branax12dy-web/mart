@@ -1648,13 +1648,6 @@ export default function ProfileScreen() {
             <Row icon="receipt-outline"    label="Incoming Orders" sub="View new orders"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)}    iconColor={C.accent} iconBg={C.accentSoft} />
           </SectionCard>
         )}
-        {user?.role === "rider" && (
-          <SectionCard title="RIDER DASHBOARD">
-            <Row icon="bicycle-outline" label="Active Deliveries" sub="Current deliveries"    onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/rider/`)}     iconColor={C.success} iconBg={C.successSoft} />
-            <Row icon="cash-outline"    label="My Earnings"       sub="Daily/monthly earnings" onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/rider/`)}      iconColor={C.accent}    iconBg={C.accentSoft} />
-            <Row icon="star-outline"    label="My Rating"         sub="Your rider performance"   onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/rider/`)} iconColor={C.accent} iconBg={C.accentSoft} />
-          </SectionCard>
-        )}
 
         <View style={[sec.wrap, { overflow: "hidden" }]}>
           <Accordion
