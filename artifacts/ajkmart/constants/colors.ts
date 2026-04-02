@@ -1,9 +1,9 @@
 import { Platform } from "react-native";
 
-const primary = "#0066FF";
-const primaryLight = "#4D94FF";
-const primaryDark = "#0047B3";
-const primarySoft = "#E8F1FF";
+const primary = "#F97316";
+const primaryLight = "#FB923C";
+const primaryDark = "#EA580C";
+const primarySoft = "#FFF7ED";
 const accent = "#FF9500";
 const accentSoft = "#FFF4E5";
 const success = "#00C48C";
@@ -231,7 +231,7 @@ export default {
     textSecondary: "#475569",
     textMuted: "#94A3B8",
     textInverse: "#FFFFFF",
-    background: "#111827",
+    background: "#0F1923",
     surface: "#FFFFFF",
     surfaceSecondary: "#F8FAFC",
     surfaceElevated: "#FFFFFF",
@@ -239,8 +239,8 @@ export default {
     borderLight: "#1F2937",
     inputBg: "#F8F9FA",
     tint: primary,
-    tabIconDefault: "#9CA3AF",
-    tabIconSelected: "#60A5FA",
+    tabIconDefault: "#6B7280",
+    tabIconSelected: primary,
     shadow: "rgba(0, 0, 0, 0.25)",
     overlay: "rgba(0, 0, 0, 0.6)",
 

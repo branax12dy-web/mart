@@ -1341,7 +1341,7 @@ export default function ProfileScreen() {
   };
 
   const roleMap: Record<string, { label: string; colors: [string, string] }> = {
-    customer: { label: "Customer",        colors: ["#111827", "#374151"] },
+    customer: { label: "Customer",        colors: ["#0F1923", "#2A1505"] },
     rider:    { label: "Delivery Rider",  colors: [C.success, C.mintGreen] },
     vendor:   { label: "Store Vendor",    colors: [C.accent, C.goldWarm] },
   };
@@ -1569,7 +1569,7 @@ export default function ProfileScreen() {
         )}
 
         <Pressable onPress={() => router.push("/(tabs)/wallet")} style={wb.wrap} accessibilityRole="button" accessibilityLabel={`${platformCfg.appName} wallet, Rs. ${(user?.walletBalance || 0).toLocaleString()}, tap to manage`}>
-          <LinearGradient colors={["#111827", "#374151"]} style={wb.grad}>
+          <LinearGradient colors={["#0F1923", "#2A1505"]} style={wb.grad}>
             <Ionicons name="wallet" size={18} color={C.textInverse} />
           </LinearGradient>
           <View style={{ flex: 1, marginLeft: spacing.md }}>

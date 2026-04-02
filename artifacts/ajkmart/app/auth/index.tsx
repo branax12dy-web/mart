@@ -596,7 +596,7 @@ export default function AuthScreen() {
   if (step === "totp") {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
-        <LinearGradient colors={["#111827", "#1F2937", "#374151"]} style={styles.flex}>
+        <LinearGradient colors={["#0F1923", "#1A0D06", "#2A1505"]} style={styles.flex}>
           <ScrollView contentContainerStyle={styles.scrollGrow} keyboardShouldPersistTaps="handled">
             <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
               <View style={styles.heroIcon}>
@@ -674,7 +674,7 @@ export default function AuthScreen() {
 
   if (step === "pending") {
     return (
-      <LinearGradient colors={["#111827", "#1F2937", "#374151"]} style={styles.flex}>
+      <LinearGradient colors={["#0F1923", "#1A0D06", "#2A1505"]} style={styles.flex}>
         <View style={[styles.centeredContainer, { paddingTop: topPad + 40 }]}>
           <View style={styles.pendingCard}>
             <View style={styles.pendingIconWrap}>
@@ -773,7 +773,7 @@ export default function AuthScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
       <LinearGradient
-        colors={["#111827", "#1F2937", "#374151"]}
+        colors={["#0F1923", "#1A0D06", "#2A1505"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.flex}
@@ -1161,43 +1161,44 @@ const styles = StyleSheet.create({
   logoWrap: { marginBottom: spacing.lg, position: "relative" },
   logoRing: {
     position: "absolute",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
     borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.12)",
-    top: -12,
-    left: -12,
+    borderColor: "rgba(249,115,22,0.45)",
+    top: -14,
+    left: -14,
   },
   logo: {
     width: 76, height: 76, borderRadius: radii.xxl,
     backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
-    ...shadows.lg,
+    shadowColor: "#F97316", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.45, shadowRadius: 18, elevation: 10,
   },
   secureBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    backgroundColor: "rgba(249,115,22,0.12)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: radii.full,
     marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(249,115,22,0.35)",
   },
-  secureBadgeText: { ...typography.small, color: "rgba(255,255,255,0.9)" },
+  secureBadgeText: { ...typography.small, color: "rgba(249,115,22,0.95)", fontFamily: "Inter_600SemiBold" },
   heroIcon: {
     width: 76, height: 76, borderRadius: radii.xxl,
     backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
-    ...shadows.lg, marginBottom: 14,
+    shadowColor: "#F97316", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 8,
+    marginBottom: 14,
   },
-  heroTitle: { fontFamily: "Inter_700Bold", fontSize: 30, color: "#fff", marginBottom: 6, textAlign: "center" },
-  heroSubtitle: { ...typography.body, color: "rgba(255,255,255,0.85)", textAlign: "center", paddingHorizontal: spacing.xl },
+  heroTitle: { fontFamily: "Inter_700Bold", fontSize: 32, color: "#fff", marginBottom: 8, textAlign: "center", letterSpacing: -0.5 },
+  heroSubtitle: { ...typography.body, color: "rgba(255,255,255,0.7)", textAlign: "center", paddingHorizontal: spacing.xl },
 
-  cardScroll: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, flex: 1 },
+  cardScroll: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, flex: 1, borderTopWidth: 2, borderTopColor: "#F97316" },
   cardContent: { padding: spacing.xxl, paddingBottom: 40, flexGrow: 1 },
-  card: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.xxl, paddingBottom: 40, flex: 1 },
+  card: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.xxl, paddingBottom: 40, flex: 1, borderTopWidth: 2, borderTopColor: "#F97316" },
 
   centeredContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
   pendingCard: { backgroundColor: C.surface, borderRadius: radii.xxl, padding: 28, alignItems: "center", width: "100%", ...shadows.lg },

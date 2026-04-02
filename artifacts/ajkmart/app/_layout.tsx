@@ -280,18 +280,20 @@ export default function RootLayout() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#0047B3", alignItems: "center", justifyContent: "center", gap: 20 }}>
+      <View style={{ flex: 1, backgroundColor: "#0F1923", alignItems: "center", justifyContent: "center", gap: 20 }}>
         <View style={{
           width: 72,
           height: 72,
           borderRadius: 20,
-          backgroundColor: "rgba(255,255,255,0.15)",
+          backgroundColor: "rgba(249,115,22,0.15)",
+          borderWidth: 1.5,
+          borderColor: "rgba(249,115,22,0.35)",
           alignItems: "center",
           justifyContent: "center",
         }}>
           <Text style={{ fontSize: 36 }}>🛒</Text>
         </View>
-        <ActivityIndicator size="large" color="#ffffff" />
+        <ActivityIndicator size="large" color="#F97316" />
       </View>
     );
   }
