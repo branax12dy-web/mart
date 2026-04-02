@@ -109,7 +109,7 @@ router.post("/check-identifier", async (req, res) => {
   /* ── If user is banned or locked, surface it early ── */
   if (user?.isBanned) {
     addSecurityEvent({ type: "banned_user_identifier_check", ip, userId: user.id, details: `Banned user check: ${identifier}`, severity: "medium" });
-    res.json({ exists: true, isNewUser: false, isBanned: true, action: "blocked", availableMethods: [] });
+    res.json({ isNewUser: false, isBanned: true, action: "blocked", availableMethods: [] });
     return;
   }
 
@@ -118,7 +118,7 @@ router.post("/check-identifier", async (req, res) => {
   const lockoutKey     = looksLikePhone ? canonicalizePhone(identifier) : identifier.trim();
   const lockout        = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
   if (lockout.locked) {
-    res.json({ exists: true, isNewUser: false, isLocked: true, lockedMinutes: lockout.minutesLeft, action: "locked", availableMethods: [] });
+    res.json({ isNewUser: false, isLocked: true, lockedMinutes: lockout.minutesLeft, action: "locked", availableMethods: [] });
     return;
   }
 
@@ -281,14 +281,13 @@ router.post("/send-merge-otp", async (req, res) => {
       sent = smsResult.sent;
     }
     const isDev = process.env.NODE_ENV !== "production";
-    res.json({ message: "OTP sent to phone", ...(isDev ? { otp } : {}) });
+    res.json({ message: "OTP sent to phone" });
   } else {
     const email = identifier.trim().toLowerCase();
     const lang = await getUserLanguage(auth.userId);
     const [user] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
     await sendPasswordResetEmail(email, otp, user?.name ?? undefined, lang);
-    const isDev = process.env.NODE_ENV !== "production";
-    res.json({ message: "OTP sent to email", ...(isDev ? { otp } : {}) });
+    res.json({ message: "OTP sent to email" });
   }
 
   writeAuthAuditLog("merge_otp_sent", { ip, userId: auth.userId, userAgent: req.headers["user-agent"] ?? undefined, metadata: { identifier } });
@@ -434,34 +433,31 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
   const newUserApprovalStatus = isNewUser && requireApproval ? "pending" : "approved";
 
-  /* ══ OTP DISABLED — bypass OTP, upsert user, issue tokens directly ══ */
+  /* ══ OTP DISABLED — require password for existing users, block new registrations ══ */
   if (!otpEnabled || !otpEnabledForRole) {
+    if (isNewUser) {
+      res.status(403).json({ error: "Phone verification is required for new registrations. Please contact support." });
+      return;
+    }
+    const u = existingUser[0]!;
+    if (!u.passwordHash) {
+      res.status(403).json({ error: "Phone OTP is currently disabled. Please use password or another login method." });
+      return;
+    }
+    res.json({
+      otpRequired: false,
+      requiresPassword: true,
+      message: "Phone OTP is disabled. Please enter your password.",
+      action: "login_password",
+      availableMethods: ["password"],
+      user: { id: u.id, phone: u.phone, name: u.name },
+    });
+    return;
+  }
+  if (false) {
     const now = new Date();
     const userId = existingUser[0]?.id ?? generateId();
-
-    if (isNewUser) {
-      await db.insert(usersTable).values({
-        id: userId,
-        phone,
-        role: "customer",
-        roles: "customer",
-        walletBalance: "0",
-        isActive: !requireApproval,
-        approvalStatus: newUserApprovalStatus,
-        phoneVerified: true,
-        lastLoginAt: now,
-        ...(deviceId ? { deviceId } : {}),
-      }).onConflictDoUpdate({
-        target: usersTable.phone,
-        set: { phoneVerified: true, lastLoginAt: now, updatedAt: now },
-      });
-    } else {
-      await db.update(usersTable)
-        .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now })
-        .where(eq(usersTable.phone, phone));
-    }
-
-    const [u] = await db.select().from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
+    const u = existingUser[0];
     if (!u) { res.status(500).json({ error: "User creation failed" }); return; }
 
     const signupBonus = parseFloat(settings["customer_signup_bonus"] ?? "0");
@@ -608,7 +604,6 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     message: "OTP sent successfully",
     channel: deliveryChannel,
     fallbackChannels,
-    ...(isDev ? { otp } : {}),
   });
 });
 
@@ -1283,7 +1278,6 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   res.json({
     message: "OTP aapki email par bhej diya gaya hai",
     channel: emailResult.sent ? "email" : "console",
-    ...(isDev ? { otp } : {}),
   });
 });
 
@@ -1899,7 +1893,6 @@ router.post("/register", verifyCaptcha, async (req, res) => {
     role: userRole,
     pendingApproval: needsApproval,
     channel: smsResult.sent ? smsResult.provider : "console",
-    ...(isDev ? { otp } : {}),
   });
 });
 
@@ -2005,7 +1998,6 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
 
   res.json({
     message: "If an account exists, a reset code has been sent.",
-    ...(isDev ? { otp } : {}),
   });
 });
 

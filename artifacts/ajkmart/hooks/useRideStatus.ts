@@ -75,7 +75,12 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
     abortRef.current = controller;
 
     try {
-      const token = await AsyncStorage.getItem("@ajkmart_token");
+      let token: string | null = null;
+      try {
+        const SS = await import("expo-secure-store");
+        token = await SS.getItemAsync("ajkmart_token");
+      } catch {}
+      if (!token) token = await AsyncStorage.getItem("@ajkmart_token");
       const sseUrl = `${apiBase}/rides/${rideId}/stream`;
 
       const response = await fetch(sseUrl, {

@@ -22,6 +22,11 @@ router.post("/", async (req, res) => {
   const userId = req.customerId!;
   const { label, address, city, icon, isDefault } = req.body;
   if (!label || !address) { res.status(400).json({ error: "label and address required" }); return; }
+  if (typeof address !== "string" || address.length > 500) { res.status(400).json({ error: "Address must be 500 characters or less" }); return; }
+  if (typeof label !== "string" || label.length > 100) { res.status(400).json({ error: "Label must be 100 characters or less" }); return; }
+  if (city && (typeof city !== "string" || city.length > 100)) { res.status(400).json({ error: "City must be 100 characters or less" }); return; }
+  const existing = await db.select({ id: savedAddressesTable.id }).from(savedAddressesTable).where(eq(savedAddressesTable.userId, userId));
+  if (existing.length >= 5) { res.status(400).json({ error: "Maximum 5 addresses allowed" }); return; }
   if (isDefault) {
     await db.update(savedAddressesTable).set({ isDefault: false }).where(eq(savedAddressesTable.userId, userId));
   }

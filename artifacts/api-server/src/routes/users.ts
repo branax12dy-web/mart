@@ -273,15 +273,22 @@ router.delete("/delete-account", async (req, res) => {
     }
 
     const now = new Date();
+    const scrambledPhone = `DELETED_${userId.slice(0, 8)}_${Date.now()}`;
     await db.update(usersTable)
       .set({
         isActive: false,
         isBanned: true,
         name: "Deleted User",
+        phone: scrambledPhone,
         email: null,
+        username: null,
         avatar: null,
         cnic: null,
         address: null,
+        area: null,
+        city: null,
+        latitude: null,
+        longitude: null,
         updatedAt: now,
       })
       .where(eq(usersTable.id, userId));

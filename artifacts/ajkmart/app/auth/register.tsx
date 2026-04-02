@@ -107,6 +107,12 @@ export default function RegisterScreen() {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
+  useEffect(() => {
+    return () => {
+      import("expo-secure-store").then(SS => SS.deleteItemAsync("ajkmart_reg_token")).catch(() => {});
+    };
+  }, []);
+
   const clearError = () => setError("");
 
   const normalizedPhone = normalizePhone(phone);
@@ -412,6 +418,7 @@ export default function RegisterScreen() {
   const handleBack = () => {
     clearError();
     if (step <= 2) {
+      import("expo-secure-store").then(SS => SS.deleteItemAsync("ajkmart_reg_token")).catch(() => {});
       router.back();
     } else {
       setStep((step - 1) as RegStep);

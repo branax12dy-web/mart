@@ -435,12 +435,13 @@ export default function AuthScreen() {
           setLoading(false);
           return;
         }
-        /* FIX 5: Use cryptographically random nonce instead of predictable Date.now() */
-        const nonceBytes = new Uint8Array(16);
+        let nonceBytes: Uint8Array;
         if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+          nonceBytes = new Uint8Array(16);
           crypto.getRandomValues(nonceBytes);
         } else {
-          nonceBytes.forEach((_, i) => { nonceBytes[i] = Math.floor(Math.random() * 256); });
+          const ExpoCrypto = await import("expo-crypto");
+          nonceBytes = ExpoCrypto.getRandomBytes(16);
         }
         const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
         const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(googleClientId)}&response_type=id_token&redirect_uri=${encodeURIComponent(redirectUri)}&scope=openid%20email%20profile&nonce=${nonce}`;

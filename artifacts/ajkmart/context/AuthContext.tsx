@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   setAuthTokenGetter,
@@ -57,11 +58,43 @@ interface AuthContextType {
   socket: Socket | null;
 }
 
-const TOKEN_KEY         = "@ajkmart_token";
-const REFRESH_TOKEN_KEY = "@ajkmart_refresh_token";
+const TOKEN_KEY         = "ajkmart_token";
+const REFRESH_TOKEN_KEY = "ajkmart_refresh_token";
 const USER_KEY          = "@ajkmart_user";
 const BIOMETRIC_KEY     = "@ajkmart_biometric_enabled";
-const BIOMETRIC_TOKEN   = "@ajkmart_biometric_token";
+const BIOMETRIC_TOKEN   = "ajkmart_biometric_token";
+
+const LEGACY_TOKEN_KEY = "@ajkmart_token";
+const LEGACY_REFRESH_KEY = "@ajkmart_refresh_token";
+
+async function secureSet(key: string, value: string) {
+  try { await SecureStore.setItemAsync(key, value); } catch { await AsyncStorage.setItem(key, value); }
+}
+async function secureGet(key: string): Promise<string | null> {
+  try {
+    const val = await SecureStore.getItemAsync(key);
+    if (val) return val;
+  } catch {}
+  return AsyncStorage.getItem(key);
+}
+async function secureDelete(key: string) {
+  try { await SecureStore.deleteItemAsync(key); } catch {}
+  try { await AsyncStorage.removeItem(key); } catch {}
+}
+
+async function migrateTokensToSecureStore() {
+  try {
+    const [[, legacyToken], [, legacyRefresh]] = await AsyncStorage.multiGet([LEGACY_TOKEN_KEY, LEGACY_REFRESH_KEY]);
+    if (legacyToken) {
+      await secureSet(TOKEN_KEY, legacyToken);
+      await AsyncStorage.removeItem(LEGACY_TOKEN_KEY);
+    }
+    if (legacyRefresh) {
+      await secureSet(REFRESH_TOKEN_KEY, legacyRefresh);
+      await AsyncStorage.removeItem(LEGACY_REFRESH_KEY);
+    }
+  } catch {}
+}
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -119,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const refreshIn = Math.max((expiresAt - Date.now()) - 60_000, 10_000);
     refreshTimerRef.current = setTimeout(async () => {
       try {
-        const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+        const refreshToken = await secureGet(REFRESH_TOKEN_KEY);
         if (!refreshToken) {
           /* FIX 4: Use ref so we always call the latest doLogout */
           await doLogoutRef.current();
@@ -150,9 +183,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
         }
         setToken(data.token);
-        await AsyncStorage.setItem(TOKEN_KEY, data.token);
+        await secureSet(TOKEN_KEY, data.token);
         if (data.refreshToken) {
-          await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+          await secureSet(REFRESH_TOKEN_KEY, data.refreshToken);
           setRefreshTokenGetter(() => data.refreshToken!);
         }
         setAuthTokenGetter(() => data.token!);
@@ -182,11 +215,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearCustomerLocation(u.id, tok).catch(() => {});
     }
     clearRefreshTimer();
-    await AsyncStorage.multiRemove([USER_KEY, TOKEN_KEY, REFRESH_TOKEN_KEY]);
-    try {
-      const SecureStore = await import("expo-secure-store");
-      await SecureStore.deleteItemAsync(BIOMETRIC_TOKEN);
-    } catch {}
+    await AsyncStorage.multiRemove([USER_KEY]);
+    await secureDelete(TOKEN_KEY);
+    await secureDelete(REFRESH_TOKEN_KEY);
+    await secureDelete(BIOMETRIC_TOKEN);
     setBiometricEnabledState(false);
     await AsyncStorage.setItem(BIOMETRIC_KEY, "false");
     setUser(null);
@@ -208,9 +240,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setOnTokenRefreshed(async (newToken: string, newRefreshToken: string) => {
       setToken(newToken);
-      await AsyncStorage.setItem(TOKEN_KEY, newToken);
+      await secureSet(TOKEN_KEY, newToken);
       if (newRefreshToken) {
-        await AsyncStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
+        await secureSet(REFRESH_TOKEN_KEY, newRefreshToken);
         setRefreshTokenGetter(() => newRefreshToken);
       }
       setAuthTokenGetter(() => newToken);
@@ -233,12 +265,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadAuth = async () => {
       try {
-        const [[, storedUser], [, storedToken], [, storedRefresh], [, bioPref]] = await AsyncStorage.multiGet([
+        await migrateTokensToSecureStore();
+        const [[, storedUser], [, bioPref]] = await AsyncStorage.multiGet([
           USER_KEY,
-          TOKEN_KEY,
-          REFRESH_TOKEN_KEY,
           BIOMETRIC_KEY,
         ]);
+        const storedToken = await secureGet(TOKEN_KEY);
+        const storedRefresh = await secureGet(REFRESH_TOKEN_KEY);
         if (bioPref === "true") setBiometricEnabledState(true);
         if (storedUser && storedToken) {
           const parsedUser = JSON.parse(storedUser);
@@ -276,12 +309,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (userData: AppUser, userToken: string, refreshToken?: string) => {
-    const pairs: [string, string][] = [
-      [USER_KEY, JSON.stringify(userData)],
-      [TOKEN_KEY, userToken],
-    ];
-    if (refreshToken) pairs.push([REFRESH_TOKEN_KEY, refreshToken]);
-    await AsyncStorage.multiSet(pairs);
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
+    await secureSet(TOKEN_KEY, userToken);
+    if (refreshToken) await secureSet(REFRESH_TOKEN_KEY, refreshToken);
     setUser(userData);
     setToken(userToken);
     setTwoFactorPending(null);
@@ -320,18 +350,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setBiometricEnabled = async (enabled: boolean) => {
     setBiometricEnabledState(enabled);
     await AsyncStorage.setItem(BIOMETRIC_KEY, enabled ? "true" : "false");
+    /* biometric pref is non-sensitive — stays in AsyncStorage */
     if (enabled && token) {
       try {
-        const SecureStore = await import("expo-secure-store");
-        const refreshTok = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+        const refreshTok = await secureGet(REFRESH_TOKEN_KEY);
         if (refreshTok) {
-          await SecureStore.setItemAsync(BIOMETRIC_TOKEN, refreshTok);
+          await secureSet(BIOMETRIC_TOKEN, refreshTok);
         }
       } catch {}
     } else if (!enabled) {
       try {
-        const SecureStore = await import("expo-secure-store");
-        await SecureStore.deleteItemAsync(BIOMETRIC_TOKEN);
+        await secureDelete(BIOMETRIC_TOKEN);
       } catch {}
     }
   };
@@ -362,8 +391,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
 
-      const SecureStore = await import("expo-secure-store");
-      const storedRefreshToken = await SecureStore.getItemAsync(BIOMETRIC_TOKEN);
+      const storedRefreshToken = await secureGet(BIOMETRIC_TOKEN);
       if (!storedRefreshToken) return false;
 
       const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
@@ -373,7 +401,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ refreshToken: storedRefreshToken }),
       });
       if (!res.ok) {
-        await SecureStore.deleteItemAsync(BIOMETRIC_TOKEN);
+        await secureDelete(BIOMETRIC_TOKEN);
         setBiometricEnabledState(false);
         await AsyncStorage.setItem(BIOMETRIC_KEY, "false");
         return false;
@@ -390,7 +418,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await login(freshUser, data.token, data.refreshToken);
       if (data.refreshToken) {
-        await SecureStore.setItemAsync(BIOMETRIC_TOKEN, data.refreshToken);
+        await secureSet(BIOMETRIC_TOKEN, data.refreshToken);
       }
       return true;
     } catch {

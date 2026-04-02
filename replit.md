@@ -86,7 +86,8 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 - **Orval codegen:** Generates API client and hooks.
 - **React Query:** Data fetching and caching for frontend.
 - **Zod:** Schema validation library.
-- **AsyncStorage:** For client-side data persistence in React Native (including pre-login language preference).
+- **AsyncStorage:** For client-side data persistence in React Native (non-sensitive: user profile cache, biometric preference, language).
+- **expo-secure-store:** Encrypted storage for auth tokens (access token, refresh token, biometric token). Fallback to AsyncStorage on unsupported platforms.
 - **jsonwebtoken:** For JWT generation and verification.
 - **crypto.scryptSync:** For password hashing.
 - **react-native-qrcode-svg:** For generating real QR codes in the wallet Receive Money modal.
@@ -131,8 +132,15 @@ The project is structured as a pnpm monorepo using TypeScript. The frontend leve
 **Critical Security Fixes:**
 1. Server-side OTP verification before password reset — new `POST /auth/verify-reset-otp` endpoint validates OTP against server before allowing password step (was client-only check)
 2. Duplicate magic link listener removed from `auth/index.tsx` — centralized in `_layout.tsx` `MagicLinkHandler` to prevent double API calls and race conditions
-3. Cryptographically secure nonce for Google OAuth — uses `crypto.getRandomValues(Uint8Array(16))` instead of predictable `Date.now()`
+3. Cryptographically secure nonce for Google OAuth — uses `crypto.getRandomValues(Uint8Array(16))` with `expo-crypto` SHA-256 fallback (no Math.random)
 4. Stale closure fixes in `AuthContext` — `userRef`/`tokenRef`/`doLogoutRef` pattern ensures callbacks always see latest state
+5. Auth tokens (access + refresh + biometric) migrated from AsyncStorage to SecureStore (hardware-encrypted on iOS/Android); fallback to AsyncStorage on web
+6. Registration partial token cleaned up on back-navigation (prevents stale token reuse)
+7. OTP bypass blocked server-side for new users; existing users redirected to password auth
+8. OTP removed from ALL dev API responses (5 occurrences in auth.ts)
+9. Account enumeration removed from check-identifier (generic responses)
+10. Account deletion PII scrub: phone scrambled, email/username/cnic/address/area/city/lat/lng all cleared
+11. Address endpoint enforces max 5 addresses + field length limits server-side
 
 **Medium Fixes:**
 5. All `doLogout()` calls properly awaited (unauthorized handler, proactive refresh, `clearSuspended`)

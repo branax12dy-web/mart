@@ -158,7 +158,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (cartItems.length === 0) return { valid: true, cartChanged: false };
     setIsValidating(true);
     try {
-      const storedToken = authTokenRef.current ?? await AsyncStorage.getItem("@ajkmart_token");
+      let storedToken = authTokenRef.current;
+      if (!storedToken) {
+        try {
+          const SS = await import("expo-secure-store");
+          storedToken = await SS.getItemAsync("ajkmart_token");
+        } catch {}
+      }
+      if (!storedToken) storedToken = await AsyncStorage.getItem("@ajkmart_token");
       const res = await fetch(`${API_BASE}/orders/validate-cart`, {
         method: "POST",
         headers: {
