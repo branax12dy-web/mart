@@ -225,7 +225,7 @@ export default function UniversalSearchScreen() {
     setQuery(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!text.trim()) { setSections([]); return; }
-    debounceRef.current = setTimeout(() => fetchResults(text), 350);
+    debounceRef.current = setTimeout(() => fetchResults(text), 300);
   };
 
   const doAddItem = (item: SearchResult) => {
