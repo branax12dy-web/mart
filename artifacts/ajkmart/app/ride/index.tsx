@@ -64,13 +64,13 @@ function RideScreenInner() {
       >
         <View
           style={{
-            backgroundColor: "#fff",
+            backgroundColor: C.surface,
             borderRadius: 24,
             padding: 32,
             alignItems: "center",
             width: "100%",
             borderWidth: 1,
-            borderColor: "#FEF3C7",
+            borderColor: C.amberSoft,
           }}
         >
           <View
@@ -78,19 +78,19 @@ function RideScreenInner() {
               width: 64,
               height: 64,
               borderRadius: 32,
-              backgroundColor: "#FEF3C7",
+              backgroundColor: C.amberSoft,
               alignItems: "center",
               justifyContent: "center",
               marginBottom: 16,
             }}
           >
-            <Ionicons name="construct-outline" size={32} color="#D97706" />
+            <Ionicons name="construct-outline" size={32} color={C.amber} />
           </View>
           <Text
             style={{
               fontFamily: "Inter_700Bold",
               fontSize: 20,
-              color: "#D97706",
+              color: C.amber,
               marginBottom: 8,
               textAlign: "center",
             }}
@@ -132,13 +132,13 @@ function RideScreenInner() {
         </Pressable>
         <View
           style={{
-            backgroundColor: "#fff",
+            backgroundColor: C.surface,
             borderRadius: 24,
             padding: 32,
             alignItems: "center",
             width: "100%",
             borderWidth: 1,
-            borderColor: "#FEE2E2",
+            borderColor: C.redSoft,
           }}
         >
           <View
@@ -146,7 +146,7 @@ function RideScreenInner() {
               width: 64,
               height: 64,
               borderRadius: 32,
-              backgroundColor: "#FEE2E2",
+              backgroundColor: C.redSoft,
               alignItems: "center",
               justifyContent: "center",
               marginBottom: 16,
@@ -155,14 +155,14 @@ function RideScreenInner() {
             <Ionicons
               name="close-circle-outline"
               size={32}
-              color="#EF4444"
+              color={C.redBright}
             />
           </View>
           <Text
             style={{
               fontFamily: "Inter_700Bold",
               fontSize: 20,
-              color: "#EF4444",
+              color: C.redBright,
               marginBottom: 8,
               textAlign: "center",
             }}
@@ -185,7 +185,7 @@ function RideScreenInner() {
             style={{
               width: "100%",
               alignItems: "center",
-              backgroundColor: "#FEF2F2",
+              backgroundColor: C.redBg,
               borderRadius: 14,
               paddingVertical: 14,
             }}
@@ -195,7 +195,7 @@ function RideScreenInner() {
               style={{
                 fontFamily: "Inter_700Bold",
                 fontSize: 15,
-                color: "#EF4444",
+                color: C.redBright,
               }}
             >
               {T("backToHome")}
@@ -219,21 +219,21 @@ function RideScreenInner() {
       >
         <View
           style={{
-            backgroundColor: "#fff",
+            backgroundColor: C.surface,
             borderRadius: 24,
             padding: 32,
             alignItems: "center",
             width: "100%",
             borderWidth: 1,
-            borderColor: "#FEE2E2",
+            borderColor: C.redSoft,
           }}
         >
-          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" style={{ marginBottom: 16 }} />
+          <Ionicons name="alert-circle-outline" size={48} color={C.redBright} style={{ marginBottom: 16 }} />
           <Text
             style={{
               fontFamily: "Inter_700Bold",
               fontSize: 18,
-              color: "#EF4444",
+              color: C.redBright,
               marginBottom: 8,
               textAlign: "center",
             }}
@@ -263,7 +263,7 @@ function RideScreenInner() {
             }}
             onPress={() => { setRetryNonce(n => n + 1); }}
           >
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.textInverse }}>
               {T("tryAgain")}
             </Text>
           </Pressable>
@@ -271,13 +271,13 @@ function RideScreenInner() {
             style={{
               width: "100%",
               alignItems: "center",
-              backgroundColor: "#FEF2F2",
+              backgroundColor: C.redBg,
               borderRadius: 14,
               paddingVertical: 14,
             }}
             onPress={() => router.back()}
           >
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#EF4444" }}>
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.redBright }}>
               {T("backToHome")}
             </Text>
           </Pressable>

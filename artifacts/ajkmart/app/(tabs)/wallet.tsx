@@ -88,8 +88,8 @@ function TxItem({ tx }: { tx: any }) {
   const amtColor = isPending ? C.textMuted : isRejected ? C.danger : isCredit ? C.success : C.danger;
   const prefix   = isPending ? "" : isCredit ? "+" : "−";
   const suffix   = isPending ? " (Pending)" : isRejected ? " (Rejected)" : "";
-  const bgColor  = isPending ? "#FEF3C7" : isRejected ? "#FEE2E2" : isCredit ? "#D1FAE5" : "#FEE2E2";
-  const iconColor = isPending ? "#D97706" : isRejected ? C.danger : isCredit ? C.success : C.danger;
+  const bgColor  = isPending ? C.amberSoft : isRejected ? C.redSoft : isCredit ? C.emeraldSoft : C.redSoft;
+  const iconColor = isPending ? C.amber : isRejected ? C.danger : isCredit ? C.success : C.danger;
 
   return (
     <View style={ws.txRow} accessibilityLabel={`${tx.description}, ${prefix}Rs. ${Number(tx.amount).toLocaleString()}${suffix}, ${date}`}>
@@ -112,12 +112,12 @@ function TxItem({ tx }: { tx: any }) {
 
 function MethodIcon({ id, size = 24 }: { id: string; size?: number }) {
   if (id === "jazzcash") {
-    return <Ionicons name="phone-portrait" size={size} color="#CE2029" />;
+    return <Ionicons name="phone-portrait" size={size} color={C.crimson} />;
   }
   if (id === "easypaisa") {
-    return <Ionicons name="phone-landscape" size={size} color="#1B8E3D" />;
+    return <Ionicons name="phone-landscape" size={size} color={C.greenVivid} />;
   }
-  return <Ionicons name="business" size={size} color="#2B6CB0" />;
+  return <Ionicons name="business" size={size} color={C.blueDeep} />;
 }
 
 type WithdrawMethod = "jazzcash" | "easypaisa" | "bank";
@@ -184,7 +184,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
 
             {step === "done" && (
               <Animated.View style={{ alignItems: "center", paddingVertical: 20, opacity: doneAnim, transform: [{ translateY: doneAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
-                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.redSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
                   <Ionicons name="arrow-up-circle" size={40} color={C.danger} />
                 </View>
                 <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
@@ -216,7 +216,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                 <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, marginBottom: 18 }}>Choose your withdrawal method</Text>
                 <View style={{ gap: 10 }}>
                   {WITHDRAW_METHODS.map(m => (
-                    <Pressable key={m.id} onPress={() => { setSelectedMethod(m.id); setErr(""); setStep("details"); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: "#fff" }} accessibilityRole="button" accessibilityLabel={`Withdraw via ${m.label}`}>
+                    <Pressable key={m.id} onPress={() => { setSelectedMethod(m.id); setErr(""); setStep("details"); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: C.surface }} accessibilityRole="button" accessibilityLabel={`Withdraw via ${m.label}`}>
                       <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
                         <MethodIcon id={m.id} size={26} />
                       </View>
@@ -259,9 +259,9 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                     </Pressable>
                   ))}
                 </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, backgroundColor: "#FEF3C7", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: "#FDE68A" }}>
-                  <Ionicons name="wallet-outline" size={14} color="#D97706" />
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>Available: Rs. {balance.toLocaleString()}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.amberBorder }}>
+                  <Ionicons name="wallet-outline" size={14} color={C.amber} />
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.amberDark, flex: 1 }}>Available: Rs. {balance.toLocaleString()}</Text>
                 </View>
 
                 <Text style={ws.sheetLbl}>Your {WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Account *</Text>
@@ -288,16 +288,16 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                 </View>
 
                 {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
                     <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.danger, flex: 1 }}>{err}</Text>
                   </View>
                 ) : null}
 
                 <Pressable onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { backgroundColor: C.danger }, submitting && { opacity: 0.6 }]} accessibilityRole="button" accessibilityLabel="Submit withdrawal request" accessibilityState={{ disabled: submitting }}>
-                  {submitting ? <ActivityIndicator color="#fff" /> : (
+                  {submitting ? <ActivityIndicator color={C.textInverse} /> : (
                     <>
-                      <Ionicons name="arrow-up-outline" size={18} color="#fff" />
+                      <Ionicons name="arrow-up-outline" size={18} color={C.textInverse} />
                       <Text style={ws.actionBtnTxt}>Submit Withdrawal Request</Text>
                     </>
                   )}
@@ -440,7 +440,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
             <View style={{ marginBottom: 18 }}>
               <View style={{ flexDirection: "row", gap: 6 }}>
                 {STEPS.map((_, i) => (
-                  <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i <= stepIdx ? C.primary : "#E2E8F0" }} />
+                  <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i <= stepIdx ? C.primary : C.border }} />
                 ))}
               </View>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, textAlign: "right", marginTop: 6 }}>Step {stepIdx + 1} of {STEPS.length}</Text>
@@ -451,7 +451,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
 
             {step === "done" && (
               <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#D1FAE5", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.emeraldSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
                   <Ionicons name="checkmark-circle" size={40} color={C.success} />
                 </View>
                 <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
@@ -484,7 +484,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                 {loadingMethods ? (
                   <ActivityIndicator color={C.primary} style={{ marginTop: 24 }} />
                 ) : methodsError ? (
-                  <View style={{ backgroundColor: "#FEF2F2", borderRadius: 16, padding: 24, alignItems: "center", gap: 10, borderWidth: 1, borderColor: "#FEE2E2" }}>
+                  <View style={{ backgroundColor: C.redBg, borderRadius: 16, padding: 24, alignItems: "center", gap: 10, borderWidth: 1, borderColor: C.redSoft }}>
                     <Ionicons name="alert-circle-outline" size={28} color={C.danger} />
                     <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.text }}>Methods Unavailable</Text>
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, textAlign: "center" }}>Could not load payment methods. Please try again.</Text>
@@ -501,14 +501,14 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                         .catch(() => setMethodsError(true))
                         .finally(() => setLoadingMethods(false));
                     }} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12 }} accessibilityRole="button" accessibilityLabel="Try again to load payment methods">
-                      <Ionicons name="refresh-outline" size={15} color="#fff" />
-                      <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" }}>Try Again</Text>
+                      <Ionicons name="refresh-outline" size={15} color={C.textInverse} />
+                      <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.textInverse }}>Try Again</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <View style={{ gap: 10 }}>
                     {methods.map(m => (
-                      <Pressable key={m.id} onPress={() => selectMethod(m)} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: "#fff" }} accessibilityRole="button" accessibilityLabel={`Deposit via ${m.label}`}>
+                      <Pressable key={m.id} onPress={() => selectMethod(m)} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: C.surface }} accessibilityRole="button" accessibilityLabel={`Deposit via ${m.label}`}>
                         <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
                           <MethodIcon id={m.id} size={26} />
                         </View>
@@ -568,7 +568,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                   )}
                 </View>
 
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EFF6FF", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "#DBEAFE" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.blueSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.brandBlueSoft }}>
                   <Ionicons name="information-circle-outline" size={16} color={C.primary} />
                   <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textSecondary, flex: 1 }}>After payment, enter the Transaction ID in the next step</Text>
                 </View>
@@ -578,7 +578,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                     <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
                   </Pressable>
                   <Pressable onPress={goToAmount} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]} accessibilityRole="button" accessibilityLabel="Payment done, continue">
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                    <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
                     <Text style={ws.actionBtnTxt}>Payment Done</Text>
                   </Pressable>
                 </View>
@@ -644,7 +644,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                 </View>
 
                 {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
                     <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.danger, flex: 1 }}>{err}</Text>
                   </View>
@@ -694,13 +694,13 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                   </View>
                 </View>
 
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "#FDE68A" }}>
-                  <Ionicons name="alert-circle-outline" size={16} color="#D97706" />
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#92400E", flex: 1 }}>An incorrect TxID may cause rejection. Enter the real transaction ID.</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.amberBorder }}>
+                  <Ionicons name="alert-circle-outline" size={16} color={C.amber} />
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.amberDark, flex: 1 }}>An incorrect TxID may cause rejection. Enter the real transaction ID.</Text>
                 </View>
 
                 {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
                     <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.danger, flex: 1 }}>{err}</Text>
                   </View>
@@ -712,10 +712,10 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                   </Pressable>
                   <Pressable onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary, opacity: submitting ? 0.6 : 1 }]} accessibilityRole="button" accessibilityLabel="Submit deposit request" accessibilityState={{ disabled: submitting }}>
                     {submitting ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={C.textInverse} />
                     ) : (
                       <>
-                        <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                        <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
                         <Text style={ws.actionBtnTxt}>Submit Request</Text>
                       </>
                     )}
@@ -932,30 +932,30 @@ export default function WalletScreen() {
         lastUpdated={lastRefreshed}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ backgroundColor: "#fff", paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
+        <View style={{ backgroundColor: C.surface, paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28, borderBottomWidth: 1, borderBottomColor: C.border }}>
           {walletError && !data && !walletFrozen && (
-            <Pressable onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEE2E2", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "#FCA5A5" }} accessibilityRole="button" accessibilityLabel="No network connection, tap to retry">
-              <Ionicons name="cloud-offline-outline" size={20} color="#DC2626" />
+            <Pressable onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="No network connection, tap to retry">
+              <Ionicons name="cloud-offline-outline" size={20} color={C.red} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#7F1D1D" }}>No network connection</Text>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#991B1B", marginTop: 2 }}>Showing last known balance. Tap to retry.</Text>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: C.redDeep }}>No network connection</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.redDeepest, marginTop: 2 }}>Showing last known balance. Tap to retry.</Text>
               </View>
-              <Ionicons name="refresh-outline" size={16} color="#DC2626" />
+              <Ionicons name="refresh-outline" size={16} color={C.red} />
             </Pressable>
           )}
 
           {walletFrozen ? (
             <View style={{ alignItems: "center", paddingVertical: 24, gap: 14 }}>
-              <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#FEF3C7", alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="lock-closed" size={36} color="#D97706" />
+              <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="lock-closed" size={36} color={C.amber} />
               </View>
-              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#92400E" }}>Wallet Frozen</Text>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#92400E", textAlign: "center", lineHeight: 20, maxWidth: 280 }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.amberDark }}>Wallet Frozen</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.amberDark, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>
                 Your wallet has been temporarily frozen. Please contact support to resolve this issue.
               </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#FDE68A", width: "100%", marginTop: 4 }}>
-                <Ionicons name="headset-outline" size={16} color="#D97706" />
-                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>Contact support to unfreeze your wallet</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: C.amberBorder, width: "100%", marginTop: 4 }}>
+                <Ionicons name="headset-outline" size={16} color={C.amber} />
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: C.amberDark, flex: 1 }}>Contact support to unfreeze your wallet</Text>
               </View>
             </View>
           ) : (
@@ -963,7 +963,7 @@ export default function WalletScreen() {
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 4 }}>{appName} {T("wallet")}</Text>
               {isLoading && !data ? (
                 <View style={{ marginBottom: 4 }}>
-                  <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "#E2E8F0", opacity: 0.7 }} />
+                  <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: C.border, opacity: 0.7 }} />
                 </View>
               ) : (
                 <Text style={{ fontFamily: "Inter_700Bold", fontSize: 40, color: C.text, marginBottom: 4 }}>
@@ -974,27 +974,27 @@ export default function WalletScreen() {
 
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <Pressable onPress={() => setShowDeposit(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("topUp")}>
-                  <View style={[ws.actionCardIcon, { backgroundColor: "#D1FAE5" }]}>
+                  <View style={[ws.actionCardIcon, { backgroundColor: C.emeraldSoft }]}>
                     <Ionicons name="add" size={20} color={C.success} />
                   </View>
                   <Text style={ws.actionCardTxt}>{T("topUp")}</Text>
                 </Pressable>
                 <Pressable onPress={() => setShowWithdraw(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel="Withdraw money">
-                  <View style={[ws.actionCardIcon, { backgroundColor: "#FEE2E2" }]}>
+                  <View style={[ws.actionCardIcon, { backgroundColor: C.redSoft }]}>
                     <Ionicons name="arrow-up-outline" size={18} color={C.danger} />
                   </View>
                   <Text style={ws.actionCardTxt}>Withdraw</Text>
                 </Pressable>
                 {p2pEnabled && (
                   <Pressable onPress={() => setShowSend(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("send")}>
-                    <View style={[ws.actionCardIcon, { backgroundColor: "#EDE9FE" }]}>
-                      <Ionicons name="send-outline" size={18} color="#7C3AED" />
+                    <View style={[ws.actionCardIcon, { backgroundColor: C.purpleSoft }]}>
+                      <Ionicons name="send-outline" size={18} color={C.purple} />
                     </View>
                     <Text style={ws.actionCardTxt}>{T("send")}</Text>
                   </Pressable>
                 )}
                 <Pressable onPress={() => setShowQR(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("receive")}>
-                  <View style={[ws.actionCardIcon, { backgroundColor: "#DBEAFE" }]}>
+                  <View style={[ws.actionCardIcon, { backgroundColor: C.brandBlueSoft }]}>
                     <Ionicons name="qr-code-outline" size={18} color={C.primary} />
                   </View>
                   <Text style={ws.actionCardTxt}>{T("receive")}</Text>
@@ -1002,9 +1002,9 @@ export default function WalletScreen() {
               </View>
 
               {pendingTopups.count > 0 && (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FEF3C7", borderRadius: 12, marginTop: 16, padding: 12, borderWidth: 1, borderColor: "#FDE68A" }}>
-                  <Ionicons name="time-outline" size={14} color="#D97706" />
-                  <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#92400E", flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, marginTop: 16, padding: 12, borderWidth: 1, borderColor: C.amberBorder }}>
+                  <Ionicons name="time-outline" size={14} color={C.amber} />
+                  <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: C.amberDark, flex: 1 }}>
                     {pendingTopups.count} pending ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
                   </Text>
                 </View>
@@ -1015,21 +1015,21 @@ export default function WalletScreen() {
 
         <View style={{ flexDirection: "row", paddingHorizontal: 20, gap: 10, marginTop: 16 }}>
           <View style={ws.statCard}>
-            <View style={[ws.statIcon, { backgroundColor: "#D1FAE5" }]}>
+            <View style={[ws.statIcon, { backgroundColor: C.emeraldSoft }]}>
               <Ionicons name="arrow-down-outline" size={16} color={C.success} />
             </View>
             <Text style={ws.statLbl}>{T("moneyIn")}</Text>
             <Text style={[ws.statAmt, { color: C.success }]}>Rs. {totalIn.toLocaleString()}</Text>
           </View>
           <View style={ws.statCard}>
-            <View style={[ws.statIcon, { backgroundColor: "#FEE2E2" }]}>
+            <View style={[ws.statIcon, { backgroundColor: C.redSoft }]}>
               <Ionicons name="arrow-up-outline" size={16} color={C.danger} />
             </View>
             <Text style={ws.statLbl}>{T("moneyOut")}</Text>
             <Text style={[ws.statAmt, { color: C.danger }]}>Rs. {totalOut.toLocaleString()}</Text>
           </View>
           <View style={ws.statCard}>
-            <View style={[ws.statIcon, { backgroundColor: "#DBEAFE" }]}>
+            <View style={[ws.statIcon, { backgroundColor: C.brandBlueSoft }]}>
               <Ionicons name="receipt-outline" size={16} color={C.primary} />
             </View>
             <Text style={ws.statLbl}>{T("transactions")}</Text>
@@ -1057,12 +1057,12 @@ export default function WalletScreen() {
             <View style={{ gap: 12, marginTop: 8 }}>
               {[1,2,3,4].map(i => (
                 <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                  <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: "#E2E8F0" }} />
+                  <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: C.border }} />
                   <View style={{ flex: 1, gap: 6 }}>
-                    <View style={{ height: 13, width: "70%", borderRadius: 6, backgroundColor: "#E2E8F0" }} />
-                    <View style={{ height: 11, width: "45%", borderRadius: 5, backgroundColor: "#EDF2F7" }} />
+                    <View style={{ height: 13, width: "70%", borderRadius: 6, backgroundColor: C.border }} />
+                    <View style={{ height: 11, width: "45%", borderRadius: 5, backgroundColor: C.slateGray }} />
                   </View>
-                  <View style={{ height: 14, width: 64, borderRadius: 6, backgroundColor: "#E2E8F0" }} />
+                  <View style={{ height: 14, width: 64, borderRadius: 6, backgroundColor: C.border }} />
                 </View>
               ))}
             </View>
@@ -1080,7 +1080,7 @@ export default function WalletScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Explore services"
                 >
-                  <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Explore Services</Text>
+                  <Text style={{ color: C.textInverse, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Explore Services</Text>
                 </Pressable>
               )}
             </View>
@@ -1129,7 +1129,7 @@ export default function WalletScreen() {
                 <Text style={ws.sheetTitle}>Send Money</Text>
 
                 <Text style={ws.sheetLbl}>Receiver's Phone Number</Text>
-                <View style={[ws.inputWrap, sendPhoneError ? { borderColor: "#EF4444" } : {}]}>
+                <View style={[ws.inputWrap, sendPhoneError ? { borderColor: C.redBright } : {}]}>
                   <View style={ws.phonePrefix}>
                     <Text style={ws.phonePrefixTxt}>+92</Text>
                   </View>
@@ -1143,7 +1143,7 @@ export default function WalletScreen() {
                     maxLength={10}
                   />
                 </View>
-                {sendPhoneError ? <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#EF4444", marginTop: 2, marginBottom: 6 }}>{sendPhoneError}</Text> : null}
+                {sendPhoneError ? <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.redBright, marginTop: 2, marginBottom: 6 }}>{sendPhoneError}</Text> : null}
 
                 <Text style={ws.sheetLbl}>Amount (PKR)</Text>
                 <View style={ws.amtWrap}>
@@ -1161,10 +1161,10 @@ export default function WalletScreen() {
                   <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, flex: 1 }}>Available: Rs. {balance.toLocaleString()} · Min: Rs. {minTransfer.toLocaleString()}</Text>
                 </View>
 
-                <Pressable onPress={handleSendContinue} disabled={!sendPhone || !sendAmount || sendLoading} style={[ws.actionBtn, { backgroundColor: "#7C3AED" }, (!sendPhone || !sendAmount || sendLoading) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Continue to confirm send" accessibilityState={{ disabled: !sendPhone || !sendAmount || sendLoading }}>
-                  {sendLoading ? <ActivityIndicator color="#fff" /> : (
+                <Pressable onPress={handleSendContinue} disabled={!sendPhone || !sendAmount || sendLoading} style={[ws.actionBtn, { backgroundColor: C.purple }, (!sendPhone || !sendAmount || sendLoading) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Continue to confirm send" accessibilityState={{ disabled: !sendPhone || !sendAmount || sendLoading }}>
+                  {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
                     <>
-                      <Ionicons name="arrow-forward" size={17} color="#fff" />
+                      <Ionicons name="arrow-forward" size={17} color={C.textInverse} />
                       <Text style={ws.actionBtnTxt}>Continue</Text>
                     </>
                   )}
@@ -1189,7 +1189,7 @@ export default function WalletScreen() {
                   </View>
                   <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                     <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>Amount</Text>
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: "#7C3AED" }}>Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: C.purple }}>Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
                   </View>
                   {sendNote ? (
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -1203,10 +1203,10 @@ export default function WalletScreen() {
                   <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.primary }}>Edit Details</Text>
                 </Pressable>
 
-                <Pressable onPress={handleSendConfirm} disabled={sendLoading} style={[ws.actionBtn, { backgroundColor: "#7C3AED" }, sendLoading && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={`Send Rs. ${parseFloat(sendAmount || "0").toLocaleString()}`} accessibilityState={{ disabled: sendLoading }}>
-                  {sendLoading ? <ActivityIndicator color="#fff" /> : (
+                <Pressable onPress={handleSendConfirm} disabled={sendLoading} style={[ws.actionBtn, { backgroundColor: C.purple }, sendLoading && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={`Send Rs. ${parseFloat(sendAmount || "0").toLocaleString()}`} accessibilityState={{ disabled: sendLoading }}>
+                  {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
                     <>
-                      <Ionicons name="send" size={17} color="#fff" />
+                      <Ionicons name="send" size={17} color={C.textInverse} />
                       <Text style={ws.actionBtnTxt}>Send Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
                     </>
                   )}
@@ -1226,12 +1226,12 @@ export default function WalletScreen() {
             </Text>
 
             <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 20, padding: 24, alignItems: "center", marginBottom: 16, gap: 12, borderWidth: 1, borderColor: C.border }}>
-              <View style={{ width: 140, height: 140, borderRadius: 16, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border }}>
+              <View style={{ width: 140, height: 140, borderRadius: 16, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border }}>
                 <QRCode
                   value={JSON.stringify({ type: "ajkmart_pay", phone: user?.phone, id: user?.id, name: user?.name })}
                   size={120}
                   color={C.primary}
-                  backgroundColor="#fff"
+                  backgroundColor={C.surface}
                 />
               </View>
               <Text style={{ fontFamily: "Inter_700Bold", fontSize: 17, color: C.text }}>{user?.name || "AJKMart User"}</Text>
@@ -1259,7 +1259,7 @@ const ws = StyleSheet.create({
   actionCardIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   actionCardTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary, textAlign: "center" },
 
-  statCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14, alignItems: "center", gap: 6, borderWidth: 1, borderColor: C.border },
+  statCard: { flex: 1, backgroundColor: C.surface, borderRadius: 16, padding: 14, alignItems: "center", gap: 6, borderWidth: 1, borderColor: C.border },
   statIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   statLbl: { fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted },
   statAmt: { fontFamily: "Inter_700Bold", fontSize: 13 },
@@ -1267,7 +1267,7 @@ const ws = StyleSheet.create({
   filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: C.surfaceSecondary },
   filterChipActive: { backgroundColor: C.primary },
   filterTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textMuted },
-  filterTxtActive: { color: "#fff" },
+  filterTxtActive: { color: C.textInverse },
 
   txRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.borderLight },
   txIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
@@ -1276,7 +1276,7 @@ const ws = StyleSheet.create({
   txAmt: { fontFamily: "Inter_700Bold", fontSize: 14 },
 
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingBottom: Platform.OS === "web" ? 40 : 48, paddingTop: 12 },
+  sheet: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingBottom: Platform.OS === "web" ? 40 : 48, paddingTop: 12 },
   handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
   sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, marginBottom: 4 },
   sheetLbl: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.textSecondary, marginBottom: 8 },
@@ -1287,7 +1287,7 @@ const ws = StyleSheet.create({
 
   quickRow: { flexDirection: "row", gap: 8, marginBottom: 18 },
   quickBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 11, alignItems: "center" },
-  quickBtnActive: { borderColor: C.primary, backgroundColor: "#EFF6FF" },
+  quickBtnActive: { borderColor: C.primary, backgroundColor: C.blueSoft },
   quickTxt: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary },
   quickTxtActive: { color: C.primary, fontFamily: "Inter_700Bold" },
 
@@ -1297,5 +1297,5 @@ const ws = StyleSheet.create({
   sendInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 15, color: C.text, paddingHorizontal: 14, paddingVertical: 13 },
 
   actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4 },
-  actionBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },
+  actionBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.textInverse },
 });

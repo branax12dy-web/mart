@@ -69,6 +69,40 @@ const blueMist = "#93C5FD";
 const redMist = "#FCA5A5";
 const blueLightBorder = "#B3D4FF";
 const royalBlue = "#2563EB";
+const greenBright = "#16A34A";
+const greenBg = "#F0FDF4";
+const greenBorder = "#BBF7D0";
+const greenLightBg = "#DCFCE7";
+const greenDeep = "#166534";
+const navyDeep = "#1E40AF";
+const slateDeep = "#1E293B";
+const yellowLightBg = "#FEF9C3";
+const roseBg = "#FFE4E6";
+const roseDeep = "#BE123C";
+const skyBg = "#E0F2FE";
+const skyDark = "#0284C7";
+const purpleMid = "#A78BFA";
+const purpleVivid = "#6D28D9";
+const redDeepest = "#991B1B";
+const grayMid = "#9CA3AF";
+const grayDark = "#374151";
+const silverBg = "#D1D5DB";
+const yellowWarm = "#FFFDE7";
+const peachBg = "#FFF3E0";
+const goldBright = "#FFD700";
+const goldWarm = "#FFB340";
+const silverGray = "#F5F5F5";
+const goldAlpha = "#F59E0B22";
+const bronzeAccent = "#CD7F32";
+const neutralGray = "#8E8E93";
+const whatsappGreen = "#25D366";
+const facebookBlue = "#1877F2";
+const mintGreen = "#00E6A0";
+const slateGray = "#EDF2F7";
+const crimson = "#CE2029";
+const redDeep = "#7F1D1D";
+const blueDeep = "#2B6CB0";
+const greenVivid = "#1B8E3D";
 
 export const spacing = {
   xs: 4,
@@ -253,6 +287,40 @@ export default {
     redMist,
     blueLightBorder,
     royalBlue,
+    greenBright,
+    greenBg,
+    greenBorder,
+    greenLightBg,
+    greenDeep,
+    navyDeep,
+    slateDeep,
+    yellowLightBg,
+    roseBg,
+    roseDeep,
+    skyBg,
+    skyDark,
+    purpleMid,
+    purpleVivid,
+    redDeepest,
+    grayMid,
+    grayDark,
+    silverBg,
+    yellowWarm,
+    peachBg,
+    goldBright,
+    goldWarm,
+    silverGray,
+    goldAlpha,
+    bronzeAccent,
+    neutralGray,
+    whatsappGreen,
+    facebookBlue,
+    mintGreen,
+    slateGray,
+    crimson,
+    redDeep,
+    blueDeep,
+    greenVivid,
     pharmacy: "#AF52DE",
     pharmacyLight: "#F5E6FF",
     parcel: "#FF6B35",

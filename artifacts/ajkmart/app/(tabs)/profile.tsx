@@ -204,11 +204,11 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
                       : <Ionicons name="camera-outline" size={28} color={C.primary} />}
               </View>
               <View style={{ position: "absolute", bottom: 0, right: 0, backgroundColor: C.primary, borderRadius: 12, padding: 4 }}>
-                <Ionicons name="pencil" size={11} color="#fff" />
+                <Ionicons name="pencil" size={11} color={C.textInverse} />
               </View>
             </Pressable>
             {avatarError && pendingAsset && (
-              <Pressable onPress={() => uploadAvatar(pendingAsset)} disabled={avatarUploading} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FEE2E2", paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: "#FCA5A5" }} accessibilityRole="button" accessibilityLabel="Retry avatar upload">
+              <Pressable onPress={() => uploadAvatar(pendingAsset)} disabled={avatarUploading} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.redSoft, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="Retry avatar upload">
                 <Ionicons name="refresh-outline" size={13} color={C.danger} />
                 <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: C.danger }}>Retry Upload</Text>
               </Pressable>
@@ -304,7 +304,7 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
               <Text style={btnStyles.cancelTxt}>Cancel</Text>
             </Pressable>
             <Pressable onPress={save} disabled={saving} style={[btnStyles.save, saving && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel="Save changes" accessibilityState={{ disabled: saving }}>
-              {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={btnStyles.saveTxt}>Save Changes</Text>}
+              {saving ? <ActivityIndicator color={C.textInverse} size="small" /> : <Text style={btnStyles.saveTxt}>Save Changes</Text>}
             </Pressable>
           </View>
         </Pressable>
@@ -535,8 +535,8 @@ function DeleteAccountRow({ token }: { token?: string }) {
               }}
             >
               {deleting
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Delete My Account</Text>}
+                ? <ActivityIndicator color={C.textInverse} size="small" />
+                : <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: C.textInverse }}>Delete My Account</Text>}
             </Pressable>
             <Pressable
               onPress={() => { setConfirmVisible(false); setConfirmText(""); }}
@@ -695,7 +695,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
         <Text style={privRow.sub}>{sub}</Text>
       </View>
       {saving === k ? <ActivityIndicator size="small" color={C.primary} /> : (
-        <Switch value={cfg[k] ?? false} onValueChange={v => toggle(k, v)} trackColor={{ false: C.border, true: C.primary }} thumbColor="#fff" />
+        <Switch value={cfg[k] ?? false} onValueChange={v => toggle(k, v)} trackColor={{ false: C.border, true: C.primary }} thumbColor={C.surface} />
       )}
     </View>
   );
@@ -778,7 +778,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                       <Text style={privRow.sub}>Face ID / Fingerprint</Text>
                     </View>
                     {saving === "biometric" ? <ActivityIndicator size="small" color={C.primary} /> : (
-                      <Switch value={biometricEnabled} onValueChange={handleBiometricToggle} trackColor={{ false: C.border, true: C.primary }} thumbColor="#fff" />
+                      <Switch value={biometricEnabled} onValueChange={handleBiometricToggle} trackColor={{ false: C.border, true: C.primary }} thumbColor={C.surface} />
                     )}
                   </View>
                 )}
@@ -888,9 +888,9 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                       Save these backup codes securely. They cannot be shown again.
                     </Text>
                   </View>
-                  <View style={{ backgroundColor: C.accentSoft, borderRadius: radii.lg, padding: spacing.lg, borderWidth: 1, borderColor: "#FDE68A" }}>
+                  <View style={{ backgroundColor: C.accentSoft, borderRadius: radii.lg, padding: spacing.lg, borderWidth: 1, borderColor: C.amberBorder }}>
                     {backupCodes.map((code, i) => (
-                      <Text key={i} style={{ ...typography.subtitle, color: "#92400E", textAlign: "center", paddingVertical: 4, letterSpacing: 2 }}>{code}</Text>
+                      <Text key={i} style={{ ...typography.subtitle, color: C.amberDark, textAlign: "center", paddingVertical: 4, letterSpacing: 2 }}>{code}</Text>
                     ))}
                   </View>
                   <Pressable
@@ -910,7 +910,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                   </Text>
                   {twoFAQR ? (
                     <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
-                      <View style={{ backgroundColor: "#fff", borderRadius: radii.lg, padding: spacing.md, borderWidth: 1, borderColor: C.border }}>
+                      <View style={{ backgroundColor: C.surface, borderRadius: radii.lg, padding: spacing.md, borderWidth: 1, borderColor: C.border }}>
                         <Image source={{ uri: twoFAQR }} style={{ width: 200, height: 200 }} resizeMode="contain" />
                       </View>
                       <Text style={{ ...typography.caption, color: C.textMuted, marginTop: spacing.sm }}>Scan with your authenticator app</Text>
@@ -936,7 +936,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                   ) : null}
                   <Pressable onPress={handleVerify2FASetup} disabled={twoFALoading}
                     style={[primaryBtn.base, twoFALoading && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel="Verify and enable 2FA" accessibilityState={{ disabled: twoFALoading }}>
-                    {twoFALoading ? <ActivityIndicator color="#fff" /> : <Text style={primaryBtn.txt}>Verify & Enable</Text>}
+                    {twoFALoading ? <ActivityIndicator color={C.textInverse} /> : <Text style={primaryBtn.txt}>Verify & Enable</Text>}
                   </Pressable>
                 </>
               )}
@@ -967,7 +967,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
                 </Pressable>
                 <Pressable onPress={handleDisable2FA} disabled={twoFALoading}
                   style={[btnStyles.save, { backgroundColor: C.danger }, twoFALoading && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel="Disable two-factor authentication" accessibilityState={{ disabled: twoFALoading }}>
-                  {twoFALoading ? <ActivityIndicator color="#fff" /> : <Text style={btnStyles.saveTxt}>Disable</Text>}
+                  {twoFALoading ? <ActivityIndicator color={C.textInverse} /> : <Text style={btnStyles.saveTxt}>Disable</Text>}
                 </Pressable>
               </View>
               <Pressable
@@ -1100,7 +1100,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
           <Text style={modalHdr.title}>Saved Addresses</Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <Pressable onPress={() => { if (!showAdd && list.length >= 5) { showToast("Maximum 5 addresses allowed", "error"); return; } setShowAdd(v => !v); }} style={[addrHdr.addBtn, !showAdd && list.length >= 5 && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={showAdd ? "Cancel adding address" : list.length >= 5 ? "Maximum 5 addresses reached" : "Add new address"}>
-              <Ionicons name={showAdd ? "close" : "add"} size={17} color="#fff" />
+              <Ionicons name={showAdd ? "close" : "add"} size={17} color={C.textInverse} />
               <Text style={addrHdr.addBtnTxt}>{showAdd ? "Cancel" : `Add New${list.length > 0 ? ` (${list.length}/5)` : ""}`}</Text>
             </Pressable>
             <Pressable onPress={onClose} style={modalHdr.close} accessibilityRole="button" accessibilityLabel="Close addresses"><Ionicons name="close" size={20} color={C.text} /></Pressable>
@@ -1130,7 +1130,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
               </View>
             </ScrollView>
             <Pressable onPress={add} disabled={saving} style={[primaryBtn.base, saving && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel="Save address" accessibilityState={{ disabled: saving }}>
-              {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={primaryBtn.txt}>Save Address</Text>}
+              {saving ? <ActivityIndicator color={C.textInverse} size="small" /> : <Text style={primaryBtn.txt}>Save Address</Text>}
             </Pressable>
           </View>
         )}
@@ -1141,7 +1141,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
             <Text style={empty.title}>No addresses</Text>
             <Text style={empty.sub}>Save your home or office address</Text>
             <Pressable onPress={() => setShowAdd(true)} style={[primaryBtn.base, { flexDirection: "row", gap: 6, marginTop: spacing.md, alignSelf: "center", width: "auto", paddingHorizontal: spacing.xl }]} accessibilityRole="button" accessibilityLabel="Add address">
-              <Ionicons name="add" size={16} color="#fff" />
+              <Ionicons name="add" size={16} color={C.textInverse} />
               <Text style={primaryBtn.txt}>Add Address</Text>
             </Pressable>
           </View>
@@ -1178,7 +1178,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
                       </ScrollView>
                       <View style={{ flexDirection: "row", gap: 8 }}>
                         <Pressable onPress={saveEdit} disabled={editSaving} style={[primaryBtn.base, { flex: 1, opacity: editSaving ? 0.7 : 1 }]} accessibilityRole="button" accessibilityLabel="Save address changes" accessibilityState={{ disabled: editSaving }}>
-                          {editSaving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={primaryBtn.txt}>Save Changes</Text>}
+                          {editSaving ? <ActivityIndicator color={C.textInverse} size="small" /> : <Text style={primaryBtn.txt}>Save Changes</Text>}
                         </Pressable>
                         <Pressable onPress={cancelEdit} style={[primaryBtn.base, { backgroundColor: C.surfaceSecondary, paddingHorizontal: spacing.md, width: "auto" }]} accessibilityRole="button" accessibilityLabel="Cancel editing">
                           <Text style={[primaryBtn.txt, { color: C.textSecondary }]}>Cancel</Text>
@@ -1341,8 +1341,8 @@ export default function ProfileScreen() {
 
   const roleMap: Record<string, { label: string; colors: [string, string] }> = {
     customer: { label: "Customer",        colors: [C.primaryDark, C.primary] },
-    rider:    { label: "Delivery Rider",  colors: [C.success, "#00E6A0"] },
-    vendor:   { label: "Store Vendor",    colors: [C.accent, "#FFB340"] },
+    rider:    { label: "Delivery Rider",  colors: [C.success, C.mintGreen] },
+    vendor:   { label: "Store Vendor",    colors: [C.accent, C.goldWarm] },
   };
   const role = roleMap[user?.role || "customer"] || roleMap.customer!;
   const initials = user?.name
@@ -1350,9 +1350,9 @@ export default function ProfileScreen() {
     : user?.phone?.slice(-2) || "U";
 
   const LEVEL_CONFIG: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-    bronze: { color: "#CD7F32", bg: "#FFF3E0", icon: "shield-outline", label: "Bronze" },
-    silver: { color: "#8E8E93", bg: "#F5F5F5", icon: "shield-half-outline", label: "Silver" },
-    gold:   { color: "#FFD700", bg: "#FFFDE7", icon: "shield-checkmark-outline", label: "Gold" },
+    bronze: { color: C.bronzeAccent, bg: C.peachBg, icon: "shield-outline", label: "Bronze" },
+    silver: { color: C.neutralGray, bg: C.silverGray, icon: "shield-half-outline", label: "Silver" },
+    gold:   { color: C.goldBright, bg: C.yellowWarm, icon: "shield-checkmark-outline", label: "Gold" },
   };
   const accountLevel = user?.accountLevel || "bronze";
   const levelInfo = LEVEL_CONFIG[accountLevel] || LEVEL_CONFIG.bronze!;
@@ -1426,7 +1426,7 @@ export default function ProfileScreen() {
               </View>
             </View>
             <Pressable onPress={() => setShowEdit(true)} style={ph.editBtn} accessibilityRole="button" accessibilityLabel="Edit profile">
-              <Ionicons name="pencil" size={16} color="#fff" />
+              <Ionicons name="pencil" size={16} color={C.textInverse} />
             </Pressable>
           </View>
 
@@ -1550,7 +1550,7 @@ export default function ProfileScreen() {
               )}
               {user?.cnic && (
                 <View style={[pi.row, { borderBottomWidth: 0 }]}>
-                  <View style={[pi.iconWrap, { backgroundColor: "#FEF3C7" }]}><Ionicons name="card-outline" size={16} color={C.accent} /></View>
+                  <View style={[pi.iconWrap, { backgroundColor: C.amberSoft }]}><Ionicons name="card-outline" size={16} color={C.accent} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>CNIC</Text>
                     <Text style={pi.value}>{user.cnic.replace(/(\d{5})(\d{7})(\d{1})/, "$1-$2-$3")}</Text>
@@ -1569,7 +1569,7 @@ export default function ProfileScreen() {
 
         <Pressable onPress={() => router.push("/(tabs)/wallet")} style={wb.wrap} accessibilityRole="button" accessibilityLabel={`${platformCfg.appName} wallet, Rs. ${(user?.walletBalance || 0).toLocaleString()}, tap to manage`}>
           <LinearGradient colors={[C.primaryDark, C.primary]} style={wb.grad}>
-            <Ionicons name="wallet" size={18} color="#fff" />
+            <Ionicons name="wallet" size={18} color={C.textInverse} />
           </LinearGradient>
           <View style={{ flex: 1, marginLeft: spacing.md }}>
             <Text style={wb.lbl}>{platformCfg.appName} {T("wallet")}</Text>
@@ -1602,9 +1602,9 @@ export default function ProfileScreen() {
         )}
 
         {platformConfig.customer.loyaltyEnabled && (
-          <View style={[rc.wrap, { borderColor: "#F59E0B22", backgroundColor: C.accentSoft }]}>
+          <View style={[rc.wrap, { borderColor: C.goldAlpha, backgroundColor: C.accentSoft }]}>
             <View style={rc.left}>
-              <View style={[rc.iconBox, { backgroundColor: "#FEF3C7" }]}>
+              <View style={[rc.iconBox, { backgroundColor: C.amberSoft }]}>
                 <Ionicons name="star-outline" size={22} color={C.accent} />
               </View>
               <View style={{ flex: 1 }}>
@@ -1612,8 +1612,8 @@ export default function ProfileScreen() {
                 <Text style={rc.sub}>Earn {platformConfig.customer.loyaltyPtsPerRs100} points for every Rs. 100 spent</Text>
                 <View style={rc.codeRow}>
                   <Text style={rc.codeLabel}>You can earn:</Text>
-                  <View style={[rc.codePill, { backgroundColor: "#FDE68A" }]}>
-                    <Text style={[rc.code, { color: "#92400E" }]}>{platformConfig.customer.loyaltyPtsPerRs100} pts / Rs.100</Text>
+                  <View style={[rc.codePill, { backgroundColor: C.amberBorder }]}>
+                    <Text style={[rc.code, { color: C.amberDark }]}>{platformConfig.customer.loyaltyPtsPerRs100} pts / Rs.100</Text>
                   </View>
                 </View>
               </View>
@@ -1634,7 +1634,7 @@ export default function ProfileScreen() {
           <Row icon="bicycle-outline"  label={T("rides")}         sub={`${stats.rides} ${T("ridesCount")}`}          onPress={() => router.push("/ride")}            iconColor={C.info}   iconBg={C.infoSoft} />
           <Row icon="medkit-outline"   label={T("pharmacy")}         sub={T("medicineOrderHistory")}               onPress={() => router.push("/pharmacy")}        iconColor={C.pharmacy}   iconBg={C.pharmacyLight} />
           <Row icon="cube-outline"     label={T("parcelBookings")}  sub={T("courierHistory")}             onPress={() => router.push("/parcel")}          iconColor={C.parcel}   iconBg={C.parcelLight} />
-          <Row icon="star-outline"     label={T("myReviews")}       sub={T("customerFeedback")}           onPress={() => router.push("/my-reviews")}      iconColor="#f59e0b"    iconBg="#fffbeb" />
+          <Row icon="star-outline"     label={T("myReviews")}       sub={T("customerFeedback")}           onPress={() => router.push("/my-reviews")}      iconColor={C.gold}    iconBg={C.amberBg} />
           <Row icon="location-outline" label={T("savedAddresses")}  sub={T("savedAddressesSub")}    onPress={() => setShowAddrs(true)}              iconColor={C.mart}    iconBg={C.martLight} />
         </SectionCard>
 
@@ -1678,14 +1678,14 @@ export default function ProfileScreen() {
                    label={T("liveChatLabel")}
                    sub={platformCfg.supportMsg}
                    onPress={() => Linking.openURL(`https://wa.me/${platformCfg.supportPhone.replace(/^0/, "92")}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
-                   iconColor="#25D366" iconBg="#DCFCE7" />
+                   iconColor={C.whatsappGreen} iconBg={C.greenLightBg} />
             )}
             {(platformCfg.socialFacebook || platformCfg.socialInstagram) && (
               <Row icon="share-social-outline"
                    label={T("followUsLabel")}
                    sub={[platformCfg.socialFacebook && "Facebook", platformCfg.socialInstagram && "Instagram"].filter(Boolean).join(" • ")}
                    onPress={() => Linking.openURL(platformCfg.socialFacebook || platformCfg.socialInstagram).catch(() => {})}
-                   iconColor="#1877F2" iconBg={C.primarySoft} />
+                   iconColor={C.facebookBlue} iconBg={C.primarySoft} />
             )}
             {platformCfg.tncUrl ? (
               <Row icon="document-text-outline"
@@ -1754,7 +1754,7 @@ export default function ProfileScreen() {
                   <Text style={btnStyles.cancelTxt}>{T("cancelNo")}</Text>
                 </Pressable>
                 <Pressable onPress={doSignOut} disabled={signingOut} style={[btnStyles.save, { backgroundColor: C.danger }, signingOut && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel={T("signOutYes")}>
-                  {signingOut ? <ActivityIndicator color="#fff" size="small" /> : <Text style={btnStyles.saveTxt}>{T("signOutYes")}</Text>}
+                  {signingOut ? <ActivityIndicator color={C.textInverse} size="small" /> : <Text style={btnStyles.saveTxt}>{T("signOutYes")}</Text>}
                 </Pressable>
               </View>
             </View>
@@ -1811,16 +1811,16 @@ const ph = StyleSheet.create({
   card: { paddingHorizontal: spacing.lg, paddingBottom: 0, overflow: "hidden" },
   blob: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.1)" },
   avatar: { width: 68, height: 68, borderRadius: radii.xl, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.4)" },
-  avatarTxt: { fontFamily: "Inter_700Bold", fontSize: 26, color: "#fff" },
-  name: { ...typography.h3, color: "#fff", marginBottom: 2 },
+  avatarTxt: { fontFamily: "Inter_700Bold", fontSize: 26, color: C.textInverse },
+  name: { ...typography.h3, color: C.textInverse, marginBottom: 2 },
   phone: { ...typography.captionMedium, color: "rgba(255,255,255,0.85)" },
   email: { ...typography.caption, color: "rgba(255,255,255,0.7)", marginTop: 1 },
   roleBadge: { backgroundColor: "rgba(255,255,255,0.22)", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radii.full, alignSelf: "flex-start", marginTop: 6 },
-  roleTxt: { ...typography.smallMedium, color: "#fff" },
+  roleTxt: { ...typography.smallMedium, color: C.textInverse },
   editBtn: { width: 38, height: 38, borderRadius: radii.md, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   statsStrip: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.15)", borderRadius: radii.lg, marginTop: spacing.lg, marginBottom: spacing.lg, padding: spacing.md },
   stat: { flex: 1, alignItems: "center" },
-  statVal: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },
+  statVal: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.textInverse },
   statLbl: { ...typography.small, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   statDiv: { width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.25)" },
 });
@@ -1835,14 +1835,14 @@ const wb = StyleSheet.create({
 });
 
 const rc = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", backgroundColor: C.infoSoft, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: "#C7D2FE" },
+  wrap: { flexDirection: "row", alignItems: "center", backgroundColor: C.infoSoft, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: C.indigoBorder },
   left: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md, flex: 1 },
-  iconBox: { width: 44, height: 44, borderRadius: radii.lg, backgroundColor: "#E0E7FF", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  iconBox: { width: 44, height: 44, borderRadius: radii.lg, backgroundColor: C.indigoSoft, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   title: { ...typography.subtitle, color: C.text, marginBottom: 3 },
   sub: { ...typography.caption, color: C.textSecondary, lineHeight: 17, marginBottom: spacing.sm },
   codeRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   codeLabel: { ...typography.smallMedium, color: C.textMuted },
-  codePill: { backgroundColor: "#C7D2FE", paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.full },
+  codePill: { backgroundColor: C.indigoBorder, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.full },
   code: { fontFamily: "Inter_700Bold", fontSize: 12, color: C.info, letterSpacing: 1 },
 });
 
@@ -1860,7 +1860,7 @@ const row = StyleSheet.create({
   label: { ...typography.bodyMedium, color: C.text },
   sub: { ...typography.small, color: C.textMuted, marginTop: 1 },
   badge: { backgroundColor: C.danger, borderRadius: 10, minWidth: 20, height: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 5, marginRight: 4 },
-  badgeTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff" },
+  badgeTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: C.textInverse },
 });
 
 const appInfo = StyleSheet.create({
@@ -1906,7 +1906,7 @@ const chip = StyleSheet.create({
 });
 
 const errStyle = StyleSheet.create({
-  box: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.dangerSoft, borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: spacing.sm, borderWidth: 1, borderColor: "#FECACA" },
+  box: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.dangerSoft, borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: spacing.sm, borderWidth: 1, borderColor: C.redBorder },
   txt: { ...typography.captionMedium, color: C.danger, flex: 1 },
 });
 
@@ -1914,12 +1914,12 @@ const btnStyles = StyleSheet.create({
   cancel: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, paddingVertical: 14, alignItems: "center" },
   cancelTxt: { ...typography.bodySemiBold, color: C.textSecondary },
   save: { flex: 2, backgroundColor: C.primary, borderRadius: radii.lg, paddingVertical: 14, alignItems: "center" },
-  saveTxt: { ...typography.button, color: "#fff" },
+  saveTxt: { ...typography.button, color: C.textInverse },
 });
 
 const primaryBtn = StyleSheet.create({
   base: { backgroundColor: C.primary, borderRadius: radii.lg, paddingVertical: spacing.lg, alignItems: "center", ...shadows.md },
-  txt: { ...typography.button, color: "#fff" },
+  txt: { ...typography.button, color: C.textInverse },
 });
 
 const otpStyle = StyleSheet.create({
@@ -1969,7 +1969,7 @@ const secCard = StyleSheet.create({
 
 const addrHdr = StyleSheet.create({
   addBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.primary, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radii.md },
-  addBtnTxt: { ...typography.captionMedium, color: "#fff" },
+  addBtnTxt: { ...typography.captionMedium, color: C.textInverse },
 });
 
 const addrAdd = StyleSheet.create({
@@ -1986,7 +1986,7 @@ const addrItem = StyleSheet.create({
   city: { ...typography.small, color: C.textMuted, marginTop: 1 },
   defBadge: { backgroundColor: C.successSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radii.full },
   defTxt: { ...typography.smallMedium, color: C.success },
-  setDefBtn: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radii.sm, backgroundColor: C.primarySoft, borderWidth: 1, borderColor: "#B3D4FF" },
+  setDefBtn: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radii.sm, backgroundColor: C.primarySoft, borderWidth: 1, borderColor: C.blueLightBorder },
   setDefTxt: { ...typography.smallMedium, color: C.primary },
   delBtn: { width: 30, height: 30, borderRadius: radii.sm, alignItems: "center", justifyContent: "center" },
 });

@@ -30,11 +30,11 @@ function StarRating({ rating, size = 14 }: { rating: number; size?: number }) {
   const stars = [];
   for (let i = 1; i <= 5; i++) {
     if (i <= Math.floor(rating)) {
-      stars.push(<Ionicons key={i} name="star" size={size} color="#F59E0B" />);
+      stars.push(<Ionicons key={i} name="star" size={size} color={C.gold} />);
     } else if (i - 0.5 <= rating) {
-      stars.push(<Ionicons key={i} name="star-half" size={size} color="#F59E0B" />);
+      stars.push(<Ionicons key={i} name="star-half" size={size} color={C.gold} />);
     } else {
-      stars.push(<Ionicons key={i} name="star-outline" size={size} color="#D1D5DB" />);
+      stars.push(<Ionicons key={i} name="star-outline" size={size} color={C.silverBg} />);
     }
   }
   return <View style={{ flexDirection: "row", gap: 1 }}>{stars}</View>;
@@ -160,7 +160,7 @@ export default function ProductDetailScreen() {
           <Text style={styles.errorTitle}>Could not load product</Text>
           <Text style={styles.errorSub}>Check your connection and try again</Text>
           <Pressable onPress={() => refetch()} style={styles.retryBtn}>
-            <Ionicons name="refresh-outline" size={16} color="#fff" />
+            <Ionicons name="refresh-outline" size={16} color={C.textInverse} />
             <Text style={styles.retryBtnTxt}>Retry</Text>
           </Pressable>
         </View>
@@ -200,11 +200,11 @@ export default function ProductDetailScreen() {
 
       <View style={[styles.floatingHeader, { paddingTop: topPad + 8 }]}>
         <Pressable onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
+          <Ionicons name="arrow-back" size={22} color={C.textInverse} />
         </Pressable>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <Pressable onPress={() => router.push("/cart")} style={styles.headerBtn}>
-            <Ionicons name="bag-outline" size={22} color="#fff" />
+            <Ionicons name="bag-outline" size={22} color={C.textInverse} />
             {itemCount > 0 && (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeTxt}>{itemCount}</Text>
@@ -239,7 +239,7 @@ export default function ProductDetailScreen() {
               keyExtractor={(_, i) => String(i)}
             />
           ) : (
-            <LinearGradient colors={["#F1F5F9", "#E2E8F0"]} style={[styles.placeholderImage, { height: IMAGE_H }]}>
+            <LinearGradient colors={[C.background, C.border]} style={[styles.placeholderImage, { height: IMAGE_H }]}>
               <Ionicons
                 name={productType === "food" ? "restaurant-outline" : productType === "pharmacy" ? "medical-outline" : "basket-outline"}
                 size={64}
@@ -311,7 +311,7 @@ export default function ProductDetailScreen() {
               </View>
               {product.deliveryTime && (
                 <View style={styles.deliveryBadge}>
-                  <Ionicons name="time-outline" size={12} color="#059669" />
+                  <Ionicons name="time-outline" size={12} color={C.emerald} />
                   <Text style={styles.deliveryTime}>{product.deliveryTime}</Text>
                 </View>
               )}
@@ -357,7 +357,7 @@ export default function ProductDetailScreen() {
                 </View>
               )}
               <View style={styles.specItem}>
-                <Ionicons name={product.inStock ? "checkmark-circle-outline" : "close-circle-outline"} size={16} color={product.inStock ? "#059669" : C.danger} />
+                <Ionicons name={product.inStock ? "checkmark-circle-outline" : "close-circle-outline"} size={16} color={product.inStock ? C.emerald : C.danger} />
                 <View>
                   <Text style={styles.specLabel}>Availability</Text>
                   <Text style={styles.specValue}>{product.inStock ? "Available" : "Unavailable"}</Text>
@@ -385,7 +385,7 @@ export default function ProductDetailScreen() {
                       return (
                         <View key={star} style={styles.ratingBarRow}>
                           <Text style={styles.ratingBarLabel}>{star}</Text>
-                          <Ionicons name="star" size={10} color="#F59E0B" />
+                          <Ionicons name="star" size={10} color={C.gold} />
                           <View style={styles.ratingBarTrack}>
                             <View style={[styles.ratingBarFill, { width: `${pct}%` }]} />
                           </View>
@@ -452,7 +452,7 @@ export default function ProductDetailScreen() {
             disabled={!product.inStock}
             style={[styles.addToCartBtn, added && styles.addToCartBtnDone, !product.inStock && styles.addToCartBtnDisabled]}
           >
-            <Ionicons name={added ? "checkmark-circle" : "bag-add-outline"} size={20} color="#fff" />
+            <Ionicons name={added ? "checkmark-circle" : "bag-add-outline"} size={20} color={C.textInverse} />
             <Text style={styles.addToCartTxt}>
               {!product.inStock ? "Out of Stock" : added ? "Added to Cart!" : "Add to Cart"}
             </Text>
@@ -493,18 +493,18 @@ const styles = StyleSheet.create({
     borderRadius: 9, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center",
     paddingHorizontal: 4,
   },
-  cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff" },
+  cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: C.textInverse },
 
   imageContainer: { position: "relative" },
   placeholderImage: { width: SCREEN_W, alignItems: "center", justifyContent: "center" },
   dotRow: { position: "absolute", bottom: 16, alignSelf: "center", flexDirection: "row", gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.5)" },
-  dotActive: { backgroundColor: "#fff", width: 20 },
+  dotActive: { backgroundColor: C.surface, width: 20 },
   discountBadge: {
     position: "absolute", top: 16, left: 16, backgroundColor: C.danger,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12,
   },
-  discountTxt: { fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" },
+  discountTxt: { fontFamily: "Inter_700Bold", fontSize: 13, color: C.textInverse },
 
   contentContainer: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -24, paddingTop: 24, paddingHorizontal: 16 },
 
@@ -513,14 +513,14 @@ const styles = StyleSheet.create({
   unit: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, marginTop: 4 },
   stockBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.successSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   stockDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.success },
-  stockTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#059669" },
+  stockTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: C.emerald },
 
   priceRow: { flexDirection: "row", alignItems: "baseline", gap: 10, marginBottom: 12 },
   price: { fontFamily: "Inter_700Bold", fontSize: 26, color: C.primary },
   origPrice: { fontFamily: "Inter_400Regular", fontSize: 16, color: C.textMuted, textDecorationLine: "line-through" },
 
   ratingSection: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  ratingNum: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#92400E" },
+  ratingNum: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.amberDark },
   reviewCount: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
 
   divider: { height: 1, backgroundColor: C.border, marginVertical: 16 },
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   vendorLabel: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   vendorName: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.text, marginTop: 1 },
   deliveryBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.successSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  deliveryTime: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#059669" },
+  deliveryTime: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: C.emerald },
 
   descSection: {},
   sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.text, marginBottom: 12 },
@@ -555,7 +555,7 @@ const styles = StyleSheet.create({
   ratingBarRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   ratingBarLabel: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.textSecondary, width: 12, textAlign: "right" },
   ratingBarTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: C.surfaceSecondary },
-  ratingBarFill: { height: 6, borderRadius: 3, backgroundColor: "#F59E0B" },
+  ratingBarFill: { height: 6, borderRadius: 3, backgroundColor: C.gold },
 
   relatedSection: { marginBottom: 8 },
   relatedGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -565,7 +565,7 @@ const styles = StyleSheet.create({
   },
   relatedImg: { height: 100, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   relatedDiscBadge: { position: "absolute", top: 6, left: 6, backgroundColor: C.danger, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  relatedDiscTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff" },
+  relatedDiscTxt: { fontFamily: "Inter_700Bold", fontSize: 10, color: C.textInverse },
   relatedBody: { padding: 10 },
   relatedName: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.text, marginBottom: 4, minHeight: 30 },
   relatedPrice: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.primary },
@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 16,
     backgroundColor: C.surface, paddingHorizontal: 16, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: C.border,
-    shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
+    shadowColor: C.text, shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
   },
   footerPriceCol: {},
   footerPriceLabel: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
@@ -587,12 +587,12 @@ const styles = StyleSheet.create({
   },
   addToCartBtnDone: { backgroundColor: C.success },
   addToCartBtnDisabled: { backgroundColor: C.textMuted, shadowOpacity: 0 },
-  addToCartTxt: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },
+  addToCartTxt: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.textInverse },
 
   errorCenter: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   errorIconWrap: { width: 80, height: 80, borderRadius: 24, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   errorTitle: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text },
   errorSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted },
   retryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 4 },
-  retryBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
+  retryBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.textInverse },
 });

@@ -81,16 +81,16 @@ function MedCard({ med, qty, onAdd, onRemove }: {
         {qty > 0 ? (
           <>
             <Pressable onPress={onRemove} style={s.qtyBtn}>
-              <Ionicons name="remove" size={16} color="#7C3AED" />
+              <Ionicons name="remove" size={16} color={C.purple} />
             </Pressable>
             <Text style={s.qtyTxt}>{qty}</Text>
             <Pressable onPress={onAdd} style={s.qtyBtn}>
-              <Ionicons name="add" size={16} color="#7C3AED" />
+              <Ionicons name="add" size={16} color={C.purple} />
             </Pressable>
           </>
         ) : (
           <Pressable onPress={onAdd} style={s.addBtn}>
-            <Ionicons name="add" size={16} color="#fff" />
+            <Ionicons name="add" size={16} color={C.textInverse} />
           </Pressable>
         )}
       </View>
@@ -366,12 +366,12 @@ function PharmacyScreenInner() {
         <Pressable onPress={() => router.back()} style={{ position: "absolute", top: topPad + 12, left: 16 }}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </Pressable>
-        <View style={[s.successCard, { borderColor: "#FEE2E2" }]}>
+        <View style={[s.successCard, { borderColor: C.redSoft }]}>
           <Text style={{ fontSize: 52, marginBottom: 12 }}>🚫</Text>
-          <Text style={[s.successTitle, { color: "#EF4444" }]}>{T("serviceUnavailable")}</Text>
+          <Text style={[s.successTitle, { color: C.redBright }]}>{T("serviceUnavailable")}</Text>
           <Text style={[s.successSub, { marginBottom: 20 }]}>{T("maintenanceApology")}</Text>
-          <Pressable style={[s.successBtn, { backgroundColor: "#FEF2F2" }]} onPress={() => router.back()}>
-            <Text style={[s.successBtnTxt, { color: "#EF4444" }]}>{T("backToHome")}</Text>
+          <Pressable style={[s.successBtn, { backgroundColor: C.redBg }]} onPress={() => router.back()}>
+            <Text style={[s.successBtnTxt, { color: C.redBright }]}>{T("backToHome")}</Text>
           </Pressable>
         </View>
       </View>
@@ -381,9 +381,9 @@ function PharmacyScreenInner() {
   if (inMaintenance) {
     return (
       <View style={[s.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
-        <View style={[s.successCard, { borderColor: "#FEF3C7" }]}>
+        <View style={[s.successCard, { borderColor: C.amberSoft }]}>
           <Text style={{ fontSize: 52, marginBottom: 12 }}>🔧</Text>
-          <Text style={[s.successTitle, { color: "#D97706" }]}>{T("underMaintenance")}</Text>
+          <Text style={[s.successTitle, { color: C.amber }]}>{T("underMaintenance")}</Text>
           <Text style={[s.successSub, { marginBottom: 20 }]}>{config.content.maintenanceMsg}</Text>
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, textAlign: "center" }}>
             {T("maintenanceApology")}
@@ -398,8 +398,8 @@ function PharmacyScreenInner() {
       <View style={[s.root, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
         <View style={s.successCard}>
           <View style={s.successIconWrap}>
-            <LinearGradient colors={["#7C3AED", "#A78BFA"]} style={s.successIconCircle}>
-              <Ionicons name="checkmark" size={36} color="#fff" />
+            <LinearGradient colors={[C.purple, C.purpleMid]} style={s.successIconCircle}>
+              <Ionicons name="checkmark" size={36} color={C.textInverse} />
             </LinearGradient>
           </View>
           <Text style={s.successTitle}>{T("orderPlaced")}</Text>
@@ -412,16 +412,16 @@ function PharmacyScreenInner() {
             <Text style={s.successMetaTxt} numberOfLines={2}>{address}</Text>
           </View>
           <View style={{ flexDirection: "row", gap: 8, width: "100%", marginTop: 8 }}>
-            <Pressable style={[s.successBtn, { flex: 1, backgroundColor: "#F5F3FF" }]} onPress={() => { setConfirmed(false); router.push("/(tabs)"); }}>
-              <Text style={[s.successBtnTxt, { color: "#7C3AED" }]}>{T("backToHome")}</Text>
+            <Pressable style={[s.successBtn, { flex: 1, backgroundColor: C.purpleBg }]} onPress={() => { setConfirmed(false); router.push("/(tabs)"); }}>
+              <Text style={[s.successBtnTxt, { color: C.purple }]}>{T("backToHome")}</Text>
             </Pressable>
             <Pressable style={[s.successBtn, { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }]} onPress={() => { setConfirmed(false); router.push({ pathname: "/order", params: { orderId: confirmedOrderId, type: "pharmacy" } }); }}>
-              <Ionicons name="navigate-outline" size={15} color="#fff" />
+              <Ionicons name="navigate-outline" size={15} color={C.textInverse} />
               <Text style={s.successBtnTxt}>Track Order</Text>
             </Pressable>
           </View>
-          <Pressable style={[s.successBtn, { backgroundColor: "#F5F3FF", marginTop: 8, width: "100%" }]} onPress={() => { setConfirmed(false); }}>
-            <Text style={[s.successBtnTxt, { color: "#7C3AED" }]}>{T("orderMore")}</Text>
+          <Pressable style={[s.successBtn, { backgroundColor: C.purpleBg, marginTop: 8, width: "100%" }]} onPress={() => { setConfirmed(false); }}>
+            <Text style={[s.successBtnTxt, { color: C.purple }]}>{T("orderMore")}</Text>
           </Pressable>
         </View>
       </View>
@@ -430,10 +430,10 @@ function PharmacyScreenInner() {
 
   return (
     <View style={s.root}>
-      <LinearGradient colors={["#6D28D9", "#7C3AED", "#A78BFA"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
+      <LinearGradient colors={[C.purpleVivid, C.purple, C.purpleMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
         <View style={s.hdrRow}>
           <Pressable onPress={() => router.back()} style={s.backBtn}>
-            <Ionicons name="arrow-back" size={20} color="#fff" />
+            <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </Pressable>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={s.hdrTitle}>💊 {T("pharmacy")}</Text>
@@ -441,7 +441,7 @@ function PharmacyScreenInner() {
           </View>
           {cartCount > 0 && (
             <Pressable onPress={() => setShowCheckout(true)} style={s.cartPill}>
-              <Ionicons name="cart" size={16} color="#fff" />
+              <Ionicons name="cart" size={16} color={C.textInverse} />
               <Text style={s.cartPillTxt}>{cartCount} {T("itemsLabel")}</Text>
             </Pressable>
           )}
@@ -472,7 +472,7 @@ function PharmacyScreenInner() {
       </ScrollView>
 
       <View style={s.rxNotice}>
-        <Ionicons name="information-circle-outline" size={14} color="#7C3AED" />
+        <Ionicons name="information-circle-outline" size={14} color={C.purple} />
         <Text style={s.rxNoticeTxt}><Text style={{ fontFamily: "Inter_600SemiBold" }}>Rx</Text> {T("rxNotice")}</Text>
       </View>
 
@@ -481,26 +481,26 @@ function PharmacyScreenInner() {
           <>
             {[0,1,2,3,4,5,6].map(i => (
               <View key={i} style={[s.medCard, { opacity: 1 - i * 0.08 }]}>
-                <View style={[s.medEmoji, { backgroundColor: "#EDE9FE" }]} />
+                <View style={[s.medEmoji, { backgroundColor: C.purpleSoft }]} />
                 <View style={{ flex: 1, gap: 6 }}>
-                  <View style={{ height: 13, width: "65%", backgroundColor: "#EDE9FE", borderRadius: 6 }} />
-                  <View style={{ height: 10, width: "45%", backgroundColor: "#F5F3FF", borderRadius: 5 }} />
-                  <View style={{ height: 10, width: "30%", backgroundColor: "#F5F3FF", borderRadius: 5 }} />
-                  <View style={{ height: 12, width: "40%", backgroundColor: "#EDE9FE", borderRadius: 6 }} />
+                  <View style={{ height: 13, width: "65%", backgroundColor: C.purpleSoft, borderRadius: 6 }} />
+                  <View style={{ height: 10, width: "45%", backgroundColor: C.purpleBg, borderRadius: 5 }} />
+                  <View style={{ height: 10, width: "30%", backgroundColor: C.purpleBg, borderRadius: 5 }} />
+                  <View style={{ height: 12, width: "40%", backgroundColor: C.purpleSoft, borderRadius: 6 }} />
                 </View>
-                <View style={{ width: 80, height: 32, backgroundColor: "#EDE9FE", borderRadius: 10 }} />
+                <View style={{ width: 80, height: 32, backgroundColor: C.purpleSoft, borderRadius: 10 }} />
               </View>
             ))}
           </>
         ) : medsError ? (
           <View style={s.centerState}>
             <View style={s.errorIconWrap}>
-              <Ionicons name="cloud-offline-outline" size={48} color="#9CA3AF" />
+              <Ionicons name="cloud-offline-outline" size={48} color={C.grayMid} />
             </View>
             <Text style={s.errorTitle}>{T("cannotLoad")}</Text>
             <Text style={s.errorSub}>{T("checkInternet")}</Text>
             <Pressable onPress={loadMeds} style={s.retryBtn}>
-              <Ionicons name="refresh-outline" size={16} color="#fff" />
+              <Ionicons name="refresh-outline" size={16} color={C.textInverse} />
               <Text style={s.retryBtnTxt}>{T("retry")}</Text>
             </Pressable>
           </View>
@@ -531,7 +531,7 @@ function PharmacyScreenInner() {
           </View>
           <Pressable style={s.checkoutBtn} onPress={() => setShowCheckout(true)}>
             <Text style={s.checkoutBtnTxt}>{T("placeOrder")}</Text>
-            <Ionicons name="arrow-forward" size={16} color="#fff" />
+            <Ionicons name="arrow-forward" size={16} color={C.textInverse} />
           </Pressable>
         </View>
       )}
@@ -561,7 +561,7 @@ function PharmacyScreenInner() {
             </View>
             <View style={s.orderItem}>
               <Text style={[s.orderItemName, { fontFamily: "Inter_700Bold", fontSize: 15 }]}>{T("totalLabel")}</Text>
-              <Text style={[s.orderItemPrice, { fontFamily: "Inter_700Bold", fontSize: 15, color: "#7C3AED" }]}>Rs. {cartTotal.toLocaleString()}</Text>
+              <Text style={[s.orderItemPrice, { fontFamily: "Inter_700Bold", fontSize: 15, color: C.purple }]}>Rs. {cartTotal.toLocaleString()}</Text>
             </View>
           </View>
 
@@ -570,9 +570,9 @@ function PharmacyScreenInner() {
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
               <Text style={s.label}>{T("deliveryAddress")} *</Text>
               {savedAddresses.length > 0 && (
-                <Pressable onPress={() => setShowAddressPicker(true)} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#EDE9FE", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
-                  <Ionicons name="bookmark-outline" size={12} color="#7C3AED" />
-                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#7C3AED" }}>Saved</Text>
+                <Pressable onPress={() => setShowAddressPicker(true)} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.purpleSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Ionicons name="bookmark-outline" size={12} color={C.purple} />
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: C.purple }}>Saved</Text>
                 </Pressable>
               )}
             </View>
@@ -605,26 +605,26 @@ function PharmacyScreenInner() {
               numberOfLines={3}
             />
             <Pressable onPress={pickPrescriptionPhoto} style={s.photoPickerBtn}>
-              <Ionicons name="camera-outline" size={18} color="#7C3AED" />
+              <Ionicons name="camera-outline" size={18} color={C.purple} />
               <Text style={s.photoPickerTxt}>
                 {prescriptionPhotoUri ? "Change Prescription Photo" : "Attach Prescription Photo"}
               </Text>
             </Pressable>
             {prescriptionPhotoUri && (
-              <View style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: "#DDD6FE" }}>
+              <View style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: C.purpleBorder }}>
                 <Image source={{ uri: prescriptionPhotoUri }} style={{ width: "100%", height: 140 }} resizeMode="cover" />
                 <Pressable
                   onPress={() => setPrescriptionPhotoUri(null)}
                   style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 12, padding: 4 }}
                 >
-                  <Ionicons name="close" size={16} color="#fff" />
+                  <Ionicons name="close" size={16} color={C.textInverse} />
                 </Pressable>
                 <Pressable
                   onPress={pickPrescriptionPhoto}
                   style={{ position: "absolute", bottom: 8, right: 8, backgroundColor: "rgba(124,58,237,0.85)", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5, flexDirection: "row", alignItems: "center", gap: 4 }}
                 >
-                  <Ionicons name="refresh-outline" size={12} color="#fff" />
-                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: "#fff" }}>Retry</Text>
+                  <Ionicons name="refresh-outline" size={12} color={C.textInverse} />
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: C.textInverse }}>Retry</Text>
                 </Pressable>
               </View>
             )}
@@ -635,10 +635,10 @@ function PharmacyScreenInner() {
             <View style={s.payRow}>
               {cartTotal <= config.orderRules.maxCodAmount ? (
                 <Pressable onPress={() => setPayMethod("cash")} style={[s.payOpt, payMethod === "cash" && s.payOptActive]}>
-                  <View style={[s.payOptIconWrap, { backgroundColor: payMethod === "cash" ? "#D1FAE5" : C.surfaceSecondary }]}>
-                    <Ionicons name="cash-outline" size={20} color={payMethod === "cash" ? "#059669" : C.textMuted} />
+                  <View style={[s.payOptIconWrap, { backgroundColor: payMethod === "cash" ? C.emeraldSoft : C.surfaceSecondary }]}>
+                    <Ionicons name="cash-outline" size={20} color={payMethod === "cash" ? C.emerald : C.textMuted} />
                   </View>
-                  <Text style={[s.payOptTxt, payMethod === "cash" && { color: "#059669" }]}>{T("cashOnDelivery")}</Text>
+                  <Text style={[s.payOptTxt, payMethod === "cash" && { color: C.emerald }]}>{T("cashOnDelivery")}</Text>
                 </Pressable>
               ) : (
                 <View style={[s.payOpt, { opacity: 0.4 }]}>
@@ -650,7 +650,7 @@ function PharmacyScreenInner() {
               )}
               {config.features.wallet && (
                 <Pressable onPress={() => setPayMethod("wallet")} style={[s.payOpt, payMethod === "wallet" && s.payOptActive]}>
-                  <View style={[s.payOptIconWrap, { backgroundColor: payMethod === "wallet" ? "#EFF6FF" : C.surfaceSecondary }]}>
+                  <View style={[s.payOptIconWrap, { backgroundColor: payMethod === "wallet" ? C.blueSoft : C.surfaceSecondary }]}>
                     <Ionicons name="wallet-outline" size={20} color={payMethod === "wallet" ? C.primary : C.textMuted} />
                   </View>
                   <View>
@@ -663,11 +663,11 @@ function PharmacyScreenInner() {
           </View>
 
           {uploadFailed && (
-            <View style={{ backgroundColor: "#FEF2F2", borderRadius: 14, padding: 14, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: "#FECACA" }}>
-              <Ionicons name="cloud-offline-outline" size={18} color="#DC2626" />
+            <View style={{ backgroundColor: C.redBg, borderRadius: 14, padding: 14, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: C.redBorder }}>
+              <Ionicons name="cloud-offline-outline" size={18} color={C.red} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#991B1B" }}>Prescription upload failed</Text>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#B91C1C", marginTop: 2 }}>Check your connection and tap below to retry</Text>
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.redDeepest }}>Prescription upload failed</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.redDark, marginTop: 2 }}>Check your connection and tap below to retry</Text>
               </View>
             </View>
           )}
@@ -675,7 +675,7 @@ function PharmacyScreenInner() {
           <Pressable style={[s.placeBtn, loading && { opacity: 0.7 }]} onPress={placeOrder} disabled={loading}>
             {loading ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={C.textInverse} />
                 <Text style={[s.placeBtnTxt, { marginLeft: 8 }]}>
                   {isUploading ? "Uploading Prescription…" : "Placing Order…"}
                 </Text>
@@ -683,7 +683,7 @@ function PharmacyScreenInner() {
             ) : (
               <>
                 <Text style={s.placeBtnTxt}>{uploadFailed ? "Retry Upload & Place Order" : `${T("placeOrder")} • Rs. ${cartTotal.toLocaleString()}`}</Text>
-                <Ionicons name={uploadFailed ? "refresh-outline" : "checkmark-circle"} size={18} color="#fff" />
+                <Ionicons name={uploadFailed ? "refresh-outline" : "checkmark-circle"} size={18} color={C.textInverse} />
               </>
             )}
           </Pressable>
@@ -692,20 +692,20 @@ function PharmacyScreenInner() {
 
       <Modal visible={showAddressPicker} transparent animationType="fade" onRequestClose={() => setShowAddressPicker(false)}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }} onPress={() => setShowAddressPicker(false)}>
-          <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 }}>
+          <View style={{ backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 }}>
             <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 16 }}>Saved Addresses</Text>
             {savedAddresses.map((sa: any) => (
               <Pressable
                 key={sa.id}
                 onPress={() => { setAddress(sa.address); setShowAddressPicker(false); }}
-                style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: "#F5F3FF", borderRadius: 12, marginBottom: 8 }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: C.purpleBg, borderRadius: 12, marginBottom: 8 }}
               >
-                <Ionicons name={(sa.icon || "location-outline") as any} size={20} color="#7C3AED" />
+                <Ionicons name={(sa.icon || "location-outline") as any} size={20} color={C.purple} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.text }}>{sa.label}</Text>
                   <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted }} numberOfLines={1}>{sa.address}</Text>
                 </View>
-                {sa.isDefault && <View style={{ backgroundColor: "#7C3AED", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" }}>Default</Text></View>}
+                {sa.isDefault && <View style={{ backgroundColor: C.purple, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: C.textInverse }}>Default</Text></View>}
               </Pressable>
             ))}
           </View>
@@ -714,23 +714,23 @@ function PharmacyScreenInner() {
 
       <Modal visible={showPhotoSourceModal} transparent animationType="fade" onRequestClose={() => setShowPhotoSourceModal(false)}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }} onPress={() => setShowPhotoSourceModal(false)}>
-          <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 }}>
+          <View style={{ backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 }}>
             <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 16, textAlign: "center" }}>
               Attach Prescription
             </Text>
             <Pressable
               onPress={takePhoto}
-              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: "#F5F3FF", borderRadius: 14, marginBottom: 10 }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: C.purpleBg, borderRadius: 14, marginBottom: 10 }}
             >
-              <Ionicons name="camera-outline" size={22} color="#7C3AED" />
-              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#7C3AED" }}>Take Photo</Text>
+              <Ionicons name="camera-outline" size={22} color={C.purple} />
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.purple }}>Take Photo</Text>
             </Pressable>
             <Pressable
               onPress={pickFromGallery}
-              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: "#F5F3FF", borderRadius: 14, marginBottom: 10 }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: C.purpleBg, borderRadius: 14, marginBottom: 10 }}
             >
-              <Ionicons name="image-outline" size={22} color="#7C3AED" />
-              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#7C3AED" }}>Choose from Gallery</Text>
+              <Ionicons name="image-outline" size={22} color={C.purple} />
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.purple }}>Choose from Gallery</Text>
             </Pressable>
             <Pressable
               onPress={() => setShowPhotoSourceModal(false)}
@@ -758,53 +758,53 @@ const s = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 16 },
   hdrRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  hdrTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
+  hdrTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.textInverse },
   hdrSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
   cartPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22 },
-  cartPillTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#fff" },
-  searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
+  cartPillTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.textInverse },
+  searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
   searchInput: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text, padding: 0 },
 
-  tabsScroll: { maxHeight: 52, backgroundColor: "#fff" },
+  tabsScroll: { maxHeight: 52, backgroundColor: C.surface },
   tabsRow: { paddingHorizontal: 12, gap: 8, alignItems: "center", paddingVertical: 8 },
-  tab: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 22, backgroundColor: "#F5F3FF" },
-  tabActive: { backgroundColor: "#7C3AED" },
-  tabTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#7C3AED" },
-  tabTxtActive: { color: "#fff" },
+  tab: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 22, backgroundColor: C.purpleBg },
+  tabActive: { backgroundColor: C.purple },
+  tabTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.purple },
+  tabTxtActive: { color: C.textInverse },
 
-  rxNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#F5F3FF", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#EDE9FE" },
-  rxNoticeTxt: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#7C3AED", flex: 1 },
+  rxNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.purpleBg, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.purpleSoft },
+  rxNoticeTxt: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.purple, flex: 1 },
 
   grid: { paddingHorizontal: 12, paddingTop: 12, gap: 10 },
   centerState: { alignItems: "center", paddingTop: 60, gap: 10 },
   emptyTxt: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.textMuted },
   errorIconWrap: { width: 80, height: 80, borderRadius: 24, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },
-  errorTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#374151" },
-  errorSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280" },
-  retryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#7C3AED", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 4 },
-  retryBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
+  errorTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.grayDark },
+  errorSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.gray },
+  retryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.purple, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 4 },
+  retryBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.textInverse },
 
-  medCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 16, padding: 14, gap: 12, borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  medEmoji: { width: 50, height: 50, borderRadius: 14, backgroundColor: "#F5F3FF", alignItems: "center", justifyContent: "center" },
+  medCard: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderRadius: 16, padding: 14, gap: 12, borderWidth: 1, borderColor: C.border, shadowColor: C.text, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  medEmoji: { width: 50, height: 50, borderRadius: 14, backgroundColor: C.purpleBg, alignItems: "center", justifyContent: "center" },
   medName: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text, flex: 1 },
   medBrand: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginTop: 2 },
   medUnit: { fontFamily: "Inter_400Regular", fontSize: 10, color: C.textMuted },
-  medPrice: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#7C3AED", marginTop: 4 },
-  rxBadge: { backgroundColor: "#FEE2E2", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  rxTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#EF4444" },
+  medPrice: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.purple, marginTop: 4 },
+  rxBadge: { backgroundColor: C.redSoft, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  rxTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: C.redBright },
 
   qtyCtrl: { flexDirection: "row", alignItems: "center", gap: 8 },
-  qtyBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: "#7C3AED", alignItems: "center", justifyContent: "center" },
+  qtyBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: C.purple, alignItems: "center", justifyContent: "center" },
   qtyTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, minWidth: 20, textAlign: "center" },
-  addBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center", shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  addBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.purple, alignItems: "center", justifyContent: "center", shadowColor: C.purple, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
 
-  cartBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 5 },
+  cartBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: C.surface, paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border, shadowColor: C.text, shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 5 },
   cartBarCount: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   cartBarTotal: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text },
-  checkoutBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#7C3AED", paddingHorizontal: 22, paddingVertical: 13, borderRadius: 14, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
-  checkoutBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
+  checkoutBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.purple, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 14, shadowColor: C.purple, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  checkoutBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.textInverse },
 
-  modal: { backgroundColor: "#fff", flex: 1 },
+  modal: { backgroundColor: C.surface, flex: 1 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: C.border },
   modalTitle: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text },
   modalCloseBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" },
@@ -820,26 +820,26 @@ const s = StyleSheet.create({
 
   label: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.text, marginBottom: 6, marginTop: 12 },
   input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: "Inter_400Regular", fontSize: 13, color: C.text, backgroundColor: C.surfaceSecondary },
-  photoPickerBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5, borderColor: "#DDD6FE", backgroundColor: "#F5F3FF" },
-  photoPickerTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#7C3AED" },
+  photoPickerBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.purpleBorder, backgroundColor: C.purpleBg },
+  photoPickerTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.purple },
 
   payRow: { gap: 10 },
   payOpt: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.border },
-  payOptActive: { borderColor: "#7C3AED", backgroundColor: "#F5F3FF" },
+  payOptActive: { borderColor: C.purple, backgroundColor: C.purpleBg },
   payOptIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   payOptTxt: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.textMuted },
   walletBal: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted, marginTop: 2 },
 
-  placeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, margin: 16, backgroundColor: "#7C3AED", borderRadius: 16, paddingVertical: 16, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  placeBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" },
+  placeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, margin: 16, backgroundColor: C.purple, borderRadius: 16, paddingVertical: 16, shadowColor: C.purple, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  placeBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.textInverse },
 
-  successCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, alignItems: "center", width: "100%", borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 5 },
+  successCard: { backgroundColor: C.surface, borderRadius: 24, padding: 28, alignItems: "center", width: "100%", borderWidth: 1, borderColor: C.border, shadowColor: C.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 5 },
   successIconWrap: { marginBottom: 16 },
   successIconCircle: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
   successTitle: { fontFamily: "Inter_700Bold", fontSize: 24, color: C.text, marginBottom: 8 },
   successSub: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 20, marginBottom: 16 },
   successMeta: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginBottom: 20, width: "100%" },
   successMetaTxt: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, flex: 1 },
-  successBtn: { width: "100%", alignItems: "center", backgroundColor: "#7C3AED", borderRadius: 16, paddingVertical: 15 },
-  successBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" },
+  successBtn: { width: "100%", alignItems: "center", backgroundColor: C.purple, borderRadius: 16, paddingVertical: 15 },
+  successBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.textInverse },
 });

@@ -83,7 +83,7 @@ function AddressPickerModal({
                     onPress={() => { onSelect(addr); onClose(); }}
                     style={[styles.addrOpt, isSel && styles.addrOptSel]}
                   >
-                    <View style={[styles.addrOptIcon, { backgroundColor: isSel ? "#DBEAFE" : C.surfaceSecondary }]}>
+                    <View style={[styles.addrOptIcon, { backgroundColor: isSel ? C.brandBlueSoft : C.surfaceSecondary }]}>
                       <Ionicons name={(addr.icon as any) || "location-outline"} size={20} color={isSel ? C.primary : C.textSecondary} />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -105,7 +105,7 @@ function AddressPickerModal({
             </ScrollView>
           )}
           <Pressable onPress={() => { onClose(); router.push({ pathname: "/(tabs)/profile", params: { section: "addresses" } }); }} style={[styles.addrOpt, { borderColor: C.primary, borderStyle: "dashed", marginTop: 8 }]}>
-            <View style={[styles.addrOptIcon, { backgroundColor: "#DBEAFE" }]}>
+            <View style={[styles.addrOptIcon, { backgroundColor: C.brandBlueSoft }]}>
               <Ionicons name="add-outline" size={20} color={C.primary} />
             </View>
             <Text style={[styles.addrOptLabel, { color: C.primary }]}>Add New Address</Text>
@@ -716,7 +716,7 @@ export default function CartScreen() {
 
   const gwName = payMethod === "jazzcash" ? "JazzCash" : "EasyPaisa";
   const gwLogo = payMethod === "jazzcash" ? "🔴" : "🟢";
-  const gwColor = payMethod === "jazzcash" ? "#DC2626" : "#16A34A";
+  const gwColor = payMethod === "jazzcash" ? C.red : C.greenBright;
 
   type NumPadBtn = { label: string; action: () => void; isOk?: boolean };
   const numPadRows: NumPadBtn[][] = [
@@ -782,7 +782,7 @@ export default function CartScreen() {
                           borderWidth: 1, borderColor: btn.isOk ? "transparent" : C.border,
                         }}
                       >
-                        <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: btn.isOk ? "#fff" : C.text }}>{btn.label}</Text>
+                        <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: btn.isOk ? C.textInverse : C.text }}>{btn.label}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -838,8 +838,8 @@ export default function CartScreen() {
                     }}
                     style={{ marginTop: 16, backgroundColor: C.primary, borderRadius: 12, paddingHorizontal: 22, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 }}
                   >
-                    <Ionicons name="refresh-outline" size={16} color="#fff" />
-                    <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" }}>Check Payment Status</Text>
+                    <Ionicons name="refresh-outline" size={16} color={C.textInverse} />
+                    <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: C.textInverse }}>Check Payment Status</Text>
                   </Pressable>
                 </>
               ) : (
@@ -857,7 +857,7 @@ export default function CartScreen() {
           {gwStep === "done" && (
             <View style={{ alignItems: "center", paddingVertical: 24 }}>
               <Text style={{ fontSize: 48 }}>✅</Text>
-              <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#16A34A", marginTop: 12 }}>Payment Successful!</Text>
+              <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: C.greenBright, marginTop: 12 }}>Payment Successful!</Text>
               <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: C.textSecondary, marginTop: 6 }}>Placing your order...</Text>
             </View>
           )}
@@ -870,8 +870,8 @@ export default function CartScreen() {
     if (ackStuck) {
       return (
         <View style={[styles.container, { backgroundColor: C.background, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
-          <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: "#FEF9C3", justifyContent: "center", alignItems: "center", marginBottom: 20 }}>
-            <Ionicons name="warning-outline" size={32} color="#B45309" />
+          <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: C.yellowLightBg, justifyContent: "center", alignItems: "center", marginBottom: 20 }}>
+            <Ionicons name="warning-outline" size={32} color={C.amberBrown} />
           </View>
           <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: C.text, textAlign: "center" }}>Taking longer than expected</Text>
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginTop: 10, textAlign: "center", lineHeight: 20 }}>
@@ -881,7 +881,7 @@ export default function CartScreen() {
             onPress={() => router.push("/(tabs)/orders")}
             style={{ marginTop: 24, backgroundColor: C.primary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14 }}
           >
-            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: "#fff" }}>View My Orders</Text>
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.textInverse }}>View My Orders</Text>
           </Pressable>
           <Pressable
             onPress={dismissAck}
@@ -911,21 +911,21 @@ export default function CartScreen() {
     return (
       <View style={[styles.container, { backgroundColor: C.background }]}>
         <View style={styles.successWrap}>
-          <LinearGradient colors={["#065F46", "#059669"]} style={styles.successCircle}>
-            <Ionicons name="checkmark" size={44} color="#fff" />
+          <LinearGradient colors={[C.emeraldDeep, C.emerald]} style={styles.successCircle}>
+            <Ionicons name="checkmark" size={44} color={C.textInverse} />
           </LinearGradient>
           <Text style={styles.successTitle}>Order Placed Successfully!</Text>
           <Text style={styles.successId}>Order #{orderSuccess.id}</Text>
           <Text style={styles.successAddr} numberOfLines={2}>{deliveryLine}</Text>
           <Text style={styles.successEta}>ETA: {orderSuccess.time}</Text>
-          <View style={{ backgroundColor: "#F0FDF4", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, borderWidth: 1, borderColor: "#BBF7D0" }}>
-            <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#166534", textAlign: "center" }}>
+          <View style={{ backgroundColor: C.greenBg, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, borderWidth: 1, borderColor: C.greenBorder }}>
+            <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: C.greenDeep, textAlign: "center" }}>
               Payment: {methodLabel[orderSuccess.payMethod || "cash"] || orderSuccess.payMethod}
             </Text>
           </View>
           <View style={styles.successBtns}>
             <Pressable onPress={() => { clearOrderSuccess(); router.push("/(tabs)/orders"); }} style={styles.trackBtn}>
-              <Ionicons name="navigate-outline" size={16} color="#fff" />
+              <Ionicons name="navigate-outline" size={16} color={C.textInverse} />
               <Text style={styles.trackBtnTxt}>Track Order</Text>
             </Pressable>
             <Pressable onPress={() => { clearOrderSuccess(); router.replace("/(tabs)"); }} style={styles.homeBtn}>
@@ -958,11 +958,11 @@ export default function CartScreen() {
           <Text style={styles.emptyText}>Add items from Mart or Food section</Text>
           <View style={styles.emptyBtns}>
             <Pressable onPress={() => router.push("/mart")} style={styles.emptyBtn}>
-              <Ionicons name="storefront-outline" size={16} color="#fff" />
+              <Ionicons name="storefront-outline" size={16} color={C.textInverse} />
               <Text style={styles.emptyBtnText}>Browse Mart</Text>
             </Pressable>
             <Pressable onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: C.food }]}>
-              <Ionicons name="restaurant-outline" size={16} color="#fff" />
+              <Ionicons name="restaurant-outline" size={16} color={C.textInverse} />
               <Text style={styles.emptyBtnText}>Order Food</Text>
             </Pressable>
           </View>
@@ -974,21 +974,21 @@ export default function CartScreen() {
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
       <LinearGradient
-        colors={["#0D3B93", "#1A56DB", "#3B82F6"]}
+        colors={[C.brandBlueDark, C.brandBlue, C.brandBlueMid]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: topPad + 8 }]}
       >
         <View style={styles.headerRow}>
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
+            <Ionicons name="arrow-back" size={22} color={C.textInverse} />
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>{cartType === "food" ? "Food Order" : "Mart Order"}</Text>
             <Text style={styles.headerSub}>{items.length} item{items.length !== 1 ? "s" : ""} in cart</Text>
           </View>
           <Pressable onPress={() => setShowClearConfirm(true)} style={styles.clearBtn}>
-            <Ionicons name="trash-outline" size={14} color="#fff" />
+            <Ionicons name="trash-outline" size={14} color={C.textInverse} />
             <Text style={styles.clearText}>Clear</Text>
           </Pressable>
         </View>
@@ -1024,14 +1024,14 @@ export default function CartScreen() {
           <Text style={styles.sectionTitle}>Your Items</Text>
           {items.map(item => (
             <Pressable key={item.productId} onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.productId } })} style={styles.cartItem}>
-              <View style={[styles.itemThumb, { backgroundColor: item.type === "food" ? "#FEF3C7" : "#EFF6FF" }]}>
+              <View style={[styles.itemThumb, { backgroundColor: item.type === "food" ? C.amberSoft : C.blueSoft }]}>
                 {item.image ? (
                   <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : (
                   <Ionicons
                     name={item.type === "food" ? "restaurant-outline" : "basket-outline"}
                     size={20}
-                    color={item.type === "food" ? "#D97706" : "#1A56DB"}
+                    color={item.type === "food" ? C.amber : C.brandBlue}
                   />
                 )}
               </View>
@@ -1109,10 +1109,10 @@ export default function CartScreen() {
               jazzcash: "card-outline", easypaisa: "phone-portrait-outline",
             };
             const colorMap: Record<string, { bg: string; tint: string }> = {
-              cash: { bg: "#D1FAE5", tint: C.success },
-              wallet: { bg: "#DBEAFE", tint: C.primary },
-              jazzcash: { bg: "#FEE2E2", tint: "#DC2626" },
-              easypaisa: { bg: "#DCFCE7", tint: "#16A34A" },
+              cash: { bg: C.emeraldSoft, tint: C.success },
+              wallet: { bg: C.brandBlueSoft, tint: C.primary },
+              jazzcash: { bg: C.redSoft, tint: C.red },
+              easypaisa: { bg: C.greenLightBg, tint: C.greenBright },
             };
             const clr = colorMap[method.id] || { bg: C.surfaceSecondary, tint: C.textSecondary };
             const isGateway = method.id === "jazzcash" || method.id === "easypaisa";
@@ -1143,7 +1143,7 @@ export default function CartScreen() {
                 </View>
                 {isGateway && sel && (
                   <View style={{ backgroundColor: clr.tint, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
-                    <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: "#fff" }}>Enter No. →</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: C.textInverse }}>Enter No. →</Text>
                   </View>
                 )}
                 {!isGateway && (
@@ -1161,15 +1161,15 @@ export default function CartScreen() {
           <View style={[styles.summaryCard, { padding: 14 }]}>
             {promoApplied ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ flex: 1, backgroundColor: "#ECFDF5", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={{ flex: 1, backgroundColor: C.emeraldBg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Text style={{ fontSize: 18 }}>🏷️</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold", color: "#065F46" }}>{promoCode}</Text>
-                    <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: "#059669" }}>Rs. {promoDiscount.toLocaleString()} discount applied!</Text>
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold", color: C.emeraldDeep }}>{promoCode}</Text>
+                    <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: C.emerald }}>Rs. {promoDiscount.toLocaleString()} discount applied!</Text>
                   </View>
                 </View>
                 <Pressable onPress={removePromo} style={{ padding: 8 }}>
-                  <Ionicons name="close-circle" size={24} color="#DC2626" />
+                  <Ionicons name="close-circle" size={24} color={C.red} />
                 </Pressable>
               </View>
             ) : (
@@ -1182,7 +1182,7 @@ export default function CartScreen() {
                     placeholderTextColor={C.textSecondary}
                     autoCapitalize="characters"
                     style={{
-                      flex: 1, borderWidth: 1.5, borderColor: promoError ? "#DC2626" : C.border,
+                      flex: 1, borderWidth: 1.5, borderColor: promoError ? C.red : C.border,
                       borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
                       fontSize: 14, color: C.text, backgroundColor: C.surfaceSecondary,
                       fontFamily: "Inter_500Medium", letterSpacing: 1,
@@ -1197,13 +1197,13 @@ export default function CartScreen() {
                     }}
                   >
                     {promoLoading
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={{ color: "#fff", fontFamily: "Inter_700Bold", fontSize: 13 }}>Apply</Text>
+                      ? <ActivityIndicator size="small" color={C.textInverse} />
+                      : <Text style={{ color: C.textInverse, fontFamily: "Inter_700Bold", fontSize: 13 }}>Apply</Text>
                     }
                   </Pressable>
                 </View>
                 {promoError && (
-                  <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: "#DC2626", marginTop: 6, marginLeft: 2 }}>{promoError}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: C.red, marginTop: 6, marginLeft: 2 }}>{promoError}</Text>
                 )}
               </View>
             )}
@@ -1226,13 +1226,13 @@ export default function CartScreen() {
             {finance.gstEnabled && gstAmount > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>GST ({finance.gstPct}%)</Text>
-                <Text style={[styles.summaryValue, { color: "#D97706" }]}>Rs. {gstAmount.toLocaleString()}</Text>
+                <Text style={[styles.summaryValue, { color: C.amber }]}>Rs. {gstAmount.toLocaleString()}</Text>
               </View>
             )}
             {promoDiscount > 0 && (
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: "#059669" }]}>🏷️ Promo ({promoCode})</Text>
-                <Text style={[styles.summaryValue, { color: "#059669" }]}>- Rs. {promoDiscount.toLocaleString()}</Text>
+                <Text style={[styles.summaryLabel, { color: C.emerald }]}>🏷️ Promo ({promoCode})</Text>
+                <Text style={[styles.summaryValue, { color: C.emerald }]}>- Rs. {promoDiscount.toLocaleString()}</Text>
               </View>
             )}
             <View style={[styles.summaryRow, styles.summaryDivider]}>
@@ -1240,17 +1240,17 @@ export default function CartScreen() {
               <Text style={styles.grandValue}>Rs. {grandTotal.toLocaleString()}</Text>
             </View>
             {finance.cashbackEnabled && cashbackAmt > 0 && (
-              <View style={{ marginTop: 10, backgroundColor: "#ECFDF5", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ marginTop: 10, backgroundColor: C.emeraldBg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <Text style={{ fontSize: 16 }}>🎁</Text>
-                <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: "#065F46", flex: 1 }}>
+                <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: C.emeraldDeep, flex: 1 }}>
                   Earn <Text style={{ fontFamily: "Inter_700Bold" }}>Rs. {cashbackAmt}</Text> wallet cashback on this order!
                 </Text>
               </View>
             )}
             {walletCashbackAmt > 0 && (
-              <View style={{ marginTop: 6, backgroundColor: "#EFF6FF", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ marginTop: 6, backgroundColor: C.blueSoft, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <Text style={{ fontSize: 16 }}>💰</Text>
-                <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: "#1E40AF", flex: 1 }}>
+                <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: C.navyDeep, flex: 1 }}>
                   Wallet bonus: Earn <Text style={{ fontFamily: "Inter_700Bold" }}>Rs. {walletCashbackAmt}</Text> ({customer.walletCashbackPct}%) back!
                 </Text>
               </View>
@@ -1277,15 +1277,15 @@ export default function CartScreen() {
           </View>
         ) : (
           <Pressable style={[styles.checkoutBtn, (loading || addrLoading || promoLoading) && { opacity: 0.7 }]} onPress={handleCheckout} disabled={loading || addrLoading || promoLoading}>
-            {loading ? <ActivityIndicator color="#fff" size="small" /> : promoLoading ? (
+            {loading ? <ActivityIndicator color={C.textInverse} size="small" /> : promoLoading ? (
               <>
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={C.textInverse} size="small" />
                 <Text style={styles.checkoutBtnTxt}>Validating promo...</Text>
               </>
             ) : (
               <>
                 <Text style={styles.checkoutBtnTxt}>Place Order</Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <Ionicons name="arrow-forward" size={18} color={C.textInverse} />
               </>
             )}
           </Pressable>
@@ -1303,9 +1303,9 @@ export default function CartScreen() {
       <GatewayModal />
 
       {showUndoClear && (
-        <View style={{ position: "absolute", bottom: 90, left: 16, right: 16, backgroundColor: "#1E293B", borderRadius: 14, flexDirection: "row", alignItems: "center", padding: 14, gap: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 10 }}>
-          <Ionicons name="trash-outline" size={18} color="#94A3B8" />
-          <Text style={{ flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, color: "#F8FAFC" }}>Cart cleared</Text>
+        <View style={{ position: "absolute", bottom: 90, left: 16, right: 16, backgroundColor: C.slateDeep, borderRadius: 14, flexDirection: "row", alignItems: "center", padding: 14, gap: 10, shadowColor: C.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 10 }}>
+          <Ionicons name="trash-outline" size={18} color={C.textMuted} />
+          <Text style={{ flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, color: C.surfaceSecondary }}>Cart cleared</Text>
           <Pressable onPress={() => {
             if (undoSnapshot) {
               restoreCart(undoSnapshot);
@@ -1328,22 +1328,22 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 14 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: "#fff" },
+  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.textInverse },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   clearBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
   clearText: { fontFamily: "Inter_500Medium", fontSize: 12, color: "rgba(255,255,255,0.9)" },
   clearConfirm: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 14, padding: 12, marginTop: 10 },
-  clearConfirmTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#fff" },
+  clearConfirmTxt: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.textInverse },
   clearNo: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.2)" },
-  clearNoTxt: { fontFamily: "Inter_500Medium", fontSize: 12, color: "#fff" },
-  clearYes: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, backgroundColor: "#DC2626" },
-  clearYesTxt: { fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" },
+  clearNoTxt: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.textInverse },
+  clearYes: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, backgroundColor: C.red },
+  clearYesTxt: { fontFamily: "Inter_700Bold", fontSize: 12, color: C.textInverse },
 
   scroll: { flex: 1 },
   section: { paddingHorizontal: 16, paddingTop: 18 },
   sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text, marginBottom: 12 },
 
-  cartItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, backgroundColor: C.surface, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: C.borderLight, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  cartItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, backgroundColor: C.surface, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: C.borderLight, shadowColor: C.text, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
   itemThumb: { width: 56, height: 56, borderRadius: 14, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   itemInfo: { flex: 1 },
   itemName: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text, marginBottom: 3 },
@@ -1354,15 +1354,15 @@ const styles = StyleSheet.create({
   itemTotal: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text, minWidth: 60, textAlign: "right" },
 
   addrCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, backgroundColor: C.surface, borderRadius: 16, borderWidth: 1.5, borderColor: C.border },
-  addrCardIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center" },
+  addrCardIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center" },
   addrCardLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text },
   addrCardValue: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 },
   changeBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
   changeBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.primary },
 
-  etaRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F0FDF4", marginHorizontal: 16, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "#BBF7D0" },
-  etaIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#D1FAE5", alignItems: "center", justifyContent: "center" },
-  etaText: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#065F46", flex: 1 },
+  etaRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.greenBg, marginHorizontal: 16, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: C.greenBorder },
+  etaIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: C.emeraldSoft, alignItems: "center", justifyContent: "center" },
+  etaText: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.emeraldDeep, flex: 1 },
 
   payOption: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, backgroundColor: C.surface, borderRadius: 16, marginBottom: 8, borderWidth: 1.5, borderColor: C.border },
   payIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
@@ -1379,29 +1379,29 @@ const styles = StyleSheet.create({
   grandLabel: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.text },
   grandValue: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.primary },
 
-  checkoutBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border, shadowColor: "#000", shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 8 },
+  checkoutBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: C.surface, paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border, shadowColor: C.text, shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 8 },
   checkoutTotal: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text },
   checkoutItems: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
   checkoutBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.primary, paddingHorizontal: 28, paddingVertical: 15, borderRadius: 16, shadowColor: C.primary, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  checkoutBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" },
+  checkoutBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.textInverse },
   minOrderWrap: { flex: 1, marginLeft: 16, gap: 6 },
-  minOrderTxt: { fontFamily: "Inter_500Medium", fontSize: 12, color: "#D97706" },
-  minOrderBar: { height: 6, backgroundColor: "#FEF3C7", borderRadius: 3, overflow: "hidden" as const },
-  minOrderFill: { height: 6, backgroundColor: "#F59E0B", borderRadius: 3 },
+  minOrderTxt: { fontFamily: "Inter_500Medium", fontSize: 12, color: C.amber },
+  minOrderBar: { height: 6, backgroundColor: C.amberSoft, borderRadius: 3, overflow: "hidden" as const },
+  minOrderFill: { height: 6, backgroundColor: C.gold, borderRadius: 3 },
 
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 32 },
+  sheet: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 32 },
   handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 18 },
   sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.text, marginBottom: 16 },
 
   addrOpt: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: C.border, marginBottom: 8 },
-  addrOptSel: { borderColor: C.primary, backgroundColor: "#EFF6FF" },
+  addrOptSel: { borderColor: C.primary, backgroundColor: C.blueSoft },
   addrOptIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   addrOptLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text },
   addrOptAddress: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 },
   addrOptCity: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
   defaultTag: { backgroundColor: C.primary, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  defaultTagText: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#fff" },
+  defaultTagText: { fontFamily: "Inter_700Bold", fontSize: 9, color: C.textInverse },
   cancelBtn: { paddingVertical: 14, alignItems: "center", marginTop: 8 },
   cancelBtnText: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.textSecondary },
 
@@ -1413,15 +1413,15 @@ const styles = StyleSheet.create({
   successEta: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.success, marginBottom: 6 },
   successBtns: { flexDirection: "row", gap: 12, marginTop: 20, width: "100%" },
   trackBtn: { flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: C.primary, borderRadius: 16, paddingVertical: 15, shadowColor: C.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
-  trackBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
-  homeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#EFF6FF", borderRadius: 16, paddingVertical: 15 },
+  trackBtnTxt: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.textInverse },
+  homeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: C.blueSoft, borderRadius: 16, paddingVertical: 15 },
   homeBtnTxt: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.primary },
 
   emptyContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-  emptyIconBox: { width: 88, height: 88, borderRadius: 28, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  emptyIconBox: { width: 88, height: 88, borderRadius: 28, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 },
   emptyTitle: { fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, marginBottom: 8 },
   emptyText: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, marginBottom: 20 },
   emptyBtns: { flexDirection: "row", gap: 12 },
   emptyBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14 },
-  emptyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#fff" },
+  emptyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.textInverse },
 });

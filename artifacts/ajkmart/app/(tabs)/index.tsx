@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: "#fff",
+    borderColor: C.surface,
   },
   cartBadgeTxt: { fontFamily: "Inter_700Bold", fontSize: 9, color: C.textInverse },
 
