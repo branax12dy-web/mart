@@ -30,7 +30,7 @@ const MIN_DISTANCE_METERS = 25;
 
 /* Dual-mode intervals */
 const IDLE_INTERVAL_SEC = 4 * 60;    /* 4 minutes when idle/online */
-const ACTIVE_INTERVAL_SEC = 8;       /* 8 seconds when on active order/ride */
+const ACTIVE_INTERVAL_SEC = 5;       /* 5 seconds when on active order/ride — synced with web rider-app */
 
 /* AsyncStorage key for persisting online state */
 const STORAGE_KEY_IS_ONLINE = "rider_is_online";

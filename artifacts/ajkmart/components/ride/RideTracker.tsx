@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -96,6 +97,10 @@ export function RideTracker({
   const [acceptedAt, setAcceptedAt] = useState<number | null>(null);
   const CANCEL_GRACE_SEC = 180;
 
+  /* ── Trip OTP — shown to customer when rider has arrived ── */
+  const [tripOtp, setTripOtp] = useState<string | null>(null);
+  const [otpCopied, setOtpCopied] = useState(false);
+
   /* ── Live rider location via Socket.io ── */
   const [riderLivePos, setRiderLivePos] = useState<{ lat: number; lng: number } | null>(null);
   const socketRef = useRef<{ disconnect: () => void } | null>(null);
@@ -127,6 +132,11 @@ export function RideTracker({
       socket.on("rider:location", (payload: { latitude: number; longitude: number }) => {
         setRiderLivePos({ lat: payload.latitude, lng: payload.longitude });
       });
+      socket.on("ride:otp", (payload: { rideId: string; otp: string }) => {
+        if (payload.rideId === rideId && payload.otp) {
+          setTripOtp(payload.otp);
+        }
+      });
     });
 
     return () => {
@@ -156,6 +166,16 @@ export function RideTracker({
     const st = ride?.status;
     if (st === "accepted" && !acceptedAt) setAcceptedAt(Date.now());
   }, [ride?.status, acceptedAt]);
+
+  /* ── Populate OTP from polling data (fallback if socket event missed) ── */
+  useEffect(() => {
+    if (ride?.status === "arrived" && (ride as any)?.tripOtp && !tripOtp) {
+      setTripOtp((ride as any).tripOtp);
+    }
+    if (ride?.status === "in_transit") {
+      setTripOtp(null); // clear once trip starts
+    }
+  }, [ride?.status, (ride as any)?.tripOtp]);
 
   useEffect(() => {
     const st = ride?.status;
@@ -1805,6 +1825,97 @@ export function RideTracker({
               })}
             </View>
           </View>
+
+          {/* ── OTP Security Card — shown when driver has arrived ── */}
+          {status === "arrived" && tripOtp && (
+            <View
+              style={{
+                backgroundColor: "#FFFBEB",
+                borderRadius: 20,
+                padding: 20,
+                borderWidth: 2,
+                borderColor: "#F59E0B",
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 12,
+                    backgroundColor: "#FDE68A",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="shield-checkmark" size={20} color="#D97706" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#92400E" }}>
+                    Trip Security Code
+                  </Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#B45309", marginTop: 1 }}>
+                    Share this with your driver to start the trip
+                  </Text>
+                </View>
+              </View>
+
+              {/* 4-digit OTP display */}
+              <View style={{ flexDirection: "row", gap: 10, justifyContent: "center", marginBottom: 16 }}>
+                {tripOtp.split("").map((digit, idx) => (
+                  <View
+                    key={idx}
+                    style={{
+                      width: 56,
+                      height: 64,
+                      borderRadius: 14,
+                      backgroundColor: "#fff",
+                      borderWidth: 2,
+                      borderColor: "#F59E0B",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      shadowColor: "#F59E0B",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.15,
+                      shadowRadius: 4,
+                      elevation: 3,
+                    }}
+                  >
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 32, color: "#92400E" }}>
+                      {digit}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Copy button */}
+              <Pressable
+                onPress={async () => {
+                  await Clipboard.setStringAsync(tripOtp);
+                  setOtpCopied(true);
+                  setTimeout(() => setOtpCopied(false), 2500);
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  backgroundColor: otpCopied ? "#10B981" : "#F59E0B",
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                }}
+              >
+                <Ionicons
+                  name={otpCopied ? "checkmark-circle" : "copy-outline"}
+                  size={16}
+                  color="#fff"
+                />
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>
+                  {otpCopied ? "Copied!" : "Copy Code"}
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
           {ride?.riderName && (
             <View
