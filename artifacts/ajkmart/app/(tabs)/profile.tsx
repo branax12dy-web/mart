@@ -1399,45 +1399,60 @@ export default function ProfileScreen() {
         lastUpdated={lastRefreshed}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient colors={role.colors} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={[ph.card, { paddingTop: topPad + spacing.lg }]}>
-          <View style={[ph.blob, { width:180, height:180, top:-50, right:-40 }]} />
-          <View style={[ph.blob, { width:80,  height:80,  bottom:-15, left:16 }]} />
+        <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} start={{ x:0,y:0 }} end={{ x:1,y:1 }} style={[ph.card, { paddingTop: topPad + spacing.xl }]}>
+          {/* Decorative circles */}
+          <View style={[ph.blob, { width: 220, height: 220, top: -80, right: -60, opacity: 0.12 }]} />
+          <View style={[ph.blob, { width: 120, height: 120, top: 20, left: -40, opacity: 0.08 }]} />
+          <View style={[ph.blob, { width: 80,  height: 80,  bottom: 20, right: 40, opacity: 0.1 }]} />
 
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
-            <View style={ph.avatar}>
-              {user?.avatar
-                ? <Image
-                    source={{ uri: user.avatar.startsWith("/") ? `${API.replace(/\/api$/, "")}${user.avatar}` : user.avatar }}
-                    style={{ width: 68, height: 68, borderRadius: radii.xl }}
-                  />
-                : <Text style={ph.avatarTxt}>{initials}</Text>}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={ph.name}>{user?.name || "AJKMart User"}</Text>
-              <Text style={ph.phone}>+92 {user?.phone || "—"}</Text>
-              {user?.username ? <Text style={ph.email}>@{user.username}</Text> : null}
-              {user?.email ? <Text style={ph.email}>{user.email}</Text> : null}
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
-                <View style={ph.roleBadge}>
-                  <Text style={ph.roleTxt}>{role.label}</Text>
-                </View>
-                <View style={[ph.roleBadge, { backgroundColor: levelInfo.bg }]}>
-                  <Text style={[ph.roleTxt, { color: levelInfo.color }]}>{levelInfo.label}</Text>
-                </View>
+          {/* Edit button top-right */}
+          <Pressable onPress={() => setShowEdit(true)} style={ph.editBtn} accessibilityRole="button" accessibilityLabel="Edit profile">
+            <Ionicons name="pencil" size={16} color="#fff" />
+          </Pressable>
+
+          {/* Centered avatar */}
+          <View style={{ alignItems: "center", marginBottom: spacing.lg }}>
+            <View style={ph.avatarRing}>
+              <View style={ph.avatar}>
+                {user?.avatar
+                  ? <Image
+                      source={{ uri: user.avatar.startsWith("/") ? `${API.replace(/\/api$/, "")}${user.avatar}` : user.avatar }}
+                      style={{ width: 80, height: 80, borderRadius: 40 }}
+                    />
+                  : <Text style={ph.avatarTxt}>{initials}</Text>}
               </View>
             </View>
-            <Pressable onPress={() => setShowEdit(true)} style={ph.editBtn} accessibilityRole="button" accessibilityLabel="Edit profile">
-              <Ionicons name="pencil" size={16} color={C.textInverse} />
-            </Pressable>
+            <Text style={ph.name}>{user?.name || "AJKMart User"}</Text>
+            <Text style={ph.phone}>{user?.phone ? `+92 ${user.phone}` : user?.email || "—"}</Text>
+            {user?.username ? (
+              <Text style={ph.handle}>@{user.username}</Text>
+            ) : null}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: spacing.sm }}>
+              <View style={ph.roleBadge}>
+                <Ionicons name={role.label === "Delivery Rider" ? "bicycle-outline" : role.label === "Store Vendor" ? "storefront-outline" : "person-outline"} size={11} color="#fff" />
+                <Text style={ph.roleTxt}>{role.label}</Text>
+              </View>
+              <View style={[ph.roleBadge, { backgroundColor: levelInfo.bg + "33", borderColor: levelInfo.color + "55" }]}>
+                <Ionicons name={levelInfo.icon} size={11} color={levelInfo.color} />
+                <Text style={[ph.roleTxt, { color: levelInfo.color }]}>{levelInfo.label}</Text>
+              </View>
+              {user?.kycStatus === "verified" && (
+                <View style={[ph.roleBadge, { backgroundColor: C.success + "22", borderColor: C.success + "44" }]}>
+                  <Ionicons name="checkmark-circle" size={11} color={C.success} />
+                  <Text style={[ph.roleTxt, { color: C.success }]}>Verified</Text>
+                </View>
+              )}
+            </View>
           </View>
 
+          {/* Stats strip */}
           <View style={ph.statsStrip}>
             {statsLoading ? (
-              <ActivityIndicator color={C.overlayLight80} />
+              <ActivityIndicator color="rgba(255,255,255,0.8)" style={{ paddingVertical: 4 }} />
             ) : statsError ? (
-              <Pressable onPress={() => { setStatsLoading(true); setStatsError(false); fetchAll(); }} style={{ flexDirection: "row", alignItems: "center", gap: 8 }} accessibilityRole="button" accessibilityLabel="Could not load stats, tap to retry">
-                <Ionicons name="refresh-outline" size={16} color={C.overlayLight80} />
-                <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.overlayLight80 }}>Could not load stats — tap to retry</Text>
+              <Pressable onPress={() => { setStatsLoading(true); setStatsError(false); fetchAll(); }} style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, justifyContent: "center" }} accessibilityRole="button" accessibilityLabel="Could not load stats, tap to retry">
+                <Ionicons name="refresh-outline" size={16} color="rgba(255,255,255,0.8)" />
+                <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>Tap to retry</Text>
               </Pressable>
             ) : (
               <>
@@ -1569,17 +1584,19 @@ export default function ProfileScreen() {
         )}
 
         <Pressable onPress={() => router.push("/(tabs)/wallet")} style={wb.wrap} accessibilityRole="button" accessibilityLabel={`${platformCfg.appName} wallet, Rs. ${(user?.walletBalance || 0).toLocaleString()}, tap to manage`}>
-          <LinearGradient colors={[C.primaryDark, C.primary]} style={wb.grad}>
-            <Ionicons name="wallet" size={18} color={C.textInverse} />
+          <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={wb.grad}>
+            <View style={wb.iconBox}>
+              <Ionicons name="wallet" size={22} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={wb.lbl}>{platformCfg.appName} {T("wallet")}</Text>
+              <Text style={wb.amt}>Rs. {(user?.walletBalance || 0).toLocaleString()}</Text>
+            </View>
+            <View style={wb.btn}>
+              <Text style={wb.btnTxt}>{T("manageLabel")}</Text>
+              <Ionicons name="arrow-forward" size={13} color="#fff" />
+            </View>
           </LinearGradient>
-          <View style={{ flex: 1, marginLeft: spacing.md }}>
-            <Text style={wb.lbl}>{platformCfg.appName} {T("wallet")}</Text>
-            <Text style={wb.amt}>Rs. {(user?.walletBalance || 0).toLocaleString()}</Text>
-          </View>
-          <View style={wb.btn}>
-            <Text style={wb.btnTxt}>{T("manageLabel")}</Text>
-            <Ionicons name="arrow-forward" size={13} color={C.primary} />
-          </View>
         </Pressable>
 
         {platformConfig.features.referral && platformConfig.customer.referralEnabled && (
@@ -1784,12 +1801,12 @@ const lvl = StyleSheet.create({
   badge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radii.full, borderWidth: 1.5 },
   badgeTxt: { ...Typ.captionBold },
   progressWrap: { flex: 1 },
-  progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
   progressLabel: { ...typography.captionMedium, color: C.text },
-  progressCount: { ...typography.small, color: C.textMuted },
-  progressBar: { height: 6, backgroundColor: C.surfaceSecondary, borderRadius: 3, overflow: "hidden" },
-  progressFill: { height: 6, borderRadius: 3 },
-  progressHint: { ...typography.small, color: C.textMuted, marginTop: 3 },
+  progressCount: { fontFamily: Font.bold, fontSize: 12, color: C.primary },
+  progressBar: { height: 7, backgroundColor: C.surfaceSecondary, borderRadius: 4, overflow: "hidden" },
+  progressFill: { height: 7, borderRadius: 4 },
+  progressHint: { ...typography.small, color: C.textMuted, marginTop: 4 },
 });
 
 const kyc = StyleSheet.create({
@@ -1810,29 +1827,31 @@ const pi = StyleSheet.create({
 
 const ph = StyleSheet.create({
   card: { paddingHorizontal: spacing.lg, paddingBottom: 0, overflow: "hidden" },
-  blob: { position: "absolute", borderRadius: 999, backgroundColor: C.overlayLight10 },
-  avatar: { width: 68, height: 68, borderRadius: radii.xl, backgroundColor: C.overlayLight25, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.overlayLight40 },
-  avatarTxt: { fontFamily: Font.bold, fontSize: 26, color: C.textInverse },
-  name: { ...typography.h3, color: C.textInverse, marginBottom: 2 },
-  phone: { ...typography.captionMedium, color: C.overlayLight85 },
-  email: { ...typography.caption, color: C.overlayLight70, marginTop: 1 },
-  roleBadge: { backgroundColor: C.overlayLight22, paddingHorizontal: 10, paddingVertical: 3, borderRadius: radii.full, alignSelf: "flex-start", marginTop: 6 },
-  roleTxt: { ...typography.smallMedium, color: C.textInverse },
-  editBtn: { width: 38, height: 38, borderRadius: radii.md, backgroundColor: C.overlayLight20, alignItems: "center", justifyContent: "center" },
-  statsStrip: { flexDirection: "row", alignItems: "center", backgroundColor: C.overlayDark15, borderRadius: radii.lg, marginTop: spacing.lg, marginBottom: spacing.lg, padding: spacing.md },
+  blob: { position: "absolute", borderRadius: 999, backgroundColor: "#fff" },
+  avatarRing: { width: 96, height: 96, borderRadius: 48, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center", marginBottom: spacing.md, borderWidth: 2, borderColor: "rgba(255,255,255,0.5)", ...shadows.lg },
+  avatar: { width: 84, height: 84, borderRadius: 42, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
+  avatarTxt: { fontFamily: Font.bold, fontSize: 30, color: "#fff" },
+  name: { fontFamily: Font.bold, fontSize: 20, color: "#fff", marginBottom: 3, textAlign: "center" },
+  phone: { ...typography.captionMedium, color: "rgba(255,255,255,0.85)", textAlign: "center" },
+  handle: { ...typography.caption, color: "rgba(255,255,255,0.7)", marginTop: 2, textAlign: "center" },
+  roleBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.full, borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
+  roleTxt: { ...typography.smallMedium, color: "#fff", fontSize: 11 },
+  editBtn: { position: "absolute", top: 0, right: 0, width: 38, height: 38, borderRadius: radii.md, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
+  statsStrip: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.15)", borderRadius: radii.xl, marginTop: spacing.sm, marginBottom: spacing.lg, paddingVertical: spacing.md },
   stat: { flex: 1, alignItems: "center" },
-  statVal: { ...Typ.h3, fontSize: 16, color: C.textInverse },
-  statLbl: { ...typography.small, color: C.overlayLight75, marginTop: 2 },
-  statDiv: { width: 1, height: 28, backgroundColor: C.overlayLight25 },
+  statVal: { fontFamily: Font.bold, fontSize: 17, color: "#fff" },
+  statLbl: { ...typography.small, color: "rgba(255,255,255,0.75)", marginTop: 2 },
+  statDiv: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.25)" },
 });
 
 const wb = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, marginHorizontal: spacing.lg, marginTop: spacing.lg, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: C.borderLight, ...shadows.sm },
-  grad: { width: 42, height: 42, borderRadius: radii.md, alignItems: "center", justifyContent: "center" },
-  lbl: { ...typography.small, color: C.textMuted, marginBottom: 2 },
-  amt: { ...Typ.h3, color: C.text },
-  btn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.primarySoft, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radii.md },
-  btnTxt: { ...typography.captionMedium, color: C.primary },
+  wrap: { marginHorizontal: spacing.lg, marginTop: spacing.lg, borderRadius: radii.xl, overflow: "hidden", ...shadows.md },
+  grad: { flexDirection: "row", alignItems: "center", padding: spacing.lg, paddingVertical: 20 },
+  iconBox: { width: 48, height: 48, borderRadius: radii.lg, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center", marginRight: spacing.md, borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
+  lbl: { ...typography.caption, color: "rgba(255,255,255,0.8)", marginBottom: 2 },
+  amt: { fontFamily: Font.bold, fontSize: 22, color: "#fff" },
+  btn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.full, borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
+  btnTxt: { ...typography.captionMedium, color: "#fff" },
 });
 
 const rc = StyleSheet.create({
