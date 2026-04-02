@@ -398,4 +398,42 @@ router.get("/status", async (_req, res) => {
   });
 });
 
+/* ── GET /api/maps/config — Securely serves map provider config to frontend clients.
+   API keys are fetched from platform_settings (DB-managed) and returned at request
+   time so they never appear in frontend build artifacts or source code.
+   This endpoint is intentionally public (no auth) because map API keys are
+   domain-restricted by the provider and must be available on page load.
+   Rate limiting is enforced by the global API rate limiter. ── */
+router.get("/config", async (_req, res) => {
+  const settings = await getPlatformSettings();
+  const s = settings as Record<string, string>;
+
+  const mapProvider      = s["map_provider"]        ?? "osm";       /* osm | mapbox | google */
+  const mapboxToken      = s["mapbox_api_key"]       ?? "";
+  const googleKey        = s["maps_api_key"]         ?? "";
+  const searchProvider   = s["search_api_provider"]  ?? "google";   /* google | locationiq */
+  const locationIqKey    = s["locationiq_api_key"]   ?? "";
+  const routingProvider  = s["routing_api_provider"] ?? "mapbox";   /* mapbox | google */
+
+  /* Return the appropriate token for the active map provider, never all keys at once */
+  const activeToken = mapProvider === "mapbox" ? mapboxToken
+                    : mapProvider === "google"  ? googleKey
+                    : "";
+
+  /* Search token is separate from map visual provider */
+  const searchToken = searchProvider === "locationiq" ? locationIqKey
+                    : googleKey; /* google search uses same key as google maps */
+
+  res.json({
+    provider:        mapProvider,       /* Which tile/SDK to use for the map visual */
+    token:           activeToken,       /* API key / access token for the active provider */
+    searchProvider,                     /* Which API to use for address search/autocomplete */
+    searchToken,                        /* API key for the search provider */
+    routingProvider,                    /* Which API to use for route calculation */
+    enabled:         s["integration_maps"] !== "off",
+    defaultLat:      parseFloat(s["map_default_lat"] || "33.7294"),
+    defaultLng:      parseFloat(s["map_default_lng"] || "73.3872"),
+  });
+});
+
 export default router;

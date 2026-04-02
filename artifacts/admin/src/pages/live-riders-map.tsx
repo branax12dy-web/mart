@@ -47,6 +47,7 @@ type Rider = {
   action?: string | null;
   batteryLevel?: number | null;
   lastSeen?: string;
+  currentTripId?: string | null;
 };
 
 type CustomerLoc = {
@@ -145,7 +146,14 @@ function makeServiceProviderIcon(status: "online" | "offline" | "busy", isSelect
   });
 }
 
-function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean) {
+/* Returns true when a rider was active (had a GPS ping) in the last 24 hours */
+function wasRecentlyActive(rider: Rider): boolean {
+  return rider.ageSeconds < 24 * 60 * 60;
+}
+
+/* ── Rider icon: supports optional username label above the marker and a
+   50%-opacity "dimmed" state for offline riders still visible in last 24h ── */
+function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean, label?: string, dimmed?: boolean) {
   /* Service providers get a distinct purple wrench icon */
   const role = (rider.role ?? "rider").toLowerCase();
   if (role === "service_provider" || role === "provider") {
@@ -156,14 +164,21 @@ function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSe
   const innerSize = size - 8;
   const staleBorder = stale && status !== "offline" ? "3px solid #f59e0b" : `${isSelected ? "3px" : "2px"} solid white`;
   const svgPath = getVehicleSvgPath(rider.vehicleType);
-  /* Use CSS transform for smooth position updates instead of recreating DOM elements */
+  const opacity = dimmed ? "0.5" : "1";
+  /* Username/ID label floats above the icon */
+  const labelHtml = label
+    ? `<div style="position:absolute;top:${-(size / 2 + 16)}px;left:50%;transform:translateX(-50%);white-space:nowrap;background:rgba(0,0,0,0.78);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;pointer-events:none;line-height:1.4">${label}</div>`
+    : "";
   return L.divIcon({
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:${isSelected ? "10px" : "50%"};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.35);cursor:pointer;will-change:transform;transition:background-color 0.3s,border-color 0.3s">
-      <svg width="${innerSize}" height="${innerSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgPath}</svg>
+    html: `<div style="position:relative;opacity:${opacity}">
+      ${labelHtml}
+      <div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:${isSelected ? "10px" : "50%"};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.35);cursor:pointer;will-change:transform;transition:background-color 0.3s,border-color 0.3s,opacity 0.3s">
+        <svg width="${innerSize}" height="${innerSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgPath}</svg>
+      </div>
     </div>`,
     className: "",
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    iconSize: [size, size + (label ? 20 : 0)],
+    iconAnchor: [size / 2, size / 2 + (label ? 20 : 0)],
   });
 }
 
@@ -548,6 +563,17 @@ export default function LiveRidersMap() {
     if (next.has(uid)) next.delete(uid); else next.add(uid);
     return next;
   });
+  /* Show/hide username labels floating above each marker */
+  const [showLabels, setShowLabels] = useState(true);
+  /* Socket-supplied vehicleType / currentTripId overrides (arrive live via socket) */
+  const [vehicleTypeOverrides, setVehicleTypeOverrides] = useState<Record<string, string | null>>({});
+  const [currentTripIdOverrides, setCurrentTripIdOverrides] = useState<Record<string, string | null>>({});
+
+  /* ── Map provider config — fetched from backend so keys never appear in build ── */
+  const { data: mapConfigData } = useQuery<{
+    provider: string; token: string; searchProvider: string; searchToken: string;
+    routingProvider: string; enabled: boolean; defaultLat: number; defaultLng: number;
+  }>({ queryKey: ["map-config"], queryFn: () => fetcher("/api/maps/config"), staleTime: 5 * 60 * 1000 });
 
   const { data: routeData } = useRiderRoute(selectedId, routeDate);
   const { data: customerData } = useCustomerLocations();
@@ -589,10 +615,19 @@ export default function LiveRidersMap() {
       longitude: number;
       action?: string | null;
       updatedAt: string;
+      vehicleType?: string | null;
+      currentTripId?: string | null;
     }) => {
       if (typeof payload.userId !== "string" ||
           typeof payload.latitude !== "number" ||
           typeof payload.longitude !== "number") return;
+      /* Capture live vehicleType / currentTripId from socket (overrides stale DB value) */
+      if (payload.vehicleType !== undefined) {
+        setVehicleTypeOverrides(prev => ({ ...prev, [payload.userId]: payload.vehicleType ?? null }));
+      }
+      if (payload.currentTripId !== undefined) {
+        setCurrentTripIdOverrides(prev => ({ ...prev, [payload.userId]: payload.currentTripId ?? null }));
+      }
       setRiderOverrides(prev => {
         const next = {
           ...prev,
@@ -728,7 +763,7 @@ export default function LiveRidersMap() {
   const baseRiders: Rider[] = data?.riders || [];
   const offlineAfterSec: number = data?.staleTimeoutSec ?? DEFAULT_OFFLINE_AFTER_SEC;
 
-  /* Merge WebSocket overrides into the rider list (location + status + heartbeat) */
+  /* Merge WebSocket overrides into the rider list (location + status + heartbeat + vehicleType + currentTripId) */
   const mergedBaseRiders: Rider[] = baseRiders.map(r => {
     const ov = riderOverrides[r.userId];
     const statusOv = riderStatusOverrides[r.userId];
@@ -744,6 +779,9 @@ export default function LiveRidersMap() {
       isOnline: statusOv ? statusOv.isOnline : r.isOnline,
       batteryLevel: hb?.batteryLevel ?? null,
       lastSeen: hb?.lastSeen ?? r.updatedAt,
+      /* Socket-supplied live values take priority over stale DB values */
+      vehicleType: vehicleTypeOverrides[r.userId] !== undefined ? vehicleTypeOverrides[r.userId] : r.vehicleType,
+      currentTripId: currentTripIdOverrides[r.userId] !== undefined ? currentTripIdOverrides[r.userId] : r.currentTripId,
     };
   });
 
@@ -760,7 +798,8 @@ export default function LiveRidersMap() {
         name: "Rider",
         phone: null,
         isOnline: statusOv ? statusOv.isOnline : ageSeconds < offlineAfterSec,
-        vehicleType: null,
+        vehicleType: vehicleTypeOverrides[uid] ?? null,
+        currentTripId: currentTripIdOverrides[uid] ?? null,
         lat: ov.lat,
         lng: ov.lng,
         updatedAt: ov.updatedAt,
@@ -830,10 +869,16 @@ export default function LiveRidersMap() {
       const status = getRiderStatus(rider);
       const stale = isGpsStale(rider, offlineAfterSec);
       const isSelected = rider.userId === selectedId;
-      const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}:${stale ? "s" : "f"}`;
+      /* Dim offline markers that were active in the last 24 hours */
+      const dimmed = status === "offline" && wasRecentlyActive(rider);
+      /* Short label: first word of name or last 6 chars of userId */
+      const labelText = showLabels
+        ? (rider.name ? rider.name.split(" ")[0].slice(0, 10) : rider.userId.slice(-6))
+        : undefined;
+      const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}:${stale ? "s" : "f"}:${dimmed ? "d" : "n"}:${labelText ?? ""}`;
       let icon = riderIconCacheRef.current.get(cacheKey);
       if (!icon) {
-        icon = makeRiderIcon(rider, status, isSelected, stale);
+        icon = makeRiderIcon(rider, status, isSelected, stale, labelText, dimmed);
         riderIconCacheRef.current.set(cacheKey, icon);
       }
       result.set(rider.userId, icon);
@@ -1017,6 +1062,16 @@ export default function LiveRidersMap() {
                 {showCustomers ? <Eye className="w-4 h-4 text-blue-500" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
                 Customers
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLabels(v => !v)}
+                className={`h-9 rounded-xl gap-2 ${showLabels ? "bg-indigo-50 border-indigo-300 text-indigo-700" : ""}`}
+                title="Toggle name labels above markers"
+              >
+                {showLabels ? <Eye className="w-4 h-4 text-indigo-500" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
+                Labels
+              </Button>
               <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} className="h-9 rounded-xl gap-2">
                 <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
                 Refresh
@@ -1054,7 +1109,7 @@ export default function LiveRidersMap() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Map */}
             <div className="lg:col-span-2">
-              <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden" style={{ height: 520 }}>
+              <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden" style={{ height: 520, position: "relative" }}>
                 {isLoading && riders.length === 0 ? (
                   <div className="w-full h-full flex items-center justify-center bg-gray-50">
                     <div className="text-center">
@@ -1068,11 +1123,37 @@ export default function LiveRidersMap() {
                     zoom={12}
                     style={{ width: "100%", height: "100%" }}
                   >
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution="&copy; OpenStreetMap contributors"
-                      maxZoom={19}
-                    />
+                    {/* Dynamic tile layer — provider and token come from /api/maps/config (DB-managed, never hardcoded) */}
+                    {(() => {
+                      const provider = mapConfigData?.provider ?? "osm";
+                      const token    = mapConfigData?.token ?? "";
+                      if (provider === "mapbox" && token) {
+                        return (
+                          <TileLayer
+                            url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${token}`}
+                            attribution='© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            maxZoom={22}
+                          />
+                        );
+                      }
+                      if (provider === "google" && token) {
+                        return (
+                          <TileLayer
+                            url={`https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${token}`}
+                            attribution="© Google Maps"
+                            maxZoom={21}
+                          />
+                        );
+                      }
+                      /* Default: OpenStreetMap (no key needed) */
+                      return (
+                        <TileLayer
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution="&copy; OpenStreetMap contributors"
+                          maxZoom={19}
+                        />
+                      );
+                    })()}
                     <FitBoundsOnLoad
                       riders={riders}
                       customers={customers}
@@ -1099,8 +1180,8 @@ export default function LiveRidersMap() {
                           icon={riderIconMap.get(rider.userId)!}
                           onClick={() => setSelectedId(rider.userId)}
                         >
-                          <Popup maxWidth={200}>
-                            <div style={{ fontFamily: "sans-serif", minWidth: 160 }}>
+                          <Popup maxWidth={220}>
+                            <div style={{ fontFamily: "sans-serif", minWidth: 170 }}>
                               <p style={{ fontWeight: 700, margin: "0 0 4px" }}>{rider.name || "Unknown Rider"}</p>
                               <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>
                                 {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
@@ -1108,6 +1189,11 @@ export default function LiveRidersMap() {
                               <p style={{ fontSize: 11, margin: "4px 0 0", color: status === "online" ? "#22c55e" : status === "busy" ? "#ef4444" : "#9ca3af" }}>
                                 ● {status === "online" ? "Online" : status === "busy" ? "Busy / On Trip" : "Offline"} · {fd(rider.updatedAt)}
                               </p>
+                              {rider.currentTripId && (
+                                <p style={{ fontSize: 10, margin: "2px 0 0", color: "#ef4444", fontWeight: 600 }}>
+                                  🚗 Trip: {rider.currentTripId.slice(0, 12)}…
+                                </p>
+                              )}
                               {stale && status !== "offline" && (
                                 <p style={{ fontSize: 10, margin: "2px 0 0", color: "#f59e0b" }}>⚠ GPS stale — last ping {fd(rider.updatedAt)}</p>
                               )}
@@ -1184,6 +1270,71 @@ export default function LiveRidersMap() {
                       </Marker>
                     )}
                   </MapContainer>
+                )}
+
+                {/* ── History Playback floating control — appears over the map when a rider is selected ── */}
+                {selectedRider && (
+                  <div style={{
+                    position: "absolute",
+                    bottom: 16,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    zIndex: 1000,
+                    background: "rgba(255,255,255,0.97)",
+                    borderRadius: 14,
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+                    padding: "10px 16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    minWidth: 290,
+                    maxWidth: 380,
+                    backdropFilter: "blur(4px)",
+                    border: "1px solid rgba(99,102,241,0.25)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: "#4f46e5", display: "flex", alignItems: "center", gap: 4 }}>
+                        📍 History Playback — {selectedRider.name || "Rider"}
+                      </span>
+                      <button
+                        onClick={() => setSelectedId(null)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 2 }}
+                        title="Close playback"
+                      >✕</button>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", whiteSpace: "nowrap" }}>Date</label>
+                      <input
+                        type="date"
+                        value={routeDate}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={e => { setRouteDate(e.target.value); setSliderVal(100); }}
+                        style={{ flex: 1, fontSize: 12, padding: "3px 8px", borderRadius: 8, border: "1px solid #d1d5db", outline: "none" }}
+                      />
+                    </div>
+                    {routePoints.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6b7280" }}>
+                          <span>🗺 {routePoints.length} GPS points</span>
+                          <span>{visibleRoute.length > 0 ? new Date(visibleRoute[visibleRoute.length - 1].createdAt).toLocaleTimeString() : "—"}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={sliderVal}
+                          onChange={e => setSliderVal(Number(e.target.value))}
+                          style={{ width: "100%", accentColor: "#6366f1" }}
+                        />
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9ca3af" }}>
+                          <span>{routePoints[0] ? new Date(routePoints[0].createdAt).toLocaleTimeString() : "Start"}</span>
+                          <span>{routePoints[routePoints.length - 1] ? new Date(routePoints[routePoints.length - 1].createdAt).toLocaleTimeString() : "End"}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: 11, color: "#9ca3af", margin: 0, textAlign: "center" }}>No GPS data for this date</p>
+                    )}
+                  </div>
                 )}
               </Card>
             </div>

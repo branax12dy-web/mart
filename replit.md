@@ -10,6 +10,43 @@ AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pak
 - Do not make changes to file `artifacts/api-server/src/routes/auth.ts`.
 - Prefer clear and concise explanations.
 
+### Phase 3: Live Tracking & Map Integration — Completed Changes
+
+#### T001 — Socket.io: vehicleType + currentTripId in location broadcast
+- **`artifacts/api-server/src/lib/socketio.ts`**: `emitRiderLocation` signature extended with optional `vehicleType?` and `currentTripId?` fields.
+- **`artifacts/api-server/src/routes/locations.ts`**: `broadcastRiderLocation` now fetches `vehicleType` from the `users` table and includes it in the socket emission. `currentTripId` is broadcast when set.
+
+#### T002 — Secure Map Config API endpoint
+- **`artifacts/api-server/src/routes/maps.ts`**: `GET /api/maps/config` endpoint added. Returns `{ provider, token, searchProvider, searchToken, routingProvider, enabled, defaultLat, defaultLng }` from `platform_settings` (DB-managed). API keys are served per-request so they never appear in frontend build artifacts. The active provider's token is returned — never all keys at once.
+
+#### T003 — Admin Maps & API Settings tab (fully rebuilt)
+- **`artifacts/admin/src/pages/settings-integrations.tsx`**: Maps tab completely rewritten with:
+  - **Active Map Provider** selector (OSM / Mapbox GL JS / Google Maps) with visual card-picker UI
+  - **Mapbox token input** shown conditionally when Mapbox is selected
+  - **Google API key input** shown conditionally when Google is selected
+  - **Search/Autocomplete API** selector (Google Places / LocationIQ) with provider-specific key fields
+  - **LocationIQ API key input** shown conditionally when LocationIQ is selected
+  - **Routing Engine** selector (Mapbox Directions / Google Directions)
+  - All existing Maps Usage toggles and Fare Calculation fields retained
+
+#### T004 — UniversalMap component (lazy Mapbox loading)
+- **`artifacts/admin/src/components/UniversalMap.tsx`**: Created. Provides a provider-agnostic map component:
+  - **Leaflet implementation**: Uses react-leaflet MapContainer with OSM/Mapbox raster/Google tile URL switching. Supports normalised `MapMarkerData[]` and `MapPolylineData[]` props. Renders username labels above markers and 50%-opacity dimmed state.
+  - **Mapbox GL JS implementation**: Lazily loaded via `React.lazy + import("react-map-gl")` — only downloaded when Mapbox provider is active, keeping the initial bundle lean. Uses GeoJSON Source/Layer for polylines and `<Marker>` for custom HTML markers.
+  - **`artifacts/admin/src/global.d.ts`**: Ambient module declarations for `react-map-gl` and `mapbox-gl` to satisfy `tsc --noEmit` in the pnpm virtual-store layout.
+
+#### T005 — Admin Fleet Map enhancements
+- **`artifacts/admin/src/pages/live-riders-map.tsx`**:
+  - **Dynamic tile layer**: Reads provider + token from `/api/maps/config` at runtime. Supports Mapbox raster, Google Maps, and OSM tile URLs — no hardcoded provider in source.
+  - **Username labels**: `makeRiderIcon` now accepts an optional `label` string rendered as a floating dark pill above each marker. Toggleable via "Labels" button in the map toolbar.
+  - **Dimmed offline markers**: Riders offline but active in the last 24 h render at 50% opacity via `wasRecentlyActive()` helper — visually distinct from never-seen riders.
+  - **vehicleType + currentTripId from socket**: `rider:location` handler extracts both fields into `vehicleTypeOverrides` and `currentTripIdOverrides` state; applied when merging riders. Popup shows active trip ID when set.
+  - **History Playback floating panel**: A frosted-glass overlay appears on the map when any rider is selected. Contains date picker, GPS point count, and a range slider for scrubbing through the route. Uses the existing `useRiderRoute` hook and `Polyline` render — no new endpoints needed.
+  - **Icon cache updated**: Cache key now includes `dimmed`, `label`, and status to prevent stale icon reuse.
+
+#### T006 — Rider App GPS interval: 4 min → 5 seconds
+- **`artifacts/rider-app/src/pages/Home.tsx`**: `IDLE_INTERVAL_MS` changed from `4 * 60 * 1000` (4 minutes) to `5 * 1000` (5 seconds). Riders now emit their GPS position every 5 s even when stationary, giving the Admin fleet map near-real-time updates. The `MIN_DISTANCE_METERS = 25` filter is still active to suppress duplicate sends when the rider hasn't moved.
+
 ### Phase 2 Cleanup — Completed Changes
 
 #### 1. Security Fixes (Critical)

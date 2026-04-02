@@ -291,6 +291,7 @@ export default function SosAlerts() {
     if (t === "active")       return "pending";
     if (t === "acknowledged") return "acknowledged";
     if (t === "resolved")     return "resolved";
+    return undefined;
   };
 
   /* ── Load alerts ── */

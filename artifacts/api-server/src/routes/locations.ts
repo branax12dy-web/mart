@@ -246,6 +246,19 @@ async function broadcastRiderLocation(userId: string, lat: number, lon: number, 
   let serverRideId: string | null = null;
   let serverVendorId: string | null = null;
   let serverOrderId: string | null = null;
+  let vehicleType: string | null = null;
+  let currentTripId: string | null = null;
+
+  /* Fetch rider's vehicle type from users table (for map markers) */
+  try {
+    const [rider] = await db.select({ vehicleType: usersTable.vehicleType })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    vehicleType = rider?.vehicleType ?? null;
+  } catch {}
+
+  /* Find active ride (for currentTripId) */
   try {
     const [activeRide] = await db.select({ id: ridesTable.id })
       .from(ridesTable)
@@ -262,7 +275,10 @@ async function broadcastRiderLocation(userId: string, lat: number, lon: number, 
       .orderBy(desc(ridesTable.updatedAt))
       .limit(1);
     serverRideId = activeRide?.id ?? null;
+    currentTripId = serverRideId;
   } catch {}
+
+  /* Find active order if no ride trip */
   try {
     const [activeOrder] = await db.select({ id: ordersTable.id, vendorId: ordersTable.vendorId })
       .from(ordersTable)
@@ -273,6 +289,7 @@ async function broadcastRiderLocation(userId: string, lat: number, lon: number, 
       .limit(1);
     serverVendorId = activeOrder?.vendorId ?? null;
     serverOrderId = activeOrder?.id ?? null;
+    if (!currentTripId && serverOrderId) currentTripId = serverOrderId;
   } catch {}
 
   emitRiderLocation({
@@ -287,6 +304,8 @@ async function broadcastRiderLocation(userId: string, lat: number, lon: number, 
     rideId: serverRideId,
     vendorId: serverVendorId,
     orderId: serverOrderId,
+    vehicleType,
+    currentTripId,
     updatedAt: opts.updatedAt,
   });
 }

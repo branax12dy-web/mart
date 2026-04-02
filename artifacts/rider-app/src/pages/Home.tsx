@@ -495,7 +495,7 @@ export default function Home() {
     let lastSentTime = 0;
     let lastLat: number | null = null;
     let lastLng: number | null = null;
-    const IDLE_INTERVAL_MS = 4 * 60 * 1000;
+    const IDLE_INTERVAL_MS = 5 * 1000;
     const MIN_DISTANCE_METERS = 25;
 
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {

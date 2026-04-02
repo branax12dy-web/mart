@@ -465,6 +465,8 @@ export function emitRiderLocation(payload: {
   rideId?: string | null;
   vendorId?: string | null;
   orderId?: string | null;
+  vehicleType?: string | null;
+  currentTripId?: string | null;
   updatedAt: string;
 }) {
   if (!_io) return;

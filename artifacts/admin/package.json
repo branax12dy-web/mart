@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "mapbox-gl": "^3.20.0",
+    "react-map-gl": "^8.1.0",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
