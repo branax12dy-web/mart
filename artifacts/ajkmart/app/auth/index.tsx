@@ -810,6 +810,39 @@ export default function AuthScreen() {
             <>
               <Text style={styles.sectionTitle} accessibilityRole="header">Welcome</Text>
               <Text style={styles.sectionSubtitle}>Enter your phone, email, or username to continue</Text>
+
+              {showBiometric && (
+                <>
+                  <Pressable
+                    onPress={handleBiometricLogin}
+                    style={styles.biometricQuickBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Login with fingerprint"
+                  >
+                    {biometricLoading ? (
+                      <Text style={styles.biometricQuickTxt}>Authenticating…</Text>
+                    ) : (
+                      <>
+                        <View style={styles.biometricIconWrap}>
+                          <Ionicons name="finger-print" size={28} color={C.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.biometricQuickTitle}>Quick Login</Text>
+                          <Text style={styles.biometricQuickSub}>Use fingerprint / face ID</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={C.primary} />
+                      </>
+                    )}
+                  </Pressable>
+
+                  <View style={styles.orRow}>
+                    <View style={styles.orLine} />
+                    <Text style={styles.orTxt}>or sign in with identifier</Text>
+                    <View style={styles.orLine} />
+                  </View>
+                </>
+              )}
+
               <InputField
                 value={identifier}
                 onChangeText={v => { setIdentifier(v); clearError(); }}
@@ -818,7 +851,7 @@ export default function AuthScreen() {
                 autoCorrect={false}
                 returnKeyType="go"
                 onSubmitEditing={checkIdentifier}
-                autoFocus
+                autoFocus={!showBiometric}
               />
 
               {error ? <AlertBox type="error" message={error} /> : null}
@@ -1243,6 +1276,32 @@ const styles = StyleSheet.create({
   linkBtn: { alignItems: "center", marginTop: spacing.md },
   linkBtnText: { ...typography.bodyMedium, color: C.primary },
   backRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: spacing.lg },
+  biometricQuickBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: `${C.primary}12`,
+    borderRadius: radii.lg,
+    padding: 14,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: `${C.primary}30`,
+  },
+  biometricIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.md,
+    backgroundColor: `${C.primary}18`,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  biometricQuickTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.text },
+  biometricQuickSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  biometricQuickTxt: { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.primary, textAlign: "center" },
+  orRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: spacing.sm },
+  orLine: { flex: 1, height: 1, backgroundColor: C.border },
+  orTxt: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted },
+
   backToHome: {
     position: "absolute",
     left: 16,
