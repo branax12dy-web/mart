@@ -1,4 +1,4 @@
-import { decimal, index, integer, pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { boolean, decimal, index, integer, pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -32,8 +32,20 @@ export const ridesTable = pgTable("rides", {
   dispatchLoopCount: integer("dispatch_loop_count").default(0),
   dispatchedAt:      timestamp("dispatched_at"),
   expiresAt:         timestamp("expires_at"),
-  /* ── Timestamps ── */
-  acceptedAt: timestamp("accepted_at"),
+  /* ── OTP start system ── */
+  tripOtp:     text("trip_otp"),
+  otpVerified: boolean("otp_verified").notNull().default(false),
+  /* ── Parcel delivery fields ── */
+  isParcel:      boolean("is_parcel").notNull().default(false),
+  receiverName:  text("receiver_name"),
+  receiverPhone: text("receiver_phone"),
+  packageType:   text("package_type"),
+  /* ── Precise event timestamps ── */
+  acceptedAt:   timestamp("accepted_at"),
+  arrivedAt:    timestamp("arrived_at"),
+  startedAt:    timestamp("started_at"),
+  completedAt:  timestamp("completed_at"),
+  cancelledAt:  timestamp("cancelled_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

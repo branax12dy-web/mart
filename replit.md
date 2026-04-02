@@ -3,6 +3,45 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Phase 4: Ride Booking & Fare Logic — Completed Changes
+
+#### P4-T001 — DB Migration 0016 + rides schema update
+- **`lib/db/migrations/0016_ride_phase4.sql`**: Added columns: `trip_otp`, `otp_verified`, `is_parcel`, `receiver_name`, `receiver_phone`, `package_type`, `arrived_at`, `started_at`, `completed_at`, `cancelled_at`.
+- **`lib/db/src/schema/rides.ts`**: Schema updated with all new fields.
+
+#### P4-T002 — Routing-provider road distance in fare engine
+- **`artifacts/api-server/src/routes/rides.ts`**: `getRoadDistanceKm()` helper added — tries Google Directions → Mapbox Directions → haversine fallback. Used in `/estimate` and `POST /` ride creation. Response includes `distanceSource`.
+
+#### P4-T003 — OTP system + parcel support + event timestamps
+- **`artifacts/api-server/src/routes/rides.ts`**: `bookRideSchema` accepts `isParcel`, `receiverName`, `receiverPhone`, `packageType`. Parcel fields stored in DB.
+- **`artifacts/api-server/src/routes/rider.ts`**: OTP generated on accept (both accept-bid and rider accept). `POST /rider/rides/:id/verify-otp` endpoint validates OTP, sets `otpVerified=true`. PATCH status records `arrivedAt/startedAt/completedAt/cancelledAt`. `in_transit` gated on `otpVerified`.
+- **`artifacts/api-server/src/lib/socketio.ts`**: `emitRideOtp()` emits `ride:otp` event to customer's user room and the ride room.
+- **`artifacts/api-server/src/routes/rides.ts`** `formatRide()`: Now includes all new timestamp fields + OTP/parcel fields in every response.
+
+#### P4-T004 — Admin rides page enhanced with audit timestamps
+- **`artifacts/admin/src/pages/rides.tsx`**: Detail modal now shows Parcel Info section (receiver, phone, package type), OTP Status badge (Verified/Pending with code), and full Event Timeline grid (Requested/Accepted/Arrived/Started/Completed/Cancelled + Last updated).
+- **`artifacts/api-server/src/routes/admin.ts`**: `GET /admin/rides/:id` now returns all new fields: `arrivedAt`, `startedAt`, `completedAt`, `cancelledAt`, `tripOtp`, `otpVerified`, `isParcel`, `receiverName`, `receiverPhone`, `packageType`.
+
+#### P4-T005 — Admin Fleet Map active-trip focus mode
+- **`artifacts/admin/src/pages/live-riders-map.tsx`**: `makeRiderIcon` now accepts `hasActiveTrip` parameter. When a rider has a `currentTripId`, two concentric pulsing red rings animate around their marker. Icon cache key updated to include trip state.
+
+#### P4-T006 — Rider App OTP entry step + parcel badge
+- **`artifacts/rider-app/src/pages/Active.tsx`**: At `arrived` status with `!otpVerified` → shows blue "Verify OTP to Start" button. OTP modal with 4-digit input calls `POST /rider/rides/:id/verify-otp`. After verification, shows normal "Start Ride" button. `verifyOtpMut` mutation added.
+- **`artifacts/rider-app/src/pages/Home.tsx`**: Parcel rides show `📦 Parcel` amber badge on request cards.
+- **`artifacts/rider-app/src/lib/api.ts`**: `verifyRideOtp(id, otp)` method added.
+
+#### P4-T007 — Customer Booking Web Portal (new artifact)
+- **New artifact**: `artifacts/customer` at `/customer/` path, React + Vite.
+- **`src/pages/Login.tsx`**: Phone OTP login (send → verify flow) using `/api/auth/send-otp` + `/api/auth/verify-otp`.
+- **`src/pages/Booking.tsx`**: Leaflet map (click-to-set pickup/drop), Nominatim geocoding search, ride type selector (Bike/Auto/Car), fare estimate display with distance and surge info, InDrive bargaining offer mode, parcel delivery toggle with receiver fields and package type picker.
+- **`src/pages/Tracking.tsx`**: Live tracking with Socket.io (listens for `ride:otp`, `ride:update`, `rider:location`). Shows large OTP banner when rider arrives. Leaflet map with rider location marker + polyline. Status timeline. Cancel button for pre-trip statuses. 8s polling fallback.
+- **`src/pages/Completed.tsx`**: Trip summary (fare, addresses, driver name). 5-star rating with optional comment.
+- **`src/pages/History.tsx`**: Full ride history list with status badges, parcel indicator, LIVE badge for active rides (tap to re-open tracking).
+- **`src/lib/api.ts`**: Full API client — auth, estimate, book, getRide, cancelRide, acceptBid, counterOffer, rateRide, geocode/reverseGeocode.
+- **`src/lib/auth.tsx`**: Auth context with `getMe` on mount, login/logout.
+- **`src/lib/socket.tsx`**: Socket.io provider connecting with JWT auth.
+- **`src/index.css`**: Clean green-primary theme (HSL variables).
+
 ### User Preferences
 - I want iterative development.
 - Ask before making major changes.

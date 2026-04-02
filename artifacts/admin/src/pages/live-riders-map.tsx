@@ -153,7 +153,7 @@ function wasRecentlyActive(rider: Rider): boolean {
 
 /* ── Rider icon: supports optional username label above the marker and a
    50%-opacity "dimmed" state for offline riders still visible in last 24h ── */
-function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean, label?: string, dimmed?: boolean) {
+function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSelected: boolean, stale: boolean, label?: string, dimmed?: boolean, hasActiveTrip?: boolean) {
   /* Service providers get a distinct purple wrench icon */
   const role = (rider.role ?? "rider").toLowerCase();
   if (role === "service_provider" || role === "provider") {
@@ -169,16 +169,24 @@ function makeRiderIcon(rider: Rider, status: "online" | "offline" | "busy", isSe
   const labelHtml = label
     ? `<div style="position:absolute;top:${-(size / 2 + 16)}px;left:50%;transform:translateX(-50%);white-space:nowrap;background:rgba(0,0,0,0.78);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;pointer-events:none;line-height:1.4">${label}</div>`
     : "";
+  /* Active-trip pulsing ring */
+  const ringSize = size + 14;
+  const tripRingHtml = hasActiveTrip
+    ? `<div style="position:absolute;top:50%;left:50%;width:${ringSize}px;height:${ringSize}px;transform:translate(-50%,-50%);border-radius:50%;border:2.5px solid #ef4444;opacity:0.75;animation:pulse 1.4s ease-in-out infinite;pointer-events:none;"></div>
+       <div style="position:absolute;top:50%;left:50%;width:${ringSize + 10}px;height:${ringSize + 10}px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(239,68,68,0.4);animation:pulse 1.4s ease-in-out 0.4s infinite;pointer-events:none;"></div>`
+    : "";
   return L.divIcon({
-    html: `<div style="position:relative;opacity:${opacity}">
+    html: `<style>@keyframes pulse{0%,100%{opacity:0.75;transform:translate(-50%,-50%) scale(1)}50%{opacity:0.3;transform:translate(-50%,-50%) scale(1.15)}}</style>
+    <div style="position:relative;opacity:${opacity}">
       ${labelHtml}
+      ${tripRingHtml}
       <div style="width:${size}px;height:${size}px;background:${color};border:${staleBorder};border-radius:${isSelected ? "10px" : "50%"};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.35);cursor:pointer;will-change:transform;transition:background-color 0.3s,border-color 0.3s,opacity 0.3s">
         <svg width="${innerSize}" height="${innerSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgPath}</svg>
       </div>
     </div>`,
     className: "",
-    iconSize: [size, size + (label ? 20 : 0)],
-    iconAnchor: [size / 2, size / 2 + (label ? 20 : 0)],
+    iconSize: [size + (hasActiveTrip ? 24 : 0), size + (hasActiveTrip ? 24 : 0) + (label ? 20 : 0)],
+    iconAnchor: [(size + (hasActiveTrip ? 24 : 0)) / 2, (size + (hasActiveTrip ? 24 : 0)) / 2 + (label ? 20 : 0)],
   });
 }
 
@@ -875,10 +883,11 @@ export default function LiveRidersMap() {
       const labelText = showLabels
         ? (rider.name ? rider.name.split(" ")[0].slice(0, 10) : rider.userId.slice(-6))
         : undefined;
-      const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}:${stale ? "s" : "f"}:${dimmed ? "d" : "n"}:${labelText ?? ""}`;
+      const hasActiveTrip = !!(rider.currentTripId);
+      const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}:${stale ? "s" : "f"}:${dimmed ? "d" : "n"}:${labelText ?? ""}:${hasActiveTrip ? "t" : "f"}`;
       let icon = riderIconCacheRef.current.get(cacheKey);
       if (!icon) {
-        icon = makeRiderIcon(rider, status, isSelected, stale, labelText, dimmed);
+        icon = makeRiderIcon(rider, status, isSelected, stale, labelText, dimmed, hasActiveTrip);
         riderIconCacheRef.current.set(cacheKey, icon);
       }
       result.set(rider.userId, icon);

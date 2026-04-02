@@ -5,7 +5,7 @@ import { eq, desc, and, or, sql, count, sum, avg, gte, isNull, type InferSelectM
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
-import { emitRiderLocation, emitRiderStatus, emitRideDispatchUpdate, getIO } from "../lib/socketio.js";
+import { emitRiderLocation, emitRiderStatus, emitRideDispatchUpdate, emitRideOtp, getIO } from "../lib/socketio.js";
 import { z } from "zod";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
@@ -1113,8 +1113,46 @@ router.post("/rides/:id/accept", async (req, res) => {
     type: "ride", icon: updated.type === "bike" ? "bicycle-outline" : "car-outline",
   }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
 
+  /* Generate trip OTP and emit to customer */
+  const tripOtp = String(Math.floor(1000 + Math.random() * 9000));
+  await db.update(ridesTable).set({ tripOtp, updatedAt: new Date() }).where(eq(ridesTable.id, updated.id)).catch(() => {});
+  emitRideOtp(updated.userId, updated.id, tripOtp);
+
   emitRideDispatchUpdate({ rideId: updated.id, action: "accepted", status: "accepted" });
-  res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
+  res.json({ ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance), tripOtp });
+});
+
+/* ── POST /rider/rides/:id/verify-otp — Verify customer OTP before starting trip ── */
+router.post("/rides/:id/verify-otp", async (req, res) => {
+  const riderId = req.riderId!;
+  const rideId  = req.params["id"]!;
+  const { otp } = req.body ?? {};
+
+  if (!otp || typeof otp !== "string") {
+    res.status(400).json({ error: "OTP is required" }); return;
+  }
+
+  const [ride] = await db.select().from(ridesTable)
+    .where(and(eq(ridesTable.id, rideId), eq(ridesTable.riderId, riderId)))
+    .limit(1);
+
+  if (!ride) { res.status(404).json({ error: "Ride not found or not yours" }); return; }
+  if (ride.status !== "arrived") {
+    res.status(400).json({ error: "OTP can only be verified when you have marked Arrived" }); return;
+  }
+  if (ride.otpVerified) {
+    res.json({ success: true, message: "OTP already verified" }); return;
+  }
+  if (!ride.tripOtp) {
+    res.status(400).json({ error: "No OTP found for this ride" }); return;
+  }
+  if (ride.tripOtp.trim() !== otp.trim()) {
+    res.status(400).json({ error: "Incorrect OTP. Please check with your customer.", code: "OTP_MISMATCH" }); return;
+  }
+
+  await db.update(ridesTable).set({ otpVerified: true, updatedAt: new Date() }).where(eq(ridesTable.id, rideId));
+  emitRideDispatchUpdate({ rideId, action: "otp-verified", status: ride.status });
+  res.json({ success: true, message: "OTP verified. You may now start the trip." });
 });
 
 /* ── PATCH /rider/rides/:id/status — Update ride status (completed/cancelled) ── */
@@ -1160,6 +1198,15 @@ router.patch("/rides/:id/status", async (req, res) => {
     }
   }
 
+  /* ── OTP gate: in_transit requires OTP verification ── */
+  if (status === "in_transit" && !ride.otpVerified) {
+    res.status(400).json({
+      error: "Customer OTP not verified. Ask the customer for the 4-digit code, then tap 'Verify OTP'.",
+      code: "OTP_REQUIRED",
+    });
+    return;
+  }
+
   let updated: typeof ride;
 
   if (status === "completed") {
@@ -1174,7 +1221,7 @@ router.patch("/rides/:id/status", async (req, res) => {
       const platformFee = parseFloat((fareAmt * platformFeePct).toFixed(2));
       const riderShare  = parseFloat((fareAmt - platformFee).toFixed(2));
       updated = await db.transaction(async (tx) => {
-        const [statusRow] = await tx.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+        const [statusRow] = await tx.update(ridesTable).set({ status, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
         if (!statusRow) throw new Error("Ride not found or already updated");
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "cash_collection",
@@ -1212,7 +1259,7 @@ router.patch("/rides/:id/status", async (req, res) => {
       const earnings = parseFloat((fareAmt * riderKeepPct).toFixed(2));
       const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
       updated = await db.transaction(async (tx) => {
-        const [statusRow] = await tx.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+        const [statusRow] = await tx.update(ridesTable).set({ status, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
         if (!statusRow) throw new Error("Ride not found or already updated");
         await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
         await tx.insert(walletTransactionsTable).values({
@@ -1244,7 +1291,15 @@ router.patch("/rides/:id/status", async (req, res) => {
       type: "ride", icon: "checkmark-circle-outline",
     }).catch(e => console.error("customer notif insert failed:", e));
   } else {
-    const [row] = await db.update(ridesTable).set({ status, updatedAt: new Date() }).where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId))).returning();
+    const now = new Date();
+    const timestampFields =
+      status === "arrived"    ? { arrivedAt:   now } :
+      status === "in_transit" ? { startedAt:   now } :
+      status === "cancelled"  ? { cancelledAt: now } : {};
+    const [row] = await db.update(ridesTable)
+      .set({ status, updatedAt: now, ...timestampFields })
+      .where(and(eq(ridesTable.id, req.params["id"]!), eq(ridesTable.riderId, riderId)))
+      .returning();
     if (!row) { res.status(404).json({ error: "Ride not found or not yours" }); return; }
     updated = row;
   }

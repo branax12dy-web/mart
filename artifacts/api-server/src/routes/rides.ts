@@ -21,7 +21,7 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 }
 import { t, type TranslationKey } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
-import { emitRiderNewRequest, emitRideDispatchUpdate } from "../lib/socketio.js";
+import { emitRiderNewRequest, emitRideDispatchUpdate, emitRideOtp } from "../lib/socketio.js";
 
 const router: IRouter = Router();
 
@@ -45,6 +45,11 @@ const bookRideSchema = z.object({
   paymentMethod: z.string().min(1),
   offeredFare: z.preprocess((v) => (v != null && v !== "" ? Number(v) : undefined), z.number().positive().optional()),
   bargainNote: z.string().max(500).optional(),
+  /* ── Parcel delivery fields ── */
+  isParcel: z.boolean().optional().default(false),
+  receiverName: z.string().max(200).optional(),
+  receiverPhone: z.string().max(20).optional(),
+  packageType: z.string().max(100).optional(),
 });
 
 const cancelRideSchema = z.object({
@@ -216,6 +221,60 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Generates a random 4-digit OTP string (1000–9999) */
+function generateOtp(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+/**
+ * Returns road distance in km using the configured routing provider.
+ * Falls back to haversine if no API key is available or the call fails.
+ */
+async function getRoadDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): Promise<{ distanceKm: number; durationSeconds: number; source: "google" | "mapbox" | "haversine" }> {
+  const haversine = calcDistance(lat1, lng1, lat2, lng2);
+  const haversineFallback = { distanceKm: haversine, durationSeconds: Math.round((haversine / 45) * 3600), source: "haversine" as const };
+
+  try {
+    const s = await getPlatformSettings();
+    const routingProvider = s["routing_api_provider"] ?? "google";
+
+    if (routingProvider === "google") {
+      const googleKey = s["maps_api_key"];
+      if (!googleKey) return haversineFallback;
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${lat1},${lng1}&destination=${lat2},${lng2}&mode=driving&key=${googleKey}`;
+      const raw  = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      const data = await raw.json() as any;
+      if (data.status === "OK" && data.routes?.length) {
+        const leg = data.routes[0].legs[0];
+        return {
+          distanceKm:      Math.round(leg.distance.value / 100) / 10,
+          durationSeconds: leg.duration.value,
+          source: "google",
+        };
+      }
+    }
+
+    if (routingProvider === "mapbox") {
+      const mapboxKey = s["mapbox_api_key"];
+      if (!mapboxKey) return haversineFallback;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${lng1},${lat1};${lng2},${lat2}?access_token=${mapboxKey}&overview=false`;
+      const raw  = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      const data = await raw.json() as any;
+      if (data.routes?.length) {
+        return {
+          distanceKm:      Math.round(data.routes[0].distance / 100) / 10,
+          durationSeconds: Math.round(data.routes[0].duration),
+          source: "mapbox",
+        };
+      }
+    }
+  } catch {
+    /* Network error — fall through to haversine */
+  }
+
+  return haversineFallback;
+}
+
 async function calcFare(distance: number, type: string): Promise<{ baseFare: number; gstAmount: number; total: number }> {
   if (!isFinite(distance) || distance < 0) {
     throw new RideApiError("Invalid distance: must be a non-negative number", "INVALID_DISTANCE", 422);
@@ -259,17 +318,28 @@ async function calcFare(distance: number, type: string): Promise<{ baseFare: num
   return { baseFare, gstAmount, total: baseFare + gstAmount };
 }
 
+const toISO = (v: any) => v ? (v instanceof Date ? v.toISOString() : v) : null;
 function formatRide(r: any) {
   return {
     ...r,
-    fare:        parseFloat(r.fare         ?? "0"),
-    distance:    parseFloat(r.distance     ?? "0"),
-    offeredFare: r.offeredFare  ? parseFloat(r.offeredFare)  : null,
-    counterFare: r.counterFare  ? parseFloat(r.counterFare)  : null,
+    fare:          parseFloat(r.fare         ?? "0"),
+    distance:      parseFloat(r.distance     ?? "0"),
+    offeredFare:   r.offeredFare  ? parseFloat(r.offeredFare)  : null,
+    counterFare:   r.counterFare  ? parseFloat(r.counterFare)  : null,
     bargainRounds: r.bargainRounds ?? 0,
-    createdAt:   r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
-    updatedAt:   r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
-    acceptedAt:  r.acceptedAt   ? (r.acceptedAt instanceof Date ? r.acceptedAt.toISOString() : r.acceptedAt) : null,
+    createdAt:     toISO(r.createdAt),
+    updatedAt:     toISO(r.updatedAt),
+    acceptedAt:    toISO(r.acceptedAt),
+    arrivedAt:     toISO(r.arrivedAt),
+    startedAt:     toISO(r.startedAt),
+    completedAt:   toISO(r.completedAt),
+    cancelledAt:   toISO(r.cancelledAt),
+    tripOtp:       r.tripOtp  ?? null,
+    otpVerified:   r.otpVerified ?? false,
+    isParcel:      r.isParcel ?? false,
+    receiverName:  r.receiverName  ?? null,
+    receiverPhone: r.receiverPhone ?? null,
+    packageType:   r.packageType   ?? null,
   };
 }
 
@@ -320,19 +390,22 @@ router.post("/estimate", async (req, res) => {
   const { pickupLat, pickupLng, dropLat, dropLng, type } = parsed.data;
   try {
     const serviceType = type || "bike";
-    const distance = calcDistance(pickupLat, pickupLng, dropLat, dropLng);
-    const { baseFare, gstAmount, total } = await calcFare(distance, serviceType);
+    const { distanceKm, durationSeconds, source } = await getRoadDistanceKm(pickupLat, pickupLng, dropLat, dropLng);
+    const { baseFare, gstAmount, total } = await calcFare(distanceKm, serviceType);
     const s = await getPlatformSettings();
-    const duration = `${Math.round(distance * 3 + 5)} min`;
+    const durationMin = Math.round(durationSeconds / 60);
+    const duration = `${durationMin} min`;
     const bargainEnabled = (s["ride_bargaining_enabled"] ?? "on") === "on";
     const bargainMinPct  = parseFloat(s["ride_bargaining_min_pct"] ?? "70");
     const minOffer       = Math.ceil(total * (bargainMinPct / 100));
     res.json({
-      distance:    Math.round(distance * 10) / 10,
+      distance:    Math.round(distanceKm * 10) / 10,
       baseFare,
       gstAmount,
       fare:        total,
       duration,
+      durationSeconds,
+      distanceSource: source,
       type:        serviceType,
       bargainEnabled,
       minOffer,
@@ -356,6 +429,7 @@ router.post("/", customerAuth, async (req, res) => {
     type, pickupAddress, dropAddress,
     pickupLat, pickupLng, dropLat, dropLng,
     paymentMethod, offeredFare, bargainNote,
+    isParcel, receiverName, receiverPhone, packageType,
   } = parsed.data;
 
   const existingActive = await db.select({ id: ridesTable.id, status: ridesTable.status })
@@ -400,7 +474,8 @@ router.post("/", customerAuth, async (req, res) => {
   let distance: number;
   let baseFare: number, gstAmount: number, platformFare: number;
   try {
-    distance = calcDistance(pickupLat, pickupLng, dropLat, dropLng);
+    const routeResult = await getRoadDistanceKm(pickupLat, pickupLng, dropLat, dropLng);
+    distance = routeResult.distanceKm;
     const fareResult = await calcFare(distance, type);
     baseFare = fareResult.baseFare;
     gstAmount = fareResult.gstAmount;
@@ -479,6 +554,10 @@ router.post("/", customerAuth, async (req, res) => {
           dropLat: String(dropLat), dropLng: String(dropLng),
           fare: fareToStore, distance: (Math.round(distance * 10) / 10).toString(), paymentMethod,
           offeredFare: null, counterFare: null, bargainStatus: null, bargainRounds: 0,
+          isParcel: isParcel ?? false,
+          receiverName: receiverName || null,
+          receiverPhone: receiverPhone || null,
+          packageType: packageType || null,
         }).returning();
         return ride!;
       });
@@ -494,6 +573,10 @@ router.post("/", customerAuth, async (req, res) => {
         bargainStatus: isBargaining ? "customer_offered" : null,
         bargainRounds: isBargaining ? 1 : 0,
         bargainNote:   bargainNote || null,
+        isParcel: isParcel ?? false,
+        receiverName: receiverName || null,
+        receiverPhone: receiverPhone || null,
+        packageType: packageType || null,
       }).returning();
       rideRecord = ride!;
     }
@@ -775,6 +858,11 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
   const { rideUpdate, bid } = updated;
   const agreedFare = parseFloat(bid.fare);
 
+  /* Generate OTP for trip start and persist it */
+  const otp = generateOtp();
+  await db.update(ridesTable).set({ tripOtp: otp, updatedAt: new Date() }).where(eq(ridesTable.id, rideUpdate!.id)).catch(() => {});
+  emitRideOtp(rideUpdate!.userId, rideUpdate!.id, otp);
+
   const bidLang = await getUserLanguage(bid.riderId);
   await db.insert(notificationsTable).values({
     id: generateId(), userId: bid.riderId,
@@ -784,7 +872,7 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
   }).catch(() => {});
 
   emitRideDispatchUpdate({ rideId: rideUpdate!.id, action: "accepted", status: "accepted" });
-  res.json({ ...formatRide(rideUpdate!), agreedFare });
+  res.json({ ...formatRide(rideUpdate!), agreedFare, tripOtp: otp });
 });
 
 router.patch("/:id/customer-counter", customerAuth, requireRideState(["bargaining"]), requireRideOwner("userId"), async (req, res) => {

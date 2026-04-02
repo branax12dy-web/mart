@@ -499,10 +499,40 @@ function RideDetailModal({
             </div>
           )}
 
-          {/* Timestamps */}
-          <div className="flex justify-between text-xs text-muted-foreground border-t border-border/40 pt-3">
-            <span>Booked: {formatDate(ride.createdAt)}</span>
-            <span>Updated: {formatDate(ride.updatedAt)}</span>
+          {/* Parcel Info */}
+          {ride.isParcel && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 space-y-1.5">
+              <p className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">📦 Parcel Delivery</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                {ride.receiverName && <><span className="text-muted-foreground">Receiver</span><span className="font-semibold text-right">{ride.receiverName}</span></>}
+                {ride.receiverPhone && <><span className="text-muted-foreground">Phone</span><span className="font-semibold text-right">{ride.receiverPhone}</span></>}
+                {ride.packageType && <><span className="text-muted-foreground">Package</span><span className="font-semibold text-right capitalize">{ride.packageType}</span></>}
+              </div>
+            </div>
+          )}
+
+          {/* OTP Status */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Trip OTP:</span>
+            {ride.otpVerified
+              ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-bold"><CheckCircle2 className="w-3 h-3"/> Verified</span>
+              : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-bold"><Clock className="w-3 h-3"/> Pending</span>
+            }
+            {ride.tripOtp && <span className="ml-auto text-muted-foreground font-mono tracking-widest">{ride.tripOtp}</span>}
+          </div>
+
+          {/* Event Timestamps */}
+          <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3 space-y-1.5">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Event Timeline</p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+              <span className="text-muted-foreground">Requested</span><span className="font-semibold text-right">{formatDate(ride.createdAt)}</span>
+              {ride.acceptedAt && <><span className="text-muted-foreground">Accepted</span><span className="font-semibold text-right">{formatDate(ride.acceptedAt)}</span></>}
+              {ride.arrivedAt  && <><span className="text-muted-foreground">Arrived</span><span className="font-semibold text-right">{formatDate(ride.arrivedAt)}</span></>}
+              {ride.startedAt  && <><span className="text-muted-foreground">Started</span><span className="font-semibold text-right">{formatDate(ride.startedAt)}</span></>}
+              {ride.completedAt && <><span className="text-muted-foreground">Completed</span><span className="font-semibold text-right">{formatDate(ride.completedAt)}</span></>}
+              {ride.cancelledAt && <><span className="text-muted-foreground text-red-500">Cancelled</span><span className="font-semibold text-right text-red-600">{formatDate(ride.cancelledAt)}</span></>}
+              <span className="text-muted-foreground">Last updated</span><span className="font-semibold text-right">{formatDate(ride.updatedAt)}</span>
+            </div>
           </div>
         </div>
       </DialogContent>

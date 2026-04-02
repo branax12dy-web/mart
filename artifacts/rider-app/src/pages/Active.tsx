@@ -486,6 +486,8 @@ export default function Active() {
   const [toastMsg, setToastMsg]                    = useState("");
   const [toastIsError, setToastIsError]            = useState(false);
   const [showCancelConfirm, setShowCancelConfirm]  = useState(false);
+  const [showOtpModal, setShowOtpModal]            = useState(false);
+  const [otpInput, setOtpInput]                    = useState("");
   const [cancelTarget, setCancelTarget]            = useState<"order" | "ride">("order");
   const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
   const [proofFileName, setProofFileName]          = useState<string>("");
@@ -830,6 +832,17 @@ export default function Active() {
     onError: (e: Error) => {
       if (e.message !== "Offline — queued for retry") showToast(e.message, true);
     },
+  });
+
+  const verifyOtpMut = useMutation({
+    mutationFn: ({ id, otp }: { id: string; otp: string }) => api.verifyRideOtp(id, otp),
+    onSuccess: () => {
+      setShowOtpModal(false);
+      setOtpInput("");
+      qc.invalidateQueries({ queryKey: ["rider-active"] });
+      showToast("OTP verified! You can now start the ride.");
+    },
+    onError: (e: Error) => showToast(e.message, true),
   });
 
   if (isLoading) return <SkeletonActive />;
@@ -1426,7 +1439,16 @@ export default function Active() {
                     <MapPin size={16}/> {T("arrivedAtPickup")}
                   </button>
                 )}
-                {ride.status === "arrived" && (
+                {ride.status === "arrived" && !ride.otpVerified && (
+                  <button
+                    onClick={() => { setOtpInput(""); setShowOtpModal(true); }}
+                    disabled={updateRideMut.isPending}
+                    onTouchStart={() => setPressedBtn("otp")} onTouchEnd={() => setPressedBtn(null)}
+                    className={`flex-1 bg-blue-600 text-white font-black rounded-2xl py-4 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-transform ${pressedBtn === "otp" ? "scale-[0.97]" : ""}`}>
+                    <Shield size={16}/> Verify OTP to Start
+                  </button>
+                )}
+                {ride.status === "arrived" && ride.otpVerified && (
                   <button
                     onClick={() => updateRideMut.mutate({ id: ride.id, status: "in_transit" })}
                     disabled={updateRideMut.isPending}
@@ -1457,6 +1479,42 @@ export default function Active() {
           </div>
         )}
       </div>
+
+      {/* ── OTP Verification Modal ── */}
+      {showOtpModal && ride && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-[slideUp_0.3s_ease-out]">
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 px-6 py-6 flex flex-col items-center gap-3 border-b border-blue-100">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-200">
+                <Shield className="w-8 h-8 text-white" />
+              </div>
+              <div className="text-center">
+                <p className="font-black text-gray-900 text-xl">Enter Customer OTP</p>
+                <p className="text-gray-500 text-sm mt-1">Ask the customer for their 4-digit trip code</p>
+              </div>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <input
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                value={otpInput}
+                onChange={e => setOtpInput(e.target.value.slice(0, 4))}
+                placeholder="_ _ _ _"
+                className="w-full text-center text-3xl font-black tracking-[0.5em] border-2 border-gray-200 rounded-2xl py-4 focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                onClick={() => { if (otpInput.length === 4) verifyOtpMut.mutate({ id: ride.id, otp: otpInput }); }}
+                disabled={otpInput.length !== 4 || verifyOtpMut.isPending}
+                className="w-full bg-blue-600 text-white font-black rounded-2xl py-4 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-blue-200">
+                <CheckCircle size={18}/> {verifyOtpMut.isPending ? "Verifying…" : "Verify & Start Ride"}
+              </button>
+              <button onClick={() => setShowOtpModal(false)} className="w-full text-gray-400 font-bold py-2 text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCancelConfirm && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">

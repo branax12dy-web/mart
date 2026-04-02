@@ -1212,6 +1212,11 @@ export default function Home() {
                                   <CheckCircle size={8}/> Bid Sent
                                 </span>
                               )}
+                              {r.isParcel && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1 border border-amber-200">
+                                  📦 Parcel
+                                </span>
+                              )}
                               <RequestAge createdAt={r.createdAt} />
                             </div>
                             {(r.riderDistanceKm != null || r.riderEtaMin != null) && (
