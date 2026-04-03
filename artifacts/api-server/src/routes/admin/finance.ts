@@ -131,18 +131,26 @@ router.post("/vendors/:id/payout", async (req, res) => {
   const [vendor] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
   if (!vendor) { sendNotFound(res, "Vendor not found"); return; }
   const amt = Number(amount);
-  const currentBal = parseFloat(vendor.walletBalance ?? "0");
-  if (currentBal < amt) {
-    sendValidationError(res, `Insufficient wallet balance (Rs. ${currentBal.toFixed(0)})`); return;
-  }
-  const newBal = currentBal - amt;
-  const [updated] = await db.update(usersTable).set({ walletBalance: String(newBal), updatedAt: new Date() }).where(eq(usersTable.id, vendor.id)).returning();
-  await db.insert(walletTransactionsTable).values({
-    id: generateId(), userId: vendor.id, type: "debit", amount: String(amt),
-    description: description || `Admin payout processed: Rs. ${amt}`, reference: "admin_payout",
+  const txResult = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(usersTable)
+      .set({ walletBalance: sql`GREATEST(wallet_balance - ${amt}, 0)`, updatedAt: new Date() })
+      .where(and(eq(usersTable.id, vendor.id), gte(usersTable.walletBalance, String(amt))))
+      .returning();
+    if (!updated) throw new Error("INSUFFICIENT_BALANCE");
+    await tx.insert(walletTransactionsTable).values({
+      id: generateId(), userId: vendor.id, type: "debit", amount: String(amt),
+      description: description || `Admin payout processed: Rs. ${amt}`, reference: "admin_payout",
+    });
+    return { updated, newBal: parseFloat(updated.walletBalance ?? "0") };
+  }).catch((err: Error) => {
+    if (err.message === "INSUFFICIENT_BALANCE") return null;
+    throw err;
   });
+  if (!txResult) {
+    sendValidationError(res, `Insufficient wallet balance`); return;
+  }
   await sendUserNotification(vendor.id, "Payout Processed 💰", `Rs. ${amt} has been paid out from your vendor wallet.`, "system", "cash-outline");
-  sendSuccess(res, { amount: amt, newBalance: newBal, vendor: { ...stripUser(updated!), walletBalance: newBal } });
+  sendSuccess(res, { amount: amt, newBalance: txResult.newBal, vendor: { ...stripUser(txResult.updated), walletBalance: txResult.newBal } });
 });
 
 router.post("/vendors/:id/credit", async (req, res) => {
@@ -390,16 +398,27 @@ router.patch("/withdrawal-requests/:id/reject", async (req, res) => {
     sendValidationError(res, `Already processed (${tx.reference})`); return;
   }
   const rejReason = reason?.trim() || "Admin rejected";
-  await db.update(walletTransactionsTable).set({ reference: `rejected:${rejReason}` }).where(eq(walletTransactionsTable.id, txId));
   const amt = parseFloat(String(tx.amount));
-  await db.update(usersTable).set({ walletBalance: sql`wallet_balance + ${amt}`, updatedAt: new Date() }).where(eq(usersTable.id, tx.userId));
-  await db.insert(walletTransactionsTable).values({
-    id: generateId(), userId: tx.userId, type: "credit",
-    amount: amt.toFixed(2),
-    description: `Withdrawal Refunded — ${rejReason}`,
-    reference: `refund:${txId}`,
-    paymentMethod: null,
+  const txResult = await db.transaction(async (txn) => {
+    const [updated] = await txn.update(walletTransactionsTable)
+      .set({ reference: `rejected:${rejReason}` })
+      .where(and(eq(walletTransactionsTable.id, txId), eq(walletTransactionsTable.reference, "pending")))
+      .returning();
+    if (!updated) throw new Error("ALREADY_PROCESSED");
+    await txn.update(usersTable).set({ walletBalance: sql`wallet_balance + ${amt}`, updatedAt: new Date() }).where(eq(usersTable.id, tx.userId));
+    await txn.insert(walletTransactionsTable).values({
+      id: generateId(), userId: tx.userId, type: "credit",
+      amount: amt.toFixed(2),
+      description: `Withdrawal Refunded — ${rejReason}`,
+      reference: `refund:${txId}`,
+      paymentMethod: null,
+    });
+    return true;
+  }).catch((err: Error) => {
+    if (err.message === "ALREADY_PROCESSED") return null;
+    throw err;
   });
+  if (!txResult) { sendError(res, "Withdrawal has already been processed", 409); return; }
   const wdRejLang = await getUserLanguage(tx.userId);
   await db.insert(notificationsTable).values({
     id: generateId(), userId: tx.userId,

@@ -133,36 +133,36 @@ async function riderAuth(req: Request, res: Response, next: NextFunction) {
   const tokenHeader = req.headers["x-auth-token"] as string | undefined;
   const raw = tokenHeader || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
 
-  /* Include machine-readable `code` in all auth-denial responses so the frontend
-     api.ts can reliably detect auth vs. business-rule 403s and trigger logout
-     only for genuine auth failures, not policy blocks (e.g. "withdrawals disabled"). */
   if (!raw) { sendErrorWithData(res, "Authentication required", { code: "AUTH_REQUIRED" }, 401); return; }
 
   const payload = verifyUserJwt(raw);
   if (!payload) { sendErrorWithData(res, "Invalid or expired session. Please log in again.", { code: "TOKEN_INVALID" }, 401); return; }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
-  if (!user) { sendErrorWithData(res, "User not found", { code: "AUTH_REQUIRED" }, 401); return; }
-  if (user.isBanned) { sendErrorWithData(res, "Your account has been permanently banned. Please contact support.", { code: "ACCOUNT_BANNED" }, 401); return; }
-  if (!user.isActive) {
-    sendErrorWithData(res, "Account is inactive", { code: "AUTH_REQUIRED" }, 403); return;
-  }
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+    if (!user) { sendErrorWithData(res, "User not found", { code: "AUTH_REQUIRED" }, 401); return; }
+    if (user.isBanned) { sendErrorWithData(res, "Your account has been permanently banned. Please contact support.", { code: "ACCOUNT_BANNED" }, 401); return; }
+    if (!user.isActive) {
+      sendErrorWithData(res, "Account is inactive", { code: "AUTH_REQUIRED" }, 403); return;
+    }
 
-  /* Token version check — invalidates all outstanding JWTs after logout / password change / ban */
-  if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
-    sendErrorWithData(res, "Session revoked. Please log in again.", { code: "TOKEN_EXPIRED" }, 401); return;
-  }
+    if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
+      sendErrorWithData(res, "Session revoked. Please log in again.", { code: "TOKEN_EXPIRED" }, 401); return;
+    }
 
-  /* Enforce rider role — check BOTH the JWT claim and the DB roles field */
-  const dbRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
-  const jwtRoles = (payload.roles || payload.role || "").split(",").map((r: string) => r.trim());
-  if (!dbRoles.includes("rider") || !jwtRoles.includes("rider")) {
-    sendErrorWithData(res, "Access denied. This portal is for riders only.", { code: "ROLE_DENIED" }, 403); return;
-  }
+    const dbRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
+    const jwtRoles = (payload.roles || payload.role || "").split(",").map((r: string) => r.trim());
+    if (!dbRoles.includes("rider") || !jwtRoles.includes("rider")) {
+      sendErrorWithData(res, "Access denied. This portal is for riders only.", { code: "ROLE_DENIED" }, 403); return;
+    }
 
-  req.riderId = user.id;
-  req.riderUser = user;
-  next();
+    req.riderId = user.id;
+    req.riderUser = user;
+    next();
+  } catch (err) {
+    logger.error("[riderAuth] DB error:", err instanceof Error ? err.message : err);
+    sendError(res, "Authentication service temporarily unavailable", 503);
+  }
 }
 
 router.use(riderAuth);
@@ -889,9 +889,9 @@ router.patch("/orders/:id/status", async (req, res) => {
     if (isCash) {
       const platformFee = parseFloat((orderTotal * platformFeePct).toFixed(2));
       const riderShare  = parseFloat((orderTotal - platformFee).toFixed(2));
-      updated = await db.transaction(async (tx) => {
-        const [row] = await tx.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
-        if (!row) throw new Error("Order not found or already updated");
+      const txResult = await db.transaction(async (tx) => {
+        const [row] = await tx.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId), eq(ordersTable.status, order.status))).returning();
+        if (!row) throw new Error("STATUS_CONFLICT");
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "cash_collection",
           amount: orderTotal.toFixed(2),
@@ -917,7 +917,12 @@ router.patch("/orders/:id/status", async (req, res) => {
           });
         }
         return row;
+      }).catch((err: Error) => {
+        if (err.message === "STATUS_CONFLICT") return null;
+        throw err;
       });
+      if (!txResult) { sendError(res, "Order status has already been updated", 409); return; }
+      updated = txResult;
       const riderCashLang = await getUserLanguage(riderId);
       await db.insert(notificationsTable).values({
         id: generateId(), userId: riderId,
@@ -927,9 +932,9 @@ router.patch("/orders/:id/status", async (req, res) => {
     } else {
       const earnings = parseFloat((orderTotal * riderKeepPct).toFixed(2));
       const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
-      updated = await db.transaction(async (tx) => {
-        const [row] = await tx.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
-        if (!row) throw new Error("Order not found or already updated");
+      const txResult = await db.transaction(async (tx) => {
+        const [row] = await tx.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId), eq(ordersTable.status, order.status))).returning();
+        if (!row) throw new Error("STATUS_CONFLICT");
         await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${totalCredit}`, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId: riderId, type: "credit",
@@ -944,7 +949,12 @@ router.patch("/orders/:id/status", async (req, res) => {
           });
         }
         return row;
+      }).catch((err: Error) => {
+        if (err.message === "STATUS_CONFLICT") return null;
+        throw err;
       });
+      if (!txResult) { sendError(res, "Order status has already been updated", 409); return; }
+      updated = txResult;
       const riderEarnLang = await getUserLanguage(riderId);
       await db.insert(notificationsTable).values({
         id: generateId(), userId: riderId,
@@ -1018,7 +1028,7 @@ router.patch("/orders/:id/status", async (req, res) => {
       }
     }
   } else {
-    const [row] = await db.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId))).returning();
+    const [row] = await db.update(ordersTable).set(updateData).where(and(eq(ordersTable.id, req.params["id"]!), eq(ordersTable.riderId, riderId), eq(ordersTable.status, order.status))).returning();
     if (!row) { sendNotFound(res, "Order not found or not yours"); return; }
     updated = row;
   }
@@ -1809,35 +1819,46 @@ router.post("/cod/remit", async (req, res) => {
       res.status(400).json({ error: "Payment method is required" }); return;
     }
 
-    const [codAgg] = await db.select({ total: sum(ordersTable.total) }).from(ordersTable)
-      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), eq(ordersTable.paymentMethod, "cod")));
-    const [verifiedAgg] = await db.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
-      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'verified:%'`));
-    const [pendingAgg] = await db.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
-      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'pending:%'`));
-
-    const totalCollected = safeNum(codAgg?.total);
-    const totalVerified  = safeNum(verifiedAgg?.total);
-    const totalPending   = safeNum(pendingAgg?.total);
-    const netOwed = Math.max(0, totalCollected - totalVerified - totalPending);
-
-    if (Number(amount) > netOwed) {
-      res.status(400).json({ error: `Remittance amount exceeds available owed balance (${netOwed})` }); return;
-    }
-
     const txId = generateId();
     const refParts = [paymentMethod];
     if (accountNumber) refParts.push(accountNumber);
     if (transactionId) refParts.push(transactionId);
 
-    await db.insert(walletTransactionsTable).values({
-      id: txId,
-      userId: riderId,
-      amount: String(amount),
-      type: "cod_remittance",
-      description: note || `COD remittance via ${paymentMethod}`,
-      reference: `pending:${refParts.join(":")}`,
+    const result = await db.transaction(async (tx) => {
+      const [codAgg] = await tx.select({ total: sum(ordersTable.total) }).from(ordersTable)
+        .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), eq(ordersTable.paymentMethod, "cod")));
+      const [verifiedAgg] = await tx.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+        .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'verified:%'`));
+      const [pendingAgg] = await tx.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+        .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'pending:%'`));
+
+      const totalCollected = safeNum(codAgg?.total);
+      const totalVerified  = safeNum(verifiedAgg?.total);
+      const totalPending   = safeNum(pendingAgg?.total);
+      const netOwed = Math.max(0, totalCollected - totalVerified - totalPending);
+
+      if (Number(amount) > netOwed) {
+        throw new Error(`OVER_LIMIT:${netOwed}`);
+      }
+
+      await tx.insert(walletTransactionsTable).values({
+        id: txId,
+        userId: riderId,
+        amount: String(amount),
+        type: "cod_remittance",
+        description: note || `COD remittance via ${paymentMethod}`,
+        reference: `pending:${refParts.join(":")}`,
+      });
+
+      return { netOwed };
+    }).catch((err: Error) => {
+      if (err.message.startsWith("OVER_LIMIT:")) return { overLimit: err.message.split(":")[1] };
+      throw err;
     });
+
+    if ("overLimit" in result) {
+      res.status(400).json({ error: `Remittance amount exceeds available owed balance (${result.overLimit})` }); return;
+    }
 
     res.json({ success: true, transactionId: txId, message: "Remittance submitted for admin verification" });
   } catch (e: any) {

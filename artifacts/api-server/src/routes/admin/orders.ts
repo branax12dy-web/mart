@@ -89,12 +89,11 @@ router.patch("/orders/:id/status", async (req, res) => {
     /* Notifications after successful commit */
     await sendUserNotification(preOrder.userId, "Order Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya — Order #${orderId.slice(-6).toUpperCase()}`, "mart", "wallet-outline");
   } else {
-    /* Non-wallet or non-cancel: plain status update */
     const [updated] = await db.update(ordersTable)
       .set({ status, updatedAt: new Date() })
-      .where(eq(ordersTable.id, orderId))
+      .where(and(eq(ordersTable.id, orderId), ne(ordersTable.status, status)))
       .returning();
-    if (!updated) { sendNotFound(res, "Order not found"); return; }
+    if (!updated) { sendError(res, "Order status has already been updated", 409); return; }
     order = updated;
   }
 
@@ -111,18 +110,17 @@ router.patch("/orders/:id/status", async (req, res) => {
     const total = parseFloat(String(order.total));
     const riderKeepPct = (Number((await getPlatformSettings())["rider_keep_pct"]) || 80) / 100;
     const riderEarning = parseFloat((total * riderKeepPct).toFixed(2));
-    // Credit assigned rider's wallet earnings
     if (order.riderId) {
-      const [rider] = await db.select().from(usersTable).where(eq(usersTable.id, order.riderId));
-      if (rider) {
-        const riderNewBal = (parseFloat(rider.walletBalance ?? "0") + riderEarning).toFixed(2);
-        await db.update(usersTable).set({ walletBalance: riderNewBal, updatedAt: new Date() }).where(eq(usersTable.id, rider.id));
-        await db.insert(walletTransactionsTable).values({
-          id: generateId(), userId: rider.id, type: "credit",
+      await db.transaction(async (tx) => {
+        await tx.update(usersTable)
+          .set({ walletBalance: sql`wallet_balance + ${riderEarning}`, updatedAt: new Date() })
+          .where(eq(usersTable.id, order.riderId!));
+        await tx.insert(walletTransactionsTable).values({
+          id: generateId(), userId: order.riderId!, type: "credit",
           amount: String(riderEarning),
           description: `Delivery earnings — Order #${order.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
         });
-      }
+      });
     }
   }
 
