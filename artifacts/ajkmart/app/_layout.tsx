@@ -200,6 +200,7 @@ function RootLayoutNav() {
         <Stack.Screen name="cart/index"     options={{ headerShown: false }} />
         <Stack.Screen name="pharmacy/index" options={{ headerShown: false }} />
         <Stack.Screen name="parcel/index"   options={{ headerShown: false }} />
+        <Stack.Screen name="categories/index" options={{ headerShown: false }} />
         <Stack.Screen name="order/index"    options={{ headerShown: false }} />
       </Stack>
     </>

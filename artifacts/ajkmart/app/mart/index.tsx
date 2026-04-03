@@ -219,9 +219,9 @@ function MartScreenInner() {
   const showCartBanner = itemCount > 0 && cartType !== "mart" && cartType !== "none";
   const [clearBannerConfirm, setClearBannerConfirm] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
   const topPad = Math.max(insets.top, 12);
-  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const { focus, category: routeCategory } = useLocalSearchParams<{ focus?: string; category?: string }>();
+  const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
   const searchInputRef = useRef<TextInput>(null);
   useEffect(() => {
     if (focus === "search") {
@@ -326,6 +326,13 @@ function MartScreenInner() {
               <Text style={[styles.catChipTxt, selectedCat === cat.id && styles.catChipTxtActive]}>{cat.name}</Text>
             </Pressable>
           ))}
+          <Pressable
+            onPress={() => router.push({ pathname: "/categories" as any, params: { type: "mart" } })}
+            style={[styles.catChip, { borderStyle: "dashed" as any }]}
+          >
+            <Ionicons name="apps-outline" size={14} color={C.primary} />
+            <Text style={styles.catChipTxt}>Browse All</Text>
+          </Pressable>
         </ScrollView>
 
         {isLoading ? (

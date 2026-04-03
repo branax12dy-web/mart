@@ -3,7 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { PermissionGuide } from "@/components/PermissionGuide";
 import React, { useState, useEffect } from "react";
 import {
@@ -102,6 +102,7 @@ function MedCard({ med, qty, onAdd, onRemove }: {
 function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Math.max(insets.top, 12);
+  const { category: routeCategory } = useLocalSearchParams<{ category?: string }>();
   const { user, updateUser, token } = useAuth();
   const { items: globalCartItems, addItem: addToGlobalCart, removeItem: removeFromGlobalCart, updateQuantity, clearCart, setPharmacyPendingOrderId } = useCart();
   const { showToast } = useToast();
@@ -116,7 +117,7 @@ function PharmacyScreenInner() {
   const [categories, setCategories] = useState<string[]>(["All"]);
   const [loadingMeds, setLoadingMeds] = useState(true);
   const [medsError, setMedsError] = useState(false);
-  const [activeTab, setActiveTab] = useState("All");
+  const [activeTab, setActiveTab] = useState(routeCategory || "All");
   const [search, setSearch] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);

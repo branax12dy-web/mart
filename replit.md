@@ -3,6 +3,31 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Dynamic Categories System — Completed Changes
+
+#### Database Schema
+- **`lib/db/src/schema/categories.ts`**: New `categories` table with fields: id, name, icon, type (mart/food/pharmacy), parentId (self-referencing hierarchy), sortOrder, isActive, timestamps.
+
+#### API Endpoints
+- **`artifacts/api-server/src/routes/categories.ts`**: Replaced hardcoded category arrays with database-driven categories. Endpoints: GET `/categories` (hierarchical list with children and product counts), GET `/categories/tree` (full tree for admin), POST/PATCH/DELETE for CRUD, POST `/categories/reorder`. Auto-seeds initial categories from previous hardcoded data.
+- **`artifacts/api-server/src/routes/admin.ts`**: Admin-specific category management routes: GET `/admin/categories/tree`, POST/PATCH/DELETE for admin CRUD.
+
+#### Admin Panel
+- **`artifacts/admin/src/pages/categories.tsx`**: Categories management page with expandable tree view, type filtering (mart/food/pharmacy), add/edit/delete dialogs, parent category selection, icon picker, active/inactive toggle, sort order management.
+- **`artifacts/admin/src/App.tsx`**: Route registered at `/categories`.
+- **`artifacts/admin/src/components/layout/AdminLayout.tsx`**: Navigation entry added under "Vendor Portal" group.
+
+#### Mobile App
+- **`artifacts/ajkmart/app/categories/index.tsx`**: Full-screen categories browsing with AliExpress-style sidebar navigation. Left sidebar shows top-level categories with active indicator, right panel shows sub-categories grid and product list filtered by selected category.
+- **`artifacts/ajkmart/app/search.tsx`**: Enhanced filter panel with price range inputs, star rating filter chips (Any, 3★+, 3.5★+, 4★+, 4.5★+), clear all button, and apply filters button.
+
+#### API Client
+- **`lib/api-client-react/src/discovery.ts`**: Added `getHierarchicalCategories` function and `HierarchicalCategory` interface.
+- **`lib/api-client-react/src/index.ts`**: Exported new function and type.
+
+#### i18n
+- **`lib/i18n/src/index.ts`**: Added `navCategories` translation key in English, Urdu, and Hindi sections.
+
 ### Product Reviews, Wishlist & Image Gallery — Completed Changes
 
 #### Backend

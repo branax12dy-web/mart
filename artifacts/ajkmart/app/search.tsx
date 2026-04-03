@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
-import { searchProducts, getTrendingSearches } from "@workspace/api-client-react";
+import { searchProducts, getTrendingSearches, useGetCategories } from "@workspace/api-client-react";
 import { WishlistHeart } from "@/components/WishlistHeart";
 
 const C = Colors.light;
@@ -90,9 +90,16 @@ export default function UniversalSearchScreen() {
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const { data: catData } = useGetCategories({});
+  const allCategories = (catData?.categories || []).flatMap(cat => [
+    cat,
+    ...(cat.children || []),
+  ]);
 
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,6 +156,7 @@ export default function UniversalSearchScreen() {
             minPrice: minPrice || undefined,
             maxPrice: maxPrice || undefined,
             minRating: minRating || undefined,
+            category: filterCategory || undefined,
             page,
             perPage: 20,
           }).then((data) => ({
@@ -214,7 +222,7 @@ export default function UniversalSearchScreen() {
     }
     setLoading(false);
     setLoadingMore(false);
-  }, [enabledServices.join(","), saveToHistory, sortBy, minPrice, maxPrice, minRating, sections]);
+  }, [enabledServices.join(","), saveToHistory, sortBy, minPrice, maxPrice, minRating, filterCategory, sections]);
 
   const loadNextPage = useCallback(() => {
     if (currentPage < totalPages && !loadingMore && query.trim()) {
@@ -302,22 +310,84 @@ export default function UniversalSearchScreen() {
           </Pressable>
         </ScrollView>
         {showFilters && (
-          <View style={s.filterRow}>
-            <View style={s.filterField}>
-              <Text style={s.filterLabel}>Min Rs.</Text>
-              <TextInput style={s.filterInput} value={minPrice} onChangeText={setMinPrice} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
+          <View style={s.filterPanel}>
+            <View style={s.filterSection}>
+              <Text style={s.filterSectionTitle}>Price Range (Rs.)</Text>
+              <View style={s.filterPriceRow}>
+                <View style={s.filterField}>
+                  <TextInput style={s.filterInput} value={minPrice} onChangeText={setMinPrice} keyboardType="numeric" placeholder="Min" placeholderTextColor={C.textMuted} />
+                </View>
+                <Text style={s.filterDash}>—</Text>
+                <View style={s.filterField}>
+                  <TextInput style={s.filterInput} value={maxPrice} onChangeText={setMaxPrice} keyboardType="numeric" placeholder="Max" placeholderTextColor={C.textMuted} />
+                </View>
+              </View>
             </View>
-            <View style={s.filterField}>
-              <Text style={s.filterLabel}>Max Rs.</Text>
-              <TextInput style={s.filterInput} value={maxPrice} onChangeText={setMaxPrice} keyboardType="numeric" placeholder="Any" placeholderTextColor={C.textMuted} />
+
+            <View style={s.filterSection}>
+              <Text style={s.filterSectionTitle}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                <Pressable onPress={() => setFilterCategory("")} style={[s.ratingChip, filterCategory === "" && s.ratingChipActive]}>
+                  <Text style={[s.ratingChipTxt, filterCategory === "" && s.ratingChipTxtActive]}>All</Text>
+                </Pressable>
+                {allCategories.map(cat => (
+                  <Pressable key={cat.id} onPress={() => setFilterCategory(filterCategory === cat.id ? "" : cat.id)} style={[s.ratingChip, filterCategory === cat.id && s.ratingChipActive]}>
+                    <Text style={[s.ratingChipTxt, filterCategory === cat.id && s.ratingChipTxtActive]}>{cat.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </View>
-            <View style={s.filterField}>
-              <Text style={s.filterLabel}>Min Rating</Text>
-              <TextInput style={s.filterInput} value={minRating} onChangeText={setMinRating} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
+
+            <View style={s.filterSection}>
+              <Text style={s.filterSectionTitle}>Sort By</Text>
+              <View style={s.ratingChipsRow}>
+                {SORT_OPTIONS.map(opt => (
+                  <Pressable key={opt.key} onPress={() => setSortBy(opt.key)} style={[s.ratingChip, sortBy === opt.key && s.ratingChipActive]}>
+                    <Text style={[s.ratingChipTxt, sortBy === opt.key && s.ratingChipTxtActive]}>{opt.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
-            <Pressable onPress={() => { if (query.trim()) fetchResults(query); }} style={s.filterApply}>
-              <Text style={s.filterApplyTxt}>Apply</Text>
-            </Pressable>
+
+            <View style={s.filterSection}>
+              <Text style={s.filterSectionTitle}>Minimum Rating</Text>
+              <View style={s.ratingChipsRow}>
+                {["", "3", "3.5", "4", "4.5"].map(val => {
+                  const isSelected = minRating === val;
+                  const label = val === "" ? "Any" : `${val}★+`;
+                  return (
+                    <Pressable
+                      key={val}
+                      onPress={() => setMinRating(val)}
+                      style={[s.ratingChip, isSelected && s.ratingChipActive]}
+                    >
+                      {val !== "" && <Ionicons name="star" size={11} color={isSelected ? "#fff" : "#F59E0B"} />}
+                      <Text style={[s.ratingChipTxt, isSelected && s.ratingChipTxtActive]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={s.filterActions}>
+              <Pressable
+                onPress={() => {
+                  setMinPrice("");
+                  setMaxPrice("");
+                  setMinRating("");
+                  setFilterCategory("");
+                  setSortBy("relevance");
+                  if (query.trim()) fetchResults(query);
+                }}
+                style={s.filterClearBtn}
+              >
+                <Text style={s.filterClearTxt}>Clear All</Text>
+              </Pressable>
+              <Pressable onPress={() => { if (query.trim()) fetchResults(query); }} style={s.filterApply}>
+                <Ionicons name="checkmark" size={14} color="#fff" />
+                <Text style={s.filterApplyTxt}>Apply Filters</Text>
+              </Pressable>
+            </View>
           </View>
         )}
       </View>
@@ -577,11 +647,22 @@ const s = StyleSheet.create({
   sortChipActive: { backgroundColor: C.primary, borderColor: C.primary },
   sortChipTxt: { fontSize: 12, fontFamily: "Inter_500Medium", color: C.textSecondary },
   sortChipTxtActive: { color: "#fff" },
-  filterRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingTop: 8 },
+  filterPanel: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, gap: 10 },
+  filterSection: { gap: 6 },
+  filterSectionTitle: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  filterPriceRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterField: { flex: 1 },
-  filterLabel: { fontSize: 10, fontFamily: "Inter_500Medium", color: C.textMuted, marginBottom: 2 },
-  filterInput: { backgroundColor: C.surfaceSecondary, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 13, fontFamily: "Inter_400Regular", color: C.text, borderWidth: 1, borderColor: C.border },
-  filterApply: { backgroundColor: C.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, marginTop: 12 },
+  filterDash: { fontSize: 14, color: C.textMuted },
+  filterInput: { backgroundColor: C.surfaceSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, fontFamily: "Inter_400Regular", color: C.text, borderWidth: 1, borderColor: C.border },
+  ratingChipsRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  ratingChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.surfaceSecondary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: C.border },
+  ratingChipActive: { backgroundColor: C.primary, borderColor: C.primary },
+  ratingChipTxt: { fontSize: 12, fontFamily: "Inter_500Medium", color: C.textSecondary },
+  ratingChipTxtActive: { color: "#fff" },
+  filterActions: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "flex-end", paddingTop: 4 },
+  filterClearBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  filterClearTxt: { fontSize: 12, fontFamily: "Inter_500Medium", color: C.danger },
+  filterApply: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.primary, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 },
   filterApplyTxt: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#fff" },
 
   loadMoreWrap: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16 },

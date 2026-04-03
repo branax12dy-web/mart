@@ -1,30 +1,46 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable } from "@workspace/db/schema";
-import { eq, and, sql } from "drizzle-orm";
-import { getPlatformSettings } from "./admin.js";
+import { categoriesTable, productsTable } from "@workspace/db/schema";
+import { eq, and, sql, asc } from "drizzle-orm";
+import { generateId } from "../lib/id.js";
+import { adminAuth, getPlatformSettings } from "./admin.js";
 
 const router: IRouter = Router();
 
-const MART_CATEGORIES = [
-  { id: "fruits", name: "Fruits & Veg", icon: "leaf-outline", type: "mart" },
-  { id: "meat", name: "Meat & Fish", icon: "fish-outline", type: "mart" },
-  { id: "dairy", name: "Dairy & Eggs", icon: "egg-outline", type: "mart" },
-  { id: "bakery", name: "Bakery", icon: "cafe-outline", type: "mart" },
-  { id: "household", name: "Household", icon: "home-outline", type: "mart" },
-  { id: "beverages", name: "Beverages", icon: "wine-outline", type: "mart" },
-  { id: "snacks", name: "Snacks", icon: "pizza-outline", type: "mart" },
-  { id: "personal", name: "Personal Care", icon: "heart-outline", type: "mart" },
+const SEED_CATEGORIES = [
+  { id: "fruits", name: "Fruits & Veg", icon: "leaf-outline", type: "mart", sortOrder: 0 },
+  { id: "meat", name: "Meat & Fish", icon: "fish-outline", type: "mart", sortOrder: 1 },
+  { id: "dairy", name: "Dairy & Eggs", icon: "egg-outline", type: "mart", sortOrder: 2 },
+  { id: "bakery", name: "Bakery", icon: "cafe-outline", type: "mart", sortOrder: 3 },
+  { id: "household", name: "Household", icon: "home-outline", type: "mart", sortOrder: 4 },
+  { id: "beverages", name: "Beverages", icon: "wine-outline", type: "mart", sortOrder: 5 },
+  { id: "snacks", name: "Snacks", icon: "pizza-outline", type: "mart", sortOrder: 6 },
+  { id: "personal", name: "Personal Care", icon: "heart-outline", type: "mart", sortOrder: 7 },
+  { id: "restaurants", name: "Restaurants", icon: "restaurant-outline", type: "food", sortOrder: 0 },
+  { id: "fast-food", name: "Fast Food", icon: "fast-food-outline", type: "food", sortOrder: 1 },
+  { id: "desi", name: "Desi Food", icon: "flame-outline", type: "food", sortOrder: 2 },
+  { id: "chinese", name: "Chinese", icon: "nutrition-outline", type: "food", sortOrder: 3 },
+  { id: "pizza", name: "Pizza", icon: "pizza-outline", type: "food", sortOrder: 4 },
+  { id: "desserts", name: "Desserts", icon: "ice-cream-outline", type: "food", sortOrder: 5 },
 ];
 
-const FOOD_CATEGORIES = [
-  { id: "restaurants", name: "Restaurants", icon: "restaurant-outline", type: "food" },
-  { id: "fast-food", name: "Fast Food", icon: "fast-food-outline", type: "food" },
-  { id: "desi", name: "Desi Food", icon: "flame-outline", type: "food" },
-  { id: "chinese", name: "Chinese", icon: "nutrition-outline", type: "food" },
-  { id: "pizza", name: "Pizza", icon: "pizza-outline", type: "food" },
-  { id: "desserts", name: "Desserts", icon: "ice-cream-outline", type: "food" },
-];
+async function ensureSeedCategories() {
+  const existing = await db.select({ id: categoriesTable.id }).from(categoriesTable).limit(1);
+  if (existing.length > 0) return;
+  for (const cat of SEED_CATEGORIES) {
+    await db.insert(categoriesTable).values({
+      id: cat.id,
+      name: cat.name,
+      icon: cat.icon,
+      type: cat.type,
+      sortOrder: cat.sortOrder,
+      parentId: null,
+      isActive: true,
+    }).onConflictDoNothing();
+  }
+}
+
+ensureSeedCategories().catch(() => {});
 
 router.get("/", async (req, res) => {
   const type = req.query["type"] as string;
@@ -40,7 +56,16 @@ router.get("/", async (req, res) => {
     } catch {}
   }
 
-  let categories = type === "food" ? FOOD_CATEGORIES : type === "mart" ? MART_CATEGORIES : [...MART_CATEGORIES, ...FOOD_CATEGORIES];
+  const conditions = [eq(categoriesTable.isActive, true)];
+  if (type) {
+    conditions.push(eq(categoriesTable.type, type));
+  }
+
+  const allCats = await db
+    .select()
+    .from(categoriesTable)
+    .where(and(...conditions))
+    .orderBy(asc(categoriesTable.sortOrder));
 
   const typeFilter = type === "mart" ? eq(productsTable.type, "mart")
     : type === "food" ? eq(productsTable.type, "food")
@@ -63,12 +88,122 @@ router.get("/", async (req, res) => {
 
   const countMap = new Map(countRows.map((r) => [r.category, r.count]));
 
-  res.json({
-    categories: categories.map((c) => ({
-      ...c,
-      productCount: countMap.get(c.id) ?? 0,
+  const topLevel = allCats.filter(c => !c.parentId);
+  const childrenMap = new Map<string, typeof allCats>();
+  for (const c of allCats) {
+    if (c.parentId) {
+      const arr = childrenMap.get(c.parentId) || [];
+      arr.push(c);
+      childrenMap.set(c.parentId, arr);
+    }
+  }
+
+  const categories = topLevel.map(c => ({
+    id: c.id,
+    name: c.name,
+    icon: c.icon,
+    type: c.type,
+    parentId: c.parentId,
+    sortOrder: c.sortOrder,
+    productCount: countMap.get(c.id) ?? 0,
+    children: (childrenMap.get(c.id) || []).map(child => ({
+      id: child.id,
+      name: child.name,
+      icon: child.icon,
+      type: child.type,
+      parentId: child.parentId,
+      sortOrder: child.sortOrder,
+      productCount: countMap.get(child.id) ?? 0,
     })),
-  });
+  }));
+
+  res.json({ categories });
+});
+
+router.post("/", adminAuth, async (req, res) => {
+  const { name, icon, type, parentId, sortOrder, isActive } = req.body;
+  if (!name || !type) {
+    res.status(400).json({ error: "name and type are required" });
+    return;
+  }
+
+  const id = generateId();
+  const [category] = await db.insert(categoriesTable).values({
+    id,
+    name,
+    icon: icon || "grid-outline",
+    type,
+    parentId: parentId || null,
+    sortOrder: sortOrder ?? 0,
+    isActive: isActive !== false,
+  }).returning();
+
+  res.status(201).json(category);
+});
+
+router.patch("/:id", adminAuth, async (req, res) => {
+  const { name, icon, type, parentId, sortOrder, isActive } = req.body;
+
+  const updates: Record<string, any> = { updatedAt: new Date() };
+  if (name !== undefined) updates.name = name;
+  if (icon !== undefined) updates.icon = icon;
+  if (type !== undefined) updates.type = type;
+  if (parentId !== undefined) updates.parentId = parentId || null;
+  if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+  if (isActive !== undefined) updates.isActive = isActive;
+
+  const [updated] = await db
+    .update(categoriesTable)
+    .set(updates)
+    .where(eq(categoriesTable.id, req.params["id"]!))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Category not found" });
+    return;
+  }
+
+  res.json(updated);
+});
+
+router.delete("/:id", adminAuth, async (req, res) => {
+  const id = req.params["id"]!;
+
+  await db
+    .update(categoriesTable)
+    .set({ parentId: null })
+    .where(eq(categoriesTable.parentId, id));
+
+  const [deleted] = await db
+    .delete(categoriesTable)
+    .where(eq(categoriesTable.id, id))
+    .returning();
+
+  if (!deleted) {
+    res.status(404).json({ error: "Category not found" });
+    return;
+  }
+
+  res.json({ success: true });
+});
+
+router.post("/reorder", adminAuth, async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "items array required" });
+    return;
+  }
+
+  for (const item of items) {
+    if (item.id && typeof item.sortOrder === "number") {
+      await db
+        .update(categoriesTable)
+        .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+        .where(eq(categoriesTable.id, item.id));
+    }
+  }
+
+  res.json({ success: true });
 });
 
 export default router;

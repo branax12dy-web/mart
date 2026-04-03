@@ -39,3 +39,4 @@ export * from "./kyc_verifications";
 export * from "./user_sessions";
 export * from "./login_history";
 export * from "./wishlist";
+export * from "./categories";

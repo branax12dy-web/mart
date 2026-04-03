@@ -27,6 +27,7 @@ import {
   rideNotifiedRidersTable,
   locationLogsTable,
   reviewsTable,
+  categoriesTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -2057,6 +2058,122 @@ router.get("/app-overview", async (_req, res) => {
       wallet:   settingsMap["feature_wallet"]   || "on",
     },
   });
+});
+
+/* ── Categories Management ── */
+router.get("/categories/tree", async (req, res) => {
+  const type = req.query["type"] as string;
+  const conditions = [];
+  if (type) conditions.push(eq(categoriesTable.type, type));
+
+  const allCats = await db
+    .select()
+    .from(categoriesTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(asc(categoriesTable.sortOrder));
+
+  const topLevel = allCats.filter(c => !c.parentId);
+  const childrenMap = new Map<string, typeof allCats>();
+  for (const c of allCats) {
+    if (c.parentId) {
+      const arr = childrenMap.get(c.parentId) || [];
+      arr.push(c);
+      childrenMap.set(c.parentId, arr);
+    }
+  }
+
+  const tree = topLevel.map(c => ({
+    ...c,
+    children: (childrenMap.get(c.id) || []),
+  }));
+
+  res.json({ categories: tree });
+});
+
+router.post("/categories", async (req, res) => {
+  const { name, icon, type, parentId, sortOrder, isActive } = req.body;
+  if (!name || !type) {
+    res.status(400).json({ error: "name and type are required" });
+    return;
+  }
+
+  const id = generateId();
+  const [category] = await db.insert(categoriesTable).values({
+    id,
+    name,
+    icon: icon || "grid-outline",
+    type,
+    parentId: parentId || null,
+    sortOrder: sortOrder ?? 0,
+    isActive: isActive !== false,
+  }).returning();
+
+  res.status(201).json(category);
+});
+
+router.patch("/categories/:id", async (req, res) => {
+  const { name, icon, type, parentId, sortOrder, isActive } = req.body;
+
+  const updates: Record<string, any> = { updatedAt: new Date() };
+  if (name !== undefined) updates.name = name;
+  if (icon !== undefined) updates.icon = icon;
+  if (type !== undefined) updates.type = type;
+  if (parentId !== undefined) updates.parentId = parentId || null;
+  if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+  if (isActive !== undefined) updates.isActive = isActive;
+
+  const [updated] = await db
+    .update(categoriesTable)
+    .set(updates)
+    .where(eq(categoriesTable.id, req.params["id"]!))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Category not found" });
+    return;
+  }
+
+  res.json(updated);
+});
+
+router.delete("/categories/:id", async (req, res) => {
+  const id = req.params["id"]!;
+
+  await db
+    .update(categoriesTable)
+    .set({ parentId: null })
+    .where(eq(categoriesTable.parentId, id));
+
+  const [deleted] = await db
+    .delete(categoriesTable)
+    .where(eq(categoriesTable.id, id))
+    .returning();
+
+  if (!deleted) {
+    res.status(404).json({ error: "Category not found" });
+    return;
+  }
+
+  res.json({ success: true });
+});
+
+router.post("/categories/reorder", async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "items array required" });
+    return;
+  }
+
+  for (const item of items) {
+    if (item.id && typeof item.sortOrder === "number") {
+      await db
+        .update(categoriesTable)
+        .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+        .where(eq(categoriesTable.id, item.id));
+    }
+  }
+
+  res.json({ success: true });
 });
 
 /* ── Flash Deals ── */

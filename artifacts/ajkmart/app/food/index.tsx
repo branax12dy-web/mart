@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState, useRef } from "react";
 import {
   ActivityIndicator,
@@ -125,7 +125,8 @@ function FoodScreenInner() {
   const showCartBanner = itemCount > 0 && cartType !== "food" && cartType !== "none";
   const [clearBannerConfirm, setClearBannerConfirm] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedCat, setSelectedCat] = useState<string | undefined>(undefined);
+  const { category: routeCategory } = useLocalSearchParams<{ category?: string }>();
+  const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
   const topPad = Math.max(insets.top, 12);
 
   const { data: catData } = useGetCategories({ type: "food" });
@@ -211,6 +212,13 @@ function FoodScreenInner() {
               <Text style={[styles.catChipText, selectedCat === c.id && styles.catChipTextActive]}>{c.name}</Text>
             </Pressable>
           ))}
+          <Pressable
+            onPress={() => router.push({ pathname: "/categories" as any, params: { type: "food" } })}
+            style={[styles.catChip, { borderStyle: "dashed" as any }]}
+          >
+            <Ionicons name="apps-outline" size={14} color={C.food} />
+            <Text style={styles.catChipText}>Browse All</Text>
+          </Pressable>
         </ScrollView>
 
         {isLoading ? (

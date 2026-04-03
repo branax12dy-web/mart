@@ -20,6 +20,7 @@ import Broadcast from "@/pages/broadcast";
 import Transactions from "@/pages/transactions";
 import Settings from "@/pages/settings";
 import FlashDeals from "@/pages/flash-deals";
+import Categories from "@/pages/categories";
 import AppManagement from "@/pages/app-management";
 import Vendors from "@/pages/vendors";
 import Riders from "@/pages/riders";
@@ -95,6 +96,7 @@ function Router() {
       <Route path="/transactions"><ProtectedRoute component={Transactions} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route path="/flash-deals"><ProtectedRoute component={FlashDeals} /></Route>
+      <Route path="/categories"><ProtectedRoute component={Categories} /></Route>
       <Route path="/app-management"><ProtectedRoute component={AppManagement} /></Route>
       <Route path="/vendors"><ProtectedRoute component={Vendors} /></Route>
       <Route path="/riders"><ProtectedRoute component={Riders} /></Route>

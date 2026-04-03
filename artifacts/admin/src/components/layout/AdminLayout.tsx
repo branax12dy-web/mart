@@ -8,6 +8,7 @@ import {
   Pill,
   Box,
   PackageSearch,
+  FolderTree,
   Megaphone,
   Receipt,
   Settings2,
@@ -71,6 +72,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { nameKey: "navVendors",      href: "/vendors",      icon: Store },
       { nameKey: "navProducts",     href: "/products",     icon: PackageSearch },
+      { nameKey: "navCategories",   href: "/categories",   icon: FolderTree },
       { nameKey: "navFlashDeals",   href: "/flash-deals",  icon: Zap },
       { nameKey: "navPromoCodes",   href: "/promo-codes",  icon: Ticket },
       { nameKey: "navReviews",      href: "/reviews",      icon: Star },

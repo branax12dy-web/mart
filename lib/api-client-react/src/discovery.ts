@@ -125,6 +125,7 @@ export interface SearchProductsParams {
   minPrice?: string;
   maxPrice?: string;
   minRating?: string;
+  category?: string;
   page?: number;
   perPage?: number;
 }
@@ -158,10 +159,33 @@ export const searchProducts = async (
   if (params.minPrice) qs.set("minPrice", params.minPrice);
   if (params.maxPrice) qs.set("maxPrice", params.maxPrice);
   if (params.minRating) qs.set("minRating", params.minRating);
+  if (params.category) qs.set("category", params.category);
   if (params.page) qs.set("page", String(params.page));
   if (params.perPage) qs.set("perPage", String(params.perPage));
   const res: SearchProductsResponse = await customFetch(`/products/search?${qs.toString()}`, { ...options, method: "GET" });
   return res;
+};
+
+export interface HierarchicalCategory {
+  id: string;
+  name: string;
+  icon: string;
+  type: string;
+  parentId: string | null;
+  sortOrder: number;
+  productCount: number;
+  children: HierarchicalCategory[];
+}
+
+export const getHierarchicalCategories = async (
+  params?: { type?: string },
+  options?: RequestInit,
+): Promise<HierarchicalCategory[]> => {
+  const qs = new URLSearchParams();
+  if (params?.type) qs.set("type", params.type);
+  const q = qs.toString();
+  const res: { categories?: HierarchicalCategory[] } = await customFetch(`/categories${q ? `?${q}` : ""}`, { ...options, method: "GET" });
+  return res.categories ?? [];
 };
 
 export const getTrendingSearches = async (

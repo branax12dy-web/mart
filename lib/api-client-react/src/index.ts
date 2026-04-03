@@ -16,10 +16,11 @@ export {
   getFlashDeals, getTrendingSearches, searchProducts,
   getWishlist, addToWishlist, removeFromWishlist, checkWishlist,
   getProductReviews, getProductReviewSummary, submitProductReview,
-  uploadImage,
+  uploadImage, getHierarchicalCategories,
 } from "./discovery";
 export type {
   Banner, RecommendationProduct, FlashDealProduct,
   SearchProductsParams, SearchProductsResponse,
   WishlistItem, ProductReview, ProductReviewsResponse, ReviewSummary,
+  HierarchicalCategory,
 } from "./discovery";

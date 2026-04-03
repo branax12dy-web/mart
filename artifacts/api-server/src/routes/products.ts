@@ -76,7 +76,7 @@ router.get("/trending-searches", async (req, res) => {
 });
 
 router.get("/search", async (req, res) => {
-  const { q, type, sort, minPrice, maxPrice, minRating } = req.query;
+  const { q, type, sort, minPrice, maxPrice, minRating, category } = req.query;
   const page = Math.max(parseInt(req.query.page as string) || 1, 1);
   const perPage = Math.min(Math.max(parseInt(req.query.perPage as string) || 20, 1), 50);
   const offset = (page - 1) * perPage;
@@ -92,6 +92,7 @@ router.get("/search", async (req, res) => {
     ilike(productsTable.name, `%${q.trim()}%`),
   ];
   if (type && typeof type === "string") conditions.push(eq(productsTable.type, type));
+  if (category && typeof category === "string") conditions.push(eq(productsTable.category, category));
   if (minPrice) conditions.push(gte(productsTable.price, String(minPrice)));
   if (maxPrice) conditions.push(lte(productsTable.price, String(maxPrice)));
   if (minRating) conditions.push(gte(productsTable.rating, String(minRating)));
