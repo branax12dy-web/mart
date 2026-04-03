@@ -678,6 +678,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
 
   let deliveryChannel = "none";
   let deliverySuccess = false;
+  let deliveryProvider = "";
   const smsEnabled = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveRole);
   const availableChannels: string[] = [];
   if (whatsappEnabled) availableChannels.push("whatsapp");
@@ -697,16 +698,16 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   for (const channel of channelOrder) {
     if (channel === "whatsapp") {
       const waResult = await sendWhatsAppOTP(phone, otp, settings, otpLang);
-      if (waResult.sent) { deliveryChannel = "whatsapp"; deliverySuccess = true; break; }
+      if (waResult.sent) { deliveryChannel = "whatsapp"; deliverySuccess = true; deliveryProvider = "whatsapp"; break; }
       req.log.warn({ err: waResult.error }, "WhatsApp OTP failed, trying next channel");
     } else if (channel === "sms") {
       const smsResult = await sendOtpSMS(phone, otp, settings, otpLang);
-      if (smsResult.sent) { deliveryChannel = "sms"; deliverySuccess = true; break; }
+      if (smsResult.sent) { deliveryChannel = "sms"; deliverySuccess = true; deliveryProvider = smsResult.provider ?? "sms"; break; }
       req.log.warn({ err: smsResult.error }, "SMS OTP failed, trying next channel");
     } else if (channel === "email" && userEmail) {
       const emailLang = otpUserId ? await getUserLanguage(otpUserId) : await getPlatformDefaultLanguage();
       const emailResult = await sendPasswordResetEmail(userEmail, otp, existingUser[0]?.name ?? undefined, emailLang);
-      if (emailResult.sent) { deliveryChannel = "email"; deliverySuccess = true; break; }
+      if (emailResult.sent) { deliveryChannel = "email"; deliverySuccess = true; deliveryProvider = "email"; break; }
       req.log.warn({ err: emailResult.reason }, "Email OTP failed");
     }
   }
@@ -714,6 +715,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   const isDev = process.env.NODE_ENV !== "production";
   const userDevOtp = existingUser[0]?.devOtpEnabled === true;
   const globalDevOtp = settings["security_global_dev_otp"] === "on";
+  const isConsoleDelivery = deliveryProvider === "console";
 
   if (!deliverySuccess) {
     if (isDev || userDevOtp || globalDevOtp) {
@@ -734,11 +736,12 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     fallbackChannels,
   };
 
-  /* Dev OTP: expose OTP in response when:
-     - the admin enabled devOtpEnabled on this specific user (per-user flag in Users page), OR
-     - the global Dev OTP Mode platform setting is "on" (Security settings in admin)
-     Both only work when the server is not in production mode. */
-  if ((userDevOtp || globalDevOtp) && isDev) {
+  /* Dev OTP: expose OTP in response when in non-production mode AND any of:
+     - admin enabled devOtpEnabled on this specific user (per-user flag in Users page)
+     - global Dev OTP Mode platform setting is "on" (Security settings in admin)
+     - delivery channel is "dev" (all real channels failed, only dev fallback available)
+     - delivery was via console SMS provider (no real SMS configured — dev environment) */
+  if (isDev && (userDevOtp || globalDevOtp || deliveryChannel === "dev" || isConsoleDelivery)) {
     response.otp = otp;
     response.devMode = true;
   }
@@ -1506,10 +1509,11 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
 
   const globalDevOtpEmail = settings["security_global_dev_otp"] === "on";
   const userDevOtpEmail = user.devOtpEnabled === true;
+  const emailConsoleFallback = !emailResult.sent;
   res.json({
     message: "OTP aapki email par bhej diya gaya hai",
     channel: emailResult.sent ? "email" : "console",
-    ...((globalDevOtpEmail || userDevOtpEmail) && isDev ? { otp, devMode: true } : {}),
+    ...(isDev && (globalDevOtpEmail || userDevOtpEmail || emailConsoleFallback) ? { otp, devMode: true } : {}),
   });
 });
 
