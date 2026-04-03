@@ -39,7 +39,18 @@ router.get("/rides", async (_req, res) => {
 
 router.patch("/rides/:id/status", async (req, res) => {
   const { status, riderName, riderPhone } = req.body;
+
+  if (status === "completed") {
+    const [existing] = await db.select({ riderId: ridesTable.riderId })
+      .from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
+    if (!existing) { sendNotFound(res, "Ride not found"); return; }
+    if (!existing.riderId) {
+      sendError(res, "Cannot force-complete a ride with no assigned rider. Assign a rider first.", 400); return;
+    }
+  }
+
   const updateData: Record<string, unknown> = { status, updatedAt: new Date() };
+  if (status === "completed") updateData.completedAt = new Date();
   if (riderName) updateData.riderName = riderName;
   if (riderPhone) updateData.riderPhone = riderPhone;
 
@@ -61,7 +72,7 @@ router.patch("/rides/:id/status", async (req, res) => {
   if (status === "completed") {
     const fare = parseFloat(ride.fare);
     const s = await getPlatformSettings();
-    const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
     const riderEarning = parseFloat((fare * riderKeepPct).toFixed(2));
     if (ride.riderId) {
       /* Atomic credit — uses sql`wallet_balance + X` to avoid clobbering

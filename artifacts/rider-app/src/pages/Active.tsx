@@ -647,11 +647,13 @@ export default function Active() {
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
         /* Detect client-side mock GPS: accuracy === 0 is impossible with real hardware sensors.
-           We do NOT return early here — we send the ping WITH mockProvider: true so the server
-           can track violations (spoof detection pipeline) and still process/reject it server-side. */
+           Suppress the ping entirely to prevent spoofed coordinates reaching the server. */
         const isMockGps = pos.coords.accuracy !== null && pos.coords.accuracy === 0;
-        if (isMockGps && isMountedRef.current) {
-          setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
+        if (isMockGps) {
+          if (isMountedRef.current) {
+            setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
+          }
+          return;
         }
         const gpsPayload = {
           latitude:     pos.coords.latitude,
@@ -660,7 +662,6 @@ export default function Active() {
           speed:        pos.coords.speed ?? undefined,
           heading:      pos.coords.heading ?? undefined,
           rideId:       data?.ride?.id ?? undefined,
-          mockProvider: isMockGps,
         };
         const queuedPing = {
           id:        `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -670,7 +671,6 @@ export default function Active() {
           accuracy:  pos.coords.accuracy ?? undefined,
           speed:     pos.coords.speed ?? undefined,
           heading:   pos.coords.heading ?? undefined,
-          mockProvider: isMockGps,
         };
         const doUpdate = () => api.updateLocation(gpsPayload).then(() => {
           if (isMountedRef.current && gpsWarningRef.current) setGpsWarningWithRef(null);
@@ -1439,7 +1439,7 @@ export default function Active() {
                     <MapPin size={16}/> {T("arrivedAtPickup")}
                   </button>
                 )}
-                {ride.status === "arrived" && !ride.otpVerified && (
+                {["arrived", "accepted"].includes(ride.status) && !ride.otpVerified && (
                   <button
                     onClick={() => { setOtpInput(""); setShowOtpModal(true); }}
                     disabled={updateRideMut.isPending}

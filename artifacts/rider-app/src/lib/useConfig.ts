@@ -273,7 +273,7 @@ export function getRiderModules(config: PlatformConfig): RiderModules {
 export function usePlatformConfig() {
   const { data, isLoading } = useQuery<PlatformConfig>({
     queryKey: ["platform-config"],
-    queryFn: () => apiFetch("/platform-config"),
+    queryFn: () => apiFetch("/platform-config") as Promise<PlatformConfig>,
     staleTime: 60_000,
     refetchInterval: 2 * 60_000,
     retry: 2,

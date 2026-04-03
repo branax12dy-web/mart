@@ -18,14 +18,14 @@ export const fetcher = async (endpoint: string, options: RequestInit = {}) => {
     },
   });
 
-  const data = await res.json();
+  const json = await res.json();
 
   if (!res.ok) {
     if (res.status === 401) {
       localStorage.removeItem("ajkmart_admin_token");
     }
-    throw new Error(data.error || "An error occurred");
+    throw new Error(json.error || "An error occurred");
   }
 
-  return data;
+  return json.data !== undefined ? json.data : json;
 };

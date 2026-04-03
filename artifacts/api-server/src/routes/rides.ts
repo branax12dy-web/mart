@@ -355,8 +355,9 @@ async function calcFare(distance: number, type: string): Promise<{ baseFare: num
   const baseFare = Math.round(Math.max(minFare, raw) * surgeMultiplier);
   const gstEnabled = (s["finance_gst_enabled"] ?? "off") === "on";
   const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
-  const gstAmount  = gstEnabled ? parseFloat(((baseFare * gstPct) / 100).toFixed(2)) : 0;
-  return { baseFare, gstAmount, total: baseFare + gstAmount };
+  const gstAmount  = gstEnabled ? Math.round((baseFare * gstPct) / 100) : 0;
+  const total      = baseFare + gstAmount; /* total is already integer: Math.round(baseFare) + Math.round(gst) */
+  return { baseFare, gstAmount, total };
 }
 
 const toISO = (v: unknown) => v ? (v instanceof Date ? v.toISOString() : v) : null;

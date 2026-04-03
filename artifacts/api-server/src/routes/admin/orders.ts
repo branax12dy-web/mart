@@ -109,7 +109,7 @@ router.patch("/orders/:id/status", async (req, res) => {
 
   if (status === "delivered") {
     const total = parseFloat(String(order.total));
-    const riderKeepPct = parseFloat((await getPlatformSettings())["rider_keep_pct"] ?? "80") / 100;
+    const riderKeepPct = (Number((await getPlatformSettings())["rider_keep_pct"]) || 80) / 100;
     const riderEarning = parseFloat((total * riderKeepPct).toFixed(2));
     // Credit assigned rider's wallet earnings
     if (order.riderId) {

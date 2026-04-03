@@ -127,7 +127,6 @@ function RideDetailModal({
   const handleCancel = () => {
     cancelMut.mutate({ id: rideId, reason: cancelReason || undefined }, {
       onSuccess: () => { toast({ title: "Ride cancelled" }); onClose(); },
-      onError: e => toast({ title: "Failed", description: e.message, variant: "destructive" }),
     });
   };
 
@@ -138,7 +137,6 @@ function RideDetailModal({
     }
     refundMut.mutate({ id: rideId, amount: amt, reason: refundReason || undefined }, {
       onSuccess: (d: any) => { toast({ title: `Refunded ${formatCurrency(Number(d.refundedAmount))}` }); setShowRefund(false); refetch(); },
-      onError: e => toast({ title: "Failed", description: e.message, variant: "destructive" }),
     });
   };
 
@@ -171,7 +169,6 @@ function RideDetailModal({
     }
     reassignMut.mutate({ id: rideId, riderId: selectedRiderId, riderName: assignName.trim(), riderPhone: assignPhone.trim() }, {
       onSuccess: () => { toast({ title: "Rider reassigned" }); setShowReassign(false); refetch(); },
-      onError: e => toast({ title: "Failed", description: e.message, variant: "destructive" }),
     });
   };
 

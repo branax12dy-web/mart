@@ -129,6 +129,14 @@ async function _doRefresh(): Promise<boolean> {
   }
 }
 
+interface ApiEnvelope<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+  code?: string;
+}
+
 export async function apiFetch(path: string, opts: RequestInit = {}, _retry = true): Promise<any> {
   const token = getToken();
   const isFormData = opts.body instanceof FormData;
@@ -192,7 +200,8 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
     Object.assign(error, { responseData: err, status: res.status });
     throw error;
   }
-  return res.json();
+  const json = await res.json() as ApiEnvelope;
+  return json.data !== undefined ? json.data : json;
 }
 
 export const api = {

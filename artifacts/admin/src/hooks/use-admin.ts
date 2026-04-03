@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 const REFETCH_INTERVAL = 30_000;
 
@@ -131,6 +132,7 @@ export const useRides = () => {
 
 export const useUpdateRide = () => {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   return useMutation({
     mutationFn: ({ id, status, riderName, riderPhone }: { id: string; status: string; riderName?: string; riderPhone?: string }) =>
       fetcher(`/rides/${id}/status`, {
@@ -141,6 +143,11 @@ export const useUpdateRide = () => {
       queryClient.invalidateQueries({ queryKey: ["admin-rides"] });
       queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      toast({ title: "Failed to update ride", description: error.message, variant: "destructive" });
+      console.error("[admin] update ride status failed:", error.message);
     },
   });
 };
@@ -816,6 +823,7 @@ export const useLeaderboard = () =>
 
 export const useAdminCancelRide = () => {
   const qc = useQueryClient();
+  const { toast } = useToast();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
       fetcher(`/rides/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
@@ -827,11 +835,17 @@ export const useAdminCancelRide = () => {
       qc.invalidateQueries({ queryKey: ["admin-ride-detail"] });
       qc.invalidateQueries({ queryKey: ["admin-ride-audit"] });
     },
+    onError: (error: Error) => {
+      qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      toast({ title: "Failed to cancel ride", description: error.message, variant: "destructive" });
+      console.error("[admin] cancel ride failed:", error.message);
+    },
   });
 };
 
 export const useAdminRefundRide = () => {
   const qc = useQueryClient();
+  const { toast } = useToast();
   return useMutation({
     mutationFn: ({ id, amount, reason }: { id: string; amount?: number; reason?: string }) =>
       fetcher(`/rides/${id}/refund`, { method: "POST", body: JSON.stringify({ amount, reason }) }),
@@ -842,11 +856,17 @@ export const useAdminRefundRide = () => {
       qc.invalidateQueries({ queryKey: ["admin-ride-detail"] });
       qc.invalidateQueries({ queryKey: ["admin-ride-audit"] });
     },
+    onError: (error: Error) => {
+      qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      toast({ title: "Failed to process refund", description: error.message, variant: "destructive" });
+      console.error("[admin] refund ride failed:", error.message);
+    },
   });
 };
 
 export const useAdminReassignRide = () => {
   const qc = useQueryClient();
+  const { toast } = useToast();
   return useMutation({
     mutationFn: ({ id, riderId, riderName, riderPhone }: { id: string; riderId?: string; riderName?: string; riderPhone?: string }) =>
       fetcher(`/rides/${id}/reassign`, { method: "POST", body: JSON.stringify({ riderId, riderName, riderPhone }) }),
@@ -856,6 +876,11 @@ export const useAdminReassignRide = () => {
       qc.invalidateQueries({ queryKey: ["admin-stats"] });
       qc.invalidateQueries({ queryKey: ["admin-ride-detail"] });
       qc.invalidateQueries({ queryKey: ["admin-ride-audit"] });
+    },
+    onError: (error: Error) => {
+      qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+      toast({ title: "Failed to reassign rider", description: error.message, variant: "destructive" });
+      console.error("[admin] reassign ride failed:", error.message);
     },
   });
 };

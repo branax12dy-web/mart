@@ -77,7 +77,13 @@ type ServiceType = {
   maxPassengers: number;
   description?: string;
   allowBargaining?: boolean;
+  isParcel?: boolean;
 };
+
+const PARCEL_KEYS = ["parcel", "courier", "delivery", "cargo", "freight"];
+const isParcelService = (key: string, svc?: ServiceType) =>
+  (svc?.isParcel === true) ||
+  PARCEL_KEYS.some((k) => key.toLowerCase().includes(k));
 
 type BookedRide = {
   id: string;
@@ -150,6 +156,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     address: string;
   } | null>(null);
   const [rideType, setRideType] = useState("bike");
+  const [receiverName, setReceiverName] = useState("");
+  const [receiverPhone, setReceiverPhone] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
   const [services, setServices] = useState<ServiceType[]>(DEFAULT_SERVICES);
   const [servicesLoading, setServicesLoading] = useState(true);
@@ -523,12 +531,28 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       showToast("Please log in to book a ride", "error");
       return;
     }
+    const selectedSvc = services.find((s) => s.key === rideType);
+    if (isParcelService(rideType, selectedSvc)) {
+      if (!receiverName.trim()) {
+        showToast("Please enter the receiver's full name", "error");
+        return;
+      }
+      if (!receiverPhone.trim()) {
+        showToast("Please enter the receiver's phone number", "error");
+        return;
+      }
+    }
     if (!estimate) {
       showToast("Fare estimate is being calculated. Please wait.", "error");
       return;
     }
     if (estimateForType && estimateForType !== rideType) {
       showToast("Fare estimate is outdated. Please wait for it to refresh.", "error");
+      return;
+    }
+    if (estimateAt && Date.now() - estimateAt > 5 * 60 * 1000) {
+      showToast("Your fare estimate has expired. Please wait a moment while it refreshes.", "error");
+      setEstimate(null);
       return;
     }
 
@@ -569,6 +593,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
 
     setBooking(true);
     try {
+      const selectedSvcForBook = services.find((s) => s.key === rideType);
+      const parcelBooking = isParcelService(rideType, selectedSvcForBook);
       const rideData = await bookRide({
         userId: user.id,
         type: rideType,
@@ -581,6 +607,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         paymentMethod: payMethod,
         ...(parsedOffer !== undefined && { offeredFare: parsedOffer }),
         ...(bargainNote && { bargainNote }),
+        ...(parcelBooking && receiverName.trim() && { receiverName: receiverName.trim() }),
+        ...(parcelBooking && receiverPhone.trim() && { receiverPhone: receiverPhone.trim() }),
+        ...(parcelBooking && { isParcel: true }),
       } as BookRideRequest);
       const bookedRide = rideData as BookedRide;
       if (payMethod === "wallet" && !bookedRide.isBargaining) {
@@ -1740,6 +1769,50 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 </Text>
               </View>
             )}
+          </View>
+        )}
+
+        {isParcelService(rideType, services.find((s) => s.key === rideType)) && (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={{ fontFamily: Font.bold, fontSize: 15, color: C.text, marginBottom: 10 }}>
+              Receiver Details
+            </Text>
+            <TextInput
+              value={receiverName}
+              onChangeText={setReceiverName}
+              placeholder="Receiver full name"
+              placeholderTextColor={C.textMuted}
+              style={{
+                fontFamily: Font.regular,
+                fontSize: 14,
+                color: C.text,
+                backgroundColor: C.surface,
+                borderWidth: 1,
+                borderColor: C.border,
+                borderRadius: 10,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                marginBottom: 10,
+              }}
+            />
+            <TextInput
+              value={receiverPhone}
+              onChangeText={setReceiverPhone}
+              placeholder="Receiver phone (03XXXXXXXXX)"
+              placeholderTextColor={C.textMuted}
+              keyboardType="phone-pad"
+              style={{
+                fontFamily: Font.regular,
+                fontSize: 14,
+                color: C.text,
+                backgroundColor: C.surface,
+                borderWidth: 1,
+                borderColor: C.border,
+                borderRadius: 10,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+              }}
+            />
           </View>
         )}
 

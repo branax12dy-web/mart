@@ -172,7 +172,7 @@ router.get("/me", async (req, res) => {
   const today = new Date(); today.setHours(0,0,0,0);
 
   const s = await getPlatformSettings();
-  const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+  const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
 
   const [
     ordersTodayStats, ordersAllStats,
@@ -852,7 +852,7 @@ router.patch("/orders/:id/status", async (req, res) => {
 
   if (status === "delivered") {
     const s = await getPlatformSettings();
-    const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
     const platformFeePct = 1 - riderKeepPct;
     const bonusPerTrip = parseFloat(s["rider_bonus_per_trip"] ?? "0");
     const orderTotal = safeNum(order.total);
@@ -1154,8 +1154,8 @@ router.post("/rides/:id/verify-otp", async (req, res) => {
     .limit(1);
 
   if (!ride) { sendNotFound(res, "Ride not found or not yours"); return; }
-  if (ride.status !== "arrived") {
-    sendValidationError(res, "OTP can only be verified when you have marked Arrived"); return;
+  if (!["arrived", "accepted"].includes(ride.status)) {
+    sendValidationError(res, "OTP can only be verified once you have accepted and are en route to the pickup location."); return;
   }
   if (ride.otpVerified) {
     sendSuccess(res, undefined, "OTP already verified"); return;
@@ -1225,7 +1225,7 @@ router.patch("/rides/:id/status", async (req, res) => {
 
   if (status === "completed") {
     const s = await getPlatformSettings();
-    const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+    const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
     const platformFeePct = 1 - riderKeepPct;
     const bonusPerTrip = parseFloat(s["rider_bonus_per_trip"] ?? "0");
     const fareAmt = safeNum(ride.fare);
@@ -1471,7 +1471,7 @@ router.post("/rides/:id/reject-offer", async (req, res) => {
 router.get("/history", async (req, res) => {
   const riderId = req.riderId!;
   const s = await getPlatformSettings();
-  const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+  const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
 
   const rawLimit  = parseInt(String(req.query["limit"]  || "50"), 10);
   const rawOffset = parseInt(String(req.query["offset"] || "0"),  10);
@@ -1628,7 +1628,7 @@ router.get("/earnings", async (req, res) => {
   const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate() - 30);
 
   const s = await getPlatformSettings();
-  const riderKeepPct = parseFloat(s["rider_keep_pct"] ?? "80") / 100;
+  const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
 
   /* Bonus transactions are credited per completed trip and must be included in the
      earnings summary — otherwise the displayed total is always lower than actual
@@ -1964,6 +1964,20 @@ router.patch("/location", async (req, res) => {
     }
   }
 
+  /* Reject accuracy === 0 or explicit mockProvider flag immediately.
+     accuracy === 0 is physically impossible with real hardware (GPS minimum is ~1m).
+     mockProvider === true is set by the client when it detects a fake GPS app. */
+  const mockProviderFlagged = req.body.mockProvider === true || req.body.mockProvider === "true";
+  if (accuracy === 0 || mockProviderFlagged) {
+    const ip = getClientIp(req);
+    const spoofReason = accuracy === 0
+      ? "GPS accuracy === 0 — mock provider signature"
+      : "mockProvider flag set — client-detected fake GPS";
+    addSecurityEvent({ type: "gps_spoof_detected", ip, userId: riderId, details: spoofReason, severity: "medium" });
+    sendErrorWithData(res, "GPS location rejected: mock GPS provider detected. Please disable fake GPS apps.", { code: "GPS_SPOOF_DETECTED" }, 422);
+    return;
+  }
+
   /* GPS Spoof Detection — 3-strike auto-offline.
      Minimum threshold is always 300 km/h (physically impossible for ground transport),
      or the admin-configured max if it's higher. Mock GPS provider flag is also checked. */
@@ -2198,6 +2212,8 @@ router.post("/location/batch", async (req, res) => {
 
   let inserted = 0;
   let skipped  = 0;
+  /* Pings rejected explicitly as mock GPS (accuracy=0) — reported separately in response */
+  let rejectedMock = 0;
   /* Track the previous accepted point to detect speed spoofing within the batch */
   let prevBatchLat: number | null = null;
   let prevBatchLng: number | null = null;
@@ -2212,7 +2228,10 @@ router.post("/location/batch", async (req, res) => {
       skipped++; continue;
     }
 
-    /* ── GPS accuracy filter (same rule as single-ping) ── */
+    /* ── Mock GPS explicit rejection (accuracy=0 is an emulator/mock provider signature) ── */
+    if (loc.accuracy === 0) { rejectedMock++; skipped++; continue; }
+
+    /* ── GPS accuracy filter ── */
     if (loc.accuracy !== undefined && loc.accuracy > minAccuracyMeters) {
       skipped++; continue;
     }
@@ -2284,7 +2303,7 @@ router.post("/location/batch", async (req, res) => {
     });
   }
 
-  sendSuccess(res, { inserted, skipped, total: sorted.length });
+  sendSuccess(res, { inserted, skipped, rejectedMock, total: sorted.length });
 });
 
 /* ── GET /rider/wallet/deposits — Deposit history ── */

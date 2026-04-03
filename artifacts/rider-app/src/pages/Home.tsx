@@ -551,26 +551,22 @@ export default function Home() {
         const { latitude, longitude, accuracy, speed, heading } = pos.coords;
 
         /* Detect client-side mock GPS: accuracy === 0 is impossible with real hardware sensors.
-           We do NOT return early — send the ping with mockProvider: true so server can track violations. */
+           Suppress the ping entirely — no spoofed coordinates are forwarded to the server. */
         const isMockGps = accuracy !== null && accuracy === 0;
         if (isMockGps) {
           setGpsWarningWithRef("Suspicious GPS accuracy detected. Please disable mock location apps.");
+          return;
         }
 
-        if (!isMockGps) {
-          /* Non-spoof pings are throttled to prevent unnecessary API spam.
-             Logic: send the update if (moved enough) OR (idle keep-alive interval passed).
-             A hard 1-second rate limit prevents GPS burst spam regardless. */
-          const timeSinceLast = now - lastSentTime;
-          if (timeSinceLast < 1000) return; /* hard rate limit */
-          if (lastLat !== null && lastLng !== null) {
-            const dist = haversineMeters(lastLat, lastLng, latitude, longitude);
-            /* Skip only when movement is below threshold AND keep-alive hasn't fired */
-            if (dist < MIN_DISTANCE_METERS && timeSinceLast < IDLE_INTERVAL_MS) return;
-          } else {
-            /* No prior location recorded — use idle interval as gate for first ping */
-            if (timeSinceLast < IDLE_INTERVAL_MS) return;
-          }
+        /* Throttle non-spoof pings to prevent unnecessary API spam.
+           Send if moved enough OR idle keep-alive interval passed. */
+        const timeSinceLast = now - lastSentTime;
+        if (timeSinceLast < 1000) return; /* hard 1s rate limit */
+        if (lastLat !== null && lastLng !== null) {
+          const dist = haversineMeters(lastLat, lastLng, latitude, longitude);
+          if (dist < MIN_DISTANCE_METERS && timeSinceLast < IDLE_INTERVAL_MS) return;
+        } else {
+          if (timeSinceLast < IDLE_INTERVAL_MS) return;
         }
         lastSentTime = now;
         lastLat = latitude;
@@ -582,7 +578,6 @@ export default function Home() {
           speed:        speed ?? undefined,
           heading:      heading ?? undefined,
           batteryLevel: batteryRef.current,
-          mockProvider: isMockGps,
         };
         const queuedPing = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -656,9 +651,14 @@ export default function Home() {
       qc.invalidateQueries({ queryKey: ["rider-active"] });
       showToast("Order accepted! Check Active tab.", "success");
     },
-    onError: (e: any) => {
+    onError: (e: any, id) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      showToast(e.message || "Could not accept — may already be taken", "error");
+      if (e?.status === 409 || /already taken|already accepted/i.test(e?.message || "")) {
+        dismiss(id);
+        showToast("This order was already accepted by another rider.", "error");
+      } else {
+        showToast(e.message || "Could not accept order. Please try again.", "error");
+      }
     },
   });
 
@@ -683,9 +683,14 @@ export default function Home() {
       logRideEvent(id, "accepted", (msg, isErr) => showToast(msg, isErr ? "error" : "success"));
       showToast("Ride accepted! Check Active tab.", "success");
     },
-    onError: (e: any) => {
+    onError: (e: any, id) => {
       qc.invalidateQueries({ queryKey: ["rider-requests"] });
-      showToast(e.message || "Could not accept — may already be taken", "error");
+      if (e?.status === 409 || /already taken|already accepted/i.test(e?.message || "")) {
+        dismiss(id);
+        showToast("This ride was already accepted by another rider.", "error");
+      } else {
+        showToast(e.message || "Could not accept ride. Please try again.", "error");
+      }
     },
   });
 
