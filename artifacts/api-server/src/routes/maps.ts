@@ -224,14 +224,34 @@ router.get("/geocode", async (req, res) => {
 
   const { key, enabled, geocoding } = await getKey();
 
+  /* Helper: try Nominatim forward geocode for a text address query */
+  async function nominatimForwardGeocode(query: string) {
+    const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=1`;
+    const nomRaw = await fetch(nomUrl, { headers: { "User-Agent": "AJKMart-Server/1.0" } });
+    if (!nomRaw.ok) return null;
+    const results = await nomRaw.json() as any[];
+    if (!Array.isArray(results) || !results.length) return null;
+    const r = results[0];
+    return { lat: parseFloat(r.lat), lng: parseFloat(r.lon), formattedAddress: r.display_name as string };
+  }
+
   if (!enabled || !key || !geocoding) {
-    /* Best-effort text match from fallback */
+    /* Best-effort text match from hardcoded AJK list first */
     const query = (placeId || address).toLowerCase();
     const loc = AJK_FALLBACK.find(l =>
       l.placeId === query || l.description.toLowerCase().includes(query) || l.mainText.toLowerCase().includes(query)
     );
     if (loc) { res.json({ lat: loc.lat, lng: loc.lng, formattedAddress: loc.description, source: "fallback" }); return; }
-    res.status(503).json({ error: "Maps not configured. Set maps_api_key in admin Integrations." });
+
+    /* Try Nominatim forward geocode when address text is available */
+    if (address) {
+      try {
+        const nom = await nominatimForwardGeocode(address);
+        if (nom) { res.json({ ...nom, source: "nominatim" }); return; }
+      } catch { /* Nominatim unavailable */ }
+    }
+
+    res.status(503).json({ error: "Maps not configured and location not found in local list." });
     return;
   }
 
@@ -242,6 +262,13 @@ router.get("/geocode", async (req, res) => {
     const data  = await raw.json() as any;
 
     if (data.status !== "OK" || !data.results?.length) {
+      /* Google failed — try Nominatim as secondary */
+      if (address) {
+        try {
+          const nom = await nominatimForwardGeocode(address);
+          if (nom) { res.json({ ...nom, source: "nominatim" }); return; }
+        } catch { /* Nominatim unavailable */ }
+      }
       res.status(404).json({ error: "Location not found", googleStatus: data.status });
       return;
     }
@@ -254,6 +281,13 @@ router.get("/geocode", async (req, res) => {
       source:           "google",
     });
   } catch (err) {
+    /* Google threw — try Nominatim as last resort */
+    if (address) {
+      try {
+        const nom = await nominatimForwardGeocode(address);
+        if (nom) { res.json({ ...nom, source: "nominatim" }); return; }
+      } catch { /* Nominatim unavailable */ }
+    }
     res.status(500).json({ error: "Maps geocode request failed" });
   }
 });
@@ -314,12 +348,33 @@ router.get("/reverse-geocode", async (req, res) => {
     res.json({ address, source: "fallback" }); return;
   }
 
+  /* Helper: Nominatim reverse geocode for lat/lng */
+  async function nominatimReverseGeocode(rlat: number, rlng: number): Promise<string | null> {
+    const nomUrl = `https://nominatim.openstreetmap.org/reverse?lat=${rlat}&lon=${rlng}&format=json&addressdetails=1`;
+    const nomRaw = await fetch(nomUrl, { headers: { "User-Agent": "AJKMart-Server/1.0" } });
+    if (!nomRaw.ok) return null;
+    const nomData = await nomRaw.json() as any;
+    if (!nomData?.display_name) return null;
+    const addr = nomData.address;
+    const parts: string[] = [];
+    if (addr?.road) parts.push(addr.road);
+    else if (addr?.suburb) parts.push(addr.suburb);
+    else if (addr?.village) parts.push(addr.village);
+    if (addr?.city || addr?.town || addr?.county) parts.push(addr.city ?? addr.town ?? addr.county);
+    return parts.length ? parts.join(", ") : nomData.display_name;
+  }
+
   try {
     const url  = `${GOOGLE_BASE}/geocode/json?latlng=${lat},${lng}&language=en&key=${key}`;
     const raw  = await fetch(url);
     const data = await raw.json() as any;
 
     if (data.status !== "OK" || !data.results?.length) {
+      /* Google returned no results — try Nominatim before giving up */
+      try {
+        const nomAddr = await nominatimReverseGeocode(lat, lng);
+        if (nomAddr) { revGeoCacheSet(lat, lng, nomAddr); res.json({ address: nomAddr, source: "nominatim" }); return; }
+      } catch { /* Nominatim unavailable */ }
       res.status(404).json({ error: "Address not found", googleStatus: data.status }); return;
     }
 
@@ -327,6 +382,11 @@ router.get("/reverse-geocode", async (req, res) => {
     revGeoCacheSet(lat, lng, address);
     res.json({ address, formattedAddress: data.results[0].formatted_address, source: "google" });
   } catch {
+    /* Google threw — try Nominatim before error response */
+    try {
+      const nomAddr = await nominatimReverseGeocode(lat, lng);
+      if (nomAddr) { revGeoCacheSet(lat, lng, nomAddr); res.json({ address: nomAddr, source: "nominatim" }); return; }
+    } catch { /* Nominatim also unavailable */ }
     res.status(500).json({ error: "Reverse geocode request failed" });
   }
 });
