@@ -16,6 +16,8 @@ export const reviewsTable = pgTable("reviews", {
   /** Separate rider rating — only set when a delivery rider is also being rated */
   riderRating: integer("rider_rating"),
   comment: text("comment"),
+  photos: text("photos").array(),
+  productId: text("product_id"),
   hidden: boolean("hidden").notNull().default(false),
   deletedAt: timestamp("deleted_at"),
   deletedBy: text("deleted_by"),
