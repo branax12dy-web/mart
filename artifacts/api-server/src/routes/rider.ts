@@ -15,6 +15,60 @@ import { sendSuccess, sendCreated, sendError, sendErrorWithData, sendNotFound, s
 import { isInServiceZone } from "../lib/geofence.js";
 import rateLimit from "express-rate-limit";
 
+/* ── Ride-action rate limiters (defined early so they can be referenced anywhere in the file) ── */
+
+/** Ride-accept limiter: 10 accept attempts per rider per minute (prevents accept-spam) */
+const rideAcceptLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  keyGenerator: (req) => req.riderId ?? getClientIp(req) ?? "unknown",
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) => {
+    sendTooManyRequests(res, "Too many ride accept attempts. Please wait a moment.");
+  },
+});
+
+/** Ride-bid limiter: 15 counter bids per rider per minute */
+const rideBidLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 15,
+  keyGenerator: (req) => req.riderId ?? getClientIp(req) ?? "unknown",
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) => {
+    sendTooManyRequests(res, "Too many bid requests. Please wait before submitting another bid.");
+  },
+});
+
+/** Ride-status limiter: 20 status updates per rider per minute */
+const rideStatusLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  keyGenerator: (req) => req.riderId ?? getClientIp(req) ?? "unknown",
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) => {
+    sendTooManyRequests(res, "Too many status update requests. Please wait a moment.");
+  },
+});
+
+/** OTP brute-force limiter: 5 attempts per rider per minute */
+const otpLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  keyGenerator: (req) => req.riderId ?? getClientIp(req) ?? "unknown",
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) => {
+    sendTooManyRequests(res, "Too many OTP attempts. Please wait before trying again.");
+  },
+});
+
 function normalizeVehicleType(raw: string | null | undefined): string {
   const v = (raw ?? "").trim().toLowerCase();
   if (!v) return "";
@@ -1043,7 +1097,7 @@ router.patch("/orders/:id/status", async (req, res) => {
 
 /* ── POST /rider/rides/:id/accept — Accept a ride ──
    Uses WHERE riderId IS NULL to prevent two riders accepting same ride (race condition) */
-router.post("/rides/:id/accept", async (req, res) => {
+router.post("/rides/:id/accept", rideAcceptLimiter, async (req, res) => {
   const paramParsed = idParamSchema.safeParse(req.params);
   if (!paramParsed.success) { sendValidationError(res, "Invalid ride ID"); return; }
   const riderId   = req.riderId!;
@@ -1193,7 +1247,7 @@ router.post("/rides/:id/accept", async (req, res) => {
 });
 
 /* ── POST /rider/rides/:id/verify-otp — Verify customer OTP before starting trip ── */
-router.post("/rides/:id/verify-otp", async (req, res) => {
+router.post("/rides/:id/verify-otp", otpLimiter, async (req, res) => {
   const riderId = req.riderId!;
   const rideId  = req.params["id"]!;
   const { otp } = req.body ?? {};
@@ -1226,7 +1280,7 @@ router.post("/rides/:id/verify-otp", async (req, res) => {
 });
 
 /* ── PATCH /rider/rides/:id/status — Update ride status (completed/cancelled) ── */
-router.patch("/rides/:id/status", async (req, res) => {
+router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
   const parsed = rideStatusSchema.safeParse(req.body);
   if (!parsed.success) { sendValidationError(res, parsed.error.issues[0]?.message || "Invalid status"); return; }
   const riderId = req.riderId!;
@@ -1407,7 +1461,7 @@ router.patch("/rides/:id/status", async (req, res) => {
 });
 
 /* ── POST /rider/rides/:id/counter — Rider submits a bid on a bargaining ride (InDrive multi-bid) ── */
-router.post("/rides/:id/counter", async (req, res) => {
+router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
   const parsed = counterSchema.safeParse(req.body);
   if (!parsed.success) { sendValidationError(res, parsed.error.issues[0]?.message || "counterFare required"); return; }
   const riderId   = req.riderId!;

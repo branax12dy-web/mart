@@ -607,7 +607,6 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       const selectedSvcForBook = services.find((s) => s.key === rideType);
       const parcelBooking = isParcelService(rideType, selectedSvcForBook);
       const rideData = await bookRide({
-        userId: user.id,
         type: rideType,
         pickupAddress: pickup,
         dropAddress: drop,

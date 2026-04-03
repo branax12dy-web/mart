@@ -40,6 +40,26 @@ const bargainLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
 });
 
+/** Book-ride limiter: 10 booking attempts per IP per minute */
+const bookRideLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many booking requests. Please wait a minute before trying again." },
+  validate: { xForwardedForHeader: false },
+});
+
+/** Fare-estimate limiter: 30 estimate calls per IP per minute */
+const estimateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many fare estimate requests. Please wait a moment." },
+  validate: { xForwardedForHeader: false },
+});
+
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
 const coordinateSchema = z.number().min(-180).max(180);
@@ -431,7 +451,7 @@ router.get("/stops", async (_req, res) => {
   });
 });
 
-router.post("/estimate", async (req, res) => {
+router.post("/estimate", estimateLimiter, async (req, res) => {
   const parsed = estimateSchema.safeParse(req.body);
   if (!parsed.success) {
     const msg = parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -467,7 +487,7 @@ router.post("/estimate", async (req, res) => {
   }
 });
 
-router.post("/", customerAuth, async (req, res) => {
+router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
   const parsed = bookRideSchema.safeParse(req.body);
   if (!parsed.success) {
     const msg = parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -596,11 +616,20 @@ router.post("/", customerAuth, async (req, res) => {
       if (!walletEnabled) { sendValidationError(res, "Wallet payments are currently disabled"); return; }
 
       rideRecord = await db.transaction(async (tx) => {
-        /* Re-check for active ride inside transaction to prevent race condition */
+        /* Lock the user row first — this serializes ALL concurrent booking attempts
+           for the same user. Without this lock, two simultaneous requests can both
+           pass the active-ride check (SELECT ... FOR UPDATE only locks existing rows;
+           it cannot prevent a concurrent INSERT when the result set is empty). */
+        await tx.select({ id: usersTable.id })
+          .from(usersTable)
+          .where(eq(usersTable.id, userId))
+          .for("update")
+          .limit(1);
+
+        /* Now check for active ride — safe because user row is locked above */
         const [activeConflict] = await tx.select({ id: ridesTable.id, status: ridesTable.status })
           .from(ridesTable)
           .where(and(eq(ridesTable.userId, userId), sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')`))
-          .for("update")
           .limit(1);
         if (activeConflict) {
           throw new RideApiError("Aapki ek ride pehle se active hai. Naye ride ke liye pehle wali complete ya cancel karein.", "ACTIVE_RIDE_EXISTS", 409);
@@ -635,11 +664,19 @@ router.post("/", customerAuth, async (req, res) => {
       });
     } else {
       rideRecord = await db.transaction(async (tx) => {
-        /* Re-check for active ride inside transaction to prevent race condition */
+        /* Lock the user row first — serializes concurrent bookings per user.
+           A FOR UPDATE on rides rows cannot prevent concurrent INSERTs when no
+           active ride yet exists. Locking the users row is the correct primitive. */
+        await tx.select({ id: usersTable.id })
+          .from(usersTable)
+          .where(eq(usersTable.id, userId))
+          .for("update")
+          .limit(1);
+
+        /* Active-ride check — safe because user row is locked above */
         const [activeConflict] = await tx.select({ id: ridesTable.id })
           .from(ridesTable)
           .where(and(eq(ridesTable.userId, userId), sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')`))
-          .for("update")
           .limit(1);
         if (activeConflict) {
           throw new RideApiError("Aapki ek ride pehle se active hai. Naye ride ke liye pehle wali complete ya cancel karein.", "ACTIVE_RIDE_EXISTS", 409);
