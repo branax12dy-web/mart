@@ -643,11 +643,23 @@ export default function LiveRidersMap() {
   const [vehicleTypeOverrides, setVehicleTypeOverrides] = useState<Record<string, string | null>>({});
   const [currentTripIdOverrides, setCurrentTripIdOverrides] = useState<Record<string, string | null>>({});
 
-  /* ── Map provider config — fetched from backend so keys never appear in build ── */
-  const { data: mapConfigData } = useQuery<MapConfig>({
+  /* ── Map provider config — fetched from the PUBLIC /api/maps/config endpoint.
+     Must NOT use the admin fetcher (which prepends /api/admin/) because this
+     endpoint lives at /api/maps/config, not /api/admin/maps/config. ── */
+  const { data: mapConfigData } = useQuery<MapConfig | undefined>({
     queryKey: ["map-config"],
-    queryFn: () => fetcher("/api/maps/config"),
+    queryFn: async (): Promise<MapConfig | undefined> => {
+      try {
+        const res = await fetch(`${window.location.origin}/api/maps/config`);
+        if (!res.ok) return undefined;
+        const json = await res.json();
+        return (json.data ?? json) as MapConfig;
+      } catch {
+        return undefined;
+      }
+    },
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: routeData } = useRiderRoute(selectedId, routeDate);

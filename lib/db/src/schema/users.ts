@@ -1,4 +1,4 @@
-import { boolean, check, decimal, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, decimal, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -115,6 +115,10 @@ export const usersTable = pgTable("users", {
   /* DB-level floor: wallet can never go below zero.
      Application layer already enforces this; the DB constraint is the final guard. */
   check("users_wallet_non_negative", sql`${t.walletBalance} >= 0`),
+  /* Performance indexes for fleet/admin queries that filter by role and/or online status */
+  index("users_role_idx").on(t.role),
+  index("users_is_online_idx").on(t.isOnline),
+  index("users_role_is_online_idx").on(t.role, t.isOnline),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ createdAt: true, updatedAt: true });
