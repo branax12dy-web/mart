@@ -1945,7 +1945,7 @@ router.post("/wallet/deposit", async (req, res) => {
   sendSuccess(res, { txId, amount: amt });
 });
 
-const locationRateStore = new Map<string, number>();
+const spoofHitStore = new Map<string, number>();
 
 const locationRateLimiter = rateLimit({
   windowMs: 60_000,
@@ -2047,7 +2047,7 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
     const emulatorFlagged = isEmulatorCoord;
 
     const spoofHitKey = `spoof_hits:${riderId}`;
-    const currentHits: number = locationRateStore.get(spoofHitKey) ?? 0;
+    const currentHits: number = spoofHitStore.get(spoofHitKey) ?? 0;
 
     /* Check speed-based spoofing if we have a previous location */
     let speedSpoofed = false;
@@ -2062,7 +2062,7 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
 
     if (speedSpoofed || mockFlagged || emulatorFlagged) {
         const newHits = currentHits + 1;
-        locationRateStore.set(spoofHitKey, newHits);
+        spoofHitStore.set(spoofHitKey, newHits);
 
         const reason = emulatorFlagged
           ? "Emulator signature detected — known fake GPS coordinates"
@@ -2080,7 +2080,7 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
         /* 3rd consecutive violation: auto-offline + emit admin alert */
         let autoOffline = false;
         if (newHits >= 3) {
-          locationRateStore.set(spoofHitKey, 0);
+          spoofHitStore.set(spoofHitKey, 0);
           autoOffline = true;
           try {
             await db.update(usersTable)
@@ -2104,7 +2104,7 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
           hit: newHits,
         }, 422); return;
       } else if (currentHits > 0) {
-        locationRateStore.set(spoofHitKey, 0);
+        spoofHitStore.set(spoofHitKey, 0);
       }
   }
 
