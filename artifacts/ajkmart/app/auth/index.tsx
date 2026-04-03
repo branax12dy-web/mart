@@ -858,6 +858,15 @@ export default function AuthScreen() {
 
               <AuthButton label="Continue" onPress={checkIdentifier} loading={loading} icon="arrow-forward" />
 
+              <Pressable
+                onPress={() => router.push("/auth/forgot-password")}
+                style={[styles.forgotBtn, { alignSelf: "center", marginTop: spacing.sm, marginBottom: 0 }]}
+                accessibilityLabel="Forgot your password?"
+                accessibilityRole="link"
+              >
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+
               {(socialMethods.length > 0 || showMagicLink) && (
                 <>
                   <Divider />

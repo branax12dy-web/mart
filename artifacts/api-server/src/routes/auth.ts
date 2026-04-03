@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import crypto from "crypto";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable, rateLimitsTable, pendingOtpsTable, userSessionsTable, loginHistoryTable } from "@workspace/db/schema";
 import { eq, and, sql, lt, or, desc } from "drizzle-orm";
@@ -41,6 +42,107 @@ import { logger } from "../lib/logger.js";
 /* OTP rate limiting is handled per-account + per-IP inside the route handler
    using the admin-configurable settings (security_otp_max_per_phone,
    security_otp_max_per_ip, security_otp_window_min) via checkAndIncrOtpRateLimit(). */
+
+/* ── OTP TTL ─────────────────────────────────────────────────
+   All auth OTPs (phone, email, forgot-password) expire in 5 minutes.
+   Account-merge OTPs use a longer 10-minute window.
+   ──────────────────────────────────────────────────────────── */
+const AUTH_OTP_TTL_MS = 5 * 60 * 1000;
+
+/* ── Zod validation helper ────────────────────────────────────
+   Returns the parsed body on success, or sends a 400 response
+   and returns null (caller must return immediately).
+   ──────────────────────────────────────────────────────────── */
+function validateBody<T extends z.ZodTypeAny>(
+  schema: T,
+  req: Request,
+  res: any
+): z.infer<T> | null {
+  const result = schema.safeParse(req.body ?? {});
+  if (!result.success) {
+    const first = result.error.issues[0];
+    res.status(400).json({
+      error: first?.message ?? "Invalid request body",
+      field: first?.path?.[0] ?? undefined,
+      issues: result.error.issues.map(i => ({ field: i.path.join("."), message: i.message })),
+    });
+    return null;
+  }
+  return result.data;
+}
+
+/* ── Auth Zod schemas ─────────────────────────────────────────
+   One schema per key endpoint. Extra/unknown fields are stripped.
+   ──────────────────────────────────────────────────────────── */
+const checkIdentifierSchema = z.object({
+  identifier: z.string().min(3, "Identifier must be at least 3 characters"),
+  role: z.enum(["customer", "rider", "vendor"]).optional(),
+  deviceId: z.string().max(256).optional(),
+}).strip();
+
+const sendOtpSchema = z.object({
+  phone: z.string().min(7, "Phone number is required"),
+  role: z.enum(["customer", "rider", "vendor"]).optional(),
+  deviceId: z.string().max(256).optional(),
+  preferredChannel: z.enum(["whatsapp", "sms", "email"]).optional(),
+  captchaToken: z.string().optional(),
+}).strip();
+
+const verifyOtpSchema = z.object({
+  phone: z.string().min(7, "Phone number is required"),
+  otp: z.string().length(6, "OTP must be exactly 6 digits").regex(/^\d{6}$/, "OTP must be 6 digits"),
+  deviceFingerprint: z.string().max(512).optional(),
+  deviceId: z.string().max(256).optional(),
+}).strip();
+
+const loginSchema = z.object({
+  identifier: z.string().min(3, "Identifier (phone, email, or username) is required").optional(),
+  username: z.string().min(3).optional(),
+  password: z.string().min(1, "Password is required"),
+  deviceFingerprint: z.string().max(512).optional(),
+}).strip().refine(d => d.identifier || d.username, {
+  message: "Phone, email, or username is required",
+  path: ["identifier"],
+});
+
+const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(10, "refreshToken is required"),
+}).strip();
+
+const forgotPasswordSchema = z.object({
+  phone: z.string().min(7).optional(),
+  email: z.string().email("Invalid email address").optional(),
+  identifier: z.string().min(3).optional(),
+}).strip().refine(d => d.phone || d.email || d.identifier, {
+  message: "Phone, email, or username is required",
+  path: ["phone"],
+});
+
+const registerSchema = z.object({
+  phone: z.string().min(7, "Phone number is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z.string().max(80).optional(),
+  role: z.enum(["customer", "rider", "vendor"]).optional(),
+  email: z.string().email().optional().or(z.literal("")),
+  username: z.string().min(3).max(20).regex(/^[a-z0-9_]+$/, "Username can only contain lowercase letters, numbers, and underscores").optional(),
+  cnic: z.string().regex(/^\d{5}-\d{7}-\d{1}$/, "CNIC format must be XXXXX-XXXXXXX-X").optional().or(z.literal("")),
+  nationalId: z.string().optional(),
+  vehicleType: z.string().optional(),
+  vehicleRegNo: z.string().optional(),
+  drivingLicense: z.string().optional(),
+  address: z.string().max(255).optional(),
+  city: z.string().max(80).optional(),
+  emergencyContact: z.string().optional(),
+  vehiclePlate: z.string().optional(),
+  vehiclePhoto: z.string().optional(),
+  documents: z.string().optional(),
+  businessName: z.string().max(120).optional(),
+  businessType: z.string().optional(),
+  storeAddress: z.string().max(255).optional(),
+  ntn: z.string().optional(),
+  storeName: z.string().max(120).optional(),
+  captchaToken: z.string().optional(),
+}).strip();
 
 function hashOtp(otp: string): string {
   return createHash("sha256").update(otp).digest("hex");
@@ -92,11 +194,9 @@ const router: IRouter = Router();
    Returns what the client should do next: action + available methods.
 ══════════════════════════════════════════════════════════════ */
 router.post("/check-identifier", async (req, res) => {
-  const { identifier, role, deviceId } = req.body ?? {};
-  if (!identifier || typeof identifier !== "string") {
-    res.status(400).json({ error: "identifier is required" });
-    return;
-  }
+  const body = validateBody(checkIdentifierSchema, req, res);
+  if (!body) return;
+  const { identifier, role, deviceId } = body;
 
   const ip          = getClientIp(req);
   const settings    = await getCachedSettings();
@@ -386,13 +486,11 @@ router.post("/merge-account", async (req, res) => {
    Atomically upsert user by phone — one account per number.
 ───────────────────────────────────────────────────────────── */
 router.post("/send-otp", verifyCaptcha, async (req, res) => {
-  const rawPhone = req.body?.phone;
-  const deviceId: string | undefined = typeof req.body?.deviceId === "string" ? req.body.deviceId : undefined;
-  const preferredChannel: string | undefined = req.body?.preferredChannel;
-  if (!rawPhone) {
-    res.status(400).json({ error: "Phone number is required" });
-    return;
-  }
+  const body = validateBody(sendOtpSchema, req, res);
+  if (!body) return;
+  const rawPhone = body.phone;
+  const deviceId = body.deviceId;
+  const preferredChannel = body.preferredChannel;
   const phone = canonicalizePhone(rawPhone);
 
   const ip = getClientIp(req);
@@ -407,7 +505,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
     .where(eq(usersTable.phone, phone))
     .limit(1);
 
-  const effectiveRole = existingUser[0]?.role ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
+  const effectiveRole = existingUser[0]?.role ?? ((body.role === "rider" || body.role === "vendor") ? body.role : "customer");
   const otpEnabledForRole = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveRole);
 
   if (existingUser.length === 0 && settings["feature_new_users"] === "off") {
@@ -526,7 +624,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   const otpCooldownMs = parseInt(settings["security_otp_cooldown_sec"] ?? "60", 10) * 1000;
   const existingOtpExpiry = existingUser[0]?.otpExpiry;
   if (existingOtpExpiry) {
-    const otpValidityMs = 10 * 60 * 1000;
+    const otpValidityMs = AUTH_OTP_TTL_MS;
     const issuedAgoMs   = otpValidityMs - (existingOtpExpiry.getTime() - Date.now());
     if (issuedAgoMs < otpCooldownMs) {
       const waitSec = Math.ceil((otpCooldownMs - issuedAgoMs) / 1000);
@@ -548,7 +646,7 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
   }
 
   const otp       = generateSecureOtp();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
 
   if (isNewUser) {
     /* NEW USERS: store OTP in pending_otps — do NOT create a users record yet.
@@ -653,13 +751,10 @@ router.post("/send-otp", verifyCaptcha, async (req, res) => {
    Validates the OTP, checks security settings, returns token.
 ───────────────────────────────────────────────────────────── */
 router.post("/verify-otp", verifyCaptcha, async (req, res) => {
-  const rawPhone = req.body?.phone;
-  const { otp } = req.body;
-  if (!rawPhone || !otp) {
-    res.status(400).json({ error: "Phone and OTP are required" });
-    return;
-  }
-  const phone = canonicalizePhone(rawPhone);
+  const body = validateBody(verifyOtpSchema, req, res);
+  if (!body) return;
+  const phone = canonicalizePhone(body.phone);
+  const { otp } = body;
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
@@ -1136,14 +1231,11 @@ router.post("/validate-token", async (req, res) => {
    On success: returns { token, expiresAt }
    Refresh tokens are rotated on use (old one revoked, new one issued).
 ───────────────────────────────────────────────────────────── */
-router.post("/refresh", async (req, res) => {
-  const { refreshToken } = req.body;
+async function handleRefreshToken(req: Request, res: any) {
+  const body = validateBody(refreshTokenSchema, req, res);
+  if (!body) return;
+  const { refreshToken } = body;
   const ip = getClientIp(req);
-
-  if (!refreshToken) {
-    res.status(400).json({ error: "refreshToken required" });
-    return;
-  }
 
   const tokenHash = hashRefreshToken(refreshToken);
   const [rt] = await db.select().from(refreshTokensTable).where(eq(refreshTokensTable.tokenHash, tokenHash)).limit(1);
@@ -1234,7 +1326,10 @@ router.post("/refresh", async (req, res) => {
     refreshToken: newRefreshRaw,
     expiresAt:    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   });
-});
+}
+
+router.post("/refresh", handleRefreshToken);
+router.post("/refresh-token", handleRefreshToken);
 
 /* ─────────────────────────────────────────────────────────────
    POST /auth/logout
@@ -1361,7 +1456,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   const otpCooldownMs   = parseInt(settings["security_otp_cooldown_sec"] ?? "60", 10) * 1000;
   const existingExpiry  = user.emailOtpExpiry;
   if (existingExpiry) {
-    const otpValidityMs = 10 * 60 * 1000;
+    const otpValidityMs = AUTH_OTP_TTL_MS;
     const issuedAgoMs   = otpValidityMs - (existingExpiry.getTime() - Date.now());
     if (issuedAgoMs < otpCooldownMs) {
       const waitSec = Math.ceil((otpCooldownMs - issuedAgoMs) / 1000);
@@ -1383,7 +1478,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   }
 
   const otp    = generateSecureOtp();
-  const expiry = new Date(Date.now() + 10 * 60 * 1000);
+  const expiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
 
   await db.update(usersTable)
     .set({ emailOtpCode: hashOtp(otp), emailOtpExpiry: expiry, updatedAt: new Date() })
@@ -1571,9 +1666,15 @@ async function findUserByIdentifier(identifier: string) {
 }
 
 async function handleUnifiedLogin(req: Request, res: any) {
-  const identifier = (req.body?.identifier || req.body?.username || "").trim();
-  const { password } = req.body;
-  if (!identifier || !password) { res.status(400).json({ error: "Identifier and password required" }); return; }
+  const parsed = loginSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    res.status(400).json({ error: first?.message ?? "Invalid request body", field: first?.path?.[0] ?? undefined });
+    return;
+  }
+  const identifier = (parsed.data.identifier || parsed.data.username || "").trim();
+  const { password } = parsed.data;
+  if (!identifier) { res.status(400).json({ error: "Identifier and password required" }); return; }
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
@@ -1947,10 +2048,12 @@ const CNIC_REGEX = /^\d{5}-\d{7}-\d{1}$/;
 const PHONE_REGEX = /^0?3\d{9}$/;
 
 router.post("/register", verifyCaptcha, async (req, res) => {
+  const body = validateBody(registerSchema, req, res);
+  if (!body) return;
   const { phone, password, name, role, cnic, nationalId, email, username,
           vehicleType, vehicleRegNo, drivingLicense,
           address, city, emergencyContact, vehiclePlate, vehiclePhoto, documents,
-          businessName, businessType, storeAddress, ntn, storeName } = req.body;
+          businessName, businessType, storeAddress, ntn, storeName } = body;
 
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
@@ -2037,7 +2140,7 @@ router.post("/register", verifyCaptcha, async (req, res) => {
   const needsApproval = requireApproval && !autoApproveRider && !autoApproveVendor;
 
   const otp = generateSecureOtp();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
   const userId = generateId();
 
   await db.insert(usersTable).values({
@@ -2094,7 +2197,9 @@ router.post("/register", verifyCaptcha, async (req, res) => {
 });
 
 router.post("/forgot-password", verifyCaptcha, async (req, res) => {
-  let { phone, email, identifier } = req.body;
+  const body = validateBody(forgotPasswordSchema, req, res);
+  if (!body) return;
+  let { phone, email, identifier } = body;
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
 
@@ -2169,7 +2274,7 @@ router.post("/forgot-password", verifyCaptcha, async (req, res) => {
   }
 
   const otp = generateSecureOtp();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
 
   const forgotLang = await getUserLanguage(user.id);
 
