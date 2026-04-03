@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { useMapsAutocomplete, resolveLocation, staticMapUrl } from "@/hooks/useMaps";
@@ -642,26 +643,26 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
-      <View
+      <LinearGradient
+        colors={["#0047B3", "#0066FF"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={{
-          backgroundColor: C.surface,
           paddingTop: topPad + 12,
           paddingHorizontal: 20,
-          paddingBottom: 18,
-          borderBottomWidth: 1,
-          borderBottomColor: C.border,
+          paddingBottom: 24,
         }}
       >
         <View style={rs.hdrRow}>
-          <Pressable onPress={() => router.back()} style={rs.backBtn}>
-            <Ionicons name="arrow-back" size={20} color={C.text} />
+          <Pressable onPress={() => router.back()} style={rs.backBtnBlue}>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </Pressable>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text
               style={{
                 fontFamily: Font.bold,
                 fontSize: 20,
-                color: C.text,
+                color: "#FFFFFF",
               }}
             >
               Book a Ride
@@ -670,7 +671,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               style={{
                 fontFamily: Font.regular,
                 fontSize: 12,
-                color: C.textMuted,
+                color: "rgba(255,255,255,0.75)",
                 marginTop: 2,
               }}
             >
@@ -686,23 +687,26 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               width: 40,
               height: 40,
               borderRadius: 12,
-              backgroundColor: C.surfaceSecondary,
+              backgroundColor: "rgba(255,255,255,0.2)",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="time-outline" size={20} color={C.textSecondary} />
+            <Ionicons name="time-outline" size={20} color="#FFFFFF" />
           </Pressable>
         </View>
 
         <View
           style={{
             marginTop: 16,
-            backgroundColor: C.surfaceSecondary,
+            backgroundColor: "#FFFFFF",
             borderRadius: 16,
             padding: 14,
-            borderWidth: 1,
-            borderColor: C.border,
+            ...Platform.select({
+              ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 },
+              android: { elevation: 4 },
+              web: { boxShadow: "0 4px 12px rgba(0,0,0,0.1)" },
+            }),
           }}
         >
           <Pressable
@@ -981,7 +985,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
             </View>
           )}
         </View>
-      </View>
+      </LinearGradient>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -2694,11 +2698,11 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
 
 const rs = StyleSheet.create({
   hdrRow: { flexDirection: "row", alignItems: "center" },
-  backBtn: {
+  backBtnBlue: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: C.surfaceSecondary,
+    backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
