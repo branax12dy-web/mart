@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { usePwaInstall } from "../hooks/usePwaInstall";
 
 export function PwaInstallBanner() {
@@ -37,7 +38,7 @@ export function PwaInstallBanner() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   wrapper: {
     position: "fixed",
     bottom: 0,
