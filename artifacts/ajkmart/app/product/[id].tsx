@@ -499,6 +499,7 @@ export default function ProductDetailScreen() {
 
   const handleReviewSuccess = () => {
     refetchReviews();
+    refetch();
   };
 
   if (isLoading) {
