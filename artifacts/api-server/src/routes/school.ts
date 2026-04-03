@@ -14,7 +14,7 @@ const router: IRouter = Router();
 
 const safeNum = (v: any, def = 0) => { const n = parseFloat(String(v ?? def)); return isNaN(n) ? def : n; };
 
-function formatRoute(r: any) {
+function formatRoute(r: Record<string, unknown>) {
   return {
     ...r,
     monthlyPrice:  safeNum(r.monthlyPrice),

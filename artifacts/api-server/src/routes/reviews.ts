@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, pharmacyOrdersTable, parcelBookingsTable, productsTable, reviewsTable, rideRatingsTable, ridesTable, usersTable } from "@workspace/db/schema";
@@ -69,7 +70,7 @@ async function moderateComment(comment: string): Promise<{ flagged: boolean; rea
       return { flagged: !!parsed.flagged, reason: parsed.reason || null };
     }
   } catch (e) {
-    console.error("[moderation] AI check failed:", e);
+    logger.error("[moderation] AI check failed:", e);
   }
   return { flagged: false, reason: null };
 }

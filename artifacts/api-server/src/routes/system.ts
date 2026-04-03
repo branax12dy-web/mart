@@ -91,8 +91,8 @@ async function restoreTables(tables: Record<string, any[]>) {
     try {
       await db.delete(ref);
       if (rows.length > 0) {
-        const cleaned = rows.map((r: any) => {
-          const out: any = { ...r };
+        const cleaned = rows.map((r: Record<string, unknown>) => {
+          const out: Record<string, unknown> = { ...r };
           if (out.createdAt) out.createdAt = new Date(out.createdAt);
           if (out.updatedAt) out.updatedAt = new Date(out.updatedAt);
           if (out.expiresAt) out.expiresAt = new Date(out.expiresAt);
@@ -105,7 +105,7 @@ async function restoreTables(tables: Record<string, any[]>) {
         }
       }
       restored[key] = rows.length;
-    } catch (e: any) {
+    } catch (e: unknown) {
       errors.push(`${key}: ${e.message}`);
     }
   }

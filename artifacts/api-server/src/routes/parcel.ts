@@ -225,7 +225,7 @@ router.post("/", customerAuth, async (req, res) => {
       }).catch(() => {});
 
       res.status(201).json({ ...mapBooking(booking), gstAmount });
-    } catch (e: any) {
+    } catch (e: unknown) {
       res.status(400).json({ error: e.message });
     }
     return;
@@ -308,7 +308,7 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
         reference: `refund:${bookingId}`,
       });
       return updated;
-    }).catch((err: any) => {
+    }).catch((err: unknown) => {
       if (err?.httpStatus) { res.status(err.httpStatus).json({ error: err.message }); }
       else { res.status(500).json({ error: "Cancel failed" }); }
       return undefined;

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -15,7 +16,7 @@ if (!_jwtSecret || _jwtSecret.length < 32) {
   const msg = !_jwtSecret
     ? "[AUTH] FATAL: JWT_SECRET environment variable is not set. Minimum 32 characters required."
     : `[AUTH] FATAL: JWT_SECRET too short (${_jwtSecret.length} chars, need ≥32).`;
-  console.error(msg);
+  logger.error(msg);
   process.exit(1);
 }
 export const JWT_SECRET: string = _jwtSecret;
@@ -33,7 +34,7 @@ if (!_adminJwtSecret || _adminJwtSecret.length < 32) {
   const msg = !_adminJwtSecret
     ? "[AUTH] FATAL: ADMIN_JWT_SECRET environment variable is not set. Minimum 32 characters required."
     : `[AUTH] FATAL: ADMIN_JWT_SECRET too short (${_adminJwtSecret.length} chars, need ≥32).`;
-  console.error(msg);
+  logger.error(msg);
   process.exit(1);
 }
 export const ADMIN_JWT_SECRET: string = _adminJwtSecret;
@@ -53,7 +54,7 @@ async function refreshTorExitNodes(): Promise<void> {
     });
     if (!resp.ok) {
       const msg = `TOR list HTTP error ${resp.status}`;
-      console.warn(`[TOR] Failed to refresh exit node list: ${msg}`);
+      logger.warn(`[TOR] Failed to refresh exit node list: ${msg}`);
       addSecurityEvent({ type: "tor_list_refresh_failed", ip: "server", details: msg, severity: "low" });
       return;
     }
@@ -61,10 +62,10 @@ async function refreshTorExitNodes(): Promise<void> {
     const ips = text.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"));
     torExitNodes = new Set(ips);
     torListFetchedAt = Date.now();
-    console.log(`[TOR] Refreshed exit node list: ${torExitNodes.size} nodes`);
+    logger.info(`[TOR] Refreshed exit node list: ${torExitNodes.size} nodes`);
   } catch (err: any) {
     const msg = err?.message ?? "unknown error";
-    console.warn(`[TOR] Failed to fetch exit node list: ${msg}`);
+    logger.warn(`[TOR] Failed to fetch exit node list: ${msg}`);
     addSecurityEvent({ type: "tor_list_refresh_failed", ip: "server", details: `TOR list fetch error: ${msg}`, severity: "low" });
   }
 }
@@ -97,7 +98,7 @@ async function isVpnOrProxy(ip: string): Promise<boolean> {
       signal: AbortSignal.timeout(5_000),
     });
     if (!resp.ok) {
-      console.warn(`[VPN] Check failed for IP ${ip}: HTTP ${resp.status} — flagging as check_failed`);
+      logger.warn(`[VPN] Check failed for IP ${ip}: HTTP ${resp.status} — flagging as check_failed`);
       addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check HTTP error ${resp.status}`, severity: "low" });
       return false;
     }
@@ -106,7 +107,7 @@ async function isVpnOrProxy(ip: string): Promise<boolean> {
     vpnCache.set(ip, { isVpn, cachedAt: Date.now() });
     return isVpn;
   } catch (err: any) {
-    console.warn(`[VPN] Check failed for IP ${ip}: ${err?.message ?? "unknown error"} — flagging as check_failed`);
+    logger.warn(`[VPN] Check failed for IP ${ip}: ${err?.message ?? "unknown error"} — flagging as check_failed`);
     addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check error: ${err?.message ?? "unknown"}`, severity: "low" });
     return false;
   }
@@ -973,7 +974,7 @@ export async function verifyCaptcha(req: Request, res: Response, next: NextFunct
 
   const secretKey = process.env["RECAPTCHA_SECRET_KEY"] || settings["recaptcha_secret_key"] || "";
   if (!secretKey) {
-    console.error("[CAPTCHA] CAPTCHA enabled but no RECAPTCHA_SECRET_KEY configured — blocking request");
+    logger.error("[CAPTCHA] CAPTCHA enabled but no RECAPTCHA_SECRET_KEY configured — blocking request");
     res.status(500).json({ error: "CAPTCHA verification is misconfigured. Please contact support." });
     return;
   }
@@ -988,7 +989,7 @@ export async function verifyCaptcha(req: Request, res: Response, next: NextFunct
     });
 
     if (!resp.ok) {
-      console.error("[CAPTCHA] Google API returned non-OK status:", resp.status);
+      logger.error("[CAPTCHA] Google API returned non-OK status:", resp.status);
       res.status(502).json({ error: "CAPTCHA verification service unavailable. Please try again." });
       return;
     }
@@ -1011,7 +1012,7 @@ export async function verifyCaptcha(req: Request, res: Response, next: NextFunct
 
     next();
   } catch (err: any) {
-    console.error("[CAPTCHA] Verification error:", err.message);
+    logger.error("[CAPTCHA] Verification error:", err.message);
     res.status(502).json({ error: "CAPTCHA verification failed. Please try again later." });
   }
 }

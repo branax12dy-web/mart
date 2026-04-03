@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import { usersTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
@@ -144,7 +145,7 @@ router.post("/topup", adminAuth, async (req, res) => {
     broadcastWalletUpdate(userId, result);
     const transactions = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.userId, userId));
     res.json({ balance: result, transactions: transactions.map(mapTx) });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(400).json({ error: e.message });
   }
 });
@@ -232,7 +233,7 @@ router.post("/deposit", customerAuth, async (req, res) => {
           paymentMethod,
         });
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       res.status(400).json({ error: e.message }); return;
     }
 
@@ -242,7 +243,7 @@ router.post("/deposit", customerAuth, async (req, res) => {
       title: t("notifWalletCredited", depositLang) + " ✅",
       body: t("notifWalletCreditedBody", depositLang).replace("{amount}", amt.toFixed(0)),
       type: "wallet", icon: "wallet-outline",
-    }).catch(e => console.error("customer deposit notif insert failed:", e));
+    }).catch(e => logger.error("customer deposit notif insert failed:", e));
 
     const [freshUser] = await db.select({ walletBalance: usersTable.walletBalance }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (freshUser) broadcastWalletUpdate(userId, parseFloat(freshUser.walletBalance ?? "0"));
@@ -263,7 +264,7 @@ router.post("/deposit", customerAuth, async (req, res) => {
       title: t("notifWalletPending", pendingLang) + " ✅",
       body: t("notifWalletPendingBody", pendingLang).replace("{amount}", amt.toFixed(0)),
       type: "wallet", icon: "wallet-outline",
-    }).catch(e => console.error("customer deposit notif insert failed:", e));
+    }).catch(e => logger.error("customer deposit notif insert failed:", e));
 
     res.json({ success: true, txId, status: "pending", amount: amt });
   }
@@ -425,11 +426,11 @@ router.post("/send", customerAuth, async (req, res) => {
       title: t("notifWalletCredited", sendLang) + " 💰",
       body: t("notifWalletReceivedBody", sendLang).replace("{amount}", result.amount.toFixed(0)).replace("{sender}", result.senderName),
       type: "wallet", icon: "wallet-outline",
-    }).catch(e => console.error("receiver send notif insert failed:", e));
+    }).catch(e => logger.error("receiver send notif insert failed:", e));
 
     const { receiverId: _rid, senderName: _sn, ...responseData } = result;
     res.json({ success: true, ...responseData });
-  } catch (e: any) {
+  } catch (e: unknown) {
     if ((e as any).walletFrozen) {
       res.status(403).json({ error: "wallet_frozen", message: e.message }); return;
     }
@@ -498,7 +499,7 @@ router.post("/withdraw", customerAuth, async (req, res) => {
         paymentMethod,
       });
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(400).json({ error: e.message }); return;
   }
 
@@ -508,7 +509,7 @@ router.post("/withdraw", customerAuth, async (req, res) => {
     title: t("notifWithdrawalPending", withdrawLang),
     body: t("notifWithdrawalPendingBody", withdrawLang).replace("{amount}", amt.toFixed(0)),
     type: "wallet", icon: "wallet-outline",
-  }).catch(e => console.error("withdrawal notif insert failed:", e));
+  }).catch(e => logger.error("withdrawal notif insert failed:", e));
 
   res.json({ success: true, txId, status: "pending", amount: amt });
 });

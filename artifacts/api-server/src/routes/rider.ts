@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable, rideRatingsTable, locationLogsTable } from "@workspace/db/schema";
@@ -13,7 +14,7 @@ import { getUserLanguage } from "../lib/getUserLanguage.js";
 
 const router: IRouter = Router();
 
-const safeNum = (v: any, def = 0) => { const n = parseFloat(String(v ?? def)); return isNaN(n) ? def : n; };
+const safeNum = (v: unknown, def = 0) => { const n = parseFloat(String(v ?? def)); return isNaN(n) ? def : n; };
 
 const onlineSchema = z.object({ isOnline: z.boolean() });
 
@@ -274,9 +275,9 @@ router.patch("/online", async (req, res) => {
         }).onConflictDoUpdate({
           target: liveLocationsTable.userId,
           set: { onlineSince: now, updatedAt: now },
-        }).catch((e: any) => { console.warn("[rider] live_location seed failed:", e?.message); });
+        }).catch((e: Record<string, unknown>) => { logger.warn("[rider] live_location seed failed:", e?.message); });
       }
-    } catch (e: any) { console.warn("[rider] live_location seed failed:", e?.message); }
+    } catch (e: unknown) { logger.warn("[rider] live_location seed failed:", e?.message); }
   }
 
   /* Emit real-time status event to admin-fleet */
@@ -299,7 +300,7 @@ router.patch("/profile", async (req, res) => {
   const riderId = req.riderId!;
   const currentUser = req.riderUser!;
   const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, vehicleRegNo, drivingLicense, bankName, bankAccount, bankAccountTitle, avatar, cnicDocUrl, licenseDocUrl, regDocUrl, vehiclePhoto } = parsed.data;
-  const updates: any = { updatedAt: new Date() };
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
   if (email            !== undefined) updates.email            = email;
   if (cnic             !== undefined) updates.cnic             = cnic;
@@ -359,7 +360,7 @@ router.patch("/profile", async (req, res) => {
   try {
     const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, riderId)).returning();
     user = updated;
-  } catch (dbErr: any) {
+  } catch (dbErr: unknown) {
     const msg = dbErr?.message || "";
     if (msg.includes("unique") || msg.includes("duplicate")) {
       res.status(409).json({ error: "A profile field conflicts with an existing record (e.g. duplicate CNIC)" });
@@ -612,7 +613,7 @@ router.post("/orders/:id/accept", async (req, res) => {
     title: t("notifRideAccepted", orderAcceptLang) + " 🚴",
     body: t("notifOrderOnWay", orderAcceptLang),
     type: "order", icon: "bicycle-outline",
-  }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+  }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
 
   res.json({ ...updated, total: safeNum(updated.total) });
 });
@@ -812,7 +813,7 @@ router.patch("/orders/:id/status", async (req, res) => {
       id: generateId(), userId: order.userId,
       title: t("notifRiderChange", riderChangeLang) + " 🔄", body: t("notifRiderChangeBody", riderChangeLang),
       type: "order", icon: "refresh-outline",
-    }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+    }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
     res.json({
       ...cancelled, total: safeNum(cancelled?.total || 0), status: "cancelled_by_rider",
       cancelPenalty: penalty,
@@ -883,7 +884,7 @@ router.patch("/orders/:id/status", async (req, res) => {
         id: generateId(), userId: riderId,
         title: t("notifOrderDelivered", riderCashLang), body: t("notifCashFeeDeductedBody", riderCashLang).replace("{fee}", String(platformFee)).replace("{cash}", orderTotal.toFixed(0)),
         type: "wallet", icon: "wallet-outline",
-      }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
+      }).catch((e: Error) => logger.error("[rider] notif insert failed:", e.message));
     } else {
       const earnings = parseFloat((orderTotal * riderKeepPct).toFixed(2));
       const totalCredit = parseFloat((earnings + bonusPerTrip).toFixed(2));
@@ -910,7 +911,7 @@ router.patch("/orders/:id/status", async (req, res) => {
         id: generateId(), userId: riderId,
         title: t("notifWalletCredited", riderEarnLang), body: t("notifWalletCreditedBody", riderEarnLang).replace("{amount}", earnings.toFixed(0)),
         type: "wallet", icon: "wallet-outline",
-      }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
+      }).catch((e: Error) => logger.error("[rider] notif insert failed:", e.message));
     }
 
     const custDelivLang = await getUserLanguage(order.userId);
@@ -918,7 +919,7 @@ router.patch("/orders/:id/status", async (req, res) => {
       id: generateId(), userId: order.userId,
       title: t("notifOrderDelivered", custDelivLang) + " 🎉", body: t("orderDeliveredEnjoy", custDelivLang),
       type: "order", icon: "bag-check-outline",
-    }).catch(e => console.error("customer notif insert failed:", e));
+    }).catch(e => logger.error("customer notif insert failed:", e));
 
     /* ── Customer loyalty points (customer_loyalty_enabled + customer_loyalty_pts) ── */
     const loyaltyEnabled = (s["customer_loyalty_enabled"] ?? "on") === "on";
@@ -931,18 +932,18 @@ router.patch("/orders/:id/status", async (req, res) => {
         await db.update(usersTable)
           .set({ walletBalance: sql`wallet_balance + ${loyaltyPts}`, updatedAt: new Date() })
           .where(eq(usersTable.id, order.userId))
-          .catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+          .catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
         await db.insert(walletTransactionsTable).values({
           id: generateId(), userId: order.userId, type: "loyalty",
           amount: loyaltyPts.toFixed(2),
           description: `Loyalty points (${loyaltyPtsPerHundred} pts/Rs.100) — Order #${order.id.slice(-6).toUpperCase()}`,
-        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+        }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
         const loyaltyLang = await getUserLanguage(order.userId);
         await db.insert(notificationsTable).values({
           id: generateId(), userId: order.userId,
           title: t("notifLoyaltyEarned", loyaltyLang) + " ⭐", body: t("notifLoyaltyEarnedBody", loyaltyLang).replace("{points}", String(loyaltyPts)),
           type: "wallet", icon: "star-outline",
-        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+        }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
       }
     }
 
@@ -958,18 +959,18 @@ router.patch("/orders/:id/status", async (req, res) => {
         await db.update(usersTable)
           .set({ walletBalance: sql`wallet_balance + ${cashbackAmt}`, updatedAt: new Date() })
           .where(eq(usersTable.id, order.userId))
-          .catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+          .catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
         await db.insert(walletTransactionsTable).values({
           id: generateId(), userId: order.userId, type: "cashback",
           amount: cashbackAmt.toFixed(2),
           description: `Cashback ${Math.round(cashbackPct * 100)}% — Order #${order.id.slice(-6).toUpperCase()}`,
-        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+        }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
         const cashbackLang = await getUserLanguage(order.userId);
         await db.insert(notificationsTable).values({
           id: generateId(), userId: order.userId,
           title: t("notifCashbackCredited", cashbackLang) + " 🎁", body: t("notifCashbackCreditedBody", cashbackLang).replace("{amount}", cashbackAmt.toFixed(0)),
           type: "wallet", icon: "wallet-outline",
-        }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+        }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
       }
     }
   } else {
@@ -1101,7 +1102,7 @@ router.post("/rides/:id/accept", async (req, res) => {
     if (msg.includes("Insufficient wallet balance")) {
       res.status(402).json({ error: msg, code: "INSUFFICIENT_WALLET" }); return;
     }
-    console.error("[rider] ride accept transaction failed:", msg);
+    logger.error("[rider] ride accept transaction failed:", msg);
     res.status(500).json({ error: "Failed to accept ride. Please try again." }); return;
   }
 
@@ -1117,7 +1118,7 @@ router.post("/rides/:id/accept", async (req, res) => {
       ? `${riderUser.name || "Your rider"} ne Rs. ${safeNum(agreedFare).toFixed(0)} par offer accept kar liya!`
       : `${riderUser.name || "Your rider"} ${t("notifRiderComingBody", rideAssignLang)}`,
     type: "ride", icon: updated.type === "bike" ? "bicycle-outline" : "car-outline",
-  }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+  }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
 
   /* Generate trip OTP and emit to customer */
   const tripOtp = String(Math.floor(1000 + Math.random() * 9000));
@@ -1264,7 +1265,7 @@ router.patch("/rides/:id/status", async (req, res) => {
         id: generateId(), userId: riderId,
         title: t("rideCompleted", rideCashLang), body: t("notifCashFeeDeductedBody", rideCashLang).replace("{fee}", String(platformFee)).replace("{cash}", fareAmt.toFixed(0)),
         type: "wallet", icon: "wallet-outline",
-      }).catch((e: Error) => console.error("[rider] notif insert failed:", e.message));
+      }).catch((e: Error) => logger.error("[rider] notif insert failed:", e.message));
       /* Auto-offline if balance hits zero */
       if (newRiderBalance <= 0) {
         await db.update(usersTable).set({ isOnline: false, updatedAt: new Date() }).where(eq(usersTable.id, riderId)).catch(() => {});
@@ -1296,7 +1297,7 @@ router.patch("/rides/:id/status", async (req, res) => {
         id: generateId(), userId: riderId,
         title: t("notifWalletCredited", rideEarnLang), body: t("notifWalletCreditedBody", rideEarnLang).replace("{amount}", earnings.toFixed(0)),
         type: "wallet", icon: "wallet-outline",
-      }).catch(e => console.error("notif insert failed:", e));
+      }).catch(e => logger.error("notif insert failed:", e));
     }
 
     const custRideCompleteLang = await getUserLanguage(ride.userId);
@@ -1304,7 +1305,7 @@ router.patch("/rides/:id/status", async (req, res) => {
       id: generateId(), userId: ride.userId,
       title: t("rideCompleted", custRideCompleteLang) + " ✅", body: t("notifRideCompletedBody", custRideCompleteLang),
       type: "ride", icon: "checkmark-circle-outline",
-    }).catch(e => console.error("customer notif insert failed:", e));
+    }).catch(e => logger.error("customer notif insert failed:", e));
     /* Web Push: trip completed */
     sendPushToUser(ride.userId, {
       title: "Trip Completed ✅",
@@ -1437,7 +1438,7 @@ router.post("/rides/:id/counter", async (req, res) => {
       title: t("notifNewBid", bidLang) + " 💬",
       body: t("notifNewBidBody", bidLang).replace("{name}", riderUser.name || "A rider").replace("{amount}", parsedCounter.toFixed(0)),
       type: "ride", icon: "chatbubble-outline", link: "/ride",
-    }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+    }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
   }
 
   emitRideDispatchUpdate({ rideId, action: "bid", status: "bargaining" });
@@ -1720,10 +1721,10 @@ router.post("/wallet/withdraw", async (req, res) => {
       title: t("notifWithdrawalPending", withdrawLang) + " ✅",
       body: t("notifWithdrawalPendingBody", withdrawLang).replace("{amount}", amt.toFixed(0)),
       type: "wallet", icon: "cash-outline",
-    }).catch((err: Error) => { console.error("[rider] background op failed:", err.message); });
+    }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
 
     res.json({ success: true, newBalance: parseFloat(result.toFixed(2)), amount: amt, txId });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(400).json({ error: e.message });
   }
 });
@@ -1758,7 +1759,7 @@ router.get("/notifications", async (req, res) => {
     .where(eq(notificationsTable.userId, riderId))
     .orderBy(desc(notificationsTable.createdAt))
     .limit(30);
-  res.json({ notifications: notifs, unread: notifs.filter((n: any) => !n.isRead).length });
+  res.json({ notifications: notifs, unread: notifs.filter((n: Record<string, unknown>) => !n.isRead).length });
 });
 
 /* ── PATCH /rider/notifications/read-all ── */
@@ -1789,7 +1790,7 @@ router.patch("/notifications/:id/read", async (req, res) => {
     }
     return res.json({ success: true });
   } catch (err) {
-    console.error("Failed to mark notification read:", err);
+    logger.error("Failed to mark notification read:", err);
     return res.status(500).json({ error: "Failed to mark notification as read" });
   }
 });
@@ -1857,7 +1858,7 @@ router.post("/wallet/deposit", async (req, res) => {
     title: t("notifWalletDeposit", depositNotifLang) + " ✅",
     body: t("notifWalletDepositBody", depositNotifLang).replace("{amount}", amt.toFixed(0)),
     type: "wallet", icon: "wallet-outline",
-  }).catch(e => console.error("deposit notif insert failed:", e));
+  }).catch(e => logger.error("deposit notif insert failed:", e));
 
   res.json({ success: true, txId, amount: amt });
 });

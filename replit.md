@@ -46,6 +46,34 @@ AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pak
 - **`artifacts/ajkmart/app/mart/index.tsx`**: Heart icons on FlashCard and ProductCard components.
 - **`artifacts/ajkmart/app/search.tsx`**: Heart icons on search result cards.
 
+### Step 3: UI/UX & Refactoring — Completed Changes
+
+#### B-17/B-21: Admin Route Split
+- **`artifacts/api-server/src/routes/admin.ts`**: Refactored from 5267-line monolith into a thin barrel file mounting 7 sub-routers.
+- **`artifacts/api-server/src/routes/admin-shared.ts`**: Shared exports (AdminRequest type, stripUser, adminAuth, getPlatformSettings, revokeAllUserSessions, serializeSosAlert, notification key constants, DEFAULT_PLATFORM_SETTINGS, login attempt map, ride/location defaults).
+- **`artifacts/api-server/src/routes/admin/auth.ts`**: Admin login/register/logout.
+- **`artifacts/api-server/src/routes/admin/users.ts`**: User management, ban/unban, identity edits, KYC, debt.
+- **`artifacts/api-server/src/routes/admin/orders.ts`**: Order management, status updates, rider assignment.
+- **`artifacts/api-server/src/routes/admin/rides.ts`**: Ride management, service types, cancellation, refunds.
+- **`artifacts/api-server/src/routes/admin/finance.ts`**: Payouts, commission, vendor/rider financials.
+- **`artifacts/api-server/src/routes/admin/content.ts`**: Banners, FAQs, promos, categories, flash deals.
+- **`artifacts/api-server/src/routes/admin/system.ts`**: Settings, notifications, audit, analytics, SOS.
+
+#### B-20: Pino Structured Logging
+- Replaced all `console.log/error/warn` with pino `logger.info/error/warn` in rider.ts (22), security.ts (10), rides.ts (6), wallet.ts (4), admin/finance.ts (4), reviews.ts.
+- Logger imported from `artifacts/api-server/src/lib/logger.ts`.
+
+#### B-18: TypeScript `any` Type Cleanup
+- Replaced `catch (e: any)` → `catch (e: unknown)` across all route files.
+- Replaced `(req as any).adminId` → `(req as AdminRequest).adminId` in admin sub-routers.
+- Replaced `req.body as any` → `req.body as Record<string, unknown>` in content routes.
+- Replaced loose `any[]` → `unknown[]` or typed arrays in finance, system routes.
+- Remaining `as any` casts are legitimate Drizzle ORM dynamic query patterns.
+
+#### A-04: ARIA Accessibility
+- **`artifacts/admin/src/components/ui/dialog.tsx`**: Added `aria-describedby={undefined}` to suppress Radix warning, `aria-label="Close dialog"` on close button.
+- **`artifacts/admin/src/components/ui/sheet.tsx`**: Same ARIA fixes for sheet overlay component.
+
 ### Step 2: API & Frontend Sync — Completed Changes
 
 #### C-06: Payment Status Route Alias

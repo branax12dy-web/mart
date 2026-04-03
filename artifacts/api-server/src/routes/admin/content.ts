@@ -1,0 +1,538 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import {
+  usersTable,
+  walletTransactionsTable,
+  notificationsTable,
+  ordersTable, productsTable, flashDealsTable, promoCodesTable, categoriesTable, bannersTable,
+} from "@workspace/db/schema";
+import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
+import {
+  stripUser, generateId, getUserLanguage, t,
+  getPlatformSettings, adminAuth, getAdminSecret,
+  sendUserNotification, logger,
+  ORDER_NOTIF_KEYS, RIDE_NOTIF_KEYS, PHARMACY_NOTIF_KEYS, PARCEL_NOTIF_KEYS,
+  checkAdminLoginLockout, recordAdminLoginFailure, resetAdminLoginAttempts,
+  addAuditEntry, addSecurityEvent, getClientIp,
+  signAdminJwt, verifyAdminJwt, invalidateSettingsCache, getCachedSettings,
+  ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
+  ensureDefaultRideServices, ensureDefaultLocations, formatSvc,
+  type AdminRequest,
+} from "../admin-shared.js";
+
+
+const router = Router();
+router.get("/products", async (_req, res) => {
+  const products = await db.select().from(productsTable).orderBy(desc(productsTable.createdAt));
+  res.json({
+    products: products.map(p => ({
+      ...p,
+      price: parseFloat(p.price),
+      originalPrice: p.originalPrice ? parseFloat(p.originalPrice) : null,
+      rating: p.rating ? parseFloat(p.rating) : null,
+      createdAt: p.createdAt.toISOString(),
+    })),
+    total: products.length,
+  });
+});
+
+router.get("/products/pending", async (_req, res) => {
+  const products = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.approvalStatus, "pending"))
+    .orderBy(desc(productsTable.createdAt));
+  res.json({
+    products: products.map(p => ({
+      ...p,
+      price: parseFloat(p.price),
+      originalPrice: p.originalPrice ? parseFloat(p.originalPrice) : null,
+      rating: p.rating ? parseFloat(p.rating) : null,
+      createdAt: p.createdAt.toISOString(),
+    })),
+    total: products.length,
+  });
+});
+
+router.patch("/products/:id/approve", async (req, res) => {
+  const { note } = req.body;
+  const [product] = await db
+    .update(productsTable)
+    .set({ approvalStatus: "approved", inStock: true, updatedAt: new Date() })
+    .where(eq(productsTable.id, req.params["id"]!))
+    .returning();
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  if (product.vendorId && product.vendorId !== "ajkmart_system") {
+    const [vendor] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, product.vendorId)).limit(1);
+    if (vendor) {
+      const vLang = await getUserLanguage(vendor.id);
+      const vBody = note
+        ? t("notifProductApprovedBodyNote", vLang).replace("{name}", product.name).replace("{note}", note)
+        : t("notifProductApprovedBody", vLang).replace("{name}", product.name);
+      await db.insert(notificationsTable).values({
+        id: generateId(),
+        userId: vendor.id,
+        title: t("notifProductApproved", vLang),
+        body: vBody,
+        type: "system",
+        icon: "checkmark-circle-outline",
+      }).catch(() => {});
+    }
+  }
+  res.json({ ...product, price: parseFloat(product.price) });
+});
+
+router.patch("/products/:id/reject", async (req, res) => {
+  const { reason } = req.body;
+  if (!reason) { res.status(400).json({ error: "reason is required" }); return; }
+  const [product] = await db
+    .update(productsTable)
+    .set({ approvalStatus: "rejected", inStock: false, updatedAt: new Date() })
+    .where(eq(productsTable.id, req.params["id"]!))
+    .returning();
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  if (product.vendorId && product.vendorId !== "ajkmart_system") {
+    const [vendor] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, product.vendorId)).limit(1);
+    if (vendor) {
+      const vLang = await getUserLanguage(vendor.id);
+      await db.insert(notificationsTable).values({
+        id: generateId(),
+        userId: vendor.id,
+        title: t("notifProductRejected", vLang),
+        body: t("notifProductRejectedBody", vLang).replace("{name}", product.name).replace("{reason}", reason),
+        type: "system",
+        icon: "close-circle-outline",
+      }).catch(() => {});
+    }
+  }
+  res.json({ ...product, price: parseFloat(product.price) });
+});
+
+router.post("/products", async (req, res) => {
+  const { name, description, price, originalPrice, category, type, unit, vendorName, inStock, deliveryTime, image } = req.body;
+  if (!name || !price || !category) {
+    res.status(400).json({ error: "name, price, and category are required" });
+    return;
+  }
+  const [product] = await db.insert(productsTable).values({
+    id: generateId(),
+    name,
+    description: description || null,
+    price: String(price),
+    originalPrice: originalPrice ? String(originalPrice) : null,
+    category,
+    type: type || "mart",
+    vendorId: "ajkmart_system",
+    vendorName: vendorName || "AJKMart Store",
+    unit: unit || null,
+    inStock: inStock !== false,
+    deliveryTime: deliveryTime || "30-45 min",
+    rating: "4.5",
+    reviewCount: 0,
+    image: image || null,
+  }).returning();
+  res.status(201).json({ ...product!, price: parseFloat(product!.price) });
+});
+
+router.patch("/products/:id", async (req, res) => {
+  const { name, description, price, originalPrice, category, unit, inStock, vendorName, deliveryTime, image } = req.body;
+  const updates: Partial<typeof productsTable.$inferInsert> = {};
+  if (name !== undefined) updates.name = name;
+  if (description !== undefined) updates.description = description;
+  if (price !== undefined) updates.price = String(price);
+  if (originalPrice !== undefined) updates.originalPrice = originalPrice ? String(originalPrice) : null;
+  if (category !== undefined) updates.category = category;
+  if (unit !== undefined) updates.unit = unit;
+  if (inStock !== undefined) updates.inStock = inStock;
+  if (vendorName !== undefined) updates.vendorName = vendorName;
+  if (deliveryTime !== undefined) updates.deliveryTime = deliveryTime;
+  if (image !== undefined) updates.image = image;
+
+  const [product] = await db
+    .update(productsTable)
+    .set(updates)
+    .where(eq(productsTable.id, req.params["id"]!))
+    .returning();
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  res.json({ ...product, price: parseFloat(product.price) });
+});
+
+router.delete("/products/:id", async (req, res) => {
+  await db.delete(productsTable).where(eq(productsTable.id, req.params["id"]!));
+  res.json({ success: true });
+});
+
+/* ── Broadcast Notification ── */
+router.post("/broadcast", async (req, res) => {
+  const { title, body, titleKey, bodyKey, type = "system", icon = "notifications-outline" } = req.body;
+  if (!title && !titleKey) { res.status(400).json({ error: "title or titleKey required" }); return; }
+  if (!body && !bodyKey) { res.status(400).json({ error: "body or bodyKey required" }); return; }
+
+  const users = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.isActive, true));
+  let sent = 0;
+  for (const user of users) {
+    let localTitle = title as string;
+    let localBody = body as string;
+    if (titleKey || bodyKey) {
+      const lang = await getUserLanguage(user.id);
+      if (titleKey) localTitle = t(titleKey as TranslationKey, lang);
+      if (bodyKey) localBody = t(bodyKey as TranslationKey, lang);
+    }
+    await db.insert(notificationsTable).values({
+      id: generateId(),
+      userId: user.id,
+      title: localTitle,
+      body: localBody,
+      type,
+      icon,
+    }).catch(() => {});
+    sent++;
+  }
+  res.json({ success: true, sent });
+});
+
+/* ── Wallet Transactions ── */
+router.get("/categories/tree", async (req, res) => {
+  const type = req.query["type"] as string;
+  const conditions = [];
+  if (type) conditions.push(eq(categoriesTable.type, type));
+
+  const allCats = await db
+    .select()
+    .from(categoriesTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(asc(categoriesTable.sortOrder));
+
+  const topLevel = allCats.filter(c => !c.parentId);
+  const childrenMap = new Map<string, typeof allCats>();
+  for (const c of allCats) {
+    if (c.parentId) {
+      const arr = childrenMap.get(c.parentId) || [];
+      arr.push(c);
+      childrenMap.set(c.parentId, arr);
+    }
+  }
+
+  const tree = topLevel.map(c => ({
+    ...c,
+    children: (childrenMap.get(c.id) || []),
+  }));
+
+  res.json({ categories: tree });
+});
+
+router.post("/categories", async (req, res) => {
+  const { name, icon, type, parentId, sortOrder, isActive } = req.body;
+  if (!name || !type) {
+    res.status(400).json({ error: "name and type are required" });
+    return;
+  }
+
+  const id = generateId();
+  const [category] = await db.insert(categoriesTable).values({
+    id,
+    name,
+    icon: icon || "grid-outline",
+    type,
+    parentId: parentId || null,
+    sortOrder: sortOrder ?? 0,
+    isActive: isActive !== false,
+  }).returning();
+
+  res.status(201).json(category);
+});
+
+router.patch("/categories/:id", async (req, res) => {
+  const { name, icon, type, parentId, sortOrder, isActive } = req.body;
+
+  const updates: Record<string, any> = { updatedAt: new Date() };
+  if (name !== undefined) updates.name = name;
+  if (icon !== undefined) updates.icon = icon;
+  if (type !== undefined) updates.type = type;
+  if (parentId !== undefined) updates.parentId = parentId || null;
+  if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+  if (isActive !== undefined) updates.isActive = isActive;
+
+  const [updated] = await db
+    .update(categoriesTable)
+    .set(updates)
+    .where(eq(categoriesTable.id, req.params["id"]!))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Category not found" });
+    return;
+  }
+
+  res.json(updated);
+});
+
+router.delete("/categories/:id", async (req, res) => {
+  const id = req.params["id"]!;
+
+  await db
+    .update(categoriesTable)
+    .set({ parentId: null })
+    .where(eq(categoriesTable.parentId, id));
+
+  const [deleted] = await db
+    .delete(categoriesTable)
+    .where(eq(categoriesTable.id, id))
+    .returning();
+
+  if (!deleted) {
+    res.status(404).json({ error: "Category not found" });
+    return;
+  }
+
+  res.json({ success: true });
+});
+
+router.post("/categories/reorder", async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "items array required" });
+    return;
+  }
+
+  for (const item of items) {
+    if (item.id && typeof item.sortOrder === "number") {
+      await db
+        .update(categoriesTable)
+        .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+        .where(eq(categoriesTable.id, item.id));
+    }
+  }
+
+  res.json({ success: true });
+});
+
+/* ── Banners ── */
+router.get("/banners", async (req, res) => {
+  const placement = req.query["placement"] as string | undefined;
+  const status = req.query["status"] as string | undefined;
+
+  const banners = await db
+    .select()
+    .from(bannersTable)
+    .orderBy(asc(bannersTable.sortOrder), desc(bannersTable.createdAt));
+  const now = new Date();
+  let mapped = banners.map(b => ({
+    ...b,
+    startDate: b.startDate ? b.startDate.toISOString() : null,
+    endDate: b.endDate ? b.endDate.toISOString() : null,
+    createdAt: b.createdAt.toISOString(),
+    updatedAt: b.updatedAt.toISOString(),
+    status: (!b.isActive ? "inactive"
+          : b.startDate && now < b.startDate ? "scheduled"
+          : b.endDate && now > b.endDate ? "expired"
+          : "active") as "active" | "scheduled" | "expired" | "inactive",
+  }));
+  if (placement) mapped = mapped.filter(b => b.placement === placement);
+  if (status) mapped = mapped.filter(b => b.status === status);
+  res.json({ banners: mapped, total: mapped.length });
+});
+
+router.post("/banners", async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  if (!body.title) {
+    res.status(400).json({ error: "title is required" }); return;
+  }
+  const [banner] = await db.insert(bannersTable).values({
+    id: generateId(),
+    title: body.title as string,
+    subtitle: (body.subtitle as string) || null,
+    imageUrl: (body.imageUrl as string) || null,
+    linkType: (body.linkType as string) || "none",
+    linkValue: (body.linkValue as string) || null,
+    targetService: (body.targetService as string) || null,
+    placement: (body.placement as string) || "home",
+    colorFrom: (body.colorFrom as string) || "#7C3AED",
+    colorTo: (body.colorTo as string) || "#4F46E5",
+    icon: (body.icon as string) || null,
+    sortOrder: (body.sortOrder as number) ?? 0,
+    isActive: body.isActive !== false,
+    startDate: body.startDate ? new Date(body.startDate as string) : null,
+    endDate: body.endDate ? new Date(body.endDate as string) : null,
+  }).returning();
+  res.status(201).json(banner);
+});
+
+router.patch("/banners/reorder", async (req, res) => {
+  const { items } = req.body as { items: { id: string; sortOrder: number }[] };
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "items array required" }); return;
+  }
+  for (const item of items) {
+    await db.update(bannersTable).set({ sortOrder: item.sortOrder, updatedAt: new Date() }).where(eq(bannersTable.id, item.id));
+  }
+  res.json({ success: true });
+});
+
+const bannerUpdateHandler = async (req: import("express").Request, res: import("express").Response) => {
+  const bannerId = req.params["id"]!;
+  const body = req.body as Record<string, unknown>;
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  const fields = ["title", "subtitle", "imageUrl", "linkType", "linkValue", "targetService", "placement", "colorFrom", "colorTo", "icon", "sortOrder", "isActive"];
+  for (const f of fields) {
+    if (body[f] !== undefined) updates[f] = body[f];
+  }
+  if (body.startDate !== undefined) updates.startDate = body.startDate ? new Date(body.startDate as string) : null;
+  if (body.endDate !== undefined) updates.endDate = body.endDate ? new Date(body.endDate as string) : null;
+
+  const [updated] = await db.update(bannersTable).set(updates).where(eq(bannersTable.id, bannerId)).returning();
+  if (!updated) {
+    res.status(404).json({ error: "Banner not found" }); return;
+  }
+  res.json(updated);
+};
+router.patch("/banners/:id", bannerUpdateHandler);
+router.put("/banners/:id", bannerUpdateHandler);
+
+router.delete("/banners/:id", async (req, res) => {
+  const bannerId = req.params["id"]!;
+  const [deleted] = await db.delete(bannersTable).where(eq(bannersTable.id, bannerId)).returning();
+  if (!deleted) {
+    res.status(404).json({ error: "Banner not found" }); return;
+  }
+  res.json({ success: true, id: bannerId });
+});
+
+/* ── Flash Deals ── */
+router.get("/flash-deals", async (_req, res) => {
+  const deals = await db.select().from(flashDealsTable).orderBy(desc(flashDealsTable.createdAt));
+  const products = await db.select({ id: productsTable.id, name: productsTable.name, price: productsTable.price, image: productsTable.image, category: productsTable.category }).from(productsTable);
+  const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+  const now = new Date();
+  res.json({
+    deals: deals.map(d => ({
+      ...d,
+      discountPct:  d.discountPct  ? parseFloat(String(d.discountPct))  : null,
+      discountFlat: d.discountFlat ? parseFloat(String(d.discountFlat)) : null,
+      startTime: d.startTime.toISOString(),
+      endTime:   d.endTime.toISOString(),
+      createdAt: d.createdAt.toISOString(),
+      product:   productMap[d.productId] ?? null,
+      status: !d.isActive ? "inactive"
+            : now < d.startTime ? "scheduled"
+            : now > d.endTime   ? "expired"
+            : d.dealStock !== null && d.soldCount >= d.dealStock ? "sold_out"
+            : "live",
+    })),
+  });
+});
+
+router.post("/flash-deals", async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  if (!body.productId || !body.startTime || !body.endTime) {
+    res.status(400).json({ error: "productId, startTime, endTime required" }); return;
+  }
+  const [deal] = await db.insert(flashDealsTable).values({
+    id:           generateId(),
+    productId:    body.productId,
+    title:        body.title    || null,
+    badge:        body.badge    || "FLASH",
+    discountPct:  body.discountPct  ? String(body.discountPct)  : null,
+    discountFlat: body.discountFlat ? String(body.discountFlat) : null,
+    startTime:    new Date(body.startTime),
+    endTime:      new Date(body.endTime),
+    dealStock:    body.dealStock  ? Number(body.dealStock)  : null,
+    isActive:     body.isActive !== false,
+  }).returning();
+  res.status(201).json(deal);
+});
+
+router.patch("/flash-deals/:id", async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  const updates: Record<string, any> = {};
+  if (body.title        !== undefined) updates.title        = body.title;
+  if (body.badge        !== undefined) updates.badge        = body.badge;
+  if (body.discountPct  !== undefined) updates.discountPct  = body.discountPct  ? String(body.discountPct)  : null;
+  if (body.discountFlat !== undefined) updates.discountFlat = body.discountFlat ? String(body.discountFlat) : null;
+  if (body.startTime    !== undefined) updates.startTime    = new Date(body.startTime);
+  if (body.endTime      !== undefined) updates.endTime      = new Date(body.endTime);
+  if (body.dealStock    !== undefined) updates.dealStock    = body.dealStock ? Number(body.dealStock) : null;
+  if (body.isActive     !== undefined) updates.isActive     = body.isActive;
+  const [deal] = await db.update(flashDealsTable).set(updates).where(eq(flashDealsTable.id, req.params["id"]!)).returning();
+  if (!deal) { res.status(404).json({ error: "Deal not found" }); return; }
+  res.json(deal);
+});
+
+router.delete("/flash-deals/:id", async (req, res) => {
+  await db.delete(flashDealsTable).where(eq(flashDealsTable.id, req.params["id"]!));
+  res.json({ success: true });
+});
+
+/* ── Promo Codes ── */
+router.get("/promo-codes", async (_req, res) => {
+  const codes = await db.select().from(promoCodesTable).orderBy(desc(promoCodesTable.createdAt));
+  const now = new Date();
+  res.json({
+    codes: codes.map(c => ({
+      ...c,
+      discountPct:    c.discountPct    ? parseFloat(String(c.discountPct))    : null,
+      discountFlat:   c.discountFlat   ? parseFloat(String(c.discountFlat))   : null,
+      minOrderAmount: c.minOrderAmount ? parseFloat(String(c.minOrderAmount)) : 0,
+      maxDiscount:    c.maxDiscount    ? parseFloat(String(c.maxDiscount))    : null,
+      expiresAt:  c.expiresAt  ? c.expiresAt.toISOString()  : null,
+      createdAt:  c.createdAt.toISOString(),
+      status: !c.isActive ? "inactive"
+            : c.expiresAt && now > c.expiresAt ? "expired"
+            : c.usageLimit !== null && c.usedCount >= c.usageLimit ? "exhausted"
+            : "active",
+    })),
+  });
+});
+
+router.post("/promo-codes", async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  if (!body.code) { res.status(400).json({ error: "code required" }); return; }
+  try {
+    const [code] = await db.insert(promoCodesTable).values({
+      id:             generateId(),
+      code:           String(body.code).toUpperCase().trim(),
+      description:    body.description    || null,
+      discountPct:    body.discountPct    ? String(body.discountPct)    : null,
+      discountFlat:   body.discountFlat   ? String(body.discountFlat)   : null,
+      minOrderAmount: body.minOrderAmount ? String(body.minOrderAmount) : "0",
+      maxDiscount:    body.maxDiscount    ? String(body.maxDiscount)    : null,
+      usageLimit:     body.usageLimit     ? Number(body.usageLimit)     : null,
+      appliesTo:      body.appliesTo      || "all",
+      expiresAt:      body.expiresAt      ? new Date(body.expiresAt)    : null,
+      isActive:       body.isActive !== false,
+    }).returning();
+    res.status(201).json(code);
+  } catch (e: unknown) {
+    if (e.code === "23505") { res.status(409).json({ error: "Promo code already exists" }); return; }
+    throw e;
+  }
+});
+
+router.patch("/promo-codes/:id", async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  const updates: Record<string, any> = {};
+  if (body.code           !== undefined) updates.code           = String(body.code).toUpperCase().trim();
+  if (body.description    !== undefined) updates.description    = body.description;
+  if (body.discountPct    !== undefined) updates.discountPct    = body.discountPct    ? String(body.discountPct)    : null;
+  if (body.discountFlat   !== undefined) updates.discountFlat   = body.discountFlat   ? String(body.discountFlat)   : null;
+  if (body.minOrderAmount !== undefined) updates.minOrderAmount = String(body.minOrderAmount);
+  if (body.maxDiscount    !== undefined) updates.maxDiscount    = body.maxDiscount    ? String(body.maxDiscount)    : null;
+  if (body.usageLimit     !== undefined) updates.usageLimit     = body.usageLimit     ? Number(body.usageLimit)     : null;
+  if (body.appliesTo      !== undefined) updates.appliesTo      = body.appliesTo;
+  if (body.expiresAt      !== undefined) updates.expiresAt      = body.expiresAt      ? new Date(body.expiresAt)    : null;
+  if (body.isActive       !== undefined) updates.isActive       = body.isActive;
+  const [code] = await db.update(promoCodesTable).set(updates).where(eq(promoCodesTable.id, req.params["id"]!)).returning();
+  if (!code) { res.status(404).json({ error: "Promo code not found" }); return; }
+  res.json(code);
+});
+
+router.delete("/promo-codes/:id", async (req, res) => {
+  await db.delete(promoCodesTable).where(eq(promoCodesTable.id, req.params["id"]!));
+  res.json({ success: true });
+});
+
+/* ══════════════════════════════════════
+   VENDOR MANAGEMENT
+══════════════════════════════════════ */
+
+export default router;

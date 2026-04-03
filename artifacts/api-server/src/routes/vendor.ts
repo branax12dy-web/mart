@@ -67,7 +67,7 @@ router.get("/me", async (req, res) => {
 router.patch("/profile", async (req, res) => {
   const vendorId = req.vendorId!;
   const { name, email, cnic, address, city, bankName, bankAccount, bankAccountTitle, businessType } = req.body;
-  const updates: any = { updatedAt: new Date() };
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
   if (email            !== undefined) updates.email            = email;
   if (cnic             !== undefined) updates.cnic             = cnic;
@@ -91,7 +91,7 @@ router.get("/store", async (req, res) => {
 router.patch("/store", async (req, res) => {
   const vendorId = req.vendorId!;
   const body = req.body;
-  const updates: any = { updatedAt: new Date() };
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
   const fields = ["storeName","storeCategory","storeBanner","storeDescription","storeAnnouncement","storeDeliveryTime","storeIsOpen","storeMinOrder"];
   for (const f of fields) {
     if (body[f] !== undefined) updates[f] = body[f];
@@ -332,7 +332,7 @@ router.post("/products/bulk", async (req, res) => {
 router.patch("/products/:id", async (req, res) => {
   const vendorId = req.vendorId!;
   const body = req.body;
-  const updates: any = { updatedAt: new Date() };
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
   const fields = ["name","description","category","type","unit","deliveryTime"];
   for (const f of fields) if (body[f] !== undefined) updates[f] = body[f];
   if (body.price !== undefined) {
@@ -485,7 +485,7 @@ router.post("/wallet/withdraw", async (req, res) => {
     }).catch(() => {});
 
     res.json({ success: true, newBalance: parseFloat(result.toFixed(2)), amount: amt });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(400).json({ error: e.message });
   }
 });
@@ -497,7 +497,7 @@ router.get("/notifications", async (req, res) => {
     .where(eq(notificationsTable.userId, vendorId))
     .orderBy(desc(notificationsTable.createdAt))
     .limit(30);
-  res.json({ notifications: notifs, unread: notifs.filter((n: any) => !n.isRead).length });
+  res.json({ notifications: notifs, unread: notifs.filter((n: Record<string, unknown>) => !n.isRead).length });
 });
 
 /* ── PATCH /vendor/notifications/read-all ── */

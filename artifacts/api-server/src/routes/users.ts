@@ -199,7 +199,7 @@ router.post("/avatar", avatarUpload.single("avatar"), async (req, res) => {
       id: user.id, phone: user.phone, name: user.name, email: user.email,
       role: user.role, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"),
     }});
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(500).json({ error: e?.message || "Avatar upload failed" });
   }
 });
@@ -346,7 +346,7 @@ router.delete("/delete-account", async (req, res) => {
     writeAuthAuditLog("account_deleted", { userId, ip, userAgent: req.headers["user-agent"] as string });
 
     res.json({ success: true, message: "Account has been deleted and all data anonymized." });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(500).json({ error: e.message || "Could not delete account" });
   }
 });

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -110,7 +111,7 @@ async function broadcastRide(rideId: string) {
     const pickupLat = parseFloat(ride.pickupLat ?? "");
     const pickupLng = parseFloat(ride.pickupLng ?? "");
     if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) {
-      console.error(`[broadcast] Ride ${rideId} has invalid coordinates — skipping dispatch`);
+      logger.error(`[broadcast] Ride ${rideId} has invalid coordinates — skipping dispatch`);
       return;
     }
 
@@ -194,7 +195,7 @@ async function broadcastRide(rideId: string) {
     }
 
     if (notifiedCount === 0 && alreadySet.size === 0) {
-      console.warn(`[broadcast] NO_RIDERS_AVAILABLE for ride ${rideId} — no eligible riders within ${radiusKm}km`);
+      logger.warn(`[broadcast] NO_RIDERS_AVAILABLE for ride ${rideId} — no eligible riders within ${radiusKm}km`);
       await db.insert(notificationsTable).values({
         id: generateId(), userId: ride.userId,
         title: "No riders available",
@@ -214,7 +215,7 @@ async function broadcastRide(rideId: string) {
     }).where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)));
 
   } catch (err) {
-    console.error(`[broadcast] Error for ride ${rideId}:`, err);
+    logger.error(`[broadcast] Error for ride ${rideId}:`, err);
   }
 }
 
@@ -343,8 +344,8 @@ async function calcFare(distance: number, type: string): Promise<{ baseFare: num
   return { baseFare, gstAmount, total: baseFare + gstAmount };
 }
 
-const toISO = (v: any) => v ? (v instanceof Date ? v.toISOString() : v) : null;
-function formatRide(r: any) {
+const toISO = (v: unknown) => v ? (v instanceof Date ? v.toISOString() : v) : null;
+function formatRide(r: Record<string, unknown>) {
   return {
     ...r,
     fare:          parseFloat(r.fare         ?? "0"),
@@ -435,7 +436,7 @@ router.post("/estimate", async (req, res) => {
       bargainEnabled,
       minOffer,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     const status = e instanceof RideApiError ? e.httpStatus : 422;
     const code = e instanceof RideApiError ? e.code : "ESTIMATE_FAILED";
     res.status(status).json({ error: e.message, code });
@@ -505,7 +506,7 @@ router.post("/", customerAuth, async (req, res) => {
     baseFare = fareResult.baseFare;
     gstAmount = fareResult.gstAmount;
     platformFare = fareResult.total;
-  } catch (e: any) {
+  } catch (e: unknown) {
     const status = e instanceof RideApiError ? e.httpStatus : 422;
     const code = e instanceof RideApiError ? e.code : "FARE_CALCULATION_FAILED";
     res.status(status).json({ error: e.message, code }); return;
@@ -631,7 +632,7 @@ router.post("/", customerAuth, async (req, res) => {
       platformFare, effectiveFare: fareToCharge,
       isBargaining,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     const status = e instanceof RideApiError ? e.httpStatus : 400;
     const code = e instanceof RideApiError ? e.code : "BOOKING_FAILED";
     res.status(status).json({ error: e.message, code });
@@ -873,7 +874,7 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
 
       return { rideUpdate, bid };
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     const status = e instanceof RideApiError ? e.httpStatus : 400;
     const code = e instanceof RideApiError ? e.code : "ACCEPT_BID_FAILED";
     res.status(status).json({ error: e.message, code });
@@ -1453,11 +1454,11 @@ async function runDispatchCycle() {
 
         await broadcastRide(ride.id);
       } catch (rideErr) {
-        console.error(`[dispatch-engine] Error processing ride ${ride.id}:`, rideErr);
+        logger.error(`[dispatch-engine] Error processing ride ${ride.id}:`, rideErr);
       }
     }
   } catch (err) {
-    console.error("[dispatch-engine] cycle error:", err);
+    logger.error("[dispatch-engine] cycle error:", err);
   } finally {
     dispatchCycleRunning = false;
   }
@@ -1467,7 +1468,7 @@ let dispatchInterval: ReturnType<typeof setInterval> | null = null;
 export function startDispatchEngine() {
   if (dispatchInterval) return;
   dispatchInterval = setInterval(runDispatchCycle, 10_000);
-  console.log("[dispatch-engine] started (every 10s)");
+  logger.info("[dispatch-engine] started (every 10s)");
   runDispatchCycle();
 }
 

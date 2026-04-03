@@ -173,7 +173,7 @@ router.get("/autocomplete", async (req, res) => {
       return;
     }
 
-    const predictions = (data.predictions ?? []).map((p: any) => ({
+    const predictions = (data.predictions ?? []).map((p: Record<string, unknown>) => ({
       placeId:       p.place_id,
       description:   p.description,
       mainText:      p.structured_formatting?.main_text ?? p.description,

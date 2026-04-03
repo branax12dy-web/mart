@@ -154,7 +154,7 @@ router.post("/validate-cart", async (req, res) => {
     return;
   }
 
-  const productIds = items.map((it: any) => it.productId).filter(Boolean);
+  const productIds = items.map((it: Record<string, unknown>) => it.productId).filter(Boolean);
   if (productIds.length === 0) {
     res.json({ valid: true, items, removed: [], priceChanges: [] });
     return;
@@ -170,7 +170,7 @@ router.post("/validate-cart", async (req, res) => {
   const productMap = new Map(dbProducts.map(p => [p.id, p]));
   const removed: string[] = [];
   const priceChanges: { productId: string; name: string; oldPrice: number; newPrice: number }[] = [];
-  const validItems: any[] = [];
+  const validItems: unknown[] = [];
 
   for (const item of items) {
     const dbProduct = productMap.get(item.productId);
@@ -337,7 +337,7 @@ router.post("/", customerAuth, async (req, res) => {
 
   /* Per-item validation — prevents negative-price injection that could
      reduce the order total below what the customer is actually owed */
-  const badItem = (items as any[]).find(
+  const badItem = (items as Array<Record<string, unknown>>).find(
     (it) => !Number.isFinite(Number(it.price)) || Number(it.price) <= 0 ||
             !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0,
   );
@@ -346,12 +346,12 @@ router.post("/", customerAuth, async (req, res) => {
   }
 
   /* ── Server-side price verification — every item must have a productId ── */
-  const missingProductId = (items as any[]).find((it: any) => !it.productId);
+  const missingProductId = (items as Array<Record<string, unknown>>).find((it: Record<string, unknown>) => !it.productId);
   if (missingProductId) {
     res.status(400).json({ error: "Each item must include a valid productId" }); return;
   }
 
-  const productIds = (items as any[]).map((it: any) => it.productId);
+  const productIds = (items as Array<Record<string, unknown>>).map((it: Record<string, unknown>) => it.productId);
   {
     const dbProducts = await db.select({
       id: productsTable.id,
@@ -644,7 +644,7 @@ router.post("/", customerAuth, async (req, res) => {
       res.status(201).json(mapped);
       /* Notify online riders via socket so their Home screen refreshes instantly */
       notifyOnlineRidersOfOrder(order.id, type || "mart").catch(() => {});
-    } catch (e: any) {
+    } catch (e: unknown) {
       res.status(400).json({ error: e.message });
     }
     return;
@@ -679,7 +679,7 @@ router.post("/", customerAuth, async (req, res) => {
     res.status(201).json(mapped);
     /* Notify online riders via socket so their Home screen refreshes instantly */
     notifyOnlineRidersOfOrder(order!.id, type || "mart").catch(() => {});
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(500).json({ error: "Order could not be created. Please try again." });
   }
 });
@@ -760,7 +760,7 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
       refundMethod: isWallet ? "wallet" : null,
       cancelReason: reason,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(400).json({ error: e.message || "Could not cancel order" });
   }
 });
@@ -800,7 +800,7 @@ router.post("/:id/refund-request", customerAuth, async (req, res) => {
     broadcastOrderUpdate(mapOrder(updatedOrder), order.vendorId);
 
     res.json({ success: true, message: "Refund request submitted", refundStatus: "requested" });
-  } catch (e: any) {
+  } catch (e: unknown) {
     res.status(500).json({ error: e.message || "Could not process refund request" });
   }
 });

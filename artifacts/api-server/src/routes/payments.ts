@@ -429,7 +429,7 @@ router.post("/initiate", customerAuth, async (req, res) => {
           return;
         }
         res.status(502).json({ error: `EasyPaisa error: ${epData?.responseDesc || "Unknown error"}` }); return;
-      } catch (e: any) {
+      } catch (e: unknown) {
         res.status(502).json({ error: `EasyPaisa API unreachable: ${e.message}` }); return;
       }
     }

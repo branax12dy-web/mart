@@ -1,0 +1,1157 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import {
+  usersTable,
+  walletTransactionsTable,
+  notificationsTable,
+  ordersTable, ridesTable, pharmacyOrdersTable, parcelBookingsTable, productsTable, platformSettingsTable, adminAccountsTable, authAuditLogTable, refreshTokensTable, rideRatingsTable, riderPenaltiesTable, reviewsTable,
+} from "@workspace/db/schema";
+import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
+import {
+  stripUser, generateId, getUserLanguage, t,
+  getPlatformSettings, adminAuth, getAdminSecret,
+  sendUserNotification, logger,
+  ORDER_NOTIF_KEYS, RIDE_NOTIF_KEYS, PHARMACY_NOTIF_KEYS, PARCEL_NOTIF_KEYS,
+  checkAdminLoginLockout, recordAdminLoginFailure, resetAdminLoginAttempts,
+  addAuditEntry, addSecurityEvent, getClientIp,
+  signAdminJwt, verifyAdminJwt, invalidateSettingsCache, getCachedSettings,
+  ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
+  ensureDefaultRideServices, ensureDefaultLocations, formatSvc,
+  type AdminRequest, serializeSosAlert,
+} from "../admin-shared.js";
+import { emitSosNew, emitSosAcknowledged, emitSosResolved } from "../../lib/socketio.js";
+import { hashPassword } from "../../services/password.js";
+import { auditLog, securityEvents, blockIP, unblockIP, isIPBlocked, getBlockedIPList, getActiveLockouts, unlockPhone } from "../../middleware/security.js";
+
+const router = Router();
+router.get("/stats", async (_req, res) => {
+  const [userCount] = await db.select({ count: count() }).from(usersTable);
+  const [orderCount] = await db.select({ count: count() }).from(ordersTable);
+  const [rideCount] = await db.select({ count: count() }).from(ridesTable);
+  const [pharmCount] = await db.select({ count: count() }).from(pharmacyOrdersTable);
+  const [parcelCount] = await db.select({ count: count() }).from(parcelBookingsTable);
+  const [productCount] = await db.select({ count: count() }).from(productsTable);
+
+  const [totalRevenue] = await db
+    .select({ total: sum(ordersTable.total) })
+    .from(ordersTable)
+    .where(eq(ordersTable.status, "delivered"));
+
+  const [rideRevenue] = await db
+    .select({ total: sum(ridesTable.fare) })
+    .from(ridesTable)
+    .where(eq(ridesTable.status, "completed"));
+
+  const [pharmRevenue] = await db
+    .select({ total: sum(pharmacyOrdersTable.total) })
+    .from(pharmacyOrdersTable)
+    .where(eq(pharmacyOrdersTable.status, "delivered"));
+
+  const recentOrders = await db
+    .select()
+    .from(ordersTable)
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(5);
+
+  const recentRides = await db
+    .select()
+    .from(ridesTable)
+    .orderBy(desc(ridesTable.createdAt))
+    .limit(5);
+
+  res.json({
+    users: userCount!.count,
+    orders: orderCount!.count,
+    rides: rideCount!.count,
+    pharmacyOrders: pharmCount!.count,
+    parcelBookings: parcelCount!.count,
+    products: productCount!.count,
+    revenue: {
+      orders: parseFloat(totalRevenue!.total ?? "0"),
+      rides: parseFloat(rideRevenue!.total ?? "0"),
+      pharmacy: parseFloat(pharmRevenue!.total ?? "0"),
+      total:
+        parseFloat(totalRevenue!.total ?? "0") +
+        parseFloat(rideRevenue!.total ?? "0") +
+        parseFloat(pharmRevenue!.total ?? "0"),
+    },
+    recentOrders: recentOrders.map(o => ({
+      ...o,
+      total: parseFloat(String(o.total)),
+      createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
+    })),
+    recentRides: recentRides.map(r => ({
+      ...r,
+      fare: parseFloat(r.fare),
+      distance: parseFloat(r.distance),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })),
+  });
+});
+router.get("/platform-settings", async (_req, res) => {
+  /* Always seed new defaults (onConflictDoNothing keeps existing values intact) */
+  await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+  const rows = await db.select().from(platformSettingsTable);
+  const grouped: Record<string, any[]> = {};
+  for (const row of rows) {
+    if (!grouped[row.category]) grouped[row.category] = [];
+    grouped[row.category]!.push({ key: row.key, value: row.value, label: row.label, updatedAt: row.updatedAt.toISOString() });
+  }
+  res.json({ settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })), grouped });
+});
+
+/* Keys that must be valid finite numbers */
+const NUMERIC_SETTING_KEYS = new Set([
+  "dispatch_min_radius_km", "dispatch_max_radius_km", "dispatch_avg_speed_kmh",
+  "ride_cancellation_fee", "ride_surge_multiplier", "ride_bargaining_min_pct",
+  "finance_gst_pct", "customer_signup_bonus",
+  "payment_min_online", "payment_max_online",
+  "security_login_max_attempts", "security_lockout_minutes", "security_otp_cooldown_sec",
+  "security_otp_max_per_phone", "security_otp_max_per_ip", "security_otp_window_min",
+  "auth_trusted_device_days", "order_refund_days",
+]);
+
+/* Keys that must be strictly "on" or "off" */
+const BOOLEAN_SETTING_KEYS = new Set([
+  "feature_rides", "feature_wallet", "feature_mart", "feature_food", "feature_parcel",
+  "feature_pharmacy", "feature_school", "feature_new_users",
+  "ride_bargaining_enabled", "ride_surge_enabled", "rider_cash_allowed",
+  "cod_enabled", "finance_gst_enabled", "jazzcash_enabled", "easypaisa_enabled",
+  "security_global_dev_otp", "security_otp_bypass", "security_phone_verify",
+  "user_require_approval", "integration_whatsapp",
+  "cod_allowed_rides", "wallet_allowed_rides", "jazzcash_allowed_rides", "easypaisa_allowed_rides",
+]);
+
+function isValidOctet(s: string): boolean {
+  const n = parseInt(s, 10);
+  return n >= 0 && n <= 255 && String(n) === s;
+}
+
+function isValidIPv4(s: string): boolean {
+  const parts = s.split(".");
+  return parts.length === 4 && parts.every(isValidOctet);
+}
+
+function isValidIpOrCidr(entry: string): boolean {
+  if (entry.includes("/")) {
+    const [ip, prefix] = entry.split("/");
+    const p = parseInt(prefix, 10);
+    return isValidIPv4(ip) && !isNaN(p) && p >= 0 && p <= 32 && String(p) === prefix;
+  }
+  return isValidIPv4(entry);
+}
+
+function validateSettingValue(key: string, value: string): string | null {
+  if (NUMERIC_SETTING_KEYS.has(key)) {
+    const n = parseFloat(value);
+    if (!Number.isFinite(n)) return `Setting "${key}" must be a valid number (got: "${value}")`;
+  }
+  if (BOOLEAN_SETTING_KEYS.has(key)) {
+    if (value !== "on" && value !== "off") return `Setting "${key}" must be "on" or "off" (got: "${value}")`;
+  }
+  if (key === "security_admin_ip_whitelist" && value.trim()) {
+    const entries = value.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const invalid = entries.filter((e: string) => !isValidIpOrCidr(e));
+    if (invalid.length > 0) {
+      return `Invalid IP whitelist entr${invalid.length === 1 ? "y" : "ies"}: ${invalid.join(", ")}. Use IPv4 or CIDR notation (e.g. 192.168.1.1 or 10.0.0.0/8).`;
+    }
+  }
+  return null;
+}
+
+router.put("/platform-settings", async (req, res) => {
+  const { settings } = req.body as { settings: Array<{ key: string; value: string }> };
+  if (!Array.isArray(settings)) { res.status(400).json({ error: "settings array required" }); return; }
+  for (const { key, value } of settings) {
+    const err = validateSettingValue(key, String(value));
+    if (err) { res.status(422).json({ error: err }); return; }
+  }
+  for (const { key, value } of settings) {
+    await db
+      .update(platformSettingsTable)
+      .set({ value: String(value), updatedAt: new Date() })
+      .where(eq(platformSettingsTable.key, key));
+  }
+  /* Bust the security settings cache so new values apply immediately */
+  invalidateSettingsCache();
+  const changedKeys = settings.map((s: Record<string, unknown>) => s.key).join(", ");
+  addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Updated ${settings.length} setting(s): ${changedKeys}`, result: "success" });
+  const rows = await db.select().from(platformSettingsTable);
+  res.json({ success: true, settings: rows.map(r => ({ ...r, updatedAt: r.updatedAt.toISOString() })) });
+});
+
+router.patch("/platform-settings/:key", async (req, res) => {
+  const { value } = req.body;
+  const settingKey = req.params["key"]!;
+  const err = validateSettingValue(settingKey, String(value));
+  if (err) { res.status(422).json({ error: err }); return; }
+  const [row] = await db
+    .update(platformSettingsTable)
+    .set({ value: String(value), updatedAt: new Date() })
+    .where(eq(platformSettingsTable.key, settingKey))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Setting not found" }); return; }
+  /* Bust the security settings cache so new values apply immediately */
+  invalidateSettingsCache();
+  addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Updated setting "${settingKey}" = "${value}"`, result: "success" });
+  res.json({ ...row, updatedAt: row.updatedAt.toISOString() });
+});
+
+/* ── Pharmacy Orders Enriched ── */
+router.get("/app-overview", async (_req, res) => {
+  const [
+    totalUsers, activeUsers, bannedUsers,
+    totalOrders, pendingOrders,
+    totalRides, activeRides,
+    totalPharmacy, totalParcel,
+    settings, adminAccounts,
+  ] = await Promise.all([
+    db.select({ c: count() }).from(usersTable),
+    db.select({ c: count() }).from(usersTable).where(eq(usersTable.isActive, true)),
+    db.select({ c: count() }).from(usersTable).where(eq(usersTable.isBanned, true)),
+    db.select({ c: count() }).from(ordersTable),
+    db.select({ c: count() }).from(ordersTable).where(eq(ordersTable.status, "pending")),
+    db.select({ c: count() }).from(ridesTable),
+    db.select({ c: count() }).from(ridesTable).where(eq(ridesTable.status, "ongoing")),
+    db.select({ c: count() }).from(pharmacyOrdersTable),
+    db.select({ c: count() }).from(parcelBookingsTable),
+    db.select().from(platformSettingsTable),
+    db.select({ c: count() }).from(adminAccountsTable).where(eq(adminAccountsTable.isActive, true)),
+  ]);
+  const settingsMap = Object.fromEntries(settings.map(s => [s.key, s.value]));
+  res.json({
+    users:    { total: totalUsers[0]?.c ?? 0, active: activeUsers[0]?.c ?? 0, banned: bannedUsers[0]?.c ?? 0 },
+    orders:   { total: totalOrders[0]?.c ?? 0, pending: pendingOrders[0]?.c ?? 0 },
+    rides:    { total: totalRides[0]?.c ?? 0, active: activeRides[0]?.c ?? 0 },
+    pharmacy: { total: totalPharmacy[0]?.c ?? 0 },
+    parcel:   { total: totalParcel[0]?.c ?? 0 },
+    adminAccounts: adminAccounts[0]?.c ?? 0,
+    appStatus:    settingsMap["app_status"]    || "active",
+    appName:      settingsMap["app_name"]      || "AJKMart",
+    features: {
+      mart:     settingsMap["feature_mart"]     || "on",
+      food:     settingsMap["feature_food"]     || "on",
+      rides:    settingsMap["feature_rides"]    || "on",
+      pharmacy: settingsMap["feature_pharmacy"] || "on",
+      parcel:   settingsMap["feature_parcel"]   || "on",
+      wallet:   settingsMap["feature_wallet"]   || "on",
+    },
+  });
+});
+
+/* ── Categories Management ── */
+router.get("/all-notifications", async (req, res) => {
+  const role = req.query["role"] as string | undefined;
+  const limit = Math.min(parseInt(String(req.query["limit"] || "100")), 300);
+  let userIds: string[] = [];
+  if (role) {
+    const users = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role as any, role));
+    userIds = users.map(u => u.id);
+    if (userIds.length === 0) { res.json({ notifications: [] }); return; }
+  }
+  const notifs = await db.select().from(notificationsTable)
+    .orderBy(desc(notificationsTable.createdAt))
+    .limit(limit);
+  const filtered = role ? notifs.filter(n => userIds.includes(n.userId)) : notifs;
+  const enriched = await Promise.all(filtered.slice(0, 200).map(async n => {
+    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+      .from(usersTable).where(eq(usersTable.id, n.userId)).limit(1);
+    return { ...n, user: user || null };
+  }));
+  res.json({ notifications: enriched });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   SECURITY MANAGEMENT ENDPOINTS
+══════════════════════════════════════════════════════════════ */
+
+/* ── GET /admin/audit-log — view admin action audit trail ── */
+router.get("/audit-log", adminAuth, (req, res) => {
+  const page   = Math.max(1, parseInt(String(req.query["page"]  || "1")));
+  const limit  = Math.min(parseInt(String(req.query["limit"]  || "50")), 500);
+  const action = req.query["action"] as string | undefined;
+  const result = req.query["result"] as string | undefined;
+  const from   = req.query["from"] as string | undefined;
+  const to     = req.query["to"]   as string | undefined;
+
+  let entries = [...auditLog];
+  if (action) entries = entries.filter(e => e.action.includes(action));
+  if (result) entries = entries.filter(e => e.result === result);
+  if (from)   entries = entries.filter(e => new Date(e.timestamp) >= new Date(from));
+  if (to)     entries = entries.filter(e => new Date(e.timestamp) <= new Date(to));
+
+  const total = entries.length;
+  const paginated = entries.slice((page - 1) * limit, page * limit);
+
+  res.json({
+    entries: paginated,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  });
+});
+
+/* ── GET /admin/auth-audit-log — persistent auth event log from DB ── */
+router.get("/auth-audit-log", adminAuth, async (req, res) => {
+  const limit  = Math.min(parseInt(String(req.query["limit"]  || "100")), 500);
+  const event  = req.query["event"] as string | undefined;
+  const userId = req.query["userId"] as string | undefined;
+
+  const conditions: unknown[] = [];
+  if (event)  conditions.push(eq(authAuditLogTable.event, event));
+  if (userId) conditions.push(eq(authAuditLogTable.userId, userId));
+
+  const entries = await db.select().from(authAuditLogTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(authAuditLogTable.createdAt))
+    .limit(limit);
+
+  res.json({ entries, total: entries.length });
+});
+
+/* ── POST /admin/rotate-secret — rotate the admin master secret ── */
+router.get("/security-events", adminAuth, (req, res) => {
+  const limit    = Math.min(parseInt(String(req.query["limit"]    || "200")), 1000);
+  const severity = req.query["severity"] as string | undefined;
+  const type     = req.query["type"]     as string | undefined;
+
+  let events = [...securityEvents];
+  if (severity) events = events.filter(e => e.severity === severity);
+  if (type)     events = events.filter(e => e.type.includes(type));
+
+  res.json({
+    events: events.slice(0, limit),
+    total: events.length,
+    summary: {
+      critical: securityEvents.filter(e => e.severity === "critical").length,
+      high:     securityEvents.filter(e => e.severity === "high").length,
+      medium:   securityEvents.filter(e => e.severity === "medium").length,
+      low:      securityEvents.filter(e => e.severity === "low").length,
+    },
+  });
+});
+
+/* ── GET /admin/blocked-ips — list all blocked IPs ── */
+router.get("/blocked-ips", adminAuth, async (_req, res) => {
+  const blocked = await getBlockedIPList();
+  res.json({
+    blocked,
+    total: blocked.length,
+  });
+});
+
+/* ── POST /admin/blocked-ips — block an IP ── */
+router.post("/blocked-ips", adminAuth, async (req, res) => {
+  const { ip, reason } = req.body as { ip: string; reason?: string };
+  if (!ip) { res.status(400).json({ error: "ip required" }); return; }
+
+  await blockIP(ip.trim());
+  addAuditEntry({
+    action: "manual_block_ip",
+    ip: getClientIp(req),
+    adminId: req.adminId!,
+    details: `IP ${ip} manually blocked. Reason: ${reason || "No reason given"}`,
+    result: "success",
+  });
+  addSecurityEvent({ type: "ip_manually_blocked", ip, details: `Admin manually blocked IP: ${ip}. Reason: ${reason || "none"}`, severity: "high" });
+  const blocked = await getBlockedIPList();
+  res.json({ success: true, blocked: ip, totalBlocked: blocked.length });
+});
+
+/* ── DELETE /admin/blocked-ips/:ip — unblock an IP ── */
+router.delete("/blocked-ips/:ip", adminAuth, async (req, res) => {
+  const ip = decodeURIComponent(String(req.params["ip"]));
+  const wasBlocked = await isIPBlocked(ip);
+  await unblockIP(ip);
+  addAuditEntry({
+    action: "unblock_ip",
+    ip: getClientIp(req),
+    adminId: req.adminId!,
+    details: `IP ${ip} unblocked`,
+    result: "success",
+  });
+  res.json({ success: true, unblocked: ip, wasBlocked });
+});
+
+/* ── GET /admin/login-lockouts — view locked accounts ── */
+router.get("/login-lockouts", adminAuth, async (_req, res) => {
+  const lockouts = await getActiveLockouts();
+  res.json({
+    lockouts: lockouts.map(l => ({
+      phone: l.key,
+      attempts: l.attempts,
+      lockedUntil: l.lockedUntil,
+      minutesLeft: l.minutesLeft,
+    })),
+    total: lockouts.length,
+  });
+});
+
+/* ── DELETE /admin/login-lockouts/:phone — unlock a phone ── */
+router.delete("/login-lockouts/:phone", adminAuth, async (req, res) => {
+  const phone = decodeURIComponent(String(req.params["phone"]));
+  await unlockPhone(phone);
+  addAuditEntry({
+    action: "admin_unlock_phone",
+    ip: getClientIp(req),
+    adminId: req.adminId!,
+    details: `Admin manually unlocked phone: ${phone}`,
+    result: "success",
+  });
+  res.json({ success: true, unlocked: phone });
+});
+
+/* ── GET /admin/security-dashboard — quick security overview ── */
+router.get("/security-dashboard", adminAuth, async (_req, res) => {
+  const settings = await getPlatformSettings();
+  const now = Date.now();
+
+  const blockedList = await getBlockedIPList();
+  const activeBlocks = blockedList.length;
+  const lockoutList = await getActiveLockouts();
+  const activeLockouts = lockoutList.filter(r => r.minutesLeft !== null && r.minutesLeft > 0).length;
+  const recentCritical = securityEvents.filter(e => e.severity === "critical" && new Date(e.timestamp).getTime() > now - 24 * 60 * 60 * 1000).length;
+  const recentHigh     = securityEvents.filter(e => e.severity === "high"     && new Date(e.timestamp).getTime() > now - 24 * 60 * 60 * 1000).length;
+
+  res.json({
+    status: recentCritical > 0 ? "critical" : recentHigh > 5 ? "warning" : "healthy",
+    activeBlockedIPs: activeBlocks,
+    activeAccountLockouts: activeLockouts,
+    last24hCriticalEvents: recentCritical,
+    last24hHighEvents: recentHigh,
+    totalAuditEntries: auditLog.length,
+    totalSecurityEvents: securityEvents.length,
+    settings: {
+      otpBypass:      settings["security_otp_bypass"]       === "on",
+      mfaRequired:    settings["security_mfa_required"]      === "on",
+      autoBlockIP:    settings["security_auto_block_ip"]     === "on",
+      spoofDetection: settings["security_spoof_detection"]   === "on",
+      fakeOrderDetect:settings["security_fake_order_detect"] === "on",
+      rateLimitGeneral: parseInt(settings["security_rate_limit"]  ?? "100", 10),
+      rateLimitAdmin:   parseInt(settings["security_rate_admin"]  ?? "60",  10),
+      rateLimitRider:   parseInt(settings["security_rate_rider"]  ?? "200", 10),
+      rateLimitVendor:  parseInt(settings["security_rate_vendor"] ?? "150", 10),
+      sessionDays:      parseInt(settings["security_session_days"]      ?? "30", 10),
+      adminTokenHrs:    parseInt(settings["security_admin_token_hrs"]   ?? "24", 10),
+      riderTokenDays:   parseInt(settings["security_rider_token_days"]  ?? "30", 10),
+      maxLoginAttempts: parseInt(settings["security_login_max_attempts"]?? "5",  10),
+      lockoutMinutes:   parseInt(settings["security_lockout_minutes"]   ?? "30", 10),
+      maxDailyOrders:   parseInt(settings["security_max_daily_orders"]  ?? "20", 10),
+      maxSpeedKmh:      parseInt(settings["security_max_speed_kmh"]     ?? "150",10),
+      ipWhitelistActive: !!(settings["security_admin_ip_whitelist"] || "").trim(),
+    },
+  });
+});
+
+/* ── POST /admin/settings (override) — invalidate settings cache on save ── */
+/* This wraps the existing settings update to bust the cache */
+router.post("/invalidate-cache", adminAuth, (_req, res) => {
+  invalidateSettingsCache();
+  res.json({ success: true, message: "Settings cache invalidated. New security settings will be applied immediately." });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   TOTP / MFA ENDPOINTS
+   Sub-admins can set up Google Authenticator / Authy for their account.
+   Super admin is not required to use TOTP (secret key is the master).
+═══════════════════════════════════════════════════════════════ */
+
+/* GET /admin/me/language — get current admin's saved language */
+router.get("/search", async (req, res) => {
+  const q = String(req.query["q"] ?? "").trim();
+  if (!q || q.length < 2) {
+    res.json({ users: [], rides: [], orders: [], pharmacy: [], query: q });
+    return;
+  }
+
+  const pattern = `%${q}%`;
+
+  type UserResult = { id: string; name: string | null; phone: string; email: string | null; role: string; createdAt: Date };
+  type RideResult = { id: string; type: string; status: string; pickupAddress: string; dropAddress: string; fare: string | null; offeredFare: string | null; riderName: string | null; createdAt: Date };
+  type OrderResult = { id: string; status: string; type: string; total: string; deliveryAddress: string; createdAt: Date };
+  type PharmacyResult = { id: string; status: string; total: string; deliveryAddress: string; createdAt: Date };
+  type SearchError = { source: string; message: string };
+
+  const errors: SearchError[] = [];
+
+  async function safeSearchQuery<R>(source: string, fn: () => Promise<R[]>): Promise<R[]> {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      errors.push({ source, message });
+      return [];
+    }
+  }
+
+  const [users, rides, orders, pharmacy] = await Promise.all([
+    safeSearchQuery<UserResult>("users", () =>
+      db.select({
+        id:    usersTable.id,
+        name:  usersTable.name,
+        phone: usersTable.phone,
+        email: usersTable.email,
+        role:  usersTable.role,
+        createdAt: usersTable.createdAt,
+      })
+      .from(usersTable)
+      .where(or(ilike(usersTable.name, pattern), ilike(usersTable.phone, pattern), ilike(usersTable.email, pattern)))
+      .orderBy(desc(usersTable.createdAt))
+      .limit(5)
+    ),
+
+    safeSearchQuery<RideResult>("rides", () =>
+      db.select({
+        id:            ridesTable.id,
+        type:          ridesTable.type,
+        status:        ridesTable.status,
+        pickupAddress: ridesTable.pickupAddress,
+        dropAddress:   ridesTable.dropAddress,
+        fare:          ridesTable.fare,
+        offeredFare:   ridesTable.offeredFare,
+        riderName:     ridesTable.riderName,
+        createdAt:     ridesTable.createdAt,
+      })
+      .from(ridesTable)
+      .where(or(
+        ilike(ridesTable.id, pattern),
+        ilike(ridesTable.pickupAddress, pattern),
+        ilike(ridesTable.dropAddress, pattern),
+        ilike(ridesTable.riderName, pattern),
+        ilike(ridesTable.status, pattern),
+      ))
+      .orderBy(desc(ridesTable.createdAt))
+      .limit(5)
+    ),
+
+    safeSearchQuery<OrderResult>("orders", () =>
+      db.select({
+        id:              ordersTable.id,
+        status:          ordersTable.status,
+        type:            ordersTable.type,
+        total:           ordersTable.total,
+        deliveryAddress: ordersTable.deliveryAddress,
+        createdAt:       ordersTable.createdAt,
+      })
+      .from(ordersTable)
+      .where(or(
+        ilike(ordersTable.id, pattern),
+        ilike(ordersTable.deliveryAddress, pattern),
+        ilike(ordersTable.status, pattern),
+      ))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(5)
+    ),
+
+    safeSearchQuery<PharmacyResult>("pharmacy", () =>
+      db.select({
+        id:              pharmacyOrdersTable.id,
+        status:          pharmacyOrdersTable.status,
+        total:           pharmacyOrdersTable.total,
+        deliveryAddress: pharmacyOrdersTable.deliveryAddress,
+        createdAt:       pharmacyOrdersTable.createdAt,
+      })
+      .from(pharmacyOrdersTable)
+      .where(or(
+        ilike(pharmacyOrdersTable.id, pattern),
+        ilike(pharmacyOrdersTable.deliveryAddress, pattern),
+        ilike(pharmacyOrdersTable.status, pattern),
+      ))
+      .orderBy(desc(pharmacyOrdersTable.createdAt))
+      .limit(5)
+    ),
+  ]);
+
+  res.json({
+    users, rides, orders, pharmacy, query: q,
+    ...(errors.length > 0 ? { errors, partial: true } : {}),
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   NEW ENDPOINTS — Task 4: Operations Pages (51–100)
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── PATCH /admin/users/:id/request-correction — ask user to re-upload specific doc ── */
+router.get("/leaderboard", async (_req, res) => {
+  const vendors = await db.select({
+    id:     usersTable.id,
+    name:   usersTable.storeName,
+    phone:  usersTable.phone,
+    totalOrders: sql<number>`count(${ordersTable.id})`,
+    totalRevenue: sql<number>`coalesce(sum(${ordersTable.total}),0)`,
+  })
+  .from(usersTable)
+  .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered")))
+  .where(eq(usersTable.role, "vendor"))
+  .groupBy(usersTable.id)
+  .orderBy(sql`coalesce(sum(${ordersTable.total}),0) desc`)
+  .limit(5);
+
+  const riders = await db.select({
+    id:   usersTable.id,
+    name: usersTable.name,
+    phone: usersTable.phone,
+    completedTrips: sql<number>`count(${ridesTable.id})`,
+    totalEarned: sql<number>`coalesce(sum(${ridesTable.fare}),0)`,
+  })
+  .from(usersTable)
+  .leftJoin(ridesTable, and(eq(ridesTable.riderId, usersTable.id), eq(ridesTable.status, "completed")))
+  .where(eq(usersTable.role, "rider"))
+  .groupBy(usersTable.id)
+  .orderBy(sql`count(${ridesTable.id}) desc`)
+  .limit(5);
+
+  res.json({
+    vendors: vendors.map(v => ({ ...v, totalRevenue: parseFloat(String(v.totalRevenue)), totalOrders: Number(v.totalOrders) })),
+    riders:  riders.map(r  => ({ ...r,  totalEarned: parseFloat(String(r.totalEarned)),  completedTrips: Number(r.completedTrips) })),
+  });
+});
+
+/* ── GET /admin/dashboard-export — export current dashboard stats as JSON ── */
+router.get("/dashboard-export", async (_req, res) => {
+  const [userCount] = await db.select({ count: count() }).from(usersTable);
+  const [orderCount] = await db.select({ count: count() }).from(ordersTable);
+  const [rideCount]  = await db.select({ count: count() }).from(ridesTable);
+  const [revenue]    = await db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.status, "delivered"));
+  const [rideRev]    = await db.select({ total: sum(ridesTable.fare) }).from(ridesTable).where(eq(ridesTable.status, "completed"));
+  const snapshot = {
+    exportedAt: new Date().toISOString(),
+    users: userCount?.count ?? 0,
+    orders: orderCount?.count ?? 0,
+    rides: rideCount?.count ?? 0,
+    totalRevenue: parseFloat(revenue?.total ?? "0") + parseFloat(rideRev?.total ?? "0"),
+    orderRevenue: parseFloat(revenue?.total ?? "0"),
+    rideRevenue:  parseFloat(rideRev?.total ?? "0"),
+  };
+  res.setHeader("Content-Disposition", `attachment; filename="dashboard-${new Date().toISOString().slice(0,10)}.json"`);
+  res.json(snapshot);
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   RIDE MANAGEMENT MODULE — Admin ride actions with full audit logging
+══════════════════════════════════════════════════════════════════════════════ */
+
+router.get("/reviews", adminAuth, async (req, res) => {
+  const page   = Math.max(1, parseInt(String(req.query["page"]  || "1")));
+  const limit  = Math.min(parseInt(String(req.query["limit"] || "50")), 200);
+  const offset = (page - 1) * limit;
+
+  const typeFilter    = req.query["type"]    as string | undefined;  // "order" | "ride"
+  const starsFilter   = req.query["stars"]   as string | undefined;  // "1"–"5"
+  const statusFilter  = req.query["status"]  as string | undefined;  // "visible" | "hidden" | "deleted"
+  const subjectFilter = req.query["subject"] as string | undefined;  // "vendor" | "rider"
+  const dateFrom      = req.query["dateFrom"] as string | undefined;
+  const dateTo        = req.query["dateTo"]   as string | undefined;
+
+  /* ── Order Reviews ── */
+  const orderConditions: unknown[] = [];
+  if (starsFilter) orderConditions.push(eq(reviewsTable.rating, parseInt(starsFilter)));
+  if (statusFilter === "hidden")  orderConditions.push(eq(reviewsTable.hidden, true));
+  if (statusFilter === "deleted") orderConditions.push(isNotNull(reviewsTable.deletedAt));
+  if (statusFilter === "visible") orderConditions.push(eq(reviewsTable.hidden, false), isNull(reviewsTable.deletedAt));
+  if (dateFrom) orderConditions.push(gte(reviewsTable.createdAt, new Date(dateFrom)));
+  if (dateTo)   orderConditions.push(lte(reviewsTable.createdAt, new Date(dateTo)));
+  /* subject filter:
+     vendor = has vendorId (includes dual-rated delivery orders)
+     rider  = has riderId (includes both ride-only AND dual-rated delivery orders where rider feedback exists) */
+  if (subjectFilter === "vendor") orderConditions.push(isNotNull(reviewsTable.vendorId));
+  if (subjectFilter === "rider")  orderConditions.push(isNotNull(reviewsTable.riderId));
+
+  /* ── Ride Ratings ── */
+  const rideConditions: unknown[] = [];
+  if (starsFilter) rideConditions.push(eq(rideRatingsTable.stars, parseInt(starsFilter)));
+  if (statusFilter === "hidden")  rideConditions.push(eq(rideRatingsTable.hidden, true));
+  if (statusFilter === "deleted") rideConditions.push(isNotNull(rideRatingsTable.deletedAt));
+  if (statusFilter === "visible") rideConditions.push(eq(rideRatingsTable.hidden, false), isNull(rideRatingsTable.deletedAt));
+  if (dateFrom) rideConditions.push(gte(rideRatingsTable.createdAt, new Date(dateFrom)));
+  if (dateTo)   rideConditions.push(lte(rideRatingsTable.createdAt, new Date(dateTo)));
+  /* For ride_ratings: all rows are rider-subject; vendor filter means exclude all ride_ratings */
+  const skipRideRatings = subjectFilter === "vendor";
+
+  const [orderReviews, rideRatings] = await Promise.all([
+    typeFilter === "ride" ? [] : db
+      .select({
+        id: reviewsTable.id,
+        type: sql<string>`'order'`,
+        rating: reviewsTable.rating,
+        riderRating: reviewsTable.riderRating,
+        comment: reviewsTable.comment,
+        orderType: reviewsTable.orderType,
+        hidden: reviewsTable.hidden,
+        deletedAt: reviewsTable.deletedAt,
+        createdAt: reviewsTable.createdAt,
+        reviewerId: reviewsTable.userId,
+        subjectId: sql<string | null>`COALESCE(${reviewsTable.vendorId}, ${reviewsTable.riderId})`,
+        subjectRiderId: reviewsTable.riderId,
+        reviewerName: usersTable.name,
+        reviewerPhone: usersTable.phone,
+      })
+      .from(reviewsTable)
+      .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined)
+      .orderBy(desc(reviewsTable.createdAt)),
+
+    (typeFilter === "order" || skipRideRatings) ? [] : db
+      .select({
+        id: rideRatingsTable.id,
+        type: sql<string>`'ride'`,
+        rating: rideRatingsTable.stars,
+        riderRating: sql<null>`null`,
+        comment: rideRatingsTable.comment,
+        orderType: sql<string>`'ride'`,
+        hidden: rideRatingsTable.hidden,
+        deletedAt: rideRatingsTable.deletedAt,
+        createdAt: rideRatingsTable.createdAt,
+        reviewerId: rideRatingsTable.customerId,
+        subjectId: rideRatingsTable.riderId,
+        subjectRiderId: rideRatingsTable.riderId,
+        reviewerName: usersTable.name,
+        reviewerPhone: usersTable.phone,
+      })
+      .from(rideRatingsTable)
+      .leftJoin(usersTable, eq(rideRatingsTable.customerId, usersTable.id))
+      .where(rideConditions.length > 0 ? and(...rideConditions) : undefined)
+      .orderBy(desc(rideRatingsTable.createdAt)),
+  ]);
+
+  /* Merge and sort by date descending */
+  const combined = [...orderReviews, ...rideRatings]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const total = combined.length;
+  const paginated = combined.slice(offset, offset + limit);
+
+  /* Enrich with subject names */
+  const subjectIds = [...new Set(paginated.map(r => r.subjectId).filter(Boolean))];
+  const subjectUsers = subjectIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, storeName: usersTable.storeName, phone: usersTable.phone })
+        .from(usersTable).where(sql`${usersTable.id} = ANY(${subjectIds})`)
+    : [];
+  const subjectMap = new Map(subjectUsers.map(u => [u.id, u]));
+
+  const enriched = paginated.map(r => ({
+    ...r,
+    deletedAt: r.deletedAt ? r.deletedAt.toISOString?.() ?? r.deletedAt : null,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    subjectName: r.subjectId ? (subjectMap.get(r.subjectId)?.storeName || subjectMap.get(r.subjectId)?.name || null) : null,
+    subjectPhone: r.subjectId ? subjectMap.get(r.subjectId)?.phone ?? null : null,
+  }));
+
+  res.json({ reviews: enriched, total, page, limit, pages: Math.ceil(total / limit) });
+});
+
+/* ── PATCH /admin/reviews/:id/hide — toggle hidden status ── */
+router.patch("/reviews/:id/hide", adminAuth, async (req, res) => {
+  const [existing] = await db.select({ id: reviewsTable.id, hidden: reviewsTable.hidden })
+    .from(reviewsTable).where(eq(reviewsTable.id, String(req.params["id"]))).limit(1);
+  if (!existing) { res.status(404).json({ error: "Review not found" }); return; }
+  const newHidden = !existing.hidden;
+  await db.update(reviewsTable).set({ hidden: newHidden }).where(eq(reviewsTable.id, existing.id));
+  res.json({ success: true, hidden: newHidden });
+});
+
+/* ── DELETE /admin/reviews/:id — soft delete ── */
+router.delete("/reviews/:id", adminAuth, async (req, res) => {
+  const adminId = (req as AdminRequest).adminId ?? "admin";
+  const [existing] = await db.select({ id: reviewsTable.id })
+    .from(reviewsTable).where(eq(reviewsTable.id, String(req.params["id"]))).limit(1);
+  if (!existing) { res.status(404).json({ error: "Review not found" }); return; }
+  await db.update(reviewsTable)
+    .set({ deletedAt: new Date(), deletedBy: adminId, hidden: true })
+    .where(eq(reviewsTable.id, existing.id));
+  res.json({ success: true });
+});
+
+/* ── PATCH /admin/ride-ratings/:id/hide — toggle hidden status ── */
+router.patch("/ride-ratings/:id/hide", adminAuth, async (req, res) => {
+  const [existing] = await db.select({ id: rideRatingsTable.id, hidden: rideRatingsTable.hidden })
+    .from(rideRatingsTable).where(eq(rideRatingsTable.id, String(req.params["id"]))).limit(1);
+  if (!existing) { res.status(404).json({ error: "Ride rating not found" }); return; }
+  const newHidden = !existing.hidden;
+  await db.update(rideRatingsTable).set({ hidden: newHidden }).where(eq(rideRatingsTable.id, existing.id));
+  res.json({ success: true, hidden: newHidden });
+});
+
+/* ── DELETE /admin/ride-ratings/:id — soft delete ── */
+router.delete("/ride-ratings/:id", adminAuth, async (req, res) => {
+  const adminId = (req as AdminRequest).adminId ?? "admin";
+  const [existing] = await db.select({ id: rideRatingsTable.id })
+    .from(rideRatingsTable).where(eq(rideRatingsTable.id, String(req.params["id"]))).limit(1);
+  if (!existing) { res.status(404).json({ error: "Ride rating not found" }); return; }
+  await db.update(rideRatingsTable)
+    .set({ deletedAt: new Date(), deletedBy: adminId, hidden: true })
+    .where(eq(rideRatingsTable.id, existing.id));
+  res.json({ success: true });
+});
+
+/* ── GET /admin/reviews/export — export CSV ────────────────────────────── */
+router.get("/reviews/export", async (req, res) => {
+  const { status, type } = req.query as Record<string, string>;
+
+  const conditions: unknown[] = [];
+  if (status && status !== "all") conditions.push(eq(reviewsTable.status, status));
+  if (type && type !== "all") conditions.push(eq(reviewsTable.orderType, type));
+
+  const rows = await db
+    .select({
+      review: reviewsTable,
+      reviewerName: usersTable.name,
+      reviewerPhone: usersTable.phone,
+    })
+    .from(reviewsTable)
+    .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(reviewsTable.createdAt));
+
+  const escCSV = (v: unknown) => {
+    const s = String(v ?? "").replace(/"/g, '""');
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
+  };
+
+  const header = ["id", "orderType", "orderId", "vendorId", "riderId", "reviewer", "stars", "comment", "vendorReply", "status", "date"].join(",");
+  const csvRows = rows.map(r => [
+    escCSV(r.review.id),
+    escCSV(r.review.orderType),
+    escCSV(r.review.orderId),
+    escCSV(r.review.vendorId || ""),
+    escCSV(r.review.riderId || ""),
+    escCSV(r.reviewerName || r.reviewerPhone || ""),
+    escCSV(r.review.rating),
+    escCSV(r.review.comment || ""),
+    escCSV(r.review.vendorReply || ""),
+    escCSV(r.review.status),
+    escCSV(r.review.createdAt.toISOString().slice(0, 10)),
+  ].join(","));
+
+  const csv = [header, ...csvRows].join("\n");
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="reviews-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(csv);
+});
+
+/* ── POST /admin/reviews/import — import CSV ────────────────────────────── */
+router.post("/reviews/import", async (req, res) => {
+  const { csvData } = req.body;
+  if (!csvData || typeof csvData !== "string") {
+    res.status(400).json({ error: "csvData (string) is required" });
+    return;
+  }
+
+  const lines = csvData.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) {
+    res.status(400).json({ error: "CSV must have a header and at least one data row" });
+    return;
+  }
+
+  const header = lines[0]!.split(",").map(h => h.trim().replace(/^"|"$/g, "").toLowerCase());
+  const requiredCols = ["ordertype", "orderid", "stars"];
+  const missing = requiredCols.filter(c => !header.includes(c));
+  if (missing.length > 0) {
+    res.status(400).json({ error: `Missing required columns: ${missing.join(", ")}` });
+    return;
+  }
+
+  const col = (row: string[], name: string) => {
+    const idx = header.indexOf(name);
+    return idx >= 0 ? (row[idx] || "").replace(/^"|"$/g, "").trim() : "";
+  };
+
+  let imported = 0, skipped = 0, errored = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = (lines[i] || "").match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g) || lines[i]!.split(",");
+    try {
+      const orderId   = col(cells, "orderid");
+      const userId    = col(cells, "userid") || generateId();
+      const orderType = col(cells, "ordertype");
+      const ratingStr = col(cells, "stars") || col(cells, "rating");
+      const rating    = parseInt(ratingStr);
+
+      if (!orderId || !orderType || isNaN(rating) || rating < 1 || rating > 5) {
+        errored++;
+        continue;
+      }
+
+      const existing = await db.select({ id: reviewsTable.id })
+        .from(reviewsTable)
+        .where(and(eq(reviewsTable.orderId, orderId), eq(reviewsTable.userId, userId)))
+        .limit(1);
+
+      if (existing.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      await db.insert(reviewsTable).values({
+        id: generateId(),
+        orderId,
+        userId,
+        vendorId: col(cells, "vendorid") || null,
+        riderId: col(cells, "riderid") || null,
+        orderType,
+        rating,
+        comment: col(cells, "comment") || null,
+        vendorReply: col(cells, "vendorreply") || null,
+        status: col(cells, "status") || "visible",
+      });
+      imported++;
+    } catch {
+      errored++;
+    }
+  }
+
+  res.json({ imported, skipped, errored, total: lines.length - 1 });
+});
+
+/* ── GET /admin/reviews/moderation-queue — pending moderation ─────────── */
+router.get("/reviews/moderation-queue", async (req, res) => {
+  const rows = await db
+    .select({
+      review: reviewsTable,
+      reviewerName: usersTable.name,
+      reviewerPhone: usersTable.phone,
+    })
+    .from(reviewsTable)
+    .leftJoin(usersTable, eq(reviewsTable.userId, usersTable.id))
+    .where(eq(reviewsTable.status, "pending_moderation"))
+    .orderBy(desc(reviewsTable.createdAt));
+
+  res.json({
+    reviews: rows.map(r => ({
+      ...r.review,
+      reviewerName: r.reviewerName,
+      reviewerPhone: r.reviewerPhone,
+    })),
+    total: rows.length,
+  });
+});
+
+/* ── PATCH /admin/reviews/:id/approve — approve a moderated review ──────── */
+router.patch("/reviews/:id/approve", async (req, res) => {
+  const [updated] = await db.update(reviewsTable)
+    .set({ status: "visible" })
+    .where(and(eq(reviewsTable.id, req.params["id"]!), eq(reviewsTable.status, "pending_moderation")))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Review not found or not pending moderation" }); return; }
+  res.json(updated);
+});
+
+/* ── PATCH /admin/reviews/:id/reject — reject (soft-delete) a moderated review ─ */
+router.patch("/reviews/:id/reject", async (req, res) => {
+  const [updated] = await db.update(reviewsTable)
+    .set({ status: "rejected" })
+    .where(eq(reviewsTable.id, req.params["id"]!))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Review not found" }); return; }
+  res.json(updated);
+});
+
+/* ── POST /admin/jobs/rating-suspension — auto-suspend low-rated riders/vendors ─ */
+router.post("/jobs/rating-suspension", async (req, res) => {
+  const s = await getPlatformSettings();
+  const riderThreshold  = parseFloat(s["auto_suspend_rating_threshold"] ?? "2.5");
+  const riderMinReviews = parseInt(s["auto_suspend_min_reviews"] ?? "10");
+  const vendorThreshold  = parseFloat(s["auto_suspend_vendor_threshold"] ?? "2.5");
+  const vendorMinReviews = parseInt(s["auto_suspend_vendor_min_reviews"] ?? "10");
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const now = new Date();
+
+  let suspendedRiders = 0;
+  let suspendedVendors = 0;
+
+  /* ── Rider auto-suspension ── */
+  const riderRatings = await db
+    .select({
+      riderId: reviewsTable.riderId,
+      avgRating: avg(reviewsTable.rating),
+      reviewCount: count(),
+    })
+    .from(reviewsTable)
+    .where(and(
+      eq(reviewsTable.status, "visible"),
+      gte(reviewsTable.createdAt, thirtyDaysAgo),
+      ne(reviewsTable.riderId, ""),
+    ))
+    .groupBy(reviewsTable.riderId);
+
+  for (const row of riderRatings) {
+    if (!row.riderId) continue;
+    const avg_ = parseFloat(String(row.avgRating ?? "5"));
+    const cnt  = Number(row.reviewCount ?? 0);
+    if (cnt >= riderMinReviews && avg_ < riderThreshold) {
+      const [rider] = await db.select({ id: usersTable.id, isActive: usersTable.isActive, adminOverrideSuspension: usersTable.adminOverrideSuspension })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.riderId))
+        .limit(1);
+
+      if (rider && rider.isActive && !rider.adminOverrideSuspension) {
+        await db.update(usersTable).set({
+          isActive: false,
+          autoSuspendedAt: now,
+          autoSuspendReason: `Average rating ${avg_.toFixed(1)} (${cnt} reviews in last 30 days) fell below threshold ${riderThreshold}`,
+          updatedAt: now,
+        }).where(eq(usersTable.id, rider.id));
+
+        await db.insert(notificationsTable).values({
+          id: generateId(),
+          userId: rider.id,
+          title: "Account Suspended",
+          body: `Your account has been automatically suspended due to a low average rating of ${avg_.toFixed(1)} stars. Please contact support for assistance.`,
+          type: "system",
+          icon: "alert-circle-outline",
+        }).catch(() => {});
+
+        suspendedRiders++;
+      }
+    }
+  }
+
+  /* ── Vendor auto-suspension ── */
+  const vendorRatings = await db
+    .select({
+      vendorId: reviewsTable.vendorId,
+      avgRating: avg(reviewsTable.rating),
+      reviewCount: count(),
+    })
+    .from(reviewsTable)
+    .where(and(
+      eq(reviewsTable.status, "visible"),
+      gte(reviewsTable.createdAt, thirtyDaysAgo),
+      ne(reviewsTable.vendorId, ""),
+    ))
+    .groupBy(reviewsTable.vendorId);
+
+  for (const row of vendorRatings) {
+    if (!row.vendorId) continue;
+    const avg_ = parseFloat(String(row.avgRating ?? "5"));
+    const cnt  = Number(row.reviewCount ?? 0);
+    if (cnt >= vendorMinReviews && avg_ < vendorThreshold) {
+      const [vendor] = await db.select({ id: usersTable.id, isActive: usersTable.isActive, adminOverrideSuspension: usersTable.adminOverrideSuspension })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.vendorId))
+        .limit(1);
+
+      if (vendor && vendor.isActive && !vendor.adminOverrideSuspension) {
+        await db.update(usersTable).set({
+          isActive: false,
+          autoSuspendedAt: now,
+          autoSuspendReason: `Average vendor rating ${avg_.toFixed(1)} (${cnt} reviews in last 30 days) fell below threshold ${vendorThreshold}`,
+          updatedAt: now,
+        }).where(eq(usersTable.id, vendor.id));
+
+        await db.insert(notificationsTable).values({
+          id: generateId(),
+          userId: vendor.id,
+          title: "Store Suspended",
+          body: `Your store has been automatically suspended due to a low average rating of ${avg_.toFixed(1)} stars. Please contact support for assistance.`,
+          type: "system",
+          icon: "alert-circle-outline",
+        }).catch(() => {});
+
+        suspendedVendors++;
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    suspendedRiders,
+    suspendedVendors,
+    message: `Suspended ${suspendedRiders} rider(s) and ${suspendedVendors} vendor(s) due to low ratings.`,
+  });
+});
+
+/* ── POST /admin/riders/:id/override-suspension — override auto-suspension ─ */
+router.get("/sos/alerts", async (req, res) => {
+  const page   = Math.max(1, parseInt(String(req.query["page"]  || "1"),  10));
+  const limit  = Math.min(50, Math.max(1, parseInt(String(req.query["limit"] || "20"), 10)));
+  const offset = (page - 1) * limit;
+  const rawStatus = req.query["status"] as string | undefined;
+  const statusFilter = rawStatus && ALLOWED_SOS_STATUSES.has(rawStatus) ? rawStatus : undefined;
+
+  const baseWhere = eq(notificationsTable.type, "sos");
+  const whereClause = statusFilter
+    ? and(baseWhere, eq(notificationsTable.sosStatus, statusFilter))
+    : baseWhere;
+
+  const [alerts, totalRows, unresolvedRows] = await Promise.all([
+    db.select().from(notificationsTable)
+      .where(whereClause)
+      .orderBy(desc(notificationsTable.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db.select({ id: notificationsTable.id }).from(notificationsTable).where(whereClause).then(r => r.length),
+    /* unresolved = pending + acknowledged (anything not resolved) */
+    db.select({ id: notificationsTable.id }).from(notificationsTable)
+      .where(and(eq(notificationsTable.type, "sos"), ne(notificationsTable.sosStatus, "resolved")))
+      .then(r => r.length),
+  ]);
+
+  res.json({
+    alerts:      alerts.map(serializeSosAlert),
+    total:       totalRows,
+    page,
+    hasMore:     offset + alerts.length < totalRows,
+    activeCount: unresolvedRows,
+  });
+});
+
+/* PATCH /admin/sos/alerts/:id/acknowledge */
+router.patch("/sos/alerts/:id/acknowledge", async (req, res) => {
+  const alertId  = req.params["id"];
+  const adminId  = (req as AdminRequest).adminId  ?? "admin";
+  const adminName = (req as AdminRequest).adminName ?? "Admin";
+
+  const [existing] = await db.select().from(notificationsTable)
+    .where(and(eq(notificationsTable.id, alertId), eq(notificationsTable.type, "sos")))
+    .limit(1);
+
+  if (!existing) { res.status(404).json({ error: "SOS alert not found" }); return; }
+  if (existing.sosStatus === "acknowledged") {
+    res.status(409).json({ error: "Alert is already acknowledged", acknowledgedBy: existing.acknowledgedByName ?? existing.acknowledgedBy ?? "another admin" });
+    return;
+  }
+  if (existing.sosStatus === "resolved") { res.status(409).json({ error: "Alert is already resolved" }); return; }
+
+  const now = new Date();
+  await db.update(notificationsTable)
+    .set({ sosStatus: "acknowledged", acknowledgedAt: now, acknowledgedBy: adminId, acknowledgedByName: adminName })
+    .where(eq(notificationsTable.id, alertId));
+
+  const [updatedAck] = await db.select().from(notificationsTable).where(eq(notificationsTable.id, alertId)).limit(1);
+  const fullAckPayload = serializeSosAlert(updatedAck);
+  try { emitSosAcknowledged(fullAckPayload); } catch { /* non-critical */ }
+  res.json({ ok: true, alert: fullAckPayload });
+});
+
+/* PATCH /admin/sos/alerts/:id/resolve */
+router.patch("/sos/alerts/:id/resolve", async (req, res) => {
+  const alertId   = req.params["id"];
+  const adminId   = (req as AdminRequest).adminId  ?? "admin";
+  const adminName = (req as AdminRequest).adminName ?? "Admin";
+  const notes = typeof req.body?.notes === "string" ? req.body.notes.trim() : null;
+
+  const [existing] = await db.select().from(notificationsTable)
+    .where(and(eq(notificationsTable.id, alertId), eq(notificationsTable.type, "sos")))
+    .limit(1);
+
+  if (!existing) { res.status(404).json({ error: "SOS alert not found" }); return; }
+  if (existing.sosStatus === "resolved") { res.status(409).json({ error: "Alert is already resolved" }); return; }
+
+  const now = new Date();
+  await db.update(notificationsTable)
+    .set({ sosStatus: "resolved", resolvedAt: now, resolvedBy: adminId, resolvedByName: adminName, resolutionNotes: notes || null })
+    .where(eq(notificationsTable.id, alertId));
+
+  const [updatedRes] = await db.select().from(notificationsTable).where(eq(notificationsTable.id, alertId)).limit(1);
+  const fullResPayload = serializeSosAlert(updatedRes);
+  try { emitSosResolved(fullResPayload); } catch { /* non-critical */ }
+  res.json({ ok: true, alert: fullResPayload });
+});
+
+export default router;
