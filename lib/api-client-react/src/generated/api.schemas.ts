@@ -84,6 +84,9 @@ export interface Product {
 export interface ProductListResponse {
   products: Product[];
   total: number;
+  page?: number;
+  perPage?: number;
+  totalPages?: number;
 }
 
 export type CreateProductRequestType =
@@ -548,6 +551,13 @@ export type GetProductsParams = {
   category?: string;
   search?: string;
   type?: GetProductsType;
+  sort?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  minRating?: string;
+  vendor?: string;
+  page?: number;
+  perPage?: number;
 };
 
 export type GetProductsType =

@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
   Image,
   Platform,
   Pressable,
@@ -17,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { Font } from "@/constants/typography";
-import { getHierarchicalCategories, type HierarchicalCategory } from "@workspace/api-client-react";
+import { getHierarchicalCategories } from "@workspace/api-client-react";
 import { useGetProducts } from "@workspace/api-client-react";
 
 const C = Colors.light;
@@ -25,11 +24,23 @@ const { width } = Dimensions.get("window");
 const SIDEBAR_W = 90;
 const RIGHT_W = width - SIDEBAR_W;
 
+type SortKey = "newest" | "popular" | "price_asc" | "price_desc" | "rating";
+
+const SORT_OPTIONS: { key: SortKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: "newest",     label: "Newest",     icon: "time-outline" },
+  { key: "popular",    label: "Popular",    icon: "flame-outline" },
+  { key: "price_asc",  label: "Price ↑",   icon: "trending-up-outline" },
+  { key: "price_desc", label: "Price ↓",   icon: "trending-down-outline" },
+  { key: "rating",     label: "Top Rated",  icon: "star-outline" },
+];
+
 export default function CategoriesBrowseScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
   const serviceType = initialType || "mart";
+
+  const [sortBy, setSortBy] = useState<SortKey>("newest");
 
   const { data: categories, isLoading } = useQuery({
     queryKey: ["hierarchical-categories", serviceType],
@@ -50,8 +61,9 @@ export default function CategoriesBrowseScreen() {
   const subCategories = selectedCat?.children ?? [];
 
   const { data: productsData, isLoading: productsLoading } = useGetProducts({
-    type: serviceType,
+    type: serviceType as any,
     category: selectedId || undefined,
+    sort: sortBy,
   });
 
   const products = productsData?.products ?? [];
@@ -109,9 +121,11 @@ export default function CategoriesBrowseScreen() {
                     {cat.name}
                   </Text>
                   {cat.productCount > 0 && (
-                    <Text style={[s.sidebarCount, isActive && s.sidebarCountActive]}>
-                      {cat.productCount}
-                    </Text>
+                    <View style={[s.countBadge, isActive && s.countBadgeActive]}>
+                      <Text style={[s.sidebarCount, isActive && s.sidebarCountActive]}>
+                        {cat.productCount}
+                      </Text>
+                    </View>
                   )}
                 </Pressable>
               );
@@ -159,16 +173,40 @@ export default function CategoriesBrowseScreen() {
               </View>
             )}
 
-            {subCategories.length > 0 && (
-              <View style={s.divider} />
-            )}
+            {subCategories.length > 0 && <View style={s.divider} />}
 
             <View style={s.productsHeader}>
               <Text style={s.productsTitle}>
                 {subCategories.length > 0 ? "All Products" : "Products"}
               </Text>
-              <Text style={s.productsCount}>{products.length}</Text>
+              <Text style={s.productsCountBadge}>{products.length}</Text>
             </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.sortRow}
+            >
+              {SORT_OPTIONS.map(opt => {
+                const active = sortBy === opt.key;
+                return (
+                  <Pressable
+                    key={opt.key}
+                    onPress={() => setSortBy(opt.key)}
+                    style={[s.sortPill, active && s.sortPillActive]}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={12}
+                      color={active ? C.textInverse : C.textMuted}
+                    />
+                    <Text style={[s.sortPillText, active && s.sortPillTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
             {productsLoading ? (
               <View style={s.productsLoadingWrap}>
@@ -181,34 +219,50 @@ export default function CategoriesBrowseScreen() {
               </View>
             ) : (
               <View style={s.productsList}>
-                {products.map(product => (
-                  <Pressable
-                    key={product.id}
-                    onPress={() => router.push({ pathname: "/product/[id]", params: { id: product.id } })}
-                    style={s.productCard}
-                  >
-                    <View style={s.productImg}>
-                      {product.image ? (
-                        <Image source={{ uri: product.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      ) : (
-                        <Ionicons name="cube-outline" size={24} color={C.textMuted} />
-                      )}
-                    </View>
-                    <View style={s.productInfo}>
-                      <Text style={s.productName} numberOfLines={2}>{product.name}</Text>
-                      {product.unit && <Text style={s.productUnit}>{product.unit}</Text>}
-                      <View style={s.productFooter}>
-                        <Text style={s.productPrice}>Rs. {product.price}</Text>
-                        {product.rating != null && (
-                          <View style={s.ratingBadge}>
-                            <Ionicons name="star" size={10} color="#F59E0B" />
-                            <Text style={s.ratingText}>{product.rating}</Text>
+                {products.map(product => {
+                  const hasDiscount = product.originalPrice && Number(product.originalPrice) > Number(product.price);
+                  const discountPct = hasDiscount
+                    ? Math.round(((Number(product.originalPrice) - Number(product.price)) / Number(product.originalPrice)) * 100)
+                    : 0;
+                  return (
+                    <Pressable
+                      key={product.id}
+                      onPress={() => router.push({ pathname: "/product/[id]", params: { id: product.id } })}
+                      style={s.productCard}
+                    >
+                      <View style={s.productImg}>
+                        {product.image ? (
+                          <Image source={{ uri: product.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        ) : (
+                          <Ionicons name="cube-outline" size={24} color={C.textMuted} />
+                        )}
+                        {discountPct > 0 && (
+                          <View style={s.discBadge}>
+                            <Text style={s.discBadgeText}>{discountPct}%</Text>
                           </View>
                         )}
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                      <View style={s.productInfo}>
+                        <Text style={s.productName} numberOfLines={2}>{product.name}</Text>
+                        {product.unit && <Text style={s.productUnit}>{product.unit}</Text>}
+                        <View style={s.productFooter}>
+                          <View>
+                            <Text style={s.productPrice}>Rs. {product.price}</Text>
+                            {hasDiscount && (
+                              <Text style={s.productOldPrice}>Rs. {product.originalPrice}</Text>
+                            )}
+                          </View>
+                          {product.rating != null && (
+                            <View style={s.ratingBadge}>
+                              <Ionicons name="star" size={10} color="#F59E0B" />
+                              <Text style={s.ratingText}>{product.rating}</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
           </ScrollView>
@@ -262,9 +316,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 6,
     position: "relative",
   },
-  sidebarItemActive: {
-    backgroundColor: C.surface,
-  },
+  sidebarItemActive: { backgroundColor: C.surface },
   activeIndicator: {
     position: "absolute",
     left: 0, top: 8, bottom: 8,
@@ -279,21 +331,24 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     marginBottom: 6,
   },
-  sidebarIconActive: {
-    backgroundColor: C.primarySoft || "#EEF2FF",
-  },
+  sidebarIconActive: { backgroundColor: C.primarySoft || "#EEF2FF" },
   sidebarLabel: {
     fontFamily: Font.medium, fontSize: 10,
     color: C.textMuted, textAlign: "center",
     lineHeight: 13,
   },
-  sidebarLabelActive: {
-    fontFamily: Font.bold, color: C.primary,
+  sidebarLabelActive: { fontFamily: Font.bold, color: C.primary },
+  countBadge: {
+    marginTop: 3,
+    backgroundColor: C.border,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    minWidth: 20,
+    alignItems: "center",
   },
-  sidebarCount: {
-    fontFamily: Font.regular, fontSize: 9,
-    color: C.textMuted, marginTop: 2,
-  },
+  countBadgeActive: { backgroundColor: C.primarySoft || "#EEF2FF" },
+  sidebarCount: { fontFamily: Font.bold, fontSize: 9, color: C.textMuted },
   sidebarCountActive: { color: C.primary },
 
   rightPanel: { flex: 1, backgroundColor: C.surface },
@@ -326,27 +381,52 @@ const s = StyleSheet.create({
     fontFamily: Font.medium, fontSize: 10,
     color: C.text, textAlign: "center", lineHeight: 13,
   },
-  subCount: {
-    fontFamily: Font.regular, fontSize: 9,
-    color: C.textMuted, marginTop: 2,
-  },
+  subCount: { fontFamily: Font.regular, fontSize: 9, color: C.textMuted, marginTop: 2 },
 
-  divider: {
-    height: 1, backgroundColor: C.border,
-    marginHorizontal: 14, marginVertical: 10,
-  },
+  divider: { height: 1, backgroundColor: C.border, marginHorizontal: 14, marginVertical: 10 },
 
   productsHeader: {
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 14, paddingBottom: 8,
+    paddingHorizontal: 14, paddingBottom: 6,
   },
   productsTitle: { fontFamily: Font.bold, fontSize: 14, color: C.text },
-  productsCount: {
+  productsCountBadge: {
     fontFamily: Font.bold, fontSize: 11, color: C.textInverse,
     backgroundColor: C.primary,
     paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 10, overflow: "hidden",
+  },
+
+  sortRow: {
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    gap: 6,
+    flexDirection: "row",
+  },
+  sortPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: C.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  sortPillActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  sortPillText: {
+    fontFamily: Font.medium,
+    fontSize: 11,
+    color: C.textMuted,
+  },
+  sortPillTextActive: {
+    color: C.textInverse,
+    fontFamily: Font.bold,
   },
 
   productsLoadingWrap: { paddingVertical: 40, alignItems: "center" },
@@ -364,11 +444,22 @@ const s = StyleSheet.create({
     backgroundColor: C.surfaceSecondary,
     alignItems: "center", justifyContent: "center",
   },
+  discBadge: {
+    position: "absolute", top: 4, left: 4,
+    backgroundColor: "#EF4444",
+    borderRadius: 6,
+    paddingHorizontal: 4, paddingVertical: 1,
+  },
+  discBadgeText: { fontFamily: Font.bold, fontSize: 9, color: "#fff" },
   productInfo: { flex: 1, padding: 10, justifyContent: "center" },
   productName: { fontFamily: Font.semiBold, fontSize: 13, color: C.text, marginBottom: 2 },
   productUnit: { fontFamily: Font.regular, fontSize: 11, color: C.textMuted, marginBottom: 4 },
-  productFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  productFooter: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   productPrice: { fontFamily: Font.bold, fontSize: 14, color: C.primary },
+  productOldPrice: {
+    fontFamily: Font.regular, fontSize: 11,
+    color: C.textMuted, textDecorationLine: "line-through",
+  },
   ratingBadge: {
     flexDirection: "row", alignItems: "center", gap: 3,
     backgroundColor: "#FEF3C7", paddingHorizontal: 6, paddingVertical: 2,
