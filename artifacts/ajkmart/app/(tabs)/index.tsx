@@ -14,6 +14,7 @@ import {
   View,
   Image,
   FlatList,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -40,7 +41,7 @@ import {
   CountdownTimer,
 } from "@/components/user-shared";
 import { WishlistHeart } from "@/components/WishlistHeart";
-import { getBanners, getTrending, getFlashDeals } from "@workspace/api-client-react";
+import { getBanners, getTrending, getFlashDeals, type Banner } from "@workspace/api-client-react";
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
@@ -284,8 +285,36 @@ function DynamicBannerCarousel() {
   const [active, setActive] = useState(0);
   const { width: windowWidth } = useWindowDimensions();
   const BANNER_W = windowWidth - H_PAD * 2;
+  const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const items = banners ?? [];
+
+  useEffect(() => {
+    if (items.length <= 1) return;
+    autoScrollTimer.current = setInterval(() => {
+      setActive(prev => {
+        const next = (prev + 1) % items.length;
+        scrollRef.current?.scrollTo({ x: next * BANNER_W, animated: true });
+        return next;
+      });
+    }, 4000);
+    return () => { if (autoScrollTimer.current) clearInterval(autoScrollTimer.current); };
+  }, [items.length, BANNER_W]);
+
+  const handleBannerPress = (b: Banner) => {
+    if (b.linkType === "product" && b.linkValue) {
+      router.push({ pathname: "/product/[id]", params: { id: b.linkValue } } as Href);
+    } else if (b.linkType === "category" && b.linkValue) {
+      router.push({ pathname: "/search", params: { category: b.linkValue } } as Href);
+    } else if (b.linkType === "url" && b.linkValue) {
+      if (b.linkValue.startsWith("http://") || b.linkValue.startsWith("https://")) {
+        Linking.openURL(b.linkValue);
+      } else {
+        router.push(b.linkValue as Href);
+      }
+    }
+  };
+
   if (items.length === 0) return null;
 
   return (
@@ -304,34 +333,69 @@ function DynamicBannerCarousel() {
           snapToInterval={BANNER_W}
           snapToAlignment="start"
           style={{ width: BANNER_W }}
+          onScrollBeginDrag={() => {
+            if (autoScrollTimer.current) clearInterval(autoScrollTimer.current);
+          }}
+          onScrollEndDrag={() => {
+            if (items.length <= 1) return;
+            autoScrollTimer.current = setInterval(() => {
+              setActive(prev => {
+                const next = (prev + 1) % items.length;
+                scrollRef.current?.scrollTo({ x: next * BANNER_W, animated: true });
+                return next;
+              });
+            }, 4000);
+          }}
           onScroll={(e) => setActive(Math.round(e.nativeEvent.contentOffset.x / BANNER_W))}
           scrollEventThrottle={16}
         >
           {items.map((b) => (
             <Pressable
               key={b.id}
-              onPress={() => b.linkUrl && router.push(b.linkUrl as Href)}
+              onPress={() => handleBannerPress(b)}
               style={{ width: BANNER_W }}
             >
-              <LinearGradient
-                colors={[b.gradient1 || C.primary, b.gradient2 || C.primaryDark]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={ban.card}
-              >
-                <View style={[ban.blob, { width: 130, height: 130, top: -30, right: 60 }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={ban.title}>{b.title}</Text>
-                  {b.subtitle ? <Text style={ban.desc}>{b.subtitle}</Text> : null}
-                  <View style={ban.cta}>
-                    <Text style={ban.ctaTxt}>Shop Now</Text>
-                    <Ionicons name="arrow-forward" size={13} color="#fff" />
+              {b.imageUrl ? (
+                <View style={ban.card}>
+                  <Image source={{ uri: b.imageUrl }} style={ban.bgImage} />
+                  <LinearGradient
+                    colors={[`${b.gradient1 || C.primary}cc`, `${b.gradient2 || C.primaryDark}bb`]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={ban.overlay}
+                  />
+                  <View style={ban.contentWrap}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={ban.title}>{b.title}</Text>
+                      {b.subtitle ? <Text style={ban.desc}>{b.subtitle}</Text> : null}
+                      <View style={ban.cta}>
+                        <Text style={ban.ctaTxt}>Shop Now</Text>
+                        <Ionicons name="arrow-forward" size={13} color="#fff" />
+                      </View>
+                    </View>
                   </View>
                 </View>
-                <View style={ban.iconWrap}>
-                  <Ionicons name={(b.icon as any) || "pricetag"} size={48} color="rgba(255,255,255,0.15)" />
-                </View>
-              </LinearGradient>
+              ) : (
+                <LinearGradient
+                  colors={[b.gradient1 || C.primary, b.gradient2 || C.primaryDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={ban.card}
+                >
+                  <View style={[ban.blob, { width: 130, height: 130, top: -30, right: 60 }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={ban.title}>{b.title}</Text>
+                    {b.subtitle ? <Text style={ban.desc}>{b.subtitle}</Text> : null}
+                    <View style={ban.cta}>
+                      <Text style={ban.ctaTxt}>Shop Now</Text>
+                      <Ionicons name="arrow-forward" size={13} color="#fff" />
+                    </View>
+                  </View>
+                  <View style={ban.iconWrap}>
+                    <Ionicons name={(b.icon as any) || "pricetag"} size={48} color="rgba(255,255,255,0.15)" />
+                  </View>
+                </LinearGradient>
+              )}
             </Pressable>
           ))}
         </ScrollView>
@@ -351,15 +415,78 @@ const ban = StyleSheet.create({
   headerRow: { flexDirection: "row", alignItems: "baseline", gap: 8, paddingHorizontal: H_PAD, marginBottom: 10 },
   headerTitle: { fontFamily: Font.bold, fontSize: 16, color: C.text },
   headerSub: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
-  card: { borderRadius: 16, padding: 18, minHeight: 120, flexDirection: "row", alignItems: "center", overflow: "hidden" },
-  blob: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.1)" },
-  title: { fontFamily: Font.bold, fontSize: 16, color: "#fff", marginBottom: 4 },
-  desc: { fontFamily: Font.regular, fontSize: 12, color: "rgba(255,255,255,0.85)", lineHeight: 17, marginBottom: 10 },
-  cta: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.2)", alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  card: { borderRadius: 16, minHeight: 140, overflow: "hidden", position: "relative" as const },
+  bgImage: { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%", borderRadius: 16 },
+  overlay: { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16 },
+  contentWrap: { flexDirection: "row" as const, alignItems: "center" as const, padding: 18, zIndex: 2 },
+  blob: { position: "absolute" as const, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.1)" },
+  title: { fontFamily: Font.bold, fontSize: 17, color: "#fff", marginBottom: 4, textShadowColor: "rgba(0,0,0,0.3)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  desc: { fontFamily: Font.regular, fontSize: 12, color: "rgba(255,255,255,0.9)", lineHeight: 17, marginBottom: 10, textShadowColor: "rgba(0,0,0,0.2)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  cta: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6, backgroundColor: "rgba(255,255,255,0.25)", alignSelf: "flex-start" as const, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
   ctaTxt: { fontFamily: Font.semiBold, fontSize: 12, color: "#fff" },
   iconWrap: { marginLeft: 10 },
-  dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 10 },
+  dotsRow: { flexDirection: "row" as const, justifyContent: "center" as const, gap: 6, marginTop: 10 },
   dot: { height: 5, borderRadius: 3 },
+});
+
+function FlashCountdownTimer({ targetTime }: { targetTime: Date }) {
+  const [timeLeft, setTimeLeft] = React.useState({ d: 0, h: 0, m: 0, s: 0 });
+
+  React.useEffect(() => {
+    const update = () => {
+      const diff = Math.max(0, targetTime.getTime() - Date.now());
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft({ d, h, m, s });
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [targetTime]);
+
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const totalHours = timeLeft.d * 24 + timeLeft.h;
+  const isUrgent = totalHours < 2;
+
+  const boxBg = isUrgent ? "#DC2626" : "#1F2937";
+
+  return (
+    <View style={fct.wrap}>
+      {timeLeft.d > 0 && (
+        <>
+          <View style={[fct.box, { backgroundColor: boxBg }]}>
+            <Text style={fct.digit}>{pad(timeLeft.d)}</Text>
+            <Text style={fct.unit}>DAY</Text>
+          </View>
+          <Text style={[fct.sep, isUrgent && { color: "#DC2626" }]}>:</Text>
+        </>
+      )}
+      <View style={[fct.box, { backgroundColor: boxBg }]}>
+        <Text style={fct.digit}>{pad(timeLeft.h)}</Text>
+        <Text style={fct.unit}>HR</Text>
+      </View>
+      <Text style={[fct.sep, isUrgent && { color: "#DC2626" }]}>:</Text>
+      <View style={[fct.box, { backgroundColor: boxBg }]}>
+        <Text style={fct.digit}>{pad(timeLeft.m)}</Text>
+        <Text style={fct.unit}>MIN</Text>
+      </View>
+      <Text style={[fct.sep, isUrgent && { color: "#DC2626" }]}>:</Text>
+      <View style={[fct.box, { backgroundColor: boxBg }]}>
+        <Text style={fct.digit}>{pad(timeLeft.s)}</Text>
+        <Text style={fct.unit}>SEC</Text>
+      </View>
+    </View>
+  );
+}
+
+const fct = StyleSheet.create({
+  wrap: { flexDirection: "row", alignItems: "center", gap: 3 },
+  box: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, alignItems: "center", minWidth: 28 },
+  digit: { fontFamily: Font.bold, fontSize: 12, color: "#fff", lineHeight: 16 },
+  unit: { fontFamily: Font.bold, fontSize: 6, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 },
+  sep: { fontFamily: Font.bold, fontSize: 12, color: "#1F2937", marginTop: -4 },
 });
 
 function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => string }) {
@@ -380,16 +507,18 @@ function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => str
   if (isLoading) {
     return (
       <View style={fd.section}>
-        <View style={fd.headerRow}>
-          <View style={fd.badge}><Ionicons name="flash" size={14} color="#fff" /></View>
-          <Text style={fd.title}>{T("todaysDeals")}</Text>
-        </View>
+        <LinearGradient colors={["#FF4444", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={fd.headerGrad}>
+          <View style={fd.headerInner}>
+            <Ionicons name="flash" size={16} color="#FFD700" />
+            <Text style={fd.headerTitle}>{T("todaysDeals")}</Text>
+          </View>
+        </LinearGradient>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={fd.row}>
           {[0,1,2,3].map(i => (
             <View key={i} style={fd.card}>
-              <SkeletonBlock w={48} h={48} r={14} />
-              <SkeletonBlock w={50} h={10} r={4} />
-              <SkeletonBlock w={44} h={16} r={8} />
+              <SkeletonBlock w={100} h={100} r={8} />
+              <SkeletonBlock w={80} h={12} r={4} />
+              <SkeletonBlock w={60} h={14} r={4} />
             </View>
           ))}
         </ScrollView>
@@ -401,62 +530,104 @@ function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => str
 
   return (
     <View style={fd.section}>
-      <View style={fd.headerRow}>
-        <View style={fd.badge}><Ionicons name="flash" size={14} color="#fff" /></View>
-        <Text style={fd.title}>{T("todaysDeals")}</Text>
+      <LinearGradient colors={["#FF4444", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={fd.headerGrad}>
+        <View style={fd.headerInner}>
+          <Ionicons name="flash" size={16} color="#FFD700" />
+          <Text style={fd.headerTitle}>{T("todaysDeals")}</Text>
+          <Ionicons name="flash" size={12} color="#FFD700" style={{ opacity: 0.6 }} />
+        </View>
         {earliestExpiry && (
           <View style={fd.timerWrap}>
-            <CountdownTimer targetTime={earliestExpiry} />
+            <Text style={fd.endsLabel}>Ends in</Text>
+            <FlashCountdownTimer targetTime={earliestExpiry} />
           </View>
         )}
-      </View>
+      </LinearGradient>
       <FlatList
         horizontal
         data={items}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={fd.row}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
-            style={fd.card}
-            accessibilityLabel={`${item.name} ${item.discountPercent}% OFF`}
-          >
-            <View style={fd.imgWrap}>
-              {item.image ? (
-                <Image source={{ uri: item.image }} style={{ width: 48, height: 48, borderRadius: 12 }} />
-              ) : (
-                <View style={[fd.imgWrap, { backgroundColor: C.dangerSoft, alignItems: "center", justifyContent: "center" }]}>
-                  <Ionicons name="flash" size={20} color={C.danger} />
-                </View>
-              )}
-            </View>
-            <Text style={fd.name} numberOfLines={2}>{item.name}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <View style={fd.discBadge}>
-                <Text style={fd.disc}>{item.discountPercent}% OFF</Text>
+        renderItem={({ item }) => {
+          const soldPct = item.dealStock && item.dealStock > 0
+            ? Math.min(Math.round((item.soldCount / item.dealStock) * 100), 99)
+            : 0;
+          return (
+            <Pressable
+              onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
+              style={fd.card}
+              accessibilityLabel={`${item.name} ${item.discountPercent}% OFF`}
+            >
+              <View style={fd.discBadgeCorner}>
+                <Text style={fd.discBadgeText}>{item.discountPercent}%</Text>
+                <Text style={fd.discBadgeOff}>OFF</Text>
               </View>
-              <WishlistHeart productId={item.id} size={12} style={{ marginLeft: "auto" }} />
-            </View>
-          </Pressable>
-        )}
+              <View style={fd.imgWrap}>
+                {item.image ? (
+                  <Image source={{ uri: item.image }} style={fd.productImg} resizeMode="cover" />
+                ) : (
+                  <View style={[fd.productImg, { backgroundColor: "#FFF5F5", alignItems: "center", justifyContent: "center" }]}>
+                    <Ionicons name="flash" size={28} color="#FF4444" />
+                  </View>
+                )}
+              </View>
+              <View style={fd.cardInfo}>
+                <Text style={fd.name} numberOfLines={2}>{item.name}</Text>
+                <View style={fd.priceRow}>
+                  <Text style={fd.dealPrice}>Rs.{Math.round(item.price).toLocaleString()}</Text>
+                  {item.originalPrice > item.price && (
+                    <Text style={fd.origPrice}>Rs.{Math.round(item.originalPrice).toLocaleString()}</Text>
+                  )}
+                </View>
+                {soldPct > 0 && (
+                <View style={fd.progressWrap}>
+                  <View style={fd.progressBg}>
+                    <LinearGradient
+                      colors={soldPct >= 70 ? ["#FF4444", "#FF6B35"] : ["#FF8C00", "#FFB347"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[fd.progressFill, { width: `${soldPct}%` }]}
+                    />
+                    <Text style={fd.progressText}>
+                      {soldPct >= 70 ? "Almost Gone!" : `${soldPct}% claimed`}
+                    </Text>
+                  </View>
+                </View>
+                )}
+                <WishlistHeart productId={item.id} size={14} style={{ position: "absolute", top: 4, right: 4, zIndex: 10 }} />
+              </View>
+            </Pressable>
+          );
+        }}
       />
     </View>
   );
 }
 
 const fd = StyleSheet.create({
-  section: { marginHorizontal: H_PAD, marginTop: 16, backgroundColor: C.surface, borderRadius: 16, padding: 14, ...shadows.sm },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  badge: { width: 26, height: 26, borderRadius: 8, backgroundColor: C.danger, alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: Font.bold, fontSize: 15, color: C.text, flex: 1 },
-  timerWrap: { alignItems: "flex-end" },
-  row: { gap: 10 },
-  card: { width: 90, alignItems: "center", backgroundColor: C.background, borderRadius: 14, padding: 10, gap: 6, borderWidth: 1, borderColor: C.borderLight },
-  imgWrap: { width: 48, height: 48, borderRadius: 14 },
-  name: { fontFamily: Font.medium, fontSize: 10, color: C.text, textAlign: "center", lineHeight: 14 },
-  discBadge: { backgroundColor: C.dangerSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 16 },
-  disc: { fontFamily: Font.bold, fontSize: 9, color: C.danger },
+  section: { marginHorizontal: H_PAD, marginTop: 16, backgroundColor: C.surface, borderRadius: 16, overflow: "hidden", ...shadows.sm },
+  headerGrad: { paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerInner: { flexDirection: "row", alignItems: "center", gap: 6 },
+  headerTitle: { fontFamily: Font.bold, fontSize: 15, color: "#fff" },
+  timerWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
+  endsLabel: { fontFamily: Font.medium, fontSize: 10, color: "rgba(255,255,255,0.8)" },
+  row: { gap: 8, paddingHorizontal: 10, paddingVertical: 12 },
+  card: { width: 120, backgroundColor: C.background, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: C.borderLight, position: "relative" as const },
+  discBadgeCorner: { position: "absolute" as const, top: 4, left: 4, zIndex: 5, backgroundColor: "#FF4444", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, alignItems: "center" },
+  discBadgeText: { fontFamily: Font.bold, fontSize: 11, color: "#fff", lineHeight: 14 },
+  discBadgeOff: { fontFamily: Font.bold, fontSize: 7, color: "rgba(255,255,255,0.85)", letterSpacing: 0.5 },
+  imgWrap: { width: 120, height: 100, backgroundColor: "#FAFAFA" },
+  productImg: { width: 120, height: 100 },
+  cardInfo: { padding: 8, gap: 4 },
+  name: { fontFamily: Font.medium, fontSize: 11, color: C.text, lineHeight: 15 },
+  priceRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  dealPrice: { fontFamily: Font.bold, fontSize: 13, color: "#FF4444" },
+  origPrice: { fontFamily: Font.regular, fontSize: 10, color: C.textMuted, textDecorationLine: "line-through" },
+  progressWrap: { marginTop: 2 },
+  progressBg: { height: 14, backgroundColor: "#FFE4E1", borderRadius: 7, overflow: "hidden", position: "relative" as const, justifyContent: "center" },
+  progressFill: { position: "absolute" as const, left: 0, top: 0, bottom: 0, borderRadius: 7 },
+  progressText: { fontFamily: Font.bold, fontSize: 8, color: "#fff", textAlign: "center", zIndex: 1, textShadowColor: "rgba(0,0,0,0.3)", textShadowOffset: { width: 0, height: 0.5 }, textShadowRadius: 1 },
 });
 
 function TrendingSection() {

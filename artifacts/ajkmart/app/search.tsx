@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
@@ -77,8 +77,9 @@ export default function UniversalSearchScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { addItem, cartType, itemCount, clearCart } = useCart();
   const { config } = usePlatformConfig();
+  const params = useLocalSearchParams<{ category?: string }>();
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(params.category ? `category:${params.category}` : "");
   const [sections, setSections] = useState<Array<{ title: string; data: SearchResult[]; type: ServiceKey }>>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
@@ -117,6 +118,12 @@ export default function UniversalSearchScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
   }, []);
 
+  useEffect(() => {
+    if (params.category) {
+      fetchResults(params.category, false, 1);
+    }
+  }, [params.category]);
+
   const saveToHistory = useCallback((term: string) => {
     const trimmed = term.trim();
     if (!trimmed) return;
@@ -152,6 +159,7 @@ export default function UniversalSearchScreen() {
           searchProducts({
             q: q.trim(),
             type: svc,
+            category: params.category || undefined,
             sort: sortBy !== "relevance" ? sortBy : undefined,
             minPrice: minPrice || undefined,
             maxPrice: maxPrice || undefined,

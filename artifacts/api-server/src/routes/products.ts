@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable, productVariantsTable } from "@workspace/db/schema";
+import { productsTable, productVariantsTable, flashDealsTable } from "@workspace/db/schema";
 import { eq, ilike, and, SQL, gte, lte, gt, desc, asc, sql, isNotNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { adminAuth, getPlatformSettings } from "./admin.js";
@@ -25,11 +25,25 @@ router.get("/flash-deals", async (req, res) => {
     .orderBy(asc(productsTable.dealExpiresAt))
     .limit(limit);
 
+  const activeDeals = await db.select({
+    productId: flashDealsTable.productId,
+    dealStock: flashDealsTable.dealStock,
+    soldCount: flashDealsTable.soldCount,
+  }).from(flashDealsTable).where(
+    and(
+      eq(flashDealsTable.isActive, true),
+      lte(flashDealsTable.startTime, now),
+      gte(flashDealsTable.endTime, now),
+    )
+  );
+  const dealMap = new Map(activeDeals.map(d => [d.productId, d]));
+
   res.json({
     products: products.map(p => {
       const price = parseFloat(p.price);
       const origPrice = p.originalPrice ? parseFloat(p.originalPrice) : price;
       const discount = origPrice > price ? Math.round(((origPrice - price) / origPrice) * 100) : 0;
+      const dealInfo = dealMap.get(p.id);
       return {
         ...p,
         price,
@@ -37,6 +51,8 @@ router.get("/flash-deals", async (req, res) => {
         rating: p.rating ? parseFloat(p.rating) : 4.0,
         discountPercent: discount,
         dealExpiresAt: p.dealExpiresAt!.toISOString(),
+        dealStock: dealInfo?.dealStock ?? null,
+        soldCount: dealInfo?.soldCount ?? 0,
       };
     }),
     total: products.length,

@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Star,
   BadgeCheck,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -73,9 +74,15 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navVendors",      href: "/vendors",      icon: Store },
       { nameKey: "navProducts",     href: "/products",     icon: PackageSearch },
       { nameKey: "navCategories",   href: "/categories",   icon: FolderTree },
+      { nameKey: "navReviews",      href: "/reviews",      icon: Star },
+    ],
+  },
+  {
+    labelKey: "navMarketing",
+    items: [
+      { nameKey: "navBanners",      href: "/banners",      icon: Layers },
       { nameKey: "navFlashDeals",   href: "/flash-deals",  icon: Zap },
       { nameKey: "navPromoCodes",   href: "/promo-codes",  icon: Ticket },
-      { nameKey: "navReviews",      href: "/reviews",      icon: Star },
     ],
   },
   {

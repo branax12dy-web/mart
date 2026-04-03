@@ -5,6 +5,8 @@ export interface Banner {
   title: string;
   subtitle: string | null;
   imageUrl: string | null;
+  linkType: string;
+  linkValue: string | null;
   linkUrl: string | null;
   placement: string;
   targetService: string | null;
@@ -105,6 +107,8 @@ export interface FlashDealProduct {
   unit: string | null;
   discountPercent: number;
   dealExpiresAt: string;
+  dealStock: number | null;
+  soldCount: number;
 }
 
 export const getFlashDeals = async (
@@ -121,6 +125,7 @@ export const getFlashDeals = async (
 export interface SearchProductsParams {
   q: string;
   type?: string;
+  category?: string;
   sort?: string;
   minPrice?: string;
   maxPrice?: string;
@@ -155,6 +160,7 @@ export const searchProducts = async (
   const qs = new URLSearchParams();
   qs.set("q", params.q);
   if (params.type) qs.set("type", params.type);
+  if (params.category) qs.set("category", params.category);
   if (params.sort) qs.set("sort", params.sort);
   if (params.minPrice) qs.set("minPrice", params.minPrice);
   if (params.maxPrice) qs.set("maxPrice", params.maxPrice);

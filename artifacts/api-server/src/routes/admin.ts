@@ -28,6 +28,7 @@ import {
   locationLogsTable,
   reviewsTable,
   categoriesTable,
+  bannersTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
@@ -2174,6 +2175,97 @@ router.post("/categories/reorder", async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+/* ── Banners ── */
+router.get("/banners", async (req, res) => {
+  const placement = req.query["placement"] as string | undefined;
+  const status = req.query["status"] as string | undefined;
+
+  const banners = await db
+    .select()
+    .from(bannersTable)
+    .orderBy(asc(bannersTable.sortOrder), desc(bannersTable.createdAt));
+  const now = new Date();
+  let mapped = banners.map(b => ({
+    ...b,
+    startDate: b.startDate ? b.startDate.toISOString() : null,
+    endDate: b.endDate ? b.endDate.toISOString() : null,
+    createdAt: b.createdAt.toISOString(),
+    updatedAt: b.updatedAt.toISOString(),
+    status: (!b.isActive ? "inactive"
+          : b.startDate && now < b.startDate ? "scheduled"
+          : b.endDate && now > b.endDate ? "expired"
+          : "active") as "active" | "scheduled" | "expired" | "inactive",
+  }));
+  if (placement) mapped = mapped.filter(b => b.placement === placement);
+  if (status) mapped = mapped.filter(b => b.status === status);
+  res.json({ banners: mapped, total: mapped.length });
+});
+
+router.post("/banners", async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  if (!body.title) {
+    res.status(400).json({ error: "title is required" }); return;
+  }
+  const [banner] = await db.insert(bannersTable).values({
+    id: generateId(),
+    title: body.title as string,
+    subtitle: (body.subtitle as string) || null,
+    imageUrl: (body.imageUrl as string) || null,
+    linkType: (body.linkType as string) || "none",
+    linkValue: (body.linkValue as string) || null,
+    targetService: (body.targetService as string) || null,
+    placement: (body.placement as string) || "home",
+    colorFrom: (body.colorFrom as string) || "#7C3AED",
+    colorTo: (body.colorTo as string) || "#4F46E5",
+    icon: (body.icon as string) || null,
+    sortOrder: (body.sortOrder as number) ?? 0,
+    isActive: body.isActive !== false,
+    startDate: body.startDate ? new Date(body.startDate as string) : null,
+    endDate: body.endDate ? new Date(body.endDate as string) : null,
+  }).returning();
+  res.status(201).json(banner);
+});
+
+router.patch("/banners/reorder", async (req, res) => {
+  const { items } = req.body as { items: { id: string; sortOrder: number }[] };
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "items array required" }); return;
+  }
+  for (const item of items) {
+    await db.update(bannersTable).set({ sortOrder: item.sortOrder, updatedAt: new Date() }).where(eq(bannersTable.id, item.id));
+  }
+  res.json({ success: true });
+});
+
+const bannerUpdateHandler = async (req: import("express").Request, res: import("express").Response) => {
+  const bannerId = req.params["id"]!;
+  const body = req.body as Record<string, unknown>;
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  const fields = ["title", "subtitle", "imageUrl", "linkType", "linkValue", "targetService", "placement", "colorFrom", "colorTo", "icon", "sortOrder", "isActive"];
+  for (const f of fields) {
+    if (body[f] !== undefined) updates[f] = body[f];
+  }
+  if (body.startDate !== undefined) updates.startDate = body.startDate ? new Date(body.startDate as string) : null;
+  if (body.endDate !== undefined) updates.endDate = body.endDate ? new Date(body.endDate as string) : null;
+
+  const [updated] = await db.update(bannersTable).set(updates).where(eq(bannersTable.id, bannerId)).returning();
+  if (!updated) {
+    res.status(404).json({ error: "Banner not found" }); return;
+  }
+  res.json(updated);
+};
+router.patch("/banners/:id", bannerUpdateHandler);
+router.put("/banners/:id", bannerUpdateHandler);
+
+router.delete("/banners/:id", async (req, res) => {
+  const bannerId = req.params["id"]!;
+  const [deleted] = await db.delete(bannersTable).where(eq(bannersTable.id, bannerId)).returning();
+  if (!deleted) {
+    res.status(404).json({ error: "Banner not found" }); return;
+  }
+  res.json({ success: true, id: bannerId });
 });
 
 /* ── Flash Deals ── */

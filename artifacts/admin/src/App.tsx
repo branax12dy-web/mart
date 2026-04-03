@@ -21,6 +21,7 @@ import Transactions from "@/pages/transactions";
 import Settings from "@/pages/settings";
 import FlashDeals from "@/pages/flash-deals";
 import Categories from "@/pages/categories";
+import Banners from "@/pages/banners";
 import AppManagement from "@/pages/app-management";
 import Vendors from "@/pages/vendors";
 import Riders from "@/pages/riders";
@@ -97,6 +98,7 @@ function Router() {
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route path="/flash-deals"><ProtectedRoute component={FlashDeals} /></Route>
       <Route path="/categories"><ProtectedRoute component={Categories} /></Route>
+      <Route path="/banners"><ProtectedRoute component={Banners} /></Route>
       <Route path="/app-management"><ProtectedRoute component={AppManagement} /></Route>
       <Route path="/vendors"><ProtectedRoute component={Vendors} /></Route>
       <Route path="/riders"><ProtectedRoute component={Riders} /></Route>
