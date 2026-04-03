@@ -1,4 +1,5 @@
-import { boolean, decimal, index, integer, pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { boolean, decimal, index, integer, pgTable, text, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -54,6 +55,13 @@ export const ridesTable = pgTable("rides", {
   index("rides_rider_id_idx").on(t.riderId),
   index("rides_status_idx").on(t.status),
   index("rides_created_at_idx").on(t.createdAt),
+  /* Prevent a customer from holding more than one active ride at a time.
+     The partial index fires only on non-terminal statuses so completed/cancelled
+     rides do not block future bookings. This is an application-level guard;
+     the pessimistic row-lock inside the booking transaction is the primary defence. */
+  uniqueIndex("rides_one_active_per_user_uidx")
+    .on(t.userId)
+    .where(sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')`),
 ]);
 
 export const insertRideSchema = createInsertSchema(ridesTable).omit({ createdAt: true, updatedAt: true });

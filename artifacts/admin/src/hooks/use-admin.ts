@@ -3,6 +3,7 @@ import { fetcher } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 const REFETCH_INTERVAL = 30_000;
+const RIDES_REFETCH_INTERVAL = 5_000;
 
 // Auth
 export const useAdminLogin = () => {
@@ -126,7 +127,7 @@ export const useRides = () => {
   return useQuery({
     queryKey: ["admin-rides"],
     queryFn: () => fetcher("/rides"),
-    refetchInterval: REFETCH_INTERVAL,
+    refetchInterval: RIDES_REFETCH_INTERVAL,
   });
 };
 
@@ -349,7 +350,7 @@ export const useRidesEnriched = () => {
   return useQuery({
     queryKey: ["admin-rides-enriched"],
     queryFn: () => fetcher("/rides-enriched"),
-    refetchInterval: 10_000,
+    refetchInterval: RIDES_REFETCH_INTERVAL,
   });
 };
 

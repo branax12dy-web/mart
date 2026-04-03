@@ -40,14 +40,30 @@ const bargainLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
 });
 
-/** Book-ride limiter: 10 booking attempts per IP per minute */
+/** Book-ride limiter: 5 booking attempts per user per minute.
+ *  IMPORTANT: this must be mounted AFTER customerAuth so req.customerId is set
+ *  when keyGenerator runs. Placing it before auth would collapse all requests
+ *  into a single shared "anonymous" bucket, enabling DoS against all customers. */
 const bookRideLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 5,
+  keyGenerator: (req) => req.customerId ?? "anonymous",
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many booking requests. Please wait a minute before trying again." },
-  validate: { xForwardedForHeader: false },
+  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
+});
+
+/** Cancel-ride limiter: 3 cancellation attempts per user per minute.
+ *  Same ordering rule: mount AFTER customerAuth. */
+const cancelRideLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => req.customerId ?? "anonymous",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many cancellation requests. Please wait a minute." },
+  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
 });
 
 /** Fare-estimate limiter: 30 estimate calls per IP per minute */
@@ -71,16 +87,18 @@ function toNumber(v: unknown): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
+const MAX_FARE = 100_000;
+
 const bookRideSchema = z.object({
   type: z.string().min(1),
-  pickupAddress: z.string().min(1).transform(stripHtml),
-  dropAddress: z.string().min(1).transform(stripHtml),
+  pickupAddress: z.string().min(1).max(300).transform(stripHtml),
+  dropAddress: z.string().min(1).max(300).transform(stripHtml),
   pickupLat: z.preprocess(toNumber, latitudeSchema),
   pickupLng: z.preprocess(toNumber, coordinateSchema),
   dropLat: z.preprocess(toNumber, latitudeSchema),
   dropLng: z.preprocess(toNumber, coordinateSchema),
   paymentMethod: z.string().min(1),
-  offeredFare: z.preprocess((v) => (v != null && v !== "" ? Number(v) : undefined), z.number().positive().optional()),
+  offeredFare: z.preprocess((v) => (v != null && v !== "" ? Number(v) : undefined), z.number().positive().max(MAX_FARE).optional()),
   bargainNote: z.string().max(500).transform(stripHtml).optional(),
   /* ── Parcel delivery fields ── */
   isParcel: z.boolean().optional().default(false),
@@ -110,8 +128,8 @@ const acceptBidSchema = z.object({
 });
 
 const customerCounterSchema = z.object({
-  offeredFare: z.preprocess(toNumber, z.number().positive()),
-  note: z.string().max(500).optional(),
+  offeredFare: z.preprocess(toNumber, z.number().positive().max(MAX_FARE)),
+  note: z.string().max(300).transform(stripHtml).optional(),
 });
 
 const rateRideSchema = z.object({
@@ -356,7 +374,7 @@ async function getRoadDistanceKm(lat1: number, lng1: number, lat2: number, lng2:
   return haversineFallback;
 }
 
-async function calcFare(distance: number, type: string): Promise<{ baseFare: number; gstAmount: number; total: number }> {
+async function calcFare(distance: number, type: string): Promise<{ baseFare: number; gstAmount: number; total: number; minFare: number }> {
   if (!isFinite(distance) || distance < 0) {
     throw new RideApiError("Invalid distance: must be a non-negative number", "INVALID_DISTANCE", 422);
   }
@@ -397,7 +415,7 @@ async function calcFare(distance: number, type: string): Promise<{ baseFare: num
   const gstPct     = parseFloat(s["finance_gst_pct"] ?? "17");
   const gstAmount  = gstEnabled ? Math.round((baseFare * gstPct) / 100) : 0;
   const total      = baseFare + gstAmount; /* total is already integer: Math.round(baseFare) + Math.round(gst) */
-  return { baseFare, gstAmount, total };
+  return { baseFare, gstAmount, total, minFare };
 }
 
 const toISO = (v: unknown) => v ? (v instanceof Date ? v.toISOString() : v) : null;
@@ -499,7 +517,7 @@ router.post("/estimate", estimateLimiter, async (req, res) => {
   }
 });
 
-router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
+router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
   const parsed = bookRideSchema.safeParse(req.body);
   if (!parsed.success) {
     const msg = parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -541,16 +559,6 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
     return;
   }
 
-  const [debtUser] = await db.select({ cancellationDebt: usersTable.cancellationDebt })
-    .from(usersTable)
-    .where(eq(usersTable.id, userId))
-    .limit(1);
-  const debtAmount = parseFloat(debtUser?.cancellationDebt ?? "0");
-  if (debtAmount > 0) {
-    sendErrorWithData(res, `You have an outstanding cancellation fee debt of Rs. ${debtAmount.toFixed(0)}. Please clear your debt before booking a new ride.`, { debtAmount }, 402);
-    return;
-  }
-
   const s = await getPlatformSettings();
 
   if ((s["app_status"] ?? "active") === "maintenance") {
@@ -581,7 +589,7 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
   }
 
   let distance: number;
-  let baseFare: number, gstAmount: number, platformFare: number;
+  let baseFare: number, gstAmount: number, platformFare: number, serviceMinFare: number;
   try {
     const routeResult = await getRoadDistanceKm(pickupLat, pickupLng, dropLat, dropLng);
     distance = routeResult.distanceKm;
@@ -589,6 +597,7 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
     baseFare = fareResult.baseFare;
     gstAmount = fareResult.gstAmount;
     platformFare = fareResult.total;
+    serviceMinFare = fareResult.minFare;
   } catch (e: unknown) {
     const status = e instanceof RideApiError ? e.httpStatus : 422;
     const code = e instanceof RideApiError ? e.code : "FARE_CALCULATION_FAILED";
@@ -603,9 +612,18 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
 
   if (offeredFare !== undefined && bargainEnabled) {
     validatedOffer = offeredFare;
+    /* Reject fares above the configurable maximum */
+    if (validatedOffer > MAX_FARE) {
+      sendErrorWithData(res, `Offered fare cannot exceed Rs. ${MAX_FARE}`, { code: "FARE_TOO_HIGH" }, 422); return;
+    }
+    /* Enforce absolute service min_fare — no offer can go below this regardless of bargaining percentage */
+    if (serviceMinFare > 0 && validatedOffer < serviceMinFare) {
+      sendErrorWithData(res, `Offered fare cannot be lower than the minimum fare of Rs. ${serviceMinFare.toFixed(0)} for this service`, { code: "FARE_BELOW_MIN" }, 422); return;
+    }
+    /* Enforce bargaining percentage floor (e.g. 70% of platform fare) */
     const minOffer = Math.ceil(platformFare * (bargainMinPct / 100));
     if (validatedOffer < minOffer) {
-      sendErrorWithData(res, `Minimum offer allowed is Rs. ${minOffer} (${bargainMinPct}% of platform fare)`, { code: "FARE_OUT_OF_RANGE" }, 400); return;
+      sendErrorWithData(res, `Minimum offer allowed is Rs. ${minOffer} (${bargainMinPct}% of platform fare)`, { code: "FARE_OUT_OF_RANGE" }, 422); return;
     }
     isBargaining = validatedOffer < platformFare;
   }
@@ -702,6 +720,19 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
           throw new RideApiError("Aapki ek ride pehle se active hai. Naye ride ke liye pehle wali complete ya cancel karein.", "ACTIVE_RIDE_EXISTS", 409);
         }
 
+        /* Debt check — inside lock so no concurrent booking can sneak past */
+        const [lockedUser] = await tx.select({ cancellationDebt: usersTable.cancellationDebt })
+          .from(usersTable)
+          .where(eq(usersTable.id, userId))
+          .limit(1);
+        const debtAmt = parseFloat(lockedUser?.cancellationDebt ?? "0");
+        if (debtAmt > 0) {
+          throw new RideApiError(
+            `You have an outstanding cancellation fee debt of Rs. ${debtAmt.toFixed(0)}. Please clear your debt before booking a new ride.`,
+            "DEBT_OUTSTANDING", 402,
+          );
+        }
+
         const [deducted] = await tx.update(usersTable)
           .set({ walletBalance: sql`wallet_balance - ${fareToCharge.toFixed(2)}` })
           .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, fareToCharge.toFixed(2))))
@@ -754,6 +785,20 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
         if (activeConflict) {
           throw new RideApiError("Aapki ek ride pehle se active hai. Naye ride ke liye pehle wali complete ya cancel karein.", "ACTIVE_RIDE_EXISTS", 409);
         }
+
+        /* Debt check — inside lock so no concurrent booking can bypass it */
+        const [lockedUser] = await tx.select({ cancellationDebt: usersTable.cancellationDebt })
+          .from(usersTable)
+          .where(eq(usersTable.id, userId))
+          .limit(1);
+        const debtAmt = parseFloat(lockedUser?.cancellationDebt ?? "0");
+        if (debtAmt > 0) {
+          throw new RideApiError(
+            `You have an outstanding cancellation fee debt of Rs. ${debtAmt.toFixed(0)}. Please clear your debt before booking a new ride.`,
+            "DEBT_OUTSTANDING", 402,
+          );
+        }
+
         const scheduledStatus2 = isScheduled ? "scheduled" : rideStatus;
         const [ride] = await tx.insert(ridesTable).values({
           id: generateId(), userId, type, status: scheduledStatus2,
@@ -816,7 +861,7 @@ router.post("/", bookRideLimiter, customerAuth, async (req, res) => {
   }
 });
 
-router.patch("/:id/cancel", customerAuth, requireRideState(["searching", "bargaining", "accepted", "arrived"]), requireRideOwner("userId"), async (req, res) => {
+router.patch("/:id/cancel", customerAuth, cancelRideLimiter, requireRideState(["searching", "bargaining", "accepted", "arrived"]), requireRideOwner("userId"), async (req, res) => {
   const userId = req.customerId!;
   const ride = req.ride!;
   const cancelParsed = cancelRideSchema.safeParse(req.body ?? {});
@@ -1096,9 +1141,22 @@ router.patch("/:id/customer-counter", bargainLimiter, customerAuth, requireRideS
   const s = await getPlatformSettings();
   const bargainMinPct = parseFloat(s["ride_bargaining_min_pct"] ?? "70");
   const platformFare  = parseFloat(ride.fare);
-  const minOffer      = Math.ceil(platformFare * (bargainMinPct / 100));
+
+  /* Enforce absolute service min_fare floor (matches booking + rider-counter logic). */
+  const psMin = s[`ride_${ride.type}_min_fare`];
+  let serviceMinFare = psMin ? parseFloat(psMin) : 0;
+  if (!serviceMinFare || !isFinite(serviceMinFare)) {
+    const [svc] = await db.select({ minFare: rideServiceTypesTable.minFare })
+      .from(rideServiceTypesTable).where(eq(rideServiceTypesTable.key, ride.type)).limit(1);
+    serviceMinFare = svc ? parseFloat(svc.minFare ?? "0") : 0;
+  }
+  if (serviceMinFare > 0 && newOffer < serviceMinFare) {
+    sendErrorWithData(res, `Offered fare cannot be lower than the minimum fare of Rs. ${serviceMinFare.toFixed(0)} for this service`, { code: "FARE_BELOW_MIN" }, 422); return;
+  }
+
+  const minOffer = Math.ceil(platformFare * (bargainMinPct / 100));
   if (newOffer < minOffer) {
-    sendValidationError(res, `Minimum offer is Rs. ${minOffer}`); return;
+    sendErrorWithData(res, `Minimum offer is Rs. ${minOffer} (${bargainMinPct}% of platform fare)`, { code: "FARE_OUT_OF_RANGE" }, 422); return;
   }
 
   await db.update(rideBidsTable)

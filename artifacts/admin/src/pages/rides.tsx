@@ -1312,6 +1312,7 @@ export default function Rides() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { data, isLoading } = useRidesEnriched();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [tab, setTab] = useState<Tab>("rides");
   const [search, setSearch] = useState("");
@@ -1330,6 +1331,25 @@ export default function Rides() {
   const [secAgo, setSecAgo] = useState(0);
   useEffect(() => { if (!isLoading) setSecAgo(0); }, [isLoading]);
   useEffect(() => { const t = setInterval(() => setSecAgo(s => s + 1), 1000); return () => clearInterval(t); }, []);
+
+  /* ── Real-time ride list sync via Socket.io ── */
+  useEffect(() => {
+    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const socket = io(window.location.origin, {
+      path: "/api/socket.io",
+      query: { rooms: "admin-fleet" },
+      auth: { adminToken: token },
+      transports: ["websocket", "polling"],
+    });
+    socket.on("ride:dispatch-update", () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-rides"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
+    });
+    socket.on("connect_error", (err) => {
+      console.warn("[Rides] socket connection error:", err.message);
+    });
+    return () => { socket.disconnect(); };
+  }, [queryClient]);
 
   const rides: any[] = data?.rides || [];
 

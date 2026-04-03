@@ -1,7 +1,7 @@
 import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable, rideRatingsTable, locationLogsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, rideBidsTable, ridesTable, riderPenaltiesTable, walletTransactionsTable, notificationsTable, liveLocationsTable, reviewsTable, rideRatingsTable, locationLogsTable, rideServiceTypesTable } from "@workspace/db/schema";
 import { eq, desc, and, or, sql, count, sum, avg, gte, isNull, type InferSelectModel } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -30,10 +30,10 @@ const rideAcceptLimiter = rateLimit({
   },
 });
 
-/** Ride-bid limiter: 15 counter bids per rider per minute */
+/** Ride-bid limiter: 10 counter bids per rider per minute */
 const rideBidLimiter = rateLimit({
   windowMs: 60_000,
-  max: 15,
+  max: 10,
   keyGenerator: (req) => req.riderId ?? getClientIp(req) ?? "unknown",
   standardHeaders: true,
   legacyHeaders: false,
@@ -147,9 +147,12 @@ const RIDE_STATUS_TRANSITIONS: Record<string, string[]> = {
   in_transit: ["completed", "cancelled"],
 };
 
+const MAX_COUNTER_FARE = 100_000;
+const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const counterSchema = z.object({
-  counterFare: z.number().positive(),
-  note: z.string().optional(),
+  counterFare: z.number().positive().max(MAX_COUNTER_FARE, `Counter fare cannot exceed Rs. ${MAX_COUNTER_FARE}`),
+  note: z.string().max(300).transform(stripHtml).optional(),
 });
 
 const withdrawSchema = z.object({
@@ -1486,7 +1489,28 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
     sendValidationError(res, `Counter offer must be higher than customer's offer (Rs. ${offeredAmt.toFixed(0)})`); return;
   }
 
-  const MAX_BIDS_PER_RIDER_PER_RIDE = 3;
+  /* Enforce service min_fare — check platform_settings first, fall back to rideServiceTypesTable
+     so the constraint works even when per-type settings haven't been configured in the admin panel */
+  const rideSettings = await getPlatformSettings();
+  const minFareKey = `ride_${ride.type}_min_fare`;
+  const psMinFare = rideSettings[minFareKey];
+  let serviceMinFare = psMinFare !== undefined ? parseFloat(psMinFare) : 0;
+  if (!(serviceMinFare > 0)) {
+    const [svc] = await db.select({ minFare: rideServiceTypesTable.minFare })
+      .from(rideServiceTypesTable)
+      .where(eq(rideServiceTypesTable.key, ride.type))
+      .limit(1);
+    serviceMinFare = svc ? parseFloat(svc.minFare ?? "0") : 0;
+  }
+  if (serviceMinFare > 0 && parsedCounter < serviceMinFare) {
+    sendValidationError(res, `Counter offer cannot be lower than the minimum fare of Rs. ${serviceMinFare.toFixed(0)} for this service`); return;
+  }
+
+  /*
+   * Strict one-bid-per-rider-per-ride: DB UNIQUE INDEX on (ride_id, rider_id).
+   * UPSERT: update fare+note on existing bid; insert on first bid.
+   * FOR-UPDATE on the ride row serialises concurrent submissions.
+   */
 
   let bid: InferSelectModel<typeof rideBidsTable> | undefined;
   let isFirstBid = false;
@@ -1497,32 +1521,31 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
         .where(eq(ridesTable.id, rideId))
         .for("update");
 
+      /*
+       * Allow bids in both 'searching' (initial offer, no bids yet) and
+       * 'bargaining' (counter after customer's rejection). Restricting to
+       * 'bargaining' only would block the very first bid a rider submits.
+       */
       if (!lockedRide || !["searching", "bargaining"].includes(lockedRide.status)) {
         throw Object.assign(new Error("Ride is no longer accepting bids"), { statusCode: 409 });
       }
 
-      const [bidCountRow] = await tx.select({ c: count() })
-        .from(rideBidsTable)
-        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.riderId, riderId)));
-      const totalBids = bidCountRow?.c ?? 0;
-
+      /* Check for any existing bid row (any status) for this rider on this ride. */
       const [existingBid] = await tx.select({ id: rideBidsTable.id })
         .from(rideBidsTable)
-        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.riderId, riderId), eq(rideBidsTable.status, "pending")))
+        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.riderId, riderId)))
         .limit(1);
 
-      if (!existingBid && totalBids >= MAX_BIDS_PER_RIDER_PER_RIDE) {
-        throw Object.assign(new Error(`Maximum ${MAX_BIDS_PER_RIDER_PER_RIDE} bids per ride allowed. You have already submitted ${totalBids} bids on this ride.`), { statusCode: 429 });
-      }
-
       if (existingBid) {
+        /* UPSERT branch: update fare, note and reset to pending */
         const [updated] = await tx.update(rideBidsTable)
-          .set({ fare: parsedCounter.toFixed(2), note: note ?? null, updatedAt: new Date() })
+          .set({ fare: parsedCounter.toFixed(2), note: note ?? null, status: "pending", updatedAt: new Date() })
           .where(and(eq(rideBidsTable.id, existingBid.id), eq(rideBidsTable.riderId, riderId)))
           .returning();
         isFirstBid = false;
         return updated;
       } else {
+        /* INSERT branch: first-time bid from this rider on this ride */
         const [inserted] = await tx.insert(rideBidsTable).values({
           id:         generateId(),
           rideId,

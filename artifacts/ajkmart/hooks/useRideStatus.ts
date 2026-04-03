@@ -9,7 +9,13 @@ type RideStatusHookResult = {
   reconnect: () => void;
 };
 
-const SSE_RETRY_DELAY = 3000;
+/** Base delay (ms) for the first SSE reconnection attempt. */
+const SSE_RETRY_BASE_DELAY = 3000;
+/**
+ * Maximum SSE reconnection delay (ms). Caps exponential growth so we never
+ * wait more than 10 s between reconnects before falling back to polling.
+ */
+const SSE_MAX_RETRY_DELAY = 10_000;
 const POLL_INTERVAL = 5000;
 
 export function useRideStatus(rideId: string): RideStatusHookResult {
@@ -120,7 +126,11 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
             if (!mountedRef.current) return;
             setRide(data);
             if (data?.status === "completed" || data?.status === "cancelled") {
+              /* Terminal state — close SSE cleanly and stop polling. */
               reader.releaseLock();
+              abortRef.current?.abort();
+              abortRef.current = null;
+              stopPolling();
               return;
             }
           } catch {}
@@ -128,21 +138,29 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
       }
 
       if (streamDone && mountedRef.current) {
+        /* Server closed the stream cleanly — reconnect immediately. */
         retryTimerRef.current = setTimeout(() => {
           if (mountedRef.current) connectSse();
-        }, SSE_RETRY_DELAY);
+        }, SSE_RETRY_BASE_DELAY);
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       if (!mountedRef.current) return;
 
       sseFailCountRef.current += 1;
+
       if (sseFailCountRef.current >= 3) {
+        /* Three consecutive failures — fall back to HTTP polling. */
         startPolling();
       } else {
+        /* Exponential back-off capped at SSE_MAX_RETRY_DELAY. */
+        const delay = Math.min(
+          SSE_RETRY_BASE_DELAY * Math.pow(2, sseFailCountRef.current - 1),
+          SSE_MAX_RETRY_DELAY,
+        );
         retryTimerRef.current = setTimeout(() => {
           if (mountedRef.current) connectSse();
-        }, SSE_RETRY_DELAY * sseFailCountRef.current);
+        }, delay);
       }
     }
   }, [rideId, apiBase, closeSse, clearRetryTimer, startPolling, stopPolling]);

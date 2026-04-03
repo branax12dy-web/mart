@@ -1,5 +1,4 @@
 import { decimal, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { ridesTable } from "./rides";
@@ -17,7 +16,7 @@ export const rideBidsTable = pgTable("ride_bids", {
   createdAt:  timestamp("created_at").notNull().defaultNow(),
   updatedAt:  timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex("ride_bids_ride_rider_uidx").on(t.rideId, t.riderId).where(sql`status = 'pending'`),
+  uniqueIndex("ride_bids_ride_rider_uidx").on(t.rideId, t.riderId),
   index("ride_bids_ride_id_idx").on(t.rideId),
   index("ride_bids_rider_id_idx").on(t.riderId),
   index("ride_bids_status_idx").on(t.status),
