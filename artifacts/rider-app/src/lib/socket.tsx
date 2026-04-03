@@ -24,7 +24,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     const token = api.getToken();
     if (!token || !user?.id) return;
 
-    const s = io(window.location.origin, {
+    const socketOrigin = import.meta.env.VITE_CAPACITOR === "true" && import.meta.env.VITE_API_BASE_URL
+      ? (import.meta.env.VITE_API_BASE_URL as string).replace(/\/+$/, "")
+      : window.location.origin;
+
+    const s = io(socketOrigin, {
       path: "/api/socket.io",
       auth: { token },
       transports: ["websocket", "polling"],

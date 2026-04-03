@@ -1,4 +1,6 @@
-const BASE = `/api`;
+const BASE = import.meta.env.VITE_CAPACITOR === "true" && import.meta.env.VITE_API_BASE_URL
+  ? `${(import.meta.env.VITE_API_BASE_URL as string).replace(/\/+$/, "")}/api`
+  : `/api`;
 
 const TOKEN_KEY   = "ajkmart_rider_token";
 const REFRESH_KEY = "ajkmart_rider_refresh_token";
