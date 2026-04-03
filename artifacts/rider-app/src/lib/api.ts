@@ -95,10 +95,6 @@ function sweepLegacyTokens(): void {
   } catch {}
 }
 
-/* Run a one-time sweep at module initialisation to evict any stale legacy
-   tokens that prior app versions may have left behind. */
-sweepLegacyTokens();
-
 function clearTokens(): void {
   sessionRemove();
   localRemove();
