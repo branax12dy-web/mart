@@ -1727,6 +1727,7 @@ router.post("/:id/retry", customerAuth, requireRideState(["no_riders", "expired"
   }).where(eq(ridesTable.id, rideId));
 
   broadcastRide(rideId);
+  emitRideUpdate(rideId);
 
   sendSuccess(res, undefined, "Dispatch restarted");
 });
@@ -1808,6 +1809,7 @@ async function runDispatchCycle() {
             icon: "close-circle-outline",
           }).catch(() => {});
 
+          emitRideUpdate(ride.id);
           await cleanupNotifiedRiders(ride.id);
           continue;
         }
@@ -1855,6 +1857,7 @@ async function runDispatchCycle() {
             body: t("searching_driver", noRiderLang),
             type: "ride", icon: "close-circle-outline",
           }).catch(() => {});
+          emitRideUpdate(ride.id);
           await cleanupNotifiedRiders(ride.id);
           continue;
         }
@@ -1908,6 +1911,7 @@ export async function dispatchScheduledRides(): Promise<void> {
         .where(and(eq(ridesTable.id, ride.id), eq(ridesTable.status, "scheduled")));
       broadcastRide(ride.id);
       emitRideDispatchUpdate({ rideId: ride.id, action: "scheduled_dispatch", status: "searching" });
+      emitRideUpdate(ride.id);
       logger.info({ rideId: ride.id }, "[scheduled-dispatch] ride activated");
     }
   } catch (e) {
