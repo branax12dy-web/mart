@@ -53,9 +53,17 @@ export async function enqueue(ping: QueuedPing): Promise<void> {
           cursorReq.onsuccess = () => {
             const cursor = cursorReq.result;
             if (cursor) {
+              /* Delete the oldest entry first, then add the new ping.
+                 store.put is intentionally inside this block — if no cursor
+                 is found the queue is in an unexpected state and we skip
+                 the put to avoid exceeding MAX_QUEUE_SIZE. */
               cursor.delete();
+              store.put(ping);
+            } else {
+              /* Queue reports full but no entry found to evict — abort to
+                 keep the transaction consistent and drop this ping. */
+              tx.abort();
             }
-            store.put(ping);
           };
           cursorReq.onerror = () => tx.abort();
         } else {

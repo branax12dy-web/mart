@@ -63,12 +63,34 @@ function getRefreshToken(): string {
   return localGet();
 }
 
+/* Sweep localStorage for any stale rider auth keys from older app versions.
+   Removes every key that looks like a rider access token (matches "rider_" or
+   "ajkmart_rider" prefix) but is NOT the current refresh-token key, which is
+   intentionally kept in localStorage for cross-session persistence. */
+function sweepLegacyTokens(): void {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key === REFRESH_KEY) continue;
+      if (key.startsWith("rider_") || key.startsWith("ajkmart_rider")) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+  } catch {}
+}
+
+/* Run a one-time sweep at module initialisation to evict any stale legacy
+   tokens that prior app versions may have left behind. */
+sweepLegacyTokens();
+
 function clearTokens(): void {
   sessionRemove();
   localRemove();
-  /* Erase all possible legacy keys */
-  try { localStorage.removeItem(TOKEN_KEY); } catch {}
-  try { localStorage.removeItem("rider_token"); } catch {}
+  /* Erase all known legacy keys AND any additional pattern-matching keys */
+  sweepLegacyTokens();
   _inMemoryAccessToken  = "";
   _inMemoryRefreshToken = "";
 }
