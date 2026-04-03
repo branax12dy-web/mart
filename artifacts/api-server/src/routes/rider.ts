@@ -1765,6 +1765,54 @@ router.get("/cod-summary", async (req, res) => {
   });
 });
 
+/* ── POST /rider/cod/remit — submit COD cash remittance ── */
+router.post("/cod/remit", async (req, res) => {
+  try {
+    const riderId = req.riderId!;
+    const { amount, paymentMethod, accountNumber, transactionId, note } = req.body;
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      res.status(400).json({ error: "Valid amount is required" }); return;
+    }
+    if (!paymentMethod) {
+      res.status(400).json({ error: "Payment method is required" }); return;
+    }
+
+    const [codAgg] = await db.select({ total: sum(ordersTable.total) }).from(ordersTable)
+      .where(and(eq(ordersTable.riderId, riderId), eq(ordersTable.status, "delivered"), eq(ordersTable.paymentMethod, "cod")));
+    const [verifiedAgg] = await db.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'verified:%'`));
+    const [pendingAgg] = await db.select({ total: sum(walletTransactionsTable.amount) }).from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, riderId), eq(walletTransactionsTable.type, "cod_remittance"), sql`reference LIKE 'pending:%'`));
+
+    const totalCollected = safeNum(codAgg?.total);
+    const totalVerified  = safeNum(verifiedAgg?.total);
+    const totalPending   = safeNum(pendingAgg?.total);
+    const netOwed = Math.max(0, totalCollected - totalVerified - totalPending);
+
+    if (Number(amount) > netOwed) {
+      res.status(400).json({ error: `Remittance amount exceeds available owed balance (${netOwed})` }); return;
+    }
+
+    const txId = generateId();
+    const refParts = [paymentMethod];
+    if (accountNumber) refParts.push(accountNumber);
+    if (transactionId) refParts.push(transactionId);
+
+    await db.insert(walletTransactionsTable).values({
+      id: txId,
+      userId: riderId,
+      amount: String(amount),
+      type: "cod_remittance",
+      description: note || `COD remittance via ${paymentMethod}`,
+      reference: `pending:${refParts.join(":")}`,
+    });
+
+    res.json({ success: true, transactionId: txId, message: "Remittance submitted for admin verification" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to submit remittance" });
+  }
+});
+
 /* ── GET /rider/notifications ── */
 router.get("/notifications", async (req, res) => {
   const riderId = req.riderId!;

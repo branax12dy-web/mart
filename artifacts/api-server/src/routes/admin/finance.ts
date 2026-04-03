@@ -216,7 +216,10 @@ router.patch("/riders/:id/status", async (req, res) => {
   if (isActive  !== undefined) updates.isActive  = isActive;
   if (isBanned  !== undefined) updates.isBanned  = isBanned;
   if (banReason !== undefined) updates.banReason = banReason || null;
-  if (isActive === true && !isBanned) updates.approvalStatus = "approved";
+  if (isActive === true) {
+    const [current] = await db.select({ isBanned: usersTable.isBanned }).from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
+    if (!isBanned && !current?.isBanned) updates.approvalStatus = "approved";
+  }
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, req.params["id"]!)).returning();
   if (!user) { res.status(404).json({ error: "Rider not found" }); return; }
   if (isBanned || isActive === false) {
@@ -730,7 +733,7 @@ router.patch("/vendors/:id/commission", async (req, res) => {
   res.json({ success: true, commissionPct });
 });
 
-/* ── PATCH /admin/riders/:id/online — toggle rider online/offline ── */
+/* ── POST /admin/riders/:id/override-suspension — override auto-suspension ── */
 router.post("/riders/:id/override-suspension", async (req, res) => {
   const userId = req.params["id"]!;
   const [user] = await db.select({ id: usersTable.id, autoSuspendedAt: usersTable.autoSuspendedAt })
