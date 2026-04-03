@@ -7,6 +7,7 @@ import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { verifyUserJwt, getCachedSettings, detectGPSSpoof, addSecurityEvent, getClientIp } from "../middleware/security.js";
 import { emitRiderLocation, emitRiderStatus, emitRideDispatchUpdate, emitRideOtp, getIO } from "../lib/socketio.js";
+import { emitRideUpdate } from "../lib/rideEvents.js";
 import { sendPushToUser } from "../lib/webpush.js";
 import { z } from "zod";
 import { t } from "@workspace/i18n";
@@ -1245,6 +1246,7 @@ router.post("/rides/:id/accept", rideAcceptLimiter, async (req, res) => {
   emitRideOtp(updated.userId, updated.id, tripOtp);
 
   emitRideDispatchUpdate({ rideId: updated.id, action: "accepted", status: "accepted" });
+  emitRideUpdate(updated.id);
   const { tripOtp: _omitOtp, ...rideWithoutOtp } = updated;
   sendSuccess(res, { ...rideWithoutOtp, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
@@ -1279,6 +1281,7 @@ router.post("/rides/:id/verify-otp", otpLimiter, async (req, res) => {
 
   await db.update(ridesTable).set({ otpVerified: true, updatedAt: new Date() }).where(eq(ridesTable.id, rideId));
   emitRideDispatchUpdate({ rideId, action: "otp-verified", status: ride.status });
+  emitRideUpdate(rideId);
   sendSuccess(res, undefined, "OTP verified. You may now start the trip.");
 });
 
@@ -1460,6 +1463,7 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
   }
 
   emitRideDispatchUpdate({ rideId: updated.id, action: "status-change", status });
+  emitRideUpdate(updated.id);
   sendSuccess(res, { ...updated, fare: safeNum(updated.fare), distance: safeNum(updated.distance) });
 });
 
@@ -1579,6 +1583,7 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
   }
 
   emitRideDispatchUpdate({ rideId, action: "bid", status: "bargaining" });
+  emitRideUpdate(rideId);
   sendSuccess(res, { bid: { ...bid, fare: safeNum(bid!.fare) } });
 });
 

@@ -25,6 +25,7 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 import { t, type TranslationKey } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { emitRiderNewRequest, emitRideDispatchUpdate, emitRideOtp } from "../lib/socketio.js";
+import { emitRideUpdate, onRideUpdate } from "../lib/rideEvents.js";
 import { sendPushToUser, sendPushToUsers } from "../lib/webpush.js";
 import rateLimit from "express-rate-limit";
 
@@ -842,8 +843,10 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
     if (rideRecord && !isScheduled) {
       broadcastRide(rideRecord.id);
       emitRideDispatchUpdate({ rideId: rideRecord.id, action: "new", status: rideRecord.status });
+      emitRideUpdate(rideRecord.id);
     } else if (rideRecord && isScheduled) {
       emitRideDispatchUpdate({ rideId: rideRecord.id, action: "new", status: "scheduled" });
+      emitRideUpdate(rideRecord.id);
     }
 
     sendCreated(res, {
@@ -1004,6 +1007,7 @@ router.patch("/:id/cancel", customerAuth, cancelRideLimiter, requireRideState(["
   }
 
   emitRideDispatchUpdate({ rideId: ride.id, action: "cancel", status: "cancelled" });
+  emitRideUpdate(ride.id);
   sendSuccess(res, {
     ...formatRide(cancelResult!),
     cancellationFee: actualCancelFee,
@@ -1123,6 +1127,7 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
   }).catch(() => {});
 
   emitRideDispatchUpdate({ rideId: rideUpdate!.id, action: "accepted", status: "accepted" });
+  emitRideUpdate(rideUpdate!.id);
   sendSuccess(res, { ...formatRide(rideUpdate!), agreedFare, tripOtp: otp });
 });
 
@@ -1180,6 +1185,7 @@ router.patch("/:id/customer-counter", bargainLimiter, customerAuth, requireRideS
     .where(and(eq(ridesTable.id, rideId), eq(ridesTable.userId, userId)))
     .returning();
 
+  emitRideUpdate(rideId);
   sendSuccess(res, formatRide(updated!));
 });
 
@@ -1237,6 +1243,68 @@ router.get("/pool/:groupId", customerAuth, async (req, res) => {
     stops: ridesTable.stops, createdAt: ridesTable.createdAt,
   }).from(ridesTable).where(eq(ridesTable.poolGroupId, groupId)).orderBy(ridesTable.createdAt);
   sendSuccess(res, { groupId, rides, passengerCount: rides.length });
+});
+
+/* ── SSE: max concurrent streams per ride ── */
+const _sseCounts = new Map<string, number>();
+const SSE_MAX_PER_RIDE = 5;
+const SSE_HEARTBEAT_MS = 25_000;
+
+router.get("/:id/stream", customerAuth, async (req, res) => {
+  const callerId = req.customerId!;
+  const rideId = String(req.params["id"]);
+
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) { sendNotFound(res, "Ride not found"); return; }
+  if (ride.userId !== callerId) { sendForbidden(res, "Access denied — not your ride"); return; }
+
+  const current = _sseCounts.get(rideId) ?? 0;
+  if (current >= SSE_MAX_PER_RIDE) {
+    res.status(429).json({ error: "Too many concurrent streams for this ride" });
+    return;
+  }
+  _sseCounts.set(rideId, current + 1);
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const pushUpdate = async () => {
+    try {
+      const [fresh] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+      if (!fresh) return;
+      res.write(`data: ${JSON.stringify(formatRide(fresh as Record<string, unknown>))}\n\n`);
+      if (fresh.status === "completed" || fresh.status === "cancelled") {
+        cleanup();
+        res.end();
+      }
+    } catch (err) {
+      logger.warn({ err, rideId }, "SSE ride: failed to push update");
+    }
+  };
+
+  await pushUpdate();
+
+  const unsubscribe = onRideUpdate(rideId, () => { pushUpdate().catch(() => {}); });
+
+  const heartbeat = setInterval(() => {
+    try { res.write(": heartbeat\n\n"); } catch {}
+  }, SSE_HEARTBEAT_MS);
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+    const n = _sseCounts.get(rideId) ?? 1;
+    if (n <= 1) _sseCounts.delete(rideId);
+    else _sseCounts.set(rideId, n - 1);
+  };
+
+  req.on("close", cleanup);
 });
 
 router.get("/:id", customerAuth, async (req, res) => {
