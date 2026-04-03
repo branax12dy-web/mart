@@ -13,6 +13,7 @@ import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { sendSuccess, sendCreated, sendError, sendErrorWithData, sendNotFound, sendForbidden, sendUnauthorized, sendValidationError, sendTooManyRequests } from "../lib/response.js";
 import { isInServiceZone } from "../lib/geofence.js";
+import rateLimit from "express-rate-limit";
 
 function normalizeVehicleType(raw: string | null | undefined): string {
   const v = (raw ?? "").trim().toLowerCase();
@@ -1944,24 +1945,24 @@ router.post("/wallet/deposit", async (req, res) => {
   sendSuccess(res, { txId, amount: amt });
 });
 
-/* Per-rider in-memory rate limiter for GPS location endpoint: max 1 request per 5 seconds */
 const locationRateStore = new Map<string, number>();
-const LOCATION_RATE_INTERVAL_MS = 5_000;
+
+const locationRateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  keyGenerator: (req) => (req as any).riderId ?? getClientIp(req) ?? "unknown",
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    sendTooManyRequests(res, "Location update rate limit exceeded (60/min). Please wait before sending another update.");
+  },
+});
 
 /* ── PATCH /rider/location — GPS heartbeat: rider sends periodic location updates ── */
-router.patch("/location", async (req, res) => {
+router.patch("/location", locationRateLimiter, async (req, res) => {
   const parsed = locationSchema.safeParse(req.body);
   if (!parsed.success) { sendValidationError(res, parsed.error.issues[0]?.message || "Invalid location data"); return; }
   const riderId = req.riderId!;
-
-  /* Per-rider rate limit: 1 update per 5 seconds */
-  const now = Date.now();
-  const lastSent = locationRateStore.get(riderId) ?? 0;
-  if (now - lastSent < LOCATION_RATE_INTERVAL_MS) {
-    sendErrorWithData(res, "Location update rate limit exceeded. Please wait before sending another update.", { retryAfterMs: LOCATION_RATE_INTERVAL_MS - (now - lastSent) }, 429);
-    return;
-  }
-  locationRateStore.set(riderId, now);
 
   const { latitude, longitude, accuracy, speed, heading, batteryLevel } = parsed.data;
 
