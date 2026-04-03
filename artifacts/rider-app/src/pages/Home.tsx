@@ -151,14 +151,49 @@ function MiniMapFitter({ pickupLat, pickupLng, dropLat, dropLng, hasPick, hasDro
   return null;
 }
 
+/* ── useMiniMapTileConfig — fetches map provider from /api/maps/config so the
+   MiniMap uses the same tile provider the admin has configured (Mapbox, Google, OSM).
+   Defaults to OSM on any error — keeps the map functional even without a network call. ── */
+interface MapsConfigPublic { provider: string; token: string; secondaryProvider?: string; secondaryToken?: string; }
+function useMiniMapTileConfig(): { tileUrl: string; attribution: string } {
+  const { data } = useQuery<MapsConfigPublic>({
+    queryKey: ["maps-config-public"],
+    queryFn: async (): Promise<MapsConfigPublic> => {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/maps/config`);
+      const json = await res.json() as { data?: MapsConfigPublic } & MapsConfigPublic;
+      /* /api/maps/config returns the object directly (no { success, data } wrapper) */
+      return (json.data ?? json) as MapsConfigPublic;
+    },
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+
+  if (data?.provider === "mapbox" && data.token)
+    return {
+      tileUrl: `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${data.token}`,
+      attribution: "© Mapbox © OSM",
+    };
+  if (data?.provider === "google" && data.token)
+    return {
+      tileUrl: `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${data.token}`,
+      attribution: "© Google Maps",
+    };
+  return {
+    tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: "© OSM",
+  };
+}
+
 /* Mini-map: Leaflet map with pickup (green) and drop (red) markers.
-   Lightweight, interactive, and works offline (cached OSM tiles). */
+   Lightweight, interactive, and works offline (cached OSM tiles).
+   Tile provider is read from platform map config (Mapbox/Google/OSM). */
 function MiniMap({ pickupLat, pickupLng, dropLat, dropLng }: {
   pickupLat?: number | null; pickupLng?: number | null;
   dropLat?: number | null; dropLng?: number | null;
 }) {
   const hasPick = pickupLat != null && pickupLng != null;
   const hasDrop = dropLat != null && dropLng != null;
+  const { tileUrl, attribution } = useMiniMapTileConfig();
   if (!hasPick && !hasDrop) return null;
 
   const centerLat = hasPick && hasDrop ? (pickupLat! + dropLat!) / 2 : (hasPick ? pickupLat! : dropLat!);
@@ -180,7 +215,7 @@ function MiniMap({ pickupLat, pickupLng, dropLat, dropLng }: {
         keyboard={false}
         attributionControl={false}
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer url={tileUrl} />
         {hasPick && <Marker position={[pickupLat!, pickupLng!]} icon={pickupIcon} />}
         {hasDrop  && <Marker position={[dropLat!, dropLng!]} icon={dropIcon} />}
         <MiniMapFitter
@@ -190,7 +225,7 @@ function MiniMap({ pickupLat, pickupLng, dropLat, dropLng }: {
         />
       </MapContainer>
       <div className="absolute bottom-1.5 right-1.5 bg-black/40 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded pointer-events-none z-[1000]">
-        © OSM
+        {attribution}
       </div>
       {hasPick && (
         <div className="absolute top-1.5 left-1.5 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full pointer-events-none z-[1000]">

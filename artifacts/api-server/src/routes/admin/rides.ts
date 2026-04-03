@@ -4,7 +4,7 @@ import {
   usersTable,
   walletTransactionsTable,
   notificationsTable,
-  ordersTable, ridesTable, rideBidsTable, rideServiceTypesTable, popularLocationsTable, schoolRoutesTable, schoolSubscriptionsTable, liveLocationsTable, rideEventLogsTable, rideNotifiedRidersTable, locationLogsTable,
+  ordersTable, ridesTable, rideBidsTable, rideServiceTypesTable, popularLocationsTable, schoolRoutesTable, schoolSubscriptionsTable, liveLocationsTable, rideEventLogsTable, rideNotifiedRidersTable, locationLogsTable, locationHistoryTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
 import {
@@ -402,6 +402,7 @@ router.get("/live-riders", async (_req, res) => {
       vehicleType:  usersTable.vehicleType,
       city:         usersTable.city,
       role:         usersTable.role,
+      lastActive:   usersTable.lastActive,
     })
     .from(liveLocationsTable)
     .leftJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
@@ -422,6 +423,7 @@ router.get("/live-riders", async (_req, res) => {
       batteryLevel: loc.batteryLevel ?? null,
       lastSeen:     loc.lastSeen    instanceof Date ? loc.lastSeen.toISOString()    : (loc.lastSeen    ?? null),
       onlineSince:  loc.onlineSince instanceof Date ? loc.onlineSince.toISOString() : (loc.onlineSince ?? null),
+      lastActive:   loc.lastActive  instanceof Date ? loc.lastActive.toISOString()  : (loc.lastActive  ?? null),
       lat:          parseFloat(String(loc.latitude)),
       lng:          parseFloat(String(loc.longitude)),
       action:       loc.action      ?? null,
@@ -1048,27 +1050,26 @@ router.get("/riders/:userId/route", async (req, res) => {
     endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   }
 
+  /* location_history stores smart-filtered waypoints (significant movement only, ≥ threshold metres).
+     This gives the admin a clean path trace rather than raw GPS noise from location_logs. */
   const logs = await db
     .select()
-    .from(locationLogsTable)
+    .from(locationHistoryTable)
     .where(
       and(
-        eq(locationLogsTable.userId, userId),
-        gte(locationLogsTable.createdAt, startOfDay),
-        lte(locationLogsTable.createdAt, endOfDay),
+        eq(locationHistoryTable.userId, userId),
+        gte(locationHistoryTable.createdAt, startOfDay),
+        lte(locationHistoryTable.createdAt, endOfDay),
       )
     )
-    .orderBy(asc(locationLogsTable.createdAt));
+    .orderBy(asc(locationHistoryTable.createdAt));
 
   const points = logs.map(l => ({
-    latitude:     parseFloat(String(l.latitude)),
-    longitude:    parseFloat(String(l.longitude)),
-    accuracy:     l.accuracy,
-    speed:        l.speed,
-    heading:      l.heading,
-    batteryLevel: l.batteryLevel,
-    isSpoofed:    l.isSpoofed,
-    createdAt:    l.createdAt.toISOString(),
+    latitude:  (l.coords as { lat: number; lng: number }).lat,
+    longitude: (l.coords as { lat: number; lng: number }).lng,
+    speed:     l.speed   != null ? parseFloat(String(l.speed))   : null,
+    heading:   l.heading != null ? parseFloat(String(l.heading)) : null,
+    createdAt: l.createdAt.toISOString(),
   }));
 
   const loginLocation  = points[0] ?? null;

@@ -409,31 +409,43 @@ router.get("/config", async (_req, res) => {
   const settings = await getPlatformSettings();
   const s = settings as Record<string, string>;
 
-  const mapProvider      = s["map_provider"]        ?? "osm";       /* osm | mapbox | google */
+  /* Primary provider: new key map_provider_primary (fallback to legacy map_provider) */
+  const mapProvider      = s["map_provider_primary"] ?? s["map_provider"] ?? "osm";  /* osm | mapbox | google */
+  /* Secondary provider used as failover when primary tile layer fails */
+  const secondaryProvider = s["map_provider_secondary"] ?? "osm";                    /* osm | mapbox | google */
+
   const mapboxToken      = s["mapbox_api_key"]       ?? "";
-  const googleKey        = s["maps_api_key"]         ?? "";
-  const searchProvider   = s["search_api_provider"]  ?? "google";   /* google | locationiq */
+  /* New key google_maps_api_key takes priority over legacy maps_api_key */
+  const googleKey        = s["google_maps_api_key"]  ?? s["maps_api_key"] ?? "";
+  const searchProvider   = s["search_api_provider"]  ?? "google";                    /* google | locationiq */
   const locationIqKey    = s["locationiq_api_key"]   ?? "";
-  const routingProvider  = s["routing_api_provider"] ?? "mapbox";   /* mapbox | google */
+  const routingProvider  = s["routing_api_provider"] ?? "mapbox";                    /* mapbox | google */
 
   /* Return the appropriate token for the active map provider, never all keys at once */
   const activeToken = mapProvider === "mapbox" ? mapboxToken
                     : mapProvider === "google"  ? googleKey
                     : "";
 
+  /* Secondary token — needed if secondary provider is mapbox or google */
+  const secondaryToken = secondaryProvider === "mapbox" ? mapboxToken
+                       : secondaryProvider === "google"  ? googleKey
+                       : "";
+
   /* Search token is separate from map visual provider */
   const searchToken = searchProvider === "locationiq" ? locationIqKey
                     : googleKey; /* google search uses same key as google maps */
 
   res.json({
-    provider:        mapProvider,       /* Which tile/SDK to use for the map visual */
-    token:           activeToken,       /* API key / access token for the active provider */
-    searchProvider,                     /* Which API to use for address search/autocomplete */
-    searchToken,                        /* API key for the search provider */
-    routingProvider,                    /* Which API to use for route calculation */
-    enabled:         s["integration_maps"] !== "off",
-    defaultLat:      parseFloat(s["map_default_lat"] || "33.7294"),
-    defaultLng:      parseFloat(s["map_default_lng"] || "73.3872"),
+    provider:          mapProvider,        /* Which tile/SDK to use for the map visual */
+    token:             activeToken,        /* API key / access token for the active provider */
+    secondaryProvider,                     /* Failover provider if primary tile fails */
+    secondaryToken,                        /* API key for the failover provider */
+    searchProvider,                        /* Which API to use for address search/autocomplete */
+    searchToken,                           /* API key for the search provider */
+    routingProvider,                       /* Which API to use for route calculation */
+    enabled:           s["integration_maps"] !== "off",
+    defaultLat:        parseFloat(s["map_default_lat"] || "33.7294"),
+    defaultLng:        parseFloat(s["map_default_lng"] || "73.3872"),
   });
 });
 

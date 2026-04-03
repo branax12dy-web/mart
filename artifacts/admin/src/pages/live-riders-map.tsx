@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLiveRiders, usePlatformSettings, useRiderRoute, useCustomerLocations } from "@/hooks/use-admin";
-import { MapPin, RefreshCw, Users, Navigation, Route, Clock, Eye, EyeOff, AlertTriangle, MessageSquare, BarChart2, Activity, TrendingUp, X } from "lucide-react";
+import { MapPin, RefreshCw, Users, Navigation, Route, Clock, Eye, EyeOff, AlertTriangle, MessageSquare, BarChart2, Activity, TrendingUp, X, History } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ type Rider = {
   action?: string | null;
   batteryLevel?: number | null;
   lastSeen?: string;
+  lastActive?: string | null;
   currentTripId?: string | null;
 };
 
@@ -218,6 +219,75 @@ function makeLoginIcon() {
   });
 }
 
+/* ── MapProviderConfig type (returned by /api/maps/config) ── */
+interface MapConfig {
+  provider: string;
+  token: string;
+  secondaryProvider: string;
+  secondaryToken: string;
+  searchProvider: string;
+  searchToken: string;
+  routingProvider: string;
+  enabled: boolean;
+  defaultLat: number;
+  defaultLng: number;
+}
+
+/* ── DynamicTileLayer — renders primary tile provider and auto-falls-over to
+   secondary when tile errors exceed threshold (e.g. API key invalid / quota exceeded).
+   Implements the failover by swapping the tile URL client-side — no page reload needed. ── */
+function DynamicTileLayer({ config }: { config: MapConfig | undefined }) {
+  const [useFallback, setUseFallback] = useState(false);
+  const errorCount = useRef(0);
+  const ERROR_THRESHOLD = 3; /* switch after 3 consecutive tile errors */
+
+  const provider = useFallback
+    ? (config?.secondaryProvider ?? "osm")
+    : (config?.provider ?? "osm");
+  const token = useFallback
+    ? (config?.secondaryToken ?? "")
+    : (config?.token ?? "");
+
+  /* Reset fallback state when provider config changes */
+  useEffect(() => {
+    setUseFallback(false);
+    errorCount.current = 0;
+  }, [config?.provider]);
+
+  const tileUrl = useMemo(() => {
+    if (provider === "mapbox" && token)
+      return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${token}`;
+    if (provider === "google" && token)
+      return `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${token}`;
+    return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+  }, [provider, token]);
+
+  const attribution = useMemo(() => {
+    if (provider === "mapbox") return '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    if (provider === "google") return "© Google Maps";
+    return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  }, [provider]);
+
+  const handleTileError = useCallback(() => {
+    errorCount.current += 1;
+    if (!useFallback && errorCount.current >= ERROR_THRESHOLD) {
+      console.warn(`[Map] Primary provider "${provider}" failed ${ERROR_THRESHOLD}x — falling back to "${config?.secondaryProvider ?? "osm"}"`);
+      setUseFallback(true);
+      errorCount.current = 0;
+    }
+  }, [useFallback, provider, config?.secondaryProvider]);
+
+  return (
+    <TileLayer
+      key={tileUrl /* force remount when URL changes */}
+      url={tileUrl}
+      attribution={attribution}
+      maxZoom={provider === "mapbox" ? 22 : provider === "google" ? 21 : 19}
+      eventHandlers={{ tileerror: handleTileError }}
+    />
+  );
+}
+
 /* Auto-fits the map to include all markers on first data load.
    Falls back to the default center if there are no markers. */
 function FitBoundsOnLoad({
@@ -346,7 +416,7 @@ function AnimatedMarker({
 }
 
 /* ── Fleet Analytics Tab ── */
-function FleetAnalyticsTab() {
+function FleetAnalyticsTab({ mapConfig }: { mapConfig?: MapConfig }) {
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -433,11 +503,7 @@ function FleetAnalyticsTab() {
                 zoom={11}
                 style={{ width: "100%", height: "100%" }}
               >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution="&copy; OpenStreetMap contributors"
-                  maxZoom={19}
-                />
+                <DynamicTileLayer config={mapConfig} />
                 {heatPoints.slice(0, 2000).map((pt, i) => (
                   <Circle
                     key={i}
@@ -578,10 +644,11 @@ export default function LiveRidersMap() {
   const [currentTripIdOverrides, setCurrentTripIdOverrides] = useState<Record<string, string | null>>({});
 
   /* ── Map provider config — fetched from backend so keys never appear in build ── */
-  const { data: mapConfigData } = useQuery<{
-    provider: string; token: string; searchProvider: string; searchToken: string;
-    routingProvider: string; enabled: boolean; defaultLat: number; defaultLng: number;
-  }>({ queryKey: ["map-config"], queryFn: () => fetcher("/api/maps/config"), staleTime: 5 * 60 * 1000 });
+  const { data: mapConfigData } = useQuery<MapConfig>({
+    queryKey: ["map-config"],
+    queryFn: () => fetcher("/api/maps/config"),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const { data: routeData } = useRiderRoute(selectedId, routeDate);
   const { data: customerData } = useCustomerLocations();
@@ -787,6 +854,7 @@ export default function LiveRidersMap() {
       isOnline: statusOv ? statusOv.isOnline : r.isOnline,
       batteryLevel: hb?.batteryLevel ?? null,
       lastSeen: hb?.lastSeen ?? r.updatedAt,
+      lastActive: r.lastActive ?? null,
       /* Socket-supplied live values take priority over stale DB values */
       vehicleType: vehicleTypeOverrides[r.userId] !== undefined ? vehicleTypeOverrides[r.userId] : r.vehicleType,
       currentTripId: currentTripIdOverrides[r.userId] !== undefined ? currentTripIdOverrides[r.userId] : r.currentTripId,
@@ -1091,7 +1159,7 @@ export default function LiveRidersMap() {
       </div>
 
       {activeTab === "analytics" ? (
-        <FleetAnalyticsTab />
+        <FleetAnalyticsTab mapConfig={mapConfigData} />
       ) : (
         <>
           {/* Stat cards */}
@@ -1132,37 +1200,9 @@ export default function LiveRidersMap() {
                     zoom={12}
                     style={{ width: "100%", height: "100%" }}
                   >
-                    {/* Dynamic tile layer — provider and token come from /api/maps/config (DB-managed, never hardcoded) */}
-                    {(() => {
-                      const provider = mapConfigData?.provider ?? "osm";
-                      const token    = mapConfigData?.token ?? "";
-                      if (provider === "mapbox" && token) {
-                        return (
-                          <TileLayer
-                            url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${token}`}
-                            attribution='© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                            maxZoom={22}
-                          />
-                        );
-                      }
-                      if (provider === "google" && token) {
-                        return (
-                          <TileLayer
-                            url={`https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${token}`}
-                            attribution="© Google Maps"
-                            maxZoom={21}
-                          />
-                        );
-                      }
-                      /* Default: OpenStreetMap (no key needed) */
-                      return (
-                        <TileLayer
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution="&copy; OpenStreetMap contributors"
-                          maxZoom={19}
-                        />
-                      );
-                    })()}
+                    {/* Dynamic tile layer — reads primary/secondary provider from /api/maps/config.
+                        Auto-fails over to secondary after 3 tile errors (bad key, quota, etc.) */}
+                    <DynamicTileLayer config={mapConfigData} />
                     <FitBoundsOnLoad
                       riders={riders}
                       customers={customers}
@@ -1189,15 +1229,27 @@ export default function LiveRidersMap() {
                           icon={riderIconMap.get(rider.userId)!}
                           onClick={() => setSelectedId(rider.userId)}
                         >
-                          <Popup maxWidth={220}>
-                            <div style={{ fontFamily: "sans-serif", minWidth: 170 }}>
+                          <Popup maxWidth={230}>
+                            <div style={{ fontFamily: "sans-serif", minWidth: 180 }}>
                               <p style={{ fontWeight: 700, margin: "0 0 4px" }}>{rider.name || "Unknown Rider"}</p>
                               <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>
-                                {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
+                                {rider.phone || "No phone"}{rider.vehicleType ? ` · ${getVehicleEmoji(rider.vehicleType)} ${rider.vehicleType}` : ""}
                               </p>
+                              {/* Role badge */}
+                              {rider.role && rider.role !== "rider" && (
+                                <p style={{ fontSize: 10, margin: "2px 0 0", color: "#7c3aed", fontWeight: 600, textTransform: "capitalize" }}>
+                                  ⚙ {rider.role.replace(/_/g, " ")}
+                                </p>
+                              )}
                               <p style={{ fontSize: 11, margin: "4px 0 0", color: status === "online" ? "#22c55e" : status === "busy" ? "#ef4444" : "#9ca3af" }}>
                                 ● {status === "online" ? "Online" : status === "busy" ? "Busy / On Trip" : "Offline"} · {fd(rider.updatedAt)}
                               </p>
+                              {/* Last Active timestamp — shown for offline riders so admin knows when they were last seen */}
+                              {status === "offline" && rider.lastActive && (
+                                <p style={{ fontSize: 10, margin: "2px 0 0", color: "#6b7280" }}>
+                                  🕐 Last Active: {fd(rider.lastActive)}
+                                </p>
+                              )}
                               {rider.currentTripId && (
                                 <p style={{ fontSize: 10, margin: "2px 0 0", color: "#ef4444", fontWeight: 600 }}>
                                   🚗 Trip: {rider.currentTripId.slice(0, 12)}…
@@ -1205,6 +1257,10 @@ export default function LiveRidersMap() {
                               )}
                               {stale && status !== "offline" && (
                                 <p style={{ fontSize: 10, margin: "2px 0 0", color: "#f59e0b" }}>⚠ GPS stale — last ping {fd(rider.updatedAt)}</p>
+                              )}
+                              {/* City if available */}
+                              {rider.city && (
+                                <p style={{ fontSize: 10, margin: "3px 0 0", color: "#9ca3af" }}>📍 {rider.city}</p>
                               )}
                             </div>
                           </Popup>
@@ -1475,21 +1531,28 @@ export default function LiveRidersMap() {
                               <p className="text-xs text-muted-foreground">
                                 {getVehicleIcon(rider.vehicleType)} {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
                               </p>
-                              {/* Last Seen */}
-                              <p className="text-[10px] text-muted-foreground mt-0.5">
-                                Last Seen: {fd(rider.lastSeen ?? rider.updatedAt)}
-                              </p>
+                              {/* Last Seen / Last Active */}
+                              {status === "offline" && rider.lastActive ? (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  🕐 Last Active: {fd(rider.lastActive)}
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  Last Seen: {fd(rider.lastSeen ?? rider.updatedAt)}
+                                </p>
+                              )}
                               {stale && status !== "offline" && (
                                 <p className="text-[10px] text-amber-500">⚠ GPS stale</p>
                               )}
-                              {/* Show Trail toggle */}
+                              {/* Show History Trail toggle */}
                               <button
                                 onClick={e => { e.stopPropagation(); toggleTrail(rider.userId); }}
-                                className={`mt-1 px-2 py-0.5 text-[9px] font-bold rounded-full border transition-colors ${
+                                className={`mt-1 px-2 py-0.5 text-[9px] font-bold rounded-full border transition-colors flex items-center gap-1 ${
                                   hasTrail ? "bg-indigo-600 text-white border-indigo-600" : "bg-transparent text-muted-foreground border-border/50 hover:bg-muted"
                                 }`}
                               >
-                                {hasTrail ? "▶ Trail On" : "▶ Trail"}
+                                <History className="w-2.5 h-2.5" />
+                                {hasTrail ? "History On" : "Show History"}
                               </button>
                             </div>
                             <div className="text-right flex-shrink-0 space-y-1">
