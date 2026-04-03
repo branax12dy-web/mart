@@ -951,6 +951,23 @@ export default function LiveRidersMap() {
   const riderIconCacheRef = useRef<Map<string, ReturnType<typeof makeRiderIcon>>>(new Map());
   const customerIconCacheRef = useRef<Map<string, ReturnType<typeof makeCustomerIcon>>>(new Map());
 
+  /* Assign sequential numbers to online riders who have no name — stable within this render */
+  const riderNumberMap = useMemo(() => {
+    const m = new Map<string, number>();
+    let n = 1;
+    for (const r of riders) {
+      if (!r.name && r.isOnline) m.set(r.userId, n++);
+    }
+    return m;
+  }, [riders]);
+
+  /* Returns a short display name: real name, or "Rider #N" for unnamed online riders */
+  const riderDisplayName = useCallback((rider: Rider): string => {
+    if (rider.name) return rider.name;
+    const n = riderNumberMap.get(rider.userId);
+    return n != null ? `Rider #${n}` : `Rider #?`;
+  }, [riderNumberMap]);
+
   const riderIconMap = (() => {
     const result = new Map<string, ReturnType<typeof makeRiderIcon>>();
     for (const rider of riders) {
@@ -959,9 +976,9 @@ export default function LiveRidersMap() {
       const isSelected = rider.userId === selectedId;
       /* Dim offline markers that were active in the last 24 hours */
       const dimmed = status === "offline" && wasRecentlyActive(rider);
-      /* Short label: first word of name or last 6 chars of userId */
+      /* Short label: first word of name, or "Rider #N" for unnamed online riders */
       const labelText = showLabels
-        ? (rider.name ? rider.name.split(" ")[0].slice(0, 10) : rider.userId.slice(-6))
+        ? (rider.name ? rider.name.split(" ")[0].slice(0, 10) : (riderNumberMap.get(rider.userId) != null ? `#${riderNumberMap.get(rider.userId)}` : undefined))
         : undefined;
       const hasActiveTrip = !!(rider.currentTripId);
       const cacheKey = `${rider.userId}:${status}:${isSelected ? "1" : "0"}:${stale ? "s" : "f"}:${dimmed ? "d" : "n"}:${labelText ?? ""}:${hasActiveTrip ? "t" : "f"}`;
@@ -1243,7 +1260,7 @@ export default function LiveRidersMap() {
                         >
                           <Popup maxWidth={230}>
                             <div style={{ fontFamily: "sans-serif", minWidth: 180 }}>
-                              <p style={{ fontWeight: 700, margin: "0 0 4px" }}>{rider.name || "Unknown Rider"}</p>
+                              <p style={{ fontWeight: 700, margin: "0 0 4px" }}>{riderDisplayName(rider)}</p>
                               <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>
                                 {rider.phone || "No phone"}{rider.vehicleType ? ` · ${getVehicleEmoji(rider.vehicleType)} ${rider.vehicleType}` : ""}
                               </p>
@@ -1539,7 +1556,7 @@ export default function LiveRidersMap() {
                               <StatusDot status={status} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="font-semibold text-sm text-foreground truncate">{rider.name || "Unknown Rider"}</p>
+                              <p className="font-semibold text-sm text-foreground truncate">{riderDisplayName(rider)}</p>
                               <p className="text-xs text-muted-foreground">
                                 {getVehicleIcon(rider.vehicleType)} {rider.phone || "No phone"}{rider.vehicleType ? ` · ${rider.vehicleType}` : ""}
                               </p>
