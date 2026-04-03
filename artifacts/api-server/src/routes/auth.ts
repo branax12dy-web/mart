@@ -38,6 +38,7 @@ import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail } fro
 import { getUserLanguage, getPlatformDefaultLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
 import { logger } from "../lib/logger.js";
+import { clearSpoofHits } from "./rider.js";
 
 /* OTP rate limiting is handled per-account + per-IP inside the route handler
    using the admin-configurable settings (security_otp_max_per_phone,
@@ -1352,6 +1353,8 @@ router.post("/logout", async (req, res) => {
       await db.update(usersTable)
         .set({ otpCode: null, tokenVersion: sql`token_version + 1` })
         .where(eq(usersTable.id, payload.userId));
+      /* Clear GPS spoof hit counter so next login starts with a clean session */
+      clearSpoofHits(payload.userId);
       addAuditEntry({ action: "user_logout", ip, details: `User logout: ${payload.userId}`, result: "success" });
       writeAuthAuditLog("logout", { userId: payload.userId, ip, userAgent: req.headers["user-agent"] ?? undefined });
     }

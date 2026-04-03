@@ -274,6 +274,11 @@ router.patch("/online", async (req, res) => {
 
   await db.update(usersTable).set({ isOnline: !!isOnline, updatedAt: new Date() }).where(eq(usersTable.id, riderId));
 
+  /* Reset spoof hit counter when going offline so the next session starts clean */
+  if (!isOnline) {
+    clearSpoofHits(riderId);
+  }
+
   /* When going online, immediately upsert live_locations with last known
      coordinates so the rider appears on the admin map without waiting for
      the first GPS ping. Falls back gracefully if no prior location exists. */
@@ -1978,6 +1983,11 @@ router.post("/wallet/deposit", async (req, res) => {
 
 const spoofHitStore = new Map<string, number>();
 
+/* Exported so auth logout and online-status toggle can clear hits for a session */
+export function clearSpoofHits(riderId: string): void {
+  spoofHitStore.delete(`spoof_hits:${riderId}`);
+}
+
 const locationRateLimiter = rateLimit({
   windowMs: 60_000,
   max: 60,
@@ -2055,10 +2065,31 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
     }
   }
 
+  /* Stale grace period threshold — configurable via admin settings, default 30 min */
+  const staleGraceMinutes = parseInt(settings["security_gps_stale_grace_minutes"] ?? "30", 10);
+  const STALE_GRACE_MS = staleGraceMinutes * 60 * 1000;
+
+  /* speedWarning is set when a speed anomaly is detected on hit 1 or 2 (warn-before-reject).
+     The ping is still accepted (DB writes proceed) — only the response payload differs. */
+  let speedWarning: { hit: number; detectedSpeedKmh: number } | null = null;
+
   if (settings["security_spoof_detection"] === "on") {
     const configMaxSpeed = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
-    const MAX_ALLOWED_KMH = Math.max(configMaxSpeed, 300); /* never below 300 km/h */
+    let MAX_ALLOWED_KMH = Math.max(configMaxSpeed, 300); /* never below 300 km/h */
+
+    /* Accuracy-proportional speed tolerance: moderate GPS accuracy (20–50m) at
+       startup can produce legitimate jumps. Apply a 1.5× multiplier so a 50m
+       GPS drift in 1 second isn't treated the same as a 500km jump. */
+    if (accuracy !== undefined && accuracy >= 20 && accuracy <= 50) {
+      MAX_ALLOWED_KMH = MAX_ALLOWED_KMH * 1.5;
+    }
+
     const [prev] = await db.select().from(liveLocationsTable).where(eq(liveLocationsTable.userId, riderId)).limit(1);
+
+    /* Stale location grace period: if the previous ping is older than the configured threshold,
+       skip speed-based comparison entirely — treat this as a fresh session start.
+       This prevents false positives when riders open the app after a long break. */
+    const prevIsStale = prev && (Date.now() - new Date(prev.updatedAt).getTime()) > STALE_GRACE_MS;
 
     /* Emulator-signature detection: same logic as /locations/* endpoints */
     const isEmulatorCoord = (
@@ -2080,10 +2111,10 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
     const spoofHitKey = `spoof_hits:${riderId}`;
     const currentHits: number = spoofHitStore.get(spoofHitKey) ?? 0;
 
-    /* Check speed-based spoofing if we have a previous location */
+    /* Check speed-based spoofing if we have a non-stale previous location */
     let speedSpoofed = false;
     let detectedSpeedKmh = 0;
-    if (prev) {
+    if (prev && !prevIsStale) {
       const prevLat = parseFloat(String(prev.latitude));
       const prevLon = parseFloat(String(prev.longitude));
       const result = detectGPSSpoof(prevLat, prevLon, prev.updatedAt, latitude, longitude, MAX_ALLOWED_KMH);
@@ -2099,7 +2130,7 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
           ? "Emulator signature detected — known fake GPS coordinates"
           : mockFlagged
           ? "Mock GPS provider detected"
-          : `Speed ${detectedSpeedKmh.toFixed(1)} km/h exceeds ${MAX_ALLOWED_KMH} km/h`;
+          : `Speed ${detectedSpeedKmh.toFixed(1)} km/h exceeds ${MAX_ALLOWED_KMH.toFixed(0)} km/h`;
 
         const ip = getClientIp(req);
         addSecurityEvent({
@@ -2108,32 +2139,46 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
           severity: newHits >= 3 ? "high" : "medium",
         });
 
-        /* 3rd consecutive violation: auto-offline + emit admin alert */
-        let autoOffline = false;
+        /* 3rd+ consecutive violation: auto-offline + emit admin alert + hard reject
+           (applies to both speed anomalies and mock/emulator detections) */
         if (newHits >= 3) {
           spoofHitStore.set(spoofHitKey, 0);
-          autoOffline = true;
+          let autoOffline = false;
           try {
             await db.update(usersTable)
               .set({ isOnline: false, updatedAt: new Date() })
               .where(eq(usersTable.id, riderId));
+            autoOffline = true;
           } catch {}
           const io = getIO();
           if (io) {
             io.to("admin-fleet").emit("rider:spoof-alert", {
               userId: riderId,
               reason,
-              autoOffline: true,
+              autoOffline,
               sentAt: new Date().toISOString(),
             });
           }
+          sendErrorWithData(res, "GPS location rejected: repeated spoofing detected. You have been taken offline.", {
+            autoOffline,
+            code: "GPS_SPOOF_DETECTED",
+            hit: newHits,
+          }, 422); return;
         }
-        /* Reject on ALL spoof hits — never broadcast a spoofed ping */
-        sendErrorWithData(res, "GPS location rejected: movement speed is physically impossible or mock GPS detected. Please disable mock location apps.", {
-          autoOffline,
-          code: "GPS_SPOOF_DETECTED",
-          hit: newHits,
-        }, 422); return;
+
+        /* Emulator/mock on hits 1-2: always hard-reject (unambiguous signal).
+           Hit count still accumulates toward 3-hit auto-offline enforcement above. */
+        if (mockFlagged || emulatorFlagged) {
+          sendErrorWithData(res, "GPS location rejected: mock GPS provider detected. Please disable fake GPS apps.", {
+            autoOffline: false,
+            code: "GPS_SPOOF_DETECTED",
+            hit: newHits,
+          }, 422); return;
+        }
+
+        /* 1st or 2nd speed anomaly: tolerate the ping — continue to DB writes.
+           A warning is attached to the success response to inform the client. */
+        speedWarning = { hit: newHits, detectedSpeedKmh: Math.round(detectedSpeedKmh) };
       } else if (currentHits > 0) {
         spoofHitStore.set(spoofHitKey, 0);
       }
@@ -2229,7 +2274,11 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
     updatedAt,
   });
 
-  sendSuccess(res, { updatedAt });
+  if (speedWarning) {
+    sendSuccess(res, { updatedAt, warning: "GPS_SPEED_ANOMALY", hit: speedWarning.hit, detectedSpeedKmh: speedWarning.detectedSpeedKmh });
+  } else {
+    sendSuccess(res, { updatedAt });
+  }
 });
 
 /* ── POST /rider/location/batch — Replay queued offline GPS pings ── */
@@ -2257,7 +2306,11 @@ router.post("/location/batch", async (req, res) => {
 
   /* Speed-spoof threshold — same floor as single-ping endpoint */
   const configMaxSpeed = parseInt(settings["security_max_speed_kmh"] ?? "150", 10);
-  const MAX_ALLOWED_KMH = Math.max(configMaxSpeed, 300);
+  const BASE_MAX_ALLOWED_KMH = Math.max(configMaxSpeed, 300);
+
+  /* Stale grace period — configurable, same key as single-ping endpoint */
+  const batchStaleGraceMinutes = parseInt(settings["security_gps_stale_grace_minutes"] ?? "30", 10);
+  const BATCH_STALE_GRACE_MS = batchStaleGraceMinutes * 60 * 1000;
 
   const nowMs = Date.now();
   /* Reject timestamps more than 24 h old or more than 60 s in the future.
@@ -2272,10 +2325,19 @@ router.post("/location/batch", async (req, res) => {
   let inserted = 0;
   let skipped  = 0;
   let rejectedMock = 0;
+  let batchSpoofWarnings = 0;
   let prevBatchLat: number | null = null;
   let prevBatchLng: number | null = null;
   let prevBatchTs:  Date   | null = null;
   const bulkRows: Array<typeof locationLogsTable.$inferInsert> = [];
+
+  /* Batch-scoped spoof hit counter — mirrors single-ping warn-before-reject logic */
+  const batchSpoofHitKey = `spoof_hits:${riderId}`;
+  let batchCurrentHits: number = spoofHitStore.get(batchSpoofHitKey) ?? 0;
+
+  /* Track whether 3+ hit enforcement was triggered mid-batch */
+  let batchHardBlocked = false;
+  let batchHardBlockReason = "";
 
   for (const loc of sorted) {
     const ts    = new Date(loc.timestamp);
@@ -2296,11 +2358,47 @@ router.post("/location/batch", async (req, res) => {
 
     /* ── Speed-based spoof detection within the batch ── */
     if (settings["security_spoof_detection"] === "on" && prevBatchLat != null && prevBatchLng != null && prevBatchTs != null) {
-      const result = detectGPSSpoof(prevBatchLat, prevBatchLng, prevBatchTs, loc.latitude, loc.longitude, MAX_ALLOWED_KMH);
-      if (result.spoofed) {
-        skipped++; continue;
+      /* Stale grace period: if gap between consecutive batch pings exceeds threshold, skip speed check */
+      const gapMs = ts.getTime() - prevBatchTs.getTime();
+      const isStaleGap = gapMs > BATCH_STALE_GRACE_MS;
+
+      /* Accuracy-proportional speed tolerance: same 1.5× multiplier for moderate accuracy */
+      const batchMaxSpeed = (loc.accuracy !== undefined && loc.accuracy >= 20 && loc.accuracy <= 50)
+        ? BASE_MAX_ALLOWED_KMH * 1.5
+        : BASE_MAX_ALLOWED_KMH;
+
+      if (!isStaleGap) {
+        const result = detectGPSSpoof(prevBatchLat, prevBatchLng, prevBatchTs, loc.latitude, loc.longitude, batchMaxSpeed);
+        if (result.spoofed) {
+          batchCurrentHits++;
+          spoofHitStore.set(batchSpoofHitKey, batchCurrentHits);
+          if (batchCurrentHits >= 3) {
+            /* 3rd+ violation: mark hard block, stop processing further pings */
+            batchHardBlocked = true;
+            batchHardBlockReason = `Speed ${result.speedKmh.toFixed(1)} km/h exceeds ${batchMaxSpeed.toFixed(0)} km/h`;
+            skipped++; continue;
+          }
+          /* 1st or 2nd: tolerate and persist the ping (warn only) */
+          batchSpoofWarnings++;
+          /* Fall through to bulkRows.push — ping is accepted with a warning */
+        } else {
+          /* Clean ping after previous anomaly(ies) — reset consecutive counter */
+          if (batchCurrentHits > 0) {
+            batchCurrentHits = 0;
+            spoofHitStore.set(batchSpoofHitKey, 0);
+          }
+        }
+      } else {
+        /* Stale gap treated as fresh start — reset consecutive counter */
+        if (batchCurrentHits > 0) {
+          batchCurrentHits = 0;
+          spoofHitStore.set(batchSpoofHitKey, 0);
+        }
       }
     }
+
+    /* Skip pings after a hard block is triggered */
+    if (batchHardBlocked) { skipped++; continue; }
 
     bulkRows.push({
       id: generateId(),
@@ -2373,7 +2471,44 @@ router.post("/location/batch", async (req, res) => {
     });
   }
 
-  sendSuccess(res, { inserted, skipped, rejectedMock, total: sorted.length });
+  /* If a 3rd+ consecutive speed violation was hit: emit admin alert and auto-offline
+     AFTER inserting previously accepted (warn-tolerated) pings. */
+  if (batchHardBlocked) {
+    spoofHitStore.set(batchSpoofHitKey, 0);
+    try {
+      await db.update(usersTable)
+        .set({ isOnline: false, updatedAt: new Date() })
+        .where(eq(usersTable.id, riderId));
+    } catch {}
+    const io = getIO();
+    if (io) {
+      io.to("admin-fleet").emit("rider:spoof-alert", {
+        userId: riderId,
+        reason: batchHardBlockReason,
+        autoOffline: true,
+        sentAt: new Date().toISOString(),
+      });
+    }
+    addSecurityEvent({
+      type: "gps_spoof_detected", ip: getClientIp(req), userId: riderId,
+      details: `GPS spoof (batch): ${batchHardBlockReason} (hit 3+)`,
+      severity: "high",
+    });
+    sendErrorWithData(res, "GPS location rejected: repeated spoofing detected in batch. You have been taken offline.", {
+      autoOffline: true,
+      code: "GPS_SPOOF_DETECTED",
+      inserted,
+      skipped,
+    }, 422);
+    return;
+  }
+
+  const batchResponse: Record<string, unknown> = { inserted, skipped, rejectedMock, total: sorted.length };
+  if (batchSpoofWarnings > 0) {
+    batchResponse["warning"] = "GPS_SPEED_ANOMALY";
+    batchResponse["spoofWarnings"] = batchSpoofWarnings;
+  }
+  sendSuccess(res, batchResponse);
 });
 
 /* ── GET /rider/wallet/deposits — Deposit history ── */
