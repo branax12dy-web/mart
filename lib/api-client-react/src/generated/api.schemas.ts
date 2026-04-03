@@ -566,6 +566,7 @@ export type GetProductsType =
 export const GetProductsType = {
   mart: "mart",
   food: "food",
+  pharmacy: "pharmacy",
 } as const;
 
 export type GetOrdersParams = {

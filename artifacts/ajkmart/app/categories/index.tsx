@@ -50,6 +50,7 @@ export default function CategoriesBrowseScreen() {
 
   const cats = categories ?? [];
   const [selectedId, setSelectedId] = useState<string>("");
+  const [subFilter, setSubFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (cats.length > 0 && !selectedId) {
@@ -57,12 +58,20 @@ export default function CategoriesBrowseScreen() {
     }
   }, [cats]);
 
+  useEffect(() => {
+    setSubFilter(null);
+  }, [selectedId]);
+
   const selectedCat = cats.find(c => c.id === selectedId);
   const subCategories = selectedCat?.children ?? [];
 
+  const productType = (serviceType === "food" || serviceType === "pharmacy" || serviceType === "mart")
+    ? serviceType as "food" | "pharmacy" | "mart"
+    : "mart";
+
   const { data: productsData, isLoading: productsLoading } = useGetProducts({
-    type: serviceType as any,
-    category: selectedId || undefined,
+    type: productType,
+    category: subFilter ?? selectedId ?? undefined,
     sort: sortBy,
   });
 
@@ -148,28 +157,28 @@ export default function CategoriesBrowseScreen() {
 
             {subCategories.length > 0 && (
               <View style={s.subGrid}>
-                {subCategories.map(sub => (
-                  <Pressable
-                    key={sub.id}
-                    onPress={() => {
-                      const route = serviceType === "food" ? "/food" : serviceType === "pharmacy" ? "/pharmacy" : "/mart";
-                      router.push({ pathname: route as any, params: { category: sub.id } });
-                    }}
-                    style={s.subCard}
-                  >
-                    <View style={s.subIcon}>
-                      <Ionicons
-                        name={(sub.icon || "grid-outline") as keyof typeof Ionicons.glyphMap}
-                        size={22}
-                        color={C.primary}
-                      />
-                    </View>
-                    <Text style={s.subName} numberOfLines={2}>{sub.name}</Text>
-                    {sub.productCount > 0 && (
-                      <Text style={s.subCount}>{sub.productCount}</Text>
-                    )}
-                  </Pressable>
-                ))}
+                {subCategories.map(sub => {
+                  const subActive = subFilter === sub.id;
+                  return (
+                    <Pressable
+                      key={sub.id}
+                      onPress={() => setSubFilter(subActive ? null : sub.id)}
+                      style={[s.subCard, subActive && s.subCardActive]}
+                    >
+                      <View style={[s.subIcon, subActive && s.subIconActive]}>
+                        <Ionicons
+                          name={(sub.icon || "grid-outline") as keyof typeof Ionicons.glyphMap}
+                          size={22}
+                          color={subActive ? C.textInverse : C.primary}
+                        />
+                      </View>
+                      <Text style={[s.subName, subActive && s.subNameActive]} numberOfLines={2}>{sub.name}</Text>
+                      {sub.productCount > 0 && (
+                        <Text style={s.subCount}>{sub.productCount}</Text>
+                      )}
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
 
@@ -371,15 +380,26 @@ const s = StyleSheet.create({
     backgroundColor: C.background, borderRadius: 14,
     borderWidth: 1, borderColor: C.borderLight || C.border,
   },
+  subCardActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
   subIcon: {
     width: 44, height: 44, borderRadius: 14,
     backgroundColor: C.primarySoft || "#EEF2FF",
     alignItems: "center", justifyContent: "center",
     marginBottom: 6,
   },
+  subIconActive: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+  },
   subName: {
     fontFamily: Font.medium, fontSize: 10,
     color: C.text, textAlign: "center", lineHeight: 13,
+  },
+  subNameActive: {
+    color: C.textInverse,
+    fontFamily: Font.bold,
   },
   subCount: { fontFamily: Font.regular, fontSize: 9, color: C.textMuted, marginTop: 2 },
 

@@ -135,7 +135,14 @@ router.get("/search", async (req, res) => {
   }
 
   const trimmed = q.trim();
-  const useFullText = trimmed.length >= 3;
+
+  const tokens = trimmed
+    .replace(/[^a-zA-Z0-9\s\u0600-\u06FF]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(t => t.length > 0);
+  const tsQueryStr = tokens.join(" & ");
+  const useFullText = tokens.length > 0 && trimmed.length >= 3;
 
   const baseConditions: SQL[] = [
     eq(productsTable.approvalStatus, "approved"),
@@ -149,8 +156,7 @@ router.get("/search", async (req, res) => {
 
   let conditions: SQL[];
   if (useFullText) {
-    const tsQuery = trimmed.replace(/[^a-zA-Z0-9\s\u0600-\u06FF]/g, " ").trim().split(/\s+/).filter(Boolean).join(" & ");
-    const ftCondition = sql`to_tsvector('simple', coalesce(${productsTable.name}, '') || ' ' || coalesce(${productsTable.description}, '')) @@ to_tsquery('simple', ${tsQuery + ":*"})`;
+    const ftCondition = sql`to_tsvector('simple', coalesce(${productsTable.name}, '') || ' ' || coalesce(${productsTable.description}, '')) @@ to_tsquery('simple', ${tsQueryStr + ":*"})`;
     conditions = [...baseConditions, ftCondition];
   } else {
     conditions = [...baseConditions, ilike(productsTable.name, `%${trimmed}%`)];
@@ -166,9 +172,8 @@ router.get("/search", async (req, res) => {
   } else if (sort === "newest") {
     orderBy = desc(productsTable.createdAt);
   } else if (useFullText) {
-    const tsQuery = trimmed.replace(/[^a-zA-Z0-9\s\u0600-\u06FF]/g, " ").trim().split(/\s+/).filter(Boolean).join(" & ");
     orderBy = desc(
-      sql`ts_rank(to_tsvector('simple', coalesce(${productsTable.name}, '') || ' ' || coalesce(${productsTable.description}, '')), to_tsquery('simple', ${tsQuery + ":*"}))`
+      sql`ts_rank(to_tsvector('simple', coalesce(${productsTable.name}, '') || ' ' || coalesce(${productsTable.description}, '')), to_tsquery('simple', ${tsQueryStr + ":*"}))`
     );
   } else {
     orderBy = desc(productsTable.reviewCount);
