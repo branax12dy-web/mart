@@ -565,9 +565,10 @@ export default function Login() {
             <Lightbulb size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-amber-700 text-xs font-medium">{T("alreadyApproved")}</p>
           </div>
-          <button onClick={() => setStep("input")} className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+          <button onClick={() => { setStep("input"); setError(null); }} className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
             <ArrowLeft size={15} /> {T("backToLogin")}
           </button>
+          <p className="text-gray-400 text-xs mt-3">{T("alreadyApproved") || "If admin has approved your account, go back and log in again."}</p>
         </div>
       </div>
     );

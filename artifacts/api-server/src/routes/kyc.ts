@@ -274,11 +274,13 @@ router.post("/admin/:id/approve", adminAuth, async (req, res) => {
     .set({ status: "approved", reviewedBy: adminId, reviewedAt: now, updatedAt: now })
     .where(eq(kycVerificationsTable.id, record.id));
 
-  /* Update user kycStatus + CNIC on users table */
+  /* Update user kycStatus + CNIC on users table AND activate the account */
   await db
     .update(usersTable)
     .set({
       kycStatus: "verified",
+      approvalStatus: "approved",
+      isActive: true,
       cnic: record.cnic ?? undefined,
       name: record.fullName ?? undefined,
       city: record.city ?? undefined,
@@ -287,7 +289,7 @@ router.post("/admin/:id/approve", adminAuth, async (req, res) => {
     })
     .where(eq(usersTable.id, record.userId));
 
-  res.json({ success: true, message: "KYC approved" });
+  res.json({ success: true, message: "KYC approved and account activated" });
 });
 
 /* ─── Admin: POST /api/kyc/admin/:id/reject ─── */

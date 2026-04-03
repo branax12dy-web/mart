@@ -216,6 +216,7 @@ router.patch("/riders/:id/status", async (req, res) => {
   if (isActive  !== undefined) updates.isActive  = isActive;
   if (isBanned  !== undefined) updates.isBanned  = isBanned;
   if (banReason !== undefined) updates.banReason = banReason || null;
+  if (isActive === true && !isBanned) updates.approvalStatus = "approved";
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, req.params["id"]!)).returning();
   if (!user) { res.status(404).json({ error: "Rider not found" }); return; }
   if (isBanned || isActive === false) {
