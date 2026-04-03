@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { liveLocationsTable, locationLogsTable, ridesTable, ordersTable, usersTable } from "@workspace/db/schema";
+import { liveLocationsTable, locationLogsTable, locationHistoryTable, ridesTable, ordersTable, usersTable } from "@workspace/db/schema";
 import { eq, and, gte, lte, asc, or, desc } from "drizzle-orm";
 import {
   getCachedSettings,
@@ -18,6 +18,10 @@ const router: IRouter = Router();
 
 /* Per-rider GPS violation counter (in-memory, resets on server restart) */
 const gpsViolationCounts = new Map<string, { count: number; lastAt: number }>();
+
+/* Per-rider last-known location cache — used to diff against tracking_distance_threshold
+   without an extra DB read. Cleared on server restart (harmless: next ping will always insert). */
+const _riderLastLocCache = new Map<string, { lat: number; lng: number }>();
 
 /* Haversine distance in meters */
 function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -213,6 +217,9 @@ async function processLocationUpdate(opts: {
     createdAt: now,
   });
 
+  /* ── Snapshot prev location from cache BEFORE updating live_locations ── */
+  const cachedPrev = effectiveRole === "rider" ? _riderLastLocCache.get(userId) : undefined;
+
   /* Update live_locations */
   await db.insert(liveLocationsTable).values({
     userId,
@@ -231,6 +238,88 @@ async function processLocationUpdate(opts: {
       updatedAt: now,
     },
   });
+
+  /* ── Update in-memory cache with fresh coords ── */
+  if (effectiveRole === "rider") {
+    _riderLastLocCache.set(userId, { lat, lng: lon });
+  }
+
+  /* ── Fire-and-forget: location_history insert + users.lastActive update ──
+     Runs asynchronously so it never blocks the HTTP response or socket handler.
+     location_history is only recorded for riders (not customers).
+     Distance threshold (tracking_distance_threshold, default 10 m) controls
+     how frequently history points are persisted to avoid bloating the table. */
+  if (effectiveRole === "rider") {
+    (async () => {
+      try {
+        const histThresholdM = parseInt(settings["tracking_distance_threshold"] ?? "10", 10);
+        const distFromCached = cachedPrev
+          ? distanceMeters(cachedPrev.lat, cachedPrev.lng, lat, lon)
+          : Infinity;
+
+        /* Insert history point when: no previous position cached, threshold is 0 (always save),
+           or the rider has moved further than the configured threshold. */
+        const shouldInsertHistory = !cachedPrev || histThresholdM <= 0 || distFromCached >= histThresholdM;
+
+        if (shouldInsertHistory) {
+          /* Resolve active ride/order for context on the history row (non-critical lookups) */
+          let histRideId: string | null = null;
+          let histOrderId: string | null = null;
+
+          try {
+            const [activeRide] = await db
+              .select({ id: ridesTable.id })
+              .from(ridesTable)
+              .where(and(
+                eq(ridesTable.riderId, userId),
+                or(
+                  eq(ridesTable.status, "accepted"),
+                  eq(ridesTable.status, "arrived"),
+                  eq(ridesTable.status, "in_transit"),
+                  eq(ridesTable.status, "picked_up"),
+                  eq(ridesTable.status, "in_progress"),
+                ),
+              ))
+              .limit(1);
+            histRideId = activeRide?.id ?? null;
+          } catch {}
+
+          if (!histRideId) {
+            try {
+              const [activeOrder] = await db
+                .select({ id: ordersTable.id })
+                .from(ordersTable)
+                .where(and(
+                  eq(ordersTable.riderId, userId),
+                  or(
+                    eq(ordersTable.status, "out_for_delivery"),
+                    eq(ordersTable.status, "picked_up"),
+                  ),
+                ))
+                .limit(1);
+              histOrderId = activeOrder?.id ?? null;
+            } catch {}
+          }
+
+          await db.insert(locationHistoryTable).values({
+            userId,
+            rideId:  histRideId,
+            orderId: histOrderId,
+            coords:  { lat, lng: lon },
+            heading: opts.heading !== undefined && opts.heading !== null ? String(opts.heading) : null,
+            speed:   opts.speed   !== undefined && opts.speed   !== null ? String(opts.speed)   : null,
+          });
+        }
+      } catch {}
+
+      /* Always update lastActive — regardless of whether a history point was saved */
+      try {
+        await db.update(usersTable)
+          .set({ lastActive: now, updatedAt: now })
+          .where(eq(usersTable.id, userId));
+      } catch {}
+    })();
+  }
 
   return { skip: false, spoofed: false, autoOffline: false };
 }

@@ -238,22 +238,33 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
     }
 
     /* Heartbeat: rider sends rider:heartbeat with batteryLevel, isOnline status is kept alive.
-       Server relays the heartbeat to admin-fleet AND persists batteryLevel + lastSeen to DB. */
+       Server relays the heartbeat to admin-fleet AND persists batteryLevel, lastSeen, lastActive,
+       and isOnline to DB — all fire-and-forget so the socket never blocks. */
     socket.on("rider:heartbeat", (payload: { batteryLevel?: number; isOnline?: boolean }) => {
       if (!userToken) return;
       const riderPay = verifyUserJwt(userToken);
       if (!riderPay?.userId || riderPay.role !== "rider") return;
       const batteryLevel = typeof payload?.batteryLevel === "number" ? payload.batteryLevel : null;
+      const isOnline = payload?.isOnline !== false;
       const now = new Date();
-      /* Persist battery level and last-seen timestamp to liveLocationsTable (fire-and-forget) */
+
+      /* 1. Update live_locations: battery level + lastSeen timestamp */
       db.update(liveLocationsTable)
-        .set({ batteryLevel: batteryLevel ?? undefined, lastSeen: now })
+        .set({ batteryLevel: batteryLevel ?? undefined, lastSeen: now, updatedAt: now })
         .where(eq(liveLocationsTable.userId, riderPay.userId))
         .catch(() => {});
+
+      /* 2. Update users: isOnline flag + lastActive timestamp so the ghost-rider
+            cleanup timer correctly uses lastActive as the freshness signal. */
+      db.update(usersTable)
+        .set({ isOnline, lastActive: now, updatedAt: now })
+        .where(eq(usersTable.id, riderPay.userId))
+        .catch(() => {});
+
       _io!.to("admin-fleet").emit("rider:heartbeat", {
         userId: riderPay.userId,
         batteryLevel,
-        isOnline: payload?.isOnline !== false,
+        isOnline,
         sentAt: now.toISOString(),
       });
     });
@@ -420,15 +431,17 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
           reason: "heartbeat_timeout",
           updatedAt: now,
         });
-        /* Also clean the throttle map to release memory */
+        /* Clean per-rider throttle map to release memory */
         _riderLocLastEmit.delete(rider.userId);
       }
 
-      /* Step 3: Mark users.is_online = false in DB for all stale riders */
+      /* Step 3: Mark users.is_online = false AND clear lastActive in DB for all stale riders.
+         Clearing lastActive prevents stale timestamps from causing false "recently active"
+         readings in the Admin Panel after a rider drops off without a clean disconnect. */
       const staleIds = staleRiders.map(r => r.userId);
       await db
         .update(usersTable)
-        .set({ isOnline: false, updatedAt: new Date() })
+        .set({ isOnline: false, lastActive: null, updatedAt: new Date() })
         .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(staleIds.map(id => sql`${id}`), sql`, `)}]::text[])`);
 
       /* Step 4: Delete stale rows from live_locations */
