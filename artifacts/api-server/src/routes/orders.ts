@@ -7,6 +7,7 @@ import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
 import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
 import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
+import { isInServiceZone } from "../lib/geofence.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError, sendErrorWithData } from "../lib/response.js";
 
 const router: IRouter = Router();
@@ -317,7 +318,7 @@ router.get("/:id/track", customerAuth, async (req, res) => {
 /* ── POST /orders ─────────────────────────────────────────────────────────── */
 router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const { type, items, deliveryAddress, paymentMethod } = req.body;
+  const { type, items, deliveryAddress, paymentMethod, deliveryLat, deliveryLng } = req.body;
   const ip = getClientIp(req);
 
   const idempotencyKey = typeof req.headers["x-idempotency-key"] === "string"
@@ -405,6 +406,18 @@ router.post("/", customerAuth, async (req, res) => {
 
   /* ── Load platform settings once ── */
   const s = await getCachedSettings();
+
+  /* ── Geofence: check delivery coordinates if provided ── */
+  if ((s["security_geo_fence"] ?? "off") === "on" && deliveryLat != null && deliveryLng != null) {
+    const dLat = parseFloat(String(deliveryLat));
+    const dLng = parseFloat(String(deliveryLng));
+    if (Number.isFinite(dLat) && Number.isFinite(dLng)) {
+      const zoneCheck = await isInServiceZone(dLat, dLng, "orders");
+      if (!zoneCheck.allowed) {
+        sendError(res, "Delivery address is outside our service area. We currently only operate in configured service zones.", 422); return;
+      }
+    }
+  }
 
   /* ── 1st gate: service feature flags (fail-fast before any calculation) ── */
   if (type === "mart" && (s["feature_mart"] ?? "on") === "off") {

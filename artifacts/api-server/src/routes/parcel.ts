@@ -8,6 +8,7 @@ import { customerAuth, riderAuth, addSecurityEvent, idorGuard } from "../middlew
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
 import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
+import { isInServiceZone } from "../lib/geofence.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError } from "../lib/response.js";
 
 const router: IRouter = Router();
@@ -84,6 +85,7 @@ router.post("/", customerAuth, async (req, res) => {
     senderName, senderPhone, pickupAddress,
     receiverName, receiverPhone, dropAddress,
     parcelType, weight, description, paymentMethod,
+    pickupLat, pickupLng,
   } = req.body;
 
   if (!senderName || !senderPhone || !pickupAddress || !receiverName || !receiverPhone || !dropAddress || !parcelType || !paymentMethod) {
@@ -106,6 +108,18 @@ router.post("/", customerAuth, async (req, res) => {
   const parcelEnabled = (s["feature_parcel"] ?? "on") === "on";
   if (!parcelEnabled) {
     sendError(res, "Parcel delivery service is currently disabled", 503); return;
+  }
+
+  /* ── Geofence: check pickup coordinates if provided ── */
+  if ((s["security_geo_fence"] ?? "off") === "on" && pickupLat != null && pickupLng != null) {
+    const pLat = parseFloat(String(pickupLat));
+    const pLng = parseFloat(String(pickupLng));
+    if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
+      const zoneCheck = await isInServiceZone(pLat, pLng, "parcel");
+      if (!zoneCheck.allowed) {
+        sendError(res, "Pickup location is outside our service area. We currently only operate in configured service zones.", 422); return;
+      }
+    }
   }
 
   /* ── Fraud detection (mirrors orders.ts pattern) ── */

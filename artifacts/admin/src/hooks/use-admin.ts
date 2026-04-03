@@ -990,3 +990,54 @@ export const useOverrideSuspension = (role: "riders" | "vendors") => {
     },
   });
 };
+
+/* ── Service Zones ── */
+export type ServiceZone = {
+  id: number;
+  name: string;
+  city: string;
+  lat: string;
+  lng: string;
+  radiusKm: string;
+  isActive: boolean;
+  appliesToRides: boolean;
+  appliesToOrders: boolean;
+  appliesToParcel: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const useServiceZones = () =>
+  useQuery<ServiceZone[]>({
+    queryKey: ["admin-service-zones"],
+    queryFn: () => fetcher("/service-zones"),
+    staleTime: 30_000,
+  });
+
+export const useCreateServiceZone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<ServiceZone>) =>
+      fetcher("/service-zones", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-service-zones"] }),
+  });
+};
+
+export const useUpdateServiceZone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<ServiceZone> & { id: number }) =>
+      fetcher(`/service-zones/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-service-zones"] }),
+  });
+};
+
+export const useDeleteServiceZone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      fetcher(`/service-zones/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-service-zones"] }),
+  });
+};

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import {
   AlertTriangle, Info, CheckCircle2, XCircle, Shield,
   RefreshCw, Lock, Eye, EyeOff, Loader2,
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Toggle, Field, SecretInput, SLabel } from "@/components/AdminShared";
+import { ServiceZonesManager } from "@/components/ServiceZonesManager";
 
 /* ─── Security Section ────────────────────────────────────────────────────── */
 type SecTab = "auth" | "ratelimit" | "gps" | "passwords" | "uploads" | "fraud" | "admin";
@@ -344,15 +345,14 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
             </div>
           </SecPanel>
 
-          <SecPanel title="Service Area & Coverage" icon={Globe} color="text-green-700">
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2">
+          <SecPanel title="Service Zones & Coverage" icon={Globe} color="text-green-700">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2 mb-3">
               <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>Service area boundaries are controlled per city in the Geofence settings. When Strict Mode is on, orders outside the defined zones are automatically rejected.</span>
+              <span>Define multi-city service zones. When <strong>Strict Geofence Mode</strong> is on, ride pickups/drops and deliveries outside all active zones are automatically rejected.</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-              <F k="security_service_city" label="Primary Service City" placeholder="Muzaffarabad, AJK" />
-              <F k="security_service_radius_km" label="Max Service Radius (km)" placeholder="30" mono hint="From city center" />
-            </div>
+            <Suspense fallback={<div className="py-6 text-center text-sm text-muted-foreground">Loading zones…</div>}>
+              <ServiceZonesManager />
+            </Suspense>
           </SecPanel>
 
           <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-xs text-green-800 space-y-1">

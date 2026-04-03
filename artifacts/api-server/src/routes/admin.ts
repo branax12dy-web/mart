@@ -7,6 +7,7 @@ import ridesRoutes from "./admin/rides.js";
 import financeRoutes from "./admin/finance.js";
 import contentRoutes from "./admin/content.js";
 import systemRoutes from "./admin/system.js";
+import serviceZonesRoutes from "./admin/service-zones.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -32,5 +33,6 @@ router.use(ridesRoutes);
 router.use(financeRoutes);
 router.use(contentRoutes);
 router.use(systemRoutes);
+router.use("/service-zones", serviceZonesRoutes);
 
 export default router;

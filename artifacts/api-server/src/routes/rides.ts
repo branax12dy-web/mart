@@ -1,4 +1,5 @@
 import { logger } from "../lib/logger.js";
+import { isInServiceZone } from "../lib/geofence.js";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -508,6 +509,18 @@ router.post("/", customerAuth, async (req, res) => {
 
   const ridesEnabled = (s["feature_rides"] ?? "on") === "on";
   if (!ridesEnabled) { sendError(res, "Ride booking is currently disabled", 503); return; }
+
+  /* ── Geofence: check pickup + drop coords are inside a configured service zone ── */
+  if ((s["security_geo_fence"] ?? "off") === "on") {
+    const pickupCheck = await isInServiceZone(pickupLat, pickupLng, "rides");
+    if (!pickupCheck.allowed) {
+      sendError(res, "Pickup location is outside our service area. We currently only operate in configured service zones.", 422); return;
+    }
+    const dropCheck = await isInServiceZone(dropLat, dropLng, "rides");
+    if (!dropCheck.allowed) {
+      sendError(res, "Drop location is outside our service area. We currently only operate in configured service zones.", 422); return;
+    }
+  }
 
   let distance: number;
   let baseFare: number, gstAmount: number, platformFare: number;
