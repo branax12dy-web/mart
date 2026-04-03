@@ -1,3 +1,5 @@
+import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Users, ShoppingBag, Car, Pill, Box, Package, TrendingUp, ArrowRight, Wallet, Download, Trophy, Star } from "lucide-react";
 import { Link } from "wouter";
 import { useStats, useRevenueTrend, useLeaderboard } from "@/hooks/use-admin";
@@ -9,6 +11,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { fetcher } from "@/lib/api";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { PullToRefresh } from "@/components/PullToRefresh";
 
 function exportDashboard() {
   fetcher("/dashboard-export").then((data: any) => {
@@ -25,9 +28,18 @@ function exportDashboard() {
 export default function Dashboard() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const qc = useQueryClient();
   const { data, isLoading } = useStats();
   const { data: trendData } = useRevenueTrend();
   const { data: lbData }    = useLeaderboard();
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["admin-stats"] }),
+      qc.invalidateQueries({ queryKey: ["admin-revenue-trend"] }),
+      qc.invalidateQueries({ queryKey: ["admin-leaderboard"] }),
+    ]);
+  }, [qc]);
 
   if (isLoading) {
     return (
@@ -56,7 +68,7 @@ export default function Dashboard() {
   const riders  = lbData?.riders  || [];
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <PullToRefresh onRefresh={handleRefresh} className="space-y-6 sm:space-y-8">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">{T("overview")}</h1>
@@ -301,6 +313,6 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
-    </div>
+    </PullToRefresh>
   );
 }

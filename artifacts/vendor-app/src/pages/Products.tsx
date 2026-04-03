@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
+import { PullToRefresh } from "../components/PullToRefresh";
 import { ImageUploader } from "../components/ImageUploader";
 import { fc, CARD, INPUT, SELECT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, LABEL, errMsg } from "../lib/ui";
 
@@ -429,9 +430,13 @@ export default function Products() {
     </div>
   );
 
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["vendor-products"] });
+  }, [qc]);
+
   /* ── Product List ── */
   return (
-    <div className="bg-gray-50 md:bg-transparent">
+    <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-gray-50 md:bg-transparent">
       <PageHeader
         title={T("products")}
         subtitle={`${totalProductCount}/${maxItems} items used`}
@@ -551,6 +556,6 @@ export default function Products() {
         )}
       </div>
       {Toast}
-    </div>
+    </PullToRefresh>
   );
 }

@@ -5,8 +5,9 @@ import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { PageHeader } from "../components/PageHeader";
+import { PullToRefresh } from "../components/PullToRefresh";
 import { fc, CARD, STAT_VAL, STAT_LBL, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 
 function VendorNoticeBanner({ message }: { message: string }) {
@@ -88,8 +89,15 @@ export default function Dashboard() {
     { label: T("monthlyRevenue"), value: isLoading ? "—" : fc(stats?.month?.revenue ?? 0),      color: "text-purple-600", bg: "bg-purple-50",  icon: "📈" },
   ];
 
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["vendor-stats"] }),
+      qc.invalidateQueries({ queryKey: ["vendor-orders"] }),
+    ]);
+  }, [qc]);
+
   return (
-    <div className="bg-gray-50 md:bg-transparent">
+    <PullToRefresh onRefresh={handleRefresh} className="min-h-screen bg-gray-50 md:bg-transparent">
       {/* ── Header ── */}
       <PageHeader
         title={user?.storeName || "Dashboard"}
@@ -381,6 +389,6 @@ export default function Dashboard() {
           <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-2xl max-w-sm w-full text-center">{toast}</div>
         </div>
       )}
-    </div>
+    </PullToRefresh>
   );
 }

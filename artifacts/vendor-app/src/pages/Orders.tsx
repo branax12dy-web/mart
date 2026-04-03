@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -6,6 +6,7 @@ import { useLanguage } from "../lib/useLanguage";
 import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
+import { PullToRefresh } from "../components/PullToRefresh";
 import { fc, fd, CARD, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 import { io, type Socket } from "socket.io-client";
 
@@ -282,8 +283,12 @@ export default function Orders() {
 
   const subtitleTab = tab === "all" ? "total" : tab;
 
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["vendor-orders"] });
+  }, [qc]);
+
   return (
-    <div className="bg-gray-50 md:bg-transparent">
+    <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-gray-50 md:bg-transparent">
       <PageHeader title={T("orders")} subtitle={`${orders.length} ${subtitleTab} order${orders.length !== 1 ? "s" : ""}`} actions={RefreshBtn} />
 
       {/* ── Tabs ── */}
@@ -605,6 +610,6 @@ export default function Orders() {
           <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-2xl max-w-sm w-full text-center">{toast}</div>
         </div>
       )}
-    </div>
+    </PullToRefresh>
   );
 }

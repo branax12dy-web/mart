@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -10,6 +10,7 @@ import {
 import { api } from "../lib/api";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { PullToRefresh } from "../components/PullToRefresh";
 
 function SkeletonBlock({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-gray-200 rounded-xl ${className || ""}`} />;
@@ -246,8 +247,12 @@ export default function Notifications() {
 
   if (isLoading) return <SkeletonNotifications />;
 
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["rider-notifications"] });
+  }, [qc]);
+
   return (
-    <div className="min-h-screen bg-[#F5F6F8]">
+    <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-[#F5F6F8]">
 
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
@@ -436,6 +441,6 @@ export default function Notifications() {
           {toast}
         </div>
       )}
-    </div>
+    </PullToRefresh>
   );
 }

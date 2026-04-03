@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Store, Search, RefreshCw, Wallet, TrendingUp, ShoppingBag,
@@ -8,6 +9,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { useVendors, useUpdateVendorStatus, useVendorPayout, useVendorCredit, usePlatformSettings, useVendorCommissionOverride, useOverrideSuspension } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PLATFORM_DEFAULTS } from "@/lib/platformConfig";
@@ -269,8 +271,13 @@ export default function Vendors() {
     return <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-[10px]">Closed</Badge>;
   };
 
+  const qc = useQueryClient();
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["admin-vendors"] });
+  }, [qc]);
+
   return (
-    <div className="space-y-6">
+    <PullToRefresh onRefresh={handlePullRefresh} className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -459,6 +466,6 @@ export default function Vendors() {
       {walletModal  && <WalletModal  vendor={walletModal}  onClose={() => setWalletModal(null)} />}
       {suspendModal && <SuspendModal vendor={suspendModal} onClose={() => setSuspendModal(null)} />}
       {commModal    && <CommissionModal vendor={commModal} defaultPct={vendorCommissionPct} onClose={() => setCommModal(null)} />}
-    </div>
+    </PullToRefresh>
   );
 }

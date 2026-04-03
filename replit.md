@@ -3,6 +3,18 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Pull-to-Refresh & UI Polish — Completed Changes
+
+#### PullToRefresh Component (All 3 Web Apps)
+- **`artifacts/vendor-app/src/components/PullToRefresh.tsx`**: Shared pull-to-refresh wrapper with touch gesture detection, animated spinner, "last updated" timestamp, and configurable accent color (orange for vendor).
+- **`artifacts/rider-app/src/components/PullToRefresh.tsx`**: Same component with green accent for rider app.
+- **`artifacts/admin/src/components/PullToRefresh.tsx`**: Same component with blue accent for admin panel.
+
+#### Pull-to-Refresh Integration (All Data Pages)
+- **Vendor App:** Dashboard, Orders, Products, Wallet — all wrapped with PullToRefresh. Each page invalidates its relevant React Query keys on pull.
+- **Rider App:** History, Earnings, Wallet, Notifications — all wrapped with PullToRefresh.
+- **Admin Panel:** Dashboard, Orders, Users, Riders, Vendors — all wrapped with PullToRefresh.
+
 ### Phase 4: Ride Booking & Fare Logic — Completed Changes
 
 #### P4-T001 — DB Migration 0016 + rides schema update

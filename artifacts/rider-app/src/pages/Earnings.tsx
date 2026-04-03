@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Target, BarChart2, Star, TrendingUp, CheckCircle,
@@ -9,6 +9,7 @@ import { useAuth } from "../lib/auth";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
+import { PullToRefresh } from "../components/PullToRefresh";
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
@@ -50,8 +51,12 @@ export default function Earnings() {
     { key: "month", label: T("thisMonth") },
   ];
 
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["rider-earnings"] });
+  }, [qc]);
+
   return (
-    <div className="min-h-screen bg-[#F5F6F8]">
+    <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-[#F5F6F8]">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
@@ -239,6 +244,6 @@ export default function Earnings() {
         </Accordion>
 
       </div>
-    </div>
+    </PullToRefresh>
   );
 }

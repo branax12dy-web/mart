@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Bike, Search, RefreshCw, Wallet, CircleDollarSign, Gift,
   CheckCircle2, Ban, AlertTriangle, Star, Phone, Download, CalendarDays,
@@ -6,6 +7,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { useRiders, useUpdateRiderStatus, useRiderPayout, useRiderBonus, useToggleRiderOnline, useRiderPenalties, useRiderRatings, useRestrictRider, useUnrestrictRider, useOverrideSuspension } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -325,8 +327,13 @@ export default function Riders() {
     return                      <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-[10px]">Offline</Badge>;
   };
 
+  const qc = useQueryClient();
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["admin-riders"] });
+  }, [qc]);
+
   return (
-    <div className="space-y-6">
+    <PullToRefresh onRefresh={handlePullRefresh} className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -515,6 +522,6 @@ export default function Riders() {
       {walletModal  && <RiderWalletModal  rider={walletModal}  onClose={() => setWalletModal(null)} />}
       {suspendModal && <RiderSuspendModal rider={suspendModal} onClose={() => setSuspendModal(null)} />}
       {detailModal  && <RiderDetailDrawer rider={detailModal}  onClose={() => setDetailModal(null)} />}
-    </div>
+    </PullToRefresh>
   );
 }

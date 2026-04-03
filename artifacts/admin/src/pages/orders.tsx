@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useOrdersEnriched, useUpdateOrder, useAssignRider, useRiders, useOrderRefund } from "@/hooks/use-admin";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +15,7 @@ import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { StatusBadge } from "@/components/AdminShared";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PullToRefresh } from "@/components/PullToRefresh";
 
 function exportOrdersCSV(orders: any[]) {
   const header = "ID,Type,Status,Total,Payment,Customer,Rider,Date";
@@ -161,8 +163,13 @@ export default function Orders() {
   const canCancel   = (o: any) => !isTerminal(o.status);
   const allowedNext = (o: any) => ALLOWED_TRANSITIONS[o.status] ?? [];
 
+  const qc = useQueryClient();
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["admin-orders-enriched"] });
+  }, [qc]);
+
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <PullToRefresh onRefresh={handlePullRefresh} className="space-y-5 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -714,6 +721,6 @@ export default function Orders() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </PullToRefresh>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Search, CheckCircle2, XCircle, Wallet, RefreshCw, Trash2,
   Activity, ShoppingBag, Car, Pill, Package, Shield, UserCog,
@@ -9,6 +9,7 @@ import {
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { useUsers, useUpdateUser, useWalletTopup, useDeleteUser, useUserActivity, usePendingUsers, useApproveUser, useRejectUser, useRequestUserCorrection, useBulkBanUsers } from "@/hooks/use-admin";
 import { fetcher } from "@/lib/api";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
@@ -924,8 +925,15 @@ export default function Users() {
     });
   };
 
+  const handlePullRefresh = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["admin-users"] }),
+      qc.invalidateQueries({ queryKey: ["admin-pending"] }),
+    ]);
+  }, [qc]);
+
   return (
-    <div className="space-y-6">
+    <PullToRefresh onRefresh={handlePullRefresh} className="space-y-6">
       <div className="bg-gradient-to-r from-[#1A56DB] to-[#2563EB] rounded-2xl p-6 text-white shadow-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -1409,6 +1417,6 @@ export default function Users() {
 
       {/* KYC Document Modal */}
       {kycUser && <KycDocModal user={kycUser} onClose={() => setKycUser(null)} />}
-    </div>
+    </PullToRefresh>
   );
 }

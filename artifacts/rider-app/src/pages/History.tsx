@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardList, Package, Bike, Car, UtensilsCrossed,
   ShoppingCart, CreditCard, Calendar, RefreshCw,
@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual } from "@workspace/i18n";
+import { PullToRefresh } from "../components/PullToRefresh";
 function formatDate(d: string | Date) {
   const date = new Date(d);
   return date.toLocaleDateString("en-PK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -32,6 +33,7 @@ export default function History() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const { config } = usePlatformConfig();
   const formatCurrency = (n: number) => `${config.platform.currencySymbol ?? "Rs."} ${Math.round(n).toLocaleString()}`;
+  const qc = useQueryClient();
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["rider-history"],
@@ -87,8 +89,12 @@ export default function History() {
     return                      <Package         size={20} className="text-blue-600"/>;
   }
 
+  const handlePullRefresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ["rider-history"] });
+  }, [qc]);
+
   return (
-    <div className="min-h-screen bg-[#F5F6F8]">
+    <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-[#F5F6F8]">
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-green-500/[0.04]"/>
@@ -275,6 +281,6 @@ export default function History() {
           </button>
         )}
       </div>
-    </div>
+    </PullToRefresh>
   );
 }

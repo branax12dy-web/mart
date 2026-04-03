@@ -1,10 +1,11 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { PullToRefresh } from "../components/PullToRefresh";
 import WithdrawModal from "../components/wallet/WithdrawModal";
 import RemittanceModal from "../components/wallet/RemittanceModal";
 import DepositModal from "../components/wallet/DepositModal";
@@ -389,8 +390,15 @@ export default function Wallet() {
     );
   }
 
+  const handlePullRefresh = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["rider-wallet"] }),
+      qc.invalidateQueries({ queryKey: ["rider-withdrawals"] }),
+    ]);
+  }, [qc]);
+
   return (
-    <div className="bg-[#F5F6F8] min-h-screen">
+    <PullToRefresh onRefresh={handlePullRefresh} className="bg-[#F5F6F8] min-h-screen">
 
       <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 px-5 pb-8 rounded-b-[2rem] relative overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}>
@@ -876,6 +884,6 @@ export default function Wallet() {
           {toast.message}
         </div>
       )}
-    </div>
+    </PullToRefresh>
   );
 }
