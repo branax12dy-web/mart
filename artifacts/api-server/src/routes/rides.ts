@@ -1250,13 +1250,99 @@ const _sseCounts = new Map<string, number>();
 const SSE_MAX_PER_RIDE = 5;
 const SSE_HEARTBEAT_MS = 25_000;
 
+/**
+ * Build the full ride payload that matches the GET /:id response shape —
+ * including pending bids (with vehicle + rating enrichment), live rider
+ * location, rider average rating, and fare breakdown.
+ * Used by both the REST endpoint and the SSE stream.
+ */
+async function buildRideSSEPayload(rideId: string): Promise<Record<string, unknown> | null> {
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride) return null;
+
+  let riderName = ride.riderName;
+  let riderPhone = ride.riderPhone;
+  if (ride.riderId && !riderName) {
+    const [riderUser] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+      .from(usersTable).where(eq(usersTable.id, ride.riderId)).limit(1);
+    riderName  = riderUser?.name  || null;
+    riderPhone = riderUser?.phone || null;
+  }
+
+  const bids = ride.status === "bargaining"
+    ? await db.select().from(rideBidsTable)
+        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")))
+        .orderBy(rideBidsTable.createdAt)
+    : [];
+
+  const formattedBids = await Promise.all(bids.map(async (b) => {
+    const [riderUser] = await db.select({
+      vehiclePlate: usersTable.vehiclePlate,
+      vehicleType:  usersTable.vehicleType,
+    }).from(usersTable).where(eq(usersTable.id, b.riderId)).limit(1);
+
+    const ratingRows = await db.select({
+      starsAvg: sql<string>`AVG(stars)`,
+      total:    sql<string>`COUNT(*)`,
+    }).from(rideRatingsTable).where(eq(rideRatingsTable.riderId, b.riderId));
+
+    const ratingAvg  = ratingRows[0]?.starsAvg ? Math.round(parseFloat(ratingRows[0].starsAvg) * 10) / 10 : null;
+    const totalRides = ratingRows[0]?.total ? parseInt(ratingRows[0].total, 10) : 0;
+
+    return {
+      ...b,
+      fare:         parseFloat(b.fare),
+      vehiclePlate: riderUser?.vehiclePlate ?? null,
+      vehicleType:  riderUser?.vehicleType  ?? null,
+      ratingAvg,
+      totalRides,
+      createdAt: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
+      updatedAt: b.updatedAt instanceof Date ? b.updatedAt.toISOString() : b.updatedAt,
+    };
+  }));
+
+  let riderLat: number | null = null;
+  let riderLng: number | null = null;
+  let riderLocAge: number | null = null;
+  let riderAvgRating: number | null = null;
+  const ACTIVE_STATUSES = ["accepted", "arrived", "in_transit"];
+  if (ride.riderId) {
+    if (ACTIVE_STATUSES.includes(ride.status)) {
+      const [loc] = await db.select().from(liveLocationsTable)
+        .where(eq(liveLocationsTable.userId, ride.riderId)).limit(1);
+      if (loc) {
+        riderLat    = parseFloat(String(loc.latitude));
+        riderLng    = parseFloat(String(loc.longitude));
+        riderLocAge = Math.floor((Date.now() - new Date(loc.updatedAt).getTime()) / 1000);
+      }
+    }
+    const ratingRows = await db.select({ starsAvg: sql<string>`AVG(stars)` })
+      .from(rideRatingsTable).where(eq(rideRatingsTable.riderId, ride.riderId));
+    riderAvgRating = ratingRows[0]?.starsAvg ? Math.round(parseFloat(ratingRows[0].starsAvg) * 10) / 10 : null;
+  }
+
+  let fareBreakdown: { baseFare: number; gstAmount: number } | null = null;
+  if (ride.distance && ride.type) {
+    try {
+      const computed = await calcFare(parseFloat(String(ride.distance)), ride.type);
+      fareBreakdown = { baseFare: computed.baseFare, gstAmount: computed.gstAmount };
+    } catch {}
+  }
+
+  return { ...formatRide(ride as Record<string, unknown>), riderName, riderPhone, bids: formattedBids, riderLat, riderLng, riderLocAge, riderAvgRating, fareBreakdown };
+}
+
 router.get("/:id/stream", customerAuth, async (req, res) => {
   const callerId = req.customerId!;
   const rideId = String(req.params["id"]);
 
   const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { sendNotFound(res, "Ride not found"); return; }
-  if (ride.userId !== callerId) { sendForbidden(res, "Access denied — not your ride"); return; }
+
+  /* Allow ride owner (customer) or assigned rider — same as GET /:id */
+  const isOwner         = ride.userId  === callerId;
+  const isAssignedRider = ride.riderId === callerId;
+  if (!isOwner && !isAssignedRider) { sendForbidden(res, "Access denied — not your ride"); return; }
 
   const current = _sseCounts.get(rideId) ?? 0;
   if (current >= SSE_MAX_PER_RIDE) {
@@ -1271,12 +1357,29 @@ router.get("/:id/stream", customerAuth, async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
+  /* Hoist mutable references so cleanup() is safe to call from anywhere,
+     including during the very first pushUpdate() before heartbeat/unsub are set. */
+  let cleaned = false;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let unsubscribeFn: (() => void) | null = null;
+
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+    if (unsubscribeFn   !== null) unsubscribeFn();
+    const n = _sseCounts.get(rideId) ?? 1;
+    if (n <= 1) _sseCounts.delete(rideId);
+    else _sseCounts.set(rideId, n - 1);
+  };
+
   const pushUpdate = async () => {
     try {
-      const [fresh] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-      if (!fresh) return;
-      res.write(`data: ${JSON.stringify(formatRide(fresh as Record<string, unknown>))}\n\n`);
-      if (fresh.status === "completed" || fresh.status === "cancelled") {
+      const payload = await buildRideSSEPayload(rideId);
+      if (!payload) return;
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      const status = payload["status"] as string | undefined;
+      if (status === "completed" || status === "cancelled") {
         cleanup();
         res.end();
       }
@@ -1285,26 +1388,14 @@ router.get("/:id/stream", customerAuth, async (req, res) => {
     }
   };
 
+  req.on("close", cleanup);
+
+  /* Send current state immediately, then wire up updates + heartbeat */
   await pushUpdate();
-
-  const unsubscribe = onRideUpdate(rideId, () => { pushUpdate().catch(() => {}); });
-
-  const heartbeat = setInterval(() => {
+  unsubscribeFn   = onRideUpdate(rideId, () => { pushUpdate().catch(() => {}); });
+  heartbeatTimer  = setInterval(() => {
     try { res.write(": heartbeat\n\n"); } catch {}
   }, SSE_HEARTBEAT_MS);
-
-  let cleaned = false;
-  const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
-    clearInterval(heartbeat);
-    unsubscribe();
-    const n = _sseCounts.get(rideId) ?? 1;
-    if (n <= 1) _sseCounts.delete(rideId);
-    else _sseCounts.set(rideId, n - 1);
-  };
-
-  req.on("close", cleanup);
 });
 
 router.get("/:id", customerAuth, async (req, res) => {
