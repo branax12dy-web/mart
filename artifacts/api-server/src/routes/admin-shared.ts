@@ -484,6 +484,11 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "wallet_deposit_auto_approve",      value: "0",    label: "Auto-Approve Deposits Up To (Rs.)",                 category: "payment" },
   { key: "security_lockout_enabled",         value: "on",   label: "Login Lockout Policy Enabled",                      category: "security" },
   { key: "service_cities",                   value: "",     label: "Service Cities (comma-separated, blank=all)",        category: "general" },
+  /* Map Configuration */
+  { key: "map_provider_primary",            value: "leaflet",            label: "Primary Map Provider (leaflet | mapbox)",              category: "map" },
+  { key: "map_provider_secondary",          value: "google_maps_deeplink", label: "Secondary / Navigation Provider",                  category: "map" },
+  { key: "google_maps_api_key",             value: "",                   label: "Google Maps API Key (optional)",                       category: "map" },
+  { key: "tracking_distance_threshold",     value: "10",                 label: "Location Save Threshold (metres, 0 = save every point)", category: "map" },
 ];
 
 let _authMethodColumnMigrated = false;

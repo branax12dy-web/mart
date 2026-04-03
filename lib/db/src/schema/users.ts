@@ -108,6 +108,7 @@ export const usersTable = pgTable("users", {
   autoSuspendReason: text("auto_suspend_reason"),
   adminOverrideSuspension: boolean("admin_override_suspension").notNull().default(false),
   lastLoginAt:       timestamp("last_login_at"),
+  lastActive:        timestamp("last_active"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
   updatedAt:       timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
