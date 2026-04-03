@@ -61,7 +61,6 @@ export type ProductType = (typeof ProductType)[keyof typeof ProductType];
 export const ProductType = {
   mart: "mart",
   food: "food",
-  pharmacy: "pharmacy",
 } as const;
 
 export interface Product {
@@ -82,34 +81,9 @@ export interface Product {
   deliveryTime?: string;
 }
 
-export interface ReviewsSummary {
-  average: number;
-  total: number;
-  breakdown: Record<number, number>;
-}
-
-export interface ProductVariant {
-  id: string;
-  productId: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  inStock: boolean;
-  attributes?: Record<string, unknown> | null;
-  sortOrder?: number;
-}
-
-export interface ProductDetail extends Product {
-  variants: ProductVariant[];
-  reviewsSummary: ReviewsSummary;
-}
-
 export interface ProductListResponse {
   products: Product[];
   total: number;
-  page?: number;
-  perPage?: number;
-  totalPages?: number;
 }
 
 export type CreateProductRequestType =
@@ -297,7 +271,6 @@ export type CreateParcelBookingRequestPaymentMethod =
 export const CreateParcelBookingRequestPaymentMethod = {
   cash: "cash",
   wallet: "wallet",
-  cod: "cod",
 } as const;
 
 export interface CreateParcelBookingRequest {
@@ -383,13 +356,8 @@ export type RideStatus = (typeof RideStatus)[keyof typeof RideStatus];
 
 export const RideStatus = {
   searching: "searching",
-  bargaining: "bargaining",
-  accepted: "accepted",
-  arrived: "arrived",
-  in_transit: "in_transit",
   confirmed: "confirmed",
   in_progress: "in_progress",
-  no_riders: "no_riders",
   completed: "completed",
   cancelled: "cancelled",
 } as const;
@@ -400,24 +368,7 @@ export type RidePaymentMethod =
 export const RidePaymentMethod = {
   cash: "cash",
   wallet: "wallet",
-  jazzcash: "jazzcash",
-  easypaisa: "easypaisa",
 } as const;
-
-export interface RideBid {
-  id: string;
-  riderId: string;
-  riderName?: string;
-  fare: number;
-  offer?: number;
-  status: string;
-  createdAt: string;
-  ratingAvg?: number | null;
-  totalRides?: number;
-  vehiclePlate?: string | null;
-  vehicleType?: string | null;
-  note?: string | null;
-}
 
 export interface Ride {
   id: string;
@@ -437,14 +388,6 @@ export interface Ride {
   riderPhone?: string;
   paymentMethod: RidePaymentMethod;
   createdAt: string;
-  riderLat?: number | null;
-  riderLng?: number | null;
-  riderLocAge?: number | null;
-  riderAvgRating?: number | null;
-  estimatedFare?: number;
-  broadcastTimeoutSec?: number;
-  minOffer?: number;
-  bids?: RideBid[];
 }
 
 export type BookRideRequestType =
@@ -568,6 +511,28 @@ export interface GeocodeResponse {
   placeId?: string;
 }
 
+/**
+ * Which geocoding provider resolved the address
+ */
+export type ReverseGeocodeResponseSource =
+  (typeof ReverseGeocodeResponseSource)[keyof typeof ReverseGeocodeResponseSource];
+
+export const ReverseGeocodeResponseSource = {
+  google: "google",
+  nominatim: "nominatim",
+  fallback: "fallback",
+  cache: "cache",
+} as const;
+
+export interface ReverseGeocodeResponse {
+  /** Concise human-readable address (road + city) */
+  address?: string;
+  /** Full formatted address from provider */
+  formattedAddress?: string;
+  /** Which geocoding provider resolved the address */
+  source?: ReverseGeocodeResponseSource;
+}
+
 export interface PharmacyOrderItem {
   id: string;
   name: string;
@@ -605,13 +570,6 @@ export type GetProductsParams = {
   category?: string;
   search?: string;
   type?: GetProductsType;
-  sort?: string;
-  minPrice?: string;
-  maxPrice?: string;
-  minRating?: string;
-  vendor?: string;
-  page?: number;
-  perPage?: number;
 };
 
 export type GetProductsType =
@@ -620,7 +578,6 @@ export type GetProductsType =
 export const GetProductsType = {
   mart: "mart",
   food: "food",
-  pharmacy: "pharmacy",
 } as const;
 
 export type GetOrdersParams = {
@@ -646,9 +603,24 @@ export type CustomerCounterOfferBody = {
 
 export type GeocodeAddressParams = {
   /**
-   * Coordinates as 'lat,lng' or address string
+   * Address text to forward geocode
    */
-  address: string;
+  address?: string;
+  /**
+   * Place ID to resolve to coordinates
+   */
+  place_id?: string;
+};
+
+export type ReverseGeocodeCoordinatesParams = {
+  /**
+   * Latitude
+   */
+  lat: number;
+  /**
+   * Longitude
+   */
+  lng: number;
 };
 
 export type SubscribeSchoolRoute200 = {

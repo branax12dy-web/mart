@@ -6,13 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GeocodeAddressParams = {
+export type ReverseGeocodeCoordinatesParams = {
   /**
-   * Address text to forward geocode
+   * Latitude
    */
-  address?: string;
+  lat: number;
   /**
-   * Place ID to resolve to coordinates
+   * Longitude
    */
-  place_id?: string;
+  lng: number;
 };

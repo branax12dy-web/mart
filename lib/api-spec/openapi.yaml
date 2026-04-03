@@ -497,14 +497,20 @@ paths:
     get:
       operationId: geocodeAddress
       tags: [maps]
-      summary: Reverse geocode coordinates or forward geocode an address
+      summary: Forward geocode an address or place ID to lat/lng
       parameters:
         - name: address
           in: query
-          required: true
+          required: false
           schema:
             type: string
-          description: "Coordinates as 'lat,lng' or address string"
+          description: "Address text to forward geocode"
+        - name: place_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Place ID to resolve to coordinates"
       responses:
         "200":
           description: Geocode result
@@ -512,6 +518,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GeocodeResponse"
+
+  /maps/reverse-geocode:
+    get:
+      operationId: reverseGeocodeCoordinates
+      tags: [maps]
+      summary: Reverse geocode lat/lng coordinates to a human-readable address
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+          description: Latitude
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+          description: Longitude
+      responses:
+        "200":
+          description: Reverse geocode result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReverseGeocodeResponse"
+        "400":
+          description: Missing or invalid lat/lng
 
   /school/routes:
     get:
@@ -1344,6 +1378,20 @@ components:
           type: number
         placeId:
           type: string
+
+    ReverseGeocodeResponse:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Concise human-readable address (road + city)
+        formattedAddress:
+          type: string
+          description: Full formatted address from provider
+        source:
+          type: string
+          enum: [google, nominatim, fallback, cache]
+          description: Which geocoding provider resolved the address
 
     PharmacyOrderItem:
       type: object

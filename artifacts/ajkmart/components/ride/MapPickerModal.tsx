@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -42,7 +42,11 @@ export function MapPickerModal({
 }: Props) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
-  const webViewRef = useRef<WebView>(null);
+
+  /* Reset loading state each time the modal opens */
+  React.useEffect(() => {
+    if (visible) setLoading(true);
+  }, [visible]);
 
   const lat = initialLat ?? 33.7294;
   const lng = initialLng ?? 73.3872;
@@ -95,7 +99,6 @@ export function MapPickerModal({
             </View>
           )}
           <WebView
-            ref={webViewRef}
             source={{ uri: src }}
             style={[styles.webview, loading && styles.hidden]}
             onLoad={() => setLoading(false)}

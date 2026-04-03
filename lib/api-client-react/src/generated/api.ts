@@ -47,8 +47,9 @@ import type {
   PaymentMethodsResponse,
   PharmacyOrderResponse,
   Product,
-  ProductDetail,
   ProductListResponse,
+  ReverseGeocodeCoordinatesParams,
+  ReverseGeocodeResponse,
   Ride,
   RideHistoryResponse,
   RideServicesResponse,
@@ -100,11 +101,11 @@ export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -135,11 +136,11 @@ export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
@@ -362,11 +363,11 @@ export const getGetProfileQueryOptions = <
 >(
   params: GetProfileParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getProfile>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -400,11 +401,11 @@ export function useGetProfile<
 >(
   params: GetProfileParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getProfile>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -542,11 +543,11 @@ export const getGetProductsQueryOptions = <
 >(
   params?: GetProductsParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getProducts>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -580,11 +581,11 @@ export function useGetProducts<
 >(
   params?: GetProductsParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getProducts>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -693,8 +694,8 @@ export const getGetProductUrl = (id: string) => {
 export const getProduct = async (
   id: string,
   options?: RequestInit,
-): Promise<ProductDetail> => {
-  return customFetch<ProductDetail>(getGetProductUrl(id), {
+): Promise<Product> => {
+  return customFetch<Product>(getGetProductUrl(id), {
     ...options,
     method: "GET",
   });
@@ -710,11 +711,11 @@ export const getGetProductQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getProduct>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -753,11 +754,11 @@ export function useGetProduct<
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getProduct>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -809,11 +810,11 @@ export const getGetOrdersQueryOptions = <
 >(
   params: GetOrdersParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getOrders>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -847,11 +848,11 @@ export function useGetOrders<
 >(
   params: GetOrdersParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getOrders>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -977,11 +978,11 @@ export const getGetOrderQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getOrder>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1018,11 +1019,11 @@ export function useGetOrder<
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getOrder>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1161,11 +1162,11 @@ export const getGetWalletQueryOptions = <
 >(
   params: GetWalletParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getWallet>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1199,11 +1200,11 @@ export function useGetWallet<
 >(
   params: GetWalletParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getWallet>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1415,7 +1416,7 @@ export const getGetRideQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getRide>>, TError, TData>>;
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getRide>>, TError, TData>;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1452,7 +1453,7 @@ export function useGetRide<
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getRide>>, TError, TData>>;
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getRide>>, TError, TData>;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1575,11 +1576,11 @@ export const getGetRideStopsQueryOptions = <
   TData = Awaited<ReturnType<typeof getRideStops>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getRideStops>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -1610,11 +1611,11 @@ export function useGetRideStops<
   TData = Awaited<ReturnType<typeof getRideStops>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getRideStops>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetRideStopsQueryOptions(options);
@@ -1650,11 +1651,11 @@ export const getGetRideServicesQueryOptions = <
   TData = Awaited<ReturnType<typeof getRideServices>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getRideServices>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -1685,11 +1686,11 @@ export function useGetRideServices<
   TData = Awaited<ReturnType<typeof getRideServices>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getRideServices>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetRideServicesQueryOptions(options);
@@ -1987,11 +1988,11 @@ export const getGetRideHistoryQueryOptions = <
   TData = Awaited<ReturnType<typeof getRideHistory>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getRideHistory>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -2022,11 +2023,11 @@ export function useGetRideHistory<
   TData = Awaited<ReturnType<typeof getRideHistory>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getRideHistory>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetRideHistoryQueryOptions(options);
@@ -2126,9 +2127,9 @@ export const useCreatePharmacyOrder = <
 };
 
 /**
- * @summary Reverse geocode coordinates or forward geocode an address
+ * @summary Forward geocode an address or place ID to lat/lng
  */
-export const getGeocodeAddressUrl = (params: GeocodeAddressParams) => {
+export const getGeocodeAddressUrl = (params?: GeocodeAddressParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -2145,7 +2146,7 @@ export const getGeocodeAddressUrl = (params: GeocodeAddressParams) => {
 };
 
 export const geocodeAddress = async (
-  params: GeocodeAddressParams,
+  params?: GeocodeAddressParams,
   options?: RequestInit,
 ): Promise<GeocodeResponse> => {
   return customFetch<GeocodeResponse>(getGeocodeAddressUrl(params), {
@@ -2162,13 +2163,13 @@ export const getGeocodeAddressQueryOptions = <
   TData = Awaited<ReturnType<typeof geocodeAddress>>,
   TError = ErrorType<unknown>,
 >(
-  params: GeocodeAddressParams,
+  params?: GeocodeAddressParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof geocodeAddress>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -2193,24 +2194,130 @@ export type GeocodeAddressQueryResult = NonNullable<
 export type GeocodeAddressQueryError = ErrorType<unknown>;
 
 /**
- * @summary Reverse geocode coordinates or forward geocode an address
+ * @summary Forward geocode an address or place ID to lat/lng
  */
 
 export function useGeocodeAddress<
   TData = Awaited<ReturnType<typeof geocodeAddress>>,
   TError = ErrorType<unknown>,
 >(
-  params: GeocodeAddressParams,
+  params?: GeocodeAddressParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof geocodeAddress>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGeocodeAddressQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Reverse geocode lat/lng coordinates to a human-readable address
+ */
+export const getReverseGeocodeCoordinatesUrl = (
+  params: ReverseGeocodeCoordinatesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/maps/reverse-geocode?${stringifiedParams}`
+    : `/api/maps/reverse-geocode`;
+};
+
+export const reverseGeocodeCoordinates = async (
+  params: ReverseGeocodeCoordinatesParams,
+  options?: RequestInit,
+): Promise<ReverseGeocodeResponse> => {
+  return customFetch<ReverseGeocodeResponse>(
+    getReverseGeocodeCoordinatesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getReverseGeocodeCoordinatesQueryKey = (
+  params?: ReverseGeocodeCoordinatesParams,
+) => {
+  return [`/api/maps/reverse-geocode`, ...(params ? [params] : [])] as const;
+};
+
+export const getReverseGeocodeCoordinatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof reverseGeocodeCoordinates>>,
+  TError = ErrorType<void>,
+>(
+  params: ReverseGeocodeCoordinatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reverseGeocodeCoordinates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReverseGeocodeCoordinatesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reverseGeocodeCoordinates>>
+  > = ({ signal }) =>
+    reverseGeocodeCoordinates(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reverseGeocodeCoordinates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReverseGeocodeCoordinatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reverseGeocodeCoordinates>>
+>;
+export type ReverseGeocodeCoordinatesQueryError = ErrorType<void>;
+
+/**
+ * @summary Reverse geocode lat/lng coordinates to a human-readable address
+ */
+
+export function useReverseGeocodeCoordinates<
+  TData = Awaited<ReturnType<typeof reverseGeocodeCoordinates>>,
+  TError = ErrorType<void>,
+>(
+  params: ReverseGeocodeCoordinatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reverseGeocodeCoordinates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReverseGeocodeCoordinatesQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -2243,11 +2350,11 @@ export const getGetSchoolRoutesQueryOptions = <
   TData = Awaited<ReturnType<typeof getSchoolRoutes>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getSchoolRoutes>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -2278,11 +2385,11 @@ export function useGetSchoolRoutes<
   TData = Awaited<ReturnType<typeof getSchoolRoutes>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getSchoolRoutes>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSchoolRoutesQueryOptions(options);
@@ -2490,11 +2597,11 @@ export const getGetParcelBookingsQueryOptions = <
   TData = Awaited<ReturnType<typeof getParcelBookings>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getParcelBookings>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -2525,11 +2632,11 @@ export function useGetParcelBookings<
   TData = Awaited<ReturnType<typeof getParcelBookings>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getParcelBookings>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetParcelBookingsQueryOptions(options);
@@ -2655,11 +2762,11 @@ export const getGetParcelBookingQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getParcelBooking>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -2698,11 +2805,11 @@ export function useGetParcelBooking<
 >(
   id: string,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getParcelBooking>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -2739,11 +2846,11 @@ export const getGetPaymentMethodsQueryOptions = <
   TData = Awaited<ReturnType<typeof getPaymentMethods>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getPaymentMethods>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -2774,11 +2881,11 @@ export function useGetPaymentMethods<
   TData = Awaited<ReturnType<typeof getPaymentMethods>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: Partial<UseQueryOptions<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getPaymentMethods>>,
     TError,
     TData
-  >>;
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetPaymentMethodsQueryOptions(options);
@@ -2915,11 +3022,11 @@ export const getGetCategoriesQueryOptions = <
 >(
   params?: GetCategoriesParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getCategories>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -2953,11 +3060,11 @@ export function useGetCategories<
 >(
   params?: GetCategoriesParams,
   options?: {
-    query?: Partial<UseQueryOptions<
+    query?: UseQueryOptions<
       Awaited<ReturnType<typeof getCategories>>,
       TError,
       TData
-    >>;
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {

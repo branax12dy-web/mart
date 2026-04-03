@@ -614,12 +614,17 @@ export const CreatePharmacyOrderBody = zod.object({
 });
 
 /**
- * @summary Reverse geocode coordinates or forward geocode an address
+ * @summary Forward geocode an address or place ID to lat/lng
  */
 export const GeocodeAddressQueryParams = zod.object({
   address: zod.coerce
     .string()
-    .describe("Coordinates as 'lat,lng' or address string"),
+    .optional()
+    .describe("Address text to forward geocode"),
+  place_id: zod.coerce
+    .string()
+    .optional()
+    .describe("Place ID to resolve to coordinates"),
 });
 
 export const GeocodeAddressResponse = zod.object({
@@ -627,6 +632,29 @@ export const GeocodeAddressResponse = zod.object({
   lat: zod.number().optional(),
   lng: zod.number().optional(),
   placeId: zod.string().optional(),
+});
+
+/**
+ * @summary Reverse geocode lat/lng coordinates to a human-readable address
+ */
+export const ReverseGeocodeCoordinatesQueryParams = zod.object({
+  lat: zod.coerce.number().describe("Latitude"),
+  lng: zod.coerce.number().describe("Longitude"),
+});
+
+export const ReverseGeocodeCoordinatesResponse = zod.object({
+  address: zod
+    .string()
+    .optional()
+    .describe("Concise human-readable address (road + city)"),
+  formattedAddress: zod
+    .string()
+    .optional()
+    .describe("Full formatted address from provider"),
+  source: zod
+    .enum(["google", "nominatim", "fallback", "cache"])
+    .optional()
+    .describe("Which geocoding provider resolved the address"),
 });
 
 /**

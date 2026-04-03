@@ -91,9 +91,19 @@ export async function resolveLocation(
   }
   try {
     const r = await fetch(`${API}/geocode?place_id=${encodeURIComponent(prediction.placeId)}`);
-    if (!r.ok) throw new Error("geocode failed");
-    const d: GeocodeResult = await r.json();
-    return { lat: d.lat, lng: d.lng, address: d.formattedAddress };
+    if (r.ok) {
+      const d: GeocodeResult = await r.json();
+      if (d.lat && d.lng) return { lat: d.lat, lng: d.lng, address: d.formattedAddress };
+    }
+    /* place_id lookup failed — retry with address text (Nominatim fallback path) */
+    if (prediction.description) {
+      const r2 = await fetch(`${API}/geocode?address=${encodeURIComponent(prediction.description)}`);
+      if (r2.ok) {
+        const d2: GeocodeResult = await r2.json();
+        if (d2.lat && d2.lng) return { lat: d2.lat, lng: d2.lng, address: d2.formattedAddress ?? prediction.description };
+      }
+    }
+    throw new Error("geocode failed for place_id and address");
   } catch {
     showError?.("Could not resolve location. Please try selecting a different address.");
     return null;
