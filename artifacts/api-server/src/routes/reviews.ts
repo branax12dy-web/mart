@@ -11,6 +11,8 @@ import OpenAI from "openai";
 
 const router: IRouter = Router();
 
+const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 /* ── Local Vendor Auth ─────────────────────────────────────────────────── */
 async function vendorAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers["authorization"];
@@ -176,7 +178,8 @@ router.get("/product/:productId/summary", async (req, res) => {
 /* ── POST /reviews — submit a review ─────────────────────────────────────── */
 router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const { orderId, vendorId, riderId, orderType, rating, riderRating, comment, productId, photos } = req.body;
+  const { orderId, vendorId, riderId, orderType, rating, riderRating, productId, photos } = req.body;
+  const comment = typeof req.body.comment === "string" ? stripHtml(req.body.comment) : req.body.comment;
 
   if (!orderType || !rating) {
     sendValidationError(res, "orderType and rating are required");

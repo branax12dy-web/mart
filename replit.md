@@ -655,3 +655,49 @@ All changes are client-side only (`artifacts/ajkmart/`):
 - Admin page: stats cards (Total/Pending/Approved/Rejected), filter tabs, sortable table with user info + CNIC + status + submission date
 - Click row → slide-in detail panel with personal details, zoomable document photos (fullscreen modal), approve/reject buttons
 - Reject modal with quick-select rejection reasons + custom reason textarea
+### Task #6 — Full QA & Security Audit (Completed)
+
+#### XSS Vulnerabilities Fixed
+
+All user-supplied string fields sanitized with `stripHtml()` (strips HTML tags via `s.replace(/<[^>]*>/g, "").trim()`):
+
+| Route | Fields Fixed | Session |
+|-------|-------------|---------|
+| `/parcel-bookings` (POST) | `senderName`, `receiverName`, `pickupAddress`, `dropAddress`, `description` | Previous |
+| `/pharmacy-orders` (POST) | `deliveryAddress` | Previous |
+| `/addresses` (POST + PUT) | `label`, `address`, `city` | Task #6 |
+| `/orders` (POST) | `deliveryAddress` | Task #6 |
+| `/users/profile` (PUT) | `address`, `city` | Task #6 |
+| `/rides` (POST) | `pickupAddress`, `dropAddress`, `bargainNote`, `receiverName`, `packageType`, `rateRide.comment` | Task #6 |
+| `/reviews` (POST) | `comment` | Task #6 |
+
+#### Security Audit Results (All PASSING)
+
+- **JWT alg:none**: Blocked (401) — algorithm whitelist enforced
+- **Expired JWT**: Blocked (401)
+- **IDOR** (orders/rides/addresses/pharmacy/parcels): Blocked (403/404) — userId scope enforced on all queries
+- **SQL injection**: Safe — all queries use Drizzle ORM parameterized statements; injection strings return empty results
+- **Mass assignment** (isAdmin, role, walletBalance): Blocked — Zod `.strip()` on profile schema
+- **Negative price injection**: Blocked — per-item validation on all order routes
+- **Cart price injection**: Server overrides with DB price; returns 409 if mismatch
+- **OTP brute force**: Blocked — rate limiter + single-use OTP enforcement
+- **Admin endpoints with user token**: Blocked (401) — separate `adminAuth` middleware
+- **New account order limit**: 3 orders in first 7 days (configurable via `security_new_acct_limit`)
+- **Same-address rate limit**: Enforced on orders, pharmacy orders
+- **Wallet negative deposit**: Blocked (400 validation)
+- **Large wallet deposit**: Max limit enforced per settings
+
+#### Functional Testing Summary
+
+All 23 core user flows tested and verified:
+Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals → Banners → Cart validate → Mart order → Food order → Order cancel → Wallet balance → Wallet payment order → Address CRUD → Ride estimate → Ride book → Ride cancel → Pharmacy order → Parcel booking (wallet + COD) → Review submit → Notifications list → Mark all read
+
+#### Route Clarifications Documented
+
+- Categories: `GET /api/categories?type=mart|food` (not `/products/categories`)
+- Flash deals: `GET /api/products/flash-deals`
+- Seed: `POST /api/seed/products` with `x-admin-token` header
+- Parcel: requires `senderPhone`, `parcelType` (not `packageType`)
+- Reviews: require `orderType` field; product reviews require delivered/completed order
+- Pharmacy: items must include `price` and `quantity` (digital pharmacy catalog model)
+- Notifications unread count: returned as `unreadCount` in `GET /api/notifications` response

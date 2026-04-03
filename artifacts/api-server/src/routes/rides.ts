@@ -40,6 +40,8 @@ const bargainLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
 });
 
+const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const coordinateSchema = z.number().min(-180).max(180);
 const latitudeSchema = z.number().min(-90).max(90);
 
@@ -51,20 +53,20 @@ function toNumber(v: unknown): number | undefined {
 
 const bookRideSchema = z.object({
   type: z.string().min(1),
-  pickupAddress: z.string().min(1),
-  dropAddress: z.string().min(1),
+  pickupAddress: z.string().min(1).transform(stripHtml),
+  dropAddress: z.string().min(1).transform(stripHtml),
   pickupLat: z.preprocess(toNumber, latitudeSchema),
   pickupLng: z.preprocess(toNumber, coordinateSchema),
   dropLat: z.preprocess(toNumber, latitudeSchema),
   dropLng: z.preprocess(toNumber, coordinateSchema),
   paymentMethod: z.string().min(1),
   offeredFare: z.preprocess((v) => (v != null && v !== "" ? Number(v) : undefined), z.number().positive().optional()),
-  bargainNote: z.string().max(500).optional(),
+  bargainNote: z.string().max(500).transform(stripHtml).optional(),
   /* ── Parcel delivery fields ── */
   isParcel: z.boolean().optional().default(false),
-  receiverName: z.string().max(200).optional(),
+  receiverName: z.string().max(200).transform(stripHtml).optional(),
   receiverPhone: z.string().max(20).optional(),
-  packageType: z.string().max(100).optional(),
+  packageType: z.string().max(100).transform(stripHtml).optional(),
 });
 
 const cancelRideSchema = z.object({
@@ -82,7 +84,7 @@ const customerCounterSchema = z.object({
 
 const rateRideSchema = z.object({
   stars: z.number().int().min(1).max(5),
-  comment: z.string().max(1000).optional(),
+  comment: z.string().max(1000).transform(stripHtml).optional(),
 });
 
 const estimateSchema = z.object({

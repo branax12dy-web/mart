@@ -12,6 +12,8 @@ const router: IRouter = Router();
 
 router.use(customerAuth);
 
+const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 router.get("/", async (req, res) => {
   const userId = req.customerId!;
   const addresses = await db.select().from(savedAddressesTable)
@@ -21,9 +23,17 @@ router.get("/", async (req, res) => {
 });
 
 const createAddressSchema = z.object({
-  label: z.string().min(1, "Label is required").max(100, "Label must be 100 characters or less"),
-  address: z.string().min(1, "Address is required").max(500, "Address must be 500 characters or less"),
-  city: z.string().max(100, "City must be 100 characters or less").optional(),
+  label: z.string().min(1, "Label is required").max(100, "Label must be 100 characters or less").transform(stripHtml),
+  address: z.string().min(1, "Address is required").max(500, "Address must be 500 characters or less").transform(stripHtml),
+  city: z.string().max(100, "City must be 100 characters or less").optional().transform(v => (v ? stripHtml(v) : v)),
+  icon: z.string().optional(),
+  isDefault: z.boolean().optional(),
+});
+
+const updateAddressSchema = z.object({
+  label: z.string().min(1).max(100).transform(stripHtml).optional(),
+  address: z.string().min(1).max(500).transform(stripHtml).optional(),
+  city: z.string().max(100).optional().transform(v => (v ? stripHtml(v) : v)),
   icon: z.string().optional(),
   isDefault: z.boolean().optional(),
 });
@@ -51,7 +61,7 @@ router.post("/", validateBody(createAddressSchema), async (req, res) => {
   sendCreated(res, { ...addr, createdAt: addr!.createdAt.toISOString() });
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", validateBody(updateAddressSchema), async (req, res) => {
   const userId = req.customerId!;
   const { label, address, city, icon, isDefault } = req.body;
   const { id } = req.params;

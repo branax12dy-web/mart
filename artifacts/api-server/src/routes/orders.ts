@@ -12,6 +12,8 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendV
 
 const router: IRouter = Router();
 
+const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const idempotencyCache = new Map<string, any>();
 const IDEMPOTENCY_TTL_MS = 5 * 60_000;
 setInterval(() => {
@@ -318,7 +320,8 @@ router.get("/:id/track", customerAuth, async (req, res) => {
 /* ── POST /orders ─────────────────────────────────────────────────────────── */
 router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const { type, items, deliveryAddress, paymentMethod, deliveryLat, deliveryLng } = req.body;
+  const { type, items, paymentMethod, deliveryLat, deliveryLng } = req.body;
+  const deliveryAddress = typeof req.body.deliveryAddress === "string" ? stripHtml(req.body.deliveryAddress) : req.body.deliveryAddress;
   const ip = getClientIp(req);
 
   const idempotencyKey = typeof req.headers["x-idempotency-key"] === "string"

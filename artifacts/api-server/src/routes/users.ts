@@ -21,8 +21,8 @@ const profileUpdateSchema = z.object({
     (v) => typeof v === "string" ? v.replace(/[-\s]/g, "") : v,
     z.string().regex(/^\d{13}$/, "CNIC must be 13 digits (e.g. 3740512345678)").optional().or(z.literal(""))
   ),
-  city: z.string().max(100).optional(),
-  address: z.string().max(500).optional(),
+  city: z.string().max(100).transform(stripHtml).optional(),
+  address: z.string().max(500).transform(stripHtml).optional(),
 }).strip();
 
 const deleteAccountSchema = z.object({
