@@ -527,8 +527,8 @@ const ban = StyleSheet.create({
   overlay: { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16 },
   contentWrap: { flexDirection: "row" as const, alignItems: "center" as const, padding: 18, zIndex: 2 },
   blob: { position: "absolute" as const, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.1)" },
-  title: { fontFamily: Font.bold, fontSize: 17, color: "#fff", marginBottom: 4, textShadowColor: "rgba(0,0,0,0.3)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  desc: { fontFamily: Font.regular, fontSize: 12, color: "rgba(255,255,255,0.9)", lineHeight: 17, marginBottom: 10, textShadowColor: "rgba(0,0,0,0.2)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  title: { fontFamily: Font.bold, fontSize: 17, color: "#fff", marginBottom: 4, textShadow: "0px 1px 3px rgba(0,0,0,0.3)" },
+  desc: { fontFamily: Font.regular, fontSize: 12, color: "rgba(255,255,255,0.9)", lineHeight: 17, marginBottom: 10, textShadow: "0px 1px 2px rgba(0,0,0,0.2)" },
   cta: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6, backgroundColor: "rgba(255,255,255,0.25)", alignSelf: "flex-start" as const, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
   ctaTxt: { fontFamily: Font.semiBold, fontSize: 12, color: "#fff" },
   iconWrap: { marginLeft: 10 },
@@ -734,7 +734,7 @@ const fd = StyleSheet.create({
   progressWrap: { marginTop: 2 },
   progressBg: { height: 14, backgroundColor: "#FFE4E1", borderRadius: 7, overflow: "hidden", position: "relative" as const, justifyContent: "center" },
   progressFill: { position: "absolute" as const, left: 0, top: 0, bottom: 0, borderRadius: 7 },
-  progressText: { fontFamily: Font.bold, fontSize: 8, color: "#fff", textAlign: "center", zIndex: 1, textShadowColor: "rgba(0,0,0,0.3)", textShadowOffset: { width: 0, height: 0.5 }, textShadowRadius: 1 },
+  progressText: { fontFamily: Font.bold, fontSize: 8, color: "#fff", textAlign: "center", zIndex: 1, textShadow: "0px 0.5px 1px rgba(0,0,0,0.3)" },
 });
 
 function TrendingSection() {

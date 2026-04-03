@@ -52,6 +52,21 @@ const MART_PRODUCTS = [
   { name: "Mango 1kg",               price: 180,  originalPrice: null, category: "fruits",    unit: "1kg",        inStock: true,  description: "Fresh sweet mangoes", image: "https://images.unsplash.com/photo-1553279768-865429fa0078?w=400&h=400&fit=crop&auto=format" },
   { name: "Kela (Banana) 12pc",      price: 90,   originalPrice: null, category: "fruits",    unit: "12 pieces",  inStock: true,  description: "Fresh bananas", image: "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=400&h=400&fit=crop&auto=format" },
   { name: "Seb (Apple) 500g",        price: 140,  originalPrice: null, category: "fruits",    unit: "500g",       inStock: true,  description: "Fresh apples", image: "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=400&h=400&fit=crop&auto=format" },
+  { name: "Sugar 1kg",               price: 110,  originalPrice: null, category: "household", unit: "1kg",        inStock: true,  description: "Refined white sugar", image: "https://images.unsplash.com/photo-1558642891-54be180ea339?w=400&h=400&fit=crop&auto=format" },
+  { name: "Palak (Spinach) 500g",    price: 40,   originalPrice: null, category: "fruits",    unit: "500g",       inStock: true,  description: "Fresh green spinach", image: "https://images.unsplash.com/photo-1576045057995-568f588f82fb?w=400&h=400&fit=crop&auto=format" },
+  { name: "Lemon 1kg",               price: 120,  originalPrice: null, category: "fruits",    unit: "1kg",        inStock: true,  description: "Fresh lemons", image: "https://images.unsplash.com/photo-1582087840878-ce1a7a3bcd81?w=400&h=400&fit=crop&auto=format" },
+  { name: "Shampoo Head&Shoulders",  price: 280,  originalPrice: 320,  category: "personal",  unit: "185ml",      inStock: true,  description: "Anti-dandruff shampoo", image: "https://images.unsplash.com/photo-1631729371254-42c2892f0e6e?w=400&h=400&fit=crop&auto=format" },
+  { name: "Bread Bran 400g",         price: 95,   originalPrice: null, category: "bakery",    unit: "400g loaf",  inStock: true,  description: "Whole wheat bran bread", image: "https://images.unsplash.com/photo-1549931319-a545753467c8?w=400&h=400&fit=crop&auto=format" },
+  { name: "Biscuits Parle-G 800g",   price: 180,  originalPrice: null, category: "snacks",    unit: "800g pack",  inStock: true,  description: "Classic glucose biscuits", image: "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&h=400&fit=crop&auto=format" },
+  { name: "Tea Tapal 450g",          price: 780,  originalPrice: 900,  category: "beverages", unit: "450g pack",  inStock: true,  description: "Premium Tapal Danedar black tea", image: "https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?w=400&h=400&fit=crop&auto=format" },
+  { name: "Soap Lifebuoy 6pc",       price: 280,  originalPrice: 320,  category: "personal",  unit: "6 bars",     inStock: true,  description: "Lifebuoy antibacterial soap", image: "https://images.unsplash.com/photo-1631729371254-42c2892f0e6e?w=400&h=400&fit=crop&auto=format" },
+  { name: "Ketchup Sauce 500g",      price: 150,  originalPrice: 180,  category: "household", unit: "500g bottle",inStock: true,  description: "Tomato ketchup sauce", image: "https://images.unsplash.com/photo-1472476443507-c7a5948772fc?w=400&h=400&fit=crop&auto=format" },
+  { name: "Gosht (Beef) 1kg",        price: 1200, originalPrice: 1400, category: "meat",      unit: "1kg",        inStock: true,  description: "Fresh beef meat", image: "https://images.unsplash.com/photo-1603048297172-c92544798d5a?w=400&h=400&fit=crop&auto=format" },
+  { name: "Murgh (Chicken) 1kg",     price: 420,  originalPrice: 480,  category: "meat",      unit: "1kg",        inStock: true,  description: "Fresh broiler chicken", image: "https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=400&h=400&fit=crop&auto=format" },
+  { name: "Dahi (Yogurt) 500g",      price: 120,  originalPrice: null, category: "dairy",     unit: "500g",       inStock: true,  description: "Fresh creamy yogurt", image: "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400&h=400&fit=crop&auto=format" },
+  { name: "Haldi (Turmeric) 200g",   price: 120,  originalPrice: 150,  category: "household", unit: "200g pack",  inStock: true,  description: "Ground turmeric powder", image: "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=400&h=400&fit=crop&auto=format" },
+  { name: "Zeera (Cumin) 100g",      price: 95,   originalPrice: 120,  category: "household", unit: "100g pack",  inStock: true,  description: "Whole cumin seeds", image: "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=400&h=400&fit=crop&auto=format" },
+  { name: "Aaloo (Potato) 5kg",      price: 280,  originalPrice: 320,  category: "fruits",    unit: "5kg bag",    inStock: true,  description: "Farm fresh potatoes", image: "https://images.unsplash.com/photo-1518977676601-b53f82afe0a7?w=400&h=400&fit=crop&auto=format" },
 ];
 
 const FOOD_PRODUCTS = [
@@ -80,6 +95,16 @@ const FOOD_PRODUCTS = [
   { name: "Shahi Tukray",            price: 150, originalPrice: null,  category: "desserts",   unit: "2 pieces",   inStock: true,  description: "Fried bread in sweetened cream & dry fruits", rating: 4.9, deliveryTime: "20-30 min", vendorName: "Mithai House", image: "https://images.unsplash.com/photo-1551024506-0bccd828d307?w=400&h=400&fit=crop&auto=format" },
   { name: "Waffles with Ice Cream",  price: 250, originalPrice: null,  category: "desserts",   unit: "1 plate",    inStock: true,  description: "Belgian waffles + 2 scoops ice cream", rating: 4.7, deliveryTime: "20-30 min", vendorName: "Cafe AJK", image: "https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=400&h=400&fit=crop&auto=format" },
   { name: "Halwa Puri (Breakfast)",  price: 180, originalPrice: null,  category: "desi",       unit: "1 set",      inStock: true,  description: "Sooji halwa + 2 puri + chana + achar", rating: 4.8, deliveryTime: "20-30 min", vendorName: "Biryani House AJK", image: "https://images.unsplash.com/photo-1567337710282-00832b415979?w=400&h=400&fit=crop&auto=format" },
+  { name: "Lassi (Meethi)",          price: 120, originalPrice: null,  category: "beverages",  unit: "1 glass",    inStock: true,  description: "Sweet lassi made with fresh yoghurt", rating: 4.7, deliveryTime: "10-20 min", vendorName: "Desi Dhaba", image: "https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=400&h=400&fit=crop&auto=format" },
+  { name: "Fruit Chaat",             price: 100, originalPrice: null,  category: "desserts",   unit: "1 bowl",     inStock: true,  description: "Seasonal fruits with chaat masala", rating: 4.6, deliveryTime: "10-20 min", vendorName: "Mithai House", image: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=400&h=400&fit=crop&auto=format" },
+  { name: "Nihari",                  price: 300, originalPrice: null,  category: "desi",       unit: "1 portion",  inStock: true,  description: "Slow-cooked beef stew with naan", rating: 4.9, deliveryTime: "30-40 min", vendorName: "Desi Dhaba", image: "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400&h=400&fit=crop&auto=format" },
+  { name: "Daal Makhani",            price: 180, originalPrice: null,  category: "desi",       unit: "1 portion",  inStock: true,  description: "Creamy black lentil dal + naan", rating: 4.6, deliveryTime: "20-30 min", vendorName: "Biryani House AJK", image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=400&h=400&fit=crop&auto=format" },
+  { name: "Halwa Puri",              price: 160, originalPrice: null,  category: "desi",       unit: "1 set",      inStock: true,  description: "Sooji halwa + 2 puri + chana", rating: 4.8, deliveryTime: "20-30 min", vendorName: "Biryani House AJK", image: "https://images.unsplash.com/photo-1567337710282-00832b415979?w=400&h=400&fit=crop&auto=format" },
+  { name: "Paratha (4pcs)",          price: 120, originalPrice: null,  category: "desi",       unit: "4 pieces",   inStock: true,  description: "Crispy layered parathas with butter", rating: 4.5, deliveryTime: "15-25 min", vendorName: "Desi Dhaba", image: "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=400&h=400&fit=crop&auto=format" },
+  { name: "Burger Meal",             price: 350, originalPrice: null,  category: "fast-food",  unit: "1 meal",     inStock: true,  description: "Chicken burger + fries + drink", rating: 4.5, deliveryTime: "20-30 min", vendorName: "Burger Point AJK", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&h=400&fit=crop&auto=format" },
+  { name: "Pizza (Large)",           price: 600, originalPrice: null,  category: "pizza",      unit: "12 inch",    inStock: true,  description: "Large pizza with choice of toppings", rating: 4.6, deliveryTime: "35-50 min", vendorName: "Pizza Palace AJK", image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&h=400&fit=crop&auto=format" },
+  { name: "Seekh Kebab Plate",       price: 280, originalPrice: null,  category: "restaurants",unit: "1 plate",    inStock: true,  description: "Grilled minced beef kebabs with naan & raita", rating: 4.7, deliveryTime: "25-35 min", vendorName: "Grill House Muzaffarabad", image: "https://images.unsplash.com/photo-1529006557810-274b9b2fc783?w=400&h=400&fit=crop&auto=format" },
+  { name: "Biryani (Full)",          price: 480, originalPrice: null,  category: "desi",       unit: "full pot",   inStock: true,  description: "Full pot biryani for 3-4 persons + raita", rating: 4.9, deliveryTime: "30-45 min", vendorName: "Biryani House AJK", image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400&h=400&fit=crop&auto=format" },
 ];
 
 const DEMO_BANNERS = [
@@ -168,6 +193,7 @@ router.post("/products", async (req, res) => {
   }
 
   let seededDeals = 0;
+  const dealEndTime = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   const existingDeals = await db.select().from(flashDealsTable).limit(1);
   if (existingDeals.length === 0) {
     const allProducts = await db.select().from(productsTable).limit(100);
@@ -183,11 +209,24 @@ router.post("/products", async (req, res) => {
         badge: "FLASH",
         discountPct: pct.toString(),
         startTime: new Date(),
-        endTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        endTime: dealEndTime,
         dealStock: 50,
         isActive: true,
       });
+      await db.update(productsTable)
+        .set({ dealExpiresAt: dealEndTime })
+        .where(eq(productsTable.id, p.id));
       seededDeals++;
+    }
+  } else {
+    const activeDeals = await db.select().from(flashDealsTable).where(eq(flashDealsTable.isActive, true));
+    for (const deal of activeDeals) {
+      await db.update(flashDealsTable)
+        .set({ endTime: dealEndTime })
+        .where(eq(flashDealsTable.id, deal.id));
+      await db.update(productsTable)
+        .set({ dealExpiresAt: dealEndTime })
+        .where(eq(productsTable.id, deal.productId));
     }
   }
 
