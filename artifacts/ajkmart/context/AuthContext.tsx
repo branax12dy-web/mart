@@ -54,7 +54,7 @@ interface AuthContextType {
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   setTwoFactorPending: (pending: TwoFactorPending | null) => void;
   completeTwoFactorLogin: (user: AppUser, token: string, refreshToken?: string) => Promise<void>;
-  attemptBiometricLogin: () => Promise<boolean>;
+  attemptBiometricLogin: () => Promise<string | null>;
   socket: Socket | null;
 }
 
@@ -226,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     clearRefreshTimer();
-    await AsyncStorage.multiRemove([USER_KEY, "@ajkmart_cart"]);
+    await AsyncStorage.multiRemove([USER_KEY, "@ajkmart_cart", "@ajkmart_auth_return_to"]);
     await secureDelete(TOKEN_KEY);
     await secureDelete(REFRESH_TOKEN_KEY);
     await secureDelete(BIOMETRIC_TOKEN);
@@ -434,14 +434,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const attemptBiometricLogin = async (): Promise<boolean> => {
-    if (!biometricEnabled) return false;
+  const attemptBiometricLogin = async (): Promise<string | null> => {
+    if (!biometricEnabled) return null;
     try {
       const LocalAuth = await import("expo-local-authentication");
       const hasHardware = await LocalAuth.hasHardwareAsync();
-      if (!hasHardware) return false;
+      if (!hasHardware) return null;
       const isEnrolled = await LocalAuth.isEnrolledAsync();
-      if (!isEnrolled) return false;
+      if (!isEnrolled) return null;
 
       const result = await LocalAuth.authenticateAsync({
         promptMessage: "Login with Biometrics",
@@ -457,11 +457,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isFatal) {
           await setBiometricEnabled(false);
         }
-        return false;
+        return null;
       }
 
       const storedRefreshToken = await secureGet(BIOMETRIC_TOKEN);
-      if (!storedRefreshToken) return false;
+      if (!storedRefreshToken) return null;
 
       const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
       const res = await fetch(`${base}/api/auth/refresh`, {
@@ -473,15 +473,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await secureDelete(BIOMETRIC_TOKEN);
         setBiometricEnabledState(false);
         await AsyncStorage.setItem(BIOMETRIC_KEY, "false");
-        return false;
+        return null;
       }
       const data = await res.json() as any;
-      if (!data.token) return false;
+      if (!data.token) return null;
 
       const meRes = await fetch(`${base}/api/users/profile`, {
         headers: { Authorization: `Bearer ${data.token}` },
       });
-      if (!meRes.ok) return false;
+      if (!meRes.ok) return null;
       const meData = await meRes.json();
       const freshUser: AppUser = meData.user || meData;
 
@@ -489,9 +489,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.refreshToken) {
         await secureSet(BIOMETRIC_TOKEN, data.refreshToken);
       }
-      return true;
+      return freshUser.role ?? "customer";
     } catch {
-      return false;
+      return null;
     }
   };
 

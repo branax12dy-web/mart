@@ -30,6 +30,7 @@ import { tDual } from "@workspace/i18n";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
 import { useGetWallet } from "@workspace/api-client-react";
 import { API_BASE as API, unwrapApiResponse } from "@/utils/api";
+import { AuthGateSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 
@@ -940,16 +941,27 @@ export default function WalletScreen() {
 
   if (!user?.id) {
     return (
+      <View style={{ flex: 1, backgroundColor: C.background }}>
+        <AuthGateSheet
+          visible
+          onClose={() => router.back()}
+          message="Sign in to access your wallet, top up, send money, and manage transactions."
+          returnTo="/(tabs)/wallet"
+        />
+      </View>
+    );
+  }
+
+  if (user.role !== "customer") {
+    return (
       <View style={{ flex: 1, backgroundColor: C.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
-        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-          <Ionicons name="wallet-outline" size={36} color={C.primary} />
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+          <Ionicons name="alert-circle-outline" size={36} color={C.amber} />
         </View>
-        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>Sign In to Access Wallet</Text>
-        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 28 }}>Top up, send money, and manage all your transactions securely.</Text>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth")} style={{ backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 36, flexDirection: "row", alignItems: "center", gap: 8 }} accessibilityRole="button">
-          <Ionicons name="person-circle-outline" size={18} color="#fff" />
-          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Sign In / Register</Text>
-        </TouchableOpacity>
+        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>Customer Account Required</Text>
+        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22 }}>
+          {`You're signed in as a ${user.role} account. The wallet is only available for customer accounts.`}
+        </Text>
       </View>
     );
   }

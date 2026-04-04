@@ -796,6 +796,13 @@ export async function customerAuth(req: Request, res: Response, next: NextFuncti
     return;
   }
 
+  const dbRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+  if (!dbRoles.includes("customer")) {
+    writeAuthAuditLog("auth_denied_role", { userId: user.id, ip, metadata: { required: "customer", actual: user.roles || user.role, url: req.url } });
+    res.status(403).json({ success: false, code: "ROLE_DENIED", error: "Access denied. Customer account required.", message: "رسائی سے انکار۔ کسٹمر اکاؤنٹ ضروری ہے۔" });
+    return;
+  }
+
   req.customerId    = payload.userId;
   req.customerPhone = payload.phone;
   req.customerUser  = user;

@@ -181,7 +181,11 @@ export default function AuthScreen() {
     }
   };
 
-  const navigateAfterLogin = async () => {
+  const navigateAfterLogin = async (role?: string) => {
+    if (role && role !== "customer") {
+      router.replace("/auth/wrong-app" as Href);
+      return;
+    }
     try {
       const returnTo = await AsyncStorage.getItem("@ajkmart_auth_return_to");
       if (returnTo) {
@@ -216,7 +220,7 @@ export default function AuthScreen() {
     }
     if (res.user && res.token) {
       await login(res.user as AppUser, res.token, res.refreshToken);
-      await navigateAfterLogin();
+      await navigateAfterLogin(res.user.role);
     }
   };
   /* FIX 2: Magic link is handled centrally in _layout.tsx MagicLinkHandler.
@@ -523,9 +527,9 @@ export default function AuthScreen() {
   const handleBiometricLogin = async () => {
     setBiometricLoading(true);
     try {
-      const success = await attemptBiometricLogin();
-      if (success) {
-        await navigateAfterLogin();
+      const role = await attemptBiometricLogin();
+      if (role !== null) {
+        await navigateAfterLogin(role);
       } else {
         setError("Biometric login failed. Please use another login method.");
       }
@@ -556,7 +560,7 @@ export default function AuthScreen() {
         } catch {}
       }
       await completeTwoFactorLogin(res.user as AppUser, res.token, res.refreshToken);
-      await navigateAfterLogin();
+      await navigateAfterLogin(res.user?.role);
     } catch (e: any) { setError(e.message || "Invalid 2FA code."); }
     setLoading(false);
   };
@@ -567,7 +571,7 @@ export default function AuthScreen() {
     try {
       const res = await authPost("/auth/2fa/recovery", { tempToken: totpTempToken, backupCode: code });
       await completeTwoFactorLogin(res.user as AppUser, res.token, res.refreshToken);
-      await navigateAfterLogin();
+      await navigateAfterLogin(res.user?.role);
     } catch (e: any) { setError(e.message || "Invalid backup code."); }
     setLoading(false);
   };
@@ -598,7 +602,7 @@ export default function AuthScreen() {
         walletBalance: 0, isActive: true, createdAt: new Date().toISOString(), ...res.user,
       };
       await login(completeUser, res.token ?? pendingToken, res.refreshToken ?? pendingRefreshToken);
-      await navigateAfterLogin();
+      await navigateAfterLogin(completeUser.role);
     } catch (e: any) { setError(e.message || "Could not save profile."); }
     setLoading(false);
   };
@@ -775,7 +779,7 @@ export default function AuthScreen() {
                 onPress={async () => {
                   if (pendingToken && pendingUser) {
                     await login(pendingUser, pendingToken, pendingRefreshToken || undefined);
-                    await navigateAfterLogin();
+                    await navigateAfterLogin(pendingUser.role);
                   } else { setStep("continue"); setPendingToken(""); }
                 }}
                 style={styles.linkBtn}

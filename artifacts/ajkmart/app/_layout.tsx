@@ -85,10 +85,13 @@ function AuthGuard() {
     const isBrowsable = GUEST_BROWSABLE.has(segments[0] as string);
 
     const isPublicRoute = inAuthGroup || inTabsGroup || inRootIndex || isBrowsable;
+    const onWrongAppScreen = segments[0] === "auth" && segments[1] === "wrong-app";
 
     if (!user && !isPublicRoute) {
       router.replace("/auth");
-    } else if (user && (inAuthGroup || inRootIndex)) {
+    } else if (user && user.role !== "customer" && !onWrongAppScreen) {
+      router.replace("/auth/wrong-app");
+    } else if (user && user.role === "customer" && (inAuthGroup || inRootIndex)) {
       router.replace("/(tabs)");
     }
   }, [user, isLoading, segments]);
@@ -179,7 +182,12 @@ function MagicLinkHandler() {
         }
         if (data.token && data.user) {
           await login(data.user as any, data.token, data.refreshToken);
-          router.replace("/(tabs)");
+          const role: string = (data.user as any)?.role ?? "customer";
+          if (role !== "customer") {
+            router.replace("/auth/wrong-app");
+          } else {
+            router.replace("/(tabs)");
+          }
         }
       } catch (err: any) {
         console.warn("MagicLinkHandler error:", err.message || err);

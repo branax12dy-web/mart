@@ -30,6 +30,7 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getPaymentMethods, estimateParcel, createParcelBooking } from "@workspace/api-client-react";
 import type { CreateParcelBookingRequest } from "@workspace/api-client-react";
 import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
+import { AuthGateSheet, useAuthGate } from "@/components/AuthGateSheet";
 
 interface ParcelBookingPayload extends CreateParcelBookingRequest {
   pickupLat?: number;
@@ -95,6 +96,7 @@ function ParcelScreenInner() {
   const topPad = Math.max(insets.top, 12);
   const { prefillPickup: pPickup, prefillDrop: pDrop, prefillType: pType } = useLocalSearchParams<{ prefillPickup?: string; prefillDrop?: string; prefillType?: string }>();
   const { user, updateUser, token } = useAuth();
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
   const { showToast } = useToast();
   const { config: platformConfig } = usePlatformConfig();
   const { language } = useLanguage();
@@ -281,7 +283,14 @@ function ParcelScreenInner() {
   };
   const prev = () => setStep(s => s - 1);
 
-  const bookParcel = async () => {
+  const bookParcel = () => {
+    requireAuth(
+      () => doBookParcel(),
+      { message: "Sign in to book a parcel delivery", returnTo: "/parcel" },
+    );
+  };
+
+  const doBookParcel = async () => {
     setLoading(true);
     try {
       // Geocode any manually-typed addresses that don't have coordinates yet
@@ -773,6 +782,7 @@ function ParcelScreenInner() {
         type={permGuideType}
         onClose={() => setPermGuideVisible(false)}
       />
+      <AuthGateSheet {...authSheetProps} />
     </View>
   );
 }

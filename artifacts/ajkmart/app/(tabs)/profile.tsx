@@ -32,6 +32,7 @@ import { tDual, type TranslationKey, type Language, LANGUAGE_OPTIONS } from "@wo
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
 import Accordion from "@/components/Accordion";
 import { API_BASE as API, unwrapApiResponse } from "@/utils/api";
+import { AuthGateSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 
@@ -1464,16 +1465,13 @@ export default function ProfileScreen() {
 
   if (!user?.id) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
-        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-          <Ionicons name="person-circle-outline" size={36} color={C.primary} />
-        </View>
-        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>Sign In to View Profile</Text>
-        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 28 }}>Manage your account, settings, addresses, and more — all in one place.</Text>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth")} style={{ backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 36, flexDirection: "row", alignItems: "center", gap: 8 }} accessibilityRole="button">
-          <Ionicons name="person-circle-outline" size={18} color="#fff" />
-          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Sign In / Register</Text>
-        </TouchableOpacity>
+      <View style={{ flex: 1, backgroundColor: C.background }}>
+        <AuthGateSheet
+          visible
+          onClose={() => router.back()}
+          message="Sign in to manage your account, settings, addresses, and more."
+          returnTo="/(tabs)/profile"
+        />
       </View>
     );
   }
