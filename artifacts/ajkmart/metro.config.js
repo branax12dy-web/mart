@@ -47,6 +47,8 @@ const WEB_SHIMS = {
   "expo-sharing":               path.resolve(projectRoot, "shims/expo-sharing.web.js"),
   "expo-location":              path.resolve(projectRoot, "shims/expo-location.web.js"),
   "expo-battery":               path.resolve(projectRoot, "shims/expo-battery.web.js"),
+  "expo-glass-effect":          path.resolve(projectRoot, "shims/expo-glass-effect.web.js"),
+  "expo-symbols":               path.resolve(projectRoot, "shims/expo-symbols.web.js"),
 };
 
 const originalResolveRequest = config.resolver.resolveRequest;
