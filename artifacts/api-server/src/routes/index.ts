@@ -32,6 +32,7 @@ import pushRouter from "./push.js";
 import kycRouter from "./kyc.js";
 import wishlistRouter from "./wishlist.js";
 import vanRouter from "./van.js";
+import webhooksRouter from "./webhooks.js";
 
 const router: IRouter = Router();
 
@@ -72,5 +73,6 @@ router.use("/push", pushRouter);
 router.use("/kyc", kycRouter);
 router.use("/wishlist", wishlistRouter);
 router.use("/van", vanRouter);
+router.use("/webhooks", webhooksRouter);
 
 export default router;

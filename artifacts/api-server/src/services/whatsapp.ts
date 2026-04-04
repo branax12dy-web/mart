@@ -88,6 +88,10 @@ export async function sendWhatsAppOTP(
     return { sent: false, error: "WhatsApp integration not enabled" };
   }
 
+  if ((settings["wa_send_otp"] ?? "on") !== "on") {
+    return { sent: false, error: "WhatsApp OTP channel is disabled (wa_send_otp=off)" };
+  }
+
   const phoneNumberId  = settings["wa_phone_number_id"]?.trim();
   const accessToken    = settings["wa_access_token"]?.trim();
   const templateName   = settings["wa_otp_template"]?.trim() ?? "otp_verification";
@@ -117,6 +121,80 @@ export async function sendWhatsAppOTP(
   return result;
 }
 
+export async function sendWhatsAppRideNotification(
+  phone: string,
+  rideId: string,
+  status: string,
+  settings: Record<string, string>,
+  recipientType: "customer" | "rider" = "customer",
+  userLanguage?: string
+): Promise<WAResult> {
+  if (settings["integration_whatsapp"] !== "on") {
+    return { sent: false, error: "WhatsApp integration not enabled" };
+  }
+
+  const toggleKey = recipientType === "rider" ? "wa_send_rider_notif" : "wa_send_ride_update";
+  if ((settings[toggleKey] ?? "on") !== "on") {
+    return { sent: false, error: `WhatsApp ${recipientType} ride channel is disabled (${toggleKey}=off)` };
+  }
+
+  const phoneNumberId = settings["wa_phone_number_id"]?.trim();
+  const accessToken   = settings["wa_access_token"]?.trim();
+  const templateName  = settings["wa_order_template"]?.trim() ?? "order_notification";
+
+  if (!phoneNumberId || !accessToken) {
+    return { sent: false, error: "WhatsApp credentials not configured" };
+  }
+
+  const to = toWhatsAppNumber(phone);
+  const langCode = toWhatsAppLangCode(userLanguage);
+
+  return sendTemplate(
+    to,
+    templateName,
+    langCode,
+    [{ type: "body", parameters: [{ type: "text", text: rideId }, { type: "text", text: status }] }],
+    phoneNumberId,
+    accessToken
+  );
+}
+
+export async function sendWhatsAppVendorNotification(
+  phone: string,
+  orderId: string,
+  customerName: string,
+  settings: Record<string, string>,
+  userLanguage?: string
+): Promise<WAResult> {
+  if (settings["integration_whatsapp"] !== "on") {
+    return { sent: false, error: "WhatsApp integration not enabled" };
+  }
+
+  if ((settings["wa_send_vendor_notif"] ?? "on") !== "on") {
+    return { sent: false, error: "WhatsApp vendor notification channel is disabled (wa_send_vendor_notif=off)" };
+  }
+
+  const phoneNumberId = settings["wa_phone_number_id"]?.trim();
+  const accessToken   = settings["wa_access_token"]?.trim();
+  const templateName  = settings["wa_order_template"]?.trim() ?? "order_notification";
+
+  if (!phoneNumberId || !accessToken) {
+    return { sent: false, error: "WhatsApp credentials not configured" };
+  }
+
+  const to = toWhatsAppNumber(phone);
+  const langCode = toWhatsAppLangCode(userLanguage);
+
+  return sendTemplate(
+    to,
+    templateName,
+    langCode,
+    [{ type: "body", parameters: [{ type: "text", text: orderId }, { type: "text", text: customerName }] }],
+    phoneNumberId,
+    accessToken
+  );
+}
+
 export async function sendWhatsAppOrderNotification(
   phone: string,
   orderId: string,
@@ -126,6 +204,10 @@ export async function sendWhatsAppOrderNotification(
 ): Promise<WAResult> {
   if (settings["integration_whatsapp"] !== "on") {
     return { sent: false, error: "WhatsApp integration not enabled" };
+  }
+
+  if ((settings["wa_send_order_update"] ?? "on") !== "on") {
+    return { sent: false, error: "WhatsApp order update channel is disabled (wa_send_order_update=off)" };
   }
 
   const phoneNumberId = settings["wa_phone_number_id"]?.trim();

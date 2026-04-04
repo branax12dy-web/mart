@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { sendAdminAlert } from "../../services/email.js";
+import { sendOtpSMS } from "../../services/sms.js";
+import { sendWhatsAppOTP } from "../../services/whatsapp.js";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -198,6 +201,62 @@ router.patch("/platform-settings/:key", async (req, res) => {
   invalidateSettingsCache();
   addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Updated setting "${settingKey}" = "${value}"`, result: "success" });
   sendSuccess(res, { ...row, updatedAt: row.updatedAt.toISOString() });
+});
+
+/* ── Integration Test Endpoints ────────────────────────────────────────────
+ * POST /api/admin/system/test-integration/email
+ * POST /api/admin/system/test-integration/sms
+ * POST /api/admin/system/test-integration/whatsapp
+ *
+ * Each returns { success, message } after attempting to send with current settings.
+ */
+router.post("/test-integration/email", async (_req, res) => {
+  const settings = await getCachedSettings();
+  const result = await sendAdminAlert(
+    "new_vendor",
+    "Test Email from AJKMart Admin",
+    `
+      <h3>✅ Email Integration Test</h3>
+      <p>This is a test alert sent from the AJKMart Admin Panel to verify your SMTP configuration is working correctly.</p>
+      <p style="color:#6b7280; font-size:13px;">Sent at: ${new Date().toISOString()}</p>
+    `,
+    { ...settings, email_alert_new_vendor: "on" },
+  );
+  if (result.sent) {
+    sendSuccess(res, { message: `Test email sent to ${settings["smtp_admin_alert_email"]}` });
+  } else {
+    sendError(res, result.reason ?? result.error ?? "Email test failed", 400);
+  }
+});
+
+router.post("/test-integration/sms", async (req, res) => {
+  const settings = await getCachedSettings();
+  const { phone } = req.body as { phone?: string };
+  if (!phone) { sendValidationError(res, "phone number required"); return; }
+  const testOtp = "123456";
+  const result = await sendOtpSMS(phone, testOtp, { ...settings, integration_sms: "on" });
+  if (result.sent) {
+    sendSuccess(res, { message: `Test SMS sent to ${phone} via ${result.provider}` });
+  } else {
+    sendError(res, result.error ?? "SMS test failed", 400);
+  }
+});
+
+router.post("/test-integration/whatsapp", async (req, res) => {
+  const settings = await getCachedSettings();
+  const { phone } = req.body as { phone?: string };
+  if (!phone) { sendValidationError(res, "phone number required"); return; }
+  const testOtp = "123456";
+  const result = await sendWhatsAppOTP(phone, testOtp, {
+    ...settings,
+    integration_whatsapp: "on",
+    wa_send_otp: "on",
+  });
+  if (result.sent) {
+    sendSuccess(res, { message: `Test WhatsApp message sent to ${phone}`, messageId: result.messageId });
+  } else {
+    sendError(res, result.error ?? "WhatsApp test failed", 400);
+  }
 });
 
 /* ── Pharmacy Orders Enriched ── */

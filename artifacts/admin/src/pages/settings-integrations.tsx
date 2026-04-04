@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   AlertTriangle, Info, ExternalLink, CheckCircle2, XCircle, Wifi, Loader2,
   MessageSquare, Phone, Globe, MapPin, BarChart3, Shield, Bug, Link,
-  KeyRound, Puzzle, ToggleRight, Car,
+  KeyRound, Puzzle, ToggleRight, Car, Send, FlaskConical,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
@@ -75,10 +75,80 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   handleToggle: (k: string, v: boolean) => void;
 }) {
   const [intTab, setIntTab] = useState<IntTab>("firebase");
+  const [testPhone, setTestPhone] = useState("");
+  const [testing, setTesting] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ type: string; ok: boolean; msg: string } | null>(null);
+  const { toast } = useToast();
 
   const val = (k: string) => localValues[k] ?? "";
   const dirty = (k: string) => dirtyKeys.has(k);
   const tog = (k: string, def: string = "off") => (localValues[k] ?? def) === "on";
+
+  async function runTest(type: "email" | "sms" | "whatsapp") {
+    setTesting(type);
+    setTestResult(null);
+    try {
+      const body: Record<string, string> = {};
+      if (type !== "email") {
+        if (!testPhone.trim()) {
+          toast({ title: "Phone required", description: "Enter a phone number to test SMS/WhatsApp", variant: "destructive" });
+          setTesting(null);
+          return;
+        }
+        body["phone"] = testPhone.trim();
+      }
+      const data = await fetcher(`/api/admin/system/test-integration/${type}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const msg = (data as any)?.message ?? `${type} test sent successfully`;
+      setTestResult({ type, ok: true, msg });
+      toast({ title: "Test Passed ✅", description: msg });
+    } catch (err: any) {
+      const msg = err?.message ?? `${type} test failed`;
+      setTestResult({ type, ok: false, msg });
+      toast({ title: "Test Failed ❌", description: msg, variant: "destructive" });
+    } finally {
+      setTesting(null);
+    }
+  }
+
+  function TestRow({ type, label }: { type: "email" | "sms" | "whatsapp"; label: string }) {
+    const needsPhone = type !== "email";
+    const isTesting = testing === type;
+    const result = testResult?.type === type ? testResult : null;
+    return (
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 p-3 bg-muted/30 rounded-xl border border-border/50">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <FlaskConical className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <span className="text-xs font-semibold text-foreground">{label}</span>
+          {result && (
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${result.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {result.ok ? "✓ PASSED" : "✗ FAILED"}
+            </span>
+          )}
+        </div>
+        {needsPhone && (
+          <Input
+            value={testPhone}
+            onChange={e => setTestPhone(e.target.value)}
+            placeholder="03xxxxxxxxx"
+            className="h-7 text-xs w-40 font-mono"
+          />
+        )}
+        <button
+          onClick={() => runTest(type)}
+          disabled={isTesting}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all">
+          {isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+          {isTesting ? "Sending…" : "Send Test"}
+        </button>
+        {result && (
+          <p className="text-[10px] text-muted-foreground w-full sm:w-auto truncate max-w-xs" title={result.msg}>{result.msg}</p>
+        )}
+      </div>
+    );
+  }
 
   const F = ({ label, k, placeholder, mono, hint }: { label: string; k: string; placeholder?: string; mono?: boolean; hint?: string }) => (
     <Field label={label} value={val(k)} onChange={v => handleChange(k, v)} isDirty={dirty(k)} placeholder={placeholder} mono={mono} hint={hint} />
@@ -248,6 +318,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                 </div>
               </div>
             )}
+            {smsConfigured && (
+              <div>
+                <SLabel icon={FlaskConical}>Test Connection</SLabel>
+                <div className="mt-3">
+                  <TestRow type="sms" label="Send test OTP SMS (OTP: 123456)" />
+                </div>
+              </div>
+            )}
           </div>
         </IntCard>
       )}
@@ -320,6 +398,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                 ))}
               </div>
             </div>
+            {smtpConfigured && (
+              <div>
+                <SLabel icon={FlaskConical}>Test Connection</SLabel>
+                <div className="mt-3">
+                  <TestRow type="email" label="Send test alert email to admin recipient" />
+                </div>
+              </div>
+            )}
           </div>
         </IntCard>
       )}
@@ -382,6 +468,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                 ))}
               </div>
             </div>
+            {waConfigured && (
+              <div>
+                <SLabel icon={FlaskConical}>Test Connection</SLabel>
+                <div className="mt-3">
+                  <TestRow type="whatsapp" label="Send test OTP via WhatsApp (OTP: 123456)" />
+                </div>
+              </div>
+            )}
           </div>
         </IntCard>
       )}

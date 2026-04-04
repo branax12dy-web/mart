@@ -35,7 +35,7 @@ import { sendWhatsAppOTP } from "../services/whatsapp.js";
 import { randomBytes, createHash } from "crypto";
 import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
 import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri, encryptTotpSecret, decryptTotpSecret } from "../services/totp.js";
-import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail } from "../services/email.js";
+import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail, alertNewVendor } from "../services/email.js";
 import { getUserLanguage, getPlatformDefaultLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
 import { logger } from "../lib/logger.js";
@@ -1157,6 +1157,15 @@ router.post("/vendor-register", async (req, res) => {
     if (adminNotifs.length) {
       db.insert(notificationsTable).values(adminNotifs).catch(() => {});
     }
+  }
+
+  if (!autoApprove) {
+    alertNewVendor(
+      name || user.name || user.phone || "Unknown",
+      user.phone || "N/A",
+      storeName,
+      settings,
+    ).catch(() => {});
   }
 
   res.json({

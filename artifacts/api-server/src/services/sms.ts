@@ -89,6 +89,47 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
     }
   }
 
+  /* ── Zong / CM.com Pakistan ── */
+  if (provider === "zong") {
+    const apiKey   = settings["sms_api_key"]?.trim();
+    const senderId = (settings["sms_sender_id"] ?? "AJKMart").trim();
+
+    if (!apiKey) {
+      console.log(`[SMS:zong] API key not configured — logging: ${message}`);
+      return { sent: false, provider: "zong", error: "Zong API key not configured. Set sms_api_key in Integrations." };
+    }
+
+    try {
+      const resp = await fetch("https://api.cm.com/v1.0/message", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CM-PRODUCTTOKEN": apiKey,
+        },
+        body: JSON.stringify({
+          messages: {
+            authentication: { producttoken: apiKey },
+            msg: [{
+              from: senderId,
+              to: [{ number: e164 }],
+              body: { type: "AUTO", content: message },
+            }],
+          },
+        }),
+      });
+
+      if (resp.ok || resp.status === 202) {
+        console.log(`[SMS:zong] Sent to ${e164}`);
+        return { sent: true, provider: "zong" };
+      }
+      const errText = await resp.text().catch(() => `HTTP ${resp.status}`);
+      return { sent: false, provider: "zong", error: errText };
+    } catch (err: any) {
+      console.error(`[SMS:zong] Error:`, err.message);
+      return { sent: false, provider: "zong", error: err.message };
+    }
+  }
+
   console.log(`[SMS:unknown] Unknown provider "${provider}" — logging: ${message}`);
   return { sent: false, provider, error: `Unknown provider: ${provider}` };
 }
