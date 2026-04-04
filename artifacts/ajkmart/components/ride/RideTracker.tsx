@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -14,6 +15,7 @@ import {
   Text,
   TextInput,
   View,
+  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
@@ -30,8 +32,6 @@ import {
   rateRide,
 } from "@workspace/api-client-react";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
-
-const C = Colors.light;
 
 function haversineKm(
   lat1: number,
@@ -67,12 +67,18 @@ export function RideTracker({
   cancellationFee,
   onReset,
 }: RideTrackerProps) {
+  const colorScheme = useColorScheme();
+  const C = colorScheme === "dark" ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { showToast } = useToast();
 
   const slideUp = useRef(new Animated.Value(50)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
+  const livePulse = useRef(new Animated.Value(1)).current;
+  const livePulseOp = useRef(new Animated.Value(1)).current;
+  const sosRing = useRef(new Animated.Value(1)).current;
+  const sosRingOp = useRef(new Animated.Value(0.6)).current;
 
   const { ride, setRide, connectionType, reconnect } = useRideStatus(rideId);
   const { config } = usePlatformConfig();
@@ -212,6 +218,41 @@ export function RideTracker({
     }
     prevStatus.current = st || "";
   }, [ride?.status]);
+
+  useEffect(() => {
+    const livePulseAnim = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(livePulse, { toValue: 1.4, duration: 600, useNativeDriver: true }),
+          Animated.timing(livePulseOp, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(livePulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(livePulseOp, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    livePulseAnim.start();
+    return () => livePulseAnim.stop();
+  }, []);
+
+  useEffect(() => {
+    if (!sosEnabled) return;
+    const sosRingAnim = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(sosRing, { toValue: 1.6, duration: 800, useNativeDriver: true }),
+          Animated.timing(sosRingOp, { toValue: 0, duration: 800, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(sosRing, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(sosRingOp, { toValue: 0.6, duration: 0, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    sosRingAnim.start();
+    return () => sosRingAnim.stop();
+  }, [sosEnabled]);
 
   useEffect(() => {
     const status = ride?.status;
@@ -797,7 +838,7 @@ export function RideTracker({
             paddingBottom: 36,
             alignItems: "center",
             paddingHorizontal: 24,
-            backgroundColor: "#fff",
+            backgroundColor: C.surface,
             borderBottomWidth: 1,
             borderBottomColor: C.border,
           }}
@@ -807,7 +848,7 @@ export function RideTracker({
               width: 72,
               height: 72,
               borderRadius: 36,
-              backgroundColor: "#FEE2E2",
+              backgroundColor: C.redSoft,
               alignItems: "center",
               justifyContent: "center",
               marginBottom: 16,
@@ -839,12 +880,12 @@ export function RideTracker({
           {appliedFee > 0 && (
             <View
               style={{
-                backgroundColor: "#FEF2F2",
+                backgroundColor: C.redBg,
                 borderRadius: 16,
                 padding: 16,
                 gap: 8,
                 borderWidth: 1,
-                borderColor: "#FEE2E2",
+                borderColor: C.redSoft,
               }}
             >
               <View
@@ -891,12 +932,12 @@ export function RideTracker({
           {wasWallet && (
             <View
               style={{
-                backgroundColor: "#F0FDF4",
+                backgroundColor: C.greenBg,
                 borderRadius: 16,
                 padding: 16,
                 gap: 8,
                 borderWidth: 1,
-                borderColor: "#D1FAE5",
+                borderColor: C.greenBorder,
               }}
             >
               <View
@@ -1063,7 +1104,7 @@ export function RideTracker({
             paddingBottom: 32,
             alignItems: "center",
             paddingHorizontal: 24,
-            backgroundColor: "#fff",
+            backgroundColor: C.surface,
             borderBottomWidth: 1,
             borderBottomColor: C.border,
           }}
@@ -1073,7 +1114,7 @@ export function RideTracker({
               width: 72,
               height: 72,
               borderRadius: 36,
-              backgroundColor: "#D1FAE5",
+              backgroundColor: C.emeraldSoft,
               alignItems: "center",
               justifyContent: "center",
               marginBottom: 16,
@@ -1113,7 +1154,7 @@ export function RideTracker({
           {!ratingDone ? (
             <View
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: C.surface,
                 borderRadius: 20,
                 padding: 20,
                 alignItems: "center",
@@ -1253,7 +1294,7 @@ export function RideTracker({
 
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: C.surface,
               borderRadius: 20,
               borderWidth: 1,
               borderColor: C.border,
@@ -1380,7 +1421,7 @@ export function RideTracker({
 
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: C.surface,
               borderRadius: 20,
               padding: 16,
               gap: 14,
@@ -1511,23 +1552,23 @@ export function RideTracker({
               flexDirection: "row",
               alignItems: "center",
               gap: 8,
-              backgroundColor: "#F0FDF4",
+              backgroundColor: C.greenBg,
               padding: 14,
               borderRadius: 14,
               borderWidth: 1,
-              borderColor: "#D1FAE5",
+              borderColor: C.greenBorder,
             }}
           >
             <Ionicons
               name="shield-checkmark"
               size={14}
-              color="#059669"
+              color={C.emerald}
             />
             <Text
               style={{
                 fontFamily: "Inter_400Regular",
                 fontSize: 12,
-                color: "#065F46",
+                color: C.emeraldDeep,
               }}
             >
               Insured ride · Verified driver · GPS tracked
@@ -1620,14 +1661,13 @@ export function RideTracker({
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
-      <View
+      {/* Dark gradient header */}
+      <LinearGradient
+        colors={["#1E293B", "#0F172A"]}
         style={{
           paddingTop: topPad + 16,
           paddingBottom: 20,
           paddingHorizontal: 20,
-          backgroundColor: "#fff",
-          borderBottomWidth: 1,
-          borderBottomColor: C.border,
         }}
       >
         <View
@@ -1640,21 +1680,23 @@ export function RideTracker({
               width: 36,
               height: 36,
               borderRadius: 12,
-              backgroundColor: C.surfaceSecondary,
+              backgroundColor: "rgba(255,255,255,0.1)",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="chevron-back" size={20} color={C.text} />
+            <Ionicons name="chevron-back" size={20} color="#fff" />
           </Pressable>
           <View
             style={{
               width: 52,
               height: 52,
               borderRadius: 16,
-              backgroundColor: `${hdrCfg.color}15`,
+              backgroundColor: `${hdrCfg.color}25`,
               alignItems: "center",
               justifyContent: "center",
+              borderWidth: 1,
+              borderColor: `${hdrCfg.color}50`,
             }}
           >
             <Ionicons
@@ -1668,7 +1710,7 @@ export function RideTracker({
               style={{
                 fontFamily: "Inter_700Bold",
                 fontSize: 18,
-                color: C.text,
+                color: "#fff",
               }}
             >
               {hdrCfg.title}
@@ -1677,15 +1719,62 @@ export function RideTracker({
               style={{
                 fontFamily: "Inter_400Regular",
                 fontSize: 13,
-                color: C.textMuted,
+                color: "rgba(255,255,255,0.5)",
                 marginTop: 3,
               }}
             >
               {hdrCfg.sub}
             </Text>
           </View>
+          {/* LIVE badge */}
+          <View style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 5,
+            backgroundColor: "rgba(16,185,129,0.18)",
+            borderRadius: 10,
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderWidth: 1,
+            borderColor: "rgba(16,185,129,0.35)",
+          }}>
+            <Animated.View style={{
+              width: 7,
+              height: 7,
+              borderRadius: 3.5,
+              backgroundColor: "#10B981",
+              transform: [{ scale: livePulse }],
+              opacity: livePulseOp,
+            }} />
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "#10B981", letterSpacing: 0.8 }}>
+              LIVE
+            </Text>
+          </View>
         </View>
-      </View>
+
+        {/* Elapsed timer strip */}
+        <View style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          marginTop: 14,
+          paddingTop: 12,
+          borderTopWidth: 1,
+          borderTopColor: "rgba(255,255,255,0.08)",
+        }}>
+          <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.4)" />
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+            Trip elapsed:
+          </Text>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "rgba(255,255,255,0.75)" }}>
+            {elapsedStr}
+          </Text>
+          <View style={{ flex: 1 }} />
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
+            #{rideId.slice(-6).toUpperCase()}
+          </Text>
+        </View>
+      </LinearGradient>
 
       {connectionType === "polling" && (
         <Pressable
@@ -1722,23 +1811,34 @@ export function RideTracker({
         >
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: C.surface,
               borderRadius: 20,
               padding: 18,
               borderWidth: 1,
               borderColor: C.border,
             }}
           >
-            <Text
-              style={{
-                fontFamily: "Inter_700Bold",
-                fontSize: 14,
-                color: C.text,
-                marginBottom: 18,
-              }}
-            >
-              Ride Progress
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+              <Text
+                style={{
+                  fontFamily: "Inter_700Bold",
+                  fontSize: 14,
+                  color: C.text,
+                }}
+              >
+                Ride Progress
+              </Text>
+              <View style={{
+                backgroundColor: `${hdrCfg.color}15`,
+                borderRadius: 8,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+              }}>
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: hdrCfg.color }}>
+                  {LABELS[Math.max(0, stepIdx)]}
+                </Text>
+              </View>
+            </View>
             <View
               style={{
                 flexDirection: "row",
@@ -1749,6 +1849,8 @@ export function RideTracker({
                 const done = stepIdx >= i;
                 const active = stepIdx === i;
                 const isLast = i === STEPS.length - 1;
+                const completedColor = "#10B981";
+                const nodeColor = done ? (active ? hdrCfg.color : completedColor) : C.surfaceSecondary;
                 return (
                   <React.Fragment key={step}>
                     <View
@@ -1758,47 +1860,55 @@ export function RideTracker({
                         gap: 6,
                       }}
                     >
-                      <View
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: done
-                            ? active
-                              ? hdrCfg.color
-                              : "#10B981"
-                            : "#F1F5F9",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          ...(active
-                            ? {
-                                shadowColor: hdrCfg.color,
-                                shadowOffset: {
-                                  width: 0,
-                                  height: 2,
-                                },
-                                shadowOpacity: 0.3,
-                                shadowRadius: 6,
-                              }
-                            : {}),
-                        }}
-                      >
-                        {done ? (
-                          <Ionicons
-                            name="checkmark"
-                            size={15}
-                            color="#fff"
-                          />
-                        ) : (
-                          <View
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: 4,
-                              backgroundColor: "#CBD5E1",
-                            }}
-                          />
+                      {/* Node with glow for active */}
+                      <View style={{ alignItems: "center", justifyContent: "center" }}>
+                        {active && (
+                          <View style={{
+                            position: "absolute",
+                            width: 44,
+                            height: 44,
+                            borderRadius: 22,
+                            backgroundColor: `${hdrCfg.color}20`,
+                          }} />
                         )}
+                        <View
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 17,
+                            backgroundColor: nodeColor,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderWidth: active ? 2 : done ? 0 : 1.5,
+                            borderColor: active ? hdrCfg.color : done ? "transparent" : C.border,
+                            ...(active
+                              ? {
+                                  shadowColor: hdrCfg.color,
+                                  shadowOffset: { width: 0, height: 0 },
+                                  shadowOpacity: 0.5,
+                                  shadowRadius: 8,
+                                  elevation: 6,
+                                }
+                              : {}),
+                          }}
+                        >
+                          {done ? (
+                            <Ionicons
+                              name={active ? (hdrCfg.icon as any) : "checkmark"}
+                              size={active ? 16 : 15}
+                              color="#fff"
+                            />
+                          ) : (
+                            <View
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 4,
+                                backgroundColor: C.border,
+                              }}
+                            />
+                          )}
+                        </View>
                       </View>
                       <Text
                         style={{
@@ -1807,6 +1917,7 @@ export function RideTracker({
                           color: done ? C.text : C.textMuted,
                           fontFamily: active
                             ? "Inter_700Bold"
+                            : done ? "Inter_500Medium"
                             : "Inter_400Regular",
                         }}
                       >
@@ -1816,12 +1927,11 @@ export function RideTracker({
                     {!isLast && (
                       <View
                         style={{
-                          height: 2,
+                          height: 3,
                           flex: 0.4,
-                          backgroundColor:
-                            stepIdx > i ? "#10B981" : "#F1F5F9",
-                          marginTop: 15,
-                          borderRadius: 1,
+                          backgroundColor: stepIdx > i ? completedColor : C.border,
+                          marginTop: 16,
+                          borderRadius: 2,
                         }}
                       />
                     )}
@@ -1925,133 +2035,164 @@ export function RideTracker({
           {ride?.riderName && (
             <View
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: C.surface,
                 borderRadius: 20,
-                padding: 18,
+                overflow: "hidden",
                 borderWidth: 1,
                 borderColor: C.border,
               }}
             >
+              {/* Glassmorphism rider card top strip */}
+              <LinearGradient
+                colors={colorScheme === "dark" ? ["rgba(30,41,59,0.95)", "rgba(15,23,42,0.6)"] : ["rgba(255,255,255,0.95)", "rgba(248,250,252,0.8)"]}
+                style={{ padding: 18 }}
+              >
               <View
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 12,
+                  gap: 14,
                   marginBottom: 16,
                 }}
               >
-                <View
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 18,
-                    backgroundColor: `${hdrCfg.color}12`,
+                {/* Circular avatar with colored ring */}
+                <View style={{ position: "relative" }}>
+                  <View style={{
+                    width: 62,
+                    height: 62,
+                    borderRadius: 31,
+                    backgroundColor: `${hdrCfg.color}18`,
                     alignItems: "center",
                     justifyContent: "center",
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontFamily: "Inter_700Bold",
-                      fontSize: 22,
-                      color: hdrCfg.color,
-                    }}
-                  >
-                    {ride.riderName.charAt(0).toUpperCase()}
-                  </Text>
+                    borderWidth: 2.5,
+                    borderColor: hdrCfg.color,
+                    shadowColor: hdrCfg.color,
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.4,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}>
+                    <Text
+                      style={{
+                        fontFamily: "Inter_700Bold",
+                        fontSize: 24,
+                        color: hdrCfg.color,
+                      }}
+                    >
+                      {ride.riderName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  {/* Active green dot */}
+                  <View style={{
+                    position: "absolute",
+                    bottom: 0,
+                    right: 0,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    backgroundColor: "#10B981",
+                    borderWidth: 2.5,
+                    borderColor: C.surface,
+                  }} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text
                     style={{
                       fontFamily: "Inter_700Bold",
-                      fontSize: 16,
+                      fontSize: 17,
                       color: C.text,
                     }}
                   >
                     {ride.riderName}
                   </Text>
+                  {/* Star rating inline */}
+                  {ride?.riderAvgRating != null && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Ionicons
+                            key={s}
+                            name={s <= Math.round(ride.riderAvgRating ?? 0) ? "star" : "star-outline"}
+                            size={12}
+                            color="#F59E0B"
+                          />
+                        ))}
+                      </View>
+                      <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 12, color: "#F59E0B" }}>
+                        {ride.riderAvgRating.toFixed(1)}
+                      </Text>
+                    </View>
+                  )}
                   {ride.riderPhone && (
                     <Text
                       style={{
                         fontFamily: "Inter_400Regular",
                         fontSize: 12,
                         color: C.textMuted,
-                        marginTop: 2,
+                        marginTop: 3,
                       }}
                     >
                       {ride.riderPhone}
                     </Text>
                   )}
+                </View>
+                {/* Vehicle plate chip + type */}
+                <View style={{ alignItems: "center", gap: 6 }}>
                   <View
                     style={{
-                      flexDirection: "row",
+                      backgroundColor: C.surfaceSecondary,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 14,
                       alignItems: "center",
-                      gap: 3,
-                      marginTop: 5,
+                      borderWidth: 1,
+                      borderColor: C.border,
                     }}
                   >
-                    {ride?.riderAvgRating != null && (
-                      <>
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Ionicons
-                            key={s}
-                            name={s <= Math.round(ride.riderAvgRating ?? 0) ? "star" : "star-outline"}
-                            size={11}
-                            color="#F59E0B"
-                          />
-                        ))}
-                        <Text
-                          style={{
-                            fontFamily: "Inter_400Regular",
-                            fontSize: 10,
-                            color: C.textMuted,
-                            marginLeft: 4,
-                          }}
-                        >
-                          {ride.riderAvgRating.toFixed(1)}
-                        </Text>
-                      </>
-                    )}
+                    <Text style={{ fontSize: 20 }}>
+                      {
+                        ({
+                          bike: "🏍️",
+                          car: "🚗",
+                          rickshaw: "🛺",
+                          daba: "🚐",
+                          school_shift: "🚌",
+                        } as Record<string, string>)[rideType] ?? "🚗"
+                      }
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: "Inter_600SemiBold",
+                        fontSize: 9,
+                        color: C.textSecondary,
+                        marginTop: 2,
+                      }}
+                    >
+                      {
+                        ({
+                          bike: "Bike",
+                          car: "Car",
+                          rickshaw: "Rickshaw",
+                          daba: "Daba",
+                          school_shift: "School",
+                        } as Record<string, string>)[rideType] ?? rideType
+                      }
+                    </Text>
                   </View>
-                </View>
-                <View
-                  style={{
-                    backgroundColor: C.surfaceSecondary,
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderRadius: 14,
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ fontSize: 22 }}>
-                    {
-                      ({
-                        bike: "🏍️",
-                        car: "🚗",
-                        rickshaw: "🛺",
-                        daba: "🚐",
-                        school_shift: "🚌",
-                      } as Record<string, string>)[rideType] ?? "🚗"
-                    }
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: "Inter_600SemiBold",
-                      fontSize: 10,
-                      color: C.textSecondary,
-                      marginTop: 3,
-                    }}
-                  >
-                    {
-                      ({
-                        bike: "Bike",
-                        car: "Car",
-                        rickshaw: "Rickshaw",
-                        daba: "Daba",
-                        school_shift: "School",
-                      } as Record<string, string>)[rideType] ?? rideType
-                    }
-                  </Text>
+                  {(ride as any)?.vehiclePlate && (
+                    <View style={{
+                      backgroundColor: colorScheme === "dark" ? "rgba(255,255,255,0.1)" : "#F1F5F9",
+                      borderRadius: 7,
+                      paddingHorizontal: 7,
+                      paddingVertical: 3,
+                      borderWidth: 1,
+                      borderColor: C.border,
+                    }}>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 9, color: C.text, letterSpacing: 0.8 }}>
+                        {(ride as any).vehiclePlate}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -2082,28 +2223,51 @@ export function RideTracker({
 
                   return (
                     <>
-                      {/* Live map showing rider position */}
+                      {/* Live map with rounded corners and overlay badge */}
                       <View
                         style={{
-                          borderRadius: 14,
+                          borderRadius: 16,
                           overflow: "hidden",
                           marginBottom: 10,
                           borderWidth: 1,
-                          borderColor: "#E2E8F0",
+                          borderColor: C.border,
+                          shadowColor: "#000",
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.08,
+                          shadowRadius: 6,
+                          elevation: 3,
                         }}
                       >
                         <Image
                           source={{ uri: mapImgUrl }}
-                          style={{ width: "100%", height: 180 }}
+                          style={{ width: "100%", height: 190 }}
                           resizeMode="cover"
                         />
-                        {/* Live indicator overlay */}
+                        {/* "Live Map" badge top-left */}
+                        <View style={{
+                          position: "absolute",
+                          top: 10,
+                          left: 10,
+                          backgroundColor: "rgba(15,23,42,0.75)",
+                          borderRadius: 9,
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 5,
+                        }}>
+                          <Ionicons name="map" size={11} color="#fff" />
+                          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#fff" }}>
+                            Live Map
+                          </Text>
+                        </View>
+                        {/* Live/last known indicator top-right */}
                         <View
                           style={{
                             position: "absolute",
-                            top: 8,
-                            right: 8,
-                            backgroundColor: isLive ? "#10B981" : "#94A3B8",
+                            top: 10,
+                            right: 10,
+                            backgroundColor: isLive ? "rgba(16,185,129,0.85)" : "rgba(100,116,139,0.85)",
                             borderRadius: 8,
                             paddingHorizontal: 8,
                             paddingVertical: 3,
@@ -2126,25 +2290,25 @@ export function RideTracker({
                             flexDirection: "row",
                             alignItems: "center",
                             gap: 8,
-                            backgroundColor: nearby ? "#F0FDF4" : "#EFF6FF",
+                            backgroundColor: nearby ? C.greenBg : C.blueSoft,
                             borderRadius: 12,
                             paddingHorizontal: 14,
                             paddingVertical: 10,
                             marginBottom: 14,
                             borderWidth: 1,
-                            borderColor: nearby ? "#D1FAE5" : "#DBEAFE",
+                            borderColor: nearby ? C.greenBorder : C.blueBorder,
                           }}
                         >
                           <Ionicons
                             name={nearby ? "location" : "navigate-outline"}
                             size={16}
-                            color={nearby ? "#10B981" : C.primary}
+                            color={nearby ? C.emeraldDot : C.primary}
                           />
                           <Text
                             style={{
                               fontFamily: "Inter_600SemiBold",
                               fontSize: 13,
-                              color: nearby ? "#065F46" : "#1E40AF",
+                              color: nearby ? C.emeraldDeep : C.navyDeep,
                               flex: 1,
                             }}
                           >
@@ -2166,106 +2330,140 @@ export function RideTracker({
                   );
                 })()}
 
-              <View style={{ flexDirection: "row", gap: 10 }}>
+              {/* Action buttons row */}
+              <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
                 {ride.riderPhone && (
-                  <Pressable
-                    onPress={() =>
-                      Linking.openURL(`tel:${ride.riderPhone}`)
-                    }
-                    style={{
-                      flex: 1,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      padding: 14,
-                      borderRadius: 14,
-                      backgroundColor: C.primary,
-                    }}
-                  >
-                    <Ionicons name="call" size={18} color="#fff" />
-                    <Text
-                      style={{
-                        fontFamily: "Inter_700Bold",
-                        fontSize: 14,
-                        color: "#fff",
-                      }}
+                  <View style={{ alignItems: "center", gap: 6 }}>
+                    <Pressable
+                      onPress={() => Linking.openURL(`tel:${ride.riderPhone}`)}
                     >
-                      Call
-                    </Text>
-                  </Pressable>
+                      <LinearGradient
+                        colors={["#0066FF", "#0047B3"]}
+                        style={{
+                          width: 60,
+                          height: 60,
+                          borderRadius: 30,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          shadowColor: "#0066FF",
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.4,
+                          shadowRadius: 8,
+                          elevation: 6,
+                        }}
+                      >
+                        <Ionicons name="call" size={24} color="#fff" />
+                      </LinearGradient>
+                    </Pressable>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: C.textMuted }}>Call</Text>
+                  </View>
                 )}
                 {ride.riderPhone && (
-                  <Pressable
-                    onPress={() =>
-                      Linking.openURL(
-                        `https://wa.me/92${ride.riderPhone?.replace(/^(\+92|0)/, "") ?? ""}`,
-                      )
-                    }
-                    style={{
-                      width: 52,
-                      height: 52,
-                      borderRadius: 14,
-                      backgroundColor: "#25D366",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Ionicons
-                      name="logo-whatsapp"
-                      size={24}
-                      color="#fff"
-                    />
-                  </Pressable>
+                  <View style={{ alignItems: "center", gap: 6 }}>
+                    <Pressable
+                      onPress={() =>
+                        Linking.openURL(
+                          `https://wa.me/92${ride.riderPhone?.replace(/^(\+92|0)/, "") ?? ""}`,
+                        )
+                      }
+                    >
+                      <LinearGradient
+                        colors={["#25D366", "#1AAB56"]}
+                        style={{
+                          width: 60,
+                          height: 60,
+                          borderRadius: 30,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          shadowColor: "#25D366",
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.35,
+                          shadowRadius: 8,
+                          elevation: 5,
+                        }}
+                      >
+                        <Ionicons name="logo-whatsapp" size={26} color="#fff" />
+                      </LinearGradient>
+                    </Pressable>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: C.textMuted }}>WhatsApp</Text>
+                  </View>
                 )}
                 {sosEnabled && (
-                <Pressable
-                  onPress={async () => {
-                    if (sosSent) return;
-                    setSosLoading(true);
-                    try {
-                      const resp = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                        body: JSON.stringify({ rideId }),
-                      });
-                      if (resp.ok) {
-                        setSosSent(true);
-                      } else {
-                        showToast("SOS failed — please call emergency contacts directly");
-                      }
-                    } catch {
-                      showToast("SOS failed — please call emergency contacts directly");
-                    }
-                    setSosLoading(false);
-                  }}
-                  disabled={sosLoading || sosSent}
-                  style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: 14,
-                    backgroundColor: sosSent ? "#6B7280" : "#EF4444",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: sosSent ? 0.7 : 1,
-                  }}
-                >
-                  {sosLoading ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "#fff", letterSpacing: 0.5 }}>
-                      {sosSent ? "SENT" : "SOS"}
+                  <View style={{ alignItems: "center", gap: 6 }}>
+                    <Pressable
+                      onPress={async () => {
+                        if (sosSent) return;
+                        setSosLoading(true);
+                        try {
+                          const resp = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                            body: JSON.stringify({ rideId }),
+                          });
+                          if (resp.ok) {
+                            setSosSent(true);
+                          } else {
+                            showToast("SOS failed — please call emergency contacts directly");
+                          }
+                        } catch {
+                          showToast("SOS failed — please call emergency contacts directly");
+                        }
+                        setSosLoading(false);
+                      }}
+                      disabled={sosLoading || sosSent}
+                      style={{ opacity: sosSent ? 0.65 : 1 }}
+                    >
+                      <View style={{ alignItems: "center", justifyContent: "center" }}>
+                        {/* Pulsing ring around SOS */}
+                        {!sosSent && (
+                          <Animated.View style={{
+                            position: "absolute",
+                            width: 72,
+                            height: 72,
+                            borderRadius: 36,
+                            backgroundColor: "rgba(239,68,68,0.3)",
+                            transform: [{ scale: sosRing }],
+                            opacity: sosRingOp,
+                          }} />
+                        )}
+                        <LinearGradient
+                          colors={sosSent ? ["#6B7280", "#4B5563"] : ["#EF4444", "#B91C1C"]}
+                          style={{
+                            width: 60,
+                            height: 60,
+                            borderRadius: 30,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            shadowColor: sosSent ? "#6B7280" : "#EF4444",
+                            shadowOffset: { width: 0, height: 4 },
+                            shadowOpacity: 0.45,
+                            shadowRadius: 8,
+                            elevation: 6,
+                          }}
+                        >
+                          {sosLoading ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff", letterSpacing: 0.5 }}>
+                              {sosSent ? "✓" : "SOS"}
+                            </Text>
+                          )}
+                        </LinearGradient>
+                      </View>
+                    </Pressable>
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: sosSent ? C.textMuted : "#EF4444" }}>
+                      {sosSent ? "Sent" : "SOS"}
                     </Text>
-                  )}
-                </Pressable>
+                  </View>
                 )}
               </View>
+              </LinearGradient>
             </View>
           )}
 
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: C.surface,
               borderRadius: 20,
               padding: 16,
               gap: 14,
@@ -2423,22 +2621,35 @@ export function RideTracker({
                 padding: 16,
                 borderRadius: 16,
                 borderWidth: 1.5,
-                borderColor: "#FCA5A5",
-                backgroundColor: "#FEF2F2",
+                borderColor: C.redBorder,
+                backgroundColor: C.redBg,
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 8,
               }}
             >
               {cancelling ? (
-                <ActivityIndicator color="#DC2626" size="small" />
+                <ActivityIndicator color={C.red} size="small" />
               ) : (
-                <Text
-                  style={{
-                    fontFamily: "Inter_600SemiBold",
-                    fontSize: 15,
-                    color: "#DC2626",
-                  }}
-                >
-                  Cancel Ride
-                </Text>
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color={C.red} />
+                  <Text
+                    style={{
+                      fontFamily: "Inter_600SemiBold",
+                      fontSize: 15,
+                      color: C.red,
+                    }}
+                  >
+                    Cancel Ride
+                  </Text>
+                  {inGracePeriod && graceSecondsLeft !== null && (
+                    <View style={{ backgroundColor: C.greenBg, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                      <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: C.greenBright }}>
+                        Free · {Math.floor(graceSecondsLeft / 60)}:{String(graceSecondsLeft % 60).padStart(2, "0")}
+                      </Text>
+                    </View>
+                  )}
+                </>
               )}
             </Pressable>
           )}
