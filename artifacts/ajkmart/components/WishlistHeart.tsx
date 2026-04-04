@@ -7,6 +7,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { addToWishlist, removeFromWishlist, getWishlist, type WishlistItem } from "@workspace/api-client-react";
+import { AuthGateSheet, useAuthGate } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 
@@ -26,6 +27,7 @@ export function WishlistHeart({
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
+  const { requireAuth, sheetProps } = useAuthGate();
 
   const { data: wishlistItems } = useQuery({
     queryKey: ["wishlist"],
@@ -44,7 +46,7 @@ export function WishlistHeart({
 
   const toggle = useCallback(async () => {
     if (!isLoggedIn) {
-      router.push("/auth");
+      requireAuth(() => {}, { message: "Sign in to save items to your wishlist" });
       return;
     }
     if (loading) return;
@@ -69,19 +71,22 @@ export function WishlistHeart({
   }, [isLoggedIn, productId, isInWishlist, loading, queryClient]);
 
   return (
-    <Animated.View style={[{ transform: [{ scale: heartScale }] }, style]}>
-      <TouchableOpacity activeOpacity={0.7}
-        onPress={(e) => { e?.stopPropagation?.(); toggle(); }}
-        style={s.btn}
-        hitSlop={6}
-      >
-        <Ionicons
-          name={isInWishlist ? "heart" : "heart-outline"}
-          size={size}
-          color={isInWishlist ? C.danger : "rgba(255,255,255,0.9)"}
-        />
-      </TouchableOpacity>
-    </Animated.View>
+    <>
+      <AuthGateSheet {...sheetProps} />
+      <Animated.View style={[{ transform: [{ scale: heartScale }] }, style]}>
+        <TouchableOpacity activeOpacity={0.7}
+          onPress={(e) => { e?.stopPropagation?.(); toggle(); }}
+          style={s.btn}
+          hitSlop={6}
+        >
+          <Ionicons
+            name={isInWishlist ? "heart" : "heart-outline"}
+            size={size}
+            color={isInWishlist ? C.danger : "rgba(255,255,255,0.9)"}
+          />
+        </TouchableOpacity>
+      </Animated.View>
+    </>
   );
 }
 

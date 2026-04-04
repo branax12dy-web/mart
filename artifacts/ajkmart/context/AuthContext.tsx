@@ -213,14 +213,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const doLogout = async () => {
-    /* FIX 4: Use refs to always read current values, not stale closure */
     const tok = tokenRef.current;
     const u   = userRef.current;
     if (u?.role === "customer" && tok) {
       clearCustomerLocation(u.id, tok).catch(() => {});
     }
+
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+      setSocketState(null);
+    }
+
     clearRefreshTimer();
-    await AsyncStorage.multiRemove([USER_KEY]);
+    await AsyncStorage.multiRemove([USER_KEY, "@ajkmart_cart"]);
     await secureDelete(TOKEN_KEY);
     await secureDelete(REFRESH_TOKEN_KEY);
     await secureDelete(BIOMETRIC_TOKEN);

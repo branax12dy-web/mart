@@ -25,6 +25,7 @@ import { T as Typ, Font } from "@/constants/typography";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 import {
   useGetProduct, useGetProducts, getProductVariants, trackInteraction,
@@ -377,7 +378,8 @@ export default function ProductDetailScreen() {
 
   const toggleWishlist = useCallback(async () => {
     if (!isLoggedIn) {
-      router.push("/auth");
+      authSheetProps.onClose();
+      requireAuth(() => {}, { message: "Sign in to save items to your wishlist" });
       return;
     }
     if (!id || wishlistLoading) return;
@@ -482,15 +484,22 @@ export default function ProductDetailScreen() {
     }, 2000);
   }, [product, productType, addItem, scale, selectedVariant]);
 
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
+
   const handleAdd = useCallback(() => {
     if (!product) return;
-    const type = productType === "food" ? "food" : productType === "pharmacy" ? "pharmacy" : "mart";
-    if (itemCount > 0 && cartType !== type && cartType !== "none") {
-      setShowSwitchModal(true);
-      return;
-    }
-    doAdd();
-  }, [product, productType, itemCount, cartType, doAdd]);
+    requireAuth(() => {
+      requireCustomerRole(() => {
+        const type = productType === "food" ? "food" : productType === "pharmacy" ? "pharmacy" : "mart";
+        if (itemCount > 0 && cartType !== type && cartType !== "none") {
+          setShowSwitchModal(true);
+          return;
+        }
+        doAdd();
+      });
+    }, { message: "Sign in to add items to your cart" });
+  }, [product, productType, itemCount, cartType, doAdd, requireAuth, requireCustomerRole]);
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, IMAGE_H - 100],
@@ -561,6 +570,8 @@ export default function ProductDetailScreen() {
 
   return (
     <View style={styles.container}>
+      <AuthGateSheet {...authSheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <CartSwitchModal
         visible={showSwitchModal}
         targetService={serviceLabel}

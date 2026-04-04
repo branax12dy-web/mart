@@ -28,6 +28,7 @@ import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useApiCall } from "@/hooks/useApiCall";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
@@ -112,6 +113,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   const { user, updateUser, token } = useAuth();
   const { showToast } = useToast();
   const { config } = usePlatformConfig();
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
   const rideCfg = config.rides;
 
   const DEFAULT_SERVICES: ServiceType[] = [
@@ -609,7 +612,11 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       return;
     }
     if (!user) {
-      showToast("Please log in to book a ride", "error");
+      requireAuth(() => {}, { message: "Sign in to book a ride", returnTo: "/ride" });
+      return;
+    }
+    if (user?.role !== "customer") {
+      requireCustomerRole(() => {});
       return;
     }
     const selectedSvc = services.find((s) => s.key === rideType);
@@ -673,10 +680,10 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     const effectiveFare = parsedOffer ?? estimate.fare;
     if (
       payMethod === "wallet" &&
-      (user.walletBalance ?? 0) < effectiveFare
+      (user?.walletBalance ?? 0) < effectiveFare
     ) {
       showToast(
-        `Wallet balance Rs. ${user.walletBalance} — less than Rs. ${effectiveFare} required. Please top up.`,
+        `Wallet balance Rs. ${user?.walletBalance ?? 0} — less than Rs. ${effectiveFare} required. Please top up.`,
         "error",
       );
       return;
@@ -728,7 +735,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       if (payMethod === "wallet" && !bookedRide.isBargaining) {
         updateUser({
           walletBalance:
-            (user.walletBalance ?? 0) -
+            (user?.walletBalance ?? 0) -
             (bookedRide.effectiveFare ?? bookedRide.fare ?? 0),
         });
       }
@@ -787,6 +794,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
+      <AuthGateSheet {...authSheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <LinearGradient
         colors={["#001A5C", "#003399", "#0052CC"]}
         start={{ x: 0, y: 0 }}

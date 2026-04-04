@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   Animated,
@@ -22,6 +22,7 @@ import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigCont
 import { useToast } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   OtpDigitInput,
@@ -180,6 +181,18 @@ export default function AuthScreen() {
     }
   };
 
+  const navigateAfterLogin = async () => {
+    try {
+      const returnTo = await AsyncStorage.getItem("@ajkmart_auth_return_to");
+      if (returnTo) {
+        await AsyncStorage.removeItem("@ajkmart_auth_return_to");
+        router.replace(returnTo as Href);
+        return;
+      }
+    } catch {}
+    router.replace("/(tabs)");
+  };
+
   const handleLoginResult = async (res: any) => {
     if (res.requires2FA) {
       setTotpTempToken(res.tempToken);
@@ -203,7 +216,7 @@ export default function AuthScreen() {
     }
     if (res.user && res.token) {
       await login(res.user as AppUser, res.token, res.refreshToken);
-      router.replace("/(tabs)");
+      await navigateAfterLogin();
     }
   };
   /* FIX 2: Magic link is handled centrally in _layout.tsx MagicLinkHandler.
@@ -512,7 +525,7 @@ export default function AuthScreen() {
     try {
       const success = await attemptBiometricLogin();
       if (success) {
-        router.replace("/(tabs)");
+        await navigateAfterLogin();
       } else {
         setError("Biometric login failed. Please use another login method.");
       }
@@ -543,7 +556,7 @@ export default function AuthScreen() {
         } catch {}
       }
       await completeTwoFactorLogin(res.user as AppUser, res.token, res.refreshToken);
-      router.replace("/(tabs)");
+      await navigateAfterLogin();
     } catch (e: any) { setError(e.message || "Invalid 2FA code."); }
     setLoading(false);
   };
@@ -554,7 +567,7 @@ export default function AuthScreen() {
     try {
       const res = await authPost("/auth/2fa/recovery", { tempToken: totpTempToken, backupCode: code });
       await completeTwoFactorLogin(res.user as AppUser, res.token, res.refreshToken);
-      router.replace("/(tabs)");
+      await navigateAfterLogin();
     } catch (e: any) { setError(e.message || "Invalid backup code."); }
     setLoading(false);
   };
@@ -585,7 +598,7 @@ export default function AuthScreen() {
         walletBalance: 0, isActive: true, createdAt: new Date().toISOString(), ...res.user,
       };
       await login(completeUser, res.token ?? pendingToken, res.refreshToken ?? pendingRefreshToken);
-      router.replace("/(tabs)");
+      await navigateAfterLogin();
     } catch (e: any) { setError(e.message || "Could not save profile."); }
     setLoading(false);
   };
@@ -762,7 +775,7 @@ export default function AuthScreen() {
                 onPress={async () => {
                   if (pendingToken && pendingUser) {
                     await login(pendingUser, pendingToken, pendingRefreshToken || undefined);
-                    router.replace("/(tabs)");
+                    await navigateAfterLogin();
                   } else { setStep("continue"); setPendingToken(""); }
                 }}
                 style={styles.linkBtn}

@@ -34,6 +34,7 @@ import { API_BASE, unwrapApiResponse } from "@/utils/api";
 import { isValidPakistaniPhone } from "@/utils/phone";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 const W = Dimensions.get("window").width;
@@ -250,8 +251,15 @@ function PharmacyScreenInner() {
     }
   }, [cartTotal, config.orderRules.maxCodAmount, payMethod]);
 
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
+
   const addToCart = (med: Med) => {
-    addToGlobalCart({ productId: med.id, name: med.name, price: med.price, quantity: 1, type: "pharmacy" });
+    requireAuth(() => {
+      requireCustomerRole(() => {
+        addToGlobalCart({ productId: med.id, name: med.name, price: med.price, quantity: 1, type: "pharmacy" });
+      });
+    }, { message: "Sign in to add items to your cart", returnTo: "/pharmacy" });
   };
 
   const removeFromCart = (med: Med) => {
@@ -287,6 +295,14 @@ function PharmacyScreenInner() {
   };
 
   const placeOrder = async () => {
+    if (!user) {
+      requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/pharmacy" });
+      return;
+    }
+    if (user?.role !== "customer") {
+      requireCustomerRole(() => {});
+      return;
+    }
     if (!address.trim() || !phone.trim()) {
       showToast(T("deliveryAddress"), "error");
       return;
@@ -351,7 +367,7 @@ function PharmacyScreenInner() {
         ...(prescriptionRefId ? { prescriptionPhotoUri: prescriptionRefId } : {}),
       } as Parameters<typeof createPharmacyOrder>[0] & { prescriptionPhotoUri?: string });
       if (payMethod === "wallet" && user) {
-        updateUser({ walletBalance: (user.walletBalance ?? 0) - cartTotal });
+        updateUser({ walletBalance: (user?.walletBalance ?? 0) - cartTotal });
       }
       setConfirmedOrderId(data.id);
       setConfirmed(true);
@@ -437,6 +453,8 @@ function PharmacyScreenInner() {
 
   return (
     <View style={s.root}>
+      <AuthGateSheet {...authSheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <LinearGradient colors={[C.purpleVivid, C.purple, C.purpleMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
         <View style={s.hdrRow}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.backBtn}>

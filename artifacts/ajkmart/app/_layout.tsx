@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { setBaseUrl } from "@workspace/api-client-react";
 import * as Linking from "expo-linking";
 import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
@@ -68,6 +68,11 @@ const queryClient = new QueryClient({
   },
 });
 
+const GUEST_BROWSABLE = new Set([
+  "food", "mart", "ride", "pharmacy", "parcel", "product", "search",
+  "cart", "categories",
+]);
+
 function AuthGuard() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
@@ -77,9 +82,9 @@ function AuthGuard() {
     const inAuthGroup = segments[0] === "auth";
     const inTabsGroup = segments[0] === "(tabs)";
     const inRootIndex = (segments as string[]).length === 0;
+    const isBrowsable = GUEST_BROWSABLE.has(segments[0] as string);
 
-    // Guests can browse home (tabs) freely; only block deep protected routes
-    const isPublicRoute = inAuthGroup || inTabsGroup || inRootIndex;
+    const isPublicRoute = inAuthGroup || inTabsGroup || inRootIndex || isBrowsable;
 
     if (!user && !isPublicRoute) {
       router.replace("/auth");
@@ -206,6 +211,16 @@ function MisconfigScreen() {
 function RootLayoutNav() {
   const { isSuspended, user, token } = useAuth();
   const { config } = usePlatformConfig();
+  const qc = useQueryClient();
+  const prevUserRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    if (prevUserRef.current && !uid) {
+      qc.clear();
+    }
+    prevUserRef.current = uid;
+  }, [user?.id]);
 
   /* ── Init Sentry + Analytics from platform-config (web only) ── */
   useEffect(() => {
@@ -222,7 +237,7 @@ function RootLayoutNav() {
 
   /* ── Register push + identify user after login ── */
   useEffect(() => {
-    if (!user || !token) return;
+    if (!user?.id || !token) return;
     setSentryUser(String(user.id));
     identifyUser(String(user.id));
     registerPush(token).catch(() => {});

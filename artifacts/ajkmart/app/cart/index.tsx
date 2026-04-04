@@ -29,6 +29,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { createOrder } from "@workspace/api-client-react";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 type PayMethod = "cash" | "wallet" | "jazzcash" | "easypaisa";
@@ -286,6 +287,8 @@ export default function CartScreen() {
   const { showToast } = useToast();
   const { config: platformConfig } = usePlatformConfig();
   const { language } = useLanguage();
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
   const T = (key: TranslationKey) => tDual(key, language);
   const appName    = platformConfig.platform.appName;
   const orderRules = platformConfig.orderRules;
@@ -541,6 +544,14 @@ export default function CartScreen() {
   };
 
   const placeOrder = async (finalPayMethod: PayMethod) => {
+    if (!user) {
+      requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/cart" });
+      return;
+    }
+    if (user?.role !== "customer") {
+      requireCustomerRole(() => {});
+      return;
+    }
     const MAX_RETRIES = 3;
     let lastError: Error | null = null;
     let order: OrderResponse | null = null;
@@ -620,7 +631,14 @@ export default function CartScreen() {
 
   const handleCheckout = async () => {
     if (loading || isValidating) return;
-    if (!user) { showToast(T("pleaseLogin"), "error"); return; }
+    if (!user) {
+      requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/cart" });
+      return;
+    }
+    if (user?.role !== "customer") {
+      requireCustomerRole(() => {});
+      return;
+    }
     if (items.length === 0) { showToast(T("cartEmpty"), "error"); return; }
     if (cartType === "pharmacy") { router.push("/pharmacy"); return; }
     if (!deliveryLine) {
@@ -688,8 +706,8 @@ export default function CartScreen() {
     }
 
     if (payMethod === "wallet") {
-      if ((user.walletBalance ?? 0) < grandTotal) {
-        showToast(`Wallet has Rs. ${user.walletBalance} — Rs. ${grandTotal} required`, "error");
+      if ((user?.walletBalance ?? 0) < grandTotal) {
+        showToast(`Wallet has Rs. ${user?.walletBalance ?? 0} — Rs. ${grandTotal} required`, "error");
         return;
       }
       setLoading(true);
@@ -993,6 +1011,8 @@ export default function CartScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
+      <AuthGateSheet {...authSheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <LinearGradient
         colors={[C.brandBlueDark, C.brandBlue, C.brandBlueMid]}
         start={{ x: 0, y: 0 }}
@@ -1147,9 +1167,9 @@ export default function CartScreen() {
                     <Text style={[styles.payLabel, sel && { color: C.text }]}>{method.label}</Text>
                   </View>
                   {method.id === "wallet" ? (
-                    <Text style={[styles.paySub, user && user.walletBalance < grandTotal && { color: C.danger }]}>
+                    <Text style={[styles.paySub, user && (user?.walletBalance ?? 0) < grandTotal && { color: C.danger }]}>
                       Balance: Rs. {user?.walletBalance?.toLocaleString() || 0}
-                      {user && user.walletBalance < grandTotal ? " (insufficient)" : ""}
+                      {user && (user?.walletBalance ?? 0) < grandTotal ? " (insufficient)" : ""}
                     </Text>
                   ) : (
                     <Text style={styles.paySub}>{method.description}</Text>

@@ -78,7 +78,7 @@ function ServiceGridView({ services, isGuest }: { services: ServiceDefinition[];
     <View style={sg.grid}>
       {services.map((svc) => {
         const label = shortLabel[svc.key] ?? svc.label;
-        const href = (isGuest ? "/auth" : String(svc.route)) as Href;
+        const href = String(svc.route) as Href;
         return (
           <TouchableOpacity
             key={svc.key}
@@ -86,9 +86,11 @@ function ServiceGridView({ services, isGuest }: { services: ServiceDefinition[];
             onPress={() => router.push(href)}
             style={[sg.item, { width: itemW }]}
             accessibilityRole="button"
-            accessibilityLabel={`${label}${isGuest ? ", sign in required" : ""}`}
+            accessibilityLabel={label}
           >
-            <LinearGradient colors={svc.iconGradient} style={sg.circle}><Ionicons name={svc.iconFocused} size={22} color="#fff" />{isGuest && (<View style={sg.lockBadge}><Ionicons name="lock-closed" size={7} color="#fff" /></View>)}</LinearGradient>
+            <LinearGradient colors={svc.iconGradient} style={sg.circle}>
+              <Ionicons name={svc.iconFocused} size={22} color="#fff" />
+            </LinearGradient>
             <Text style={sg.label} numberOfLines={1}>{label}</Text>
           </TouchableOpacity>
         );
@@ -102,7 +104,7 @@ function ServiceListView({ services, isGuest }: { services: ServiceDefinition[];
     <View style={sl.list}>
       {services.map((svc) => {
         const label = shortLabel[svc.key] ?? svc.label;
-        const href = (isGuest ? "/auth" : String(svc.route)) as Href;
+        const href = String(svc.route) as Href;
         return (
           <TouchableOpacity
             key={svc.key}
@@ -110,9 +112,11 @@ function ServiceListView({ services, isGuest }: { services: ServiceDefinition[];
             onPress={() => router.push(href)}
             style={sl.row}
             accessibilityRole="button"
-            accessibilityLabel={`${label}${isGuest ? ", sign in required" : ""}`}
+            accessibilityLabel={label}
           >
-            <LinearGradient colors={svc.iconGradient} style={sl.circle}><Ionicons name={svc.iconFocused} size={20} color="#fff" />{isGuest && (<View style={sg.lockBadge}><Ionicons name="lock-closed" size={7} color="#fff" /></View>)}</LinearGradient>
+            <LinearGradient colors={svc.iconGradient} style={sl.circle}>
+              <Ionicons name={svc.iconFocused} size={20} color="#fff" />
+            </LinearGradient>
             <View style={sl.textWrap}>
               <Text style={sl.name}>{label}</Text>
               <Text style={sl.desc} numberOfLines={1}>{svc.description}</Text>

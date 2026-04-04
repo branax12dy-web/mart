@@ -22,6 +22,7 @@ import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { searchProducts, getTrendingSearches, useGetCategories } from "@workspace/api-client-react";
 import { WishlistHeart } from "@/components/WishlistHeart";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 const HISTORY_KEY = "@ajkmart_search_history";
@@ -250,30 +251,39 @@ export default function UniversalSearchScreen() {
     setTimeout(() => setAdded((prev) => ({ ...prev, [item.id]: false })), 1500);
   };
 
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
+
   const handleAdd = (item: SearchResult) => {
     if (item.type === "pharmacy") {
       router.push("/pharmacy");
       return;
     }
-    if (itemCount > 0 && cartType !== item.type && cartType !== "none") {
-      const meta = SERVICE_META[item.type];
-      Alert.alert(
-        `Switch to ${meta.label}?`,
-        `Your cart has items from another service. Adding this item will clear your current cart.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAddItem(item); } },
-        ],
-      );
-      return;
-    }
-    doAddItem(item);
+    requireAuth(() => {
+      requireCustomerRole(() => {
+        if (itemCount > 0 && cartType !== item.type && cartType !== "none") {
+          const meta = SERVICE_META[item.type];
+          Alert.alert(
+            `Switch to ${meta.label}?`,
+            `Your cart has items from another service. Adding this item will clear your current cart.`,
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Clear & Add", style: "destructive", onPress: () => { clearCart(); doAddItem(item); } },
+            ],
+          );
+          return;
+        }
+        doAddItem(item);
+      });
+    }, { message: "Sign in to add items to your cart", returnTo: "/search" });
   };
 
   const totalResults = sections.reduce((acc, sec) => acc + sec.data.length, 0);
 
   return (
     <View style={[s.screen, { paddingTop: topPad }]}>
+      <AuthGateSheet {...authSheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <View style={s.header}>
         <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.backBtn}>
           <Ionicons name="arrow-back" size={22} color={C.text} />

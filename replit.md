@@ -3,6 +3,28 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Guest-to-Auth Flow Audit & Hardening — Completed Changes
+
+#### AuthGateSheet Component
+- **`artifacts/ajkmart/components/AuthGateSheet.tsx`**: New bottom-sheet auth prompt with `AuthGateSheet` (sign-in prompt with "Sign In" and "Continue Browsing" buttons), `RoleBlockSheet` (blocks vendor/rider accounts from customer actions), and `useAuthGate`/`useRoleGate` hooks for consistent gating pattern.
+
+#### Auth Gating Applied Across Screens
+- **`app/food/index.tsx`**, **`app/mart/index.tsx`**, **`app/product/[id].tsx`**, **`app/search.tsx`**, **`app/pharmacy/index.tsx`**, **`components/WishlistHeart.tsx`**, **`components/ride/RideBookingForm.tsx`**, **`app/cart/index.tsx`**: All auth-required actions (add to cart, place order, book ride, wishlist toggle, prescription upload) now show `AuthGateSheet` for guests and `RoleBlockSheet` for vendor/rider accounts instead of crashing or silently failing.
+
+#### Null/Undefined Crash Fixes
+- **`app/(tabs)/profile.tsx`**: Optional chaining on `user.name.split`, `user.avatar.startsWith`, `user.username`, `user.city`, `user.area`, `user.address`, `user.latitude`, `user.longitude`, `user.cnic`.
+
+#### Ghost Cart State on Logout
+- **`context/AuthContext.tsx`**: Socket disconnect happens before state clear; `@ajkmart_cart` AsyncStorage key cleared in `doLogout`.
+- **`context/CartContext.tsx`**: Watches token transition from truthy to null — resets in-memory cart items and ack state on logout.
+- **`app/_layout.tsx`**: React Query cache cleared when user transitions from logged-in to logged-out.
+
+#### Guest Browsing Routes
+- **`app/_layout.tsx`**: `GUEST_BROWSABLE` route set allows guests to browse food, mart, ride, pharmacy, parcel, product, search, cart, and categories screens without forced redirect to auth. Auth-required actions within these screens are gated at the action level via AuthGateSheet.
+
+#### Home Screen Service Navigation
+- **`app/(tabs)/index.tsx`**: Service grid/list no longer redirects guests to `/auth`; guests navigate directly to service screens where action-level auth gates handle protected operations. Lock badge icons removed.
+
 ### Dynamic Categories System — Completed Changes
 
 #### Database Schema

@@ -24,6 +24,7 @@ import { useCart } from "@/context/CartContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 
@@ -32,6 +33,8 @@ function FoodCard({ item }: { item: any }) {
   const [added, setAdded] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { requireAuth, sheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
 
   const cartItem = items.find(i => i.productId === item.id);
   const qtyInCart = cartItem?.quantity ?? 0;
@@ -53,15 +56,21 @@ function FoodCard({ item }: { item: any }) {
 
   const handleAdd = (e?: any) => {
     e?.stopPropagation?.();
-    if (itemCount > 0 && cartType !== "food" && cartType !== "none") {
-      setShowSwitchModal(true);
-      return;
-    }
-    doAdd();
+    requireAuth(() => {
+      requireCustomerRole(() => {
+        if (itemCount > 0 && cartType !== "food" && cartType !== "none") {
+          setShowSwitchModal(true);
+          return;
+        }
+        doAdd();
+      });
+    }, { message: "Sign in to add items to your cart", returnTo: "/food" });
   };
 
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })} style={styles.foodCard}>
+      <AuthGateSheet {...sheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <CartSwitchModal
         visible={showSwitchModal}
         targetService="Food"

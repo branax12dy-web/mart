@@ -152,6 +152,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const prevTokenRef = useRef<string | null | undefined>(token);
+  useEffect(() => {
+    if (prevTokenRef.current && !token) {
+      resetAckState();
+      setItems([]);
+    }
+    prevTokenRef.current = token;
+  }, [token]);
+
   useEffect(() => {
     if (hasLoaded && items.length > 0) {
       validateCartItems(items);

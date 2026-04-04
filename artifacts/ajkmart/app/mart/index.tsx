@@ -25,6 +25,7 @@ import { withServiceGuard } from "@/components/ServiceGuard";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 import { WishlistHeart } from "@/components/WishlistHeart";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
+import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
 const { width } = Dimensions.get("window");
@@ -77,6 +78,9 @@ function FlashCard({ product }: { product: any }) {
 
   useEffect(() => () => { if (addedTimerRef.current) clearTimeout(addedTimerRef.current); }, []);
 
+  const { requireAuth, sheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
+
   const doAdd = () => {
     addItem({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image, type: "mart" });
     setAdded(true);
@@ -87,15 +91,21 @@ function FlashCard({ product }: { product: any }) {
   const [showSwitchModal, setShowSwitchModal] = useState(false);
 
   const handleAdd = () => {
-    if (itemCount > 0 && cartType !== "mart" && cartType !== "none") {
-      setShowSwitchModal(true);
-      return;
-    }
-    doAdd();
+    requireAuth(() => {
+      requireCustomerRole(() => {
+        if (itemCount > 0 && cartType !== "mart" && cartType !== "none") {
+          setShowSwitchModal(true);
+          return;
+        }
+        doAdd();
+      });
+    }, { message: "Sign in to add items to your cart", returnTo: "/mart" });
   };
 
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={() => router.push({ pathname: "/product/[id]", params: { id: product.id } })} style={[styles.flashCard, { width: FLASH_CARD_W }]}>
+      <AuthGateSheet {...sheetProps} />
+      <RoleBlockSheet {...roleBlockProps} />
       <CartSwitchModal
         visible={showSwitchModal}
         targetService="Mart"

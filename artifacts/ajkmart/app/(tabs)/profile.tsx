@@ -204,7 +204,7 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
                   : avatarUri
                     ? <Image source={{ uri: avatarUri }} style={{ width: 80, height: 80, borderRadius: 40 }} />
                     : user?.avatar
-                      ? <Image source={{ uri: user.avatar.startsWith("/") ? `${API.replace(/\/api$/, "")}${user.avatar}` : user.avatar }} style={{ width: 80, height: 80, borderRadius: 40 }} />
+                      ? <Image source={{ uri: user?.avatar?.startsWith("/") ? `${API.replace(/\/api$/, "")}${user?.avatar}` : user?.avatar }} style={{ width: 80, height: 80, borderRadius: 40 }} />
                       : <Ionicons name="camera-outline" size={28} color={C.primary} />}
               </View>
               <View style={{ position: "absolute", bottom: 0, right: 0, backgroundColor: C.primary, borderRadius: 12, padding: 4 }}>
@@ -1417,7 +1417,7 @@ export default function ProfileScreen() {
   };
   const role = roleMap[user?.role || "customer"] || roleMap.customer!;
   const initials = user?.name
-    ? user.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()
+    ? user.name.split(" ").map(w => w?.[0] ?? "").slice(0, 2).join("").toUpperCase()
     : user?.phone?.slice(-2) || "U";
 
   const LEVEL_CONFIG: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
@@ -1502,7 +1502,7 @@ export default function ProfileScreen() {
               <View style={ph.avatar}>
                 {user?.avatar
                   ? <Image
-                      source={{ uri: user.avatar.startsWith("/") ? `${API.replace(/\/api$/, "")}${user.avatar}` : user.avatar }}
+                      source={{ uri: user?.avatar?.startsWith("/") ? `${API.replace(/\/api$/, "")}${user?.avatar}` : user?.avatar }}
                       style={{ width: 80, height: 80, borderRadius: 40 }}
                     />
                   : <Text style={ph.avatarTxt}>{initials}</Text>}
@@ -1511,7 +1511,7 @@ export default function ProfileScreen() {
             <Text style={ph.name}>{user?.name || "AJKMart User"}</Text>
             <Text style={ph.phone}>{user?.phone ? `+92 ${user.phone}` : user?.email || "—"}</Text>
             {user?.username ? (
-              <Text style={ph.handle}>@{user.username}</Text>
+              <Text style={ph.handle}>@{user?.username}</Text>
             ) : null}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: spacing.sm }}>
               <View style={[ph.roleBadge, { backgroundColor: levelInfo.bg + "33", borderColor: levelInfo.color + "55" }]}>
@@ -1611,7 +1611,7 @@ export default function ProfileScreen() {
                   <View style={[pi.iconWrap, { backgroundColor: C.primarySoft }]}><Ionicons name="at-outline" size={16} color={C.primary} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>Username</Text>
-                    <Text style={pi.value}>@{user.username}</Text>
+                    <Text style={pi.value}>@{user?.username}</Text>
                   </View>
                 </View>
               )}
@@ -1620,7 +1620,7 @@ export default function ProfileScreen() {
                   <View style={[pi.iconWrap, { backgroundColor: C.successSoft }]}><Ionicons name="business-outline" size={16} color={C.success} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>City</Text>
-                    <Text style={pi.value}>{user.city}</Text>
+                    <Text style={pi.value}>{user?.city}</Text>
                   </View>
                 </View>
               )}
@@ -1629,7 +1629,7 @@ export default function ProfileScreen() {
                   <View style={[pi.iconWrap, { backgroundColor: C.infoSoft }]}><Ionicons name="map-outline" size={16} color={C.info} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>Area / Locality</Text>
-                    <Text style={pi.value}>{user.area}</Text>
+                    <Text style={pi.value}>{user?.area}</Text>
                   </View>
                 </View>
               )}
@@ -1638,7 +1638,7 @@ export default function ProfileScreen() {
                   <View style={[pi.iconWrap, { backgroundColor: C.accentSoft }]}><Ionicons name="home-outline" size={16} color={C.accent} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>Address</Text>
-                    <Text style={pi.value}>{user.address}</Text>
+                    <Text style={pi.value}>{user?.address}</Text>
                   </View>
                 </View>
               )}
@@ -1647,7 +1647,7 @@ export default function ProfileScreen() {
                   <View style={[pi.iconWrap, { backgroundColor: C.successSoft }]}><Ionicons name="navigate-outline" size={16} color={C.success} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>GPS Location</Text>
-                    <Text style={pi.value}>{user.latitude}, {user.longitude}</Text>
+                    <Text style={pi.value}>{user?.latitude}, {user?.longitude}</Text>
                   </View>
                 </View>
               )}
@@ -1656,7 +1656,7 @@ export default function ProfileScreen() {
                   <View style={[pi.iconWrap, { backgroundColor: C.amberSoft }]}><Ionicons name="card-outline" size={16} color={C.accent} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={pi.label}>CNIC</Text>
-                    <Text style={pi.value}>{user.cnic.replace(/(\d{5})(\d{7})(\d{1})/, "$1-$2-$3")}</Text>
+                    <Text style={pi.value}>{user?.cnic?.replace(/(\d{5})(\d{7})(\d{1})/, "$1-$2-$3")}</Text>
                   </View>
                   {user?.kycStatus === "verified" && (
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.successSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radii.full }}>
