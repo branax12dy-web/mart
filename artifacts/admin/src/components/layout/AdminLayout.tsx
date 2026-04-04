@@ -506,13 +506,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             {/* Mobile hamburger */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors text-slate-500"
+              className="lg:hidden w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors text-slate-500"
             >
               <Menu className="w-4.5 h-4.5" />
             </button>
 
             {/* Mobile logo */}
-            <div className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #6366F1, #818CF8)" }}>
+            <div className="lg:hidden w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, #6366F1, #818CF8)" }}>
               <ShoppingBag className="w-4 h-4 text-white" />
             </div>
 
@@ -553,7 +553,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             {/* Mobile search */}
             <button
               onClick={() => setCmdOpen(true)}
-              className="sm:hidden w-8 h-8 flex items-center justify-center rounded-lg border hover:bg-slate-50 transition-colors"
+              className="sm:hidden w-8 h-8 flex items-center justify-center rounded-xl border hover:bg-slate-50 transition-colors"
               style={{ borderColor: "rgba(99,102,241,0.18)" }}
             >
               <Search className="w-4 h-4" style={{ color: "#6366F1" }} />
@@ -655,7 +655,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             {/* Mobile logout */}
             <button
               onClick={handleLogout}
-              className="sm:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors text-slate-400 hover:text-red-500"
+              className="sm:hidden w-8 h-8 flex items-center justify-center rounded-xl hover:bg-red-50 transition-colors text-slate-400 hover:text-red-500"
             >
               <LogOut className="w-4 h-4" />
             </button>

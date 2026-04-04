@@ -9,7 +9,7 @@ import {
   ToggleRight, Settings, RotateCcw, Package,
   Gift, Star, Percent, ShieldCheck, UserPlus, Server,
   Database, Download, Upload, Trash2, HardDrive, RefreshCcw, FlaskConical,
-  Clock, X,
+  Clock, X, SlidersHorizontal,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
@@ -17,6 +17,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Toggle, Field, SecretInput, SLabel, ModeBtn } from "@/components/AdminShared";
 import { PaymentSection } from "./settings-payment";
 import { IntegrationsSection } from "./settings-integrations";
@@ -70,6 +71,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<CatKey>(() => {
     const p = new URLSearchParams(window.location.search);
     const cat = p.get("cat");
@@ -188,6 +190,10 @@ export default function SettingsPage() {
   const appNameValue = (localValues["app_name"] ?? settings.find(s => s.key === "app_name")?.value ?? "").trim();
   const appNameBlank = appNameValue === "";
 
+  /* helper: is a category visible */
+  const isCatVisible = (cat: CatKey) =>
+    (grouped[cat]?.length ?? 0) > 0 || cat === "payment" || cat === "system" || cat === "security";
+
   return (
     <div className="space-y-4 max-w-5xl">
       {/* Header */}
@@ -216,65 +222,87 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ── Mobile: horizontal scrollable category picker ── */}
-      <div className="md:hidden overflow-x-auto -mx-1 px-1 pb-1">
-        <div className="flex gap-1.5 w-max">
-          {CAT_ORDER.map(cat => {
-            const cfg = CATEGORY_CONFIG[cat];
-            const Icon = cfg.icon;
-            const isActive = activeTab === cat;
-            const dirty = dirtyCounts[cat] || 0;
-            const hasSettings = (grouped[cat]?.length ?? 0) > 0 || cat === "payment" || cat === "system" || cat === "security";
-            if (!hasSettings) return null;
-            return (
-              <button key={cat} onClick={() => setActiveTab(cat)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex-shrink-0 transition-all border ${
-                  isActive ? `${cfg.activeBg} text-white border-transparent shadow-sm` : "bg-white border-border/60 text-foreground hover:bg-muted/40"
-                }`}
-              >
-                <Icon className={`w-3 h-3 flex-shrink-0 ${isActive ? "text-white" : cfg.color}`} />
-                {cfg.label}
-                {dirty > 0 && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${isActive ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>{dirty}</span>}
-              </button>
-            );
-          })}
+      {/* ── Mobile: sticky section bar with drawer trigger ── */}
+      <div className="md:hidden sticky top-0 z-20 -mx-3 sm:-mx-5 px-3 sm:px-5 py-2 bg-slate-50/95 backdrop-blur-sm border-b border-border/40">
+        <div className="flex items-center gap-3">
+          {/* Active section indicator */}
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${activeCfg.bg}`}>
+            <ActiveIcon className={`w-4 h-4 ${activeCfg.color}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground truncate">{activeCfg.label}</p>
+            {dirtyCounts[activeTab] > 0 && (
+              <p className="text-[11px] text-amber-600 font-medium leading-tight">{dirtyCounts[activeTab]} unsaved</p>
+            )}
+          </div>
+          {/* Reset shortcut on mobile */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { loadSettings(); toast({ title: "Reloaded" }); }}
+            disabled={loading}
+            className="h-8 rounded-xl px-2.5 shrink-0"
+            title="Reset all changes"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+          {/* Save shortcut on mobile */}
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || dirtyKeys.size === 0 || appNameBlank}
+            className="h-8 rounded-xl gap-1.5 px-3 text-xs shrink-0"
+          >
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            {dirtyKeys.size > 0 ? `Save (${dirtyKeys.size})` : "Save"}
+          </Button>
+          {/* All settings trigger */}
+          <button
+            onClick={() => setMobileDrawerOpen(true)}
+            className="flex items-center gap-1.5 px-3 h-8 rounded-xl border border-border/60 bg-white text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors shrink-0"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+            All Settings
+          </button>
         </div>
       </div>
 
-      {/* Two-panel layout */}
-      <div className="flex gap-4 items-start">
-        {/* LEFT sidebar — desktop only */}
-        <div className="hidden md:flex w-56 flex-shrink-0 flex-col bg-white rounded-2xl border border-border/60 shadow-sm overflow-hidden sticky top-4">
-          {/* Sidebar header */}
-          <div className="px-4 pt-4 pb-2 border-b border-border/30">
-            <div className="flex items-center gap-2">
-              <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Settings</p>
-            </div>
+      {/* ── Mobile bottom sheet drawer ── */}
+      <Sheet open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
+        <SheetContent side="bottom" className="md:hidden p-0 rounded-t-2xl max-h-[85vh] flex flex-col">
+          {/* Drag handle */}
+          <div className="flex justify-center pt-3 pb-1 shrink-0">
+            <div className="w-10 h-1 rounded-full bg-border/60" />
           </div>
-
-          <nav className="p-2 pb-3 space-y-1 max-h-[calc(100vh-200px)] overflow-y-auto">
-            {NAV_GROUPS.map((group, gi) => {
-              const visibleItems = group.items.filter(cat => {
-                const count = grouped[cat]?.length ?? 0;
-                return count > 0 || cat === "payment" || cat === "system" || cat === "security";
-              });
+          {/* Sheet title (accessible, visually styled) */}
+          <div className="px-5 pb-3 pt-1 border-b border-border/30 shrink-0">
+            <SheetTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Settings2 className="w-4 h-4 text-muted-foreground" />
+              All Settings
+              {dirtyKeys.size > 0 && (
+                <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold ml-auto">
+                  {dirtyKeys.size} unsaved
+                </Badge>
+              )}
+            </SheetTitle>
+          </div>
+          {/* Grouped category list */}
+          <div className="overflow-y-auto flex-1 px-3 py-3 space-y-3 pb-8">
+            {NAV_GROUPS.map((group) => {
+              const visibleItems = group.items.filter(isCatVisible);
               if (visibleItems.length === 0) return null;
-
               const groupDirty = visibleItems.reduce((sum, cat) => sum + (dirtyCounts[cat] || 0), 0);
-
               return (
-                <div key={group.label} className={gi > 0 ? "pt-1" : ""}>
+                <div key={group.label}>
                   {/* Group header */}
-                  <div className="flex items-center gap-1.5 px-2 py-1.5 mb-0.5">
-                    <span className="text-[11px]">{group.emoji}</span>
-                    <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider flex-1">{group.label}</p>
+                  <div className="flex items-center gap-2 px-2 pb-1.5">
+                    <span className="text-base leading-none">{group.emoji}</span>
+                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex-1">{group.label}</p>
                     {groupDirty > 0 && (
-                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1 py-0.5 rounded-full">{groupDirty}</span>
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{groupDirty}</span>
                     )}
                   </div>
-
-                  {/* Group items */}
+                  {/* Items */}
                   <div className="space-y-0.5">
                     {visibleItems.map(cat => {
                       const cfg = CATEGORY_CONFIG[cat];
@@ -282,34 +310,109 @@ export default function SettingsPage() {
                       const isActive = activeTab === cat;
                       const dirty = dirtyCounts[cat] || 0;
                       return (
-                        <button key={cat} onClick={() => setActiveTab(cat)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all group ${
-                            isActive ? `${cfg.activeBg} text-white shadow-sm` : "hover:bg-muted/50 text-foreground"
+                        <button
+                          key={cat}
+                          onClick={() => { setActiveTab(cat); setMobileDrawerOpen(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all relative ${
+                            isActive ? "bg-slate-900 text-white shadow-sm" : "hover:bg-muted/50 text-foreground bg-transparent"
                           }`}
                         >
-                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-white/20" : cfg.bg}`}>
+                          {/* Left accent stripe */}
+                          {isActive && (
+                            <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full" style={{ background: "var(--color-accent, #6366F1)" }} />
+                          )}
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${isActive ? "bg-white/15" : cfg.bg}`}>
+                            <Icon className={`w-4 h-4 ${isActive ? "text-white" : cfg.color}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold truncate ${isActive ? "text-white" : "text-foreground"}`}>{cfg.label}</p>
+                            <p className={`text-[11px] truncate mt-0.5 ${isActive ? "text-white/60" : "text-muted-foreground"}`}>{cfg.description.split("—")[0].trim()}</p>
+                          </div>
+                          {dirty > 0 ? (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${isActive ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>{dirty}</span>
+                          ) : (
+                            <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isActive ? "text-white/40" : "text-muted-foreground/30"}`} />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Two-panel layout */}
+      <div className="flex gap-4 items-start">
+        {/* LEFT sidebar — desktop only */}
+        <div className="hidden md:flex w-60 flex-shrink-0 flex-col bg-white rounded-2xl border border-border/60 shadow-sm overflow-hidden sticky top-4">
+          {/* Sidebar header */}
+          <div className="px-4 pt-4 pb-3 border-b border-border/40 bg-slate-50/80">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Settings2 className="w-3.5 h-3.5 text-slate-600" />
+              </div>
+              <p className="text-[12px] font-bold text-slate-600 tracking-wide">Settings</p>
+            </div>
+          </div>
+
+          <nav className="p-2.5 pb-3 max-h-[calc(100vh-200px)] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+            {NAV_GROUPS.map((group, gi) => {
+              const visibleItems = group.items.filter(isCatVisible);
+              if (visibleItems.length === 0) return null;
+
+              const groupDirty = visibleItems.reduce((sum, cat) => sum + (dirtyCounts[cat] || 0), 0);
+
+              return (
+                <div key={group.label} className={gi > 0 ? "mt-3" : ""}>
+                  {/* Group header — subtle left-border accent */}
+                  <div className="flex items-center gap-2 px-2 py-1.5 mb-1 rounded-lg bg-slate-50/70 border-l-[3px] border-slate-200">
+                    <span className="text-[12px] leading-none">{group.emoji}</span>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex-1">{group.label}</p>
+                    {groupDirty > 0 && (
+                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{groupDirty}</span>
+                    )}
+                  </div>
+
+                  {/* Group items */}
+                  <div className="space-y-0.5 ml-1">
+                    {visibleItems.map(cat => {
+                      const cfg = CATEGORY_CONFIG[cat];
+                      const Icon = cfg.icon;
+                      const isActive = activeTab === cat;
+                      const dirty = dirtyCounts[cat] || 0;
+                      return (
+                        <button key={cat} onClick={() => setActiveTab(cat)}
+                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-all group relative overflow-hidden ${
+                            isActive
+                              ? "bg-slate-900 text-white shadow-md"
+                              : "hover:bg-slate-50 text-foreground"
+                          }`}
+                        >
+                          {/* Active left accent stripe */}
+                          {isActive && (
+                            <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-indigo-400" />
+                          )}
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${isActive ? "bg-white/15" : cfg.bg}`}>
                             <Icon className={`w-3 h-3 ${isActive ? "text-white" : cfg.color}`} />
                           </div>
-                          <span className={`text-xs font-semibold flex-1 truncate ${isActive ? "text-white" : "text-foreground"}`}>{cfg.label}</span>
+                          <span className={`text-xs font-semibold flex-1 truncate ${isActive ? "text-white" : "text-slate-700"}`}>{cfg.label}</span>
                           {dirty > 0
                             ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${isActive ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>{dirty}</span>
-                            : <ChevronRight className={`w-3 h-3 flex-shrink-0 ${isActive ? "text-white/60" : "text-muted-foreground/30 group-hover:text-muted-foreground/60"}`} />
+                            : <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-colors ${isActive ? "text-white/40" : "text-slate-300 group-hover:text-slate-400"}`} />
                           }
                         </button>
                       );
                     })}
                   </div>
-
-                  {/* Divider between groups */}
-                  {gi < NAV_GROUPS.length - 1 && (
-                    <div className="mx-2 mt-2 border-t border-border/30" />
-                  )}
                 </div>
               );
             })}
           </nav>
 
-          <div className="px-4 py-2.5 border-t border-border/40 bg-muted/20">
+          <div className="px-4 py-2.5 border-t border-border/40 bg-slate-50/60">
             <p className="text-[10px] text-muted-foreground">{settings.length} settings</p>
           </div>
         </div>
