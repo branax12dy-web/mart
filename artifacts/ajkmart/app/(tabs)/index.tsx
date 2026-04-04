@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { router, type Href } from "expo-router";
+import { Link, router, type Href } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
   Image,
   FlatList,
@@ -227,18 +228,20 @@ const sl = StyleSheet.create({
 
 function GuestSignInStrip() {
   return (
-    <Pressable onPress={() => router.push("/auth" as Href)} style={gi.wrap} accessibilityRole="button">
-      <LinearGradient colors={["#0047B3", "#0066FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gi.card}>
-        <View style={gi.iconWrap}>
-          <Ionicons name="person-circle-outline" size={20} color="#fff" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={gi.title}>Sign In / Register</Text>
-          <Text style={gi.sub}>Sign in to place orders & track deliveries</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
-      </LinearGradient>
-    </Pressable>
+    <Link href={"/auth" as Href} asChild>
+      <TouchableOpacity activeOpacity={0.8} style={gi.wrap} accessibilityRole="button">
+        <LinearGradient colors={["#0047B3", "#0066FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gi.card}>
+          <View style={gi.iconWrap}>
+            <Ionicons name="person-circle-outline" size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={gi.title}>Sign In / Register</Text>
+            <Text style={gi.sub}>Sign in to place orders & track deliveries</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
+        </LinearGradient>
+      </TouchableOpacity>
+    </Link>
   );
 }
 
@@ -875,7 +878,7 @@ export default function HomeScreen() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
 
   useEffect(() => {
-    Animated.timing(hdOp, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    Animated.timing(hdOp, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== "web" }).start();
   }, []);
 
   const [viewMode, setViewMode] = useState<ViewMode>("grid");

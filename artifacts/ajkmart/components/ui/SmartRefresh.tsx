@@ -48,7 +48,7 @@ function BrandedSpinner({ size = INDICATOR_SIZE, color = C.primary }: { size?: n
         toValue: 1,
         duration: 900,
         easing: Easing.linear,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== "web",
       })
     );
     anim.start();
@@ -241,6 +241,7 @@ const pi = StyleSheet.create({
     right: 0,
     alignItems: "center",
     zIndex: 100,
+    pointerEvents: "none" as const,
   },
   circle: {
     width: 36,
