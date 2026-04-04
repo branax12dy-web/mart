@@ -21,10 +21,10 @@ if (!_jwtSecret || _jwtSecret.length < 32) {
 }
 export const JWT_SECRET: string = _jwtSecret;
 
-/* Access token TTL: 15 minutes */
-export const ACCESS_TOKEN_TTL_SEC = 15 * 60;
-/* Refresh token TTL: 30 days */
-export const REFRESH_TOKEN_TTL_DAYS = 30;
+/* Access token TTL: 1 hour — short-lived for security; proactive refresh handles session persistence */
+export const ACCESS_TOKEN_TTL_SEC = 60 * 60;
+/* Refresh token TTL: 90 days */
+export const REFRESH_TOKEN_TTL_DAYS = 90;
 
 /* ══════════════════════════════════════════════════════════════
    ADMIN JWT CONFIGURATION — separate from user JWT

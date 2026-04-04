@@ -6,7 +6,7 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
+  TouchableOpacity,
   ScrollView,
   StyleSheet,
   Text,
@@ -633,7 +633,7 @@ export default function AuthScreen() {
                 />
               )}
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => setTrustDevice(!trustDevice)}
                 style={styles.trustRow}
                 accessibilityLabel="Trust this device for 30 days"
@@ -644,7 +644,7 @@ export default function AuthScreen() {
                   {trustDevice && <Ionicons name="checkmark" size={13} color="#fff" />}
                 </View>
                 <Text style={styles.trustText}>Trust this device for 30 days</Text>
-              </Pressable>
+              </TouchableOpacity>
 
               {error ? <AlertBox type="error" message={error} /> : null}
 
@@ -654,7 +654,7 @@ export default function AuthScreen() {
                 loading={loading}
               />
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => { setUseBackup(!useBackup); setBackupCode(""); setTotpCode(""); clearError(); }}
                 style={styles.linkBtn}
                 accessibilityRole="button"
@@ -662,16 +662,16 @@ export default function AuthScreen() {
                 <Text style={styles.linkBtnText}>
                   {useBackup ? "Use authenticator app instead" : "Lost your device? Use backup code"}
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => { setStep("continue"); setTotpCode(""); clearError(); }}
                 style={styles.backRow}
                 accessibilityRole="button"
               >
                 <Ionicons name="arrow-back" size={16} color={C.primary} />
                 <Text style={styles.backRowText}>{T("backToLogin")}</Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </LinearGradient>
@@ -693,14 +693,14 @@ export default function AuthScreen() {
               <Ionicons name="information-circle-outline" size={16} color={C.textMuted} />
               <Text style={styles.pendingInfoText}>{T("approvalTimeframe")}</Text>
             </View>
-            <Pressable
+            <TouchableOpacity activeOpacity={0.7}
               style={styles.backRow}
               onPress={() => { setStep("continue"); setOtp(""); setEmailOtp(""); }}
               accessibilityRole="button"
             >
               <Ionicons name="arrow-back" size={16} color={C.primary} />
               <Text style={styles.backRowText}>{T("backToLogin")}</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         </View>
       </LinearGradient>
@@ -758,7 +758,7 @@ export default function AuthScreen() {
 
               <AuthButton label={T("saveAndContinue")} onPress={handleCompleteProfile} loading={loading} />
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={async () => {
                   if (pendingToken && pendingUser) {
                     await login(pendingUser, pendingToken, pendingRefreshToken || undefined);
@@ -769,7 +769,7 @@ export default function AuthScreen() {
                 accessibilityRole="button"
               >
                 <Text style={styles.linkBtnText}>{T("doLater")}</Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </LinearGradient>
@@ -786,7 +786,7 @@ export default function AuthScreen() {
         style={styles.flex}
       >
         {router.canGoBack() && (
-          <Pressable
+          <TouchableOpacity activeOpacity={0.7}
             onPress={() => router.back()}
             style={[styles.backToHome, { top: topPad + 12 }]}
             accessibilityRole="button"
@@ -794,7 +794,7 @@ export default function AuthScreen() {
           >
             <Ionicons name="arrow-back" size={16} color="rgba(255,255,255,0.9)" />
             <Text style={styles.backToHomeTxt}>Back</Text>
-          </Pressable>
+          </TouchableOpacity>
         )}
 
         <View style={[styles.topSection, { paddingTop: topPad + 32 }]}>
@@ -820,7 +820,7 @@ export default function AuthScreen() {
 
               {showBiometric && (
                 <>
-                  <Pressable
+                  <TouchableOpacity activeOpacity={0.7}
                     onPress={handleBiometricLogin}
                     style={styles.biometricQuickBtn}
                     accessibilityRole="button"
@@ -840,7 +840,7 @@ export default function AuthScreen() {
                         <Ionicons name="chevron-forward" size={18} color={C.primary} />
                       </>
                     )}
-                  </Pressable>
+                  </TouchableOpacity>
 
                   <View style={styles.orRow}>
                     <View style={styles.orLine} />
@@ -865,14 +865,14 @@ export default function AuthScreen() {
 
               <AuthButton label="Continue" onPress={checkIdentifier} loading={loading} icon="arrow-forward" />
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => router.push("/auth/forgot-password")}
                 style={[styles.forgotBtn, { alignSelf: "center", marginTop: spacing.sm, marginBottom: 0 }]}
                 accessibilityLabel="Forgot your password?"
                 accessibilityRole="link"
               >
                 <Text style={styles.forgotText}>Forgot password?</Text>
-              </Pressable>
+              </TouchableOpacity>
 
               {(socialMethods.length > 0 || showMagicLink) && (
                 <>
@@ -926,7 +926,7 @@ export default function AuthScreen() {
                 </>
               )}
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => router.push("/auth/register")}
                 style={styles.linkBtn}
                 accessibilityLabel="Create a new account"
@@ -935,24 +935,24 @@ export default function AuthScreen() {
                 <Text style={styles.linkBtnText}>
                   New user? <Text style={{ fontFamily: "Inter_700Bold" }}>Create account</Text>
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
             </>
           )}
 
           {step === "method" && enabledMethods.length > 0 && (
             <>
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => { setStep("continue"); clearError(); }}
                 style={styles.backRow}
                 accessibilityRole="button"
               >
                 <Ionicons name="arrow-back" size={16} color={C.primary} />
                 <Text style={styles.backRowText}>Change identifier</Text>
-              </Pressable>
+              </TouchableOpacity>
 
               <View style={styles.tabs} accessibilityRole="tablist">
                 {enabledMethods.map(m => (
-                  <Pressable
+                  <TouchableOpacity activeOpacity={0.7}
                     key={m.key}
                     onPress={() => selectMethod(m.key)}
                     style={[styles.tab, method === m.key && styles.tabActive]}
@@ -962,7 +962,7 @@ export default function AuthScreen() {
                   >
                     <Ionicons name={m.icon} size={15} color={method === m.key ? C.primary : C.textMuted} />
                     <Text style={[styles.tabText, method === m.key && styles.tabTextActive]}>{m.label}</Text>
-                  </Pressable>
+                  </TouchableOpacity>
                 ))}
               </View>
             </>
@@ -982,14 +982,14 @@ export default function AuthScreen() {
 
             {method === "phone" && step === "otp" && (
               <>
-                <Pressable
+                <TouchableOpacity activeOpacity={0.7}
                   onPress={() => { setStep("continue"); clearError(); setDevOtp(""); setOtp(""); }}
                   style={styles.backRow}
                   accessibilityRole="button"
                 >
                   <Ionicons name="arrow-back" size={16} color={C.primary} />
                   <Text style={styles.backRowText}>{T("changeNumber")}</Text>
-                </Pressable>
+                </TouchableOpacity>
                 <Text style={styles.sectionTitle}>{T("enterOtp")}</Text>
                 <Text style={styles.sectionSubtitle}>{T("otpSentToPhone")} +92 {phone}</Text>
 
@@ -1009,7 +1009,7 @@ export default function AuthScreen() {
 
                 <DevOtpBanner otp={devOtp} />
 
-                <Pressable
+                <TouchableOpacity activeOpacity={0.7}
                   onPress={() => handleSendPhoneOtp()}
                   style={[styles.resendBtn, resendCooldown > 0 && styles.resendDisabled]}
                   disabled={resendCooldown > 0}
@@ -1020,7 +1020,7 @@ export default function AuthScreen() {
                   <Text style={[styles.resendText, resendCooldown > 0 && { color: C.textMuted }]}>
                     {resendCooldown > 0 ? `${T("otpResendIn")} (${resendCooldown}s)` : T("otpResend")}
                   </Text>
-                </Pressable>
+                </TouchableOpacity>
               </>
             )}
 
@@ -1040,14 +1040,14 @@ export default function AuthScreen() {
 
             {method === "email" && step === "otp" && (
               <>
-                <Pressable
+                <TouchableOpacity activeOpacity={0.7}
                   onPress={() => { setStep("continue"); clearError(); setEmailDevOtp(""); setEmailOtp(""); }}
                   style={styles.backRow}
                   accessibilityRole="button"
                 >
                   <Ionicons name="arrow-back" size={16} color={C.primary} />
                   <Text style={styles.backRowText}>{T("changeEmail")}</Text>
-                </Pressable>
+                </TouchableOpacity>
                 <Text style={styles.sectionTitle}>{T("enterEmailOtp")}</Text>
                 <Text style={styles.sectionSubtitle}>{T("otpSentToEmail")} {email}</Text>
 
@@ -1062,7 +1062,7 @@ export default function AuthScreen() {
 
                 <DevOtpBanner otp={emailDevOtp} />
 
-                <Pressable
+                <TouchableOpacity activeOpacity={0.7}
                   onPress={handleSendEmailOtp}
                   style={[styles.resendBtn, emailResendCooldown > 0 && styles.resendDisabled]}
                   disabled={emailResendCooldown > 0}
@@ -1072,7 +1072,7 @@ export default function AuthScreen() {
                   <Text style={[styles.resendText, emailResendCooldown > 0 && { color: C.textMuted }]}>
                     {emailResendCooldown > 0 ? `${T("otpResendIn")} (${emailResendCooldown}s)` : T("otpResend")}
                   </Text>
-                </Pressable>
+                </TouchableOpacity>
               </>
             )}
 
@@ -1095,14 +1095,14 @@ export default function AuthScreen() {
                   rightIcon={showPwd ? "eye-off-outline" : "eye-outline"}
                   onRightIconPress={() => setShowPwd(v => !v)}
                 />
-                <Pressable
+                <TouchableOpacity activeOpacity={0.7}
                   onPress={() => router.push("/auth/forgot-password")}
                   style={styles.forgotBtn}
                   accessibilityLabel="Forgot Password"
                   accessibilityRole="link"
                 >
                   <Text style={styles.forgotText}>Forgot Password?</Text>
-                </Pressable>
+                </TouchableOpacity>
               </>
             )}
 
@@ -1183,7 +1183,7 @@ export default function AuthScreen() {
                   </>
                 )}
 
-                <Pressable
+                <TouchableOpacity activeOpacity={0.7}
                   onPress={() => router.push("/auth/register")}
                   style={[styles.linkBtn, { marginTop: spacing.xl }]}
                   accessibilityLabel="Create a new account"
@@ -1192,7 +1192,7 @@ export default function AuthScreen() {
                   <Text style={styles.linkBtnText}>
                     Don't have an account? <Text style={{ fontFamily: "Inter_700Bold" }}>Register</Text>
                   </Text>
-                </Pressable>
+                </TouchableOpacity>
               </>
             )}
 

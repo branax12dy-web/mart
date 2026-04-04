@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useCallback } from "react";
 import {
   Animated,
-  Pressable,
+  TouchableOpacity,
   TextInput,
   View,
   Text,
@@ -50,7 +50,8 @@ export function OtpDigitInput({
   const digits = value.split("");
 
   return (
-    <Pressable
+    <TouchableOpacity
+      activeOpacity={0.9}
       onPress={() => inputRef.current?.focus()}
       style={otpS.container}
       accessibilityLabel={`Enter ${length}-digit verification code`}
@@ -90,7 +91,7 @@ export function OtpDigitInput({
           );
         })}
       </View>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -161,7 +162,8 @@ export function AuthButton({
 
   return (
     <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style]}>
-      <Pressable
+      <TouchableOpacity
+        activeOpacity={0.8}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={handlePress}
@@ -187,7 +189,7 @@ export function AuthButton({
             </Text>
           </View>
         )}
-      </Pressable>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -367,9 +369,9 @@ export function InputField({
           accessibilityLabel={label || inputProps.placeholder}
         />
         {rightIcon && (
-          <Pressable onPress={onRightIconPress} style={fieldS.iconBtn} accessibilityLabel="Toggle visibility">
+          <TouchableOpacity activeOpacity={0.7} onPress={onRightIconPress} style={fieldS.iconBtn} accessibilityLabel="Toggle visibility">
             <Ionicons name={rightIcon} size={20} color={rightIconColor || C.textMuted} />
-          </Pressable>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -471,8 +473,9 @@ export function FallbackChannelButtons({
   return (
     <View style={chS.fallbackRow}>
       {channels.map(ch => (
-        <Pressable
+        <TouchableOpacity
           key={ch}
+          activeOpacity={0.7}
           onPress={() => !disabled && onSelect(ch)}
           disabled={disabled}
           style={[chS.fallbackBtn, disabled && chS.fallbackDisabled]}
@@ -482,7 +485,7 @@ export function FallbackChannelButtons({
           <Text style={[chS.fallbackText, disabled && { color: C.textMuted }]}>
             Try {labels[ch] || ch}
           </Text>
-        </Pressable>
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -552,7 +555,8 @@ export function SocialButton({
 
   return (
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <Pressable
+      <TouchableOpacity
+        activeOpacity={0.8}
         onPressIn={() => !disabled && Animated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, friction: 8 }).start()}
         onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, friction: 8 }).start()}
         onPress={() => !disabled && onPress()}
@@ -569,7 +573,7 @@ export function SocialButton({
             <Text style={[socialS.text, disabled && { color: C.textMuted }]}>{label}</Text>
           </>
         )}
-      </Pressable>
+      </TouchableOpacity>
     </Animated.View>
   );
 }

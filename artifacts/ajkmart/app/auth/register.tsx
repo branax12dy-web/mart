@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
+  TouchableOpacity,
   ScrollView,
   StyleSheet,
   Text,
@@ -490,14 +490,14 @@ export default function RegisterScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <LinearGradient colors={[C.primaryDark, C.primary, C.primaryLight]} style={s.gradient}>
         <View style={[s.topSection, { paddingTop: topPad + 16 }]}>
-          <Pressable
+          <TouchableOpacity activeOpacity={0.7}
             onPress={handleBack}
             style={s.backBtn}
             accessibilityLabel={step <= 2 ? "Go back" : "Previous step"}
             accessibilityRole="button"
           >
             <Ionicons name="arrow-back" size={20} color="#fff" />
-          </Pressable>
+          </TouchableOpacity>
           <View style={s.headerLogoRow}>
             <View style={s.headerLogo}>
               <Ionicons name="person-add" size={24} color={C.primary} />
@@ -530,14 +530,14 @@ export default function RegisterScreen() {
                 </>
               ) : (
                 <>
-                  <Pressable
+                  <TouchableOpacity activeOpacity={0.7}
                     onPress={() => { setOtpSent(false); setOtp(""); clearError(); }}
                     style={s.changeBtn}
                     accessibilityRole="button"
                   >
                     <Ionicons name="arrow-back" size={14} color={C.primary} />
                     <Text style={s.changeBtnText}>Change Number</Text>
-                  </Pressable>
+                  </TouchableOpacity>
 
                   <Text style={s.fieldLabel}>Enter Verification Code</Text>
                   <Text style={s.fieldSub}>Code sent to +92 {phone}</Text>
@@ -551,7 +551,7 @@ export default function RegisterScreen() {
 
                   <DevOtpBanner otp={devOtp} />
 
-                  <Pressable
+                  <TouchableOpacity activeOpacity={0.7}
                     onPress={handleSendOtp}
                     style={[s.resendBtn, resendCooldown > 0 && s.resendDisabled]}
                     disabled={resendCooldown > 0}
@@ -561,7 +561,7 @@ export default function RegisterScreen() {
                     <Text style={[s.resendText, resendCooldown > 0 && { color: C.textMuted }]}>
                       {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend OTP"}
                     </Text>
-                  </Pressable>
+                  </TouchableOpacity>
                 </>
               )}
             </>
@@ -625,7 +625,7 @@ export default function RegisterScreen() {
 
           {step === 3 && (
             <>
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={handleGetLocation}
                 disabled={gpsLoading}
                 style={s.gpsButton}
@@ -640,7 +640,7 @@ export default function RegisterScreen() {
                 <Text style={s.gpsButtonText}>
                   {gpsLoading ? "Getting Location..." : "Use My Current Location"}
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
               {!!gpsStatus && (
                 <Text style={[s.gpsStatusText, gpsStatus.includes("denied") && { color: C.danger }]}>
                   {gpsStatus}
@@ -660,7 +660,7 @@ export default function RegisterScreen() {
               </View>
 
               <Text style={s.fieldLabel}>City *</Text>
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => setShowCityPicker(!showCityPicker)}
                 style={[s.pickerButton, !city && !!error && s.pickerError]}
               >
@@ -668,7 +668,7 @@ export default function RegisterScreen() {
                   {city || "Select your city"}
                 </Text>
                 <Ionicons name={showCityPicker ? "chevron-up" : "chevron-down"} size={20} color={C.textMuted} />
-              </Pressable>
+              </TouchableOpacity>
               {showCityPicker && (
                 <View style={s.cityDropdown}>
                   <View style={s.citySearchWrap}>
@@ -681,14 +681,14 @@ export default function RegisterScreen() {
                   </View>
                   <ScrollView style={s.cityList} nestedScrollEnabled>
                     {filteredCities.map(c => (
-                      <Pressable
+                      <TouchableOpacity activeOpacity={0.7}
                         key={c}
                         onPress={() => { setCity(c); setShowCityPicker(false); setCitySearch(""); clearError(); }}
                         style={[s.cityItem, city === c && s.cityItemSelected]}
                       >
                         <Text style={[s.cityItemText, city === c && s.cityItemTextSelected]}>{c}</Text>
                         {city === c && <Ionicons name="checkmark-circle" size={18} color={C.primary} />}
-                      </Pressable>
+                      </TouchableOpacity>
                     ))}
                     {filteredCities.length === 0 && (
                       <Text style={s.noCityText}>No cities found</Text>
@@ -755,7 +755,7 @@ export default function RegisterScreen() {
                 <Text style={s.mismatchText}>Passwords do not match</Text>
               )}
 
-              <Pressable
+              <TouchableOpacity activeOpacity={0.7}
                 onPress={() => setTermsAccepted(!termsAccepted)}
                 style={s.termsRow}
                 accessibilityLabel="Accept Terms and Conditions"
@@ -769,7 +769,7 @@ export default function RegisterScreen() {
                   I agree to the <Text style={{ color: C.primary }}>Terms & Conditions</Text> and{" "}
                   <Text style={{ color: C.primary }}>Privacy Policy</Text>
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
             </>
           )}
 
@@ -795,7 +795,7 @@ export default function RegisterScreen() {
           />
 
           {step === 1 && (
-            <Pressable
+            <TouchableOpacity activeOpacity={0.7}
               onPress={() => router.replace("/auth")}
               style={s.loginLink}
               accessibilityLabel="Go to login"
@@ -804,13 +804,13 @@ export default function RegisterScreen() {
               <Text style={s.loginLinkText}>
                 Already have an account? <Text style={{ fontFamily: "Inter_700Bold" }}>Login</Text>
               </Text>
-            </Pressable>
+            </TouchableOpacity>
           )}
 
           {step === 3 && (
-            <Pressable onPress={() => setStep(4)} style={s.skipLink} accessibilityRole="link">
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setStep(4)} style={s.skipLink} accessibilityRole="link">
               <Text style={s.skipLinkText}>Skip for now</Text>
-            </Pressable>
+            </TouchableOpacity>
           )}
         </ScrollView>
       </LinearGradient>

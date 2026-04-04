@@ -295,11 +295,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (bioPref === "true") setBiometricEnabledState(true);
         if (storedUser && storedToken) {
           const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
-          setToken(storedToken);
-          setAuthToken(storedToken);
-          registerAuth(storedToken, storedRefresh);
-          syncToServer(storedToken).catch(() => {});
+          const exp = decodeJwtExp(storedToken);
+          const isExpired = exp ? exp * 1000 < Date.now() : false;
+
+          if (isExpired && storedRefresh) {
+            try {
+              const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+              const refreshRes = await fetch(`${base}/api/auth/refresh`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refreshToken: storedRefresh }),
+              });
+              if (refreshRes.ok) {
+                const data = await refreshRes.json() as { token?: string; refreshToken?: string; user?: AppUser };
+                if (data.token) {
+                  await secureSet(TOKEN_KEY, data.token);
+                  if (data.refreshToken) await secureSet(REFRESH_TOKEN_KEY, data.refreshToken);
+                  const freshUser = data.user || parsedUser;
+                  await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
+                  setUser(freshUser);
+                  setToken(data.token);
+                  setAuthToken(data.token);
+                  registerAuth(data.token, data.refreshToken ?? storedRefresh);
+                  syncToServer(data.token).catch(() => {});
+                  setIsLoading(false);
+                  return;
+                }
+              }
+            } catch {}
+            await AsyncStorage.multiRemove([USER_KEY]);
+            await secureDelete(TOKEN_KEY);
+            await secureDelete(REFRESH_TOKEN_KEY);
+          } else if (isExpired) {
+            await AsyncStorage.multiRemove([USER_KEY]);
+            await secureDelete(TOKEN_KEY);
+            await secureDelete(REFRESH_TOKEN_KEY);
+          } else {
+            setUser(parsedUser);
+            setToken(storedToken);
+            setAuthToken(storedToken);
+            registerAuth(storedToken, storedRefresh);
+            syncToServer(storedToken).catch(() => {});
+          }
         }
       } catch {}
       setIsLoading(false);

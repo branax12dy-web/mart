@@ -27,6 +27,7 @@ import {
   verifyUserJwt,
   writeAuthAuditLog,
   REFRESH_TOKEN_TTL_DAYS,
+  ACCESS_TOKEN_TTL_SEC,
   verifyCaptcha,
   checkAvailableRateLimit,
 } from "../middleware/security.js";
@@ -860,7 +861,7 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
     res.json({
       token: accessToken,
       refreshToken: refreshRaw,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
       user: { id: newUserId, phone, name: null, email: null, username: null, role: "customer", roles: "customer",
               walletBalance: signupBonus, isActive: !requireApproval, totpEnabled: false },
       ...(requireApproval ? { pendingApproval: true } : {}),
@@ -1033,7 +1034,7 @@ router.post("/verify-otp", verifyCaptcha, async (req, res) => {
   res.json({
     token:        accessToken,
     refreshToken: refreshRaw,
-    expiresAt:    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    expiresAt:    new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
     sessionDays:  REFRESH_TOKEN_TTL_DAYS,
     user: {
       id:            u.id,
@@ -1311,7 +1312,7 @@ async function handleRefreshToken(req: Request, res: any) {
   res.json({
     token:        newAccessToken,
     refreshToken: newRefreshRaw,
-    expiresAt:    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    expiresAt:    new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
   });
 }
 
@@ -1586,7 +1587,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
 
   /* Issue short-lived access token + refresh token (consistent with OTP flow) */
   const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
-  const expiresAt   = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt   = new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString();
 
   if (isPendingApproval) {
     res.json({
@@ -1722,7 +1723,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   }
 
   const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
-  const expiresAt   = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt   = new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString();
 
   if (isPendingApproval) {
     res.json({
@@ -2729,7 +2730,7 @@ async function issueTokensForUser(user: any, ip: string, method: string, userAge
   return {
     token: accessToken,
     refreshToken: refreshRaw,
-    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
     sessionDays: REFRESH_TOKEN_TTL_DAYS,
     user: {
       id: user.id, phone: user.phone, name: user.name, email: user.email,
@@ -3211,7 +3212,7 @@ router.post("/magic-link/send", async (req, res) => {
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashPassword(rawToken);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000);
 
   await db.insert(magicLinkTokensTable).values({
     id: generateId(),
