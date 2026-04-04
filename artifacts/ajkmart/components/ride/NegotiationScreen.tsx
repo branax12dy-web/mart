@@ -308,14 +308,14 @@ export function NegotiationScreen({
 
   const isDark = colorScheme === "dark";
   const headerGradient: [string, string] = isDark
-    ? ["#1E293B", "#0F172A"]
-    : ["#1E293B", "#0F172A"];
-  const cardBg = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)";
-  const cardBgBest = isDark ? "rgba(16,185,129,0.12)" : "rgba(16,185,129,0.08)";
-  const cardBorder = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)";
-  const textPrimary = "#fff";
-  const textSecondary = isDark ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.6)";
-  const textMuted = isDark ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.4)";
+    ? ["#1A2744", "#0F172A"]
+    : ["#1E3A5F", "#132847"];
+  const cardBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)";
+  const cardBgBest = isDark ? "rgba(16,185,129,0.14)" : "rgba(16,185,129,0.16)";
+  const cardBorder = isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.2)";
+  const textPrimary = "#FFFFFF";
+  const textSecondary = isDark ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.75)";
+  const textMuted = isDark ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.55)";
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>

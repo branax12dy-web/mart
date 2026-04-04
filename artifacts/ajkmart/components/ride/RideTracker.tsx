@@ -2400,6 +2400,7 @@ export function RideTracker({
                   <View style={{ alignItems: "center", gap: 6 }}>
                     <Pressable
                       onPress={() => Linking.openURL(`tel:${ride.riderPhone}`)}
+                      style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.88 : 1 }] })}
                     >
                       <LinearGradient
                         colors={["#0066FF", "#0047B3"]}
@@ -2424,7 +2425,10 @@ export function RideTracker({
                 )}
                 {canCancel && (
                   <View style={{ alignItems: "center", gap: 6 }}>
-                    <Pressable onPress={() => setCancelModalTarget({ id: rideId, type: "ride", status: status, fare: ride?.fare, paymentMethod: ride?.paymentMethod, riderAssigned: !!ride?.riderId })}>
+                    <Pressable
+                      onPress={() => setCancelModalTarget({ id: rideId, type: "ride", status: status, fare: ride?.fare, paymentMethod: ride?.paymentMethod, riderAssigned: !!ride?.riderId })}
+                      style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.88 : 1 }] })}
+                    >
                       <LinearGradient
                         colors={["#F43F5E", "#BE123C"]}
                         style={{
@@ -2469,7 +2473,7 @@ export function RideTracker({
                         setSosLoading(false);
                       }}
                       disabled={sosLoading || sosSent}
-                      style={{ opacity: sosSent ? 0.65 : 1 }}
+                      style={({ pressed }) => ({ opacity: sosSent ? 0.65 : 1, transform: [{ scale: pressed ? 0.88 : 1 }] })}
                     >
                       <View style={{ alignItems: "center", justifyContent: "center" }}>
                         {/* Pulsing ring around SOS */}
