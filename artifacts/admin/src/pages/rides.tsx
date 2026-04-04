@@ -1,6 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { io } from "socket.io-client";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   useRidesEnriched, useRideServices, useCreateRideService, useUpdateRideService, useDeleteRideService,
   usePopularLocations, useCreateLocation, useUpdateLocation, useDeleteLocation,
@@ -532,24 +535,90 @@ function RideDetailModal({
   );
 }
 
+/* ── Tile config hook: fetches provider from /api/maps/config?app=admin ── */
+function useDispatchTileConfig() {
+  const [tile, setTile] = useState<{ url: string; attribution: string; provider: string }>({
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    provider: "osm",
+  });
+  useEffect(() => {
+    fetch(`${window.location.origin}/api/maps/config?app=admin`)
+      .then(r => r.json())
+      .then((d: any) => {
+        const cfg = d?.data ?? d;
+        const prov = cfg?.provider ?? "osm";
+        const tok  = cfg?.token ?? "";
+        if (prov === "mapbox" && tok) {
+          setTile({
+            url: `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${tok}`,
+            attribution: '© <a href="https://www.mapbox.com/">Mapbox</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            provider: "mapbox",
+          });
+        } else if (prov === "google" && tok) {
+          setTile({
+            url: `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${tok}`,
+            attribution: "© Google Maps",
+            provider: "google",
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return tile;
+}
+
+/* ── FitBounds: auto-zooms map to show all markers ── */
+function FitBounds({ positions }: { positions: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length === 0) return;
+    if (positions.length === 1) {
+      map.setView(positions[0]!, 14);
+    } else {
+      map.fitBounds(L.latLngBounds(positions), { padding: [40, 40], maxZoom: 15 });
+    }
+  }, [positions.map(p => p.join(",")).join("|")]);
+  return null;
+}
+
+/* Fix leaflet default icons in Vite builds */
+const _fixLeafletIcons = () => {
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  });
+};
+_fixLeafletIcons();
+
+function makeRideIcon(color: string) {
+  return L.divIcon({
+    className: "",
+    iconSize:  [32, 32],
+    iconAnchor: [16, 32],
+    html: `<div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;">
+      <div style="background:${color};border-radius:50% 50% 50% 0;transform:rotate(-45deg);width:24px;height:24px;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+      </div>
+    </div>`,
+  });
+}
+
 function DispatchMap({ rides }: { rides: any[] }) {
+  const tile = useDispatchTileConfig();
   const geoRides = rides.filter(r => r.pickupLat != null && r.pickupLng != null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const positions: [number, number][] = geoRides.map(r => [r.pickupLat, r.pickupLng]);
+  const center: [number, number] = positions.length > 0
+    ? [
+        positions.reduce((s, p) => s + p[0], 0) / positions.length,
+        positions.reduce((s, p) => s + p[1], 0) / positions.length,
+      ]
+    : [34.3697, 73.4716];
+
   if (geoRides.length === 0) return null;
-
-  const lats = geoRides.map(r => r.pickupLat);
-  const lngs = geoRides.map(r => r.pickupLng);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const PAD = 0.005;
-  const latRange = Math.max(maxLat - minLat + PAD * 2, PAD * 4);
-  const lngRange = Math.max(maxLng - minLng + PAD * 2, PAD * 4);
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLng = (minLng + maxLng) / 2;
-
-  const toX = (lng: number) => ((lng - (centerLng - lngRange / 2)) / lngRange) * 100;
-  const toY = (lat: number) => ((1 - (lat - (centerLat - latRange / 2)) / latRange)) * 100;
-
-  const [hovered, setHovered] = useState<string | null>(null);
 
   return (
     <Card className="rounded-2xl border-2 border-blue-200/60 overflow-hidden">
@@ -557,73 +626,50 @@ function DispatchMap({ rides }: { rides: any[] }) {
         <p className="text-xs font-bold text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
           <MapPin className="w-3.5 h-3.5" /> Live Dispatch Map
         </p>
-        <span className="text-[10px] text-blue-600 font-semibold">{geoRides.length} active pickup{geoRides.length !== 1 ? "s" : ""}</span>
-      </div>
-      <div className="relative w-full bg-gradient-to-br from-blue-50 via-green-50/30 to-amber-50/20" style={{ height: 320 }}>
-        <div className="absolute inset-0">
-          {[...Array(6)].map((_, i) => (
-            <div key={`h${i}`} className="absolute w-full border-b border-blue-200/20" style={{ top: `${(i + 1) * (100 / 7)}%` }} />
-          ))}
-          {[...Array(8)].map((_, i) => (
-            <div key={`v${i}`} className="absolute h-full border-r border-blue-200/20" style={{ left: `${(i + 1) * (100 / 9)}%` }} />
-          ))}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">{tile.provider.toUpperCase()}</span>
+          <span className="text-[10px] text-blue-600 font-semibold">{geoRides.length} active pickup{geoRides.length !== 1 ? "s" : ""}</span>
         </div>
-
-        {geoRides.map(r => {
-          const x = toX(r.pickupLng);
-          const y = toY(r.pickupLat);
-          const elapsed = Math.floor((Date.now() - new Date(r.createdAt).getTime()) / 1000);
-          const isUrgent = elapsed > 120;
-          const isBargaining = r.status === "bargaining";
-          return (
-            <div key={r.id}>
-              <a
-                href={`https://www.google.com/maps?q=${r.pickupLat},${r.pickupLng}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="absolute z-10 group cursor-pointer"
-                style={{ left: `${Math.max(3, Math.min(97, x))}%`, top: `${Math.max(3, Math.min(97, y))}%`, transform: "translate(-50%, -100%)" }}
-                onMouseEnter={() => setHovered(r.id)}
-                onMouseLeave={() => setHovered(null)}
+      </div>
+      <div style={{ height: 340 }}>
+        <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom={true}>
+          <TileLayer url={tile.url} attribution={tile.attribution} maxZoom={19} />
+          <FitBounds positions={positions} />
+          {geoRides.map(r => {
+            const elapsed = Math.floor((Date.now() - new Date(r.createdAt).getTime()) / 1000);
+            const isUrgent = elapsed > 120;
+            const isBargaining = r.status === "bargaining";
+            const color = isBargaining ? "#f97316" : isUrgent ? "#ef4444" : "#3b82f6";
+            return (
+              <Marker
+                key={r.id}
+                position={[r.pickupLat, r.pickupLng]}
+                icon={makeRideIcon(color)}
+                eventHandlers={{ click: () => setSelectedId(selectedId === r.id ? null : r.id) }}
               >
-                <div className={`relative flex flex-col items-center ${isUrgent ? "animate-bounce" : ""}`}>
-                  <div className={`px-2 py-1 rounded-lg text-[10px] font-bold shadow-md border-2 whitespace-nowrap ${
-                    isBargaining
-                      ? "bg-orange-500 text-white border-orange-600"
-                      : isUrgent
-                        ? "bg-red-500 text-white border-red-600"
-                        : "bg-blue-500 text-white border-blue-600"
-                  }`}>
-                    {svcIcon(r.type)} #{r.id.slice(-6).toUpperCase()}
+                <Popup>
+                  <div className="min-w-[160px]">
+                    <p className="font-bold text-sm">{svcIcon(r.type)} #{r.id.slice(-6).toUpperCase()}</p>
+                    <p className="text-xs text-gray-600 mt-0.5">{r.customerName}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[180px]">{r.pickupAddress}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="font-bold text-xs text-gray-800">{formatCurrency(r.offeredFare ?? r.fare)}</span>
+                      <span className={`text-xs font-bold ${elapsed > 120 ? "text-red-600" : "text-green-600"}`}>{formatElapsed(elapsed)}</span>
+                    </div>
+                    <a href={`https://www.google.com/maps?q=${r.pickupLat},${r.pickupLng}`} target="_blank" rel="noreferrer"
+                      className="text-[10px] text-blue-600 underline mt-1 block">Open in Maps</a>
                   </div>
-                  <div className={`w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent ${
-                    isBargaining ? "border-t-orange-500" : isUrgent ? "border-t-red-500" : "border-t-blue-500"
-                  }`} />
-                  <div className={`absolute -bottom-1 w-3 h-1.5 rounded-full opacity-30 ${
-                    isBargaining ? "bg-orange-500" : isUrgent ? "bg-red-500" : "bg-blue-500"
-                  }`} />
-                </div>
-              </a>
-              {hovered === r.id && (
-                <div className="absolute z-20 bg-white rounded-xl shadow-xl border-2 border-blue-200 p-3 min-w-[180px]"
-                  style={{ left: `${Math.max(10, Math.min(70, x))}%`, top: `${Math.max(3, Math.min(60, y - 15))}%` }}>
-                  <p className="text-xs font-bold text-gray-800">{r.customerName}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{r.pickupAddress}</p>
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <span className="text-[10px] font-bold">{formatCurrency(r.offeredFare ?? r.fare)}</span>
-                    <span className={`text-[10px] font-bold ${elapsed > 120 ? "text-red-600" : "text-green-600"}`}>{formatElapsed(elapsed)}</span>
-                    <span className="text-[10px] text-muted-foreground">{r.notifiedRiders} notified</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                </Popup>
+              </Marker>
+            );
+          })}
+        </MapContainer>
       </div>
       <div className="flex items-center gap-4 px-4 py-2 bg-muted/30 border-t text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Searching</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /> Bargaining</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-bounce" /> Urgent (&gt;2min)</span>
+        <span className="ml-auto text-[10px] text-muted-foreground">Provider: {tile.provider.toUpperCase()} • Click marker for details</span>
       </div>
     </Card>
   );

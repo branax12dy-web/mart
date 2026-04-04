@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
@@ -11,6 +11,66 @@ import { fc, CARD, INPUT, TEXTAREA, BTN_PRIMARY, LABEL, errMsg } from "../lib/ui
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+/* Fix Leaflet icons in Vite */
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+/* ── Vendor tile config ── */
+function useVendorTileConfig() {
+  const [tile, setTile] = useState({ url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', provider: "osm" });
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/maps/config?app=vendor`)
+      .then(r => r.json())
+      .then((d: any) => {
+        const cfg = d?.data ?? d;
+        const prov = cfg?.provider ?? "osm";
+        const tok  = cfg?.token ?? "";
+        if (prov === "mapbox" && tok) {
+          setTile({ url: `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${tok}`, attribution: '© <a href="https://www.mapbox.com/">Mapbox</a> © OpenStreetMap', provider: "mapbox" });
+        } else if (prov === "google" && tok) {
+          setTile({ url: `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${tok}`, attribution: "© Google Maps", provider: "google" });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return tile;
+}
+
+/* ── Draggable marker + click-to-set ── */
+function DraggableMarker({ lat, lng, onChange }: { lat: number; lng: number; onChange: (lat: number, lng: number) => void }) {
+  const markerRef = useRef<L.Marker | null>(null);
+  useMapEvents({
+    click(e) { onChange(e.latlng.lat, e.latlng.lng); },
+  });
+  return (
+    <Marker
+      draggable
+      position={[lat, lng]}
+      ref={markerRef}
+      eventHandlers={{
+        dragend() {
+          const m = markerRef.current;
+          if (m) { const ll = m.getLatLng(); onChange(ll.lat, ll.lng); }
+        },
+      }}
+    />
+  );
+}
+
+/* ── Auto-pan map when lat/lng change ── */
+function PanTo({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  useEffect(() => { map.setView([lat, lng], map.getZoom()); }, [lat, lng]);
+  return null;
+}
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const DEFAULT_HOURS = Object.fromEntries(DAYS.map(d => [d, { open:"09:00", close:"22:00", closed:false }]));
@@ -22,7 +82,7 @@ export default function Store() {
   const T = (key: TranslationKey) => tDual(key, language);
   const promoEnabled = config.vendor?.promoEnabled !== false;
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"info"|"hours"|"promos">("info");
+  const [tab, setTab] = useState<"info"|"hours"|"promos"|"location">("info");
   const [toast, setToast] = useState("");
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
 
@@ -92,6 +152,27 @@ export default function Store() {
   const [editingPromo, setEditingPromo] = useState<Record<string, string | number | null> | null>(null);
   const [hoursError, setHoursError] = useState("");
 
+  /* ── Location tab state ── */
+  const DEFAULT_LAT = 34.3697, DEFAULT_LNG = 73.4716; // Abbottabad default
+  const [locLat, setLocLat] = useState<number>(() => Number(user?.storeLat) || DEFAULT_LAT);
+  const [locLng, setLocLng] = useState<number>(() => Number(user?.storeLng) || DEFAULT_LNG);
+  const [locHasPin, setLocHasPin] = useState(() => Boolean(user?.storeLat && user?.storeLng));
+  const tile = useVendorTileConfig();
+
+  useEffect(() => {
+    if (user?.storeLat && user?.storeLng) {
+      setLocLat(Number(user.storeLat));
+      setLocLng(Number(user.storeLng));
+      setLocHasPin(true);
+    }
+  }, [user?.storeLat, user?.storeLng]);
+
+  const locMut = useMutation({
+    mutationFn: () => api.updateStore({ storeLat: locLat, storeLng: locLng }),
+    onSuccess: () => { refreshUser(); showToast("✅ Store location saved!"); },
+    onError: (e: Error) => showToast("❌ " + errMsg(e)),
+  });
+
   const discountValue = pf.type === "pct" ? Number(pf.discountPct) : Number(pf.discountFlat);
   const promoDiscountValid = discountValue > 0;
 
@@ -137,9 +218,10 @@ export default function Store() {
   });
 
   const TABS = [
-    { key:"info",   label: T("storeInfo"), icon:"🏪" },
-    { key:"hours",  label: T("hoursLabel"), icon:"🕐" },
-    { key:"promos", label: T("promosLabel"), icon:"🎟️" },
+    { key:"info",     label: T("storeInfo"),   icon:"🏪" },
+    { key:"hours",    label: T("hoursLabel"),  icon:"🕐" },
+    { key:"promos",   label: T("promosLabel"), icon:"🎟️" },
+    { key:"location", label: "Location",       icon:"📍" },
   ];
 
   return (
@@ -464,6 +546,100 @@ export default function Store() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── LOCATION TAB ── */}
+        {tab === "location" && (
+          <div className="space-y-4">
+            <div className={`${CARD} p-4`}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Store Location</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Drag the pin or tap the map to set your store's exact location.</p>
+                </div>
+                <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">{tile.provider.toUpperCase()}</span>
+              </div>
+
+              {/* Map */}
+              <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 300 }}>
+                <MapContainer center={[locLat, locLng]} zoom={14} style={{ height: "100%", width: "100%" }} scrollWheelZoom={true}>
+                  <TileLayer url={tile.url} attribution={tile.attribution} maxZoom={19} />
+                  <PanTo lat={locLat} lng={locLng} />
+                  <DraggableMarker
+                    lat={locLat} lng={locLng}
+                    onChange={(lat, lng) => { setLocLat(lat); setLocLng(lng); setLocHasPin(true); }}
+                  />
+                </MapContainer>
+              </div>
+              <p className="text-[11px] text-center text-gray-400 mt-1.5">Tap on the map or drag the marker to adjust position</p>
+
+              {/* Coordinates display */}
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div>
+                  <label className={LABEL}>Latitude</label>
+                  <input
+                    type="number" step="0.000001"
+                    value={locLat.toFixed(6)}
+                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) { setLocLat(v); setLocHasPin(true); }}}
+                    className={INPUT}
+                  />
+                </div>
+                <div>
+                  <label className={LABEL}>Longitude</label>
+                  <input
+                    type="number" step="0.000001"
+                    value={locLng.toFixed(6)}
+                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) { setLocLng(v); setLocHasPin(true); }}}
+                    className={INPUT}
+                  />
+                </div>
+              </div>
+
+              {/* Use current GPS */}
+              <button
+                type="button"
+                className="w-full mt-3 h-10 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl text-sm android-press transition-colors"
+                onClick={() => {
+                  if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                      pos => { setLocLat(pos.coords.latitude); setLocLng(pos.coords.longitude); setLocHasPin(true); },
+                      () => showToast("❌ Could not get GPS location"),
+                      { enableHighAccuracy: true, timeout: 8000 }
+                    );
+                  } else {
+                    showToast("❌ GPS not available on this device");
+                  }
+                }}
+              >
+                📡 Use My Current Location
+              </button>
+
+              {/* Google Maps link */}
+              {locHasPin && (
+                <a
+                  href={`https://www.google.com/maps?q=${locLat},${locLng}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="block text-center text-xs text-blue-600 underline mt-2"
+                >
+                  🗺️ Verify on Google Maps
+                </a>
+              )}
+            </div>
+
+            <button
+              onClick={() => locMut.mutate()}
+              disabled={locMut.isPending || !locHasPin}
+              className={BTN_PRIMARY}
+            >
+              {locMut.isPending ? "Saving..." : "📍 Save Store Location"}
+            </button>
+
+            {!locHasPin && (
+              <p className="text-center text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                Tap on the map above to pin your store location
+              </p>
+            )}
           </div>
         )}
       </div>

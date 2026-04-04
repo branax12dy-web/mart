@@ -64,6 +64,8 @@ export const usersTable = pgTable("users", {
   storeDeliveryTime: text("store_delivery_time"),
   storeIsOpen:       boolean("store_is_open").notNull().default(true),
   storeAddress:      text("store_address"),
+  storeLat:          decimal("store_lat", { precision: 10, scale: 6 }),
+  storeLng:          decimal("store_lng", { precision: 10, scale: 6 }),
   businessType:      text("business_type"),
   businessName:      text("business_name"),
   ntn:               text("ntn"),

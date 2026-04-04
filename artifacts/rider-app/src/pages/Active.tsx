@@ -3,8 +3,11 @@ import {
   AlertTriangle, Camera, MapPin, Phone, Package, ShoppingCart,
   UtensilsCrossed, Bike, Car, User, CheckCircle, X, RefreshCw,
   MapPinned, ArrowDown, Shield, Navigation, Clock, Zap,
-  ChevronRight, Eye, Truck, WifiOff, MessageSquare,
+  ChevronRight, Eye, Truck, WifiOff, MessageSquare, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { api, apiFetch } from "../lib/api";
 import { logRideEvent } from "../lib/rideUtils";
 import { useState, useRef, useEffect, Component, type ReactNode, type ErrorInfo } from "react";
@@ -31,6 +34,133 @@ class MapErrorBoundary extends Component<{ children: ReactNode; fallbackMsg?: st
     }
     return this.props.children;
   }
+}
+
+/* ── Fix Leaflet default marker icons in Vite builds ── */
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+/* ── Tile config hook for rider map ── */
+function useRiderTileConfig() {
+  const [tile, setTile] = useState({ url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', provider: "osm" });
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/maps/config?app=rider`)
+      .then(r => r.json())
+      .then((d: any) => {
+        const cfg = d?.data ?? d;
+        const prov = cfg?.provider ?? "osm";
+        const tok  = cfg?.token ?? "";
+        if (prov === "mapbox" && tok) {
+          setTile({ url: `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${tok}`, attribution: '© <a href="https://www.mapbox.com/">Mapbox</a> © OpenStreetMap', provider: "mapbox" });
+        } else if (prov === "google" && tok) {
+          setTile({ url: `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${tok}`, attribution: "© Google Maps", provider: "google" });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return tile;
+}
+
+function AutoFitMap({ positions }: { positions: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!positions.length) return;
+    if (positions.length === 1) { map.setView(positions[0]!, 15); return; }
+    map.fitBounds(L.latLngBounds(positions), { padding: [30, 30], maxZoom: 16 });
+  }, [positions.map(p => p.join(",")).join("|")]);
+  return null;
+}
+
+const pickupIcon = L.divIcon({ className: "", iconSize: [28, 28], iconAnchor: [14, 28],
+  html: `<div style="width:28px;height:28px;display:flex;align-items:flex-end;justify-content:center;">
+    <div style="background:#16a34a;border-radius:50% 50% 50% 0;transform:rotate(-45deg);width:22px;height:22px;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>
+  </div>` });
+
+const dropIcon = L.divIcon({ className: "", iconSize: [28, 28], iconAnchor: [14, 28],
+  html: `<div style="width:28px;height:28px;display:flex;align-items:flex-end;justify-content:center;">
+    <div style="background:#dc2626;border-radius:50% 50% 50% 0;transform:rotate(-45deg);width:22px;height:22px;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>
+  </div>` });
+
+const riderIcon = L.divIcon({ className: "", iconSize: [32, 32], iconAnchor: [16, 16],
+  html: `<div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;">
+    <div style="background:#2563eb;border-radius:50%;width:20px;height:20px;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,0.25);">
+    </div>
+  </div>` });
+
+/* ── RideRouteMap: visual map panel for active rides/deliveries ── */
+function RideRouteMap({
+  pickupLat, pickupLng, pickupLabel,
+  dropLat, dropLng, dropLabel,
+  riderLat, riderLng,
+  polyline,
+}: {
+  pickupLat: number; pickupLng: number; pickupLabel?: string;
+  dropLat: number; dropLng: number; dropLabel?: string;
+  riderLat?: number | null; riderLng?: number | null;
+  polyline?: Array<{ lat: number; lng: number }>;
+}) {
+  const tile = useRiderTileConfig();
+  const [open, setOpen] = useState(false);
+
+  const positions: [number, number][] = [
+    [pickupLat, pickupLng],
+    [dropLat, dropLng],
+    ...(riderLat != null && riderLng != null ? [[riderLat, riderLng] as [number, number]] : []),
+  ];
+
+  const polyPositions: [number, number][] = polyline
+    ? polyline.map(p => [p.lat, p.lng])
+    : [[pickupLat, pickupLng], [dropLat, dropLng]];
+
+  return (
+    <div className="border border-blue-200 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-sky-50 text-left"
+      >
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-sky-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-200">
+          <MapPin size={14} className="text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-black text-gray-900 uppercase tracking-wide">Route Map</p>
+          <p className="text-[11px] text-blue-600">{open ? "Tap to collapse" : "Tap to view map"} · {tile.provider.toUpperCase()}</p>
+        </div>
+        {open ? <ChevronUp size={16} className="text-blue-500" /> : <ChevronDown size={16} className="text-blue-500" />}
+      </button>
+      {open && (
+        <div style={{ height: 240 }}>
+          <MapContainer
+            center={positions[0]}
+            zoom={13}
+            style={{ height: "100%", width: "100%" }}
+            scrollWheelZoom={false}
+            zoomControl={true}
+          >
+            <TileLayer url={tile.url} attribution={tile.attribution} maxZoom={19} />
+            <AutoFitMap positions={positions} />
+            <Marker position={[pickupLat, pickupLng]} icon={pickupIcon}>
+              <Popup><span className="text-xs font-bold text-green-700">📍 {pickupLabel ?? "Pickup"}</span></Popup>
+            </Marker>
+            <Marker position={[dropLat, dropLng]} icon={dropIcon}>
+              <Popup><span className="text-xs font-bold text-red-700">🎯 {dropLabel ?? "Drop-off"}</span></Popup>
+            </Marker>
+            {riderLat != null && riderLng != null && (
+              <Marker position={[riderLat, riderLng]} icon={riderIcon}>
+                <Popup><span className="text-xs font-bold text-blue-700">🏍️ You</span></Popup>
+              </Marker>
+            )}
+            {polyPositions.length >= 2 && (
+              <Polyline positions={polyPositions} color="#3b82f6" weight={4} opacity={0.8} />
+            )}
+          </MapContainer>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SkeletonBlock({ className }: { className?: string }) {
@@ -1206,6 +1336,17 @@ export default function Active() {
                     </MapErrorBoundary>
                   )}
 
+                  {/* ── Route map: rider → store ── */}
+                  {order.vendorLat != null && order.vendorLng != null && riderPos && (
+                    <MapErrorBoundary fallbackMsg="Route map unavailable">
+                      <RideRouteMap
+                        pickupLat={riderPos.lat} pickupLng={riderPos.lng} pickupLabel="Your Position"
+                        dropLat={order.vendorLat} dropLng={order.vendorLng} dropLabel={order.vendorAddress || order.vendorStoreName}
+                        riderLat={riderPos.lat} riderLng={riderPos.lng}
+                      />
+                    </MapErrorBoundary>
+                  )}
+
                   <button
                     onClick={() => { updateOrderMut.mutate({ id: order.id, status: "picked_up" }); }}
                     disabled={updateOrderMut.isPending}
@@ -1272,6 +1413,17 @@ export default function Active() {
                         fromLat={riderPos.lat} fromLng={riderPos.lng}
                         toLat={order.deliveryLat} toLng={order.deliveryLng}
                         label="Customer"
+                        riderLat={riderPos.lat} riderLng={riderPos.lng}
+                      />
+                    </MapErrorBoundary>
+                  )}
+
+                  {/* ── Route map: rider → delivery ── */}
+                  {order.deliveryLat != null && order.deliveryLng != null && riderPos && (
+                    <MapErrorBoundary fallbackMsg="Route map unavailable">
+                      <RideRouteMap
+                        pickupLat={riderPos.lat} pickupLng={riderPos.lng} pickupLabel="Your Position"
+                        dropLat={order.deliveryLat} dropLng={order.deliveryLng} dropLabel={order.deliveryAddress}
                         riderLat={riderPos.lat} riderLng={riderPos.lng}
                       />
                     </MapErrorBoundary>
@@ -1483,6 +1635,18 @@ export default function Active() {
                   />
                 </MapErrorBoundary>
               )}
+
+              {/* ── Visual route map ── */}
+              {ride.pickupLat != null && ride.pickupLng != null && ride.dropLat != null && ride.dropLng != null && (
+                <MapErrorBoundary fallbackMsg="Route map unavailable">
+                  <RideRouteMap
+                    pickupLat={ride.pickupLat} pickupLng={ride.pickupLng} pickupLabel={ride.pickupAddress}
+                    dropLat={ride.dropLat} dropLng={ride.dropLng} dropLabel={ride.dropAddress}
+                    riderLat={riderPos?.lat} riderLng={riderPos?.lng}
+                  />
+                </MapErrorBoundary>
+              )}
+
               {config.features?.sos !== false && (
                 <SosButton rideId={ride.id} riderPos={riderPos} T={T} />
               )}

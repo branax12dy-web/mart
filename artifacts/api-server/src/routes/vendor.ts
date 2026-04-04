@@ -28,6 +28,7 @@ function formatUser(user: any) {
     storeMinOrder: safeNum(user.storeMinOrder),
     storeDeliveryTime: user.storeDeliveryTime,
     storeIsOpen: user.storeIsOpen ?? true,
+    storeLat: user.storeLat, storeLng: user.storeLng,
     walletBalance: safeNum(user.walletBalance),
     cnic: user.cnic, address: user.address, city: user.city, area: user.area,
     bankName: user.bankName, bankAccount: user.bankAccount, bankAccountTitle: user.bankAccountTitle,
@@ -93,11 +94,13 @@ router.patch("/store", async (req, res) => {
   const vendorId = req.vendorId!;
   const body = req.body;
   const updates: Record<string, unknown> = { updatedAt: new Date() };
-  const fields = ["storeName","storeCategory","storeBanner","storeDescription","storeAnnouncement","storeDeliveryTime","storeIsOpen","storeMinOrder"];
+  const fields = ["storeName","storeCategory","storeBanner","storeDescription","storeAnnouncement","storeDeliveryTime","storeIsOpen","storeMinOrder","storeAddress"];
   for (const f of fields) {
     if (body[f] !== undefined) updates[f] = body[f];
   }
   if (body.storeHours !== undefined) updates.storeHours = typeof body.storeHours === "string" ? body.storeHours : JSON.stringify(body.storeHours);
+  if (body.storeLat !== undefined && body.storeLat !== null) updates.storeLat = String(body.storeLat);
+  if (body.storeLng !== undefined && body.storeLng !== null) updates.storeLng = String(body.storeLng);
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, vendorId)).returning();
   sendSuccess(res, formatUser(user));
 });

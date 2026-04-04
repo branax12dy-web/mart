@@ -13,6 +13,7 @@ export interface AuthUser {
   storeMinOrder?: number;
   storeDeliveryTime?: string;
   storeIsOpen: boolean;
+  storeLat?: string | null; storeLng?: string | null;
   lastLoginAt?: string; createdAt?: string;
   stats: { todayOrders: number; todayRevenue: number; totalOrders: number; totalRevenue: number };
   cnic?: string; city?: string; address?: string; businessType?: string;
