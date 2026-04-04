@@ -138,8 +138,8 @@ export function ServiceZonesManager() {
   const hasPreview = Number.isFinite(previewLat) && Number.isFinite(previewLng) && Number.isFinite(previewRad);
 
   /* ── Default map center: first zone, or fallback ── */
-  const mapCenter: [number, number] = zones.length > 0
-    ? [parseFloat(String(zones[0]!.lat)), parseFloat(String(zones[0]!.lng))]
+  const mapCenter: [number, number] = zones.length > 0 && zones[0]
+    ? [parseFloat(String(zones[0].lat)), parseFloat(String(zones[0].lng))]
     : [34.37, 73.47]; // Muzaffarabad, AJK
 
   /* ── Compute an appropriate zoom for a given radius in km ── */

@@ -25,7 +25,7 @@ export async function registerPush(): Promise<void> {
       body: JSON.stringify({ endpoint: sub.endpoint, p256dh: sub.toJSON().keys?.p256dh, auth: sub.toJSON().keys?.auth, role: "rider" }),
     });
   } catch (e) {
-    console.warn("[push] registration failed:", e);
+    if (import.meta.env.DEV) console.warn("[push] registration failed:", e);
   }
 }
 

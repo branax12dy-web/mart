@@ -1121,7 +1121,7 @@ export default function Profile() {
             </div>
           ) : (
             <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
-              {reviewsData!.reviews.map((r: any) => (
+              {(reviewsData?.reviews ?? []).map((r: any) => (
                 <div key={r.id} className="px-5 py-3.5">
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">

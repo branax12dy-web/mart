@@ -145,7 +145,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) setItems(parsed);
       } catch (parseErr) {
-        console.warn("[Cart] Failed to parse stored cart — clearing:", parseErr instanceof Error ? parseErr.message : String(parseErr));
+        if (__DEV__) console.warn("[Cart] Failed to parse stored cart — clearing:", parseErr instanceof Error ? parseErr.message : String(parseErr));
         AsyncStorage.removeItem("@ajkmart_cart");
       }
       setHasLoaded(true);

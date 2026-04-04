@@ -245,7 +245,7 @@ function ParcelScreenInner() {
       .then(data => {
         if (data?.methods?.length) {
           setPayMethods(data.methods.map(m => ({ ...m, logo: m.logo ?? "", description: m.description ?? "" })));
-          setPayMethod(data.methods[0]!.id);
+          setPayMethod(data.methods[0]?.id ?? "");
         }
       })
       .catch((err) => { if (__DEV__) console.warn("[Parcel] Payment methods fetch failed:", err instanceof Error ? err.message : String(err)); });

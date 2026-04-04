@@ -890,7 +890,7 @@ function SectionHeader({ title, count, active }: { title: string; count: number;
   );
 }
 
-function OrdersScreen() {
+function OrdersScreenInner() {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const { addItem } = useCart();
@@ -970,7 +970,7 @@ function OrdersScreen() {
         return;
       }
     } catch (err) {
-      console.warn("[Orders] Reorder live-price fetch failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Orders] Reorder live-price fetch failed:", err instanceof Error ? err.message : String(err));
     }
     let count = 0;
     for (const item of validItems) {
@@ -1020,7 +1020,7 @@ function OrdersScreen() {
       const serverDate = res.headers.get("Date");
       if (serverDate) setServerNow(new Date(serverDate).getTime());
     } catch (err) {
-      console.warn("[Orders] Server time sync failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Orders] Server time sync failed:", err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -1070,7 +1070,7 @@ function OrdersScreen() {
       setRidesData(d);
       setRidesError(false);
     } catch (err) {
-      console.warn("[Orders] Rides fetch failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Orders] Rides fetch failed:", err instanceof Error ? err.message : String(err));
       setRidesError(true);
     } finally {
       setRidesLoading(false);
@@ -1090,7 +1090,7 @@ function OrdersScreen() {
       setPharmData(d);
       setPharmError(false);
     } catch (err) {
-      console.warn("[Orders] Pharmacy fetch failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Orders] Pharmacy fetch failed:", err instanceof Error ? err.message : String(err));
       setPharmError(true);
     } finally {
       setPharmLoading(false);
@@ -1110,7 +1110,7 @@ function OrdersScreen() {
       setParcelData(d);
       setParcelError(false);
     } catch (err) {
-      console.warn("[Orders] Parcel fetch failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Orders] Parcel fetch failed:", err instanceof Error ? err.message : String(err));
       setParcelError(true);
     } finally {
       setParcelLoading(false);
@@ -1575,13 +1575,7 @@ function OrdersScreen() {
   );
 }
 
-export default function OrdersScreen() {
-  return (
-    <ErrorBoundary>
-      <OrdersScreenInner />
-    </ErrorBoundary>
-  );
-}
+export default withErrorBoundary(OrdersScreenInner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -1789,4 +1783,3 @@ const styles = StyleSheet.create({
   sectionErrRetry: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.red },
 });
 
-export default withErrorBoundary(OrdersScreen);

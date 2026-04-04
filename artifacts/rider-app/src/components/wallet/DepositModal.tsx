@@ -44,7 +44,7 @@ export default function DepositModal({
         setMethods(depositable);
       }
     }).catch((err: Error) => {
-      console.warn("[DepositModal] Failed to load payment methods:", err.message);
+      if (import.meta.env.DEV) console.warn("[DepositModal] Failed to load payment methods:", err.message);
       setMethodsError(true);
     }).finally(() => setLoadingMethods(false));
   }, []);
@@ -54,7 +54,7 @@ export default function DepositModal({
   const mut = useMutation({
     mutationFn: () => api.submitDeposit({
       amount: Number(amount),
-      paymentMethod: selectedMethod!.id,
+      paymentMethod: selectedMethod?.id ?? "",
       accountNumber: senderAcNo.trim() || undefined,
       transactionId: txId,
       note,

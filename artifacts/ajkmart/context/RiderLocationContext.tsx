@@ -46,7 +46,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
   if (!locations?.length) return;
   const loc = locations[locations.length - 1]!;
   backgroundLocationHandlers.forEach((handler) => {
-    try { handler(loc); } catch (cbErr) { console.warn("[RiderLocation] Background task handler threw:", cbErr instanceof Error ? cbErr.message : String(cbErr)); }
+    try { handler(loc); } catch (cbErr) { if (__DEV__) console.warn("[RiderLocation] Background task handler threw:", cbErr instanceof Error ? cbErr.message : String(cbErr)); }
   });
 });
 
@@ -115,7 +115,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
         const data = unwrapApiResponse(await r.json());
         const active = !!(data?.order || data?.ride);
         setHasActiveTask(active);
-      } catch (err) { console.warn("[RiderLocation] Active task poll failed:", err instanceof Error ? err.message : String(err)); }
+      } catch (err) { if (__DEV__) console.warn("[RiderLocation] Active task poll failed:", err instanceof Error ? err.message : String(err)); }
     };
     checkActive();
     const interval = setInterval(checkActive, 15_000);
@@ -146,7 +146,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
           },
           pausesUpdatesAutomatically: false,
         });
-      } catch (err) { console.warn("[RiderLocation] Background task interval restart failed:", err instanceof Error ? err.message : String(err)); }
+      } catch (err) { if (__DEV__) console.warn("[RiderLocation] Background task interval restart failed:", err instanceof Error ? err.message : String(err)); }
     };
     updateInterval();
   }, [hasActiveTask, isOnline]);
@@ -176,7 +176,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
       try {
         const level = await Battery.getBatteryLevelAsync();
         if (level >= 0) batteryLevel = Math.round(level * 100);
-      } catch (battErr) { console.warn("[RiderLocation] Battery level unavailable on this platform:", battErr instanceof Error ? battErr.message : String(battErr)); }
+      } catch (battErr) { if (__DEV__) console.warn("[RiderLocation] Battery level unavailable on this platform:", battErr instanceof Error ? battErr.message : String(battErr)); }
 
       const action = hasActiveTaskRef.current ? "on_trip" : null;
 
@@ -197,10 +197,10 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
         }),
       });
       if (!res.ok) {
-        console.warn(`[RiderLocation] Location patch failed: ${res.status}`);
+        if (__DEV__) console.warn(`[RiderLocation] Location patch failed: ${res.status}`);
       }
     } catch (err) {
-      console.warn("[RiderLocation] Location patch network error:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[RiderLocation] Location patch network error:", err instanceof Error ? err.message : String(err));
     }
   }, [API_BASE]);
 
@@ -258,7 +258,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
       if (running) {
         await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
       }
-    } catch (err) { console.warn("[RiderLocation] stopTracking failed:", err instanceof Error ? err.message : String(err)); }
+    } catch (err) { if (__DEV__) console.warn("[RiderLocation] stopTracking failed:", err instanceof Error ? err.message : String(err)); }
   }, []);
 
   /* Also track foreground location on web using watchPosition */
@@ -287,7 +287,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
             mocked: false,
           } as Location.LocationObject);
         },
-        (err) => console.warn("[RiderLocation] Web watchPosition error:", err.message),
+        (err) => { if (__DEV__) console.warn("[RiderLocation] Web watchPosition error:", err.message); },
         { enableHighAccuracy: false, timeout: intervalSec * 1000, maximumAge: 30000 },
       );
     } else {
@@ -321,7 +321,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     /* On native: only restart if app is currently in the foreground */
     if (Platform.OS !== "web" && AppState.currentState !== "active") return;
     stopForegroundWatch();
-    startForegroundWatch().catch((err) => console.warn("[RiderLocation] Foreground watch restart failed:", err instanceof Error ? err.message : String(err)));
+    startForegroundWatch().catch((err) => { if (__DEV__) console.warn("[RiderLocation] Foreground watch restart failed:", err instanceof Error ? err.message : String(err)); });
   }, [hasActiveTask, isOnline]);
 
   /* ── Bug 2 fix: AppState listener to start/stop foreground watch on native ── */
@@ -331,7 +331,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     const handleAppStateChange = (nextState: AppStateStatus) => {
       if (!isOnlineRef.current) return;
       if (nextState === "active") {
-        startForegroundWatch().catch((err) => console.warn("[RiderLocation] AppState foreground watch failed:", err instanceof Error ? err.message : String(err)));
+        startForegroundWatch().catch((err) => { if (__DEV__) console.warn("[RiderLocation] AppState foreground watch failed:", err instanceof Error ? err.message : String(err)); });
       } else {
         stopForegroundWatch();
       }
@@ -361,7 +361,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
                 if (AppState.currentState === "active") {
                   await startForegroundWatch();
                 }
-              } catch (err) { console.warn("[RiderLocation] Auto-resume tracking start failed:", err instanceof Error ? err.message : String(err)); }
+              } catch (err) { if (__DEV__) console.warn("[RiderLocation] Auto-resume tracking start failed:", err instanceof Error ? err.message : String(err)); }
             } else {
               await startForegroundWatch();
             }
@@ -370,7 +370,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
             await AsyncStorage.removeItem(STORAGE_KEY_IS_ONLINE);
           }
         }
-      } catch (err) { console.warn("[RiderLocation] Auto-resume bootstrap failed:", err instanceof Error ? err.message : String(err)); }
+      } catch (err) { if (__DEV__) console.warn("[RiderLocation] Auto-resume bootstrap failed:", err instanceof Error ? err.message : String(err)); }
     })();
   /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [isRider]);
@@ -383,7 +383,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     setIsOnline(true);
     prevPositionRef.current = null;
     /* Persist online state for auto-resume after reboot */
-    try { await AsyncStorage.setItem(STORAGE_KEY_IS_ONLINE, "true"); } catch (err) { console.warn("[RiderLocation] Failed to persist online state:", err instanceof Error ? err.message : String(err)); }
+    try { await AsyncStorage.setItem(STORAGE_KEY_IS_ONLINE, "true"); } catch (err) { if (__DEV__) console.warn("[RiderLocation] Failed to persist online state:", err instanceof Error ? err.message : String(err)); }
     if (Platform.OS === "web") {
       await startForegroundWatch();
     } else {
@@ -393,7 +393,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
         await startForegroundWatch();
       } catch (err) {
         setIsOnline(false);
-        try { await AsyncStorage.removeItem(STORAGE_KEY_IS_ONLINE); } catch (err) { console.warn("[RiderLocation] Failed to clear persisted online state:", err instanceof Error ? err.message : String(err)); }
+        try { await AsyncStorage.removeItem(STORAGE_KEY_IS_ONLINE); } catch (err) { if (__DEV__) console.warn("[RiderLocation] Failed to clear persisted online state:", err instanceof Error ? err.message : String(err)); }
         return "tracking_failed";
       }
     }
@@ -406,7 +406,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
     prevPositionRef.current = null;
     stopForegroundWatch();
     /* Clear persisted online state */
-    try { await AsyncStorage.removeItem(STORAGE_KEY_IS_ONLINE); } catch (err) { console.warn("[RiderLocation] Failed to clear online state on goOffline:", err instanceof Error ? err.message : String(err)); }
+    try { await AsyncStorage.removeItem(STORAGE_KEY_IS_ONLINE); } catch (err) { if (__DEV__) console.warn("[RiderLocation] Failed to clear online state on goOffline:", err instanceof Error ? err.message : String(err)); }
     if (Platform.OS !== "web") {
       await stopTracking();
     }

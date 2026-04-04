@@ -222,10 +222,11 @@ export default function Notifications() {
     for (const n of filtered) {
       const gKey = dateGroupKey(n.createdAt);
       if (!groupMap.has(gKey)) {
-        groupMap.set(gKey, []);
-        groups.push({ key: gKey, label: DATE_GROUP_LABELS[gKey], items: groupMap.get(gKey)! });
+        const items: typeof filtered = [];
+        groupMap.set(gKey, items);
+        groups.push({ key: gKey, label: DATE_GROUP_LABELS[gKey], items });
       }
-      groupMap.get(gKey)!.push(n);
+      groupMap.get(gKey)?.push(n);
     }
     return groups;
   }, [filtered, language]);

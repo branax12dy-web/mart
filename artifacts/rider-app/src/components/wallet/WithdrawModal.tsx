@@ -80,7 +80,7 @@ export default function WithdrawModal({
         setMethods(enabled);
       }
     }).catch((err: Error) => {
-      console.warn("[WithdrawModal] Failed to load payment methods:", err.message);
+      if (import.meta.env.DEV) console.warn("[WithdrawModal] Failed to load payment methods:", err.message);
       setMethodsError(true);
     }).finally(() => setLoadingMethods(false));
   }, []);

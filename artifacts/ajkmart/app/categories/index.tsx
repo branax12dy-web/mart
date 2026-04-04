@@ -54,7 +54,7 @@ export default function CategoriesBrowseScreen() {
 
   useEffect(() => {
     if (cats.length > 0 && !selectedId) {
-      setSelectedId(cats[0]!.id);
+      setSelectedId(cats[0]?.id ?? "");
     }
   }, [cats]);
 

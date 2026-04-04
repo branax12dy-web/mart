@@ -101,7 +101,7 @@ function decodeJwtExp(tok: string): number | null {
   try {
     const parts = tok.split(".");
     if (parts.length !== 3) return null;
-    const b64 = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    const b64 = (parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
     let jsonStr: string;
     if (typeof atob === "function") {
       jsonStr = atob(b64);

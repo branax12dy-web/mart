@@ -193,11 +193,11 @@ export default function UniversalSearchScreen() {
           if (page > 1) {
             const existingIdx = sections.findIndex(sec => sec.type === svc);
             if (existingIdx >= 0) {
-              const existingIds = new Set(sections[existingIdx]!.data.map(d => d.id));
+              const existingIds = new Set((sections[existingIdx]?.data ?? []).map(d => d.id));
               const newItems = result.value.products.filter(p => !existingIds.has(p.id));
               newSections.push({
                 title: SERVICE_META[svc].label,
-                data: [...sections[existingIdx]!.data, ...newItems],
+                data: [...(sections[existingIdx]?.data ?? []), ...newItems],
                 type: svc,
               });
             } else {

@@ -42,14 +42,14 @@ export default function RemittanceModal({ netOwed, onClose, onSuccess }: {
         setMethods(ms);
       }
     }).catch((err: Error) => {
-      console.warn("[RemittanceModal] Failed to load payment methods:", err.message);
+      if (import.meta.env.DEV) console.warn("[RemittanceModal] Failed to load payment methods:", err.message);
       setMethodsError(true);
     }).finally(() => setLoadingMethods(false));
   }, []);
 
   const mut = useMutation({
     mutationFn: () => api.submitCodRemittance({
-      amount: Number(amount), paymentMethod: method!.id,
+      amount: Number(amount), paymentMethod: method?.id ?? "",
       accountNumber: acNo, transactionId: txId, note,
     }),
     onSuccess: () => setStep("done"),

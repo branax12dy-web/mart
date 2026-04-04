@@ -700,7 +700,7 @@ function DispatchMonitor() {
     });
 
     socket.on("connect_error", (err) => {
-      console.warn("[DispatchMonitor] socket connection error:", err.message);
+      if (import.meta.env.DEV) console.warn("[DispatchMonitor] socket connection error:", err.message);
     });
 
     return () => { socket.disconnect(); };
@@ -1392,7 +1392,7 @@ export default function Rides() {
       queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
     });
     socket.on("connect_error", (err) => {
-      console.warn("[Rides] socket connection error:", err.message);
+      if (import.meta.env.DEV) console.warn("[Rides] socket connection error:", err.message);
     });
     return () => { socket.disconnect(); };
   }, [queryClient]);

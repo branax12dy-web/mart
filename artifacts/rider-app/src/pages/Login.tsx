@@ -244,7 +244,7 @@ export default function Login() {
         setLockoutUntil(null);
         setFailedAttempts(0);
         try { sessionStorage.removeItem("rider_lockout_until"); sessionStorage.removeItem("rider_login_attempts"); } catch (ssErr) {
-            console.warn("[Login] Could not clear lockout keys from sessionStorage:", ssErr);
+            if (import.meta.env.DEV) console.warn("[Login] Could not clear lockout keys from sessionStorage:", ssErr);
           }
       }
     }, 1000);
@@ -305,14 +305,14 @@ export default function Login() {
       setFailedAttempts(prev => {
         const next = prev + 1;
         try { sessionStorage.setItem("rider_login_attempts", String(next)); } catch (ssErr) {
-          console.warn("[Login] Could not persist login attempt count to sessionStorage:", ssErr);
+          if (import.meta.env.DEV) console.warn("[Login] Could not persist login attempt count to sessionStorage:", ssErr);
         }
         if (next >= auth.lockoutMaxAttempts) {
           const until = Date.now() + auth.lockoutDurationSec * 1000;
           setLockoutUntil(until);
           setLockoutRemaining(auth.lockoutDurationSec);
           try { sessionStorage.setItem("rider_lockout_until", String(until)); } catch (ssErr) {
-            console.warn("[Login] Could not persist lockout expiry to sessionStorage — lockout state will not survive page refresh:", ssErr);
+            if (import.meta.env.DEV) console.warn("[Login] Could not persist lockout expiry to sessionStorage — lockout state will not survive page refresh:", ssErr);
             /* Surface to user: lockout is applied now but won't persist across tab reloads */
             setError(T("accountLockedMsg"));
           }

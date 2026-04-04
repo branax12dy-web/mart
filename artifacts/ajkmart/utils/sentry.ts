@@ -39,7 +39,7 @@ export async function initSentry(
         });
         console.debug("[Sentry] Customer app initialized, env:", environment);
       } catch (e) {
-        console.warn("[Sentry] init error:", e);
+        if (__DEV__) console.warn("[Sentry] init error:", e);
       }
       resolve();
     };

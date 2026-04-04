@@ -337,7 +337,7 @@ function NotificationsModal({ visible, userId, token, onClose }: {
       const d = unwrapApiResponse(await r.json());
       setNotifs(d.notifications || []);
     } catch (err) {
-      console.warn("[Profile] Notifications load failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Profile] Notifications load failed:", err instanceof Error ? err.message : String(err));
       showToast("Could not load notifications — tap retry to try again", "error");
     }
     setLoading(false);
@@ -627,7 +627,7 @@ function PrivacyModal({ visible, userId, token, onClose }: { visible: boolean; u
     setCfg(upd);
     try { await fetch(`${API}/settings`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHdrs }, body: JSON.stringify(upd) }); }
     catch (err) {
-      console.warn("[Profile] Setting update failed, reverting:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Profile] Setting update failed, reverting:", err instanceof Error ? err.message : String(err));
       cfgRef.current = snapshot;
       setCfg(snapshot);
       showToast("Setting could not be saved — changes reverted", "error");
@@ -1091,7 +1091,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
     setLoading(true);
     try { const r = await fetch(`${API}/addresses`, { headers: authHdrs }); const d = unwrapApiResponse(await r.json()); setList(d.addresses || []); }
     catch (err) {
-      console.warn("[Profile] Addresses load failed:", err instanceof Error ? err.message : String(err));
+      if (__DEV__) console.warn("[Profile] Addresses load failed:", err instanceof Error ? err.message : String(err));
       showToast("Could not load addresses — tap to refresh", "error");
     }
     setLoading(false);
@@ -1302,7 +1302,7 @@ function AddressesModal({ visible, userId, token, onClose }: { visible: boolean;
   );
 }
 
-function ProfileScreen() {
+function ProfileScreenInner() {
   const insets = useSafeAreaInsets();
   const { user, logout, updateUser, token } = useAuth();
   const { showToast } = useToast();
@@ -1387,7 +1387,7 @@ function ProfileScreen() {
         setStatsError(false);
         break;
       } catch (err) {
-        console.warn(`[Profile] fetchAll attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn(`[Profile] fetchAll attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
         if (attempt < maxAttempts) {
           await new Promise<void>((res) => setTimeout(res, 1500 * attempt));
         } else {
@@ -1860,13 +1860,7 @@ function ProfileScreen() {
   );
 }
 
-export default function ProfileScreen() {
-  return (
-    <ErrorBoundary>
-      <ProfileScreenInner />
-    </ErrorBoundary>
-  );
-}
+export default withErrorBoundary(ProfileScreenInner);
 
 const lvl = StyleSheet.create({
   strip: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.md, borderWidth: 1, borderColor: C.borderLight, ...shadows.sm },
@@ -2083,5 +2077,4 @@ const addrItem = StyleSheet.create({
   delBtn: { width: 30, height: 30, borderRadius: radii.sm, alignItems: "center", justifyContent: "center" },
 });
 
-export default withErrorBoundary(ProfileScreen);
 

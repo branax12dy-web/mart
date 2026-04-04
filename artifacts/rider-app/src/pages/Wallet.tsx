@@ -321,10 +321,11 @@ export default function Wallet() {
     for (const t of filtered) {
       const g = dateGroupLabel(t.createdAt);
       if (!groupMap.has(g)) {
-        groupMap.set(g, []);
-        groups.push({ label: g, items: groupMap.get(g)! });
+        const items: WalletTx[] = [];
+        groupMap.set(g, items);
+        groups.push({ label: g, items });
       }
-      groupMap.get(g)!.push(t);
+      groupMap.get(g)?.push(t);
     }
     return groups;
   }, [filtered]);

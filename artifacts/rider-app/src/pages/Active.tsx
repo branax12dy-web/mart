@@ -21,7 +21,7 @@ import { enqueue, registerDrainHandler, type QueuedPing } from "../lib/gpsQueue"
 class MapErrorBoundary extends Component<{ children: ReactNode; fallbackMsg?: string }, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(_: Error, info: ErrorInfo) { console.error("MapErrorBoundary caught:", _, info); }
+  componentDidCatch(_: Error, info: ErrorInfo) { if (import.meta.env.DEV) console.error("MapErrorBoundary caught:", _, info); }
   render() {
     if (this.state.hasError) {
       return (
@@ -1147,7 +1147,7 @@ export default function Active() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-extrabold text-white">Message from Admin</p>
-            <p className="text-[11px] text-blue-100 mt-0.5 leading-relaxed truncate">{adminMessages[adminMessages.length - 1]!.text}</p>
+            <p className="text-[11px] text-blue-100 mt-0.5 leading-relaxed truncate">{adminMessages[adminMessages.length - 1]?.text}</p>
           </div>
           <button onClick={() => setShowAdminChat(true)} className="text-xs font-bold bg-white text-blue-600 px-2.5 py-1 rounded-lg flex-shrink-0">
             View
@@ -1808,7 +1808,7 @@ export default function Active() {
                 className="flex-1 h-12 border-2 border-gray-200 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-50 transition-colors">
                 Take Photo
               </button>
-              <button onClick={() => { setShowNoPhotoWarning(false); handleMarkDelivered(order!.id, true); }}
+              <button onClick={() => { setShowNoPhotoWarning(false); if (order) handleMarkDelivered(order.id, true); }}
                 disabled={proofUploading || updateOrderMut.isPending}
                 className="flex-1 h-12 bg-amber-600 text-white font-bold rounded-xl text-sm hover:bg-amber-700 transition-colors disabled:opacity-60">
                 Deliver Anyway

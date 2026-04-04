@@ -147,7 +147,7 @@ function PharmacyScreenInner() {
     fetch(`${API_BASE}/addresses`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(j => { const data = unwrapApiResponse(j); if (data?.addresses) setSavedAddresses(data.addresses); })
-      .catch((err) => console.warn("[Pharmacy] Saved addresses fetch failed:", err instanceof Error ? err.message : String(err)));
+      .catch((err) => { if (__DEV__) console.warn("[Pharmacy] Saved addresses fetch failed:", err instanceof Error ? err.message : String(err)); });
   }, [token]);
 
   const pickPrescriptionPhoto = () => {

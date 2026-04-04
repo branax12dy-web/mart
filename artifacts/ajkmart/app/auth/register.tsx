@@ -176,7 +176,7 @@ export default function RegisterScreen() {
         if (geo) {
           if (geo.city) {
             const matchedCity = cityList.find(
-              c => c.toLowerCase() === geo.city!.toLowerCase()
+              c => c.toLowerCase() === (geo.city ?? "").toLowerCase()
             );
             if (matchedCity) setCity(matchedCity);
           }
@@ -407,7 +407,7 @@ export default function RegisterScreen() {
         router.replace("/auth");
       }
     } catch (e: unknown) {
-      console.warn("Login after registration failed:", e instanceof Error ? e.message : e);
+      if (__DEV__) console.warn("Login after registration failed:", e instanceof Error ? e.message : e);
       router.replace("/auth");
     }
     setLoading(false);

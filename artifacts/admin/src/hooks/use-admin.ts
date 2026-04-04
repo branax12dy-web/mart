@@ -148,7 +148,7 @@ export const useUpdateRide = () => {
     onError: (error: Error) => {
       queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
       toast({ title: "Failed to update ride", description: error.message, variant: "destructive" });
-      console.error("[admin] update ride status failed:", error.message);
+      if (import.meta.env.DEV) console.error("[admin] update ride status failed:", error.message);
     },
   });
 };
@@ -839,7 +839,7 @@ export const useAdminCancelRide = () => {
     onError: (error: Error) => {
       qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
       toast({ title: "Failed to cancel ride", description: error.message, variant: "destructive" });
-      console.error("[admin] cancel ride failed:", error.message);
+      if (import.meta.env.DEV) console.error("[admin] cancel ride failed:", error.message);
     },
   });
 };
@@ -860,7 +860,7 @@ export const useAdminRefundRide = () => {
     onError: (error: Error) => {
       qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
       toast({ title: "Failed to process refund", description: error.message, variant: "destructive" });
-      console.error("[admin] refund ride failed:", error.message);
+      if (import.meta.env.DEV) console.error("[admin] refund ride failed:", error.message);
     },
   });
 };
@@ -881,7 +881,7 @@ export const useAdminReassignRide = () => {
     onError: (error: Error) => {
       qc.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
       toast({ title: "Failed to reassign rider", description: error.message, variant: "destructive" });
-      console.error("[admin] reassign ride failed:", error.message);
+      if (import.meta.env.DEV) console.error("[admin] reassign ride failed:", error.message);
     },
   });
 };

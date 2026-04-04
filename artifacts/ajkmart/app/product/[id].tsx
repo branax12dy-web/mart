@@ -346,7 +346,7 @@ function FullScreenImageViewer({
   );
 }
 
-function ProductDetailScreen() {
+function ProductDetailScreenInner() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 20 : insets.top;
@@ -941,13 +941,7 @@ function ProductDetailScreen() {
   );
 }
 
-export default function ProductDetailScreen() {
-  return (
-    <ErrorBoundary>
-      <ProductDetailScreenInner />
-    </ErrorBoundary>
-  );
-}
+export default withErrorBoundary(ProductDetailScreenInner);
 
 const rs = StyleSheet.create({
   card: { backgroundColor: C.surfaceSecondary, borderRadius: 14, padding: 14, gap: 8 },
@@ -1157,4 +1151,3 @@ const variantStyles = StyleSheet.create({
   oosLabel: { ...Typ.tiny, color: C.danger, marginTop: 2 },
 });
 
-export default withErrorBoundary(ProductDetailScreen);

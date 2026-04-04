@@ -166,9 +166,12 @@ export default function CategoriesPage() {
     if (idx < 0) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[swapIdx];
+    if (!a || !b) return;
     const items = [
-      { id: sorted[idx]!.id, sortOrder: sorted[swapIdx]!.sortOrder },
-      { id: sorted[swapIdx]!.id, sortOrder: sorted[idx]!.sortOrder },
+      { id: a.id, sortOrder: b.sortOrder },
+      { id: b.id, sortOrder: a.sortOrder },
     ];
     reorderMutation.mutate(items);
   };
@@ -382,7 +385,7 @@ export default function CategoriesPage() {
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-0.5">
                                       {cat.icon.replace("-outline", "")} · #{index + 1}
-                                      {hasChildren && ` · ${cat.children!.length} sub-categories`}
+                                      {hasChildren && ` · ${(cat.children ?? []).length} sub-categories`}
                                     </p>
                                   </div>
 

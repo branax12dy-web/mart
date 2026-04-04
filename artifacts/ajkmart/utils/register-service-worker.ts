@@ -15,7 +15,7 @@ export function registerServiceWorker() {
         if (__DEV__) console.log("[SW] Registered:", registration.scope);
       })
       .catch((err) => {
-        console.warn("[SW] Registration failed:", err);
+        if (__DEV__) console.warn("[SW] Registration failed:", err);
       });
   });
 }

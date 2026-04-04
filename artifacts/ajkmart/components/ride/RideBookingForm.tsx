@@ -325,7 +325,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         setPickup(address);
         setPickupObj({ lat, lng, address });
       } catch (err) {
-        console.warn("[RideBookingForm] GPS auto-fill failed:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[RideBookingForm] GPS auto-fill failed:", err instanceof Error ? err.message : String(err));
       }
     })();
     return () => { cancelled = true; };
@@ -337,7 +337,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         if (data?.locations?.length) setPopularSpots(data.locations);
       })
       .catch((err) => {
-        console.warn("[RideBookingForm] Popular spots fetch failed:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[RideBookingForm] Popular spots fetch failed:", err instanceof Error ? err.message : String(err));
       });
   }, []);
 
@@ -348,7 +348,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         if (data?.routes?.length) setSchoolRoutes(data.routes);
       })
       .catch((err) => {
-        console.warn("[RideBookingForm] School routes fetch failed:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[RideBookingForm] School routes fetch failed:", err instanceof Error ? err.message : String(err));
       });
   }, [rideType]);
 
@@ -388,7 +388,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         );
       })
       .catch((err) => {
-        console.warn("[RideBookingForm] Ride services fetch failed:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[RideBookingForm] Ride services fetch failed:", err instanceof Error ? err.message : String(err));
         showToast("Could not load ride types. Please check your connection and try again.", "error");
       })
       .finally(() => setServicesLoading(false));
@@ -405,7 +405,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         if (d?.debtBalance > 0) setDebtBalance(d.debtBalance);
       })
       .catch((err) => {
-        console.warn("[RideBookingForm] Debt fetch failed:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[RideBookingForm] Debt fetch failed:", err instanceof Error ? err.message : String(err));
       });
   }, [user?.id]);
 

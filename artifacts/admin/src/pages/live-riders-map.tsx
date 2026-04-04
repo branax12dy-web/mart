@@ -297,7 +297,7 @@ function DynamicTileLayer({ config }: { config: MapConfig | undefined }) {
     if (!config?.failoverEnabled) return;
     errorCount.current += 1;
     if (!useFallback && errorCount.current >= ERROR_THRESHOLD) {
-      console.warn(`[Map] Primary provider "${provider}" failed ${ERROR_THRESHOLD}x — falling back to "${config?.secondaryProvider ?? "osm"}"`);
+      if (import.meta.env.DEV) console.warn(`[Map] Primary provider "${provider}" failed ${ERROR_THRESHOLD}x — falling back to "${config?.secondaryProvider ?? "osm"}"`);
       setUseFallback(true);
       errorCount.current = 0;
     }
@@ -597,7 +597,7 @@ function FleetAnalyticsTab({ mapConfig }: { mapConfig?: MapConfig }) {
           <div style={{ height: 350 }}>
             {heatPoints.length > 0 ? (
               <MapContainer
-                center={heatPoints.length > 0 ? [heatPoints[0]!.lat, heatPoints[0]!.lng] : [30.3753, 69.3451]}
+                center={heatPoints.length > 0 && heatPoints[0] ? [heatPoints[0].lat, heatPoints[0].lng] : [30.3753, 69.3451]}
                 zoom={11}
                 style={{ width: "100%", height: "100%" }}
               >
@@ -797,7 +797,7 @@ export default function LiveRidersMap() {
     });
 
     socket.on("connect_error", (err) => {
-      console.warn("[Fleet] Socket connect error:", err.message);
+      if (import.meta.env.DEV) console.warn("[Fleet] Socket connect error:", err.message);
       setWsConnected(false);
     });
 
@@ -1872,7 +1872,7 @@ export default function LiveRidersMap() {
                   />
                   <div className="flex justify-between text-xs text-muted-foreground mt-1">
                     <span>{loginPoint ? new Date(loginPoint.createdAt).toLocaleTimeString() : "Login"}</span>
-                    <span>{routePoints[routePoints.length - 1] ? new Date(routePoints[routePoints.length - 1]!.createdAt).toLocaleTimeString() : "Now"}</span>
+                    <span>{routePoints[routePoints.length - 1] ? new Date(routePoints[routePoints.length - 1]?.createdAt ?? "").toLocaleTimeString() : "Now"}</span>
                   </div>
                 </div>
               ) : (

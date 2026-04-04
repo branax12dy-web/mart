@@ -840,7 +840,7 @@ export default function HomeScreen() {
   const { config: platformConfig, loading: configLoading, refresh: refreshConfig } = usePlatformConfig();
 
   const handleHomeRefresh = useCallback(async () => {
-    try { await refreshConfig(); } catch (err) { console.warn("[Home] Config refresh failed:", err instanceof Error ? err.message : String(err)); }
+    try { await refreshConfig(); } catch (err) { if (__DEV__) console.warn("[Home] Config refresh failed:", err instanceof Error ? err.message : String(err)); }
     setLastRefreshed(new Date());
   }, [refreshConfig]);
 
@@ -881,7 +881,7 @@ export default function HomeScreen() {
     try {
       await AsyncStorage.setItem(SVC_VIEW_KEY, mode);
     } catch (err) {
-      console.warn("[HomeScreen] Failed to persist view mode:", err);
+      if (__DEV__) console.warn("[HomeScreen] Failed to persist view mode:", err);
     }
   };
 

@@ -274,7 +274,7 @@ function AddressPickerModal({
   );
 }
 
-function CartScreen() {
+function CartScreenInner() {
   const insets = useSafeAreaInsets();
   const { user, updateUser, token, socket } = useAuth();
   const {
@@ -405,7 +405,7 @@ function CartScreen() {
         }
       })
       .catch((err) => {
-        console.warn("[Cart] Failed to refresh platform config:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[Cart] Failed to refresh platform config:", err instanceof Error ? err.message : String(err));
       });
   }, []);
 
@@ -455,7 +455,7 @@ function CartScreen() {
         if (def) setSelectedAddrId(def.id);
       })
       .catch((err) => {
-        console.warn("[Cart] Failed to load addresses:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[Cart] Failed to load addresses:", err instanceof Error ? err.message : String(err));
         showToast("Could not load saved addresses. Please add one manually.", "error");
       })
       .finally(() => setAddrLoading(false));
@@ -594,7 +594,7 @@ function CartScreen() {
 
     if (finalPayMethod === "wallet") {
       const serverDeducted = parseFloat(String(order?.total ?? grandTotal));
-      updateUser({ walletBalance: (user!.walletBalance ?? 0) - serverDeducted });
+      updateUser({ walletBalance: (user?.walletBalance ?? 0) - serverDeducted });
     }
 
     (async () => {
@@ -1363,13 +1363,7 @@ function CartScreen() {
   );
 }
 
-export default function CartScreen() {
-  return (
-    <ErrorBoundary>
-      <CartScreenInner />
-    </ErrorBoundary>
-  );
-}
+export default withErrorBoundary(CartScreenInner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -1475,4 +1469,3 @@ const styles = StyleSheet.create({
   emptyBtnText: { ...Typ.buttonSmall, color: C.textInverse },
 });
 
-export default withErrorBoundary(CartScreen);

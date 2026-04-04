@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshTok = api.getRefreshToken();
     if (refreshTok) {
       api.logout(refreshTok).catch((err: Error) => {
-        console.warn("[auth] Server logout failed (token already expired or network):", err.message);
+        if (import.meta.env.DEV) console.warn("[auth] Server logout failed (token already expired or network):", err.message);
       });
     } else {
       api.clearTokens();

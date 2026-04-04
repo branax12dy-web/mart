@@ -303,7 +303,7 @@ export default function Products() {
                 ))}
               </div>
               {bulkRows.map((row, i) => {
-                const hasErr = !!(bulkRows[i]!.name && !bulkRows[i]!.price) || false;
+                const hasErr = !!(bulkRows[i]?.name && !bulkRows[i]?.price) || false;
                 return (
                   <div key={i} className={`grid gap-1 px-2 py-1.5 border-b border-gray-50 last:border-0 ${hasErr ? "bg-red-50/30" : ""}`}
                     style={{ gridTemplateColumns: "minmax(140px,2fr) minmax(80px,1fr) minmax(140px,2fr) minmax(120px,1.5fr) minmax(90px,1fr) minmax(60px,0.7fr) minmax(60px,0.7fr) minmax(60px,0.7fr) 32px" }}>

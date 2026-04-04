@@ -191,7 +191,7 @@ export default function Register() {
       usernameAbortRef.current = new AbortController();
       setUsernameStatus("checking");
       try {
-        const res = await api.checkAvailable({ username }, usernameAbortRef.current!.signal);
+        const res = await api.checkAvailable({ username }, usernameAbortRef.current?.signal);
         if (res.username && !res.username.available) setUsernameStatus("taken");
         else setUsernameStatus("available");
       } catch (e: unknown) {
@@ -422,7 +422,7 @@ export default function Register() {
               profile = await api.getMe() as AuthUser;
             } catch (getMeErr: unknown) {
               /* getMe failed after OTP verify — treat as pending to avoid partial login state */
-              console.warn("[Register] getMe failed after OTP verify:", getMeErr instanceof Error ? getMeErr.message : getMeErr);
+              if (import.meta.env.DEV) console.warn("[Register] getMe failed after OTP verify:", getMeErr instanceof Error ? getMeErr.message : getMeErr);
               setCompleted(true);
               return;
             }

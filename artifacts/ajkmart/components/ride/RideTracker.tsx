@@ -276,7 +276,7 @@ export function RideTracker({
         const d = await getDispatchStatus(rideId);
         setDispatchInfo(d);
       } catch (err) {
-        console.warn("[RideTracker] Dispatch status poll failed:", err instanceof Error ? err.message : String(err));
+        if (__DEV__) console.warn("[RideTracker] Dispatch status poll failed:", err instanceof Error ? err.message : String(err));
       }
     };
     poll();

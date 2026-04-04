@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = await api.getMe();
       setUser(u);
     } catch (e) {
-      console.error("refreshUser failed:", e);
+      if (import.meta.env.DEV) console.error("refreshUser failed:", e);
     }
   };
 

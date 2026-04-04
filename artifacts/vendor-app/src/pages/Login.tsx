@@ -327,7 +327,7 @@ export default function Login() {
       regUsernameAbort.current = new AbortController();
       setRegUsernameStatus("checking");
       try {
-        const res = await api.checkAvailable({ username: regUsername }, regUsernameAbort.current!.signal);
+        const res = await api.checkAvailable({ username: regUsername }, regUsernameAbort.current?.signal);
         if (res.username && !res.username.available) setRegUsernameStatus("taken");
         else setRegUsernameStatus("available");
       } catch (e: unknown) {

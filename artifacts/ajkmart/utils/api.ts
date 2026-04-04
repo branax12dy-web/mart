@@ -1,5 +1,5 @@
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
-if (!domain) {
+if (!domain && __DEV__) {
   console.error(
     "[API] FATAL: EXPO_PUBLIC_DOMAIN is not set. All API calls will fail. " +
     "Set this environment variable to your Replit dev domain before building."

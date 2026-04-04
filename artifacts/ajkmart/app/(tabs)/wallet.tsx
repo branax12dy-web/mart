@@ -750,7 +750,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
   );
 }
 
-function WalletScreen() {
+function WalletScreenInner() {
   const insets = useSafeAreaInsets();
   const { user, updateUser, token } = useAuth();
   const { showToast } = useToast();
@@ -1301,13 +1301,7 @@ function WalletScreen() {
   );
 }
 
-export default function WalletScreen() {
-  return (
-    <ErrorBoundary>
-      <WalletScreenInner />
-    </ErrorBoundary>
-  );
-}
+export default withErrorBoundary(WalletScreenInner);
 
 const ws = StyleSheet.create({
   actionCard: { flex: 1, alignItems: "center", gap: 8 },
@@ -1355,4 +1349,3 @@ const ws = StyleSheet.create({
   actionBtnTxt: { ...Typ.h3, fontSize: 16, color: C.textInverse },
 });
 
-export default withErrorBoundary(WalletScreen);
