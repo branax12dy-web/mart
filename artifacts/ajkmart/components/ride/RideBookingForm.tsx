@@ -255,7 +255,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   useEffect(() => {
     const idx = Math.max(0, services.findIndex((s) => s.key === rideType));
     Animated.spring(svcIndicatorX, {
-      toValue: idx * 14,
+      toValue: idx * 10,
       useNativeDriver: false,
       tension: 220,
       friction: 14,
@@ -1503,7 +1503,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 <View
                   key={svc.key}
                   style={{
-                    width: svc.key === rideType ? 20 : 6,
+                    width: 6,
                     height: 6,
                     borderRadius: 3,
                     backgroundColor: svc.key === rideType ? "transparent" : C.borderLight,
@@ -1579,7 +1579,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     Fare Estimate
                   </Text>
                   {estimateAgeMinutes < 5 && (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#E8FFF0", borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: "#B3EED0" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.successSoft, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: C.greenLightBg }}>
                       <Animated.View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: C.emerald, opacity: liveAnim }} />
                       <Text style={{ fontFamily: Font.bold, fontSize: 10, color: C.emerald, letterSpacing: 0.5 }}>LIVE</Text>
                     </View>
@@ -1968,7 +1968,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               onPress={() => setIsScheduled(v => !v)}
               style={{
                 flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-                backgroundColor: isScheduled ? "#EEF5FF" : C.textInverse,
+                backgroundColor: isScheduled ? C.blueSoft : C.textInverse,
                 borderWidth: 1.5, borderColor: isScheduled ? C.primary : C.border,
                 borderRadius: 16, padding: 16,
               }}
@@ -1989,7 +1989,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               <Ionicons name={isScheduled ? "chevron-up" : "chevron-down"} size={18} color={isScheduled ? C.primary : C.textMuted} />
             </Pressable>
             {isScheduled && (
-              <View style={{ backgroundColor: "#EEF5FF", borderWidth: 1, borderColor: C.blueBorder, borderTopWidth: 0, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, padding: 16, gap: 12 }}>
+              <View style={{ backgroundColor: C.blueSoft, borderWidth: 1, borderColor: C.blueBorder, borderTopWidth: 0, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, padding: 16, gap: 12 }}>
                 <View>
                   <Text style={{ fontFamily: Font.medium, fontSize: 12, color: C.textMuted, marginBottom: 6 }}>Date</Text>
                   <TextInput
@@ -2023,13 +2023,13 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
             onPress={() => setIsPoolRide(v => !v)}
             style={{
               flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-              backgroundColor: isPoolRide ? "#F0FFF0" : C.textInverse,
+              backgroundColor: isPoolRide ? C.greenBg : C.textInverse,
               borderWidth: 1.5, borderColor: isPoolRide ? C.success : C.border,
               borderRadius: 16, padding: 16, marginBottom: 14,
             }}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isPoolRide ? "#D0F0D0" : C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isPoolRide ? C.greenLightBg : C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
                 <Ionicons name="people-outline" size={20} color={isPoolRide ? C.success : C.textSecondary} />
               </View>
               <View>
