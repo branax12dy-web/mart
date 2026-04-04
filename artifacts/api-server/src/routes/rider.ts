@@ -516,6 +516,19 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/* ── Phone masking helper ──
+   Returns the raw phone number only for statuses where the rider has formally accepted
+   the job and needs to contact the customer. All other statuses get a masked number. */
+const PHONE_REVEAL_ORDER_STATUSES = new Set(["out_for_delivery", "picked_up"]);
+const PHONE_REVEAL_RIDE_STATUSES  = new Set(["accepted", "arrived", "in_transit"]);
+
+function maskPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 6) return "****";
+  return `${digits.slice(0, 4)}-***-${digits.slice(-2)}`;
+}
+
 /* ── GET /rider/requests — Available orders + rides (incl. bargaining, with own bid info + distance/ETA) ── */
 /* InDrive-style broadcast: ALL nearby riders within admin radius see every open ride.
    First to accept wins via atomic WHERE riderId IS NULL. */
@@ -581,9 +594,19 @@ router.get("/requests", async (req, res) => {
     })
     .sort((a, b) => (a.riderDistanceKm ?? 999) - (b.riderDistanceKm ?? 999));
 
+  /* Phone masking for /rider/requests:
+     - ordersTable has no customerPhone column — the customer phone is only in usersTable.
+       Orders are safe to spread as-is (no phone present in the row).
+     - ridesTable has receiverPhone (parcel rides) which is the receiver contact.
+       Mask it here: the rider has not been assigned yet so should not see full number. */
+  const maskedRides = filteredRides.map(r => ({
+    ...r,
+    receiverPhone: r.receiverPhone ? maskPhone(r.receiverPhone) : null,
+  }));
+
   sendSuccess(res, {
     orders: orders.map(o => ({ ...o, total: safeNum(o.total) })),
-    rides: filteredRides,
+    rides: maskedRides,
   });
 });
 
@@ -600,12 +623,13 @@ router.get("/active", async (req, res) => {
   if (ride[0]) {
     const [customer] = await db.select({ name: usersTable.name, phone: usersTable.phone })
       .from(usersTable).where(eq(usersTable.id, ride[0].userId)).limit(1);
+    const revealPhone = PHONE_REVEAL_RIDE_STATUSES.has(ride[0].status ?? "");
     enrichedRide = {
       ...ride[0],
       fare: safeNum(ride[0].fare),
       distance: safeNum(ride[0].distance),
       customerName:  customer?.name  || null,
-      customerPhone: customer?.phone || null,
+      customerPhone: revealPhone ? (customer?.phone || null) : maskPhone(customer?.phone),
     };
   }
 
@@ -622,11 +646,12 @@ router.get("/active", async (req, res) => {
     const [customerRows, vendorRows] = await Promise.all(promises);
     const customer = customerRows[0];
     const vendor   = vendorRows[0];
+    const revealPhone = PHONE_REVEAL_ORDER_STATUSES.has(order[0].status ?? "");
     enrichedOrder = {
       ...order[0],
       total: safeNum(order[0].total),
       customerName:  customer?.name  || null,
-      customerPhone: customer?.phone || null,
+      customerPhone: revealPhone ? (customer?.phone || null) : maskPhone(customer?.phone),
       vendorStoreName:  vendor?.storeName  || null,
       vendorPhone:      vendor?.phone      || null,
     };
@@ -2353,6 +2378,7 @@ router.patch("/location", locationRateLimiter, async (req, res) => {
     rideId,
     vendorId,
     orderId,
+    vehicleType: normalizeVehicleType(String(req.riderUser?.vehicleType ?? "")) || null,
     updatedAt,
   });
 
@@ -2549,6 +2575,7 @@ router.post("/location/batch", async (req, res) => {
       rideId: null,
       vendorId: null,
       orderId: null,
+      vehicleType: normalizeVehicleType(String(req.riderUser?.vehicleType ?? "")) || null,
       updatedAt: nowDate.toISOString(),
     });
   }

@@ -1,6 +1,10 @@
 /* GPS offline queue backed by IndexedDB.
    Stores GPS pings that could not be sent due to network unavailability.
-   On reconnect, the queue is drained by sending a batch request to the server. */
+   On reconnect, the queue is drained by sending a batch request to the server.
+
+   Also provides a dismissed-request store with a 90-second TTL so that
+   request cards the rider hides are still hidden when the tab is reopened
+   mid-trip, but automatically re-surface after the request has expired. */
 
 export interface QueuedPing {
   id: string;
@@ -15,9 +19,17 @@ export interface QueuedPing {
   mockProvider?: boolean;
 }
 
-const DB_NAME = "ajkmart_gps_queue";
-const STORE   = "pings";
-const DB_VER  = 1;
+interface DismissedEntry {
+  id: string;
+  expiresAt: number;
+}
+
+const DB_NAME    = "ajkmart_gps_queue";
+const STORE      = "pings";
+const DISMISSED  = "dismissed";
+const DB_VER     = 2;
+
+const DISMISSED_TTL_MS = 90_000;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -27,6 +39,10 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE)) {
         const store = db.createObjectStore(STORE, { keyPath: "id" });
         store.createIndex("timestamp", "timestamp", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(DISMISSED)) {
+        const ds = db.createObjectStore(DISMISSED, { keyPath: "id" });
+        ds.createIndex("expiresAt", "expiresAt", { unique: false });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -53,15 +69,9 @@ export async function enqueue(ping: QueuedPing): Promise<void> {
           cursorReq.onsuccess = () => {
             const cursor = cursorReq.result;
             if (cursor) {
-              /* Delete the oldest entry first, then add the new ping.
-                 store.put is intentionally inside this block — if no cursor
-                 is found the queue is in an unexpected state and we skip
-                 the put to avoid exceeding MAX_QUEUE_SIZE. */
               cursor.delete();
               store.put(ping);
             } else {
-              /* Queue reports full but no entry found to evict — abort to
-                 keep the transaction consistent and drop this ping. */
               tx.abort();
             }
           };
@@ -118,6 +128,81 @@ export async function queueSize(): Promise<number> {
   } catch { return 0; }
 }
 
+/* ── Dismissed-request store (T5) ──────────────────────────────────────────────
+   Persists dismissed request IDs across tab close with a 90-second TTL.
+   On read, expired entries are purged automatically so the store stays small. */
+
+export async function addDismissed(id: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const entry: DismissedEntry = { id, expiresAt: Date.now() + DISMISSED_TTL_MS };
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DISMISSED, "readwrite");
+      tx.objectStore(DISMISSED).put(entry);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror    = () => { db.close(); reject(tx.error); };
+    });
+  } catch {}
+}
+
+export async function removeDismissed(id: string): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DISMISSED, "readwrite");
+      tx.objectStore(DISMISSED).delete(id);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror    = () => { db.close(); reject(tx.error); };
+    });
+  } catch {}
+}
+
+export async function loadDismissed(): Promise<Set<string>> {
+  try {
+    const db = await openDB();
+    const now = Date.now();
+    const entries = await new Promise<DismissedEntry[]>((resolve, reject) => {
+      const tx = db.transaction(DISMISSED, "readonly");
+      const req = tx.objectStore(DISMISSED).getAll();
+      req.onsuccess = () => resolve((req.result ?? []) as DismissedEntry[]);
+      req.onerror   = () => reject(req.error);
+      tx.oncomplete = () => db.close();
+    });
+    const valid = entries.filter(e => e.expiresAt > now);
+    const expired = entries.filter(e => e.expiresAt <= now);
+    if (expired.length) {
+      const db2 = await openDB();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db2.transaction(DISMISSED, "readwrite");
+        const store = tx.objectStore(DISMISSED);
+        expired.forEach(e => store.delete(e.id));
+        tx.oncomplete = () => { db2.close(); resolve(); };
+        tx.onerror    = () => { db2.close(); reject(tx.error); };
+      });
+    }
+    return new Set(valid.map(e => e.id));
+  } catch { return new Set(); }
+}
+
+export async function clearAllDismissed(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DISMISSED, "readwrite");
+      tx.objectStore(DISMISSED).clear();
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror    = () => { db.close(); reject(tx.error); };
+    });
+  } catch {}
+}
+
+/* ── Drain handler (T7) ────────────────────────────────────────────────────────
+   The drain function calls the registered batch-upload callback.
+   If the server responds with GPS_SPOOF_DETECTED (HTTP 422), those pings
+   are dropped from the queue permanently — never re-queued.
+   Any other error leaves the pings in the queue to retry on the next
+   online event. */
+
 let _drainFn: ((pings: QueuedPing[]) => Promise<void>) | null = null;
 let _draining = false;
 
@@ -138,8 +223,31 @@ async function drainQueue(): Promise<void> {
     const CHUNK = 100;
     for (let i = 0; i < pings.length; i += CHUNK) {
       const chunk = pings.slice(i, i + CHUNK);
-      await _drainFn(chunk);
-      await clearQueue(chunk.map(p => p.id));
+      try {
+        await _drainFn(chunk);
+        await clearQueue(chunk.map(p => p.id));
+      } catch (rawErr: unknown) {
+        /* GPS_SPOOF_DETECTED: server rejected the pings as spoofed (422).
+           Drop them permanently — re-queuing would just fail again.
+           The error shape from apiFetch on a non-OK response is:
+             err.status     = HTTP status code
+             err.responseData = parsed JSON body (may contain .code and .data)
+           We use a typed guard to avoid `any` escapes. */
+        const err = rawErr as Record<string, unknown>;
+        const responseData = err.responseData as Record<string, unknown> | undefined;
+        const responseDataNested = responseData?.data as Record<string, unknown> | undefined;
+        const isSpoofRejection =
+          err.code === "GPS_SPOOF_DETECTED" ||
+          responseData?.code === "GPS_SPOOF_DETECTED" ||
+          responseDataNested?.code === "GPS_SPOOF_DETECTED" ||
+          err.spoofDetected === true;
+        if (isSpoofRejection) {
+          await clearQueue(chunk.map(p => p.id));
+        }
+        /* Any other error: leave pings in the queue and stop draining.
+           The next online event will trigger a retry. */
+        break;
+      }
     }
   } catch { /* drain failed — will retry next online event */ }
   finally { _draining = false; }

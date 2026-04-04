@@ -399,7 +399,6 @@ export default function Profile() {
       return;
     }
     sessionStorage.removeItem("orderPickedUp");
-    sessionStorage.removeItem("rider_dismissed");
     logout();
   };
 

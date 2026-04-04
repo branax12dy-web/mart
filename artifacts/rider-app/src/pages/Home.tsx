@@ -9,7 +9,7 @@ import { tDual } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { playRequestSound, unlockAudio, silenceFor, isSilenced, unsilence, getSilenceRemaining, getSilenceMode, setSilenceMode } from "../lib/notificationSound";
 import { logRideEvent } from "../lib/rideUtils";
-import { enqueue, registerDrainHandler, type QueuedPing } from "../lib/gpsQueue";
+import { enqueue, registerDrainHandler, addDismissed, removeDismissed, loadDismissed, clearAllDismissed, type QueuedPing } from "../lib/gpsQueue";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -298,12 +298,15 @@ export default function Home() {
   const [toastMsg, setToastMsg] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [newFlash, setNewFlash] = useState(false);
-  const [dismissed, setDismissed] = useState<Set<string>>(() => {
-    try {
-      const saved = sessionStorage.getItem("rider_dismissed");
-      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
-    } catch { return new Set<string>(); }
-  });
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set<string>());
+
+  /* Load persisted dismissed IDs from IndexedDB on mount (T5) */
+  useEffect(() => {
+    loadDismissed().then(ids => {
+      if (ids.size > 0) setDismissed(ids);
+    });
+  }, []);
+
   const [silenceOn, setSilenceOn] = useState(getSilenceMode());
   const prevIdsRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -344,6 +347,7 @@ export default function Home() {
     toastTimerRef.current = setTimeout(() => setToastMsg(""), 3000);
   };
 
+  const [wakeLockWarning, setWakeLockWarning] = useState(false);
   const [optimisticOnline, setOptimisticOnline] = useState<boolean | null>(null);
   const effectiveOnline = optimisticOnline !== null ? optimisticOnline : !!user?.isOnline;
 
@@ -457,7 +461,8 @@ export default function Home() {
     setDismissed(prev => {
       const next = new Set([...prev].filter(id => serverIds.has(id)));
       if (next.size === prev.size) return prev;
-      try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
+      /* Remove expired IDs from IndexedDB (T5) */
+      [...prev].filter(id => !serverIds.has(id)).forEach(id => removeDismissed(id));
       return next;
     });
   }, [requestsData]);
@@ -500,7 +505,10 @@ export default function Home() {
      Released when going offline or unmounting. */
   useEffect(() => {
     if (!effectiveOnline || !tabVisible) return;
-    if (!('wakeLock' in navigator)) return;
+    if (!('wakeLock' in navigator)) {
+      setWakeLockWarning(true);
+      return;
+    }
 
     let sentinel: WakeLockSentinel | null = null;
     let cancelled = false;
@@ -509,7 +517,10 @@ export default function Home() {
       try {
         if (cancelled || document.hidden) return;
         sentinel = await (navigator as Navigator & { wakeLock: { request(type: string): Promise<WakeLockSentinel> } }).wakeLock.request('screen');
-      } catch { /* unsupported or permission denied — fail silently */ }
+        setWakeLockWarning(false);
+      } catch {
+        setWakeLockWarning(true);
+      }
     };
 
     acquire();
@@ -524,7 +535,7 @@ export default function Home() {
   useEffect(() => {
     const handleLogout = () => {
       setDismissed(new Set());
-      try { sessionStorage.removeItem("rider_dismissed"); } catch {}
+      clearAllDismissed(); /* clear IndexedDB dismissed store (T5) */
     };
     window.addEventListener("ajkmart:logout", handleLogout);
     return () => window.removeEventListener("ajkmart:logout", handleLogout);
@@ -690,21 +701,23 @@ export default function Home() {
   const rides  = allRides.filter((r: any) => !dismissed.has(r.id));
   const totalRequests = orders.length + rides.length;
 
-  const dismiss = (id: string) => setDismissed(prev => {
-    const next = new Set([...prev, id]);
-    try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
-    /* Stop the notification sound if all server-side requests are now dismissed */
-    const serverIds = new Set<string>([
-      ...allOrders.map((o: any) => o.id),
-      ...allRides.map((r: any) => r.id),
-    ]);
-    const remainingVisible = [...serverIds].filter(sid => !next.has(sid));
-    if (remainingVisible.length === 0) {
-      hasUnseenRequestsRef.current = false;
-      if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
-    }
-    return next;
-  });
+  const dismiss = (id: string) => {
+    addDismissed(id); /* persist to IndexedDB with 90s TTL (T5) */
+    setDismissed(prev => {
+      const next = new Set([...prev, id]);
+      /* Stop the notification sound if all server-side requests are now dismissed */
+      const serverIds = new Set<string>([
+        ...allOrders.map((o: any) => o.id),
+        ...allRides.map((r: any) => r.id),
+      ]);
+      const remainingVisible = [...serverIds].filter(sid => !next.has(sid));
+      if (remainingVisible.length === 0) {
+        hasUnseenRequestsRef.current = false;
+        if (soundIntervalRef.current) { clearInterval(soundIntervalRef.current); soundIntervalRef.current = null; }
+      }
+      return next;
+    });
+  };
 
   const stopRequestSound = () => {
     hasUnseenRequestsRef.current = false;
@@ -836,7 +849,7 @@ export default function Home() {
     <div className="flex flex-col min-h-screen bg-[#F5F6F8] animate-[fadeIn_0.3s_ease-out]">
 
       {newFlash && (
-        <div className="fixed inset-0 z-50 pointer-events-none">
+        <div className="fixed inset-0 z-[1100] pointer-events-none">
           <div className="absolute inset-0 border-[6px] border-green-400 rounded-none animate-ping opacity-50"/>
           <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white font-extrabold text-sm px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-bounce">
             <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"/>
@@ -857,6 +870,14 @@ export default function Home() {
           style={{ paddingTop: (!socketConnected ? "calc(env(safe-area-inset-top, 0px) + 30px)" : "calc(env(safe-area-inset-top, 0px) + 6px)") }}>
           <MapPin size={13}/> {zoneWarning}
           <button onClick={() => setZoneWarning(null)} className="ml-2 bg-white/20 rounded-full p-0.5"><X size={11}/></button>
+        </div>
+      )}
+
+      {wakeLockWarning && effectiveOnline && (
+        <div className="fixed bottom-20 left-4 right-4 z-[1050] bg-amber-600 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-lg flex items-center gap-2.5 animate-[slideUp_0.3s_ease-out]">
+          <AlertTriangle size={14} className="flex-shrink-0"/>
+          <span className="flex-1">Screen may sleep — keep app open for uninterrupted deliveries.</span>
+          <button onClick={() => setWakeLockWarning(false)} className="bg-white/20 rounded-full p-0.5 flex-shrink-0"><X size={11}/></button>
         </div>
       )}
 
@@ -1000,12 +1021,10 @@ export default function Home() {
             </div>
             <p className="text-sm text-blue-700 font-medium leading-relaxed flex-1 pt-0.5">{config.content.riderNotice}</p>
             <button
-              onClick={() => setDismissed(prev => {
-                const next = new Set(prev);
-                next.add("rider-notice");
-                try { sessionStorage.setItem("rider_dismissed", JSON.stringify([...next])); } catch {}
-                return next;
-              })}
+              onClick={() => {
+                addDismissed("rider-notice"); /* persist (T5) */
+                setDismissed(prev => { const next = new Set(prev); next.add("rider-notice"); return next; });
+              }}
               className="text-blue-400 hover:text-blue-600 flex-shrink-0 mt-0.5">
               <X size={14}/>
             </button>
@@ -1611,7 +1630,7 @@ export default function Home() {
       </div>
 
       {toastMsg && (
-        <div className="fixed top-6 left-4 right-4 z-50 pointer-events-none animate-[slideDown_0.3s_ease-out]">
+        <div className="fixed top-6 left-4 right-4 z-[1100] pointer-events-none animate-[slideDown_0.3s_ease-out]">
           <div className={`${toastType === "success" ? "bg-green-600" : "bg-red-600"} text-white text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-center gap-2 max-w-md mx-auto`}>
             {toastType === "success" ? <CheckCircle size={16}/> : <AlertTriangle size={16}/>}
             {toastMsg}
@@ -1631,7 +1650,7 @@ export default function Home() {
       )}
 
       {showOfflineConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center pointer-events-auto animate-[fadeIn_0.15s_ease-out]">
+        <div className="fixed inset-0 z-[1100] bg-black/40 flex items-end justify-center pointer-events-auto animate-[fadeIn_0.15s_ease-out]">
           <div className="w-full max-w-sm mx-auto bg-white rounded-t-3xl px-6 py-6 shadow-2xl animate-[slideUp_0.2s_ease-out]">
             <p className="text-base font-extrabold text-gray-900 mb-1.5">Go Offline?</p>
             <p className="text-sm text-gray-500 mb-5">You have {totalRequests} request{totalRequests > 1 ? "s" : ""} waiting — go offline anyway?</p>

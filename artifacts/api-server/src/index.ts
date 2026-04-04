@@ -62,21 +62,34 @@ async function assertSecureSettings() {
   }
 }
 
+let _listenAttempt = 0;
+const MAX_LISTEN_ATTEMPTS = 3;
+const LISTEN_RETRY_DELAY_MS = 2000;
+
+function startListening(): void {
+  _listenAttempt++;
+  httpServer.listen({ port, exclusive: false }, () => {
+    logger.info({ port }, "Server listening");
+    startDispatchEngine();
+    migrateAdminSecrets().catch(e => logger.error({ err: e }, "Admin secret migration failed"));
+  });
+}
+
+httpServer.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE" && _listenAttempt < MAX_LISTEN_ATTEMPTS) {
+    logger.warn({ port, attempt: _listenAttempt, nextAttempt: _listenAttempt + 1 }, "Port in use — retrying in 2 s");
+    httpServer.close();
+    setTimeout(() => startListening(), LISTEN_RETRY_DELAY_MS);
+  } else {
+    logger.error({ err }, "Error listening on port");
+    process.exit(1);
+  }
+});
+
 ensureAuthMethodColumn()
   .then(() => assertSecureSettings())
-  .then(() => {
-    httpServer.listen(port, () => {
-      logger.info({ port }, "Server listening");
-      startDispatchEngine();
-      migrateAdminSecrets().catch(e => logger.error({ err: e }, "Admin secret migration failed"));
-    });
-  })
+  .then(() => startListening())
   .catch(e => {
     logger.error({ err: e }, "Failed to run auth_method column migration");
     process.exit(1);
   });
-
-httpServer.on("error", (err) => {
-  logger.error({ err }, "Error listening on port");
-  process.exit(1);
-});

@@ -6,10 +6,11 @@ const TOKEN_KEY   = "ajkmart_rider_token";
 const REFRESH_KEY = "ajkmart_rider_refresh_token";
 
 /* ── Secure token storage ──────────────────────────────────────────────────────
-   Access tokens are short-lived (15 min) so we store them in sessionStorage —
-   they are cleared when the tab closes and are not accessible cross-tab.
-   Refresh tokens have a longer lifetime; we use localStorage for persistence
-   across sessions but rely on server-side revocation for security.
+   Access tokens are stored in localStorage so that closing a tab mid-trip does
+   not force a full re-login — the rider can reopen the browser and the active
+   trip screen rehydrates automatically via the existing refresh-token flow.
+   Refresh tokens also live in localStorage for cross-session persistence.
+   Server-side revocation (tokenVersion) is the primary security boundary.
 
    Separate in-memory variables are used per token class so that storage-restricted
    environments (incognito strict mode, cross-origin iframes) cannot accidentally
@@ -18,15 +19,15 @@ const REFRESH_KEY = "ajkmart_rider_refresh_token";
 let _inMemoryAccessToken   = "";
 let _inMemoryRefreshToken  = "";
 
-/* Access token helpers — sessionStorage */
+/* Access token helpers — localStorage (persists across tab close / mid-trip reopen) */
 function sessionGet(): string {
-  try { return sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return _inMemoryAccessToken; }
+  try { return localStorage.getItem(TOKEN_KEY) ?? ""; } catch { return _inMemoryAccessToken; }
 }
 function sessionSet(value: string): void {
-  try { sessionStorage.setItem(TOKEN_KEY, value); } catch { _inMemoryAccessToken = value; }
+  try { localStorage.setItem(TOKEN_KEY, value); } catch { _inMemoryAccessToken = value; }
 }
 function sessionRemove(): void {
-  try { sessionStorage.removeItem(TOKEN_KEY); } catch { _inMemoryAccessToken = ""; }
+  try { localStorage.removeItem(TOKEN_KEY); } catch { _inMemoryAccessToken = ""; }
 }
 
 /* Refresh token helpers — localStorage */
@@ -40,38 +41,9 @@ function localRemove(): void {
   try { localStorage.removeItem(REFRESH_KEY); } catch { _inMemoryRefreshToken = ""; }
 }
 
-/* Read the access token — check sessionStorage first, fall back to localStorage
-   for sessions that were stored under the legacy scheme (pre-sessionStorage migration).
-   On first successful read from localStorage the token is immediately migrated.
-   Scans ALL localStorage keys that match rider auth patterns so that tokens written
-   by any prior version of the app (regardless of key name) are picked up and cleaned. */
+/* Read the access token from localStorage (current scheme) or scan for legacy keys. */
 function getToken(): string {
-  const fromSession = sessionGet();
-  if (fromSession) return fromSession;
-
-  /* Legacy migration: scan every localStorage key that looks like a rider access token.
-     The REFRESH_KEY is explicitly skipped — it must stay in localStorage for persistence. */
-  try {
-    let legacy = "";
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (key === REFRESH_KEY) continue;
-      if (key.startsWith("rider_") || key.startsWith("ajkmart_rider")) {
-        keysToRemove.push(key);
-        /* Use the first non-empty value found as the token to migrate */
-        if (!legacy) legacy = localStorage.getItem(key) ?? "";
-      }
-    }
-    if (legacy) {
-      sessionSet(legacy);
-    }
-    /* Remove all matched legacy keys regardless of whether a token was found */
-    keysToRemove.forEach(k => { try { localStorage.removeItem(k); } catch {} });
-    if (legacy) return legacy;
-  } catch {}
-  return "";
+  return sessionGet();
 }
 
 function getRefreshToken(): string {
@@ -80,15 +52,15 @@ function getRefreshToken(): string {
 
 /* Sweep localStorage for any stale rider auth keys from older app versions.
    Removes every key that looks like a rider access token (matches "rider_" or
-   "ajkmart_rider" prefix) but is NOT the current refresh-token key, which is
-   intentionally kept in localStorage for cross-session persistence. */
+   "ajkmart_rider" prefix) but is NOT the current access-token key or refresh-token key,
+   which are intentionally kept in localStorage for mid-trip rehydration. */
 function sweepLegacyTokens(): void {
   try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key) continue;
-      if (key === REFRESH_KEY) continue;
+      if (key === TOKEN_KEY || key === REFRESH_KEY) continue;
       if (key.startsWith("rider_") || key.startsWith("ajkmart_rider")) {
         keysToRemove.push(key);
       }
