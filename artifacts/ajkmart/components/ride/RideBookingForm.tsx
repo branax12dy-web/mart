@@ -18,6 +18,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useColorScheme,
   useWindowDimensions,
   View,
   StyleSheet,
@@ -54,8 +55,6 @@ type SchoolSubscribeRequestWithNotes = SchoolSubscribeRequest & {
   startDate?: string;
   recurring?: boolean;
 };
-
-const C = Colors.light;
 
 type PopularSpot = {
   id: string;
@@ -104,6 +103,9 @@ type RideBookingFormProps = {
 };
 
 export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillType }: RideBookingFormProps) {
+  const colorScheme = useColorScheme();
+  const C = colorScheme === "dark" ? Colors.dark : Colors.light;
+  const ds = makeDynStyles(C);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { width: screenWidth } = useWindowDimensions();
@@ -892,7 +894,11 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           <View style={{ flexDirection: "row", alignItems: "stretch", gap: 0 }}>
             <View style={{ width: 24, alignItems: "center", paddingTop: 14 }}>
               <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: C.emerald, borderWidth: 2, borderColor: `${C.emerald}40` }} />
-              <View style={{ flex: 1, width: 2, backgroundColor: C.borderLight, marginVertical: 4, opacity: 0.7 }} />
+              <View style={{ flex: 1, width: 2, alignItems: "center", marginVertical: 3 }}>
+                {[0,1,2,3,4].map((i) => (
+                  <View key={i} style={{ width: 2, height: 4, backgroundColor: C.border, borderRadius: 1, marginBottom: 3, opacity: 0.8 }} />
+                ))}
+              </View>
               <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: C.red, borderWidth: 2, borderColor: `${C.red}40`, marginBottom: 14 }} />
             </View>
 
@@ -947,18 +953,18 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               ) : null}
 
               {pickupFocus && (
-                <View style={rs.sugg}>
+                <View style={ds.sugg}>
                   {pickupLoading && (
                     <ActivityIndicator size="small" color={C.primary} style={{ padding: 8 }} />
                   )}
                   <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always">
                     {pickupPreds.slice(0, 6).map((pred) => (
-                      <Pressable key={pred.placeId} onPress={() => selectPickup(pred)} style={rs.suggRow}>
+                      <Pressable key={pred.placeId} onPress={() => selectPickup(pred)} style={ds.suggRow}>
                         <Ionicons name="location-outline" size={14} color={C.emerald} />
                         <View style={{ flex: 1 }}>
-                          <Text style={rs.suggTxt}>{pred.mainText}</Text>
+                          <Text style={ds.suggTxt}>{pred.mainText}</Text>
                           {pred.secondaryText ? (
-                            <Text style={rs.suggSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                            <Text style={ds.suggSub} numberOfLines={1}>{pred.secondaryText}</Text>
                           ) : null}
                         </View>
                       </Pressable>
@@ -1008,18 +1014,18 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               </View>
 
               {dropFocus && (
-                <View style={rs.sugg}>
+                <View style={ds.sugg}>
                   {dropLoading && (
                     <ActivityIndicator size="small" color={C.red} style={{ padding: 8 }} />
                   )}
                   <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always">
                     {dropPreds.slice(0, 6).map((pred) => (
-                      <Pressable key={pred.placeId} onPress={() => selectDrop(pred)} style={rs.suggRow}>
+                      <Pressable key={pred.placeId} onPress={() => selectDrop(pred)} style={ds.suggRow}>
                         <Ionicons name="location-outline" size={14} color={C.red} />
                         <View style={{ flex: 1 }}>
-                          <Text style={rs.suggTxt}>{pred.mainText}</Text>
+                          <Text style={ds.suggTxt}>{pred.mainText}</Text>
                           {pred.secondaryText ? (
-                            <Text style={rs.suggSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                            <Text style={ds.suggSub} numberOfLines={1}>{pred.secondaryText}</Text>
                           ) : null}
                         </View>
                       </Pressable>
@@ -1373,21 +1379,16 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               if (svc.maxPassengers > 1) feats.push(`${svc.maxPassengers} seats`);
               if (svc.allowBargaining) feats.push("Bargain OK");
               if (svc.description) feats.push(svc.description);
-              return (
-                <Pressable
-                  key={svc.key}
-                  onPress={() => setRideType(svc.key)}
-                  style={({ pressed }) => ({
-                    width: 152,
-                    borderRadius: 20,
+              const cardInner = (
+                <View
+                  style={{
+                    borderRadius: active ? 19 : 20,
                     padding: 16,
-                    borderWidth: active ? 2 : 1.5,
-                    borderColor: active ? accentColor : C.border,
                     backgroundColor: active ? `${accentColor}0A` : C.textInverse,
+                    ...(active ? {} : { borderWidth: 1.5, borderColor: C.border }),
                     overflow: "hidden",
-                    transform: [{ scale: pressed ? 0.96 : 1 }],
-                    opacity: pressed ? 0.92 : 1,
-                  })}
+                    minHeight: 160,
+                  }}
                 >
                   {active && (
                     <View style={{ position: "absolute", top: 10, right: 10 }}>
@@ -1437,6 +1438,29 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                       </View>
                     ))}
                   </View>
+                </View>
+              );
+              return (
+                <Pressable
+                  key={svc.key}
+                  onPress={() => setRideType(svc.key)}
+                  style={({ pressed }) => ({
+                    width: 152,
+                    borderRadius: 21,
+                    transform: [{ scale: pressed ? 0.96 : 1 }],
+                    opacity: pressed ? 0.92 : 1,
+                  })}
+                >
+                  {active ? (
+                    <LinearGradient
+                      colors={[accentColor, `${accentColor}70`, `${accentColor}30`]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{ borderRadius: 21, padding: 1.5 }}
+                    >
+                      {cardInner}
+                    </LinearGradient>
+                  ) : cardInner}
                 </Pressable>
               );
             })}
@@ -1535,6 +1559,28 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   <Text style={{ fontSize: 11, color: C.royalBlue, fontFamily: Font.semiBold }}>Route</Text>
                 </Pressable>
               </View>
+              {estimateAgeMinutes < 5 && (
+                <View style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                    <Text style={{ fontFamily: Font.regular, fontSize: 10, color: C.textMuted }}>
+                      {estimateAgeMinutes === 0 ? "Updated just now" : `Updated ${estimateAgeMinutes} min ago`}
+                    </Text>
+                    <Text style={{ fontFamily: Font.regular, fontSize: 10, color: C.textMuted }}>
+                      {Math.max(0, 5 - estimateAgeMinutes)} min left
+                    </Text>
+                  </View>
+                  <View style={{ height: 3, backgroundColor: C.borderLight, borderRadius: 2, overflow: "hidden" }}>
+                    <View
+                      style={{
+                        height: "100%",
+                        width: `${Math.min(estimateAgeMinutes / 5, 1) * 100}%`,
+                        backgroundColor: estimateAgeMinutes >= 4 ? C.danger : estimateAgeMinutes >= 2 ? C.amberBrown : C.emerald,
+                        borderRadius: 2,
+                      }}
+                    />
+                  </View>
+                </View>
+              )}
               <View
                 style={{ flexDirection: "row", alignItems: "center" }}
               >
@@ -2926,32 +2972,37 @@ const rs = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  sugg: {
-    backgroundColor: C.surface,
-    borderRadius: 12,
-    marginTop: 6,
-    borderWidth: 1,
-    borderColor: C.border,
-    maxHeight: 200,
-  },
-  suggRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: C.borderLight,
-  },
-  suggTxt: {
-    fontFamily: Font.regular,
-    fontSize: 13,
-    color: C.text,
-  },
-  suggSub: {
-    fontFamily: Font.regular,
-    fontSize: 11,
-    color: C.textMuted,
-    marginTop: 1,
-  },
 });
+
+function makeDynStyles(C: typeof import("@/constants/colors").default.light) {
+  return {
+    sugg: {
+      backgroundColor: C.surface,
+      borderRadius: 12,
+      marginTop: 6,
+      borderWidth: 1,
+      borderColor: C.border,
+      maxHeight: 200,
+    } as const,
+    suggRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: C.borderLight,
+    } as const,
+    suggTxt: {
+      fontFamily: Font.regular,
+      fontSize: 13,
+      color: C.text,
+    } as const,
+    suggSub: {
+      fontFamily: Font.regular,
+      fontSize: 11,
+      color: C.textMuted,
+      marginTop: 1,
+    } as const,
+  };
+}

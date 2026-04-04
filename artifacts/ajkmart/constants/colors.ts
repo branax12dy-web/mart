@@ -234,8 +234,7 @@ export const serviceColors = {
   parcel: { main: "#FF6B35", light: "#FFF0EB", dark: "#D4541E" },
 } as const;
 
-export default {
-  light: {
+const lightTheme = {
     primary,
     primaryLight,
     primaryDark,
@@ -394,5 +393,53 @@ export default {
     overlayDark50,
     overlayDark60,
     overlayPurple85,
-  },
+};
+
+const darkTheme = {
+  ...lightTheme,
+  text: "#F1F5F9",
+  textSecondary: "#94A3B8",
+  textMuted: "#64748B",
+  textInverse: "#0F172A",
+  background: "#0A0F1A",
+  surface: "#141C2D",
+  surfaceSecondary: "#1A2440",
+  surfaceElevated: "#1E2A40",
+  border: "#2D3B56",
+  borderLight: "#1A2440",
+  inputBg: "#1A2440",
+  shadow: "rgba(0,0,0,0.4)",
+  overlay: "rgba(0,0,0,0.7)",
+  blueSoft: "#1A2B4A",
+  blueBorder: "#2D4A7A",
+  brandBlueSoft: "#1A2B4A",
+  yellowLightBg: "#2A2000",
+  orangeBg: "#2A1200",
+  orangeBorder: "#4A2510",
+  orangeSoft: "#3A1E0A",
+  redBg: "#2A0F0F",
+  redBorder: "#4A1515",
+  greenBg: "#0A1F12",
+  greenLightBg: "#0A1A10",
+  amberBg: "#1A1400",
+  purpleBg: "#1A1230",
+  purpleLight: "#1A1230",
+  skyBg: "#0A1C2A",
+  silverGray: "#1E293B",
+  graySoft: "#1A2440",
+  infoSoft: "#1A1840",
+  warningSoft: "#2A2000",
+  dangerSoft: "#2A0F0F",
+  successSoft: "#0A1F12",
+  primarySoft: "#0A1838",
+  accentSoft: "#2A1800",
+  slateGray: "#1A2440",
+  roseBg: "#2A1015",
+  peachBg: "#2A1A0A",
+  yellowWarm: "#1A1500",
+};
+
+export default {
+  light: lightTheme,
+  dark: darkTheme,
 };
