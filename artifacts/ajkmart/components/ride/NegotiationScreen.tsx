@@ -837,47 +837,67 @@ export function NegotiationScreen({
                       </View>
                     </View>
 
-                    {/* Accept button with gradient */}
-                    <Pressable
-                      onPress={() => acceptBid(bid.id)}
-                      disabled={acceptBidId !== null}
-                      style={{ opacity: acceptBidId !== null ? 0.6 : 1 }}
-                    >
-                      <LinearGradient
-                        colors={["#10B981", "#059669"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
+                    {/* Accept + Counter button row */}
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      {/* Accept */}
+                      <Pressable
+                        onPress={() => acceptBid(bid.id)}
+                        disabled={acceptBidId !== null}
+                        style={{ flex: 3, opacity: acceptBidId !== null ? 0.6 : 1 }}
+                      >
+                        <LinearGradient
+                          colors={["#10B981", "#059669"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={{
+                            borderRadius: 14,
+                            paddingVertical: 14,
+                            alignItems: "center",
+                            flexDirection: "row",
+                            justifyContent: "center",
+                            gap: 6,
+                          }}
+                        >
+                          {isAccepting ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <>
+                              <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>
+                                Accept · Rs. {Math.round(bid.fare)}
+                              </Text>
+                            </>
+                          )}
+                        </LinearGradient>
+                      </Pressable>
+
+                      {/* Counter */}
+                      <Pressable
+                        onPress={() => {
+                          setUpdateOfferInput(String(Math.round(bid.fare)));
+                          setShowUpdateOffer(true);
+                        }}
+                        disabled={acceptBidId !== null}
                         style={{
+                          flex: 2,
                           borderRadius: 14,
                           paddingVertical: 14,
                           alignItems: "center",
-                          flexDirection: "row",
                           justifyContent: "center",
-                          gap: 8,
+                          flexDirection: "row",
+                          gap: 6,
+                          borderWidth: 1.5,
+                          borderColor: "rgba(251,191,36,0.55)",
+                          backgroundColor: "rgba(251,191,36,0.08)",
+                          opacity: acceptBidId !== null ? 0.5 : 1,
                         }}
                       >
-                        {isAccepting ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <>
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={18}
-                              color="#fff"
-                            />
-                            <Text
-                              style={{
-                                fontFamily: "Inter_700Bold",
-                                fontSize: 14,
-                                color: "#fff",
-                              }}
-                            >
-                              Accept Rs. {Math.round(bid.fare)}
-                            </Text>
-                          </>
-                        )}
-                      </LinearGradient>
-                    </Pressable>
+                        <Ionicons name="swap-horizontal" size={14} color="#FCD34D" />
+                        <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#FCD34D" }}>
+                          Counter
+                        </Text>
+                      </Pressable>
+                    </View>
                   </LinearGradient>
                 </View>
               );

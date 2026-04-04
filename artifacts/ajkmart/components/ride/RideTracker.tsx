@@ -1154,139 +1154,156 @@ export function RideTracker({
           {!ratingDone ? (
             <View
               style={{
-                backgroundColor: C.surface,
-                borderRadius: 20,
-                padding: 20,
-                alignItems: "center",
-                gap: 12,
+                borderRadius: 24,
+                overflow: "hidden",
                 borderWidth: 1,
                 borderColor: C.border,
               }}
             >
-              <Text
-                style={{
-                  fontFamily: "Inter_700Bold",
-                  fontSize: 16,
-                  color: C.text,
-                }}
+              {/* Sheet header */}
+              <LinearGradient
+                colors={["#1E293B", "#0F172A"]}
+                style={{ padding: 20, alignItems: "center", gap: 4 }}
               >
-                Rate Your Driver
-              </Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 12,
-                  marginVertical: 4,
-                }}
-              >
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <Pressable key={s} onPress={() => setRating(s)}>
-                    <Ionicons
-                      name={s <= rating ? "star" : "star-outline"}
-                      size={36}
-                      color={s <= rating ? "#F59E0B" : "#D1D5DB"}
-                    />
-                  </Pressable>
-                ))}
-              </View>
-              <Text
-                style={{
-                  fontFamily: "Inter_400Regular",
-                  fontSize: 13,
-                  color: C.textMuted,
-                }}
-              >
-                {rating === 0
-                  ? "Tap to rate"
-                  : rating === 5
-                    ? "Excellent!"
-                    : rating >= 4
-                      ? "Great ride!"
-                      : rating >= 3
-                        ? "It was okay"
-                        : "Could be better"}
-              </Text>
-              {rating > 0 && (
-                <>
-                  <TextInput
-                    placeholder="Add a comment (optional)..."
-                    value={ratingComment}
-                    onChangeText={setRatingComment}
+                {/* drag handle */}
+                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.2)", marginBottom: 12 }} />
+                <View style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: 30,
+                  backgroundColor: "rgba(245,158,11,0.15)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 2,
+                  borderColor: "rgba(245,158,11,0.4)",
+                  marginBottom: 10,
+                }}>
+                  <Ionicons name="star" size={28} color="#F59E0B" />
+                </View>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: "#fff" }}>
+                  Rate Your Driver
+                </Text>
+                {ride.riderName ? (
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+                    How was your ride with {ride.riderName}?
+                  </Text>
+                ) : null}
+                {/* Stars */}
+                <View style={{ flexDirection: "row", gap: 14, marginTop: 18, marginBottom: 6 }}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Pressable key={s} onPress={() => setRating(s)} style={{ padding: 4 }}>
+                      <Ionicons
+                        name={s <= rating ? "star" : "star-outline"}
+                        size={38}
+                        color={s <= rating ? "#F59E0B" : "rgba(255,255,255,0.25)"}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+                {rating > 0 && (
+                  <View style={{
+                    backgroundColor: "rgba(245,158,11,0.15)",
+                    borderRadius: 20,
+                    paddingHorizontal: 16,
+                    paddingVertical: 6,
+                    borderWidth: 1,
+                    borderColor: "rgba(245,158,11,0.3)",
+                    marginTop: 4,
+                  }}>
+                    <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#FCD34D" }}>
+                      {rating === 5 ? "Excellent!" : rating >= 4 ? "Great ride!" : rating >= 3 ? "It was okay" : "Could be better"}
+                    </Text>
+                  </View>
+                )}
+                {rating === 0 && (
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+                    Tap a star to rate
+                  </Text>
+                )}
+              </LinearGradient>
+              {/* Comment + submit */}
+              <View style={{ backgroundColor: C.surface, padding: 20, gap: 12 }}>
+                <TextInput
+                  placeholder="Leave a comment (optional)..."
+                  value={ratingComment}
+                  onChangeText={setRatingComment}
+                  multiline
+                  numberOfLines={2}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: C.border,
+                    borderRadius: 14,
+                    padding: 13,
+                    fontFamily: "Inter_400Regular",
+                    fontSize: 14,
+                    color: C.text,
+                    minHeight: 60,
+                    textAlignVertical: "top",
+                    backgroundColor: C.surfaceSecondary,
+                  }}
+                  placeholderTextColor={C.textMuted}
+                />
+                <Pressable
+                  onPress={async () => {
+                    if (rating === 0) return;
+                    try {
+                      await rateRide(rideId, {
+                        stars: rating,
+                        comment: ratingComment || undefined,
+                      });
+                      setRatingDone(true);
+                      AsyncStorage.setItem(`rated_ride_${rideId}`, "1").catch(() => {});
+                    } catch {
+                      showToast("Could not submit rating. Please try again.", "error");
+                    }
+                  }}
+                  disabled={rating === 0}
+                  style={{ opacity: rating === 0 ? 0.45 : 1 }}
+                >
+                  <LinearGradient
+                    colors={rating > 0 ? ["#F59E0B", "#D97706"] : [C.border, C.border]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
                     style={{
-                      width: "100%",
-                      borderWidth: 1,
-                      borderColor: C.border,
                       borderRadius: 14,
-                      padding: 12,
-                      fontFamily: "Inter_400Regular",
-                      fontSize: 14,
-                      color: C.text,
-                      marginTop: 4,
-                    }}
-                    placeholderTextColor={C.textMuted}
-                  />
-                  <Pressable
-                    onPress={async () => {
-                      try {
-                        await rateRide(rideId, {
-                          stars: rating,
-                          comment: ratingComment || undefined,
-                        });
-                        setRatingDone(true);
-                        AsyncStorage.setItem(`rated_ride_${rideId}`, "1").catch(() => {});
-                      } catch {
-                        showToast(
-                          "Could not submit rating. Please try again.",
-                          "error",
-                        );
-                      }
-                    }}
-                    style={{
-                      backgroundColor: C.primary,
-                      borderRadius: 14,
-                      paddingVertical: 14,
-                      paddingHorizontal: 24,
-                      width: "100%",
+                      paddingVertical: 15,
                       alignItems: "center",
-                      marginTop: 4,
+                      flexDirection: "row",
+                      justifyContent: "center",
+                      gap: 8,
                     }}
                   >
-                    <Text
-                      style={{
-                        fontFamily: "Inter_700Bold",
-                        fontSize: 14,
-                        color: "#fff",
-                      }}
-                    >
+                    <Ionicons name="paper-plane" size={16} color="#fff" />
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>
                       Submit Rating
                     </Text>
-                  </Pressable>
-                </>
-              )}
+                  </LinearGradient>
+                </Pressable>
+                <Pressable
+                  onPress={() => setRatingDone(true)}
+                  style={{ alignItems: "center", paddingVertical: 6 }}
+                >
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted }}>
+                    Skip for now
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           ) : (
             <View
               style={{
-                backgroundColor: "#D1FAE5",
+                backgroundColor: C.greenBg,
                 borderRadius: 16,
                 padding: 16,
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 10,
+                borderWidth: 1,
+                borderColor: C.greenBorder,
               }}
             >
-              <Ionicons
-                name="checkmark-circle"
-                size={20}
-                color="#059669"
-              />
-              <Text
-                style={{
-                  fontFamily: "Inter_600SemiBold",
-                  fontSize: 14,
-                  color: "#065F46",
-                }}
-              >
+              <Ionicons name="checkmark-circle" size={20} color={C.emerald} />
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.emeraldDeep }}>
                 Thanks for rating!
               </Text>
             </View>
@@ -1635,7 +1652,7 @@ export function RideTracker({
     );
   }
 
-  type StatusCfg = { color: string; icon: string; title: string; sub: string };
+  type StatusCfg = { color: string; icon: React.ComponentProps<typeof Ionicons>["name"]; title: string; sub: string };
   const statusCfgs: Record<string, StatusCfg> = {
     accepted: {
       color: "#1A56DB",
@@ -1700,7 +1717,7 @@ export function RideTracker({
             }}
           >
             <Ionicons
-              name={hdrCfg.icon as any}
+              name={hdrCfg.icon}
               size={26}
               color={hdrCfg.color}
             />
@@ -1894,7 +1911,7 @@ export function RideTracker({
                         >
                           {done ? (
                             <Ionicons
-                              name={active ? (hdrCfg.icon as any) : "checkmark"}
+                              name={active ? hdrCfg.icon : "checkmark"}
                               size={active ? 16 : 15}
                               color="#fff"
                             />
@@ -2179,7 +2196,7 @@ export function RideTracker({
                       }
                     </Text>
                   </View>
-                  {(ride as any)?.vehiclePlate && (
+                  {ride.bids?.find((b) => b.vehiclePlate)?.vehiclePlate && (
                     <View style={{
                       backgroundColor: colorScheme === "dark" ? "rgba(255,255,255,0.1)" : "#F1F5F9",
                       borderRadius: 7,
@@ -2189,7 +2206,7 @@ export function RideTracker({
                       borderColor: C.border,
                     }}>
                       <Text style={{ fontFamily: "Inter_700Bold", fontSize: 9, color: C.text, letterSpacing: 0.8 }}>
-                        {(ride as any).vehiclePlate}
+                        {ride.bids?.find((b) => b.vehiclePlate)?.vehiclePlate}
                       </Text>
                     </View>
                   )}
