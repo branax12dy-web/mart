@@ -1,19 +1,8 @@
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from "@expo-google-fonts/inter";
-import {
-  NotoNastaliqUrdu_400Regular,
-  NotoNastaliqUrdu_500Medium,
-  NotoNastaliqUrdu_600SemiBold,
-  NotoNastaliqUrdu_700Bold,
-} from "@expo-google-fonts/noto-nastaliq-urdu";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setBaseUrl } from "@workspace/api-client-react";
-import * as Font from "expo-font";
 import * as Linking from "expo-linking";
+import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
 import { router, Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useRef, useState } from "react";
@@ -249,63 +238,32 @@ export default function RootLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    let webFontErrorCleanup: (() => void) | null = null;
-
-    if (Platform.OS === "web") {
-      const suppressFontRejection = (e: PromiseRejectionEvent) => {
-        const msg = String(e.reason?.message || e.reason || "").toLowerCase();
-        const stack = String(e.reason?.stack || "").toLowerCase();
-        const isFontError =
-          msg.includes("fontfaceobserver") ||
-          msg.includes("fontface") ||
-          msg.includes("is not loaded after waiting") ||
-          (msg.includes("timeout") && (msg.includes("font") || msg.includes("nastaliq"))) ||
-          stack.includes("fontfaceobserver") ||
-          msg.includes("noto") ||
-          msg.includes("nastaliq");
-        if (isFontError) e.preventDefault();
-      };
-      window.addEventListener("unhandledrejection", suppressFontRejection);
-      webFontErrorCleanup = () => window.removeEventListener("unhandledrejection", suppressFontRejection);
-    }
-
     const loadAllFonts = async () => {
-      const allFonts = {
-        Inter_400Regular,
-        Inter_500Medium,
-        Inter_600SemiBold,
-        Inter_700Bold,
-        NotoNastaliqUrdu_400Regular,
-        NotoNastaliqUrdu_500Medium,
-        NotoNastaliqUrdu_600SemiBold,
-        NotoNastaliqUrdu_700Bold,
-      };
-
       try {
-        if (Platform.OS === "web") {
-          await Promise.race([
-            Font.loadAsync(allFonts),
-            new Promise<void>((resolve) => setTimeout(resolve, 3000)),
-          ]);
-        } else {
-          await Promise.race([
-            Font.loadAsync(allFonts),
-            new Promise<void>((resolve) => setTimeout(resolve, 10000)),
-          ]);
+        const timeout = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+        // Step 1: Load core Inter fonts — always required, fast (~300 KB).
+        await Promise.race([
+          loadCoreFonts(),
+          timeout(Platform.OS === "web" ? 3000 : 8000),
+        ]).catch(() => {});
+
+        // Step 2: Pre-load Noto Nastaliq Urdu ONLY if the saved language
+        // preference is Urdu. This prevents the large (~2.7 MB) font set
+        // from being downloaded/registered on every cold start for
+        // English-speaking users — which was the source of the startup error.
+        const savedLang = await AsyncStorage.getItem("@ajkmart_language").catch(() => null);
+        if (savedLang === "ur" || savedLang === "en_ur") {
+          // Fire-and-forget; don't block the splash hide on Urdu font load.
+          loadUrduFonts().catch(() => {});
         }
       } catch {
+        // Silently continue — the app renders with system fonts as fallback.
       }
 
       if (!cancelled) {
         setReady(true);
         SplashScreen.hideAsync().catch(() => {});
-
-        if (Platform.OS === "web") {
-          setTimeout(() => {
-            webFontErrorCleanup?.();
-            webFontErrorCleanup = null;
-          }, 5000);
-        }
       }
     };
 
@@ -313,8 +271,6 @@ export default function RootLayout() {
 
     return () => {
       cancelled = true;
-      webFontErrorCleanup?.();
-      webFontErrorCleanup = null;
     };
   }, []);
 

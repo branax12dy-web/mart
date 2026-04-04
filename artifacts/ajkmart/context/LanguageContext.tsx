@@ -4,6 +4,7 @@ import { I18nManager } from "react-native";
 import type { Language } from "@workspace/i18n";
 import { LANGUAGE_OPTIONS } from "@workspace/i18n";
 import { unwrapApiResponse } from "../utils/api";
+import { loadUrduFonts } from "../utils/fonts";
 
 const LANG_STORAGE_KEY = "@ajkmart_language";
 const VALID_LANGS = new Set<string>(LANGUAGE_OPTIONS.map(o => o.value));
@@ -102,6 +103,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     try {
       await AsyncStorage.setItem(LANG_STORAGE_KEY, lang);
     } catch (err) { console.warn("[Language] Failed to persist language preference:", err instanceof Error ? err.message : String(err)); }
+    // Load Noto Nastaliq Urdu fonts the moment user switches to Urdu so
+    // all text is rendered in the correct script without needing a restart.
+    if (lang === "ur" || lang === "en_ur") {
+      loadUrduFonts().catch(() => {});
+    }
     const token = tokenRef.current;
     if (token) {
       try {
@@ -119,6 +125,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         setLanguageState(serverLang);
         applyRTL(serverLang);
         await AsyncStorage.setItem(LANG_STORAGE_KEY, serverLang);
+        // If server says Urdu, load the fonts immediately (no restart needed).
+        if (serverLang === "ur" || serverLang === "en_ur") {
+          loadUrduFonts().catch(() => {});
+        }
       } else {
         const currentLang = await AsyncStorage.getItem(LANG_STORAGE_KEY);
         const langToSave = (currentLang && VALID_LANGS.has(currentLang)) ? currentLang : language;
