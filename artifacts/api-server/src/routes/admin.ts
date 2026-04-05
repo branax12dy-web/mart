@@ -12,6 +12,7 @@ import serviceZonesRoutes from "./admin/service-zones.js";
 export {
   DEFAULT_PLATFORM_SETTINGS,
   ensureAuthMethodColumn,
+  ensureRideBidsMigration,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,

@@ -105,6 +105,14 @@ type RideBookingFormProps = {
   prefillType?: string;
 };
 
+/* ── Unified per-location state ─────────────────────────────────────────────
+ * When the user has selected/resolved a location, lat/lng/address are set.
+ * While the user is typing or after clearing, they are null and only `text`
+ * (the raw input value) is present, making desync structurally impossible. */
+type LocState =
+  | { text: string; lat: number; lng: number; address: string }
+  | { text: string; lat: null;   lng: null;   address: null  };
+
 export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillType }: RideBookingFormProps) {
   const colorScheme = useColorScheme();
   const C = colorScheme === "dark" ? Colors.dark : Colors.light;
@@ -154,18 +162,27 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     },
   ];
 
-  const [pickup, setPickup] = useState("");
-  const [drop, setDrop] = useState("");
-  const [pickupObj, setPickupObj] = useState<{
-    lat: number;
-    lng: number;
-    address: string;
-  } | null>(null);
-  const [dropObj, setDropObj] = useState<{
-    lat: number;
-    lng: number;
-    address: string;
-  } | null>(null);
+  /* ── Unified location state — see LocState type above the component ────── */
+  const [pickupLoc, setPickupLoc] = useState<LocState>({ text: "", lat: null, lng: null, address: null });
+  const [dropLoc,   setDropLoc]   = useState<LocState>({ text: "", lat: null, lng: null, address: null });
+
+  /* Derived convenience aliases (read-only) */
+  const pickup    = pickupLoc.text;
+  const drop      = dropLoc.text;
+  const pickupObj = pickupLoc.lat !== null ? { lat: pickupLoc.lat, lng: pickupLoc.lng, address: pickupLoc.address } : null;
+  const dropObj   = dropLoc.lat   !== null ? { lat: dropLoc.lat,   lng: dropLoc.lng,   address: dropLoc.address   } : null;
+
+  /* Helpers — always keep text + coords in sync inside one object */
+  function setPickup(text: string) { setPickupLoc(prev => ({ ...prev, text, lat: null, lng: null, address: null })); }
+  function setDrop(text: string)   { setDropLoc(prev   => ({ ...prev, text, lat: null, lng: null, address: null })); }
+  function setPickupObj(obj: { lat: number; lng: number; address: string } | null) {
+    if (obj) setPickupLoc({ text: obj.address, lat: obj.lat, lng: obj.lng, address: obj.address });
+    else     setPickupLoc(prev => ({ text: prev.text, lat: null, lng: null, address: null }));
+  }
+  function setDropObj(obj: { lat: number; lng: number; address: string } | null) {
+    if (obj) setDropLoc({ text: obj.address, lat: obj.lat, lng: obj.lng, address: obj.address });
+    else     setDropLoc(prev => ({ text: prev.text, lat: null, lng: null, address: null }));
+  }
   const [rideType, setRideType] = useState("bike");
   const [receiverName, setReceiverName] = useState("");
   const [receiverPhone, setReceiverPhone] = useState("");
@@ -498,6 +515,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   }, [estimateAt]);
 
   const selectPickup = useCallback(async (pred: MapPrediction) => {
+    /* Immediately clear any previously resolved coords so the UI can't book
+       with stale lat/lng if the user picks a new suggestion. */
+    setPickupObj(null);
     setPickup(pred.mainText);
     setPickupFocus(false);
     const loc = await resolveLocation(pred, (msg) => showToast(msg, "error"));
@@ -505,11 +525,14 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       setPickup("");
       return;
     }
-    setPickupObj({ ...loc, address: pred.description });
+    /* Atomically update both text and coords so they are never out of sync. */
     setPickup(pred.description);
+    setPickupObj({ ...loc, address: pred.description });
   }, [showToast]);
 
   const selectDrop = useCallback(async (pred: MapPrediction) => {
+    /* Immediately clear any previously resolved coords. */
+    setDropObj(null);
     setDrop(pred.mainText);
     setDropFocus(false);
     const loc = await resolveLocation(pred, (msg) => showToast(msg, "error"));
@@ -517,8 +540,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       setDrop("");
       return;
     }
-    setDropObj({ ...loc, address: pred.description });
+    /* Atomically update both text and coords. */
     setDrop(pred.description);
+    setDropObj({ ...loc, address: pred.description });
   }, [showToast]);
 
   const handleChip = (spot: PopularSpot) => {
@@ -704,8 +728,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           return;
         }
         const scheduledDt = new Date(`${scheduledDate}T${scheduledTime}:00`);
-        if (isNaN(scheduledDt.getTime()) || scheduledDt <= new Date()) {
-          showToast("Scheduled time must be in the future.", "error");
+        const fiveMinFromNow = new Date(Date.now() + 5 * 60_000);
+        if (isNaN(scheduledDt.getTime()) || scheduledDt <= fiveMinFromNow) {
+          showToast("Scheduled time must be at least 5 minutes in the future.", "error");
           setBooking(false);
           return;
         }
@@ -713,6 +738,16 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
 
       const selectedSvcForBook = services.find((s) => s.key === rideType);
       const parcelBooking = isParcelService(rideType, selectedSvcForBook);
+      /* Validate that any non-empty stop inputs have been resolved to coordinates */
+      const unresolvedStop = stops.some((s, i) => {
+        const typed = (stopInputs[String(i)] ?? s.address ?? "").trim();
+        return typed.length > 0 && (s.lat === undefined || s.lng === undefined);
+      });
+      if (unresolvedStop) {
+        showToast("Please select each stop from the suggestions list to confirm its location.", "error");
+        setBooking(false);
+        return;
+      }
       const resolvedStops = stops.filter(s => s.lat !== undefined && s.lng !== undefined).map((s, i) => ({
         address: s.address || stopInputs[String(i)] || "",
         lat: s.lat!,
@@ -1076,12 +1111,10 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
 
             <TouchableOpacity activeOpacity={0.7}
               onPress={() => {
-                const t = pickup;
-                const to = pickupObj;
-                setPickup(drop);
-                setPickupObj(dropObj);
-                setDrop(t);
-                setDropObj(to);
+                /* Swap entire location objects atomically to prevent desync */
+                const savedPickup = pickupLoc;
+                setPickupLoc(dropLoc);
+                setDropLoc(savedPickup);
               }}
               style={{
                 width: 28,

@@ -153,7 +153,26 @@ const eventLogSchema = z.object({
   notes: z.string().max(1000).optional(),
 });
 
-function normalizeVehicleType(raw: string | null | undefined): string {
+/** In-memory cache of all active service keys from the DB.
+ *  Populated lazily on first call and refreshed every 5 minutes. */
+let _serviceKeysCache: Set<string> | null = null;
+let _serviceKeysCacheAt = 0;
+const SERVICE_KEYS_TTL_MS = 5 * 60_000;
+
+async function getServiceKeys(): Promise<Set<string>> {
+  if (_serviceKeysCache && Date.now() - _serviceKeysCacheAt < SERVICE_KEYS_TTL_MS) {
+    return _serviceKeysCache;
+  }
+  const rows = await db.select({ key: rideServiceTypesTable.key }).from(rideServiceTypesTable);
+  _serviceKeysCache = new Set(rows.map(r => r.key.toLowerCase()));
+  _serviceKeysCacheAt = Date.now();
+  return _serviceKeysCache;
+}
+
+/** Normalize a raw vehicle/service type string to a canonical slug.
+ *  Handles the hardcoded built-in aliases AND any admin-defined service keys
+ *  that exist in the DB (e.g. "premium_sedan", "minivan"). */
+async function normalizeVehicleType(raw: string | null | undefined): Promise<string> {
   const v = (raw ?? "").trim().toLowerCase();
   if (!v) return "";
   if (v === "bike" || v.startsWith("bike") || v.includes("motorcycle")) return "bike";
@@ -163,6 +182,12 @@ function normalizeVehicleType(raw: string | null | undefined): string {
   if (v === "daba") return "daba";
   if (v === "bicycle") return "bicycle";
   if (v === "on_foot" || v === "on foot") return "on_foot";
+  /* Check admin-defined service keys: if the raw value matches any DB key exactly
+     or after normalising spaces/hyphens, use it as-is. */
+  const serviceKeys = await getServiceKeys();
+  if (serviceKeys.has(v)) return v;
+  const slug = v.replace(/[\s-]+/g, "_");
+  if (serviceKeys.has(slug)) return slug;
   return v;
 }
 
@@ -213,13 +238,13 @@ async function broadcastRide(rideId: string) {
     const busySet = new Set(busyRiders.map(r => r.riderId));
 
     let notifiedCount = 0;
-    const rideVt = ride.type ? normalizeVehicleType(ride.type) : null;
+    const rideVt = ride.type ? await normalizeVehicleType(ride.type) : null;
 
     for (const r of onlineRiders) {
       if (alreadySet.has(r.userId)) continue;
       if (busySet.has(r.userId)) continue;
       if (rideVt) {
-        const riderVt = normalizeVehicleType(r.vehicleType);
+        const riderVt = await normalizeVehicleType(r.vehicleType);
         if (!riderVt || riderVt !== rideVt) continue;
       }
       const rLat = parseFloat(String(r.latitude));
@@ -441,6 +466,9 @@ function formatRide(r: Record<string, unknown>) {
     receiverName:  r.receiverName  ?? null,
     receiverPhone: r.receiverPhone ?? null,
     packageType:   r.packageType   ?? null,
+    /* broadcastExpiresAt lets the client drive its negotiation countdown
+       from the server clock rather than a locally-drifting counter. */
+    broadcastExpiresAt: toISO(r.expiresAt),
   };
 }
 
@@ -1048,9 +1076,14 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
       if (ride.status !== "bargaining") throw new RideApiError("Ride is not in bargaining state", "RIDE_NOT_BARGAINING", 400);
 
       const [bid] = await tx.select().from(rideBidsTable)
-        .where(and(eq(rideBidsTable.id, bidId), eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")))
+        .where(and(
+          eq(rideBidsTable.id, bidId),
+          eq(rideBidsTable.rideId, rideId),
+          eq(rideBidsTable.status, "pending"),
+          gte(rideBidsTable.expiresAt, new Date()),
+        ))
         .limit(1);
-      if (!bid) throw new RideApiError("Bid not found or no longer pending", "BID_NOT_FOUND", 404);
+      if (!bid) throw new RideApiError("Bid has expired or is no longer pending", "BID_EXPIRED_OR_NOT_FOUND", 404);
 
       const agreedFare = parseFloat(bid.fare);
 
@@ -1100,6 +1133,9 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
   } catch (e: unknown) {
     const status = e instanceof RideApiError ? e.httpStatus : 400;
     const code = e instanceof RideApiError ? e.code : "ACCEPT_BID_FAILED";
+    if (!(e instanceof RideApiError)) {
+      logger.error({ err: e, rideId, bidId }, "[accept-bid] unexpected error during bid acceptance transaction");
+    }
     sendErrorWithData(res, (e as Error).message, { code }, status);
     return;
   }
@@ -1271,7 +1307,11 @@ async function buildRideSSEPayload(rideId: string): Promise<Record<string, unkno
 
   const bids = ride.status === "bargaining"
     ? await db.select().from(rideBidsTable)
-        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")))
+        .where(and(
+          eq(rideBidsTable.rideId, rideId),
+          eq(rideBidsTable.status, "pending"),
+          gte(rideBidsTable.expiresAt, new Date()),
+        ))
         .orderBy(rideBidsTable.createdAt)
     : [];
 
@@ -1296,6 +1336,7 @@ async function buildRideSSEPayload(rideId: string): Promise<Record<string, unkno
       vehicleType:  riderUser?.vehicleType  ?? null,
       ratingAvg,
       totalRides,
+      expiresAt:  b.expiresAt instanceof Date ? b.expiresAt.toISOString() : b.expiresAt,
       createdAt: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
       updatedAt: b.updatedAt instanceof Date ? b.updatedAt.toISOString() : b.updatedAt,
     };
@@ -1426,7 +1467,11 @@ router.get("/:id", customerAuth, async (req, res) => {
 
   const bids = ride.status === "bargaining"
     ? await db.select().from(rideBidsTable)
-        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")))
+        .where(and(
+          eq(rideBidsTable.rideId, rideId),
+          eq(rideBidsTable.status, "pending"),
+          gte(rideBidsTable.expiresAt, new Date()),
+        ))
         .orderBy(rideBidsTable.createdAt)
     : [];
 
@@ -1451,6 +1496,7 @@ router.get("/:id", customerAuth, async (req, res) => {
       vehicleType:  riderUser?.vehicleType  ?? null,
       ratingAvg,
       totalRides,
+      expiresAt:  b.expiresAt instanceof Date ? b.expiresAt.toISOString() : b.expiresAt,
       createdAt: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
       updatedAt: b.updatedAt instanceof Date ? b.updatedAt.toISOString() : b.updatedAt,
     };

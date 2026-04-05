@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { getRide as getRideApi, type Ride } from "@workspace/api-client-react";
+import { API_BASE } from "@/utils/api";
 
 type RideStatusHookResult = {
   ride: Ride | null;
@@ -17,6 +18,11 @@ const SSE_RETRY_BASE_DELAY = 3000;
  */
 const SSE_MAX_RETRY_DELAY = 10_000;
 const POLL_INTERVAL = 5000;
+/**
+ * How long (ms) to stay in polling mode before attempting to re-upgrade
+ * to SSE.  Gives transient connectivity blips time to recover.
+ */
+const POLLING_UPGRADE_DELAY = 30_000;
 
 export function useRideStatus(rideId: string): RideStatusHookResult {
   const [ride, setRide] = useState<Ride | null>(null);
@@ -25,10 +31,9 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const upgradeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const sseFailCountRef = useRef(0);
-
-  const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
   const clearRetryTimer = useCallback(() => {
     if (retryTimerRef.current) {
@@ -37,8 +42,34 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
     }
   }, []);
 
+  const clearUpgradeTimer = useCallback(() => {
+    if (upgradeTimerRef.current) {
+      clearTimeout(upgradeTimerRef.current);
+      upgradeTimerRef.current = null;
+    }
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    clearUpgradeTimer();
+  }, [clearUpgradeTimer]);
+
+  const closeSse = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  }, []);
+
+  /* Forward declaration — connectSse is referenced by startPolling */
+  const connectSseRef = useRef<() => void>(() => {});
+
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
+    clearUpgradeTimer();
     setConnectionType("polling");
 
     const poll = async () => {
@@ -55,21 +86,16 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
     };
     poll();
     pollRef.current = setInterval(poll, POLL_INTERVAL);
-  }, [rideId]);
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  const closeSse = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-  }, []);
+    /* Schedule a re-upgrade attempt to SSE after POLLING_UPGRADE_DELAY.
+       If SSE succeeds connectSse will call stopPolling internally. */
+    upgradeTimerRef.current = setTimeout(() => {
+      if (mountedRef.current && pollRef.current) {
+        sseFailCountRef.current = 0;
+        connectSseRef.current();
+      }
+    }, POLLING_UPGRADE_DELAY);
+  }, [rideId, clearUpgradeTimer, stopPolling]);
 
   const connectSse = useCallback(async () => {
     closeSse();
@@ -86,7 +112,7 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
         token = await SS.getItemAsync("ajkmart_token");
       } catch {}
       /* Never fall back to AsyncStorage — tokens must be read from SecureStore only. */
-      const sseUrl = `${apiBase}/rides/${rideId}/stream`;
+      const sseUrl = `${API_BASE}/rides/${rideId}/stream`;
 
       const response = await fetch(sseUrl, {
         headers: {
@@ -103,6 +129,7 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
 
       if (!mountedRef.current) return;
       sseFailCountRef.current = 0;
+      /* SSE is up — discard the polling fallback and its upgrade timer. */
       stopPolling();
       setConnectionType("sse");
 
@@ -143,14 +170,16 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
           if (mountedRef.current) connectSse();
         }, SSE_RETRY_BASE_DELAY);
       }
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
+    } catch (err: unknown) {
+      const isAbort = (err as { name?: string })?.name === "AbortError";
+      if (isAbort) return;
       if (!mountedRef.current) return;
 
       sseFailCountRef.current += 1;
 
       if (sseFailCountRef.current >= 3) {
-        /* Three consecutive failures — fall back to HTTP polling. */
+        /* Three consecutive failures — fall back to HTTP polling.
+           startPolling will schedule a re-upgrade attempt automatically. */
         startPolling();
       } else {
         /* Exponential back-off capped at SSE_MAX_RETRY_DELAY. */
@@ -163,7 +192,13 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
         }, delay);
       }
     }
-  }, [rideId, apiBase, closeSse, clearRetryTimer, startPolling, stopPolling]);
+  }, [rideId, closeSse, clearRetryTimer, startPolling, stopPolling]);
+
+  /* Keep the ref in sync so startPolling can call connectSse without a
+     circular dependency in the callback dependency arrays. */
+  useEffect(() => {
+    connectSseRef.current = connectSse;
+  }, [connectSse]);
 
   const reconnect = useCallback(() => {
     sseFailCountRef.current = 0;
@@ -185,6 +220,7 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
     return () => {
       mountedRef.current = false;
       clearRetryTimer();
+      clearUpgradeTimer();
       closeSse();
       stopPolling();
       appStateSub.remove();

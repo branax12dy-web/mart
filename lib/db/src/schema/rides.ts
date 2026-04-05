@@ -58,10 +58,12 @@ export const ridesTable = pgTable("rides", {
   /* Prevent a customer from holding more than one active ride at a time.
      The partial index fires only on non-terminal statuses so completed/cancelled
      rides do not block future bookings. This is an application-level guard;
-     the pessimistic row-lock inside the booking transaction is the primary defence. */
+     the pessimistic row-lock inside the booking transaction is the primary defence.
+     All live statuses are listed explicitly so adding a new status in future
+     cannot silently create a bypass. */
   uniqueIndex("rides_one_active_per_user_uidx")
     .on(t.userId)
-    .where(sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')`),
+    .where(sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit', 'dispatched', 'pending')`),
 ]);
 
 export const insertRideSchema = createInsertSchema(ridesTable).omit({ createdAt: true, updatedAt: true });

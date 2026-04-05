@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
   ScrollView,
@@ -22,6 +23,7 @@ import {
   acceptRideBid as acceptRideBidApi,
   customerCounterOffer as customerCounterOfferApi,
 } from "@workspace/api-client-react";
+import { API_BASE } from "@/utils/api";
 
 interface RideBid {
   id: string;
@@ -50,6 +52,10 @@ interface NegotiationRide {
   riderName?: string;
   pickupAddress?: string;
   dropAddress?: string;
+  /** ISO string for the server-side broadcast deadline.
+   * When present, the countdown is derived from real server time
+   * rather than a locally-drifting elapsed counter. */
+  broadcastExpiresAt?: string | null;
 }
 
 type NegotiationScreenProps = {
@@ -104,7 +110,7 @@ export function NegotiationScreen({
   const [connectionLost, setConnectionLost] = useState(false);
   const consecutiveFailsRef = useRef(0);
 
-  const rideApiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+  const rideApiBase = API_BASE;
 
   useEffect(() => {
     const pulse = (
@@ -219,7 +225,12 @@ export function NegotiationScreen({
       ? `${elapsed}s`
       : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
-  const remaining = Math.max(0, broadcastTimeoutSec - elapsed);
+  /* Derive remaining time from the server-provided expiry when available
+     to avoid drift from the local elapsed counter.  Fall back to the
+     locally-counted value when the server hasn't sent the deadline yet. */
+  const remaining = ride?.broadcastExpiresAt
+    ? Math.max(0, Math.floor((new Date(ride.broadcastExpiresAt).getTime() - Date.now()) / 1000))
+    : Math.max(0, broadcastTimeoutSec - elapsed);
   const remainingMin = Math.floor(remaining / 60);
   const remainingSec = remaining % 60;
   const timerStr = `${remainingMin}:${String(remainingSec).padStart(2, "0")}`;
@@ -318,6 +329,10 @@ export function NegotiationScreen({
   const textMuted = isDark ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.55)";
 
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
     <View style={{ flex: 1, backgroundColor: C.background }}>
       <LinearGradient
         colors={headerGradient}
@@ -1185,5 +1200,6 @@ export function NegotiationScreen({
         />
       )}
     </View>
+    </KeyboardAvoidingView>
   );
 }

@@ -5,7 +5,7 @@ import { logger } from "./lib/logger";
 import { startDispatchEngine, dispatchScheduledRides } from "./routes/rides.js";
 import { migrateAdminSecrets } from "./services/adminSecretMigration.js";
 import { initSocketIO } from "./lib/socketio.js";
-import { ensureAuthMethodColumn } from "./routes/admin.js";
+import { ensureAuthMethodColumn, ensureRideBidsMigration } from "./routes/admin.js";
 import { initVapid } from "./lib/webpush.js";
 import { db } from "@workspace/db";
 import { getPlatformSettings } from "./routes/admin.js";
@@ -88,9 +88,10 @@ httpServer.on("error", (err: NodeJS.ErrnoException) => {
 });
 
 ensureAuthMethodColumn()
+  .then(() => ensureRideBidsMigration())
   .then(() => assertSecureSettings())
   .then(() => startListening())
   .catch(e => {
-    logger.error({ err: e }, "Failed to run auth_method column migration");
+    logger.error({ err: e }, "Failed to run startup migrations");
     process.exit(1);
   });

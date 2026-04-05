@@ -1476,7 +1476,7 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
       .returning();
     if (!row) { sendNotFound(res, "Ride not found, not yours, or status already changed"); return; }
     updated = row;
-    /* Web Push: rider arrived at pickup */
+    /* Web Push + OTP re-emit: rider arrived at pickup */
     if (status === "arrived") {
       sendPushToUser(ride.userId, {
         title: "Rider Has Arrived 📍",
@@ -1484,6 +1484,11 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
         tag: "rider-arrived",
         data: { rideId: ride.id },
       }).catch(() => {});
+      /* Re-emit the OTP on arrived so that any customer who missed the
+         original socket event (e.g. brief disconnect) gets the OTP now. */
+      if (ride.tripOtp) {
+        emitRideOtp(ride.userId, ride.id, ride.tripOtp);
+      }
     }
   }
 
@@ -1566,15 +1571,21 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
         .limit(1);
 
       if (existingBid) {
-        /* UPSERT branch: update fare, note and reset to pending */
+        /* UPSERT branch: update fare, note and reset to pending.
+           expiresAt is refreshed to 30 minutes from now so the re-submitted
+           bid is not immediately hidden by the expiry filter in bid queries. */
+        const refreshedExpiresAt = new Date(Date.now() + 30 * 60_000);
         const [updated] = await tx.update(rideBidsTable)
-          .set({ fare: parsedCounter.toFixed(2), note: note ?? null, status: "pending", updatedAt: new Date() })
+          .set({ fare: parsedCounter.toFixed(2), note: note ?? null, status: "pending", expiresAt: refreshedExpiresAt, updatedAt: new Date() })
           .where(and(eq(rideBidsTable.id, existingBid.id), eq(rideBidsTable.riderId, riderId)))
           .returning();
         isFirstBid = false;
         return updated;
       } else {
-        /* INSERT branch: first-time bid from this rider on this ride */
+        /* INSERT branch: first-time bid from this rider on this ride.
+           expiresAt is set to 30 minutes from now so ghost bids from
+           offline riders are automatically excluded from negotiation screens. */
+        const bidExpiresAt = new Date(Date.now() + 30 * 60_000);
         const [inserted] = await tx.insert(rideBidsTable).values({
           id:         generateId(),
           rideId,
@@ -1584,6 +1595,7 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
           fare:       parsedCounter.toFixed(2),
           note:       note ?? null,
           status:     "pending",
+          expiresAt:  bidExpiresAt,
         }).returning();
         isFirstBid = true;
         return inserted;

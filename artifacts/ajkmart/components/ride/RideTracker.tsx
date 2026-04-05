@@ -98,6 +98,7 @@ export function RideTracker({
   const [rating, setRating] = useState(0);
   const [ratingDone, setRatingDone] = useState(false);
   const [ratingComment, setRatingComment] = useState("");
+  const elapsedInitialized = useRef(false);
   const [elapsed, setElapsed] = useState(0);
   const [dispatchInfo, setDispatchInfo] = useState<any>(null);
   const [retrying, setRetrying] = useState(false);
@@ -129,17 +130,18 @@ export function RideTracker({
     const socketUrl = `https://${domain}`;
     const socketIoPath = "/api/socket.io";
 
-    let socket: import("socket.io-client").Socket | null = null;
     let unmounted = false;
     import("socket.io-client").then(({ io }) => {
       if (unmounted) return;
-      socket = io(socketUrl, {
+      const socket = io(socketUrl, {
         path: socketIoPath,
         query: { rooms: `ride:${rideId}` },
         auth: token ? { token } : {},
         extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
         transports: ["polling", "websocket"],
       });
+      /* Guard again: component may have unmounted while io() was connecting */
+      if (unmounted) { socket.disconnect(); return; }
       socketRef.current = socket;
       socket.on("rider:location", (payload: { latitude: number; longitude: number; rideId?: string; orderId?: string }) => {
         const payloadRideId = payload.rideId ?? payload.orderId;
@@ -158,8 +160,7 @@ export function RideTracker({
 
     return () => {
       unmounted = true;
-      if (socket) socket.disconnect();
-      socketRef.current = null;
+      if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; }
     };
     /* NOTE: ride?.status is intentionally NOT in the dep array.
        Including it would tear down and re-create the socket on every status
@@ -173,6 +174,15 @@ export function RideTracker({
       if (val === "1") setRatingDone(true);
     }).catch(() => {});
   }, [rideId]);
+
+  /* Seed elapsed from ride.createdAt on first data arrival to avoid
+     timer drift when the component mounts after the ride was already created. */
+  useEffect(() => {
+    if (elapsedInitialized.current || !ride?.createdAt) return;
+    const ageMs = Date.now() - new Date(ride.createdAt).getTime();
+    if (ageMs > 0) setElapsed(Math.floor(ageMs / 1000));
+    elapsedInitialized.current = true;
+  }, [ride?.createdAt]);
 
   useEffect(() => {
     const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
@@ -1989,6 +1999,46 @@ export function RideTracker({
               })}
             </View>
           </View>
+
+          {/* ── OTP placeholder — rider arrived but OTP not yet received (brief window) ── */}
+          {status === "arrived" && !tripOtp && (
+            <View
+              style={{
+                backgroundColor: "#FFFBEB",
+                borderRadius: 20,
+                padding: 20,
+                borderWidth: 2,
+                borderColor: "#F59E0B",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Ionicons name="shield-checkmark-outline" size={24} color="#D97706" />
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#92400E" }}>
+                  Generating Trip Security Code…
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: 10, justifyContent: "center" }}>
+                {[0, 1, 2, 3].map((i) => (
+                  <View
+                    key={i}
+                    style={{
+                      width: 56,
+                      height: 64,
+                      borderRadius: 14,
+                      backgroundColor: "#FDE68A",
+                      borderWidth: 2,
+                      borderColor: "#F59E0B",
+                    }}
+                  />
+                ))}
+              </View>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#B45309", textAlign: "center" }}>
+                Your security code will appear here once ready
+              </Text>
+            </View>
+          )}
 
           {/* ── OTP Security Card — shown when driver has arrived ── */}
           {status === "arrived" && tripOtp && (

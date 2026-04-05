@@ -13,7 +13,7 @@ import {
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne, type SQL } from "drizzle-orm";
 import {
   stripUser, generateId, getUserLanguage, t,
-  getPlatformSettings, adminAuth, getAdminSecret,
+  getPlatformSettings, invalidatePlatformSettingsCache, adminAuth, getAdminSecret,
   sendUserNotification, logger, DEFAULT_PLATFORM_SETTINGS,
   ORDER_NOTIF_KEYS, RIDE_NOTIF_KEYS, PHARMACY_NOTIF_KEYS, PARCEL_NOTIF_KEYS,
   checkAdminLoginLockout, recordAdminLoginFailure, resetAdminLoginAttempts,
@@ -229,8 +229,9 @@ router.put("/platform-settings", async (req, res) => {
       .set({ value: String(value), updatedAt: new Date() })
       .where(eq(platformSettingsTable.key, key));
   }
-  /* Bust the security settings cache so new values apply immediately */
+  /* Bust both caches so new values apply immediately to all call sites */
   invalidateSettingsCache();
+  invalidatePlatformSettingsCache();
   const changedKeys = settings.map((s: Record<string, unknown>) => s.key).join(", ");
   addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Updated ${settings.length} setting(s): ${changedKeys}`, result: "success" });
   const rows = await db.select().from(platformSettingsTable);
@@ -250,8 +251,9 @@ router.patch("/platform-settings/:key", validateBody(patchSettingSchema), async 
     .where(eq(platformSettingsTable.key, settingKey))
     .returning();
   if (!row) { sendNotFound(res, "Setting not found"); return; }
-  /* Bust the security settings cache so new values apply immediately */
+  /* Bust both caches so new values apply immediately to all call sites */
   invalidateSettingsCache();
+  invalidatePlatformSettingsCache();
   addAuditEntry({ action: "settings_update", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Updated setting "${settingKey}" = "${value}"`, result: "success" });
   sendSuccess(res, { ...row, updatedAt: row.updatedAt.toISOString() });
 });
@@ -563,6 +565,7 @@ router.get("/security-dashboard", adminAuth, async (_req, res) => {
 /* This wraps the existing settings update to bust the cache */
 router.post("/invalidate-cache", adminAuth, (_req, res) => {
   invalidateSettingsCache();
+  invalidatePlatformSettingsCache();
   sendSuccess(res, { message: "Settings cache invalidated. New security settings will be applied immediately." });
 });
 

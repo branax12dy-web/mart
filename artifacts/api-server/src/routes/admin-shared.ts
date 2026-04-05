@@ -547,10 +547,68 @@ export async function ensureAuthMethodColumn() {
   _authMethodColumnMigrated = true;
 }
 
+let _rideBidsMigrated = false;
+export async function ensureRideBidsMigration() {
+  if (_rideBidsMigrated) return;
+  try {
+    await db.execute(sql`ALTER TABLE ride_bids ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+    await db.execute(sql`
+      UPDATE ride_bids SET expires_at = created_at + INTERVAL '30 minutes'
+      WHERE expires_at IS NULL AND status = 'pending'
+    `);
+    await db.execute(sql`
+      UPDATE ride_bids SET expires_at = updated_at
+      WHERE expires_at IS NULL
+    `);
+    await db.execute(sql`ALTER TABLE ride_bids ALTER COLUMN expires_at SET NOT NULL`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ride_bids_expires_at_idx ON ride_bids (expires_at)`);
+    await db.execute(sql`
+      DROP INDEX IF EXISTS rides_one_active_per_user_uidx
+    `);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS rides_one_active_per_user_uidx
+        ON rides (user_id)
+        WHERE status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit', 'dispatched', 'pending')
+    `);
+  } catch (e: unknown) {
+    /* "column already exists" / "index already exists" / "relation already exists"
+       are benign idempotency outcomes — log as debug.  Anything else is a real
+       schema failure; log as error and do NOT mark migrated so the next request
+       will retry rather than silently operating on a partially migrated schema. */
+    const msg = e instanceof Error ? e.message : String(e);
+    const isIdempotent = /already exists|duplicate column|42701|42P07/i.test(msg);
+    if (isIdempotent) {
+      logger.debug({ err: e }, "[migration] ride_bids expiry migration skipped (schema already in target state)");
+    } else {
+      logger.error({ err: e }, "[migration] ride_bids expiry migration FAILED — will retry on next request");
+      return;
+    }
+  }
+  _rideBidsMigrated = true;
+}
+
+/* ── Platform settings in-memory cache (10s TTL) ──────────────────────────
+ * Prevents hammering the DB on every fare-calculation request while still
+ * ensuring admin updates take effect within seconds.  Call
+ * invalidatePlatformSettingsCache() immediately after any admin save so
+ * the very next request re-reads from the DB. */
+let _platformSettingsCache: Record<string, string> | null = null;
+let _platformSettingsCacheExpiry = 0;
+
+export function invalidatePlatformSettingsCache(): void {
+  _platformSettingsCache = null;
+  _platformSettingsCacheExpiry = 0;
+}
+
 export async function getPlatformSettings(): Promise<Record<string, string>> {
+  if (_platformSettingsCache && Date.now() < _platformSettingsCacheExpiry) {
+    return _platformSettingsCache;
+  }
   await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
   const rows = await db.select().from(platformSettingsTable);
-  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+  _platformSettingsCache = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  _platformSettingsCacheExpiry = Date.now() + 10_000;
+  return _platformSettingsCache;
 }
 
 export function getAdminSecret(): string {

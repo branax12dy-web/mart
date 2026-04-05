@@ -13,6 +13,7 @@ export const rideBidsTable = pgTable("ride_bids", {
   fare:       decimal("fare", { precision: 10, scale: 2 }).notNull(),
   note:       text("note"),
   status:     text("status").notNull().default("pending"),
+  expiresAt:  timestamp("expires_at").notNull(),
   createdAt:  timestamp("created_at").notNull().defaultNow(),
   updatedAt:  timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
@@ -20,6 +21,7 @@ export const rideBidsTable = pgTable("ride_bids", {
   index("ride_bids_ride_id_idx").on(t.rideId),
   index("ride_bids_rider_id_idx").on(t.riderId),
   index("ride_bids_status_idx").on(t.status),
+  index("ride_bids_expires_at_idx").on(t.expiresAt),
 ]);
 
 export const insertRideBidSchema = createInsertSchema(rideBidsTable).omit({ createdAt: true, updatedAt: true });
