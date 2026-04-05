@@ -16,14 +16,20 @@ const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
 const createParcelSchema = z.object({
   senderName: z.string().min(1, "senderName is required").max(100, "senderName too long").transform(stripHtml),
-  senderPhone: z.string().min(7, "senderPhone is required").max(20, "senderPhone too long"),
+  senderPhone: z.string().min(7, "senderPhone is required").max(20, "senderPhone too long").refine((val) => {
+    const raw = val.replace(/[\s\-()]/g, "");
+    return /^\+?92(3\d{9})$/.test(raw) || /^0(3\d{9})$/.test(raw) || /^(3\d{9})$/.test(raw);
+  }, { message: "senderPhone must be a valid Pakistani mobile number (e.g. 03001234567)" }),
   pickupAddress: z.string().min(1, "pickupAddress is required").max(500, "pickupAddress too long").transform(stripHtml),
   receiverName: z.string().min(1, "receiverName is required").max(100, "receiverName too long").transform(stripHtml),
-  receiverPhone: z.string().min(7, "receiverPhone is required").max(20, "receiverPhone too long"),
+  receiverPhone: z.string().min(7, "receiverPhone is required").max(20, "receiverPhone too long").refine((val) => {
+    const raw = val.replace(/[\s\-()]/g, "");
+    return /^\+?92(3\d{9})$/.test(raw) || /^0(3\d{9})$/.test(raw) || /^(3\d{9})$/.test(raw);
+  }, { message: "receiverPhone must be a valid Pakistani mobile number (e.g. 03001234567)" }),
   dropAddress: z.string().min(1, "dropAddress is required").max(500, "dropAddress too long").transform(stripHtml),
   parcelType: z.string().min(1, "parcelType is required").max(50, "parcelType too long"),
   paymentMethod: z.enum(["cash", "wallet", "cod"], { errorMap: () => ({ message: "paymentMethod must be cash, wallet, or cod" }) }),
-  weight: z.number().positive().max(500, "weight cannot exceed 500 kg").optional(),
+  weight: z.number().nonnegative("weight must be non-negative").max(500, "weight cannot exceed 500 kg").optional(),
   description: z.string().max(500, "description too long").transform(s => stripHtml(s)).optional(),
   pickupLat: z.number().min(-90).max(90).optional(),
   pickupLng: z.number().min(-180).max(180).optional(),
@@ -65,13 +71,14 @@ function mapBooking(b: typeof parcelBookingsTable.$inferSelect) {
 
 router.post("/estimate", async (req, res) => {
   const { parcelType, weight } = req.body;
+  const cappedWeight = typeof weight === "number" ? Math.min(Math.max(weight, 0), 500) : undefined;
   const s = await getPlatformSettings();
   const baseFee  = parseFloat(s["delivery_fee_parcel"]    ?? "100");
   const perKgRate = parseFloat(s["delivery_parcel_per_kg"] ?? "40");
   const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
-  const fare = calcParcelFare(baseFee, perKgRate, weight);
+  const fare = calcParcelFare(baseFee, perKgRate, cappedWeight);
   const estimatedTime = `${preptimeMin + 30}–${preptimeMin + 60} min`;
-  sendSuccess(res, { fare, estimatedTime, parcelType, baseFee, perKgRate, weightKg: weight ?? 0 });
+  sendSuccess(res, { fare, estimatedTime, parcelType, baseFee, perKgRate, weightKg: cappedWeight ?? 0 });
 });
 
 router.get("/", customerAuth, async (req, res) => {
@@ -132,14 +139,28 @@ router.post("/", customerAuth, async (req, res) => {
     sendError(res, "Parcel delivery service is currently disabled", 503); return;
   }
 
+  const { dropLat, dropLng } = parsed.data;
+
   /* ── Geofence: check pickup coordinates if provided ── */
-  if ((s["security_geo_fence"] ?? "off") === "on" && pickupLat != null && pickupLng != null) {
-    const pLat = parseFloat(String(pickupLat));
-    const pLng = parseFloat(String(pickupLng));
-    if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
-      const zoneCheck = await isInServiceZone(pLat, pLng, "parcel");
-      if (!zoneCheck.allowed) {
-        sendError(res, "Pickup location is outside our service area. We currently only operate in configured service zones.", 422); return;
+  if ((s["security_geo_fence"] ?? "off") === "on") {
+    if (pickupLat != null && pickupLng != null) {
+      const pLat = parseFloat(String(pickupLat));
+      const pLng = parseFloat(String(pickupLng));
+      if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
+        const zoneCheck = await isInServiceZone(pLat, pLng, "parcel");
+        if (!zoneCheck.allowed) {
+          sendError(res, "Pickup location is outside our service area. We currently only operate in configured service zones.", 422); return;
+        }
+      }
+    }
+    if (dropLat != null && dropLng != null) {
+      const dLat = parseFloat(String(dropLat));
+      const dLng = parseFloat(String(dropLng));
+      if (Number.isFinite(dLat) && Number.isFinite(dLng)) {
+        const zoneCheck = await isInServiceZone(dLat, dLng, "parcel");
+        if (!zoneCheck.allowed) {
+          sendError(res, "Drop-off location is outside our service area. We currently only operate in configured service zones.", 422); return;
+        }
       }
     }
   }
@@ -190,7 +211,7 @@ router.post("/", customerAuth, async (req, res) => {
   const estimatedTime = `${preptimeMin + 30}–${preptimeMin + 60} min`;
 
   /* ── COD validation (mirrors orders.ts pattern) ── */
-  if (paymentMethod === "cash") {
+  if (paymentMethod === "cash" || paymentMethod === "cod") {
     const codEnabled = (s["cod_enabled"] ?? "on") === "on";
     if (!codEnabled) {
       sendValidationError(res, "Cash on Delivery is currently not available"); return;
@@ -385,7 +406,7 @@ router.patch("/:id/status", riderAuth, async (req, res) => {
   const { status } = req.body;
 
   /* Whitelist allowed status transitions — prevents arbitrary string injection */
-  const allowedStatuses = ["picked_up", "in_transit", "delivered", "cancelled"];
+  const allowedStatuses = ["accepted", "picked_up", "in_transit", "delivered", "cancelled"];
   if (!allowedStatuses.includes(status)) {
     sendValidationError(res, `Invalid status. Allowed: ${allowedStatuses.join(", ")}`); return;
   }
@@ -398,13 +419,27 @@ router.patch("/:id/status", riderAuth, async (req, res) => {
     .limit(1);
   if (!booking) { sendNotFound(res, "Parcel booking not found"); return; }
 
+  const PARCEL_STATUS_ORDER: Record<string, string[]> = {
+    pending:    ["accepted", "cancelled"],
+    accepted:   ["picked_up", "cancelled"],
+    picked_up:  ["in_transit", "cancelled"],
+    in_transit: ["delivered", "cancelled"],
+    delivered:  [],
+    cancelled:  [],
+  };
+  const allowedNext = PARCEL_STATUS_ORDER[booking.status] ?? [];
+  if (!allowedNext.includes(status)) {
+    sendValidationError(res, `Cannot transition from '${booking.status}' to '${status}'`);
+    return;
+  }
+
   const isUnassigned  = !booking.riderId;
   const isAssignedToMe = booking.riderId === riderId;
   if (!isUnassigned && !isAssignedToMe) {
     sendForbidden(res, "This parcel is assigned to another rider"); return;
   }
 
-  if (status === "picked_up" && isUnassigned) {
+  if ((status === "accepted" || status === "picked_up") && isUnassigned) {
     const [updated] = await db
       .update(parcelBookingsTable)
       .set({ status, riderId, updatedAt: new Date() })

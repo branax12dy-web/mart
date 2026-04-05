@@ -177,7 +177,11 @@ export function CancelModal({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || "Could not cancel. Please try again.");
+        if (res.status === 409) {
+          setError(data.error || "This order has already been processed and cannot be cancelled.");
+        } else {
+          setError(data.error || "Could not cancel. Please try again.");
+        }
         setLoading(false);
         return;
       }

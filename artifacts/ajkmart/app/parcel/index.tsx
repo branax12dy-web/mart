@@ -169,7 +169,14 @@ function ParcelScreenInner() {
       .then(async raw => {
         if (cancelled) return;
         if (raw) {
-          const d = JSON.parse(raw);
+          let d: any;
+          try {
+            d = JSON.parse(raw);
+          } catch {
+            AsyncStorage.removeItem(PARCEL_DRAFT_KEY).catch(() => {});
+            d = null;
+          }
+          if (d) {
           if (d.senderName)    setSenderName(d.senderName);
           if (d.senderPhone)   setSenderPhone(d.senderPhone);
           if (d.pickupAddress) setPickupAddress(d.pickupAddress);
@@ -181,6 +188,7 @@ function ParcelScreenInner() {
           if (d.description)   setDescription(d.description);
           if (d.step !== undefined) setStep(d.step);
           if (d.pickupAddress) return;
+          }
         }
         /* Auto-fill pickup from current GPS */
         try {
@@ -290,7 +298,10 @@ function ParcelScreenInner() {
     );
   };
 
+  const parcelSubmittingRef = useRef(false);
   const doBookParcel = async () => {
+    if (parcelSubmittingRef.current) return;
+    parcelSubmittingRef.current = true;
     setLoading(true);
     try {
       // Geocode any manually-typed addresses that don't have coordinates yet
@@ -319,12 +330,19 @@ function ParcelScreenInner() {
       /* Clear stale geo error now that we're proceeding */
       setGeoError(null);
 
-      // Block booking if pickup and drop resolve to the same coordinates
       if (
         finalPickupLat !== undefined && finalPickupLng !== undefined &&
         finalDropLat   !== undefined && finalDropLng   !== undefined &&
         Math.abs(finalPickupLat - finalDropLat) < 0.0001 &&
         Math.abs(finalPickupLng - finalDropLng) < 0.0001
+      ) {
+        showToast(T("sameLocationError"), "error");
+        setLoading(false);
+        return;
+      }
+      if (
+        (finalPickupLat === undefined || finalDropLat === undefined) &&
+        pickupAddress.trim().toLowerCase() === dropAddress.trim().toLowerCase()
       ) {
         showToast(T("sameLocationError"), "error");
         setLoading(false);
@@ -357,6 +375,7 @@ function ParcelScreenInner() {
       const errMsg = (err as { message?: string })?.message;
       showToast(errMsg || T("couldNotBookParcel"), "error");
     } finally {
+      parcelSubmittingRef.current = false;
       setLoading(false);
     }
   };
@@ -561,7 +580,7 @@ function ParcelScreenInner() {
               <Text style={ss.label}>{T("weightOptional")} (kg)</Text>
               <TextInput
                 value={weight}
-                onChangeText={setWeight}
+                onChangeText={(v) => { const n = parseFloat(v); if (v === "" || (Number.isFinite(n) && n >= 0 && n <= 500)) setWeight(v); }}
                 placeholder="e.g. 1.5"
                 placeholderTextColor={C.textMuted}
                 style={ss.input}
@@ -571,15 +590,15 @@ function ParcelScreenInner() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>{T("lengthLabel")}</Text>
-                  <TextInput value={length} onChangeText={setLength} placeholder="L" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
+                  <TextInput value={length} onChangeText={(v) => { const n = parseFloat(v); if (v === "" || (Number.isFinite(n) && n >= 0 && n <= 999)) setLength(v); }} placeholder="L" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>{T("widthLabel")}</Text>
-                  <TextInput value={width} onChangeText={setWidth} placeholder="W" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
+                  <TextInput value={width} onChangeText={(v) => { const n = parseFloat(v); if (v === "" || (Number.isFinite(n) && n >= 0 && n <= 999)) setWidth(v); }} placeholder="W" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>{T("heightLabel")}</Text>
-                  <TextInput value={height} onChangeText={setHeight} placeholder="H" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
+                  <TextInput value={height} onChangeText={(v) => { const n = parseFloat(v); if (v === "" || (Number.isFinite(n) && n >= 0 && n <= 999)) setHeight(v); }} placeholder="H" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
                 </View>
               </View>
               {volumetricWeight > 0 && (

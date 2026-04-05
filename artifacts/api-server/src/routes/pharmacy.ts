@@ -181,6 +181,11 @@ router.post("/", customerAuth, async (req, res) => {
     return;
   }
 
+  if (!Array.isArray(items) || items.length === 0) {
+    sendValidationError(res, "items must be a non-empty array");
+    return;
+  }
+
   /* Validate contactPhone format — must be a valid Pakistani mobile number */
   const canonPhone = (function() {
     const raw = String(contactPhone ?? "").replace(/[\s\-()]/g, "");
@@ -497,7 +502,7 @@ router.patch("/:id/status", riderAuth, async (req, res) => {
   const { status } = req.body;
 
   /* Whitelist: prevent arbitrary string injection into the status column */
-  const ALLOWED_STATUSES = ["accepted", "picked_up", "in_transit", "delivered", "cancelled"] as const;
+  const ALLOWED_STATUSES = ["accepted", "picked_up", "in_transit", "out_for_delivery", "delivered", "cancelled"] as const;
   if (!ALLOWED_STATUSES.includes(status)) {
     sendValidationError(res, `Invalid status. Allowed: ${ALLOWED_STATUSES.join(", ")}`);
     return;
@@ -510,6 +515,21 @@ router.patch("/:id/status", riderAuth, async (req, res) => {
     .limit(1);
   if (!existing) {
     sendNotFound(res, "Pharmacy order not found");
+    return;
+  }
+
+  const PHARMACY_STATUS_ORDER: Record<string, string[]> = {
+    pending:            ["accepted", "cancelled"],
+    accepted:           ["picked_up", "cancelled"],
+    picked_up:          ["in_transit", "out_for_delivery", "cancelled"],
+    in_transit:         ["out_for_delivery", "delivered", "cancelled"],
+    out_for_delivery:   ["delivered", "cancelled"],
+    delivered:          [],
+    cancelled:          [],
+  };
+  const allowedNext = PHARMACY_STATUS_ORDER[existing.status] ?? [];
+  if (!allowedNext.includes(status)) {
+    sendValidationError(res, `Cannot transition from '${existing.status}' to '${status}'`);
     return;
   }
   if (existing.riderId && existing.riderId !== req.riderId) {

@@ -5,7 +5,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 import { router, useLocalSearchParams } from "expo-router";
 import { PermissionGuide } from "@/components/PermissionGuide";
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -194,6 +194,7 @@ function PharmacyScreenInner() {
       });
       if (result.canceled || !result.assets?.[0]) return;
       setPrescriptionPhotoUri(result.assets[0].uri);
+      if (uploadFailed) setUploadFailed(false);
     } catch {
       showToast("Could not pick image", "error");
     }
@@ -214,6 +215,7 @@ function PharmacyScreenInner() {
       });
       if (result.canceled || !result.assets?.[0]) return;
       setPrescriptionPhotoUri(result.assets[0].uri);
+      if (uploadFailed) setUploadFailed(false);
     } catch {
       showToast("Could not open camera", "error");
     }
@@ -262,10 +264,13 @@ function PharmacyScreenInner() {
   const cartTotal = cartItems.reduce((sum, m) => sum + m.price * m.qty, 0);
   const cartCount = pharmacyCartItems.reduce((sum, i) => sum + i.quantity, 0);
 
+  const codSwitchingRef = useRef(false);
   useEffect(() => {
+    if (codSwitchingRef.current) { codSwitchingRef.current = false; return; }
     if (payMethod === "cash" && cartTotal > config.orderRules.maxCodAmount) {
       const walletBalance = user?.walletBalance ?? 0;
       if (config.features.wallet && walletBalance >= cartTotal) {
+        codSwitchingRef.current = true;
         setPayMethod("wallet");
       } else {
         showToast(
@@ -319,7 +324,9 @@ function PharmacyScreenInner() {
     }
   };
 
+  const submittingRef = useRef(false);
   const placeOrder = async () => {
+    if (submittingRef.current) return;
     if (!user) {
       requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/pharmacy" });
       return;
@@ -340,6 +347,11 @@ function PharmacyScreenInner() {
       showToast(T("addToCart"), "error");
       return;
     }
+    const invalidItem = cartItems.find(m => !Number.isFinite(m.price) || m.price <= 0 || !Number.isFinite(m.qty) || m.qty <= 0);
+    if (invalidItem) {
+      showToast("Each item must have a valid positive price and quantity.", "error");
+      return;
+    }
     const needsRx = cartItems.some(m => (m as any).requires_prescription);
     if (needsRx && !prescription.trim() && !prescriptionPhotoUri) {
       showToast("One or more items require a prescription. Please add a prescription note or attach a photo.", "error");
@@ -352,6 +364,7 @@ function PharmacyScreenInner() {
       );
       return;
     }
+    submittingRef.current = true;
     setLoading(true);
     try {
       const prescriptionRefId = prescriptionPhotoUri
@@ -392,7 +405,8 @@ function PharmacyScreenInner() {
         ...(prescriptionRefId ? { prescriptionPhotoUri: prescriptionRefId } : {}),
       } as Parameters<typeof createPharmacyOrder>[0] & { prescriptionPhotoUri?: string });
       if (payMethod === "wallet" && user) {
-        updateUser({ walletBalance: (user?.walletBalance ?? 0) - cartTotal });
+        const serverTotal = typeof data.total === "number" ? data.total : parseFloat(data.total);
+        updateUser({ walletBalance: (user?.walletBalance ?? 0) - (Number.isFinite(serverTotal) ? serverTotal : cartTotal) });
       }
       setConfirmedOrderId(data.id);
       setConfirmed(true);
@@ -404,6 +418,7 @@ function PharmacyScreenInner() {
     } catch {
       showToast(T("networkError"), "error");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
