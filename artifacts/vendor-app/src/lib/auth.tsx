@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
@@ -7,6 +7,7 @@ export interface StoreHours { [day: string]: { open: string; close: string; clos
 export interface AuthUser {
   id: string; phone: string; name?: string; email?: string; avatar?: string;
   walletBalance: number;
+  role?: string; roles?: string;
   storeName?: string; storeCategory?: string;
   storeBanner?: string; storeDescription?: string;
   storeHours?: StoreHours | null;
@@ -39,32 +40,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]   = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const logoutCallbackRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
+  useEffect((): (() => void) | void => {
     /* Try new namespaced key first, fall back to legacy key */
-    const t = localStorage.getItem("ajkmart_vendor_token") || localStorage.getItem("vendor_token");
-    if (t) {
-      setToken(t);
-      api.getMe().then(u => {
-        setUser(u);
-        if (!localStorage.getItem("ajkmart_vendor_token")) {
-          localStorage.setItem("ajkmart_vendor_token", t);
-          localStorage.removeItem("vendor_token");
-        }
-      }).catch((e: Error & { pendingApproval?: boolean }) => {
+    const t = api.getToken();
+    if (!t) { setLoading(false); return; }
+
+    setToken(t);
+    const controller = new AbortController();
+    api.getMe(controller.signal).then((u: AuthUser) => {
+      const roles = (u.roles || u.role || "").split(",").map((r) => r.trim());
+      if ((u.roles || u.role) && !roles.includes("vendor")) {
         api.clearTokens();
         setToken(null);
-        setUser(null);
-      }).finally(() => setLoading(false));
-    } else { setLoading(false); }
+        return;
+      }
+      setUser(u);
+    }).catch((err: unknown) => {
+      if (err instanceof Error && err.name === "AbortError") return;
+      api.clearTokens();
+      setToken(null);
+      setUser(null);
+    }).finally(() => setLoading(false));
+    return () => controller.abort();
+  }, []);
 
-    /* Listen for session-expired events from apiFetch */
-    const handleLogout = () => { setToken(null); setUser(null); };
+  useEffect(() => {
+    const clearAuth = () => { setToken(null); setUser(null); };
+    logoutCallbackRef.current = clearAuth;
+
+    const unregister = api.registerLogoutCallback(clearAuth);
+
+    const handleLogout = () => clearAuth();
     window.addEventListener("ajkmart:logout", handleLogout);
-    return () => window.removeEventListener("ajkmart:logout", handleLogout);
+    return () => {
+      unregister();
+      window.removeEventListener("ajkmart:logout", handleLogout);
+    };
   }, []);
 
   const login = (t: string, u: AuthUser, refreshToken?: string) => {
+    const roles = (u.roles || u.role || "").split(",").map((r) => r.trim());
+    if ((u.roles || u.role) && !roles.includes("vendor")) {
+      throw new Error("This app is for vendors only");
+    }
     api.storeTokens(t, refreshToken);
     setToken(t);
     setUser(u);

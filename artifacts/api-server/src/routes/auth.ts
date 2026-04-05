@@ -41,6 +41,7 @@ import { getUserLanguage, getPlatformDefaultLanguage } from "../lib/getUserLangu
 import { t, type TranslationKey } from "@workspace/i18n";
 import { logger } from "../lib/logger.js";
 import { clearSpoofHits } from "./rider.js";
+import { canonicalizePhone } from "@workspace/phone-utils";
 import { validateBody as sharedValidateBody } from "../middleware/validate.js";
 
 /* OTP rate limiting is handled per-account + per-IP inside the route handler
@@ -81,6 +82,7 @@ const verifyOtpSchema = z.object({
   otp: z.string().length(6, "OTP must be exactly 6 digits").regex(/^\d{6}$/, "OTP must be 6 digits"),
   deviceFingerprint: z.string().max(512).optional(),
   deviceId: z.string().max(256).optional(),
+  role: z.enum(["customer", "rider", "vendor"]).optional(),
 }).strip();
 
 const loginSchema = z.object({
@@ -88,6 +90,7 @@ const loginSchema = z.object({
   username: z.string().min(3).optional(),
   password: z.string().min(1, "Password is required"),
   deviceFingerprint: z.string().max(512).optional(),
+  role: z.enum(["customer", "rider", "vendor"]).optional(),
 }).strip().refine(d => d.identifier || d.username, {
   message: "Phone, email, or username is required",
   path: ["identifier"],
@@ -157,22 +160,6 @@ function hashVerificationToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/**
- * Canonical Pakistani mobile phone normalizer.
- * Returns 10-digit format: `3xxxxxxxxx` (no leading zero, no country code).
- * Accepts: 03..., 3..., +923..., 923...
- * This matches the client-side normalizePhone() in utils/phone.ts.
- */
-function canonicalizePhone(raw: string): string {
-  const cleaned = raw.replace(/[\s\-()]/g, "");
-  const e164Match = cleaned.match(/^\+?92(3\d{9})$/);
-  if (e164Match) return e164Match[1]!;
-  const localMatch = cleaned.match(/^0(3\d{9})$/);
-  if (localMatch) return localMatch[1]!;
-  const bareMatch = cleaned.match(/^(3\d{9})$/);
-  if (bareMatch) return bareMatch[1]!;
-  return cleaned;
-}
 
 function isValidCanonicalPhone(phone: string): boolean {
   return /^3\d{9}$/.test(phone);
@@ -756,6 +743,18 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     .limit(1);
 
   if (!user) {
+    /* ── Cross-role new-user guard ──
+       Riders and vendors must register through admin-controlled flows.
+       Block auto-registration for these roles to prevent cross-app token issuance. */
+    const requestedRoleForNew = req.body.role as string | undefined;
+    if (requestedRoleForNew && requestedRoleForNew !== "customer") {
+      res.status(403).json({
+        error: `No ${requestedRoleForNew} account found for this phone number. Please use the correct registration process or contact admin.`,
+        wrongApp: true,
+      });
+      return;
+    }
+
     /* ── NEW USER REGISTRATION PATH ──────────────────────────────────────────
        If the phone is not yet in usersTable, check pendingOtpsTable.
        This prevents phantom account creation — user records are only
@@ -845,6 +844,17 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
   if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled", user.role ?? undefined)) {
     res.status(403).json({ error: "Phone OTP login is currently disabled for your account type." });
     return;
+  }
+
+  /* ── Cross-role enforcement ── */
+  const requestedRole = req.body.role as string | undefined;
+  if (requestedRole) {
+    const userRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    if (!userRoles.includes(requestedRole)) {
+      addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRole}`, severity: "high" });
+      res.status(403).json({ error: "This account is not registered as a " + requestedRole + ". Please use the correct app.", wrongApp: true });
+      return;
+    }
   }
 
   /* ── Banned check ── */
@@ -969,7 +979,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     return;
   }
   if (u.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Aapka account reject kar diya gaya hai. Admin se rabta karein.", approvalStatus: "rejected", approvalNote: u.approvalNote });
+    res.status(403).json({ error: "Aapka account reject kar diya gaya hai. Admin se rabta karein.", code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: u.approvalNote ?? null });
     return;
   }
 
@@ -1508,6 +1518,16 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     return;
   }
 
+  /* Cross-role enforcement: rider/vendor apps send their role; reject mismatches */
+  const requestedEmailRole = req.body.role as string | undefined;
+  if (requestedEmailRole) {
+    const userRolesEmail = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    if (!userRolesEmail.includes(requestedEmailRole)) {
+      addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried email OTP login as ${requestedEmailRole}`, severity: "high" });
+      res.status(403).json({ error: "This account is not registered as a " + requestedEmailRole + ". Please use the correct app.", wrongApp: true }); return;
+    }
+  }
+
   if (user.isBanned) { res.status(403).json({ error: "Account suspended. Contact support." }); return; }
   const emailIsPending = user.approvalStatus === "pending";
   if (!user.isActive && !emailIsPending) { res.status(403).json({ error: "Account inactive. Contact support." }); return; }
@@ -1532,7 +1552,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
 
   /* Check approval BEFORE touching the DB — a rejected user must not have their OTP cleared */
   if (user.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Account rejected. Contact admin.", approvalNote: user.approvalNote }); return;
+    res.status(403).json({ error: "Account rejected. Contact admin.", code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: user.approvalNote ?? null }); return;
   }
 
   /* Clear email OTP + mark email verified + update last login */
@@ -1660,6 +1680,16 @@ async function handleUnifiedLogin(req: Request, res: any) {
     return;
   }
 
+  /* ── Cross-role enforcement ── */
+  const requestedRoleLogin = parsed.data.role;
+  if (requestedRoleLogin) {
+    const userRolesLogin = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    if (!userRolesLogin.includes(requestedRoleLogin)) {
+      addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRoleLogin}`, severity: "high" });
+      res.status(403).json({ error: "This account is not registered as a " + requestedRoleLogin + ". Please use the correct app.", wrongApp: true }); return;
+    }
+  }
+
   if (user.isBanned) { res.status(403).json({ error: "Account suspended. Contact support." }); return; }
   const isPendingApproval = user.approvalStatus === "pending";
   if (!user.isActive && !isPendingApproval) { res.status(403).json({ error: "Account inactive. Contact support." }); return; }
@@ -1677,7 +1707,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   }
 
   if (user.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Account rejected. Contact admin.", approvalNote: user.approvalNote }); return;
+    res.status(403).json({ error: "Account rejected. Contact admin.", code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: user.approvalNote ?? null }); return;
   }
 
   await resetAttempts(lockoutKey);
@@ -2770,7 +2800,24 @@ router.post("/social/google", async (req, res) => {
 
   const isNewUser = !user;
 
-  const googleEffectiveRole = user?.role ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
+  /* ── Cross-role guard for social login ──
+     If the caller specifies a role (rider/vendor), enforce that the existing account
+     includes that role. Block new user creation for non-customer roles via social auth. */
+  const requestedSocialRole = (req.body?.role as string | undefined) ?? null;
+  if (requestedSocialRole && requestedSocialRole !== "customer") {
+    if (user) {
+      const userRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
+      if (!userRoles.includes(requestedSocialRole)) {
+        addSecurityEvent({ type: "cross_role_social_login_attempt", ip, details: `Social Google cross-role: requested=${requestedSocialRole} user.roles=${user.roles}`, severity: "medium" });
+        res.status(403).json({ error: `No ${requestedSocialRole} account found for this Google account. Please use the correct app.`, wrongApp: true }); return;
+      }
+    } else {
+      /* No user found — cannot auto-create non-customer accounts via social auth */
+      res.status(403).json({ error: `No ${requestedSocialRole} account found for this Google account. Please use the correct registration process or contact admin.`, wrongApp: true }); return;
+    }
+  }
+
+  const googleEffectiveRole = user?.role ?? "customer";
   if (!isAuthMethodEnabledStrict(settings, "auth_google_enabled", "auth_social_google", googleEffectiveRole)) {
     res.status(403).json({ error: "Google login is currently disabled for your account type." }); return;
   }
@@ -2850,7 +2897,24 @@ router.post("/social/facebook", async (req, res) => {
 
   const isNewUser = !user;
 
-  const fbEffectiveRole = user?.role ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
+  /* ── Cross-role guard for social login ──
+     If the caller specifies a role (rider/vendor), enforce that the existing account
+     includes that role. Block new user creation for non-customer roles via social auth. */
+  const requestedFbSocialRole = (req.body?.role as string | undefined) ?? null;
+  if (requestedFbSocialRole && requestedFbSocialRole !== "customer") {
+    if (user) {
+      const userRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
+      if (!userRoles.includes(requestedFbSocialRole)) {
+        addSecurityEvent({ type: "cross_role_social_login_attempt", ip, details: `Social Facebook cross-role: requested=${requestedFbSocialRole} user.roles=${user.roles}`, severity: "medium" });
+        res.status(403).json({ error: `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct app.`, wrongApp: true }); return;
+      }
+    } else {
+      /* No user found — cannot auto-create non-customer accounts via social auth */
+      res.status(403).json({ error: `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct registration process or contact admin.`, wrongApp: true }); return;
+    }
+  }
+
+  const fbEffectiveRole = user?.role ?? "customer";
   if (!isAuthMethodEnabledStrict(settings, "auth_facebook_enabled", "auth_social_facebook", fbEffectiveRole)) {
     res.status(403).json({ error: "Facebook login is currently disabled for your account type." }); return;
   }

@@ -20,52 +20,105 @@ function clearTokens() {
   localStorage.removeItem("vendor_token");
 }
 
-let _refreshing: Promise<boolean> | null = null;
+/* ── Module-level logout callback ─────────────────────────────────────────────
+   The auth context registers this callback at mount time so apiFetch can
+   trigger a logout directly without relying on CustomEvent alone. */
+let _logoutCallback: (() => void) | null = null;
 
-async function attemptTokenRefresh(): Promise<boolean> {
-  if (_refreshing) return _refreshing;
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-  _refreshing = (async () => {
-    try {
-      const res = await fetch(`${BASE}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (!res.ok) {
-        clearTokens();
-        return false;
-      }
-      const data = await res.json();
-      if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
-      if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      _refreshing = null;
-    }
-  })();
-  return _refreshing;
+export function registerLogoutCallback(fn: () => void): () => void {
+  _logoutCallback = fn;
+  return () => { if (_logoutCallback === fn) _logoutCallback = null; };
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}, _retry = true): Promise<any> {
+function triggerLogout(reason: string) {
+  clearTokens();
+  if (_logoutCallback) _logoutCallback();
+  try { window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason } })); } catch {}
+}
+
+type RefreshResult = "refreshed" | "auth_failed" | "transient";
+
+let _refreshPromise: Promise<RefreshResult> | null = null;
+
+async function attemptTokenRefresh(): Promise<RefreshResult> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = _doRefresh();
+  try { return await _refreshPromise; } finally { _refreshPromise = null; }
+}
+
+async function _doRefresh(): Promise<RefreshResult> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return "auth_failed";
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) {
+      /* 5xx / network-level: transient — keep tokens, retry */
+      if (res.status >= 500) return "transient";
+      /* 401/403: refresh token is invalid — must re-authenticate */
+      clearTokens();
+      return "auth_failed";
+    }
+    const data = await res.json();
+    if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
+    if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    return "refreshed";
+  } catch {
+    /* Network errors (offline, timeout) are transient */
+    return "transient";
+  }
+}
+
+export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudget = 2): Promise<any> {
   const token = getToken();
+  const isFormData = opts.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(opts.headers as Record<string, string> || {}),
   };
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
 
-  if (res.status === 401 && _retry) {
-    const refreshed = await attemptTokenRefresh();
-    if (refreshed) {
-      return apiFetch(path, opts, false);
+  /* Build a combined signal: always include a 30s timeout, plus any caller-provided signal */
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
+  const externalSignal = opts.signal as AbortSignal | undefined;
+  const signal: AbortSignal = externalSignal
+    ? (typeof AbortSignal.any === "function"
+        ? AbortSignal.any([timeoutController.signal, externalSignal])
+        : externalSignal)
+    : timeoutController.signal;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...opts, headers, signal });
+  } catch (networkErr: unknown) {
+    clearTimeout(timeoutId);
+    /* Rethrow AbortError unchanged so callers can detect request cancellation */
+    if (networkErr instanceof Error && networkErr.name === "AbortError") throw networkErr;
+    /* Network-level failure (offline, timeout) — never log out for this */
+    throw Object.assign(new Error("Network error. Please check your connection and try again."), { status: 0, transient: true });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (res.status === 401 && _retryBudget > 0) {
+    const refreshResult = await attemptTokenRefresh();
+    if (refreshResult === "refreshed") {
+      return apiFetch(path, opts, _retryBudget - 1);
     }
-    clearTokens();
-    window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "session_expired" } }));
+    if (refreshResult === "transient" && _retryBudget > 1) {
+      await new Promise((r) => setTimeout(r, 800));
+      return apiFetch(path, opts, _retryBudget - 1);
+    }
+    if (refreshResult === "transient") {
+      /* Budget exhausted but refresh was transient (network/5xx) — keep tokens, surface recoverable error */
+      throw Object.assign(new Error("Connection issue. Please check your network and try again."), { status: 0, transient: true });
+    }
+    /* auth_failed — refresh token confirmed invalid — session is definitely invalid */
+    triggerLogout("session_expired");
     const err = await res.json().catch(() => ({ error: "Session expired" }));
     throw Object.assign(new Error(err.error || "Session expired. Please log in again."), { status: 401 });
   }
@@ -79,23 +132,34 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
       if (err.rejected) {
         throw Object.assign(new Error(err.error || "Application rejected"), { status: 403, rejected: true, approvalNote: err.approvalNote });
       }
-      clearTokens();
-      window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason: "access_denied" } }));
-      throw Object.assign(new Error(err.error || "Access denied"), { status: 403 });
+      const msg = err.error || "";
+      /* code may live at top level OR inside err.data (sendErrorWithData envelope) */
+      const code = err.code || (err.data as Record<string, unknown> | undefined)?.code as string || "";
+      /* APPROVAL_PENDING and APPROVAL_REJECTED are NOT auth failures — do not force logout */
+      const AUTH_DENY_CODES = ["AUTH_REQUIRED", "ROLE_DENIED", "TOKEN_INVALID", "TOKEN_EXPIRED", "ACCOUNT_BANNED"];
+      const AUTH_DENY_PHRASES = ["access denied", "forbidden", "unauthorized", "authentication required", "token invalid", "token expired"];
+      const isAuthDenial =
+        AUTH_DENY_CODES.includes(code) ||
+        AUTH_DENY_PHRASES.some(p => msg.toLowerCase().startsWith(p));
+      if (isAuthDenial) {
+        triggerLogout("access_denied");
+      }
+      throw Object.assign(new Error(msg || "Access denied"), { status: 403, code });
     }
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || "Request failed");
   }
-  return res.json();
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
 }
 
 export const api = {
   /* Auth */
   sendOtp:      (phone: string, preferredChannel?: string) => apiFetch("/auth/send-otp", { method: "POST", body: JSON.stringify({ phone, ...(preferredChannel ? { preferredChannel } : {}) }) }),
-  verifyOtp:    (phone: string, otp: string, deviceFingerprint?: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp, ...(deviceFingerprint ? { deviceFingerprint } : {}) }) }),
+  verifyOtp:    (phone: string, otp: string, deviceFingerprint?: string, role?: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp, ...(role ? { role } : {}), ...(deviceFingerprint ? { deviceFingerprint } : {}) }) }),
   sendEmailOtp: (email: string) => apiFetch("/auth/send-email-otp", { method: "POST", body: JSON.stringify({ email }) }),
-  verifyEmailOtp:(email: string, otp: string, deviceFingerprint?: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp, ...(deviceFingerprint ? { deviceFingerprint } : {}) }) }),
-  loginUsername:(identifier: string, password: string, deviceFingerprint?: string) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password, ...(deviceFingerprint ? { deviceFingerprint } : {}) }) }),
+  verifyEmailOtp:(email: string, otp: string, deviceFingerprint?: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp, role: "vendor", ...(deviceFingerprint ? { deviceFingerprint } : {}) }) }),
+  loginUsername:(identifier: string, password: string, deviceFingerprint?: string) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password, role: "vendor", ...(deviceFingerprint ? { deviceFingerprint } : {}) }) }),
   forgotPassword:(data: { phone?: string; email?: string; identifier?: string }) => apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify(data) }),
   resetPassword:(data: { phone?: string; email?: string; identifier?: string; otp: string; newPassword: string; totpCode?: string }) => apiFetch("/auth/reset-password", { method: "POST", body: JSON.stringify(data) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
@@ -105,9 +169,9 @@ export const api = {
   vendorRegister: (data: { phone: string; storeName: string; storeCategory?: string; name?: string; cnic?: string; address?: string; city?: string; bankName?: string; bankAccount?: string; bankAccountTitle?: string; username?: string }) =>
     apiFetch("/auth/vendor-register", { method: "POST", body: JSON.stringify(data) }),
   socialGoogle: (data: { idToken: string }) =>
-    apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify(data) }),
+    apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify({ ...data, role: "vendor" }) }),
   socialFacebook: (data: { accessToken: string }) =>
-    apiFetch("/auth/social/facebook", { method: "POST", body: JSON.stringify(data) }),
+    apiFetch("/auth/social/facebook", { method: "POST", body: JSON.stringify({ ...data, role: "vendor" }) }),
   magicLinkSend: (email: string) =>
     apiFetch("/auth/magic-link/send", { method: "POST", body: JSON.stringify({ email }) }),
   magicLinkVerify: (data: { token: string }) =>
@@ -122,9 +186,10 @@ export const api = {
   clearTokens,
   getToken,
   getRefreshToken,
+  registerLogoutCallback,
 
   /* Profile */
-  getMe:         () => apiFetch("/vendor/me"),
+  getMe:         (signal?: AbortSignal) => apiFetch("/vendor/me", signal ? { signal } : {}),
   updateProfile: (data: Record<string, string | undefined>) => apiFetch("/vendor/profile", { method: "PATCH", body: JSON.stringify(data) }),
 
   /* Store management */

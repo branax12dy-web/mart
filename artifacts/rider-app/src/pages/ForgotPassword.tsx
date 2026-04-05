@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { TwoFactorVerify, executeCaptcha } from "@workspace/auth-utils";
+import { TwoFactorVerify, executeCaptcha, formatPhoneForApi } from "@workspace/auth-utils";
 import {
   ArrowLeft, Loader2, Eye, EyeOff, Phone, Mail,
   CheckCircle, KeyRound,
@@ -23,12 +23,6 @@ function getPasswordStrength(pw: string): { level: number; label: TranslationKey
   if (score <= 2) return { level: 2, label: "passwordFair", color: "bg-orange-500", width: "w-2/4" };
   if (score <= 3) return { level: 3, label: "passwordGood", color: "bg-yellow-500", width: "w-3/4" };
   return { level: 4, label: "passwordStrong", color: "bg-green-500", width: "w-full" };
-}
-
-function formatPhoneForApi(localDigits: string): string {
-  const digits = localDigits.replace(/\D/g, "");
-  if (digits.startsWith("0")) return digits;
-  return `0${digits}`;
 }
 
 const INPUT = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:bg-white transition-all";

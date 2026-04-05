@@ -106,6 +106,40 @@ function AppRoutes() {
     </Switch>
   );
 
+  /* ── Approval status guard — shown after session rehydration if still pending/rejected ── */
+  if (user.approvalStatus === "pending") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-6">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="text-5xl mb-4">⏳</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Account Under Review</h2>
+          <p className="text-gray-500 text-sm leading-relaxed mb-6">Your rider account is pending admin approval. You will be able to access the app once your account is approved.</p>
+          <button onClick={() => { api.clearTokens(); window.location.reload(); }}
+            className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-sm hover:bg-gray-200 transition-colors">
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (user.approvalStatus === "rejected") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-rose-100 flex items-center justify-center p-6">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="text-5xl mb-4">❌</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Account Rejected</h2>
+          <p className="text-gray-500 text-sm leading-relaxed mb-2">Your rider account application was not approved.</p>
+          {user.rejectionReason && <p className="text-red-600 text-sm font-medium mb-6">Reason: {user.rejectionReason}</p>}
+          <button onClick={() => { api.clearTokens(); window.location.reload(); }}
+            className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-sm hover:bg-gray-200 transition-colors">
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (config.platform.appStatus === "maintenance") {
     return <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />;
   }

@@ -6,7 +6,9 @@ export interface AuthUser {
   id: string; phone: string; name?: string; email?: string;
   avatar?: string; isOnline: boolean; walletBalance: number;
   isRestricted?: boolean;
-  role?: string;
+  approvalStatus?: string;
+  rejectionReason?: string | null;
+  role?: string; roles?: string;
   createdAt?: string; lastLoginAt?: string;
   stats: { deliveriesToday: number; earningsToday: number; totalDeliveries: number; totalEarnings: number; rating?: number };
   cnic?: string; city?: string; address?: string; emergencyContact?: string;
@@ -51,7 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(t);
     const controller = new AbortController();
     api.getMe(controller.signal).then(u => {
-      if (u.role && u.role !== "rider") {
+      const roles = (u.roles || u.role || "").split(",").map((r: string) => r.trim());
+      if ((u.roles || u.role) && !roles.includes("rider")) {
         api.clearTokens();
         setToken(null);
         return;
@@ -60,6 +63,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshFailCountRef.current = 0;
     }).catch((err: unknown) => {
       if (err instanceof Error && err.name === "AbortError") return;
+      /* If riderAuth middleware returns a structured approval 403, surface the approval
+         state instead of logging the rider out — their token is still valid, they are
+         just awaiting approval or were rejected. */
+      const errAny = err as Record<string, unknown>;
+      if (errAny.code === "APPROVAL_PENDING") {
+        setUser({ id: "", phone: "", isOnline: false, walletBalance: 0, approvalStatus: "pending", stats: { deliveriesToday: 0, earningsToday: 0, totalDeliveries: 0, totalEarnings: 0 } });
+        return;
+      }
+      if (errAny.code === "APPROVAL_REJECTED") {
+        setUser({ id: "", phone: "", isOnline: false, walletBalance: 0, approvalStatus: "rejected", rejectionReason: (errAny.rejectionReason as string | undefined) ?? null, stats: { deliveriesToday: 0, earningsToday: 0, totalDeliveries: 0, totalEarnings: 0 } });
+        return;
+      }
       api.clearTokens();
       setToken(null);
     }).finally(() => setLoading(false));
@@ -84,7 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (t: string, u: AuthUser, refreshToken?: string) => {
-    if (u.role && u.role !== "rider") {
+    const roles = (u.roles || u.role || "").split(",").map((r: string) => r.trim());
+    if ((u.roles || u.role) && !roles.includes("rider")) {
       throw new Error("This app is for riders only");
     }
     api.storeTokens(t, refreshToken);

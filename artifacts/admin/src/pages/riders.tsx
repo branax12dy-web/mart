@@ -9,7 +9,7 @@ import {
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PullToRefresh } from "@/components/PullToRefresh";
-import { useRiders, useUpdateRiderStatus, useRiderPayout, useRiderBonus, useToggleRiderOnline, useRiderPenalties, useRiderRatings, useRestrictRider, useUnrestrictRider, useOverrideSuspension } from "@/hooks/use-admin";
+import { useRiders, useUpdateRiderStatus, useRiderPayout, useRiderBonus, useToggleRiderOnline, useRiderPenalties, useRiderRatings, useRestrictRider, useUnrestrictRider, useOverrideSuspension, useApproveUser, useRejectUser } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
@@ -308,9 +308,10 @@ export default function Riders() {
     const matchSearch = (r.name || "").toLowerCase().includes(q) || (r.phone || "").includes(q);
     const matchStatus =
       statusFilter === "all" ||
+      (statusFilter === "pending"  && r.approvalStatus === "pending") ||
       (statusFilter === "online"  && r.isOnline && r.isActive) ||
-      (statusFilter === "offline" && !r.isOnline && r.isActive) ||
-      (statusFilter === "blocked" && !r.isActive && !r.isBanned) ||
+      (statusFilter === "offline" && !r.isOnline && r.isActive && r.approvalStatus !== "pending") ||
+      (statusFilter === "blocked" && !r.isActive && !r.isBanned && r.approvalStatus !== "pending") ||
       (statusFilter === "banned"  && r.isBanned);
     const matchDate = (!dateFrom || new Date(r.createdAt) >= new Date(dateFrom))
                    && (!dateTo   || new Date(r.createdAt) <= new Date(dateTo + "T23:59:59"));
@@ -319,14 +320,34 @@ export default function Riders() {
 
   const onlineRiders   = riders.filter((r: any) => r.isOnline && r.isActive).length;
   const activeRiders   = riders.filter((r: any) => r.isActive && !r.isBanned).length;
+  const pendingRiders  = riders.filter((r: any) => r.approvalStatus === "pending").length;
   const totalWallet    = riders.reduce((s: number, r: any) => s + r.walletBalance, 0);
 
   const getStatusBadge = (r: any) => {
+    if (r.approvalStatus === "pending") return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-[10px]">⏳ Pending Approval</Badge>;
     if (r.isBanned)      return <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Banned</Badge>;
     if (r.isRestricted)  return <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[10px]">Restricted</Badge>;
     if (!r.isActive)     return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Blocked</Badge>;
     if (r.isOnline)      return <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">🟢 Online</Badge>;
     return                      <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-[10px]">Offline</Badge>;
+  };
+
+  const approveM = useApproveUser();
+  const rejectM  = useRejectUser();
+
+  const handleApprove = (r: any) => {
+    approveM.mutate({ id: r.id }, {
+      onSuccess: () => { toast({ title: "Rider approved ✅" }); refetch(); },
+      onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+    });
+  };
+
+  const handleReject = (r: any) => {
+    const note = window.prompt("Rejection reason (optional):");
+    rejectM.mutate({ id: r.id, note: note || undefined }, {
+      onSuccess: () => { toast({ title: "Rider rejected" }); refetch(); },
+      onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+    });
   };
 
   const qc = useQueryClient();
@@ -344,7 +365,7 @@ export default function Riders() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Riders</h1>
-            <p className="text-sm text-muted-foreground">{riders.length} total · {onlineRiders} online now</p>
+            <p className="text-sm text-muted-foreground">{riders.length} total · {onlineRiders} online now{pendingRiders > 0 ? ` · ${pendingRiders} pending` : ""}</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -360,10 +381,10 @@ export default function Riders() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Total Riders",   value: String(riders.length),      icon: Bike,         color: "text-green-600", bg: "bg-green-100" },
-          { label: "Online Now",     value: String(onlineRiders),       icon: CheckCircle2, color: "text-emerald-600",bg: "bg-emerald-100"},
-          { label: "Active Riders",  value: String(activeRiders),       icon: Star,         color: "text-blue-600",  bg: "bg-blue-100" },
-          { label: "Wallet Pending", value: formatCurrency(totalWallet), icon: Wallet,       color: "text-amber-600", bg: "bg-amber-100" },
+          { label: "Total Riders",      value: String(riders.length),       icon: Bike,          color: "text-green-600",  bg: "bg-green-100" },
+          { label: "Online Now",        value: String(onlineRiders),        icon: CheckCircle2,  color: "text-emerald-600",bg: "bg-emerald-100"},
+          { label: "Pending Approval",  value: String(pendingRiders),       icon: AlertTriangle, color: "text-yellow-600", bg: "bg-yellow-100" },
+          { label: "Wallet Pending",    value: formatCurrency(totalWallet), icon: Wallet,        color: "text-amber-600",  bg: "bg-amber-100" },
         ].map((s, i) => (
           <Card key={i} className="rounded-2xl border-border/50 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between gap-2">
@@ -392,6 +413,7 @@ export default function Riders() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Riders</SelectItem>
+              <SelectItem value="pending">⏳ Pending Approval</SelectItem>
               <SelectItem value="online">🟢 Online</SelectItem>
               <SelectItem value="offline">⚫ Offline</SelectItem>
               <SelectItem value="blocked">⊘ Blocked</SelectItem>
@@ -479,7 +501,19 @@ export default function Riders() {
                   </div>
 
                   <div className="flex gap-2 shrink-0 flex-wrap">
-                    {r.isActive && !r.isBanned && (
+                    {r.approvalStatus === "pending" && (
+                      <>
+                        <Button size="sm" onClick={() => handleApprove(r)} disabled={approveM.isPending}
+                          className="h-9 rounded-xl gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleReject(r)} disabled={rejectM.isPending}
+                          className="h-9 rounded-xl gap-1.5 text-xs border-red-200 text-red-700 hover:bg-red-50">
+                          <XCircle className="w-3.5 h-3.5" /> Reject
+                        </Button>
+                      </>
+                    )}
+                    {r.isActive && !r.isBanned && r.approvalStatus !== "pending" && (
                       <Button size="sm" variant="outline" onClick={() => handleToggleOnline(r)}
                         disabled={toggleOnlineMutation.isPending}
                         className={`h-9 rounded-xl gap-1.5 text-xs ${r.isOnline ? "border-amber-200 text-amber-700 hover:bg-amber-50" : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"}`}>

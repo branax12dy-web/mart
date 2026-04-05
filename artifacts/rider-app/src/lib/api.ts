@@ -193,7 +193,11 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
       await new Promise((r) => setTimeout(r, 800));
       return apiFetch(path, opts, _retryBudget - 1, _returnEnvelope);
     }
-    /* auth_failed or budget exhausted — session is definitely invalid */
+    if (refreshResult === "transient") {
+      /* Budget exhausted but refresh was transient (network/5xx) — keep tokens, surface recoverable error */
+      throw Object.assign(new Error("Connection issue. Please check your network and try again."), { status: 0, transient: true });
+    }
+    /* auth_failed — refresh token confirmed invalid — session is definitely invalid */
     triggerLogout("session_expired");
     const err = await res.json().catch(() => ({ error: "Session expired" }));
     throw Object.assign(new Error(err.error || "Session expired. Please log in again."), { status: 401 });
@@ -211,8 +215,12 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
        that the Express riderAuth/customerAuth/adminAuth middleware uses verbatim. */
     if (res.status === 403) {
       const msg = err.error || "";
-      const code = err.code || "";
-      const AUTH_DENY_CODES = ["AUTH_REQUIRED", "ROLE_DENIED", "TOKEN_INVALID", "TOKEN_EXPIRED"];
+      /* code and rejectionReason may live at top level OR inside err.data (sendErrorWithData envelope) */
+      const code = err.code || (err.data as Record<string, unknown> | undefined)?.code as string || "";
+      const rejectionReason = err.rejectionReason ?? (err.data as Record<string, unknown> | undefined)?.rejectionReason ?? null;
+      const approvalStatus = err.approvalStatus ?? (err.data as Record<string, unknown> | undefined)?.approvalStatus ?? null;
+      /* APPROVAL_PENDING and APPROVAL_REJECTED are NOT auth failures — do not force logout */
+      const AUTH_DENY_CODES = ["AUTH_REQUIRED", "ROLE_DENIED", "TOKEN_INVALID", "TOKEN_EXPIRED", "ACCOUNT_BANNED"];
       const AUTH_DENY_PHRASES = ["access denied", "forbidden", "unauthorized", "authentication required", "token invalid", "token expired"];
       const isAuthDenial =
         AUTH_DENY_CODES.includes(code) ||
@@ -220,7 +228,7 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
       if (isAuthDenial) {
         triggerLogout("access_denied");
       }
-      throw Object.assign(new Error(msg || "Access denied"), { status: 403, code });
+      throw Object.assign(new Error(msg || "Access denied"), { status: 403, code, rejectionReason, approvalStatus });
     }
     const error = new Error(err.error || "Request failed");
     Object.assign(error, { responseData: err, status: res.status });
@@ -236,10 +244,10 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
 export const api = {
   /* Auth */
   sendOtp:      (phone: string, captchaToken?: string, preferredChannel?: string) => apiFetch("/auth/send-otp", { method: "POST", body: JSON.stringify({ phone, captchaToken, ...(preferredChannel ? { preferredChannel } : {}) }) }),
-  verifyOtp:    (phone: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp, deviceFingerprint, captchaToken }) }),
+  verifyOtp:    (phone: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-otp", { method: "POST", body: JSON.stringify({ phone, otp, role: "rider", deviceFingerprint, captchaToken }) }),
   sendEmailOtp: (email: string, captchaToken?: string) => apiFetch("/auth/send-email-otp", { method: "POST", body: JSON.stringify({ email, captchaToken }) }),
-  verifyEmailOtp:(email: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp, deviceFingerprint, captchaToken }) }),
-  loginUsername:(identifier: string, password: string, captchaToken?: string, deviceFingerprint?: string) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password, captchaToken, deviceFingerprint }) }),
+  verifyEmailOtp:(email: string, otp: string, deviceFingerprint?: string, captchaToken?: string) => apiFetch("/auth/verify-email-otp", { method: "POST", body: JSON.stringify({ email, otp, role: "rider", deviceFingerprint, captchaToken }) }),
+  loginUsername:(identifier: string, password: string, captchaToken?: string, deviceFingerprint?: string) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password, role: "rider", captchaToken, deviceFingerprint }) }),
   checkAvailable:(data: { phone?: string; email?: string; username?: string }, signal?: AbortSignal) => apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data), ...(signal ? { signal } : {}) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
   refreshToken: () => attemptTokenRefresh(),
@@ -275,9 +283,9 @@ export const api = {
   resetPassword: (data: { phone?: string; email?: string; otp: string; newPassword: string; totpCode?: string; captchaToken?: string }) =>
     apiFetch("/auth/reset-password", { method: "POST", body: JSON.stringify(data) }),
   socialGoogle: (data: { idToken: string }) =>
-    apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify(data) }),
+    apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify({ ...data, role: "rider" }) }),
   socialFacebook: (data: { accessToken: string }) =>
-    apiFetch("/auth/social/facebook", { method: "POST", body: JSON.stringify(data) }),
+    apiFetch("/auth/social/facebook", { method: "POST", body: JSON.stringify({ ...data, role: "rider" }) }),
   magicLinkVerify: (data: { token: string }) =>
     apiFetch("/auth/magic-link/verify", { method: "POST", body: JSON.stringify(data) }),
   twoFactorSetup: () =>

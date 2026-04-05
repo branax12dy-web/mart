@@ -201,7 +201,23 @@ async function riderAuth(req: Request, res: Response, next: NextFunction) {
     if (!user) { sendErrorWithData(res, "User not found", { code: "AUTH_REQUIRED" }, 401); return; }
     if (user.isBanned) { sendErrorWithData(res, "Your account has been permanently banned. Please contact support.", { code: "ACCOUNT_BANNED" }, 401); return; }
     if (!user.isActive) {
-      sendErrorWithData(res, "Account is inactive", { code: "AUTH_REQUIRED" }, 403); return;
+      /* Structured response for approval states so the frontend can show the right screen */
+      if (user.approvalStatus === "pending") {
+        sendErrorWithData(res, "Your account is pending admin approval.", {
+          code: "APPROVAL_PENDING",
+          approvalStatus: "pending",
+        }, 403);
+        return;
+      }
+      if (user.approvalStatus === "rejected") {
+        sendErrorWithData(res, "Your account application was rejected.",  {
+          code: "APPROVAL_REJECTED",
+          approvalStatus: "rejected",
+          rejectionReason: user.approvalNote ?? null,
+        }, 403);
+        return;
+      }
+      sendErrorWithData(res, "Account is inactive. Please contact support.", { code: "ACCOUNT_INACTIVE" }, 403); return;
     }
 
     if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
@@ -268,6 +284,8 @@ router.get("/me", async (req, res) => {
     role: user.role, roles: user.roles,
     avatar: user.avatar, isOnline: user.isOnline,
     isRestricted: user.isRestricted ?? (!user.isActive && (user.cancelCount ?? 0) > 0),
+    approvalStatus: user.approvalStatus ?? "approved",
+    rejectionReason: user.approvalNote ?? null,
     walletBalance: safeNum(user.walletBalance),
     cnic: user.cnic, address: user.address, city: user.city, area: user.area,
     emergencyContact: user.emergencyContact,

@@ -5,14 +5,14 @@ import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { TwoFactorVerify, MagicLinkSender, executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken } from "@workspace/auth-utils";
+import { TwoFactorVerify, MagicLinkSender, executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken, formatPhoneForApi, canonicalizePhone } from "@workspace/auth-utils";
 import {
   Phone, Mail, User, Bike, Clock, Lightbulb, Eye, EyeOff,
   ArrowLeft, Loader2, Shield,
 } from "lucide-react";
 
 type LoginMethod = "phone" | "email" | "username" | "google" | "facebook" | "magicLink";
-type Step = "continue" | "input" | "otp" | "pending" | "2fa";
+type Step = "continue" | "input" | "otp" | "pending" | "rejected" | "2fa";
 
 type AuthResponse = {
   token: string; refreshToken?: string;
@@ -29,12 +29,6 @@ function getDeviceFingerprint(): string {
   let hash = 0;
   for (let i = 0; i < raw.length; i++) { hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0; }
   return Math.abs(hash).toString(36);
-}
-
-function formatPhoneForApi(localDigits: string): string {
-  const digits = localDigits.replace(/\D/g, "");
-  if (digits.startsWith("0")) return digits;
-  return `0${digits}`;
 }
 
 async function getCaptchaToken(enabled: boolean, siteKey: string | undefined, action: string): Promise<string | undefined> {
@@ -72,6 +66,7 @@ export default function Login() {
   const [identifier, setIdentifier] = useState("");
   const [otpChannel, setOtpChannel] = useState("");
   const [fallbackChannels, setFallbackChannels] = useState<string[]>([]);
+  const checkIdentifierAbort = useRef<AbortController | null>(null);
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -84,6 +79,7 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+  const [loginRejectionReason, setLoginRejectionReason] = useState<string | null>(null);
 
   const [failedAttempts, setFailedAttempts] = useState(() => {
     try { return parseInt(sessionStorage.getItem("rider_login_attempts") || "0", 10) || 0; } catch { return 0; }
@@ -127,11 +123,17 @@ export default function Login() {
   const checkIdentifier = async () => {
     const id = identifier.trim();
     if (!id) { setError("Please enter your phone, email, or username"); return; }
+
+    /* Cancel any in-flight request from a previous attempt */
+    if (checkIdentifierAbort.current) checkIdentifierAbort.current.abort();
+    checkIdentifierAbort.current = new AbortController();
+
     setLoading(true); clearError();
     try {
       const data = await apiFetch("/auth/check-identifier", {
         method: "POST",
         body: JSON.stringify({ identifier: id, role: "rider", deviceId: getDeviceFingerprint() }),
+        signal: checkIdentifierAbort.current.signal,
       });
 
       if (data.action === "blocked" || data.isBanned) {
@@ -174,7 +176,7 @@ export default function Login() {
         setLoading(false); return;
       }
       if (data.action === "send_phone_otp") {
-        const normalized = id.replace(/\D/g, "").replace(/^92/, "").replace(/^0/, "");
+        const normalized = canonicalizePhone(id);
         setPhone(normalized);
         setMethod("phone");
         setLoading(true);
@@ -211,7 +213,10 @@ export default function Login() {
       setMethod("username");
       setUsername(id);
       setStep("input");
-    } catch (e) { setError(e instanceof Error ? e.message : "Check failed. Please try again."); }
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Check failed. Please try again.");
+    }
     setLoading(false);
   };
 
@@ -293,6 +298,14 @@ export default function Login() {
   };
 
   const handleAuthError = (e: unknown) => {
+    const errAny = e as Record<string, unknown> | null | undefined;
+    /* Detected account rejected during login — route to rejection screen.
+       Backend sends code:"APPROVAL_REJECTED" + approvalStatus:"rejected" on 403. */
+    if (errAny && (errAny.code === "APPROVAL_REJECTED" || errAny.approvalStatus === "rejected")) {
+      setLoginRejectionReason((errAny.rejectionReason as string | null | undefined) ?? null);
+      setStep("rejected");
+      return;
+    }
     const msg = e instanceof Error ? e.message : T("loginFailed");
     if (auth.lockoutEnabled) {
       const isLockError = msg.toLowerCase().includes("locked") || msg.toLowerCase().includes("too many");
@@ -495,10 +508,14 @@ export default function Login() {
 
   const handle2faVerify = useCallback(async (code: string) => {
     if (!twoFaPending) return;
+    const tempToken = twoFaPending.tempToken;
+    if (!tempToken) {
+      setTwoFaError("Session error: 2FA token is missing. Please go back and log in again.");
+      return;
+    }
     setTwoFaLoading(true);
     setTwoFaError("");
     try {
-      const tempToken = twoFaPending.tempToken || twoFaPending.token;
       const res = await api.twoFactorVerify({ code, tempToken, deviceFingerprint: getDeviceFingerprint() });
       await finalize2fa(res, tempToken);
     } catch (e: unknown) {
@@ -509,10 +526,14 @@ export default function Login() {
 
   const handle2faBackup = useCallback(async (code: string) => {
     if (!twoFaPending) return;
+    const tempToken = twoFaPending.tempToken;
+    if (!tempToken) {
+      setTwoFaError("Session error: 2FA token is missing. Please go back and log in again.");
+      return;
+    }
     setTwoFaLoading(true);
     setTwoFaError("");
     try {
-      const tempToken = twoFaPending.tempToken || twoFaPending.token;
       const res = await api.twoFactorRecovery({ backupCode: code, tempToken, deviceFingerprint: getDeviceFingerprint() });
       await finalize2fa(res, tempToken);
     } catch (e: unknown) {
@@ -569,6 +590,33 @@ export default function Login() {
             <ArrowLeft size={15} /> {T("backToLogin")}
           </button>
           <p className="text-gray-400 text-xs mt-3">{T("alreadyApproved") || "If admin has approved your account, go back and log in again."}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "rejected") {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="absolute top-[-20%] right-[-10%] w-72 h-72 rounded-full bg-white/[0.02]" />
+        <div className="absolute bottom-[-15%] left-[-10%] w-64 h-64 rounded-full bg-red-500/[0.04]" />
+        <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative z-10">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-5">
+            <Shield size={40} className="text-red-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-3">{T("approvalRejected") || "Application Rejected"}</h2>
+          <p className="text-gray-500 text-sm leading-relaxed mb-4">
+            {T("approvalRejectedMsg") || "Your rider application was not approved. Please contact support for more information."}
+          </p>
+          {loginRejectionReason && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-5 text-left">
+              <p className="text-red-700 text-xs font-semibold mb-1">Reason:</p>
+              <p className="text-red-600 text-xs">{loginRejectionReason}</p>
+            </div>
+          )}
+          <button onClick={() => { setStep("input"); setLoginRejectionReason(null); setError(null); }} className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+            <ArrowLeft size={15} /> {T("backToLogin")}
+          </button>
         </div>
       </div>
     );

@@ -4,19 +4,13 @@ import { api } from "../lib/api";
 import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken, decodeGoogleJwtPayload } from "@workspace/auth-utils";
+import { executeCaptcha, loadGoogleGSIToken, loadFacebookAccessToken, decodeGoogleJwtPayload, formatPhoneForApi } from "@workspace/auth-utils";
 import { useAuth, type AuthUser } from "../lib/auth";
 import {
   Bike, ArrowLeft, ArrowRight, Loader2, Eye, EyeOff,
   Clock, User, Phone, Mail, FileText, Car, Shield, Lightbulb,
   MapPin, AlertCircle, Camera, Upload, X, CheckCircle2, Image,
 } from "lucide-react";
-
-function formatPhoneForApi(localDigits: string): string {
-  const digits = localDigits.replace(/\D/g, "");
-  if (digits.startsWith("0")) return digits;
-  return `0${digits}`;
-}
 
 function formatPhoneForRegister(localDigits: string): string {
   const digits = localDigits.replace(/\D/g, "");

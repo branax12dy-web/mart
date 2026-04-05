@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { Phone, Mail, User } from "lucide-react";
 import { useAuth } from "../lib/auth";
-import { api } from "../lib/api";
+import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig, getVendorAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { loadGoogleGSIToken, loadFacebookAccessToken, MagicLinkSender } from "@workspace/auth-utils";
+import { loadGoogleGSIToken, loadFacebookAccessToken, MagicLinkSender, canonicalizePhone } from "@workspace/auth-utils";
 
 type LoginMethod = "phone" | "email" | "username" | "google" | "facebook";
 type Step = "continue" | "input" | "otp" | "pending" | "2fa" | "register" | "register-otp" | "register-info" | "register-submitted" | "forgot" | "forgot-otp" | "forgot-reset" | "forgot-done";
@@ -108,6 +108,7 @@ export default function Login() {
   const [regUsernameStatus, setRegUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const regUsernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regUsernameAbort = useRef<AbortController | null>(null);
+  const checkIdentifierAbort = useRef<AbortController | null>(null);
 
   const [magicLinkEmail, setMagicLinkEmail] = useState("");
 
@@ -198,18 +199,22 @@ export default function Login() {
     }
   }, []);
 
-  const checkIdentifier = async () => {
+  const checkIdentifier = useCallback(async () => {
     const id = identifier.trim();
     if (!id) { setError("Please enter your phone, email, or username"); return; }
+
+    /* Cancel any in-flight request from a previous attempt */
+    if (checkIdentifierAbort.current) checkIdentifierAbort.current.abort();
+    checkIdentifierAbort.current = new AbortController();
+
     setLoading(true); clearError();
     try {
       const deviceId = getDeviceFingerprint();
-      const res = await fetch(`${BASE}/api/auth/check-identifier`, {
+      const data = await apiFetch("/auth/check-identifier", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: id, role: "vendor", deviceId }),
+        signal: checkIdentifierAbort.current.signal,
       });
-      const data = await res.json();
 
       if (data.action === "blocked" || data.isBanned) {
         setError("This account has been suspended. Please contact support.");
@@ -247,12 +252,12 @@ export default function Login() {
       }
       if (data.action === "register") {
         const looksLikePhone = /^[\d\s\-+()]{7,15}$/.test(id);
-        if (looksLikePhone) setRegPhone(id.replace(/\D/g, "").replace(/^92/, "").replace(/^0/, ""));
+        if (looksLikePhone) setRegPhone(canonicalizePhone(id));
         setStep("register");
         setLoading(false); return;
       }
       if (data.action === "send_phone_otp") {
-        const normalized = id.replace(/\D/g, "").replace(/^92/, "").replace(/^0/, "");
+        const normalized = canonicalizePhone(id);
         setPhone(normalized);
         setMethod("phone");
         setLoading(false);
@@ -277,9 +282,13 @@ export default function Login() {
       setMethod("username");
       setUsername(id);
       setStep("input");
-    } catch (e) { setError(e instanceof Error ? e.message : "Check failed. Please try again."); }
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Check failed. Please try again.");
+    }
     setLoading(false);
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identifier]);
 
   const sendPhoneOtpDirect = async (ph: string, channel?: string) => {
     setLoading(true); clearError();
@@ -396,20 +405,21 @@ export default function Login() {
   const verify2FA = async () => {
     const code = useBackupCode ? backupCode.trim() : totpCode.trim();
     if (!code) { setError("Please enter verification code"); return; }
+    if (!totpTempToken) {
+      setError("Session error: 2FA token is missing. Please go back and log in again.");
+      return;
+    }
     setLoading(true); clearError();
     try {
-      const endpoint = useBackupCode ? "/auth/2fa/backup-verify" : "/auth/2fa/verify";
+      const endpoint = useBackupCode ? "/auth/2fa/recovery" : "/auth/2fa/verify";
       const deviceFingerprint = getDeviceFingerprint();
       const body = useBackupCode
         ? { tempToken: totpTempToken, backupCode: code, deviceFingerprint }
-        : { tempToken: totpTempToken, totpCode: code, deviceFingerprint };
-      const res = await fetch(`${BASE}/api${endpoint}`, {
+        : { code, tempToken: totpTempToken, deviceFingerprint };
+      const data = await apiFetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "2FA verification failed");
       await doLogin(data);
     } catch (e) { setError(e instanceof Error ? e.message : "2FA verification failed"); }
     setLoading(false);
@@ -432,7 +442,7 @@ export default function Login() {
   const verifyPhoneOtp = async () => {
     if (!otp || otp.length < 6) { setError(T("enterOtp")); return; }
     setLoading(true); clearError();
-    try { await doLogin(await api.verifyOtp(phone, otp, getDeviceFingerprint())); } catch (e) { handleAuthError(e); }
+    try { await doLogin(await api.verifyOtp(phone, otp, getDeviceFingerprint(), "vendor")); } catch (e) { handleAuthError(e); }
     setLoading(false);
   };
 
