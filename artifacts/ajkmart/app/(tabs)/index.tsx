@@ -1238,11 +1238,13 @@ export default function HomeScreen() {
               onToggle={handleToggleView}
             />
 
-            <WeatherWidget
-              userLat={user?.latitude ? parseFloat(user.latitude) : undefined}
-              userLng={user?.longitude ? parseFloat(user.longitude) : undefined}
-              cityLabel={user?.city || user?.area || undefined}
-            />
+            {features.weather !== false && (
+              <WeatherWidget
+                userLat={user?.latitude ? parseFloat(user.latitude) : undefined}
+                userLng={user?.longitude ? parseFloat(user.longitude) : undefined}
+                cityLabel={user?.city || user?.area || undefined}
+              />
+            )}
 
             {isGuest && <GuestSignInStrip />}
 

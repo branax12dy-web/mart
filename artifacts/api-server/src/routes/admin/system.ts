@@ -175,7 +175,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   "ride_bargaining_enabled", "ride_surge_enabled", "rider_cash_allowed",
   "cod_enabled", "finance_gst_enabled", "jazzcash_enabled", "easypaisa_enabled",
   "security_global_dev_otp", "security_otp_bypass", "security_phone_verify",
-  "user_require_approval", "integration_whatsapp",
+  "feature_weather", "user_require_approval", "integration_whatsapp",
   "cod_allowed_rides", "wallet_allowed_rides", "jazzcash_allowed_rides", "easypaisa_allowed_rides",
 ]);
 

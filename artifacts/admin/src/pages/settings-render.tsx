@@ -25,6 +25,7 @@ export const TOGGLE_KEYS = new Set([
   "rider_module_wallet","rider_module_earnings","rider_module_history","rider_module_2fa_required",
   "rider_module_gps_tracking","rider_module_profile_edit","rider_module_support_chat",
   "vendor_auto_approve","vendor_promo_enabled","vendor_withdrawal_enabled",
+  "feature_weather",
   "feature_chat","feature_live_tracking","feature_reviews","feature_sos",
   "security_global_dev_otp","security_otp_bypass","security_mfa_required","security_multi_device","security_gps_tracking",
   "security_geo_fence","security_spoof_detection","security_block_tor","security_block_vpn",
@@ -110,7 +111,7 @@ export const TEXT_KEYS = new Set([
 
 const FEATURE_ICONS: Record<string,string> = {
   feature_mart:"🛒", feature_food:"🍔", feature_rides:"🚗", feature_pharmacy:"💊",
-  feature_parcel:"📦", feature_wallet:"💰", feature_referral:"🎁", feature_new_users:"👤",
+  feature_parcel:"📦", feature_wallet:"💰", feature_referral:"🎁", feature_new_users:"👤", feature_weather:"🌤️",
   integration_push_notif:"🔔", integration_analytics:"📊", integration_email:"📧", integration_sentry:"🐛", integration_whatsapp:"💬",
 };
 
@@ -256,6 +257,7 @@ export function renderSection(
       { fkey: "feature_live_tracking", label: "Live GPS Order Tracking",  icon: "📍", desc: "Customer can see rider's real-time location on map while en-route", apps: "📱 Customer  •  🏍️ Rider",             enforcement: "both" as const },
       { fkey: "feature_reviews",       label: "Reviews & Star Ratings",   icon: "⭐", desc: "Star ratings + written reviews on orders and rides",               apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
       { fkey: "feature_sos",            label: "SOS Emergency Alerts",    icon: "🆘", desc: "Emergency SOS button for riders and customers during active rides", apps: "📱 Customer  •  🏍️ Rider",             enforcement: "both" as const },
+      { fkey: "feature_weather",         label: "Weather Widget",          icon: "🌤️", desc: "Weather info card on customer home screen — shows temperature, humidity & wind", apps: "📱 Customer only",                        enforcement: "client" as const },
     ];
 
     const allOn  = [...coreServices, ...accountFeatures, ...experienceFeatures].every(f => fv(f.fkey));
@@ -275,6 +277,7 @@ export function renderSection(
       { label: "Live GPS tracking",   key: "feature_live_tracking",  enforced: "✅ API + Client", inverted: false },
       { label: "Reviews & ratings",   key: "feature_reviews",        enforced: "✅ API",          inverted: false },
       { label: "SOS alerts",          key: "feature_sos",            enforced: "✅ API + Client", inverted: false },
+      { label: "Weather widget",     key: "feature_weather",        enforced: "📱 Client" },
     ] as { label: string; key: string; enforced: string; inverted?: boolean }[];
 
     return (
