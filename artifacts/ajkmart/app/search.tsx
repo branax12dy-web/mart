@@ -20,6 +20,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import { searchProducts, getTrendingSearches, useGetCategories } from "@workspace/api-client-react";
 import { WishlistHeart } from "@/components/WishlistHeart";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
@@ -29,12 +31,12 @@ const HISTORY_KEY = "@ajkmart_search_history";
 const MAX_HISTORY = 10;
 
 type SortOption = "relevance" | "price_asc" | "price_desc" | "rating" | "newest";
-const SORT_OPTIONS: { key: SortOption; label: string }[] = [
-  { key: "relevance", label: "Relevance" },
-  { key: "price_asc", label: "Price: Low" },
-  { key: "price_desc", label: "Price: High" },
-  { key: "rating", label: "Top Rated" },
-  { key: "newest", label: "Newest" },
+const SORT_OPTIONS: { key: SortOption; labelKey: TranslationKey }[] = [
+  { key: "relevance", labelKey: "sortRelevance" },
+  { key: "price_asc", labelKey: "sortPriceLow" },
+  { key: "price_desc", labelKey: "sortPriceHigh" },
+  { key: "rating", labelKey: "sortTopRated" },
+  { key: "newest", labelKey: "sortNewest" },
 ];
 
 type ServiceKey = "mart" | "food" | "pharmacy";
@@ -78,6 +80,8 @@ export default function UniversalSearchScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { addItem, cartType, itemCount, clearCart } = useCart();
   const { config } = usePlatformConfig();
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const params = useLocalSearchParams<{ category?: string }>();
 
   const [query, setQuery] = useState(params.category ? `category:${params.category}` : "");
@@ -319,7 +323,7 @@ export default function UniversalSearchScreen() {
               onPress={() => { setSortBy(opt.key); if (query.trim()) fetchResults(query); }}
               style={[s.sortChip, sortBy === opt.key && s.sortChipActive]}
             >
-              <Text style={[s.sortChipTxt, sortBy === opt.key && s.sortChipTxtActive]}>{opt.label}</Text>
+              <Text style={[s.sortChipTxt, sortBy === opt.key && s.sortChipTxtActive]}>{T(opt.labelKey)}</Text>
             </TouchableOpacity>
           ))}
           <TouchableOpacity activeOpacity={0.7} onPress={() => setShowFilters(!showFilters)} style={[s.sortChip, showFilters && s.sortChipActive]}>
@@ -361,7 +365,7 @@ export default function UniversalSearchScreen() {
               <View style={s.ratingChipsRow}>
                 {SORT_OPTIONS.map(opt => (
                   <TouchableOpacity activeOpacity={0.7} key={opt.key} onPress={() => setSortBy(opt.key)} style={[s.ratingChip, sortBy === opt.key && s.ratingChipActive]}>
-                    <Text style={[s.ratingChipTxt, sortBy === opt.key && s.ratingChipTxtActive]}>{opt.label}</Text>
+                    <Text style={[s.ratingChipTxt, sortBy === opt.key && s.ratingChipTxtActive]}>{T(opt.labelKey)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>

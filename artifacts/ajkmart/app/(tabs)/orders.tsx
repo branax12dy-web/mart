@@ -85,6 +85,15 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   const [hovered, setHovered] = useState(false);
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isFood = order.type === "food";
+  const isPharmacy = order.type === "pharmacy";
+  const isParcel = order.type === "parcel";
+  const orderChip = isFood
+    ? { bg: C.amberSoft, color: C.amber, icon: "restaurant-outline" as keyof typeof Ionicons.glyphMap, label: T("food") }
+    : isPharmacy
+    ? { bg: C.emeraldSoft, color: C.emerald, icon: "medical-outline" as keyof typeof Ionicons.glyphMap, label: T("pharmacy") }
+    : isParcel
+    ? { bg: C.orangeSoft, color: C.gold, icon: "cube-outline" as keyof typeof Ionicons.glyphMap, label: T("parcel") }
+    : { bg: C.blueSoft, color: C.brandBlue, icon: "storefront-outline" as keyof typeof Ionicons.glyphMap, label: T("mart") };
   const isDelivered = order.status === "delivered";
   const isCancelled = order.status === "cancelled";
   const isActive = !["delivered", "cancelled"].includes(order.status);
@@ -116,18 +125,12 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       {...(hoverProps as object)}
       style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
       accessibilityRole="button"
-      accessibilityLabel={`${isFood ? T("food") : T("mart")} order ${order.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${order.total?.toLocaleString()}`}
+      accessibilityLabel={`${orderChip.label} order ${order.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${order.total?.toLocaleString()}`}
     >
       <View style={styles.cardTop}>
-        <View style={[styles.chip, { backgroundColor: isFood ? C.amberSoft : C.blueSoft }]}>
-          <Ionicons
-            name={isFood ? "restaurant-outline" : "storefront-outline"}
-            size={13}
-            color={isFood ? C.amber : C.brandBlue}
-          />
-          <Text style={[styles.chipText, { color: isFood ? C.amber : C.brandBlue }]}>
-            {isFood ? T("food") : T("mart")}
-          </Text>
+        <View style={[styles.chip, { backgroundColor: orderChip.bg }]}>
+          <Ionicons name={orderChip.icon} size={13} color={orderChip.color} />
+          <Text style={[styles.chipText, { color: orderChip.color }]}>{orderChip.label}</Text>
         </View>
         <Text style={styles.cardId}>#{order.id.slice(-8).toUpperCase()}</Text>
       </View>
@@ -196,10 +199,10 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
           <Ionicons name="close-circle-outline" size={14} color={C.textMuted} />
           <Text style={styles.cancelDisabledText}>
             {["preparing", "ready", "picked_up"].includes(order.status)
-              ? T("cancelOrder") + " — Order is being prepared"
+              ? T("cancelOrder") + " — " + T("orderPreparing")
               : order.status === "out_for_delivery"
-              ? T("cancelOrder") + " — Order is on the way"
-              : T("cancelOrder") + " — Cancellation window passed"}
+              ? T("cancelOrder") + " — " + T("deliveryOnWay")
+              : T("cancelOrder") + " — " + T("cancelWindowPassed")}
           </Text>
         </View>
       )}
@@ -228,7 +231,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       {(isDelivered || isCancelled) && onReorder && order.items?.length > 0 && (
         <TouchableOpacity activeOpacity={0.7} style={styles.reorderBtn} onPress={() => onReorder(order)} accessibilityRole="button" accessibilityLabel="Reorder these items">
           <Ionicons name="refresh-outline" size={14} color={C.primary} />
-          <Text style={styles.reorderBtnText}>Reorder</Text>
+          <Text style={styles.reorderBtnText}>{T("reorder")}</Text>
         </TouchableOpacity>
       )}
 
@@ -302,9 +305,9 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel, onCardPress }
           />
           <Text style={[styles.chipText, { color: C.emerald }]}>
             {ride.type === "bike" ? T("bikeRide") :
-             ride.type === "rickshaw" ? "Rickshaw" :
-             ride.type === "daba" ? "Daba" :
-             ride.type === "school_shift" ? "School Shift" :
+             ride.type === "rickshaw" ? T("rickshaw") :
+             ride.type === "daba" ? T("daba") :
+             ride.type === "school_shift" ? T("schoolShift") :
              T("carRide")}
           </Text>
         </View>

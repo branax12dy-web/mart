@@ -21,6 +21,8 @@ import Colors, { typography } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 import { useCart } from "@/context/CartContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
@@ -132,6 +134,8 @@ const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
 function FoodScreenInner() {
   const insets = useSafeAreaInsets();
   const { itemCount, cartType, clearCart } = useCart();
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const showCartBanner = itemCount > 0 && cartType !== "food" && cartType !== "none";
   const [clearBannerConfirm, setClearBannerConfirm] = useState(false);
   const [search, setSearch] = useState("");
@@ -172,8 +176,8 @@ function FoodScreenInner() {
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Food Delivery</Text>
-            <Text style={styles.headerSub}>Order from nearby restaurants</Text>
+            <Text style={styles.headerTitle}>{T("foodDelivery")}</Text>
+            <Text style={styles.headerSub}>{T("orderFromRestaurants")}</Text>
           </View>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/cart")} style={styles.cartBtn}>
             <Ionicons name="bag-outline" size={22} color={C.textInverse} />
@@ -190,7 +194,7 @@ function FoodScreenInner() {
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search food, restaurants..."
+            placeholder={T("searchFoodPlaceholder")}
             placeholderTextColor={C.textMuted}
             maxLength={200}
           />
@@ -206,14 +210,14 @@ function FoodScreenInner() {
         <View style={{ backgroundColor: C.indigoSoft, flexDirection: "row", alignItems: "center", padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: C.indigoBorder }}>
           <Ionicons name="warning-outline" size={18} color={C.indigoDark} />
           <View style={{ flex: 1 }}>
-            <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.indigoDarkest }}>{cartType === "pharmacy" ? "Pharmacy cart active" : cartType === "mart" ? "Mart cart active" : "Another cart active"}</Text>
-            <Text style={{ ...Typ.caption, color: C.indigoDarkest }}>Adding Food items will clear your existing cart</Text>
+            <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.indigoDarkest }}>{cartType === "pharmacy" ? `${T("pharmacy")} cart active` : cartType === "mart" ? `${T("mart")} cart active` : "Another cart active"}</Text>
+            <Text style={{ ...Typ.caption, color: C.indigoDarkest }}>{T("cartClearWarning").replace("{service}", T("food"))}</Text>
           </View>
           <TouchableOpacity activeOpacity={0.7}
             onPress={() => setClearBannerConfirm(true)}
             style={{ backgroundColor: C.indigoDark, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
           >
-            <Text style={{ ...Typ.captionBold, color: C.textInverse }}>Clear Cart</Text>
+            <Text style={{ ...Typ.captionBold, color: C.textInverse }}>{T("clearCart")}</Text>
           </TouchableOpacity>
         </View>
       )}

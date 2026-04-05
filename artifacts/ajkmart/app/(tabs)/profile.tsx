@@ -40,6 +40,8 @@ import { C, stripPkCode, btnStyles } from "@/components/profile/shared";
 
 function ProfileMpinInput({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
   const inputRef = useRef<TextInput>(null);
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   useEffect(() => { if (autoFocus) setTimeout(() => inputRef.current?.focus(), 300); }, []);
   return (
     <View style={{ alignItems: "center", gap: 16 }}>
@@ -61,7 +63,7 @@ function ProfileMpinInput({ value, onChange, autoFocus }: { value: string; onCha
         autoFocus={autoFocus}
       />
       <TouchableOpacity activeOpacity={0.7} onPress={() => inputRef.current?.focus()} style={{ paddingVertical: 8 }}>
-        <Text style={{ ...Typ.caption, color: C.primary }}>Tap to enter PIN</Text>
+        <Text style={{ ...Typ.caption, color: C.primary }}>{T("tapToEnterPin")}</Text>
       </TouchableOpacity>
     </View>
   );

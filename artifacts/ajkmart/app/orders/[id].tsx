@@ -433,7 +433,7 @@ export default function OrderDetailScreen() {
       const data = unwrapApiResponse(await res.json());
       if (!res.ok) throw new Error(data.error || "Refund request failed");
       setRefundRequested(true);
-      showToast(T("requestRefund") + " — submitted successfully", "success");
+      showToast(T("refundSubmitted"), "success");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Refund request failed";
       showToast(msg, "error");
@@ -482,7 +482,7 @@ export default function OrderDetailScreen() {
             {trackFailed && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderBottomWidth: 1, borderBottomColor: C.amberBorder, paddingHorizontal: 14, paddingVertical: 10 }}>
                 <Ionicons name="warning-outline" size={15} color={C.amber} />
-                <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Live tracking is temporarily unavailable. Your order is still on the way.</Text>
+                <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>{T("trackingUnavailableMsg" as TranslationKey)}</Text>
               </View>
             )}
             {mapUrl ? (
@@ -497,7 +497,7 @@ export default function OrderDetailScreen() {
               <View style={{ width: "100%", height: mapHeight, alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: C.surfaceSecondary }}>
                 <Ionicons name="map-outline" size={28} color={C.textMuted} />
                 <Text style={{ ...Typ.caption, color: C.textMuted, textAlign: "center", paddingHorizontal: 16 }}>
-                  Map unavailable — your order is still on the way
+                  {T("mapUnavailableMsg" as TranslationKey)}
                 </Text>
               </View>
             ) : (
@@ -600,31 +600,31 @@ export default function OrderDetailScreen() {
               <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
                 <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: C.emeraldDot, marginTop: 4 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ ...Typ.small, color: C.textMuted }}>Pickup</Text>
+                  <Text style={{ ...Typ.small, color: C.textMuted }}>{T("pickup")}</Text>
                   <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text, marginTop: 2 }}>{order.pickupAddress || "—"}</Text>
                 </View>
               </View>
               <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
                 <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: C.redBright, marginTop: 4 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ ...Typ.small, color: C.textMuted }}>Drop-off</Text>
+                  <Text style={{ ...Typ.small, color: C.textMuted }}>{T("dropOff")}</Text>
                   <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text, marginTop: 2 }}>{order.dropAddress || "—"}</Text>
                 </View>
               </View>
               {order.distance ? (
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
-                    <Text style={{ ...Typ.small, color: C.textMuted }}>Distance</Text>
+                    <Text style={{ ...Typ.small, color: C.textMuted }}>{T("distanceLabel" as TranslationKey)}</Text>
                     <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.text, marginTop: 2 }}>{Number.isFinite(parseFloat(order.distance)) ? parseFloat(order.distance).toFixed(1) : "—"} km</Text>
                   </View>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
-                    <Text style={{ ...Typ.small, color: C.textMuted }}>Fare</Text>
+                    <Text style={{ ...Typ.small, color: C.textMuted }}>{T("fareLabel" as TranslationKey)}</Text>
                     <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.amber, marginTop: 2 }}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
                   </View>
                 </View>
               ) : (
                 <View style={s.totalRow}>
-                  <Text style={s.totalLabel}>Fare</Text>
+                  <Text style={s.totalLabel}>{T("fareLabel" as TranslationKey)}</Text>
                   <Text style={s.totalAmount}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
                 </View>
               )}
@@ -636,12 +636,12 @@ export default function OrderDetailScreen() {
               {isPharmacy ? (
                 <View style={[s.typeChip, { backgroundColor: C.purpleLight }]}>
                   <Ionicons name="medical-outline" size={13} color={C.purple} />
-                  <Text style={[s.typeChipText, { color: C.purple }]}>Pharmacy</Text>
+                  <Text style={[s.typeChipText, { color: C.purple }]}>{T("pharmacy")}</Text>
                 </View>
               ) : isParcelType ? (
                 <View style={[s.typeChip, { backgroundColor: C.emeraldBg }]}>
                   <Ionicons name="cube-outline" size={13} color={C.emerald} />
-                  <Text style={[s.typeChipText, { color: C.emerald }]}>Parcel</Text>
+                  <Text style={[s.typeChipText, { color: C.emerald }]}>{T("parcel")}</Text>
                 </View>
               ) : (
                 <View style={[s.typeChip, { backgroundColor: isFood ? C.amberSoft : C.blueSoft }]}>
@@ -659,7 +659,7 @@ export default function OrderDetailScreen() {
               </View>
             ) : null}
 
-            <Text style={s.sectionTitle}>Items</Text>
+            <Text style={s.sectionTitle}>{T("items")}</Text>
             {(order.items || []).map((item: any, i: number) => (
               <View key={i} style={s.itemRow}>
                 <View style={s.itemQty}>
@@ -671,7 +671,7 @@ export default function OrderDetailScreen() {
             ))}
 
             <View style={s.totalRow}>
-              <Text style={s.totalLabel}>Total</Text>
+              <Text style={s.totalLabel}>{T("totalLabel")}</Text>
               <Text style={s.totalAmount}>Rs. {(order.total != null && Number.isFinite(Number(order.total)) ? Number(order.total) : 0).toLocaleString()}</Text>
             </View>
           </View>
@@ -710,7 +710,7 @@ export default function OrderDetailScreen() {
         )}
 
         <View style={s.card}>
-          <Text style={s.sectionTitle}>Payment</Text>
+          <Text style={s.sectionTitle}>{T("payment")}</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: C.emeraldSoft, alignItems: "center", justifyContent: "center" }}>
               <Ionicons
@@ -781,7 +781,7 @@ export default function OrderDetailScreen() {
                 ? T("orderPreparing" as TranslationKey)
                 : order.status === "out_for_delivery" || order.status === "in_transit"
                 ? T("deliveryOnWay" as TranslationKey)
-                : `Window passed (${cancelWindowMin}m)`}
+                : T("cancelWindowPassed")}
             </Text>
           </View>
         )}
@@ -789,7 +789,7 @@ export default function OrderDetailScreen() {
         {canRequestRefund && (
           <View style={s.refundSection}>
             <Text style={s.refundTitle}>{T("requestRefund")}</Text>
-            <Text style={s.refundDesc}>Submit a refund request for this order. Refunds are typically processed within 3-5 business days.</Text>
+            <Text style={s.refundDesc}>{T("refundDescText" as TranslationKey)}</Text>
             <TouchableOpacity activeOpacity={0.7}
               style={[s.refundBtn, refundRequesting && { opacity: 0.6 }]}
               onPress={handleRefundRequest}

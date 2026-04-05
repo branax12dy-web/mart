@@ -141,7 +141,9 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
         )}
         <View style={styles.flashFooter}>
           <View>
-            <Text style={styles.flashOrigPrice}>Rs. {product?.originalPrice ?? 0}</Text>
+            {discount > 0 && product?.originalPrice > 0 && (
+              <Text style={styles.flashOrigPrice}>Rs. {product.originalPrice}</Text>
+            )}
             <Text style={styles.flashPrice}>Rs. {product?.price ?? 0}</Text>
           </View>
           <AddToCartButton onPress={handleAdd} added={added} />

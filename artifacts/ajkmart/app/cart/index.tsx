@@ -82,6 +82,8 @@ function GpsSlotRow({ selected, onSelect, onClose }: {
   onSelect: (a: SavedAddress) => void;
   onClose: () => void;
 }) {
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const [loading, setLoading] = useState(false);
   const [gpsAddr, setGpsAddr] = useState<SavedAddress | null>(null);
   const isSel = selected === "__gps__";
@@ -178,8 +180,8 @@ function GpsSlotRow({ selected, onSelect, onClose }: {
         {loading ? <ActivityIndicator size="small" color="#10B981" /> : <Ionicons name="navigate-outline" size={20} color="#10B981" />}
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.addrOptLabel, { color: "#059669" }]}>📍 Current Location</Text>
-        <Text style={styles.addrOptCity} numberOfLines={1}>{gpsAddr ? `${gpsAddr.address}, ${gpsAddr.city}` : "Tap to detect via GPS"}</Text>
+        <Text style={[styles.addrOptLabel, { color: "#059669" }]}>📍 {T("currentLocation" as TranslationKey)}</Text>
+        <Text style={styles.addrOptCity} numberOfLines={1}>{gpsAddr ? `${gpsAddr.address}, ${gpsAddr.city}` : T("tapToDetectGps" as TranslationKey)}</Text>
       </View>
       {isSel && <Ionicons name="checkmark-circle" size={22} color="#10B981" />}
     </TouchableOpacity>
@@ -198,6 +200,8 @@ function AddressPickerModal({
   token: string | null | undefined;
   addrLoaded: React.MutableRefObject<boolean>;
 }) {
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const [showForm, setShowForm] = useState(false);
   const [newLabel, setNewLabel] = useState("Home");
   const [newAddress, setNewAddress] = useState("");
@@ -258,7 +262,7 @@ function AddressPickerModal({
       <TouchableOpacity activeOpacity={0.7} style={styles.overlay} onPress={() => { if (!saving) { resetForm(); onClose(); } }}>
         <TouchableOpacity activeOpacity={0.7} style={styles.sheet} onPress={() => {}}>
           <View style={styles.handle} />
-          <Text style={styles.sheetTitle}>{showForm ? "Add New Address" : "Choose Delivery Address"}</Text>
+          <Text style={styles.sheetTitle}>{showForm ? T("addNewAddress" as TranslationKey) : T("chooseDeliveryAddress" as TranslationKey)}</Text>
 
           {/* GPS slot is rendered inline as slot-0 inside the address list below */}
 
@@ -283,7 +287,7 @@ function AddressPickerModal({
                 </View>
               </View>
               <View>
-                <Text style={{ ...Typ.captionMedium, color: C.textSecondary, marginBottom: 6 }}>Street Address</Text>
+                <Text style={{ ...Typ.captionMedium, color: C.textSecondary, marginBottom: 6 }}>{T("streetAddress" as TranslationKey)}</Text>
                 <TextInput
                   value={newAddress}
                   onChangeText={setNewAddress}
@@ -299,7 +303,7 @@ function AddressPickerModal({
                 />
               </View>
               <View>
-                <Text style={{ ...Typ.captionMedium, color: C.textSecondary, marginBottom: 6 }}>City</Text>
+                <Text style={{ ...Typ.captionMedium, color: C.textSecondary, marginBottom: 6 }}>{T("cityLabel")}</Text>
                 <TextInput
                   value={newCity}
                   onChangeText={setNewCity}
@@ -319,7 +323,7 @@ function AddressPickerModal({
                   disabled={saving}
                   style={{ flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: "center", backgroundColor: C.surfaceSecondary, borderWidth: 1, borderColor: C.border }}
                 >
-                  <Text style={{ ...Typ.buttonSmall, color: C.textSecondary }}>Cancel</Text>
+                  <Text style={{ ...Typ.buttonSmall, color: C.textSecondary }}>{T("cancel")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity activeOpacity={0.7}
                   onPress={handleSave}
@@ -328,7 +332,7 @@ function AddressPickerModal({
                 >
                   {saving
                     ? <ActivityIndicator size="small" color={C.textInverse} />
-                    : <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.textInverse }}>Save & Select</Text>
+                    : <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.textInverse }}>{T("saveAndSelect" as TranslationKey)}</Text>
                   }
                 </TouchableOpacity>
               </View>
@@ -341,7 +345,7 @@ function AddressPickerModal({
                 {addresses.length === 0 ? (
                   <View style={{ alignItems: "center", paddingVertical: 18, gap: 8 }}>
                     <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>
-                      No saved addresses — use GPS above or add one below
+                      {T("noSavedAddresses" as TranslationKey)}
                     </Text>
                   </View>
                 ) : (
@@ -362,7 +366,7 @@ function AddressPickerModal({
                             <Text style={[styles.addrOptLabel, isSel && { color: C.primary }]}>{addr.label}</Text>
                             {addr.isDefault && (
                               <View style={styles.defaultTag}>
-                                <Text style={styles.defaultTagText}>Default</Text>
+                                <Text style={styles.defaultTagText}>{T("defaultBadge" as TranslationKey)}</Text>
                               </View>
                             )}
                           </View>
@@ -380,10 +384,10 @@ function AddressPickerModal({
                 <View style={[styles.addrOptIcon, { backgroundColor: C.brandBlueSoft }]}>
                   <Ionicons name="add-outline" size={20} color={C.primary} />
                 </View>
-                <Text style={[styles.addrOptLabel, { color: C.primary }]}>Add New Address</Text>
+                <Text style={[styles.addrOptLabel, { color: C.primary }]}>{T("addNewAddress" as TranslationKey)}</Text>
               </TouchableOpacity>
               <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={styles.cancelBtn}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>{T("cancel")}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -891,14 +895,21 @@ function CartScreenInner() {
       });
       if (!isServicable) {
         showToast(
-          `Delivery is currently only available in: ${serviceableCities.join(", ")}. Your address is in ${selectedAddr.city}.`,
+          T("cityNotServiceable" as TranslationKey)
+            .replace("{cities}", serviceableCities.join(", "))
+            .replace("{city}", selectedAddr.city),
           "error",
         );
         return;
       }
     }
     if (total < orderRules.minOrderAmount) {
-      showToast(`Minimum order Rs.${orderRules.minOrderAmount} — add Rs.${orderRules.minOrderAmount - total} more`, "error");
+      showToast(
+        T("minOrderToast" as TranslationKey)
+          .replace("{min}", String(orderRules.minOrderAmount))
+          .replace("{diff}", String(orderRules.minOrderAmount - total)),
+        "error",
+      );
       return;
     }
     if (total > orderRules.maxCartValue) {
@@ -1129,7 +1140,7 @@ function CartScreenInner() {
           <View style={styles.handle} />
           <View style={{ alignItems: "center", marginBottom: 20 }}>
             <Text style={{ fontSize: 36, marginBottom: 8 }}>{gwLogo}</Text>
-            <Text style={{ ...Typ.h3, color: C.text }}>Pay with {gwName}</Text>
+            <Text style={{ ...Typ.h3, color: C.text }}>{T("payWithLabel" as TranslationKey)} {gwName}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
               <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.textSecondary }}>Rs. {grandTotal.toLocaleString()}</Text>
             </View>
@@ -1138,7 +1149,7 @@ function CartScreenInner() {
           {gwStep === "input" && (
             <>
               <Text style={{ ...Typ.buttonSmall, color: C.text, marginBottom: 8 }}>
-                {gwName} Mobile Number
+                {gwName} {T("mobileNumberLabel" as TranslationKey)}
               </Text>
               <View style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, marginBottom: 16, backgroundColor: C.surfaceSecondary }}>
                 <Text style={{ fontSize: 16, color: C.textSecondary, marginRight: 8 }}>{gwLogo}</Text>
@@ -1169,7 +1180,7 @@ function CartScreenInner() {
                 ))}
               </View>
               <TouchableOpacity activeOpacity={0.7} onPress={() => { if (!gwPaying) setShowGwModal(false); }} style={{ marginTop: 12, paddingVertical: 12, alignItems: "center" }}>
-                <Text style={{ ...Typ.bodyMedium, color: C.textSecondary }}>Cancel</Text>
+                <Text style={{ ...Typ.bodyMedium, color: C.textSecondary }}>{T("cancel")}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -1177,7 +1188,7 @@ function CartScreenInner() {
           {gwStep === "waiting" && !gwBackgrounded && (
             <View style={{ alignItems: "center", paddingVertical: 24 }}>
               <ActivityIndicator size="large" color={gwColor} />
-              <Text style={{ ...Typ.h3, fontSize: 16, color: C.text, marginTop: 20 }}>Payment Processing...</Text>
+              <Text style={{ ...Typ.h3, fontSize: 16, color: C.text, marginTop: 20 }}>{T("paymentProcessing" as TranslationKey)}</Text>
               <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, marginTop: 8, textAlign: "center" }}>
                 {`A ${gwName} notification will be sent to ${gwMobile} — please approve`}
               </Text>
@@ -1190,7 +1201,7 @@ function CartScreenInner() {
                 <Ionicons name="hourglass-outline" size={32} color="#F59E0B" />
               </View>
               <Text style={{ ...Typ.h3, fontSize: 16, color: C.text, textAlign: "center" }}>
-                Waiting for {gwName} Approval
+                {T("waitingForApproval" as TranslationKey)}: {gwName}
               </Text>
               <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, textAlign: "center", maxWidth: 260 }}>
                 You left the {gwName} app. Did you approve the payment?
@@ -1229,7 +1240,7 @@ function CartScreenInner() {
                 }}
                 style={{ backgroundColor: gwColor, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
               >
-                <Text style={{ ...Typ.buttonMedium, color: C.textInverse }}>Resume Payment</Text>
+                <Text style={{ ...Typ.buttonMedium, color: C.textInverse }}>{T("resumePayment" as TranslationKey)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -1239,11 +1250,11 @@ function CartScreenInner() {
                   setShowGwModal(false);
                   setGwBackgrounded(false);
                   if (oid) await cancelPendingOrder(oid);
-                  showToast("Order cancelled", "info");
+                  showToast(T("orderCancelledSuccess"), "info");
                 }}
                 style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
               >
-                <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Cancel Order</Text>
+                <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>{T("cancelOrder")}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1251,8 +1262,8 @@ function CartScreenInner() {
           {gwStep === "done" && (
             <View style={{ alignItems: "center", paddingVertical: 24 }}>
               <Text style={{ fontSize: 48 }}>✅</Text>
-              <Text style={{ ...Typ.h3, fontSize: 16, color: C.greenBright, marginTop: 12 }}>Payment Successful!</Text>
-              <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, marginTop: 6 }}>Placing your order...</Text>
+              <Text style={{ ...Typ.h3, fontSize: 16, color: C.greenBright, marginTop: 12 }}>{T("paymentSuccessful" as TranslationKey)}</Text>
+              <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, marginTop: 6 }}>{T("placingOrder" as TranslationKey)}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -1266,23 +1277,23 @@ function CartScreenInner() {
         <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: C.warnBg ?? "#FFF3E0", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
           <Ionicons name="time-outline" size={32} color={C.gold ?? "#F59E0B"} />
         </View>
-        <Text style={{ ...Typ.title, color: C.text, textAlign: "center", marginBottom: 8 }}>Order confirmation delayed</Text>
+        <Text style={{ ...Typ.title, color: C.text, textAlign: "center", marginBottom: 8 }}>{T("orderConfirmDelayed" as TranslationKey)}</Text>
         <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, textAlign: "center", maxWidth: 280, marginBottom: 24 }}>
-          The server is taking longer than expected. Your order may have been placed — check your orders before retrying.
+          {T("orderConfirmDelayedDesc" as TranslationKey)}
         </Text>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => { dismissAck(); router.push("/(tabs)/orders"); }}
           style={{ backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, width: "100%", alignItems: "center", marginBottom: 12 }}
         >
-          <Text style={{ ...Typ.buttonMedium, color: C.textInverse }}>Check My Orders</Text>
+          <Text style={{ ...Typ.buttonMedium, color: C.textInverse }}>{T("checkMyOrders" as TranslationKey)}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => dismissAck()}
           style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
         >
-          <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Retry / Try Again</Text>
+          <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>{T("retryAgain" as TranslationKey)}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -1292,9 +1303,9 @@ function CartScreenInner() {
     return (
       <View style={[styles.container, { backgroundColor: C.background, justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color={C.primary} />
-        <Text style={{ ...Typ.subtitle, color: C.text, marginTop: 16 }}>Confirming your order…</Text>
+        <Text style={{ ...Typ.subtitle, color: C.text, marginTop: 16 }}>{T("confirmingOrder" as TranslationKey)}</Text>
         <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, marginTop: 6, textAlign: "center", maxWidth: 260 }}>
-          Waiting for server confirmation. Please wait.
+          {T("waitingServerConfirm" as TranslationKey)}
         </Text>
       </View>
     );
@@ -1311,23 +1322,23 @@ function CartScreenInner() {
           <LinearGradient colors={[C.emeraldDeep, C.emerald]} style={styles.successCircle}>
             <Ionicons name="checkmark" size={44} color={C.textInverse} />
           </LinearGradient>
-          <Text style={styles.successTitle}>Order Placed Successfully!</Text>
-          <Text style={styles.successId}>Order #{orderSuccess.id}</Text>
+          <Text style={styles.successTitle}>{T("orderPlacedSuccess")}</Text>
+          <Text style={styles.successId}>{T("orderNumber" as TranslationKey)}{orderSuccess.id}</Text>
           <Text style={styles.successAddr} numberOfLines={2}>{deliveryLine}</Text>
-          <Text style={styles.successEta}>ETA: {orderSuccess.time}</Text>
+          <Text style={styles.successEta}>{T("etaLabel" as TranslationKey)}: {orderSuccess.time}</Text>
           <View style={{ backgroundColor: C.greenBg, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, borderWidth: 1, borderColor: C.greenBorder }}>
             <Text style={{ ...Typ.buttonSmall, color: C.greenDeep, textAlign: "center" }}>
-              Payment: {methodLabel[orderSuccess.payMethod || "cash"] || orderSuccess.payMethod}
+              {T("payment")}: {methodLabel[orderSuccess.payMethod || "cash"] || orderSuccess.payMethod}
             </Text>
           </View>
           <View style={styles.successBtns}>
             <TouchableOpacity activeOpacity={0.7} onPress={() => { clearOrderSuccess(); router.push("/(tabs)/orders"); }} style={styles.trackBtn}>
               <Ionicons name="navigate-outline" size={16} color={C.textInverse} />
-              <Text style={styles.trackBtnTxt}>Track Order</Text>
+              <Text style={styles.trackBtnTxt}>{T("trackOrder")}</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7} onPress={() => { clearOrderSuccess(); router.replace("/(tabs)"); }} style={styles.homeBtn}>
               <Ionicons name="home-outline" size={16} color={C.primary} />
-              <Text style={styles.homeBtnTxt}>Home</Text>
+              <Text style={styles.homeBtnTxt}>{T("home")}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1343,7 +1354,7 @@ function CartScreenInner() {
             <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={22} color={C.text} />
             </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: C.text }]}>Cart</Text>
+            <Text style={[styles.headerTitle, { color: C.text }]}>{T("cart" as TranslationKey)}</Text>
             <View style={{ width: 34 }} />
           </View>
         </View>
@@ -1351,16 +1362,16 @@ function CartScreenInner() {
           <View style={styles.emptyIconBox}>
             <Ionicons name="bag-outline" size={48} color={C.primary} />
           </View>
-          <Text style={styles.emptyTitle}>Your Cart is Empty</Text>
-          <Text style={styles.emptyText}>Add items from Mart or Food section</Text>
+          <Text style={styles.emptyTitle}>{T("cartEmpty")}</Text>
+          <Text style={styles.emptyText}>{T("addItemsHint" as TranslationKey)}</Text>
           <View style={styles.emptyBtns}>
             <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/mart")} style={styles.emptyBtn}>
               <Ionicons name="storefront-outline" size={16} color={C.textInverse} />
-              <Text style={styles.emptyBtnText}>Browse Mart</Text>
+              <Text style={styles.emptyBtnText}>{T("browseMart" as TranslationKey)}</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/food")} style={[styles.emptyBtn, { backgroundColor: C.food }]}>
               <Ionicons name="restaurant-outline" size={16} color={C.textInverse} />
-              <Text style={styles.emptyBtnText}>Order Food</Text>
+              <Text style={styles.emptyBtnText}>{T("browseFood" as TranslationKey)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1663,7 +1674,7 @@ function CartScreenInner() {
         {total < orderRules.minOrderAmount ? (
           <View style={styles.minOrderWrap}>
             <Text style={styles.minOrderTxt}>
-              Min. Rs.{orderRules.minOrderAmount} — add Rs.{orderRules.minOrderAmount - total} more
+              {T("minOrderToast" as TranslationKey).replace("{min}", String(orderRules.minOrderAmount)).replace("{diff}", String(orderRules.minOrderAmount - total))}
             </Text>
             <View style={[styles.minOrderBar]}>
               <View style={[styles.minOrderFill, { width: `${Math.min(100, (total / orderRules.minOrderAmount) * 100)}%` }]} />
