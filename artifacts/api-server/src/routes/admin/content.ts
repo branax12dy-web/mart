@@ -110,12 +110,34 @@ router.patch("/products/:id/reject", async (req, res) => {
   sendSuccess(res, { ...product, price: parseFloat(product.price) });
 });
 
+const SYSTEM_VENDOR_ID = "ajkmart_system";
+
+async function ensureSystemVendor(): Promise<void> {
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, SYSTEM_VENDOR_ID));
+  if (existing.length === 0) {
+    await db.insert(usersTable).values({
+      id: SYSTEM_VENDOR_ID,
+      phone: "+920000000000",
+      name: "AJKMart System",
+      role: "vendor",
+      roles: "vendor",
+      city: "Muzaffarabad",
+      area: "System",
+      phoneVerified: true,
+      approvalStatus: "approved",
+      isActive: true,
+      walletBalance: "0",
+    });
+  }
+}
+
 router.post("/products", async (req, res) => {
   const { name, description, price, originalPrice, category, type, unit, vendorName, inStock, deliveryTime, image } = req.body;
   if (!name || !price || !category) {
     sendValidationError(res, "name, price, and category are required");
     return;
   }
+  await ensureSystemVendor();
   const [product] = await db.insert(productsTable).values({
     id: generateId(),
     name,
@@ -124,7 +146,7 @@ router.post("/products", async (req, res) => {
     originalPrice: originalPrice ? String(originalPrice) : null,
     category,
     type: type || "mart",
-    vendorId: "ajkmart_system",
+    vendorId: SYSTEM_VENDOR_ID,
     vendorName: vendorName || "AJKMart Store",
     unit: unit || null,
     inStock: inStock !== false,

@@ -1,9 +1,30 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable, bannersTable, flashDealsTable, platformSettingsTable } from "@workspace/db/schema";
+import { productsTable, bannersTable, flashDealsTable, platformSettingsTable, usersTable } from "@workspace/db/schema";
 import { eq, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { adminAuth } from "./admin.js";
+
+const SYSTEM_VENDOR_ID = "ajkmart_system";
+
+async function ensureSystemVendor(): Promise<void> {
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, SYSTEM_VENDOR_ID));
+  if (existing.length === 0) {
+    await db.insert(usersTable).values({
+      id: SYSTEM_VENDOR_ID,
+      phone: "+920000000000",
+      name: "AJKMart System",
+      role: "vendor",
+      roles: "vendor",
+      city: "Muzaffarabad",
+      area: "System",
+      phoneVerified: true,
+      approvalStatus: "approved",
+      isActive: true,
+      walletBalance: "0",
+    });
+  }
+}
 
 const router: IRouter = Router();
 
@@ -133,6 +154,7 @@ const DEMO_BANNERS = [
 ];
 
 router.post("/products", async (req, res) => {
+  await ensureSystemVendor();
   const existingMart = await db.select().from(productsTable).where(eq(productsTable.type, "mart")).limit(1);
   const existingFood = await db.select().from(productsTable).where(eq(productsTable.type, "food")).limit(1);
   const existingPharmacy = await db.select().from(productsTable).where(eq(productsTable.type, "pharmacy")).limit(1);

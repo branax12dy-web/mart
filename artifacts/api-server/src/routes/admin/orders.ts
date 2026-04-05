@@ -27,6 +27,49 @@ import {
 import { getIO } from "../../lib/socketio.js";
 
 const router = Router();
+
+router.post("/orders", async (req, res) => {
+  const { userId, vendorId, type, items, total, deliveryAddress, paymentMethod, status } = req.body;
+  if (!userId || typeof userId !== "string" || !userId.trim()) {
+    sendValidationError(res, "userId is required");
+    return;
+  }
+  const numTotal = Number(total);
+  if (!numTotal || numTotal <= 0) {
+    sendValidationError(res, "total must be a positive number");
+    return;
+  }
+  const validTypes = ["mart", "food"];
+  const orderType = validTypes.includes(type) ? type : "mart";
+  const validPayments = ["cod", "wallet", "jazzcash", "easypaisa"];
+  const payment = validPayments.includes(paymentMethod) ? paymentMethod : "cod";
+  const validStatuses = ["pending", "confirmed", "preparing", "picked_up", "delivered", "cancelled"];
+  const orderStatus = validStatuses.includes(status) ? status : "pending";
+  try {
+    const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId.trim()));
+    if (!user) {
+      sendValidationError(res, "User not found with the given userId");
+      return;
+    }
+    const [order] = await db.insert(ordersTable).values({
+      id: generateId(),
+      userId: userId.trim(),
+      vendorId: (vendorId || userId).trim(),
+      type: orderType,
+      items: items ? (typeof items === "string" ? items : JSON.stringify(items)) : JSON.stringify([{ name: "Custom item", qty: 1, price: numTotal.toString() }]),
+      total: numTotal.toString(),
+      deliveryAddress: (deliveryAddress || "Admin-created order").trim(),
+      paymentMethod: payment,
+      status: orderStatus,
+      paymentStatus: "pending",
+      estimatedTime: "30-45 min",
+    }).returning();
+    sendSuccess(res, { order });
+  } catch (e: any) {
+    sendError(res, e.message, 500);
+  }
+});
+
 router.get("/orders", async (req, res) => {
   const { status, type, limit: lim } = req.query;
   const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(Number(lim) || 200);

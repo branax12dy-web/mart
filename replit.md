@@ -40,6 +40,23 @@ AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pak
 #### Home Screen Service Navigation
 - **`app/(tabs)/index.tsx`**: Service grid/list no longer redirects guests to `/auth`; guests navigate directly to service screens where action-level auth gates handle protected operations. Lock badge icons removed.
 
+### Demo Data & Admin Data Management Controls — Completed Changes
+
+#### API — System Data Management Endpoints (`artifacts/api-server/src/routes/system.ts`)
+- **POST `/admin/system/remove-all`**: Transactional wipe of all user-generated data (orders, rides, pharmacy, parcels, wallet transactions, reviews, notifications, products, banners, promos, flash deals, vendor/rider profiles, service zones, users). Preserves admin_accounts + platform_settings. Creates undo snapshot before executing.
+- **POST `/admin/system/seed-demo`**: Seeds comprehensive AJK-themed demo data — 22 users (8 customers, 8 riders, 6 vendors), vendor/rider profiles, 3 service zones, 38+ mart/food products, 24 orders, 15 rides, 6 pharmacy orders, 6 parcel bookings, 32 wallet transactions, 22 reviews, 12 notifications, 6 banners, 5 promo codes, flash deals, and saved addresses. Creates undo snapshot.
+- **`ensureSystemVendor()`**: Creates `ajkmart_system` vendor user if missing, fixing FK constraint issue when seeding products after a data wipe.
+- **GET `/admin/system/stats`**: Extended with vendorProfiles, riderProfiles, serviceZones counts.
+
+#### API — Admin User Creation (`artifacts/api-server/src/routes/admin/users.ts`)
+- **POST `/admin/users`**: New endpoint for creating users from admin panel. Supports phone, name, role (customer/rider/vendor), city, area, email. Auto-approves and sets initial wallet balance.
+
+#### Admin Panel — System & Data UI (`artifacts/admin/src/pages/settings-system.tsx`)
+- Redesigned with 3 prominent action buttons: Remove All Data (red, requires typing REMOVE to confirm), Load Demo Data (green, requires typing DEMO to confirm), Add Custom Data (blue, opens form panel).
+- Custom data entry forms for Users, Products, Promo Codes, and Banners with validation and correct API paths.
+- Retained DB stats display, backup/restore functionality, and undo system with countdown timers.
+- Legacy reset actions collapsed under "Advanced Reset Actions" toggle.
+
 ### White Label Delivery Access Control — Completed Changes
 
 #### Database Schema

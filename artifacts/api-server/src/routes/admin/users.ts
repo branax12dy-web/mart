@@ -27,6 +27,46 @@ import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationErro
 import { reconcileUserFlags } from "./conditions.js";
 
 const router = Router();
+
+router.post("/users", async (req, res) => {
+  const { phone, name, role, city, area, email } = req.body;
+  const trimPhone = typeof phone === "string" ? phone.trim() : "";
+  const trimName = typeof name === "string" ? name.trim() : "";
+  if (!trimPhone && !trimName) {
+    sendValidationError(res, "At least phone or name is required");
+    return;
+  }
+  if (trimPhone && !/^\+?\d{7,15}$/.test(trimPhone)) {
+    sendValidationError(res, "Phone must be 7-15 digits, optionally prefixed with +");
+    return;
+  }
+  const validRoles = ["customer", "rider", "vendor"];
+  const userRole = validRoles.includes(role) ? role : "customer";
+  try {
+    const [user] = await db.insert(usersTable).values({
+      id: generateId(),
+      phone: trimPhone || null,
+      name: trimName || null,
+      email: typeof email === "string" && email.trim() ? email.trim() : null,
+      role: userRole,
+      roles: userRole,
+      city: typeof city === "string" && city.trim() ? city.trim() : null,
+      area: typeof area === "string" && area.trim() ? area.trim() : null,
+      phoneVerified: true,
+      approvalStatus: "approved",
+      isActive: true,
+      walletBalance: "1000",
+    }).returning();
+    sendSuccess(res, { user: stripUser(user!) });
+  } catch (e: any) {
+    if (e.message?.includes("duplicate")) {
+      sendError(res, "A user with this phone or email already exists", 409);
+    } else {
+      sendError(res, e.message, 500);
+    }
+  }
+});
+
 router.get("/users", async (req, res) => {
   const filter = (req.query?.filter as string) ?? "";
   const conditionTier = (req.query?.conditionTier as string) ?? "";
