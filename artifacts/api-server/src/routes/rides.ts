@@ -104,7 +104,7 @@ const bookRideSchema = z.object({
   /* ── Parcel delivery fields ── */
   isParcel: z.boolean().optional().default(false),
   receiverName: z.string().max(200).transform(stripHtml).optional(),
-  receiverPhone: z.string().max(20).optional(),
+  receiverPhone: z.string().max(20).regex(/^03\d{9}$/, "Receiver phone must be a valid Pakistani mobile number (11 digits, starts with 03)").optional(),
   packageType: z.string().max(100).transform(stripHtml).optional(),
   /* ── Scheduled ride ── */
   isScheduled: z.boolean().optional().default(false),
@@ -173,6 +173,11 @@ async function getServiceKeys(): Promise<Set<string>> {
  *  Handles the hardcoded built-in aliases AND any admin-defined service keys
  *  that exist in the DB (e.g. "premium_sedan", "minivan"). */
 async function normalizeVehicleType(raw: string | null | undefined): Promise<string> {
+  const serviceKeys = await getServiceKeys();
+  return normalizeVehicleTypeSync(raw, serviceKeys);
+}
+
+function normalizeVehicleTypeSync(raw: string | null | undefined, serviceKeys: Set<string>): string {
   const v = (raw ?? "").trim().toLowerCase();
   if (!v) return "";
   if (v === "bike" || v.startsWith("bike") || v.includes("motorcycle")) return "bike";
@@ -182,9 +187,6 @@ async function normalizeVehicleType(raw: string | null | undefined): Promise<str
   if (v === "daba") return "daba";
   if (v === "bicycle") return "bicycle";
   if (v === "on_foot" || v === "on foot") return "on_foot";
-  /* Check admin-defined service keys: if the raw value matches any DB key exactly
-     or after normalising spaces/hyphens, use it as-is. */
-  const serviceKeys = await getServiceKeys();
   if (serviceKeys.has(v)) return v;
   const slug = v.replace(/[\s-]+/g, "_");
   if (serviceKeys.has(slug)) return slug;
@@ -238,13 +240,14 @@ async function broadcastRide(rideId: string) {
     const busySet = new Set(busyRiders.map(r => r.riderId));
 
     let notifiedCount = 0;
-    const rideVt = ride.type ? await normalizeVehicleType(ride.type) : null;
+    const serviceKeys = await getServiceKeys();
+    const rideVt = ride.type ? normalizeVehicleTypeSync(ride.type, serviceKeys) : null;
 
     for (const r of onlineRiders) {
       if (alreadySet.has(r.userId)) continue;
       if (busySet.has(r.userId)) continue;
       if (rideVt) {
-        const riderVt = await normalizeVehicleType(r.vehicleType);
+        const riderVt = normalizeVehicleTypeSync(r.vehicleType, serviceKeys);
         if (!riderVt || riderVt !== rideVt) continue;
       }
       const rLat = parseFloat(String(r.latitude));
@@ -682,45 +685,9 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
   const fareToCharge = isBargaining ? validatedOffer : platformFare;
   const fareToStore  = platformFare.toFixed(2);
 
-  /* ── Pool ride: find or create a pool group ── */
-  let resolvedPoolGroupId: string | undefined;
-  if (isPoolRide && !isBargaining && !isScheduled) {
-    const POOL_RADIUS_DEG = 0.005; // ~500m
-    const MAX_POOL_SIZE = 3;       // max riders sharing a pool
-    const POOL_WINDOW_MIN = 20;    // only pool with rides booked in last 20 min
-    const windowStart = new Date(Date.now() - POOL_WINDOW_MIN * 60_000);
-    const existingPools = await db.select({ poolGroupId: ridesTable.poolGroupId, id: ridesTable.id })
-      .from(ridesTable)
-      .where(and(
-        eq(ridesTable.isPoolRide, true),
-        eq(ridesTable.type, type),
-        sql`status IN ('searching', 'bargaining')`,
-        sql`pool_group_id IS NOT NULL`,
-        sql`created_at >= ${windowStart.toISOString()}`,
-        sql`ABS(CAST(pickup_lat AS FLOAT) - ${pickupLat}) < ${POOL_RADIUS_DEG}`,
-        sql`ABS(CAST(pickup_lng AS FLOAT) - ${pickupLng}) < ${POOL_RADIUS_DEG}`,
-        sql`ABS(CAST(drop_lat AS FLOAT) - ${dropLat}) < ${POOL_RADIUS_DEG}`,
-        sql`ABS(CAST(drop_lng AS FLOAT) - ${dropLng}) < ${POOL_RADIUS_DEG}`,
-      ))
-      .limit(10);
-
-    if (existingPools.length > 0) {
-      /* Find a group that is not full */
-      const groupIds = [...new Set(existingPools.map(r => r.poolGroupId).filter(Boolean))] as string[];
-      for (const gid of groupIds) {
-        const membersInGroup = await db.select({ id: ridesTable.id })
-          .from(ridesTable)
-          .where(and(eq(ridesTable.poolGroupId, gid), sql`status IN ('searching', 'bargaining')`));
-        if (membersInGroup.length < MAX_POOL_SIZE) {
-          resolvedPoolGroupId = gid;
-          break;
-        }
-      }
-    }
-    if (!resolvedPoolGroupId) {
-      resolvedPoolGroupId = generateId();
-    }
-  }
+  const POOL_RADIUS_DEG = 0.005;
+  const MAX_POOL_SIZE = 3;
+  const POOL_WINDOW_MIN = 20;
 
   try {
     let rideRecord: typeof ridesTable.$inferSelect;
@@ -775,6 +742,31 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
           description: `${type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, " ")} ride payment`,
           reference: `ride:${rideId}`,
         });
+        let resolvedPoolGroupId: string | undefined;
+        if (isPoolRide && !isScheduled) {
+          const windowStart = new Date(Date.now() - POOL_WINDOW_MIN * 60_000);
+          const existingPools = await tx.select({ poolGroupId: ridesTable.poolGroupId, id: ridesTable.id })
+            .from(ridesTable)
+            .where(and(
+              eq(ridesTable.isPoolRide, true), eq(ridesTable.type, type),
+              sql`status IN ('searching', 'bargaining')`, sql`pool_group_id IS NOT NULL`,
+              sql`created_at >= ${windowStart.toISOString()}`,
+              sql`ABS(CAST(pickup_lat AS FLOAT) - ${pickupLat}) < ${POOL_RADIUS_DEG}`,
+              sql`ABS(CAST(pickup_lng AS FLOAT) - ${pickupLng}) < ${POOL_RADIUS_DEG}`,
+              sql`ABS(CAST(drop_lat AS FLOAT) - ${dropLat}) < ${POOL_RADIUS_DEG}`,
+              sql`ABS(CAST(drop_lng AS FLOAT) - ${dropLng}) < ${POOL_RADIUS_DEG}`,
+            )).for("update").limit(10);
+          if (existingPools.length > 0) {
+            const groupIds = [...new Set(existingPools.map(r => r.poolGroupId).filter(Boolean))] as string[];
+            for (const gid of groupIds) {
+              const [countRow] = await tx.select({ c: count() }).from(ridesTable)
+                .where(and(eq(ridesTable.poolGroupId, gid), sql`status IN ('searching', 'bargaining')`));
+              if ((countRow?.c ?? 0) < MAX_POOL_SIZE) { resolvedPoolGroupId = gid; break; }
+            }
+          }
+          if (!resolvedPoolGroupId) resolvedPoolGroupId = generateId();
+        }
+
         const scheduledStatus = isScheduled ? "scheduled" : rideStatus;
         const [ride] = await tx.insert(ridesTable).values({
           id: rideId, userId, type, status: scheduledStatus,
@@ -797,16 +789,12 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
       });
     } else {
       rideRecord = await db.transaction(async (tx) => {
-        /* Lock the user row first — serializes concurrent bookings per user.
-           A FOR UPDATE on rides rows cannot prevent concurrent INSERTs when no
-           active ride yet exists. Locking the users row is the correct primitive. */
         await tx.select({ id: usersTable.id })
           .from(usersTable)
           .where(eq(usersTable.id, userId))
           .for("update")
           .limit(1);
 
-        /* Active-ride check — safe because user row is locked above */
         const [activeConflict] = await tx.select({ id: ridesTable.id })
           .from(ridesTable)
           .where(and(eq(ridesTable.userId, userId), sql`status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')`))
@@ -815,8 +803,7 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
           throw new RideApiError("Aapki ek ride pehle se active hai. Naye ride ke liye pehle wali complete ya cancel karein.", "ACTIVE_RIDE_EXISTS", 409);
         }
 
-        /* Debt check — inside lock so no concurrent booking can bypass it */
-        const [lockedUser] = await tx.select({ cancellationDebt: usersTable.cancellationDebt })
+        const [lockedUser] = await tx.select({ cancellationDebt: usersTable.cancellationDebt, walletBalance: usersTable.walletBalance })
           .from(usersTable)
           .where(eq(usersTable.id, userId))
           .limit(1);
@@ -828,9 +815,56 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
           );
         }
 
+        const rideId = generateId();
+
+        if (paymentMethod === "wallet" && isBargaining) {
+          const balance = parseFloat(lockedUser?.walletBalance ?? "0");
+          if (balance < fareToCharge) {
+            throw new RideApiError(`Insufficient wallet balance. Required: Rs. ${fareToCharge.toFixed(0)}, Available: Rs. ${balance.toFixed(0)}`, "INSUFFICIENT_BALANCE", 402);
+          }
+          const walletEnabled = (s["feature_wallet"] ?? "on") === "on";
+          if (!walletEnabled) throw new RideApiError("Wallet payments are currently disabled", "WALLET_DISABLED", 503);
+          const [reserved] = await tx.update(usersTable)
+            .set({ walletBalance: sql`wallet_balance - ${fareToCharge.toFixed(2)}` })
+            .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, fareToCharge.toFixed(2))))
+            .returning({ id: usersTable.id });
+          if (!reserved) throw new RideApiError(`Insufficient wallet balance. Required: Rs. ${fareToCharge.toFixed(0)}`, "INSUFFICIENT_BALANCE", 402);
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId, type: "debit",
+            amount: fareToCharge.toFixed(2),
+            description: `${type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, " ")} ride reservation (bargain)`,
+            reference: `ride:${rideId}`,
+          });
+        }
+
+        let resolvedPoolGroupId: string | undefined;
+        if (isPoolRide && !isBargaining && !isScheduled) {
+          const windowStart = new Date(Date.now() - POOL_WINDOW_MIN * 60_000);
+          const existingPools = await tx.select({ poolGroupId: ridesTable.poolGroupId, id: ridesTable.id })
+            .from(ridesTable)
+            .where(and(
+              eq(ridesTable.isPoolRide, true), eq(ridesTable.type, type),
+              sql`status IN ('searching', 'bargaining')`, sql`pool_group_id IS NOT NULL`,
+              sql`created_at >= ${windowStart.toISOString()}`,
+              sql`ABS(CAST(pickup_lat AS FLOAT) - ${pickupLat}) < ${POOL_RADIUS_DEG}`,
+              sql`ABS(CAST(pickup_lng AS FLOAT) - ${pickupLng}) < ${POOL_RADIUS_DEG}`,
+              sql`ABS(CAST(drop_lat AS FLOAT) - ${dropLat}) < ${POOL_RADIUS_DEG}`,
+              sql`ABS(CAST(drop_lng AS FLOAT) - ${dropLng}) < ${POOL_RADIUS_DEG}`,
+            )).for("update").limit(10);
+          if (existingPools.length > 0) {
+            const groupIds = [...new Set(existingPools.map(r => r.poolGroupId).filter(Boolean))] as string[];
+            for (const gid of groupIds) {
+              const [countRow] = await tx.select({ c: count() }).from(ridesTable)
+                .where(and(eq(ridesTable.poolGroupId, gid), sql`status IN ('searching', 'bargaining')`));
+              if ((countRow?.c ?? 0) < MAX_POOL_SIZE) { resolvedPoolGroupId = gid; break; }
+            }
+          }
+          if (!resolvedPoolGroupId) resolvedPoolGroupId = generateId();
+        }
+
         const scheduledStatus2 = isScheduled ? "scheduled" : rideStatus;
         const [ride] = await tx.insert(ridesTable).values({
-          id: generateId(), userId, type, status: scheduledStatus2,
+          id: rideId, userId, type, status: scheduledStatus2,
           pickupAddress, dropAddress,
           pickupLat: String(pickupLat), pickupLng: String(pickupLng),
           dropLat: String(dropLat), dropLng: String(dropLng),
@@ -913,18 +947,20 @@ router.patch("/:id/cancel", customerAuth, cancelRideLimiter, requireRideState(["
   // Determine if a wallet debit was actually made for this ride.
   // All wallet-paid rides (direct booking and bargain accept-bid) record
   // a debit with reference "ride:<id>" — check that authoritatively.
-  let fareWasCharged = false;
+  let walletNetDebit = 0;
   if (ride.paymentMethod === "wallet") {
     const rideRef = `ride:${ride.id}`;
-    const [debitTx] = await db.select({ id: walletTransactionsTable.id })
+    const txns = await db.select({ type: walletTransactionsTable.type, amount: walletTransactionsTable.amount })
       .from(walletTransactionsTable)
       .where(and(
         eq(walletTransactionsTable.userId, userId),
-        eq(walletTransactionsTable.type, "debit"),
         eq(walletTransactionsTable.reference, rideRef),
-      ))
-      .limit(1);
-    fareWasCharged = !!debitTx;
+      ));
+    for (const t of txns) {
+      const amt = parseFloat(t.amount);
+      if (t.type === "debit") walletNetDebit += amt;
+      else if (t.type === "credit") walletNetDebit -= amt;
+    }
   }
 
   const cancelResult = await db.transaction(async (tx) => {
@@ -937,16 +973,14 @@ router.patch("/:id/cancel", customerAuth, cancelRideLimiter, requireRideState(["
       .set({ status: "rejected", updatedAt: new Date() })
       .where(and(eq(rideBidsTable.rideId, String(req.params["id"])), eq(rideBidsTable.status, "pending")));
 
-    // Credit the fare refund FIRST so the balance includes it when we later
-    // calculate how much of the cancellation fee the user can cover.
-    if (fareWasCharged) {
-      const refundAmt = parseFloat(ride.fare);
+    if (walletNetDebit > 0) {
       await tx.update(usersTable)
-        .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+        .set({ walletBalance: sql`wallet_balance + ${walletNetDebit.toFixed(2)}`, updatedAt: new Date() })
         .where(eq(usersTable.id, userId));
       await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId, type: "credit", amount: refundAmt.toFixed(2),
+        id: generateId(), userId, type: "credit", amount: walletNetDebit.toFixed(2),
         description: `Ride refund — #${ride.id.slice(-6).toUpperCase()} cancelled`,
+        reference: `ride:${ride.id}`,
       });
     }
 
@@ -1000,8 +1034,8 @@ router.patch("/:id/cancel", customerAuth, cancelRideLimiter, requireRideState(["
   if (postCancelUser) broadcastWalletUpdate(userId, parseFloat(postCancelUser.walletBalance ?? "0"));
 
   const cancelLang = await getUserLanguage(userId);
-  if (fareWasCharged) {
-    const refundAmt = parseFloat(ride.fare);
+  if (walletNetDebit > 0) {
+    const refundAmt = walletNetDebit;
     await db.insert(notificationsTable).values({
       id: generateId(), userId,
       title: t("notifWalletCredited", cancelLang) + " 💰",
@@ -1088,16 +1122,52 @@ router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
       const agreedFare = parseFloat(bid.fare);
 
       if (ride.paymentMethod === "wallet") {
-        const [deducted] = await tx.update(usersTable)
-          .set({ walletBalance: sql`wallet_balance - ${agreedFare.toFixed(2)}` })
-          .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, agreedFare.toFixed(2))))
-          .returning({ id: usersTable.id });
-        if (!deducted) throw new RideApiError(`Insufficient wallet balance. Need Rs. ${agreedFare.toFixed(0)}`, "INSUFFICIENT_BALANCE", 402);
-        await tx.insert(walletTransactionsTable).values({
-          id: generateId(), userId, type: "debit", amount: agreedFare.toFixed(2),
-          description: `Ride payment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
-          reference: `ride:${rideId}`,
-        });
+        const rideRef = `ride:${rideId}`;
+        const [existingDebit] = await tx.select({ id: walletTransactionsTable.id, amount: walletTransactionsTable.amount })
+          .from(walletTransactionsTable)
+          .where(and(
+            eq(walletTransactionsTable.userId, userId),
+            eq(walletTransactionsTable.type, "debit"),
+            eq(walletTransactionsTable.reference, rideRef),
+          )).limit(1);
+
+        if (existingDebit) {
+          const reservedAmt = parseFloat(existingDebit.amount);
+          if (agreedFare > reservedAmt) {
+            const diff = agreedFare - reservedAmt;
+            const [topUp] = await tx.update(usersTable)
+              .set({ walletBalance: sql`wallet_balance - ${diff.toFixed(2)}` })
+              .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, diff.toFixed(2))))
+              .returning({ id: usersTable.id });
+            if (!topUp) throw new RideApiError(`Insufficient wallet balance. Need additional Rs. ${diff.toFixed(0)}`, "INSUFFICIENT_BALANCE", 402);
+            await tx.insert(walletTransactionsTable).values({
+              id: generateId(), userId, type: "debit", amount: diff.toFixed(2),
+              description: `Ride fare adjustment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
+              reference: rideRef,
+            });
+          } else if (agreedFare < reservedAmt) {
+            const refund = reservedAmt - agreedFare;
+            await tx.update(usersTable)
+              .set({ walletBalance: sql`wallet_balance + ${refund.toFixed(2)}` })
+              .where(eq(usersTable.id, userId));
+            await tx.insert(walletTransactionsTable).values({
+              id: generateId(), userId, type: "credit", amount: refund.toFixed(2),
+              description: `Fare difference refund (bargained) — #${rideId.slice(-6).toUpperCase()}`,
+              reference: rideRef,
+            });
+          }
+        } else {
+          const [deducted] = await tx.update(usersTable)
+            .set({ walletBalance: sql`wallet_balance - ${agreedFare.toFixed(2)}` })
+            .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, agreedFare.toFixed(2))))
+            .returning({ id: usersTable.id });
+          if (!deducted) throw new RideApiError(`Insufficient wallet balance. Need Rs. ${agreedFare.toFixed(0)}`, "INSUFFICIENT_BALANCE", 402);
+          await tx.insert(walletTransactionsTable).values({
+            id: generateId(), userId, type: "debit", amount: agreedFare.toFixed(2),
+            description: `Ride payment (bargained) — #${rideId.slice(-6).toUpperCase()}`,
+            reference: rideRef,
+          });
+        }
       }
 
       const [rideUpdate] = await tx.update(ridesTable)
@@ -1823,21 +1893,24 @@ async function runDispatchCycle() {
 
             if (ride.paymentMethod === "wallet") {
               const rideRef = `ride:${ride.id}`;
-              const [debitTx] = await tx.select({ id: walletTransactionsTable.id })
+              const txns = await tx.select({ type: walletTransactionsTable.type, amount: walletTransactionsTable.amount })
                 .from(walletTransactionsTable)
                 .where(and(
                   eq(walletTransactionsTable.userId, ride.userId),
-                  eq(walletTransactionsTable.type, "debit"),
                   eq(walletTransactionsTable.reference, rideRef),
-                )).limit(1);
-              if (debitTx) {
-                const refundAmt = parseFloat(ride.fare!);
+                ));
+              let netDebit = 0;
+              for (const t of txns) {
+                const a = parseFloat(t.amount);
+                if (t.type === "debit") netDebit += a; else if (t.type === "credit") netDebit -= a;
+              }
+              if (netDebit > 0) {
                 await tx.update(usersTable)
-                  .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+                  .set({ walletBalance: sql`wallet_balance + ${netDebit.toFixed(2)}`, updatedAt: new Date() })
                   .where(eq(usersTable.id, ride.userId));
                 await tx.insert(walletTransactionsTable).values({
                   id: generateId(), userId: ride.userId, type: "credit",
-                  amount: refundAmt.toFixed(2),
+                  amount: netDebit.toFixed(2),
                   description: `Ride expired — auto-refund #${ride.id.slice(-6).toUpperCase()}`,
                   reference: rideRef,
                 });
@@ -1860,8 +1933,6 @@ async function runDispatchCycle() {
           continue;
         }
 
-        // Dispatch in rounds: each round lasts DISPATCH_ROUND_INTERVAL_SEC seconds.
-        // After MAX_DISPATCH_ROUNDS rounds with no acceptance, mark no_riders and stop.
         const currentRound = Math.floor(elapsedSec / DISPATCH_ROUND_INTERVAL_SEC);
         const loopCount = ride.dispatchLoopCount ?? 0;
 
@@ -1875,21 +1946,24 @@ async function runDispatchCycle() {
 
             if (ride.paymentMethod === "wallet") {
               const rideRef = `ride:${ride.id}`;
-              const [debitTx] = await tx.select({ id: walletTransactionsTable.id })
+              const txns = await tx.select({ type: walletTransactionsTable.type, amount: walletTransactionsTable.amount })
                 .from(walletTransactionsTable)
                 .where(and(
                   eq(walletTransactionsTable.userId, ride.userId),
-                  eq(walletTransactionsTable.type, "debit"),
                   eq(walletTransactionsTable.reference, rideRef),
-                )).limit(1);
-              if (debitTx) {
-                const refundAmt = parseFloat(ride.fare!);
+                ));
+              let netDebit = 0;
+              for (const t of txns) {
+                const a = parseFloat(t.amount);
+                if (t.type === "debit") netDebit += a; else if (t.type === "credit") netDebit -= a;
+              }
+              if (netDebit > 0) {
                 await tx.update(usersTable)
-                  .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
+                  .set({ walletBalance: sql`wallet_balance + ${netDebit.toFixed(2)}`, updatedAt: new Date() })
                   .where(eq(usersTable.id, ride.userId));
                 await tx.insert(walletTransactionsTable).values({
                   id: generateId(), userId: ride.userId, type: "credit",
-                  amount: refundAmt.toFixed(2),
+                  amount: netDebit.toFixed(2),
                   description: `No riders found — auto-refund #${ride.id.slice(-6).toUpperCase()}`,
                   reference: rideRef,
                 });

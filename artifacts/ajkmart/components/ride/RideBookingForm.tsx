@@ -332,9 +332,25 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     useMapsAutocomplete(dropFocus ? drop : "");
 
   useEffect(() => {
-    if (prefillPickup) setPickup(prefillPickup);
-    if (prefillDrop) setDrop(prefillDrop);
     if (prefillType) setRideType(prefillType);
+    if (prefillPickup) {
+      setPickup(prefillPickup);
+      resolveLocation(
+        { placeId: "", mainText: prefillPickup, secondaryText: "", description: prefillPickup },
+        (msg) => { if (__DEV__) console.warn("[RideBookingForm] prefill pickup resolve failed:", msg); },
+      ).then((loc) => {
+        if (loc) setPickupObj(loc);
+      });
+    }
+    if (prefillDrop) {
+      setDrop(prefillDrop);
+      resolveLocation(
+        { placeId: "", mainText: prefillDrop, secondaryText: "", description: prefillDrop },
+        (msg) => { if (__DEV__) console.warn("[RideBookingForm] prefill drop resolve failed:", msg); },
+      ).then((loc) => {
+        if (loc) setDropObj(loc);
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -559,6 +575,11 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     if (isParcelService(rideType, selectedSvc)) {
       if (!receiverName.trim()) { showToast("Please enter the receiver's full name", "error"); return; }
       if (!receiverPhone.trim()) { showToast("Please enter the receiver's phone number", "error"); return; }
+      const phoneDigits = receiverPhone.trim().replace(/[\s-]/g, "");
+      if (!/^03\d{9}$/.test(phoneDigits)) {
+        showToast("Receiver phone must be a valid Pakistani mobile number (e.g. 03001234567)", "error"); return;
+      }
+      setReceiverPhone(phoneDigits);
     }
     if (pickupObj && dropObj && Math.abs(pickupObj.lat - dropObj.lat) < 0.0001 && Math.abs(pickupObj.lng - dropObj.lng) < 0.0001) {
       showToast("Pickup and drop locations cannot be the same", "error"); return;
@@ -598,7 +619,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         ...(parsedOffer !== undefined && { offeredFare: parsedOffer }),
         ...(bargainNote && { bargainNote }),
         ...(isParcelService(rideType, services.find((s) => s.key === rideType)) && receiverName.trim() && { receiverName: receiverName.trim() }),
-        ...(isParcelService(rideType, services.find((s) => s.key === rideType)) && receiverPhone.trim() && { receiverPhone: receiverPhone.trim() }),
+        ...(isParcelService(rideType, services.find((s) => s.key === rideType)) && receiverPhone.trim() && { receiverPhone: receiverPhone.trim().replace(/[\s-]/g, "") }),
         ...(isParcelService(rideType, services.find((s) => s.key === rideType)) && { isParcel: true }),
         ...(isScheduled && { isScheduled: true, scheduledAt: new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString() }),
         ...(isPoolRide && { isPoolRide: true }),

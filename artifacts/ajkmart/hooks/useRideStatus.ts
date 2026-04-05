@@ -172,10 +172,18 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
       }
 
       if (streamDone && mountedRef.current) {
-        /* Server closed the stream cleanly — reconnect immediately. */
-        retryTimerRef.current = setTimeout(() => {
-          if (mountedRef.current) connectSse();
-        }, SSE_RETRY_BASE_DELAY);
+        sseFailCountRef.current += 1;
+        if (sseFailCountRef.current >= 3) {
+          startPolling();
+        } else {
+          const delay = Math.min(
+            SSE_RETRY_BASE_DELAY * Math.pow(2, sseFailCountRef.current - 1),
+            SSE_MAX_RETRY_DELAY,
+          );
+          retryTimerRef.current = setTimeout(() => {
+            if (mountedRef.current) connectSse();
+          }, delay);
+        }
       }
     } catch (err: unknown) {
       const isAbort = (err as { name?: string })?.name === "AbortError";

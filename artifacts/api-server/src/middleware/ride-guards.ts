@@ -24,16 +24,21 @@ export function loadRide() {
 
 export function requireRideState(allowedStates: string[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const rideId = String(req.params["id"] ?? "");
-    if (!rideId) {
-      res.status(400).json({ error: "Ride ID is required" });
-      return;
-    }
+    let ride = req.ride;
 
-    const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
     if (!ride) {
-      res.status(404).json({ error: "Ride not found" });
-      return;
+      const rideId = String(req.params["id"] ?? "");
+      if (!rideId) {
+        res.status(400).json({ error: "Ride ID is required" });
+        return;
+      }
+
+      const [found] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+      if (!found) {
+        res.status(404).json({ error: "Ride not found" });
+        return;
+      }
+      ride = found;
     }
 
     if (!allowedStates.includes(ride.status)) {

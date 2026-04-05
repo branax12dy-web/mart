@@ -30,6 +30,7 @@ import { useRideStatus } from "@/hooks/useRideStatus";
 import { NegotiationScreen } from "@/components/ride/NegotiationScreen";
 import { RideStatusSkeleton } from "@/components/ride/Skeletons";
 import { staticMapUrl } from "@/hooks/useMaps";
+import { API_BASE } from "@/utils/api";
 import {
   getDispatchStatus,
   retryRideDispatch,
@@ -106,6 +107,7 @@ export function RideTracker({
   const prevStatus = useRef<string>("");
   const [cancelResult, setCancelResult] = useState<{ cancellationFee?: number; cancelReason?: string } | null>(null);
   const [acceptedAt, setAcceptedAt] = useState<number | null>(null);
+  const [noDriversConfirmed, setNoDriversConfirmed] = useState(false);
 
   const [tripOtp, setTripOtp] = useState<string | null>(null);
   const [otpCopied, setOtpCopied] = useState(false);
@@ -115,7 +117,16 @@ export function RideTracker({
 
   const isSocketActive = ["accepted", "arrived", "in_transit"].includes(ride?.status ?? "");
 
-  const rideApiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+  const expoDomain = process.env.EXPO_PUBLIC_DOMAIN;
+  const rideApiBase = expoDomain ? `https://${expoDomain}/api` : API_BASE;
+  const warnedNoDomainRef = useRef(false);
+
+  useEffect(() => {
+    if (__DEV__ && !expoDomain && !warnedNoDomainRef.current) {
+      warnedNoDomainRef.current = true;
+      console.warn("[RideTracker] EXPO_PUBLIC_DOMAIN is undefined — SOS and cancel requests will use API_BASE fallback. Set EXPO_PUBLIC_DOMAIN in your environment.");
+    }
+  }, [expoDomain]);
 
   useEffect(() => {
     if (!isSocketActive || !rideId) return;
@@ -172,8 +183,8 @@ export function RideTracker({
 
   useEffect(() => {
     if (ride?.status === "arrived" && (ride as any)?.tripOtp && !tripOtp) setTripOtp((ride as any).tripOtp);
-    if (ride?.status === "in_transit") setTripOtp(null);
-  }, [ride?.status, (ride as any)?.tripOtp]);
+    if (ride?.status === "in_transit" && (ride as any)?.otpVerified) setTripOtp(null);
+  }, [ride?.status, (ride as any)?.tripOtp, (ride as any)?.otpVerified]);
 
   useEffect(() => {
     const st = ride?.status;
@@ -251,6 +262,24 @@ export function RideTracker({
     return () => clearInterval(iv);
   }, [rideId, ride?.status]);
 
+  useEffect(() => {
+    const st = ride?.status ?? "searching";
+    if (st !== "searching" || elapsed < 180) { setNoDriversConfirmed(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await getDispatchStatus(rideId);
+        if (cancelled) return;
+        if (d?.status === "accepted" || d?.status === "arrived" || d?.status === "in_transit") {
+          return;
+        }
+        setNoDriversConfirmed(true);
+      } catch {
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ride?.status, elapsed >= 180, rideId]);
+
   const handleRetryDispatch = async () => {
     setRetrying(true);
     try {
@@ -326,7 +355,7 @@ export function RideTracker({
     );
   }
 
-  if (status === "no_riders" || (status === "searching" && elapsed >= 180)) {
+  if (status === "no_riders" || (status === "searching" && elapsed >= 180 && noDriversConfirmed)) {
     return (
       <View style={{ flex: 1, backgroundColor: "#0F172A" }}>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>

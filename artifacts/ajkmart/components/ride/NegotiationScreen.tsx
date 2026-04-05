@@ -238,7 +238,17 @@ export function NegotiationScreen({
           signal: controller.signal,
         });
         clearTimeout(timeout);
-        if (res.ok) { consecutiveFailsRef.current = 0; setConnectionLost(false); }
+        if (res.ok) {
+          consecutiveFailsRef.current = 0;
+          setConnectionLost(false);
+          try {
+            const json = await res.json();
+            const data = json?.data ?? json;
+            if (data && typeof data === "object") {
+              setRide((prev) => prev ? { ...prev, ...data } : prev);
+            }
+          } catch {}
+        }
         else consecutiveFailsRef.current++;
       } catch {
         clearTimeout(timeout);
@@ -255,8 +265,9 @@ export function NegotiationScreen({
   const hasBids = bids.length > 0;
   const elapsedStr = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
-  const remaining = ride?.broadcastExpiresAt
-    ? Math.max(0, Math.floor((new Date(ride.broadcastExpiresAt).getTime() - Date.now()) / 1000))
+  const parsedExpiresAt = ride?.broadcastExpiresAt ? new Date(ride.broadcastExpiresAt).getTime() : NaN;
+  const remaining = Number.isFinite(parsedExpiresAt)
+    ? Math.max(0, Math.floor((parsedExpiresAt - Date.now()) / 1000))
     : Math.max(0, broadcastTimeoutSec - elapsed);
   const remainingMin = Math.floor(remaining / 60);
   const remainingSec = remaining % 60;
@@ -271,10 +282,13 @@ export function NegotiationScreen({
       ? Math.ceil(estimatedFare * 0.7)
       : Math.ceil(offeredFare * 0.7);
 
+  const maxOffer = estimatedFare ?? (ride?.fare ?? 0);
+
   const validateOffer = (val: string): string => {
     const amt = parseFloat(val);
     if (isNaN(amt) || amt <= 0) return "Please enter a valid amount";
     if (amt < minCounterOffer) return `Minimum offer is Rs. ${minCounterOffer}`;
+    if (maxOffer > 0 && amt > maxOffer) return `Offer cannot exceed the platform fare of Rs. ${Math.round(maxOffer)}`;
     return "";
   };
 
@@ -284,7 +298,13 @@ export function NegotiationScreen({
       const d = await acceptRideBidApi(rideId, { bidId });
       setRide(() => d as unknown as NegotiationRide);
     } catch (e: any) {
-      showToast(e?.response?.data?.error || e?.message || "Could not accept bid. Please try again.", "error");
+      const code = e?.response?.data?.data?.code ?? e?.response?.data?.code;
+      const msg = e?.response?.data?.error || e?.message || "Could not accept bid. Please try again.";
+      if (code === "INSUFFICIENT_BALANCE") {
+        showToast(`Wallet balance insufficient. Please top up your wallet and try again.`, "error");
+      } else {
+        showToast(msg, "error");
+      }
     }
     setAcceptBidId(null);
   };
