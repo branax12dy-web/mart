@@ -45,7 +45,7 @@ function IntCard({ title, emoji, description, enableKey, localValues, dirtyKeys,
         <div className="flex items-center gap-3">
           <span className="text-2xl">{emoji}</span>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h4 className="font-bold text-foreground text-sm">{title}</h4>
               <IntStatusBadge enabled={enabled} configured={configured} />
               {dirtyKeys.has(enableKey) && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
@@ -53,11 +53,16 @@ function IntCard({ title, emoji, description, enableKey, localValues, dirtyKeys,
             <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
           </div>
         </div>
-        <div onClick={() => handleToggle(enableKey, !enabled)} className="cursor-pointer">
+        <button
+          type="button"
+          onClick={() => handleToggle(enableKey, !enabled)}
+          aria-label={enabled ? `Disable ${title}` : `Enable ${title}`}
+          className="ml-3 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full"
+        >
           <div className={`w-12 h-6 rounded-full relative transition-colors ${enabled ? "bg-green-500" : "bg-gray-300"}`}>
             <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform ${enabled ? "translate-x-6" : "translate-x-0.5"}`} />
           </div>
-        </div>
+        </button>
       </div>
       {/* Card Body — only when enabled */}
       {enabled ? (
@@ -75,48 +80,67 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   handleToggle: (k: string, v: boolean) => void;
 }) {
   const [intTab, setIntTab] = useState<IntTab>("firebase");
-  const [testPhone, setTestPhone] = useState("");
-  const [testing, setTesting] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ type: string; ok: boolean; msg: string } | null>(null);
+
+  /* Per-integration test state (keyed by type) */
+  const [testPhones, setTestPhones] = useState<Record<string, string>>({});
+  const [testingMap, setTestingMap] = useState<Record<string, boolean>>({});
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; msg: string } | null>>({});
+  const [fcmDeviceToken, setFcmDeviceToken] = useState("");
+
   const { toast } = useToast();
 
   const val = (k: string) => localValues[k] ?? "";
   const dirty = (k: string) => dirtyKeys.has(k);
   const tog = (k: string, def: string = "off") => (localValues[k] ?? def) === "on";
 
-  async function runTest(type: "email" | "sms" | "whatsapp") {
-    setTesting(type);
-    setTestResult(null);
+  /* Clear stale test results when switching tabs */
+  const switchTab = (tab: IntTab) => {
+    setIntTab(tab);
+  };
+
+  async function runTest(type: "email" | "sms" | "whatsapp" | "fcm" | "maps") {
+    setTestingMap(prev => ({ ...prev, [type]: true }));
+    setTestResults(prev => ({ ...prev, [type]: null }));
     try {
       const body: Record<string, string> = {};
-      if (type !== "email") {
-        if (!testPhone.trim()) {
+      if (type === "sms" || type === "whatsapp") {
+        const phone = (testPhones[type] ?? "").trim();
+        if (!phone) {
           toast({ title: "Phone required", description: "Enter a phone number to test SMS/WhatsApp", variant: "destructive" });
-          setTesting(null);
+          setTestingMap(prev => ({ ...prev, [type]: false }));
           return;
         }
-        body["phone"] = testPhone.trim();
+        body["phone"] = phone;
       }
-      const data = await fetcher(`/api/admin/system/test-integration/${type}`, {
+      if (type === "fcm") {
+        const token = fcmDeviceToken.trim();
+        if (!token) {
+          toast({ title: "Device token required", description: "Enter an FCM device token to test push notifications", variant: "destructive" });
+          setTestingMap(prev => ({ ...prev, [type]: false }));
+          return;
+        }
+        body["deviceToken"] = token;
+      }
+      const data = await fetcher(`/system/test-integration/${type}`, {
         method: "POST",
         body: JSON.stringify(body),
       });
       const msg = (data as any)?.message ?? `${type} test sent successfully`;
-      setTestResult({ type, ok: true, msg });
+      setTestResults(prev => ({ ...prev, [type]: { ok: true, msg } }));
       toast({ title: "Test Passed ✅", description: msg });
     } catch (err: any) {
       const msg = err?.message ?? `${type} test failed`;
-      setTestResult({ type, ok: false, msg });
+      setTestResults(prev => ({ ...prev, [type]: { ok: false, msg } }));
       toast({ title: "Test Failed ❌", description: msg, variant: "destructive" });
     } finally {
-      setTesting(null);
+      setTestingMap(prev => ({ ...prev, [type]: false }));
     }
   }
 
   function TestRow({ type, label }: { type: "email" | "sms" | "whatsapp"; label: string }) {
     const needsPhone = type !== "email";
-    const isTesting = testing === type;
-    const result = testResult?.type === type ? testResult : null;
+    const isTesting = !!testingMap[type];
+    const result = testResults[type] ?? null;
     return (
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 p-3 bg-muted/30 rounded-xl border border-border/50">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -130,16 +154,17 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
         </div>
         {needsPhone && (
           <Input
-            value={testPhone}
-            onChange={e => setTestPhone(e.target.value)}
+            value={testPhones[type] ?? ""}
+            onChange={e => setTestPhones(prev => ({ ...prev, [type]: e.target.value }))}
             placeholder="03xxxxxxxxx"
             className="h-7 text-xs w-40 font-mono"
           />
         )}
         <button
+          type="button"
           onClick={() => runTest(type)}
           disabled={isTesting}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all">
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all focus-visible:ring-2 focus-visible:ring-primary focus:outline-none">
           {isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
           {isTesting ? "Sending…" : "Send Test"}
         </button>
@@ -175,7 +200,12 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   /* ── Sentry ── */
   const sentryConfigured = !!val("sentry_dsn");
   /* ── Maps ── */
+  const mapsEnabled = (localValues["integration_maps"] ?? "off") === "on";
   const mapsConfigured = !!(val("maps_api_key") || val("mapbox_api_key") || val("google_maps_api_key") || val("locationiq_api_key"));
+
+  /* Dynamic webhook URL */
+  const webhookBaseUrl = window.location.origin;
+  const whatsappWebhookUrl = `${webhookBaseUrl}/api/webhooks/whatsapp`;
 
   return (
     <div className="space-y-4">
@@ -183,8 +213,8 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
       <div className="overflow-x-auto -mx-1 px-1">
         <div className="flex gap-1.5 bg-muted/50 p-1.5 rounded-xl w-max min-w-full">
           {INT_TABS.map(t => (
-            <button key={t.id} onClick={() => setIntTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap flex-shrink-0 transition-all ${intTab === t.id ? `${t.active} text-white shadow-sm` : `text-muted-foreground hover:bg-white`}`}>
+            <button key={t.id} type="button" onClick={() => switchTab(t.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap flex-shrink-0 transition-all focus-visible:ring-2 focus-visible:ring-primary focus:outline-none ${intTab === t.id ? `${t.active} text-white shadow-sm` : `text-muted-foreground hover:bg-white`}`}>
               <span>{t.emoji}</span> {t.label}
             </button>
           ))}
@@ -234,6 +264,39 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                 ))}
               </div>
             </div>
+            {fcmConfigured && (
+              <div>
+                <SLabel icon={FlaskConical}>Test Push Notification</SLabel>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 p-3 bg-muted/30 rounded-xl border border-border/50 mt-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <FlaskConical className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-xs font-semibold text-foreground">Send test push to FCM device token</span>
+                    {testResults["fcm"] && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${testResults["fcm"]!.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                        {testResults["fcm"]!.ok ? "✓ PASSED" : "✗ FAILED"}
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    value={fcmDeviceToken}
+                    onChange={e => setFcmDeviceToken(e.target.value)}
+                    placeholder="FCM device registration token"
+                    className="h-7 text-xs w-52 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => runTest("fcm")}
+                    disabled={!!testingMap["fcm"]}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all focus-visible:ring-2 focus-visible:ring-primary focus:outline-none">
+                    {testingMap["fcm"] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    {testingMap["fcm"] ? "Sending…" : "Send Test Push"}
+                  </button>
+                  {testResults["fcm"] && (
+                    <p className="text-[10px] text-muted-foreground w-full sm:w-auto truncate max-w-xs" title={testResults["fcm"]!.msg}>{testResults["fcm"]!.msg}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </IntCard>
       )}
@@ -253,7 +316,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   { id: "msg91",   label: "MSG91",          emoji: "🇮🇳", desc: "India & Pakistan" },
                   { id: "zong",    label: "Zong/CM.com",   emoji: "🇵🇰", desc: "AJK / Pakistan" },
                 ].map(p => (
-                  <button key={p.id} onClick={() => handleChange("sms_provider", p.id)}
+                  <button key={p.id} type="button" onClick={() => handleChange("sms_provider", p.id)}
                     className={`p-3 rounded-xl border-2 text-left transition-all ${smsProvider === p.id ? "border-blue-500 bg-blue-50" : "border-border hover:bg-muted/30"} ${dirty("sms_provider") ? "ring-1 ring-amber-300" : ""}`}>
                     <div className="text-xl mb-1">{p.emoji}</div>
                     <div className="text-xs font-bold">{p.label}</div>
@@ -355,7 +418,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                 </div>
                 <div className="flex gap-2 mt-1.5">
                   {["tls","ssl","none"].map(mode => (
-                    <button key={mode} onClick={() => handleChange("smtp_secure", mode)}
+                    <button key={mode} type="button" onClick={() => handleChange("smtp_secure", mode)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${val("smtp_secure") === mode ? "bg-teal-600 text-white border-teal-600" : "border-border hover:bg-muted/30"} ${dirty("smtp_secure") ? "ring-1 ring-amber-300" : ""}`}>
                       {mode.toUpperCase()}
                     </button>
@@ -435,7 +498,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                 <S label="Webhook Verify Token (set same in Meta Developer Console)" k="wa_verify_token" placeholder="my_secure_verify_token_123" />
                 <div className="bg-muted/50 border border-border rounded-xl p-3 space-y-1">
                   <p className="text-xs font-semibold text-foreground">Webhook Callback URL (set in Meta console):</p>
-                  <p className="text-xs font-mono text-muted-foreground">https://your-domain.replit.app/api/webhooks/whatsapp</p>
+                  <p className="text-xs font-mono text-muted-foreground break-all">{whatsappWebhookUrl}</p>
                   <p className="text-xs text-muted-foreground">Subscribe to: <span className="font-mono">messages, message_deliveries, message_reads</span></p>
                 </div>
               </div>
@@ -495,7 +558,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   { id: "mixpanel",  emoji: "🧪", label: "Mixpanel",        desc: "Event analytics" },
                   { id: "amplitude", emoji: "📈", label: "Amplitude",       desc: "Product analytics" },
                 ].map(p => (
-                  <button key={p.id} onClick={() => handleChange("analytics_platform", p.id)}
+                  <button key={p.id} type="button" onClick={() => handleChange("analytics_platform", p.id)}
                     className={`p-3 rounded-xl border-2 text-left transition-all ${analyticsPlatform === p.id ? "border-purple-500 bg-purple-50" : "border-border hover:bg-muted/30"} ${dirty("analytics_platform") ? "ring-1 ring-amber-300" : ""}`}>
                     <div className="text-xl mb-1">{p.emoji}</div>
                     <div className="text-xs font-bold">{p.label}</div>
@@ -516,6 +579,12 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2">
                     <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
                     <span>Go to <span className="font-mono bg-white/70 px-1 rounded">mixpanel.com</span> → Project Settings → Project Token.</span>
+                  </div>
+                )}
+                {analyticsPlatform === "amplitude" && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2">
+                    <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>Go to <span className="font-mono bg-white/70 px-1 rounded">amplitude.com</span> → Settings → Projects → select your project → API Key.</span>
                   </div>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -576,7 +645,7 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
                   </div>
                   <div className="flex gap-2 mt-1.5">
                     {["production","staging","development"].map(env => (
-                      <button key={env} onClick={() => handleChange("sentry_environment", env)}
+                      <button key={env} type="button" onClick={() => handleChange("sentry_environment", env)}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${val("sentry_environment") === env ? "bg-red-600 text-white border-red-600" : "border-border hover:bg-muted/30"} ${dirty("sentry_environment") ? "ring-1 ring-amber-300" : ""}`}>
                         {env}
                       </button>
@@ -614,30 +683,54 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
         </IntCard>
       )}
 
-      {/* ─── Maps Management ─── */}
+      {/* ─── Maps ─── */}
       {intTab === "maps" && (
-        <div className="rounded-2xl border-2 border-sky-200 bg-white">
-          <div className="flex items-center justify-between p-4 border-b border-border/50">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🗺️</span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-bold text-foreground text-sm">Maps Management</h4>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">● ACTIVE</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">Multi-provider map configuration, routing engine, fare settings, usage analytics &amp; geocoding cache</p>
-              </div>
-            </div>
-          </div>
-          <div className="p-4">
+        <IntCard
+          title="Maps Management"
+          emoji="🗺️"
+          description="Multi-provider map configuration, routing engine, fare settings, usage analytics & geocoding cache"
+          enableKey="integration_maps"
+          localValues={localValues}
+          dirtyKeys={dirtyKeys}
+          handleToggle={handleToggle}
+          configured={mapsConfigured}
+        >
+          <div className="space-y-5">
             <MapsMgmtSection
               localValues={localValues}
               dirtyKeys={dirtyKeys}
               handleChange={handleChange}
               handleToggle={handleToggle}
             />
+            {mapsEnabled && mapsConfigured && (
+              <div>
+                <SLabel icon={FlaskConical}>Test Geocoding</SLabel>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 p-3 bg-muted/30 rounded-xl border border-border/50 mt-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <FlaskConical className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-xs font-semibold text-foreground">Geocode "Muzaffarabad, Azad Kashmir"</span>
+                    {testResults["maps"] && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${testResults["maps"]!.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                        {testResults["maps"]!.ok ? "✓ PASSED" : "✗ FAILED"}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => runTest("maps")}
+                    disabled={!!testingMap["maps"]}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all focus-visible:ring-2 focus-visible:ring-primary focus:outline-none">
+                    {testingMap["maps"] ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />}
+                    {testingMap["maps"] ? "Testing…" : "Test Geocoding"}
+                  </button>
+                  {testResults["maps"] && (
+                    <p className="text-[10px] text-muted-foreground w-full sm:w-auto truncate max-w-xs" title={testResults["maps"]!.msg}>{testResults["maps"]!.msg}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        </IntCard>
       )}
     </div>
   );

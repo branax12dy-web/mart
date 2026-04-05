@@ -274,55 +274,188 @@ router.patch("/platform-settings/:key", validateBody(patchSettingSchema), async 
  * POST /api/admin/system/test-integration/email
  * POST /api/admin/system/test-integration/sms
  * POST /api/admin/system/test-integration/whatsapp
+ * POST /api/admin/system/test-integration/fcm
+ * POST /api/admin/system/test-integration/maps
  *
- * Each returns { success, message } after attempting to send with current settings.
+ * Each returns { sent, message } after attempting to send with current settings.
  */
 router.post("/test-integration/email", async (_req, res) => {
-  const settings = await getCachedSettings();
-  const result = await sendAdminAlert(
-    "new_vendor",
-    "Test Email from AJKMart Admin",
-    `
-      <h3>✅ Email Integration Test</h3>
-      <p>This is a test alert sent from the AJKMart Admin Panel to verify your SMTP configuration is working correctly.</p>
-      <p style="color:#6b7280; font-size:13px;">Sent at: ${new Date().toISOString()}</p>
-    `,
-    { ...settings, email_alert_new_vendor: "on" },
-  );
-  if (result.sent) {
-    sendSuccess(res, { message: `Test email sent to ${settings["smtp_admin_alert_email"]}` });
-  } else {
-    sendError(res, result.reason ?? result.error ?? "Email test failed", 400);
+  try {
+    const settings = await getCachedSettings();
+    const result = await sendAdminAlert(
+      "new_vendor",
+      "Test Email from AJKMart Admin",
+      `
+        <h3>✅ Email Integration Test</h3>
+        <p>This is a test alert sent from the AJKMart Admin Panel to verify your SMTP configuration is working correctly.</p>
+        <p style="color:#6b7280; font-size:13px;">Sent at: ${new Date().toISOString()}</p>
+      `,
+      { ...settings, email_alert_new_vendor: "on" },
+    );
+    if (result.sent) {
+      sendSuccess(res, { sent: true, message: `Test email sent to ${settings["smtp_admin_alert_email"]}` });
+    } else {
+      sendError(res, result.reason ?? result.error ?? "Email test failed", 400);
+    }
+  } catch (err: any) {
+    sendError(res, err.message ?? "Email test failed unexpectedly", 502);
   }
 });
 
 router.post("/test-integration/sms", async (req, res) => {
-  const settings = await getCachedSettings();
-  const { phone } = req.body as { phone?: string };
-  if (!phone) { sendValidationError(res, "phone number required"); return; }
-  const testOtp = "123456";
-  const result = await sendOtpSMS(phone, testOtp, { ...settings, integration_sms: "on" });
-  if (result.sent) {
-    sendSuccess(res, { message: `Test SMS sent to ${phone} via ${result.provider}` });
-  } else {
-    sendError(res, result.error ?? "SMS test failed", 400);
+  try {
+    const settings = await getCachedSettings();
+    const { phone } = req.body as { phone?: string };
+    if (!phone) { sendValidationError(res, "phone number required"); return; }
+    const testOtp = "123456";
+    const result = await sendOtpSMS(phone, testOtp, { ...settings, integration_sms: "on" });
+    if (result.sent) {
+      sendSuccess(res, { sent: true, message: `Test SMS sent to ${phone} via ${result.provider}` });
+    } else {
+      sendError(res, result.error ?? "SMS test failed", 400);
+    }
+  } catch (err: any) {
+    sendError(res, err.message ?? "SMS test failed unexpectedly", 502);
   }
 });
 
 router.post("/test-integration/whatsapp", async (req, res) => {
-  const settings = await getCachedSettings();
-  const { phone } = req.body as { phone?: string };
-  if (!phone) { sendValidationError(res, "phone number required"); return; }
-  const testOtp = "123456";
-  const result = await sendWhatsAppOTP(phone, testOtp, {
-    ...settings,
-    integration_whatsapp: "on",
-    wa_send_otp: "on",
-  });
-  if (result.sent) {
-    sendSuccess(res, { message: `Test WhatsApp message sent to ${phone}`, messageId: result.messageId });
-  } else {
-    sendError(res, result.error ?? "WhatsApp test failed", 400);
+  try {
+    const settings = await getCachedSettings();
+    const { phone } = req.body as { phone?: string };
+    if (!phone) { sendValidationError(res, "phone number required"); return; }
+    const testOtp = "123456";
+    const result = await sendWhatsAppOTP(phone, testOtp, {
+      ...settings,
+      integration_whatsapp: "on",
+      wa_send_otp: "on",
+    });
+    if (result.sent) {
+      sendSuccess(res, { sent: true, message: `Test WhatsApp message sent to ${phone}`, messageId: result.messageId });
+    } else {
+      sendError(res, result.error ?? "WhatsApp test failed", 400);
+    }
+  } catch (err: any) {
+    sendError(res, err.message ?? "WhatsApp test failed unexpectedly", 502);
+  }
+});
+
+router.post("/test-integration/fcm", async (req, res) => {
+  try {
+    const settings = await getCachedSettings();
+    const { deviceToken } = req.body as { deviceToken?: string };
+    if (!deviceToken) { sendValidationError(res, "deviceToken is required"); return; }
+
+    const serverKey = settings["fcm_server_key"]?.trim();
+    const projectId = settings["fcm_project_id"]?.trim();
+
+    if (!serverKey) {
+      sendError(res, "FCM Server Key is not configured. Set fcm_server_key in Integrations → Firebase.", 400);
+      return;
+    }
+    if (!projectId) {
+      sendError(res, "Firebase Project ID is not configured. Set fcm_project_id in Integrations → Firebase.", 400);
+      return;
+    }
+
+    const resp = await fetch("https://fcm.googleapis.com/fcm/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `key=${serverKey}`,
+      },
+      body: JSON.stringify({
+        to: deviceToken,
+        notification: {
+          title: "AJKMart — Test Push Notification ✅",
+          body: `This is a test push sent from AJKMart Admin at ${new Date().toISOString()}`,
+        },
+        data: { type: "test", timestamp: Date.now().toString() },
+      }),
+    });
+
+    const body = await resp.json() as any;
+
+    if (!resp.ok) {
+      sendError(res, body?.error ?? `FCM HTTP ${resp.status}`, 400);
+      return;
+    }
+    if (body?.failure > 0) {
+      const errDetail = body?.results?.[0]?.error ?? "Unknown FCM error";
+      sendError(res, `FCM rejected the message: ${errDetail}`, 400);
+      return;
+    }
+
+    sendSuccess(res, { sent: true, message: `Test push notification sent to device token successfully`, fcmMessageId: body?.results?.[0]?.message_id });
+  } catch (err: any) {
+    sendError(res, err.message ?? "FCM test failed unexpectedly", 502);
+  }
+});
+
+router.post("/test-integration/maps", async (req, res) => {
+  try {
+    const settings = await getCachedSettings();
+    const mapsProvider = settings["maps_provider"] ?? "google";
+    const googleKey  = settings["google_maps_api_key"]?.trim() || settings["maps_api_key"]?.trim();
+    const mapboxKey  = settings["mapbox_api_key"]?.trim();
+    const locationIqKey = settings["locationiq_api_key"]?.trim();
+
+    const testQuery = "Muzaffarabad, Azad Kashmir";
+    const start = Date.now();
+    let provider = mapsProvider;
+    let result: unknown = null;
+
+    if (mapsProvider === "google" || (!mapsProvider && googleKey)) {
+      if (!googleKey) {
+        sendError(res, "Google Maps API key is not configured. Set google_maps_api_key in Integrations → Maps.", 400);
+        return;
+      }
+      provider = "google";
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(testQuery)}&key=${googleKey}`;
+      const resp = await fetch(url);
+      const body = await resp.json() as any;
+      if (body?.status !== "OK") {
+        sendError(res, `Google Maps geocoding failed: ${body?.status} — ${body?.error_message ?? ""}`, 400);
+        return;
+      }
+      result = body?.results?.[0]?.geometry?.location;
+    } else if (mapsProvider === "mapbox") {
+      if (!mapboxKey) {
+        sendError(res, "Mapbox API key is not configured. Set mapbox_api_key in Integrations → Maps.", 400);
+        return;
+      }
+      provider = "mapbox";
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(testQuery)}.json?access_token=${mapboxKey}`;
+      const resp = await fetch(url);
+      const body = await resp.json() as any;
+      if (!resp.ok || !body?.features?.length) {
+        sendError(res, `Mapbox geocoding failed: ${body?.message ?? `HTTP ${resp.status}`}`, 400);
+        return;
+      }
+      result = body?.features?.[0]?.center;
+    } else if (mapsProvider === "locationiq") {
+      if (!locationIqKey) {
+        sendError(res, "LocationIQ API key is not configured. Set locationiq_api_key in Integrations → Maps.", 400);
+        return;
+      }
+      provider = "locationiq";
+      const url = `https://us1.locationiq.com/v1/search.php?key=${locationIqKey}&q=${encodeURIComponent(testQuery)}&format=json&limit=1`;
+      const resp = await fetch(url);
+      const body = await resp.json() as any;
+      if (!resp.ok || (Array.isArray(body) && body.length === 0)) {
+        sendError(res, `LocationIQ geocoding failed: ${body?.error ?? `HTTP ${resp.status}`}`, 400);
+        return;
+      }
+      result = { lat: body?.[0]?.lat, lon: body?.[0]?.lon };
+    } else {
+      sendError(res, "No maps provider is configured. Set up an API key in Integrations → Maps.", 400);
+      return;
+    }
+
+    const latencyMs = Date.now() - start;
+    sendSuccess(res, { sent: true, provider, latencyMs, result, query: testQuery });
+  } catch (err: any) {
+    sendError(res, err.message ?? "Maps test failed unexpectedly", 502);
   }
 });
 
