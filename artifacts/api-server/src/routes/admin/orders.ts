@@ -102,12 +102,25 @@ router.patch("/orders/:id/status", async (req, res) => {
   const [preOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
   if (!preOrder) { sendNotFound(res, "Order not found"); return; }
 
-  let order = preOrder;
+  const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+    pending: ["confirmed", "cancelled"],
+    confirmed: ["preparing", "cancelled"],
+    preparing: ["ready", "out_for_delivery", "picked_up", "cancelled"],
+    ready: ["picked_up", "out_for_delivery", "delivered", "cancelled"],
+    picked_up: ["out_for_delivery", "delivered", "cancelled"],
+    out_for_delivery: ["delivered", "cancelled"],
+    delivered: [],
+    cancelled: [],
+    completed: [],
+  };
 
-  const NON_CANCELLABLE_STATUSES = ["delivered", "completed"];
-  if (status === "cancelled" && NON_CANCELLABLE_STATUSES.includes(preOrder.status)) {
-    sendValidationError(res, `Cannot cancel an order that is already ${preOrder.status}.`); return;
+  const allowed = ALLOWED_TRANSITIONS[preOrder.status] || [];
+  if (!allowed.includes(status)) {
+    sendValidationError(res, `Cannot transition from "${preOrder.status}" to "${status}". Allowed next statuses: ${allowed.length ? allowed.join(", ") : "none (terminal state)"}`);
+    return;
   }
+
+  let order = preOrder;
 
   if (status === "cancelled" && preOrder.paymentMethod === "wallet" && !preOrder.refundedAt) {
     const refundAmt = parseFloat(String(preOrder.total));
@@ -253,8 +266,10 @@ router.post("/orders/:id/refund", async (req, res) => {
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
     sendValidationError(res, "amount must be a positive number"); return;
   }
-  const refundAmt = Math.min(parsedAmount, maxRefund);
-  if (refundAmt <= 0) { sendValidationError(res, "Refund amount must be positive"); return; }
+  if (parsedAmount > maxRefund) {
+    sendValidationError(res, `Refund amount (${parsedAmount}) cannot exceed order total (${maxRefund})`); return;
+  }
+  const refundAmt = parsedAmount;
 
   const now = new Date();
   let alreadyRefunded = false;
@@ -499,20 +514,169 @@ router.get("/transactions-enriched", async (_req, res) => {
 });
 
 /* ── Delete User ── */
-router.get("/orders-enriched", async (_req, res) => {
-  const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(200);
-  const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable);
-  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+const ACTIVE_STATUSES = ["pending", "confirmed", "preparing", "ready", "picked_up", "out_for_delivery"];
+
+function buildOrderFilters(query: Record<string, string | undefined>) {
+  const { status, type, search, dateFrom, dateTo } = query;
+  const conditions: any[] = [];
+
+  if (status && status !== "all") {
+    if (status === "active") {
+      conditions.push(or(...ACTIVE_STATUSES.map(s => eq(ordersTable.status, s))));
+    } else {
+      conditions.push(eq(ordersTable.status, status));
+    }
+  }
+  if (type && type !== "all") {
+    conditions.push(eq(ordersTable.type, type));
+  }
+  if (dateFrom) {
+    conditions.push(gte(ordersTable.createdAt, new Date(dateFrom + "T00:00:00.000Z")));
+  }
+  if (dateTo) {
+    conditions.push(lte(ordersTable.createdAt, new Date(dateTo + "T23:59:59.999Z")));
+  }
+  if (search) {
+    conditions.push(
+      or(
+        ilike(ordersTable.id, `%${search}%`),
+        ilike(usersTable.name, `%${search}%`),
+        ilike(usersTable.phone, `%${search}%`),
+      )
+    );
+  }
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function getOrderByClause(sortBy?: string, sortDir?: string) {
+  const direction = sortDir === "asc" ? asc : desc;
+  switch (sortBy) {
+    case "id": return direction(ordersTable.id);
+    case "customer": return direction(usersTable.name);
+    case "type": return direction(ordersTable.type);
+    case "total": return direction(ordersTable.total);
+    case "status": return direction(ordersTable.status);
+    case "date":
+    default: return direction(ordersTable.createdAt);
+  }
+}
+
+router.get("/orders-stats", async (_req, res) => {
+  const [statuses, [revRow]] = await Promise.all([
+    db
+      .select({ status: ordersTable.status, cnt: count() })
+      .from(ordersTable)
+      .groupBy(ordersTable.status),
+    db
+      .select({ rev: sum(ordersTable.total) })
+      .from(ordersTable)
+      .where(eq(ordersTable.status, "delivered")),
+  ]);
+
+  const statusMap: Record<string, number> = {};
+  let total = 0;
+  for (const s of statuses) {
+    const n = Number(s.cnt);
+    statusMap[s.status] = n;
+    total += n;
+  }
+
   sendSuccess(res, {
-    orders: orders.map(o => ({
-      ...o,
-      total: parseFloat(String(o.total)),
-      createdAt: o.createdAt.toISOString(),
-      updatedAt: o.updatedAt.toISOString(),
-      userName: userMap[o.userId]?.name || null,
-      userPhone: userMap[o.userId]?.phone || null,
+    total,
+    pending: statusMap["pending"] ?? 0,
+    confirmed: statusMap["confirmed"] ?? 0,
+    preparing: statusMap["preparing"] ?? 0,
+    ready: statusMap["ready"] ?? 0,
+    picked_up: statusMap["picked_up"] ?? 0,
+    out_for_delivery: statusMap["out_for_delivery"] ?? 0,
+    delivered: statusMap["delivered"] ?? 0,
+    cancelled: statusMap["cancelled"] ?? 0,
+    active: ACTIVE_STATUSES.reduce((s, k) => s + (statusMap[k] ?? 0), 0),
+    totalRevenue: parseFloat(String(revRow?.rev ?? "0")),
+  });
+});
+
+router.get("/orders-enriched", async (req, res) => {
+  const query = req.query as Record<string, string | undefined>;
+  const { page: pageStr, limit: limitStr, sortBy, sortDir: sortDirStr } = query;
+
+  const whereClause = buildOrderFilters(query);
+  const pageNum = Math.max(1, parseInt(pageStr || "1", 10) || 1);
+  const limitNum = Math.min(200, Math.max(1, parseInt(limitStr || "200", 10) || 200));
+  const orderByClause = getOrderByClause(sortBy, sortDirStr);
+
+  const baseQuery = db
+    .select({
+      order: ordersTable,
+      userName: usersTable.name,
+      userPhone: usersTable.phone,
+    })
+    .from(ordersTable)
+    .leftJoin(usersTable, eq(ordersTable.userId, usersTable.id));
+
+  const countQuery = db
+    .select({ cnt: count() })
+    .from(ordersTable)
+    .leftJoin(usersTable, eq(ordersTable.userId, usersTable.id));
+
+  if (whereClause) {
+    baseQuery.where(whereClause);
+    countQuery.where(whereClause);
+  }
+
+  const [rows, [{ cnt: totalCount }]] = await Promise.all([
+    baseQuery
+      .orderBy(orderByClause)
+      .limit(limitNum)
+      .offset((pageNum - 1) * limitNum),
+    countQuery,
+  ]);
+
+  sendSuccess(res, {
+    orders: rows.map(r => ({
+      ...r.order,
+      total: parseFloat(String(r.order.total)),
+      createdAt: r.order.createdAt.toISOString(),
+      updatedAt: r.order.updatedAt.toISOString(),
+      userName: r.userName || null,
+      userPhone: r.userPhone || null,
     })),
-    total: orders.length,
+    total: totalCount,
+    page: pageNum,
+    limit: limitNum,
+  });
+});
+
+router.get("/orders-export", async (req, res) => {
+  const query = req.query as Record<string, string | undefined>;
+  const { sortBy, sortDir: sortDirStr } = query;
+
+  const whereClause = buildOrderFilters(query);
+  const orderByClause = getOrderByClause(sortBy, sortDirStr);
+
+  const baseQuery = db
+    .select({
+      order: ordersTable,
+      userName: usersTable.name,
+      userPhone: usersTable.phone,
+    })
+    .from(ordersTable)
+    .leftJoin(usersTable, eq(ordersTable.userId, usersTable.id));
+
+  if (whereClause) baseQuery.where(whereClause);
+
+  const rows = await baseQuery.orderBy(orderByClause).limit(5000);
+
+  sendSuccess(res, {
+    orders: rows.map(r => ({
+      ...r.order,
+      total: parseFloat(String(r.order.total)),
+      createdAt: r.order.createdAt.toISOString(),
+      updatedAt: r.order.updatedAt.toISOString(),
+      userName: r.userName || null,
+      userPhone: r.userPhone || null,
+    })),
+    total: rows.length,
   });
 });
 

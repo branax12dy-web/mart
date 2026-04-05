@@ -115,9 +115,37 @@ export const useUpdateOrder = () => {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-    onSuccess: () => {
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ["admin-orders-enriched"] });
+      const previousQueries: { queryKey: unknown[]; data: unknown }[] = [];
+      queryClient.getQueriesData({ queryKey: ["admin-orders-enriched"] }).forEach(([key, data]) => {
+        previousQueries.push({ queryKey: key as unknown[], data });
+      });
+      queryClient.setQueriesData(
+        { queryKey: ["admin-orders-enriched"], exact: false },
+        (old: any) => {
+          if (!old?.orders) return old;
+          return {
+            ...old,
+            orders: old.orders.map((o: any) =>
+              o.id === variables.id ? { ...o, status: variables.status, updatedAt: new Date().toISOString() } : o
+            ),
+          };
+        },
+      );
+      return { previousQueries };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousQueries) {
+        for (const { queryKey, data } of context.previousQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       queryClient.invalidateQueries({ queryKey: ["admin-orders-enriched"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders-stats"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
     },
   });
@@ -359,12 +387,56 @@ export const useTransactions = () => {
 };
 
 // Enriched endpoints (orders + user info)
-export const useOrdersEnriched = () => {
+export interface OrdersEnrichedFilters {
+  status?: string;
+  type?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortDir?: string;
+}
+
+function buildOrderParams(filters?: OrdersEnrichedFilters): string {
+  if (!filters) return "";
+  const params = new URLSearchParams();
+  if (filters.status && filters.status !== "all") params.set("status", filters.status);
+  if (filters.type && filters.type !== "all") params.set("type", filters.type);
+  if (filters.search) params.set("search", filters.search);
+  if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) params.set("dateTo", filters.dateTo);
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.sortBy) params.set("sortBy", filters.sortBy);
+  if (filters.sortDir) params.set("sortDir", filters.sortDir);
+  return params.toString();
+}
+
+export const useOrdersEnriched = (filters?: OrdersEnrichedFilters) => {
+  const qs = buildOrderParams(filters);
+  const url = qs ? `/orders-enriched?${qs}` : "/orders-enriched";
+
   return useQuery({
-    queryKey: ["admin-orders-enriched"],
-    queryFn: () => fetcher("/orders-enriched"),
+    queryKey: ["admin-orders-enriched", filters?.status, filters?.type, filters?.search, filters?.dateFrom, filters?.dateTo, filters?.page, filters?.limit, filters?.sortBy, filters?.sortDir],
+    queryFn: () => fetcher(url),
     refetchInterval: REFETCH_INTERVAL,
   });
+};
+
+export const useOrdersStats = () => {
+  return useQuery({
+    queryKey: ["admin-orders-stats"],
+    queryFn: () => fetcher("/orders-stats"),
+    refetchInterval: REFETCH_INTERVAL,
+  });
+};
+
+export const fetchOrdersExport = async (filters?: OrdersEnrichedFilters): Promise<any> => {
+  const qs = buildOrderParams(filters);
+  const url = qs ? `/orders-export?${qs}` : "/orders-export";
+  return fetcher(url);
 };
 
 export const useRidesEnriched = () => {

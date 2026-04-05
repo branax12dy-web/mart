@@ -3,6 +3,33 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Admin Orders Module Refactoring — Completed Changes
+
+#### Modular Component Structure (`artifacts/admin/src/pages/orders/`)
+- **`index.tsx`** — Main Orders page component (~380 lines, down from 1094). Composes all sub-components.
+- **`constants.ts`** — Shared constants (STATUS_LABELS, ALLOWED_TRANSITIONS, PAGE_SIZES), types (SortKey, SortDir), helper functions (isTerminal, canCancel, allowedNext, escapeCSV, exportOrdersCSV).
+- **`GpsMiniMap.tsx`** — Leaflet-based GPS mini-map showing customer/delivery locations.
+- **`GpsStampCard.tsx`** — GPS location details card with mismatch warnings and reverse geocoding.
+- **`SortHeader.tsx`** — Reusable sortable column header button.
+- **`OrdersStatsCards.tsx`** — Statistics grid (Total, Pending, Active, Delivered, Revenue).
+- **`OrdersFilterBar.tsx`** — Search, type filter, status filter, date range filter with clear-all.
+- **`OrdersTable.tsx`** — Desktop data table with sortable columns, inline status dropdowns, pagination.
+- **`OrdersMobileList.tsx`** — Mobile card-based order list with pagination.
+- **`OrderDetailDrawer.tsx`** — Order detail drawer/dialog with all sub-sections.
+- **`CancelConfirmDialog.tsx`** — Cancel order confirmation dialog with wallet refund notice.
+- **`RefundConfirmDialog.tsx`** — Refund dialog with quick-select percentages and validation.
+- **`DeliverConfirmDialog.tsx`** — Delivery confirmation dialog.
+- **`RiderAssignPanel.tsx`** — Rider search and assignment panel.
+
+#### Backend Efficiency Fix (`artifacts/api-server/src/routes/admin/orders.ts`)
+- **`GET /orders-enriched`**: Replaced fetching ALL users with SQL LEFT JOIN on users table. Added server-side filtering (status, type, date range, search via ILIKE) and pagination support with `page` and `limit` query params.
+
+#### Accessibility & Semantic HTML
+- Proper heading hierarchy (H1 page title, H2 section headers, H3 sub-sections) with sr-only labels.
+- All interactive elements have aria-labels. Role attributes on filter groups, alerts, pagination nav.
+- Keyboard navigation on table rows and card items (Enter/Space to open detail drawer).
+- Minimum 36px touch targets on all interactive elements.
+
 ### Guest-to-Auth Flow Audit & Hardening — Completed Changes
 
 #### AuthGateSheet Component
