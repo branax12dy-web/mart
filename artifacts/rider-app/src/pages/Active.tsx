@@ -5,7 +5,7 @@ import {
   MapPinned, ArrowDown, Shield, Navigation, Clock, Zap,
   ChevronRight, Eye, Truck, WifiOff, MessageSquare, ChevronDown, ChevronUp,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { api, apiFetch } from "../lib/api";
