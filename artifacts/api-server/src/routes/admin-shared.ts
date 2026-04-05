@@ -228,6 +228,9 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "upload_product_imgs",        value: "on",     label: "Allow Product / Menu Image Uploads",         category: "security" },
   { key: "upload_cod_proof",           value: "on",     label: "Allow COD Cash Photo Proof Uploads",         category: "security" },
   /* Fraud Detection */
+  { key: "order_gps_capture_enabled",  value: "off",    label: "Capture Customer GPS on Order Placement",      category: "security" },
+  { key: "gps_mismatch_threshold_m",   value: "500",    label: "GPS Mismatch Threshold (metres)",              category: "security" },
+  { key: "profile_show_saved_addresses",value: "on",    label: "Show Saved Addresses on Customer Profile",     category: "security" },
   { key: "security_fake_order_detect", value: "on",     label: "Fake Order Auto-Detection",                   category: "security" },
   { key: "security_max_daily_orders",  value: "20",     label: "Max Orders per Customer per Day",             category: "security" },
   { key: "security_auto_block_ip",     value: "on",     label: "Auto-block Suspicious IPs",                   category: "security" },
@@ -545,6 +548,20 @@ export async function ensureAuthMethodColumn() {
     await db.execute(sql`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS auth_method TEXT`);
   } catch { /* column likely already exists */ }
   _authMethodColumnMigrated = true;
+}
+
+let _ordersGpsMigrated = false;
+export async function ensureOrdersGpsColumns() {
+  if (_ordersGpsMigrated) return;
+  try {
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_lat DECIMAL(10,7)`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_lng DECIMAL(10,7)`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gps_accuracy DOUBLE PRECISION`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gps_mismatch BOOLEAN DEFAULT FALSE`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_lat DECIMAL(10,7)`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10,7)`);
+  } catch { /* columns likely already exist */ }
+  _ordersGpsMigrated = true;
 }
 
 let _rideBidsMigrated = false;

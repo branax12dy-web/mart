@@ -892,3 +892,26 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 
 - **`artifacts/admin/src/pages/DepositRequests.tsx`**: Confirmed working — lists pending/approved/rejected with approve/reject action buttons
 - **`artifacts/admin/src/pages/Withdrawals.tsx`**: Confirmed working — lists all withdrawal requests with user detail and action buttons
+
+### Task #4: Location, Address, GPS Fraud-Stamp & Weather
+
+#### GPS Fraud-Stamp (DB + API)
+- **`lib/db/src/schema/orders.ts`**: Added 4 GPS columns: `customerLat`, `customerLng` (real), `gpsAccuracy` (real), `gpsMismatch` (boolean).
+- **`artifacts/api-server/src/routes/admin-shared.ts`**: `ensureOrdersGpsColumns()` migration adds columns with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. Seed defaults added for `order_gps_capture_enabled` (off), `gps_mismatch_threshold_m` (5000), `profile_show_saved_addresses` (on).
+- **`artifacts/api-server/src/routes/orders.ts`**: `haversineMetres()` helper computes great-circle distance. POST /orders reads `customerLat/Lng/gpsAccuracy` from body, computes mismatch vs delivery coords using configurable threshold, writes GPS fields to order row. `mapOrder()` exposes GPS fields.
+
+#### Platform Config Toggles
+- **`artifacts/api-server/src/routes/platform-config.ts`**: Exposes `orderGpsCaptureEnabled`, `gpsMismatchThresholdM`, `profile.showSavedAddresses`.
+- **`artifacts/ajkmart/context/PlatformConfigContext.tsx`**: Type + DEFAULT + parsed values for GPS and address toggles.
+
+#### Customer App
+- **`artifacts/ajkmart/app/cart/index.tsx`**: GPS "Current Location" is a pinned slot-0 `GpsSlotRow` component in `AddressPickerModal`, always visible at top of address list with auto-detection + reverse geocoding for city/street. `placeOrder()` sends GPS payload + delivery coordinates (`deliveryLat/deliveryLng` from selected address). Saved Addresses row gated by `showSavedAddresses` config. `SavedAddress` type extended with optional `latitude/longitude`.
+- **`artifacts/ajkmart/app/(tabs)/index.tsx`**: `WeatherWidget` accepts `userLat/userLng/cityLabel` props from user profile coordinates, shows city label alongside weather condition. Uses Open-Meteo API, WMO weather code icon map, 45-min AsyncStorage cache, skeleton loader. No independent GPS fetch — only displays when profile has coordinates.
+
+#### Admin Panel
+- **`artifacts/admin/src/pages/orders.tsx`**: GPS card in order detail shows customer GPS coordinates + accuracy + mini OSM map embed + delivery address text. GPS mismatch warning banner with detailed message. GPS mismatch badge (`⚠ GPS`) shown in order list rows.
+- **`artifacts/admin/src/pages/settings-security.tsx`**: "Order GPS Capture & Fraud Stamp" SecPanel with toggles/threshold input.
+- **`artifacts/admin/src/pages/live-riders-map.tsx`**: Blue pulsing "You Are Here" Leaflet marker using `navigator.geolocation.watchPosition` + `L.divIcon` with CSS keyframe animation.
+
+#### DB Migration
+- **`lib/db/migrations/0022_orders_gps_fraud_stamp.sql`**: Adds `customer_lat`, `customer_lng`, `gps_accuracy` (REAL), `gps_mismatch` (BOOLEAN) to orders table.

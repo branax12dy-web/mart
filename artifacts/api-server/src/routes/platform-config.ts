@@ -237,6 +237,11 @@ router.get("/", async (req, res) => {
       smsGateway:     s["sms_provider"]  ?? "console",
       mapKeySet:      (s["maps_api_key"] ?? "") !== "",
       firebaseSet:    (s["fcm_server_key"] ?? "") !== "",
+      orderGpsCaptureEnabled: (s["order_gps_capture_enabled"] ?? "off") === "on",
+      gpsMismatchThresholdM:  parseInt(s["gps_mismatch_threshold_m"] ?? "500"),
+    },
+    profile: {
+      showSavedAddresses: (s["profile_show_saved_addresses"] ?? "on") === "on",
     },
     integrations: {
       jazzcash:  jazzcashEnabled,

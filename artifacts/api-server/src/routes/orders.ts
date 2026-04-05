@@ -88,6 +88,15 @@ async function notifyOnlineRidersOfOrder(orderId: string, orderType: string): Pr
 }
 
 
+function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstAmount?: number, codFee?: number) {
   return {
     id: o.id,
@@ -111,6 +120,12 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     riderPhone: o.riderPhone ?? null,
     vendorId: o.vendorId ?? null,
     estimatedTime: o.estimatedTime,
+    customerLat: o.customerLat ? parseFloat(o.customerLat) : null,
+    customerLng: o.customerLng ? parseFloat(o.customerLng) : null,
+    gpsAccuracy: o.gpsAccuracy ?? null,
+    gpsMismatch: o.gpsMismatch ?? false,
+    deliveryLat: o.deliveryLat ? parseFloat(o.deliveryLat) : null,
+    deliveryLng: o.deliveryLng ? parseFloat(o.deliveryLng) : null,
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
   };
@@ -345,7 +360,7 @@ router.get("/:id/track", customerAuth, async (req, res) => {
 /* ── POST /orders ─────────────────────────────────────────────────────────── */
 router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const { type, items, paymentMethod, deliveryLat, deliveryLng } = req.body;
+  const { type, items, paymentMethod, deliveryLat, deliveryLng, customerLat: rawCustLat, customerLng: rawCustLng, gpsAccuracy: rawGpsAcc } = req.body;
   const deliveryAddress = typeof req.body.deliveryAddress === "string" ? stripHtml(req.body.deliveryAddress) : req.body.deliveryAddress;
   const ip = getClientIp(req);
 
@@ -572,6 +587,49 @@ router.post("/", customerAuth, async (req, res) => {
     }
   }
 
+  /* ── GPS fraud-stamp: compare device GPS to selected delivery address coords ── */
+  const gpsEnabled = (s["order_gps_capture_enabled"] ?? "off") === "on";
+  const custLat = gpsEnabled && rawCustLat != null ? parseFloat(String(rawCustLat)) : NaN;
+  const custLng = gpsEnabled && rawCustLng != null ? parseFloat(String(rawCustLng)) : NaN;
+  const custAcc = rawGpsAcc != null ? parseFloat(String(rawGpsAcc)) : null;
+  const hasCustGps = Number.isFinite(custLat) && Number.isFinite(custLng)
+    && custLat >= -90 && custLat <= 90 && custLng >= -180 && custLng <= 180;
+
+  let resolvedDeliveryLat = deliveryLat != null ? parseFloat(String(deliveryLat)) : NaN;
+  let resolvedDeliveryLng = deliveryLng != null ? parseFloat(String(deliveryLng)) : NaN;
+  if ((!Number.isFinite(resolvedDeliveryLat) || !Number.isFinite(resolvedDeliveryLng)) && deliveryAddress && hasCustGps) {
+    try {
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(deliveryAddress)}&format=json&limit=1`,
+        { headers: { "User-Agent": "AJKMart/1.0" }, signal: AbortSignal.timeout(3000) },
+      );
+      const geoData = await geoRes.json();
+      if (Array.isArray(geoData) && geoData.length > 0) {
+        const gLat = parseFloat(geoData[0].lat);
+        const gLng = parseFloat(geoData[0].lon);
+        if (Number.isFinite(gLat) && Number.isFinite(gLng)) {
+          resolvedDeliveryLat = gLat;
+          resolvedDeliveryLng = gLng;
+        }
+      }
+    } catch {}
+  }
+
+  const hasResolvedDelivery = Number.isFinite(resolvedDeliveryLat) && Number.isFinite(resolvedDeliveryLng)
+    && resolvedDeliveryLat >= -90 && resolvedDeliveryLat <= 90
+    && resolvedDeliveryLng >= -180 && resolvedDeliveryLng <= 180;
+
+  let gpsMismatch = false;
+  if (hasCustGps && hasResolvedDelivery) {
+    const thresholdM = Math.max(100, parseFloat(s["gps_mismatch_threshold_m"] ?? "500") || 500);
+    const dist = haversineMetres(custLat, custLng, resolvedDeliveryLat, resolvedDeliveryLng);
+    if (dist > thresholdM) gpsMismatch = true;
+  }
+  const gpsInsert = {
+    ...(hasCustGps ? { customerLat: custLat.toFixed(7), customerLng: custLng.toFixed(7), gpsAccuracy: custAcc, gpsMismatch } : {}),
+    ...(hasResolvedDelivery ? { deliveryLat: resolvedDeliveryLat.toFixed(7), deliveryLng: resolvedDeliveryLng.toFixed(7) } : {}),
+  };
+
   /* ── COD validation ── */
   if (paymentMethod === "cash") {
     const codEnabled = (s["cod_enabled"] ?? "on") === "on";
@@ -651,6 +709,7 @@ router.post("/", customerAuth, async (req, res) => {
           status: "pending", total: total.toFixed(2),
           deliveryAddress, paymentMethod,
           estimatedTime,
+          ...gpsInsert,
         }).returning();
         if (promoId) {
           await tx.update(promoCodesTable)
@@ -692,6 +751,7 @@ router.post("/", customerAuth, async (req, res) => {
       status: "pending", total: total.toFixed(2),
       deliveryAddress, paymentMethod,
       estimatedTime,
+      ...gpsInsert,
     }).returning();
     if (promoId) {
       await db.update(promoCodesTable)

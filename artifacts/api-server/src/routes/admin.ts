@@ -13,6 +13,7 @@ export {
   DEFAULT_PLATFORM_SETTINGS,
   ensureAuthMethodColumn,
   ensureRideBidsMigration,
+  ensureOrdersGpsColumns,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,

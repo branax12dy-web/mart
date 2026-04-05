@@ -51,6 +51,8 @@ interface SavedAddress {
   city: string;
   icon: string;
   isDefault: boolean;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface OrderResponse {
@@ -73,6 +75,115 @@ interface PaymentMethodsApiResponse {
   payment: {
     methods: PaymentMethodRaw[];
   };
+}
+
+function GpsSlotRow({ selected, onSelect, onClose }: {
+  selected: string;
+  onSelect: (a: SavedAddress) => void;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [gpsAddr, setGpsAddr] = useState<SavedAddress | null>(null);
+  const isSel = selected === "__gps__";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status !== "granted") return;
+        setLoading(true);
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        let cityName = "";
+        let streetAddr = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+        try {
+          const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+          if (geo) {
+            cityName = geo.city || geo.subregion || geo.region || "";
+            const parts = [geo.street, geo.name, geo.district].filter(Boolean);
+            if (parts.length > 0) streetAddr = parts.join(", ");
+          }
+        } catch {}
+        if (!cancelled) {
+          setGpsAddr({
+            id: "__gps__",
+            label: "Current Location",
+            address: streetAddr,
+            city: cityName,
+            icon: "navigate-outline",
+            isDefault: false,
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handlePress = async () => {
+    if (gpsAddr) {
+      onSelect(gpsAddr);
+      onClose();
+      return;
+    }
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Location permission is needed.");
+        return;
+      }
+      setLoading(true);
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      let cityName = "";
+      let streetAddr = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        if (geo) {
+          cityName = geo.city || geo.subregion || geo.region || "";
+          const parts = [geo.street, geo.name, geo.district].filter(Boolean);
+          if (parts.length > 0) streetAddr = parts.join(", ");
+        }
+      } catch {}
+      const addr: SavedAddress = {
+        id: "__gps__",
+        label: "Current Location",
+        address: streetAddr,
+        city: cityName,
+        icon: "navigate-outline",
+        isDefault: false,
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      setGpsAddr(addr);
+      setLoading(false);
+      onSelect(addr);
+      onClose();
+    } catch {
+      setLoading(false);
+      Alert.alert("GPS Error", "Could not get your current location.");
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={handlePress}
+      style={[styles.addrOpt, { borderColor: isSel ? "#10B981" : "#D1FAE5", backgroundColor: isSel ? "#ECFDF5" : "#F0FDF4", marginBottom: 6 }]}
+    >
+      <View style={[styles.addrOptIcon, { backgroundColor: "#D1FAE5" }]}>
+        {loading ? <ActivityIndicator size="small" color="#10B981" /> : <Ionicons name="navigate-outline" size={20} color="#10B981" />}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.addrOptLabel, { color: "#059669" }]}>📍 Current Location</Text>
+        <Text style={styles.addrOptCity} numberOfLines={1}>{gpsAddr ? `${gpsAddr.address}, ${gpsAddr.city}` : "Tap to detect via GPS"}</Text>
+      </View>
+      {isSel && <Ionicons name="checkmark-circle" size={22} color="#10B981" />}
+    </TouchableOpacity>
+  );
 }
 
 function AddressPickerModal({
@@ -149,6 +260,8 @@ function AddressPickerModal({
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>{showForm ? "Add New Address" : "Choose Delivery Address"}</Text>
 
+          {/* GPS slot is rendered inline as slot-0 inside the address list below */}
+
           {showForm ? (
             <View style={{ gap: 14 }}>
               <View>
@@ -222,17 +335,18 @@ function AddressPickerModal({
             </View>
           ) : (
             <>
-              {addresses.length === 0 ? (
-                <View style={{ alignItems: "center", paddingVertical: 28, gap: 10 }}>
-                  <Ionicons name="location-outline" size={40} color={C.textMuted} />
-                  <Text style={{ ...Typ.button, color: C.text }}>No saved addresses</Text>
-                  <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>
-                    Add a delivery address to continue
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 340 }}>
-                  {addresses.map(addr => {
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 340 }}>
+                {/* Slot-0: GPS Current Location — always pinned at top */}
+                <GpsSlotRow selected={selected} onSelect={onSelect} onClose={onClose} />
+                {addresses.length === 0 ? (
+                  <View style={{ alignItems: "center", paddingVertical: 18, gap: 8 }}>
+                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, textAlign: "center" }}>
+                      No saved addresses — use GPS above or add one below
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                  {addresses.filter(a => a.id !== "__gps__").map(addr => {
                     const isSel = selected === addr.id;
                     return (
                       <TouchableOpacity activeOpacity={0.7}
@@ -259,8 +373,9 @@ function AddressPickerModal({
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
-              )}
+                  </>
+                )}
+              </ScrollView>
               <TouchableOpacity activeOpacity={0.7} onPress={() => setShowForm(true)} style={[styles.addrOpt, { borderColor: C.primary, borderStyle: "dashed", marginTop: 8 }]}>
                 <View style={[styles.addrOptIcon, { backgroundColor: C.brandBlueSoft }]}>
                   <Ionicons name="add-outline" size={20} color={C.primary} />
@@ -308,10 +423,11 @@ function CartScreenInner() {
   const undoClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
-  const [selectedAddrId, setSelectedAddrId] = useState<string>("");
+  const [selectedAddrId, setSelectedAddrId] = useState<string>("__gps__");
   const [showAddrPicker, setShowAddrPicker] = useState(false);
   const [addrLoading, setAddrLoading] = useState(false);
   const addrLoaded = useRef(false);
+  const gpsResolved = useRef(false);
 
   const [allPayMethods, setAllPayMethods] = useState<PaymentMethod[]>([
     { id: "cash",   label: "Cash on Delivery",    logo: "💵", available: true,  description: "Pay on delivery" },
@@ -424,6 +540,50 @@ function CartScreenInner() {
     : "";
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status !== "granted") {
+          gpsResolved.current = true;
+          if (!cancelled) setSelectedAddrId("");
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        let cityName = "";
+        let streetAddr = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+        try {
+          const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+          if (geo) {
+            cityName = geo.city || geo.subregion || geo.region || "";
+            const parts = [geo.street, geo.name, geo.district].filter(Boolean);
+            if (parts.length > 0) streetAddr = parts.join(", ");
+          }
+        } catch {}
+        if (!cancelled) {
+          const gpsAddr: SavedAddress = {
+            id: "__gps__",
+            label: "Current Location",
+            address: streetAddr,
+            city: cityName,
+            icon: "navigate-outline",
+            isDefault: false,
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
+          setAddresses(prev => [gpsAddr, ...prev.filter(a => a.id !== "__gps__")]);
+          setSelectedAddrId("__gps__");
+          gpsResolved.current = true;
+        }
+      } catch {
+        gpsResolved.current = true;
+        if (!cancelled) setSelectedAddrId("");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (!user?.id) return;
     addrLoaded.current = false;
     setAddrLoading(true);
@@ -432,10 +592,20 @@ function CartScreenInner() {
       .then(unwrapApiResponse)
       .then(d => {
         const addrs: SavedAddress[] = d.addresses || [];
-        setAddresses(addrs);
+        setAddresses(prev => {
+          const gps = prev.find(a => a.id === "__gps__");
+          return gps ? [gps, ...addrs] : addrs;
+        });
         addrLoaded.current = true;
-        const def = addrs.find(a => a.isDefault) || addrs[0];
-        if (def) setSelectedAddrId(def.id);
+        setSelectedAddrId(prev => {
+          if (prev === "__gps__" && !gpsResolved.current) return prev;
+          if (prev === "__gps__" && gpsResolved.current) return prev;
+          if (prev === "") {
+            const def = addrs.find(a => a.isDefault) || addrs[0];
+            return def ? def.id : "";
+          }
+          return prev;
+        });
       })
       .catch((err) => {
         if (__DEV__) console.warn("[Cart] Failed to load addresses:", err instanceof Error ? err.message : String(err));
@@ -443,6 +613,13 @@ function CartScreenInner() {
       })
       .finally(() => setAddrLoading(false));
   }, [user?.id]);
+
+  useEffect(() => {
+    if (selectedAddrId === "" && addrLoaded.current && addresses.length > 0) {
+      const def = addresses.find(a => a.id !== "__gps__" && a.isDefault) || addresses.find(a => a.id !== "__gps__");
+      if (def) setSelectedAddrId(def.id);
+    }
+  }, [selectedAddrId, addresses]);
 
   const cartFingerprint = items.map(i => `${i.productId}:${i.quantity}:${i.price}`).join("|") + "|" + cartType;
   useEffect(() => {
@@ -558,6 +735,7 @@ function CartScreenInner() {
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
+        const orderGpsPayload = await buildGpsPayload();
         order = await createOrder({
           type: cartType === "mixed" ? "mart" : cartType,
           items: items.map(i => ({
@@ -568,6 +746,7 @@ function CartScreenInner() {
           paymentMethod: finalPayMethod,
           idempotencyKey: idemKey,
           ...(promoCode ? { promoCode } : {}),
+          ...orderGpsPayload,
         } as any);
         lastError = null;
         break;
@@ -728,6 +907,26 @@ function CartScreenInner() {
     setLoading(false);
   };
 
+  const buildGpsPayload = async (): Promise<Record<string, unknown>> => {
+    const result: Record<string, unknown> = {};
+    if (platformConfig.security?.orderGpsCaptureEnabled) {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status === "granted") {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          result.customerLat = pos.coords.latitude;
+          result.customerLng = pos.coords.longitude;
+          result.gpsAccuracy = pos.coords.accuracy ?? null;
+        }
+      } catch {}
+    }
+    if (selectedAddr?.latitude != null && selectedAddr?.longitude != null) {
+      result.deliveryLat = selectedAddr.latitude;
+      result.deliveryLng = selectedAddr.longitude;
+    }
+    return result;
+  };
+
   const handleGwPay = async () => {
     if (!gwMobile || gwMobile.replace(/\D/g, "").length < 10) {
       showToast(T("validMobileRequired"), "error");
@@ -741,6 +940,7 @@ function CartScreenInner() {
       let gwLastError: Error | null = null;
       let order: OrderResponse | null = null;
       const gwIdemKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const gwGpsPayload = await buildGpsPayload();
       for (let attempt = 0; attempt < GW_MAX_RETRIES; attempt++) {
         try {
           order = await createOrder({
@@ -753,6 +953,7 @@ function CartScreenInner() {
             paymentMethod: payMethod,
             idempotencyKey: gwIdemKey,
             ...(promoCode ? { promoCode } : {}),
+            ...gwGpsPayload,
           } as any);
           gwLastError = null;
           break;
@@ -1415,7 +1616,15 @@ function CartScreenInner() {
         visible={showAddrPicker}
         addresses={addresses}
         selected={selectedAddrId}
-        onSelect={(a) => setSelectedAddrId(a.id)}
+        onSelect={(a) => {
+          if (a.id === "__gps__") {
+            setAddresses(prev => {
+              const without = prev.filter(x => x.id !== "__gps__");
+              return [a, ...without];
+            });
+          }
+          setSelectedAddrId(a.id);
+        }}
         onClose={() => setShowAddrPicker(false)}
         token={token}
         addrLoaded={addrLoaded}

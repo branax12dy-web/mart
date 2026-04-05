@@ -887,6 +887,144 @@ const tr2 = StyleSheet.create({
   errorTxt: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
 });
 
+const WMO_ICONS: Record<number, { icon: string; label: string }> = {
+  0: { icon: "sunny-outline", label: "Clear" },
+  1: { icon: "partly-sunny-outline", label: "Mostly Clear" },
+  2: { icon: "partly-sunny-outline", label: "Partly Cloudy" },
+  3: { icon: "cloudy-outline", label: "Overcast" },
+  45: { icon: "cloud-outline", label: "Foggy" },
+  48: { icon: "cloud-outline", label: "Icy Fog" },
+  51: { icon: "rainy-outline", label: "Light Drizzle" },
+  53: { icon: "rainy-outline", label: "Drizzle" },
+  55: { icon: "rainy-outline", label: "Heavy Drizzle" },
+  61: { icon: "rainy-outline", label: "Light Rain" },
+  63: { icon: "rainy-outline", label: "Rain" },
+  65: { icon: "rainy-outline", label: "Heavy Rain" },
+  71: { icon: "snow-outline", label: "Light Snow" },
+  73: { icon: "snow-outline", label: "Snow" },
+  75: { icon: "snow-outline", label: "Heavy Snow" },
+  80: { icon: "rainy-outline", label: "Showers" },
+  81: { icon: "rainy-outline", label: "Moderate Showers" },
+  82: { icon: "thunderstorm-outline", label: "Heavy Showers" },
+  95: { icon: "thunderstorm-outline", label: "Thunderstorm" },
+  96: { icon: "thunderstorm-outline", label: "Thunderstorm + Hail" },
+  99: { icon: "thunderstorm-outline", label: "Severe Thunderstorm" },
+};
+
+const WEATHER_CACHE_TTL = 45 * 60_000;
+
+function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; userLng?: number; cityLabel?: string }) {
+  const [weather, setWeather] = useState<{ temp: number; code: number; windSpeed: number; humidity: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [locationLabel, setLocationLabel] = useState(cityLabel || "");
+
+  useEffect(() => { if (cityLabel) setLocationLabel(cityLabel); }, [cityLabel]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let lat: number;
+        let lng: number;
+        if (userLat != null && userLng != null && Number.isFinite(userLat) && Number.isFinite(userLng)) {
+          lat = Math.round(userLat * 10) / 10;
+          lng = Math.round(userLng * 10) / 10;
+        } else {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        const cacheKey = `weather_cache_${lat}_${lng}`;
+
+        const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Date.now() - parsed._ts < WEATHER_CACHE_TTL) {
+              if (!cancelled) { setWeather(parsed); setLoading(false); }
+              return;
+            }
+          } catch {}
+        }
+
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m&timezone=auto`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error("weather fetch failed");
+        const data = await resp.json();
+        const cur = data?.current;
+        if (!cur) throw new Error("no current weather data");
+        const w = {
+          temp: Math.round(cur.temperature_2m),
+          code: cur.weather_code ?? 0,
+          windSpeed: Math.round(cur.wind_speed_10m ?? 0),
+          humidity: Math.round(cur.relative_humidity_2m ?? 0),
+          _ts: Date.now(),
+        };
+        AsyncStorage.setItem(cacheKey, JSON.stringify(w)).catch(() => {});
+        if (!cancelled) { setWeather(w); setLoading(false); }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userLat, userLng]);
+
+  if (!loading && !weather) return null;
+
+  const wmo = weather ? (WMO_ICONS[weather.code] ?? WMO_ICONS[0]) : WMO_ICONS[0];
+
+  if (loading) {
+    return (
+      <View style={wS.wrap}>
+        <View style={wS.skRow}>
+          <SkeletonBlock w={36} h={36} r={18} />
+          <View style={{ gap: 4, flex: 1 }}>
+            <SkeletonBlock w={80} h={12} r={4} />
+            <SkeletonBlock w={50} h={10} r={4} />
+          </View>
+          <SkeletonBlock w={40} h={24} r={6} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={wS.wrap}>
+      <View style={wS.row}>
+        <View style={wS.iconWrap}>
+          <Ionicons name={wmo.icon as keyof typeof Ionicons.glyphMap} size={22} color={C.primary} />
+        </View>
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text style={wS.label}>{wmo.label}{locationLabel ? ` · ${locationLabel}` : ""}</Text>
+          <View style={wS.detailRow}>
+            <Text style={wS.detail}>💧 {weather!.humidity}%</Text>
+            <Text style={wS.detail}>💨 {weather!.windSpeed} km/h</Text>
+          </View>
+        </View>
+        <Text style={wS.temp}>{weather!.temp}°C</Text>
+      </View>
+    </View>
+  );
+}
+
+const wS = StyleSheet.create({
+  wrap: {
+    marginHorizontal: H_PAD, marginTop: 10,
+    backgroundColor: C.surface, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10,
+    ...shadows.sm,
+  },
+  row: { flexDirection: "row", alignItems: "center", gap: 10 },
+  skRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  iconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center",
+  },
+  label: { fontFamily: Font.semiBold, fontSize: 13, color: C.text },
+  detailRow: { flexDirection: "row", gap: 10 },
+  detail: { fontFamily: Font.regular, fontSize: 11, color: C.textMuted },
+  temp: { fontFamily: Font.bold, fontSize: 22, color: C.primary },
+});
+
 function HomeSkeleton() {
   return (
     <View style={{ paddingHorizontal: H_PAD, gap: spacing.sm, marginTop: spacing.sm }}>
@@ -1098,6 +1236,12 @@ export default function HomeScreen() {
               isGuest={isGuest}
               viewMode={viewMode}
               onToggle={handleToggleView}
+            />
+
+            <WeatherWidget
+              userLat={user?.latitude ? parseFloat(user.latitude) : undefined}
+              userLng={user?.longitude ? parseFloat(user.longitude) : undefined}
+              cityLabel={user?.city || user?.area || undefined}
             />
 
             {isGuest && <GuestSignInStrip />}

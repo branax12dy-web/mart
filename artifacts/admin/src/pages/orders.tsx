@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ShoppingBag, Search, User, Package, Phone, TrendingUp, AlertTriangle, CheckCircle2, Download, CalendarDays, UserCheck } from "lucide-react";
+import { ShoppingBag, Search, User, Package, Phone, TrendingUp, AlertTriangle, CheckCircle2, Download, CalendarDays, UserCheck, MapPin } from "lucide-react";
 import { MobileDrawer } from "@/components/MobileDrawer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,107 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { StatusBadge } from "@/components/AdminShared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PullToRefresh } from "@/components/PullToRefresh";
+
+function GpsMiniMap({ cLat, cLng, dLat, dLng }: { cLat: number; cLng: number; dLat: number | null; dLng: number | null }) {
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    import("leaflet").then(L => {
+      if (el.querySelector(".leaflet-container")) return;
+      const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(map);
+      const customerIcon = L.divIcon({
+        className: "", iconSize: [14, 14], iconAnchor: [7, 7],
+        html: `<div style="width:14px;height:14px;background:#3b82f6;border:2px solid white;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>`,
+      });
+      L.marker([cLat, cLng], { icon: customerIcon }).addTo(map).bindPopup("📍 Placed from");
+      if (dLat != null && dLng != null && Number.isFinite(dLat) && Number.isFinite(dLng)) {
+        const deliveryIcon = L.divIcon({
+          className: "", iconSize: [14, 14], iconAnchor: [7, 7],
+          html: `<div style="width:14px;height:14px;background:#f59e0b;border:2px solid white;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>`,
+        });
+        L.marker([dLat, dLng], { icon: deliveryIcon }).addTo(map).bindPopup("🏠 Delivery address");
+        L.polyline([[cLat, cLng], [dLat, dLng]], { color: "#94a3b8", weight: 2, dashArray: "5,5" }).addTo(map);
+        map.fitBounds([[cLat, cLng], [dLat, dLng]], { padding: [30, 30] });
+      } else {
+        map.setView([cLat, cLng], 14);
+      }
+    }).catch(() => {});
+  }, [cLat, cLng, dLat, dLng]);
+  return <div ref={ref} className="w-full rounded-lg border border-gray-200" style={{ height: 150 }} />;
+}
+
+function GpsStampCard({ order }: { order: any }) {
+  const cLat = Number(order.customerLat);
+  const cLng = Number(order.customerLng);
+  const dLat = order.deliveryLat != null ? Number(order.deliveryLat) : null;
+  const dLng = order.deliveryLng != null ? Number(order.deliveryLng) : null;
+  const hasDual = dLat != null && dLng != null && Number.isFinite(dLat) && Number.isFinite(dLng);
+  const isMismatch = !!order.gpsMismatch;
+  const [placeName, setPlaceName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${cLat}&lon=${cLng}&format=json&zoom=16&addressdetails=1`, {
+      headers: { "Accept-Language": "en" },
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!cancelled && data?.display_name) {
+          const parts = data.display_name.split(",").slice(0, 3).map((s: string) => s.trim());
+          setPlaceName(parts.join(", "));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [cLat, cLng]);
+
+  return (
+    <div className={`rounded-xl overflow-hidden border ${isMismatch ? "border-amber-300" : "border-emerald-200"}`}>
+      {isMismatch && (
+        <div className="bg-amber-50 px-3 py-2 flex items-center gap-2 border-b border-amber-200">
+          <span className="text-base">⚠️</span>
+          <div>
+            <p className="text-[11px] font-bold text-amber-800">GPS Mismatch Warning</p>
+            <p className="text-[10px] text-amber-700">Customer device GPS is far from the selected delivery address</p>
+          </div>
+        </div>
+      )}
+      <div className={`p-3 space-y-2 ${isMismatch ? "bg-amber-50/50" : "bg-emerald-50"}`}>
+        <p className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 ${isMismatch ? "text-amber-700" : "text-emerald-700"}`}>
+          <MapPin className="w-3 h-3" /> Customer GPS Location
+          {!isMismatch && <span className="ml-1 text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full">✓ Match OK</span>}
+        </p>
+        {placeName && (
+          <p className="text-xs font-medium text-gray-800">{placeName}</p>
+        )}
+        <p className="text-[10px] font-mono text-gray-500">
+          📍 Placed from: {cLat.toFixed(5)}, {cLng.toFixed(5)}
+        </p>
+        {hasDual && (
+          <p className="text-[10px] font-mono text-gray-500">
+            🏠 Delivery to: {dLat!.toFixed(5)}, {dLng!.toFixed(5)}
+          </p>
+        )}
+        {order.gpsAccuracy != null && (
+          <p className="text-[10px] text-muted-foreground">GPS Accuracy: ±{Math.round(Number(order.gpsAccuracy))}m</p>
+        )}
+        <GpsMiniMap cLat={cLat} cLng={cLng} dLat={dLat} dLng={dLng} />
+        {hasDual && (
+          <div className="flex gap-3 text-[9px]">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span> Placed from</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Delivery address</span>
+          </div>
+        )}
+        <div className="flex items-start gap-1.5 pt-1">
+          <MapPin className="w-3 h-3 text-gray-500 mt-0.5 shrink-0" />
+          <p className="text-[10px] text-gray-600">
+            <span className="font-semibold">Delivery Address:</span> {order.deliveryAddress || "—"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function exportOrdersCSV(orders: any[]) {
   const header = "ID,Type,Status,Total,Payment,Customer,Rider,Date";
@@ -433,6 +534,7 @@ export default function Orders() {
                       {order.type === "food" ? "🍔" : order.type === "pharmacy" ? "💊" : "🛒"} {order.type}
                     </Badge>
                     <StatusBadge status={order.status} />
+                    {order.gpsMismatch && <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1">⚠️ GPS Mismatch</span>}
                   </div>
                   {order.userName && (
                     <p className="text-sm text-muted-foreground mt-1 truncate">
@@ -565,6 +667,11 @@ export default function Orders() {
                   <span className="text-right max-w-[200px] text-xs">{selectedOrder.deliveryAddress || "—"}</span>
                 </div>
               </div>
+
+              {/* GPS Fraud Stamp — Placed From */}
+              {(selectedOrder.customerLat != null && selectedOrder.customerLng != null) && (
+                <GpsStampCard order={selectedOrder} />
+              )}
 
               {/* Customer contact */}
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1">

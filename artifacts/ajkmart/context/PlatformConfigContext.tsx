@@ -145,6 +145,13 @@ export interface PlatformConfig {
     sms: boolean;
     email: boolean;
   };
+  security: {
+    orderGpsCaptureEnabled: boolean;
+    gpsMismatchThresholdM: number;
+  };
+  profile: {
+    showSavedAddresses: boolean;
+  };
   auth: {
     phoneOtpEnabled: boolean | Record<string, boolean>;
     emailOtpEnabled: boolean | Record<string, boolean>;
@@ -234,6 +241,13 @@ const DEFAULT: PlatformConfig = {
     loyaltyEnabled: true, loyaltyPtsPerRs100: 5,
     maxOrdersDay: 10, signupBonus: 0, p2pEnabled: true, p2pFeePct: 0,
     walletCashbackPct: 0, walletCashbackOrders: true, walletCashbackRides: false, walletCashbackPharm: false,
+  },
+  security: {
+    orderGpsCaptureEnabled: false,
+    gpsMismatchThresholdM: 500,
+  },
+  profile: {
+    showSavedAddresses: true,
   },
   integrations: {
     pushNotif: false, analytics: false, analyticsPlatform: "ga4", analyticsTrackingId: "", analyticsDebug: false,
@@ -440,6 +454,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           walletCashbackOrders:     raw.customer?.walletCashbackOrders     ?? DEFAULT.customer.walletCashbackOrders,
           walletCashbackRides:      raw.customer?.walletCashbackRides      ?? DEFAULT.customer.walletCashbackRides,
           walletCashbackPharm:      raw.customer?.walletCashbackPharm      ?? DEFAULT.customer.walletCashbackPharm,
+        },
+        security: {
+          orderGpsCaptureEnabled: raw.security?.orderGpsCaptureEnabled ?? DEFAULT.security.orderGpsCaptureEnabled,
+          gpsMismatchThresholdM:  raw.security?.gpsMismatchThresholdM  ?? DEFAULT.security.gpsMismatchThresholdM,
+        },
+        profile: {
+          showSavedAddresses: raw.profile?.showSavedAddresses ?? DEFAULT.profile.showSavedAddresses,
         },
         integrations: {
           pushNotif:             raw.integrations?.pushNotif             ?? DEFAULT.integrations.pushNotif,

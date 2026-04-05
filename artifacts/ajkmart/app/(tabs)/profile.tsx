@@ -84,6 +84,7 @@ function ProfileScreenInner() {
     socialFacebook:  platformConfig.platform.socialFacebook,
     socialInstagram: platformConfig.platform.socialInstagram,
     chat:            platformConfig.features.chat,
+    profile:         platformConfig.profile,
   };
 
   const fetchAll = useCallback(async () => {
@@ -471,7 +472,9 @@ function ProfileScreenInner() {
           <Row icon="cube-outline"     label={T("parcelBookings")}  sub={T("courierHistory")}             onPress={() => router.push("/parcel")}          iconColor={C.parcel}   iconBg={C.parcelLight} />
           <Row icon="heart-outline"    label="My Wishlist"          sub="Saved favorites"                 onPress={() => router.push("/wishlist")}         iconColor={C.danger}  iconBg={C.dangerSoft} />
           <Row icon="star-outline"     label={T("myReviews")}       sub={T("customerFeedback")}           onPress={() => router.push("/my-reviews")}      iconColor={C.gold}    iconBg={C.amberBg} />
-          <Row icon="location-outline" label={T("savedAddresses")}  sub={T("savedAddressesSub")}    onPress={() => setShowAddrs(true)}              iconColor={C.mart}    iconBg={C.martLight} />
+          {platformCfg.profile?.showSavedAddresses !== false && (
+            <Row icon="location-outline" label={T("savedAddresses")}  sub={T("savedAddressesSub")}    onPress={() => setShowAddrs(true)}              iconColor={C.mart}    iconBg={C.martLight} />
+          )}
         </SectionCard>
 
         {user?.role === "vendor" && (

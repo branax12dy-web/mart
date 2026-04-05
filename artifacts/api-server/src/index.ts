@@ -5,7 +5,7 @@ import { logger } from "./lib/logger";
 import { startDispatchEngine, dispatchScheduledRides } from "./routes/rides.js";
 import { migrateAdminSecrets } from "./services/adminSecretMigration.js";
 import { initSocketIO } from "./lib/socketio.js";
-import { ensureAuthMethodColumn, ensureRideBidsMigration } from "./routes/admin.js";
+import { ensureAuthMethodColumn, ensureRideBidsMigration, ensureOrdersGpsColumns } from "./routes/admin.js";
 import { initVapid } from "./lib/webpush.js";
 import { db } from "@workspace/db";
 import { getPlatformSettings } from "./routes/admin.js";
@@ -89,6 +89,7 @@ httpServer.on("error", (err: NodeJS.ErrnoException) => {
 
 ensureAuthMethodColumn()
   .then(() => ensureRideBidsMigration())
+  .then(() => ensureOrdersGpsColumns())
   .then(() => assertSecureSettings())
   .then(() => startListening())
   .catch(e => {

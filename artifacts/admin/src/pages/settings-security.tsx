@@ -340,6 +340,20 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
               <T k="security_spoof_detection" label="GPS Spoofing Detection"    sub="Mock location / fake GPS app detection" />
               <T k="security_geo_fence"       label="Strict Geofence Mode"      sub="Riders must be within service area" />
             </div>
+          </SecPanel>
+
+          <SecPanel title="Order GPS Capture & Fraud Stamp" icon={Globe} color="text-blue-700">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-2 mb-3">
+              <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>When <strong>Order GPS Capture</strong> is enabled, the customer app sends device GPS coordinates at checkout. If the device location is farther than the <strong>Mismatch Threshold</strong> from the delivery address, the order is flagged.</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <T k="order_gps_capture_enabled" label="Order GPS Capture" sub="Capture customer device GPS on checkout" />
+              <T k="profile_show_saved_addresses" label="Show Saved Addresses" sub="Toggle saved addresses row on customer profile" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <N k="gps_mismatch_threshold_m" label="GPS Mismatch Threshold" suffix="m" placeholder="5000" hint="Flag orders where device is farther than this from delivery address" />
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <N k="security_gps_accuracy" label="Min GPS Accuracy Required" suffix="m"   placeholder="50"  hint="Reject readings worse than this" />
               <N k="security_gps_interval" label="Location Update Interval"  suffix="sec" placeholder="10"  hint="How often rider sends GPS ping" />

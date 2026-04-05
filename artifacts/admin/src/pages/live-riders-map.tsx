@@ -737,6 +737,16 @@ export default function LiveRidersMap() {
   });
   /* Show/hide username labels floating above each marker */
   const [showLabels, setShowLabels] = useState(true);
+  const [adminPos, setAdminPos] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const wid = navigator.geolocation.watchPosition(
+      (pos) => setAdminPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 15_000 },
+    );
+    return () => navigator.geolocation.clearWatch(wid);
+  }, []);
   /* Socket-supplied vehicleType / currentTripId overrides (arrive live via socket) */
   const [vehicleTypeOverrides, setVehicleTypeOverrides] = useState<Record<string, string | null>>({});
   const [currentTripIdOverrides, setCurrentTripIdOverrides] = useState<Record<string, string | null>>({});
@@ -1484,6 +1494,25 @@ export default function LiveRidersMap() {
                             </Popup>
                           </Marker>
                         ))}
+
+                        {adminPos && (
+                          <Marker
+                            position={[adminPos.lat, adminPos.lng]}
+                            icon={L.divIcon({
+                              className: "",
+                              iconSize: [22, 22],
+                              iconAnchor: [11, 11],
+                              html: `<div style="width:22px;height:22px;position:relative"><div style="position:absolute;inset:0;background:rgba(59,130,246,0.25);border-radius:50%;animation:adminPulse 2s ease-out infinite"></div><div style="width:14px;height:14px;background:#3b82f6;border:3px solid white;border-radius:50%;position:absolute;top:4px;left:4px;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div></div><style>@keyframes adminPulse{0%{transform:scale(1);opacity:1}100%{transform:scale(2.5);opacity:0}}</style>`,
+                            })}
+                          >
+                            <Popup maxWidth={140}>
+                              <div style={{ fontFamily: "sans-serif", textAlign: "center" }}>
+                                <p style={{ fontWeight: 700, margin: 0, fontSize: 13 }}>📍 You Are Here</p>
+                                <p style={{ fontSize: 11, color: "#3b82f6", margin: "2px 0 0" }}>Admin location</p>
+                              </div>
+                            </Popup>
+                          </Marker>
+                        )}
 
                         {sosAlerts.filter(sos => sos.latitude != null && sos.longitude != null).map(sos => (
                           <Marker
