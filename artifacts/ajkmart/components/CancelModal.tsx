@@ -1,13 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  Easing,
   Modal,
-  TouchableOpacity,
+  Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { unwrapApiResponse } from "@/utils/api";
 
@@ -25,22 +31,40 @@ export type CancelTarget = {
 };
 
 const ORDER_CANCEL_REASONS = [
-  { key: "changed_mind",     label: "Changed my mind",       icon: "swap-horizontal-outline" },
-  { key: "wrong_items",      label: "Wrong items ordered",   icon: "alert-circle-outline" },
-  { key: "found_cheaper",    label: "Found a better price",  icon: "pricetag-outline" },
-  { key: "taking_too_long",  label: "Taking too long",       icon: "time-outline" },
-  { key: "other",            label: "Other reason",          icon: "chatbox-ellipses-outline" },
+  { key: "changed_mind",    label: "Changed my mind",         icon: "swap-horizontal-outline" },
+  { key: "wrong_items",     label: "Wrong items ordered",     icon: "alert-circle-outline" },
+  { key: "found_cheaper",   label: "Found a better price",    icon: "pricetag-outline" },
+  { key: "taking_too_long", label: "Taking too long",         icon: "time-outline" },
+  { key: "other",           label: "Other reason",            icon: "chatbox-ellipses-outline" },
 ] as const;
 
 const RIDE_CANCEL_REASONS = [
-  { key: "changed_mind",     label: "Changed my mind",       icon: "swap-horizontal-outline" },
-  { key: "wrong_location",   label: "Wrong pickup/drop",     icon: "location-outline" },
-  { key: "wait_too_long",    label: "Driver taking too long", icon: "time-outline" },
-  { key: "found_other",      label: "Found another ride",    icon: "car-outline" },
-  { key: "other",            label: "Other reason",          icon: "chatbox-ellipses-outline" },
+  { key: "changed_mind",   label: "Changed my mind",          icon: "swap-horizontal-outline" },
+  { key: "wrong_location", label: "Wrong pickup / drop",      icon: "location-outline" },
+  { key: "wait_too_long",  label: "Driver taking too long",   icon: "time-outline" },
+  { key: "found_other",    label: "Found another ride",       icon: "car-outline" },
+  { key: "other",          label: "Other reason",             icon: "chatbox-ellipses-outline" },
 ] as const;
 
-export function CancelModal({ target, cancellationFee, apiBase, token, onClose, onDone }: {
+function useIsWide() {
+  const [wide, setWide] = useState(() => Dimensions.get("window").width >= 640);
+  useEffect(() => {
+    const sub = Dimensions.addEventListener("change", ({ window }) => {
+      setWide(window.width >= 640);
+    });
+    return () => sub.remove();
+  }, []);
+  return wide;
+}
+
+export function CancelModal({
+  target,
+  cancellationFee,
+  apiBase,
+  token,
+  onClose,
+  onDone,
+}: {
   target: CancelTarget;
   cancellationFee: number;
   apiBase: string;
@@ -51,6 +75,47 @@ export function CancelModal({ target, cancellationFee, apiBase, token, onClose, 
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const insets = useSafeAreaInsets();
+  const isWide = useIsWide();
+
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 1,
+        tension: 68,
+        friction: 11,
+        useNativeDriver: Platform.OS !== "web",
+      }),
+    ]).start();
+  }, []);
+
+  const dismiss = (cb: () => void) => {
+    if (loading) return;
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: Platform.OS !== "web",
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+    ]).start(cb);
+  };
+
+  const safeClose = () => dismiss(onClose);
 
   const isRide = target.type === "ride";
   const isPharmacy = target.type === "pharmacy";
@@ -61,8 +126,12 @@ export function CancelModal({ target, cancellationFee, apiBase, token, onClose, 
   const isWallet = target.paymentMethod === "wallet";
   const amount = isRide ? target.fare : target.total;
 
+  const typeLabel = isRide ? "Ride" : isPharmacy ? "Pharmacy Order" : isParcel ? "Parcel" : "Order";
+  const typePrefix = isRide ? "Ride" : isPharmacy ? "Order" : isParcel ? "Parcel" : "Order";
+  const keepLabel = isRide ? "Keep Ride" : isParcel ? "Keep Booking" : "Keep Order";
+
   const handleConfirm = async () => {
-    if (!selectedReason) { setError("Please select a reason."); return; }
+    if (!selectedReason) { setError("Please select a cancellation reason."); return; }
     setLoading(true);
     setError("");
     try {
@@ -88,150 +157,434 @@ export function CancelModal({ target, cancellationFee, apiBase, token, onClose, 
         return;
       }
       const result = unwrapApiResponse(await res.json().catch(() => ({})));
-      onDone(result);
-      onClose();
+      dismiss(() => { onDone(result); onClose(); });
     } catch {
-      setError("Network error. Please try again.");
+      setError("Network error. Please check your connection and try again.");
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const safeClose = () => { if (!loading) onClose(); };
+  const sheetTranslate = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isWide ? [40, 0] : [340, 0],
+  });
+
+  const sheetScale = isWide
+    ? slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] })
+    : 1;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={safeClose}>
-      <TouchableOpacity activeOpacity={0.7} style={cm.backdrop} onPress={safeClose}>
-        <TouchableOpacity activeOpacity={0.7} style={cm.sheet} onPress={() => {}}>
-          <View style={cm.handle} />
+    <Modal visible transparent animationType="none" onRequestClose={safeClose} statusBarTranslucent>
+      <Animated.View style={[s.overlay, { opacity: fadeAnim }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={safeClose} />
 
-          <View style={cm.headerIconWrap}>
-            <View style={cm.headerIcon}>
-              <Ionicons name="warning" size={24} color="#fff" />
-            </View>
-          </View>
+        <Animated.View
+          style={[
+            s.sheet,
+            isWide ? s.sheetWide : s.sheetMobile,
+            !isWide && { paddingBottom: Math.max(insets.bottom, 20) },
+            {
+              transform: [
+                { translateY: sheetTranslate },
+                ...(isWide ? [{ scale: sheetScale as any }] : []),
+              ],
+            },
+          ]}
+        >
+          {!isWide && <View style={s.handle} />}
 
-          <Text style={cm.title}>
-            {isRide ? "Cancel Ride?" : isPharmacy ? "Cancel Pharmacy Order?" : isParcel ? "Cancel Parcel Booking?" : "Cancel Order?"}
-          </Text>
-          <Text style={cm.sub}>
-            {isRide
-              ? `Ride #${target.id.slice(-8).toUpperCase()}`
-              : isPharmacy
-              ? `Pharmacy Order #${target.id.slice(-8).toUpperCase()}`
-              : isParcel
-              ? `Parcel #${target.id.slice(-8).toUpperCase()}`
-              : `Order #${target.id.slice(-8).toUpperCase()}`}
-            {target.cancelMinsLeft != null && !isRide
-              ? ` · ${target.cancelMinsLeft}m left`
-              : ""}
-          </Text>
-
-          {(hasFee || isWallet) && (
-            <View style={cm.infoBox}>
-              {hasFee && (
-                <View style={cm.infoRow}>
-                  <Ionicons name="cash-outline" size={15} color="#DC2626" />
-                  <Text style={cm.infoTextRed}>
-                    Rs. {cancellationFee} cancellation fee will apply
-                  </Text>
-                </View>
-              )}
-              {isWallet && amount != null && (
-                <View style={cm.infoRow}>
-                  <Ionicons name="wallet-outline" size={15} color="#059669" />
-                  <Text style={cm.infoTextGreen}>
-                    Rs. {Math.round(amount)} will be refunded to wallet
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {!hasFee && !isWallet && isRide && !riderAssigned && (
-            <View style={cm.infoBox}>
-              <View style={cm.infoRow}>
-                <Ionicons name="checkmark-circle-outline" size={15} color="#059669" />
-                <Text style={cm.infoTextGreen}>No cancellation fee applies</Text>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={s.scrollContent}
+          >
+            <View style={s.iconRing}>
+              <View style={s.iconCircle}>
+                <Ionicons name="close-circle" size={28} color="#fff" />
               </View>
             </View>
-          )}
 
-          <Text style={cm.reasonTitle}>Why are you cancelling?</Text>
-          <View style={cm.reasons}>
-            {reasons.map(r => {
-              const active = selectedReason === r.key;
-              return (
-                <TouchableOpacity activeOpacity={0.7}
-                  key={r.key}
-                  onPress={() => { setSelectedReason(r.key); setError(""); }}
-                  style={[cm.reasonChip, active && cm.reasonChipActive]}
-                >
-                  <Ionicons
-                    name={r.icon as any}
-                    size={16}
-                    color={active ? "#DC2626" : C.textSecondary}
-                  />
-                  <Text style={[cm.reasonText, active && cm.reasonTextActive]}>
-                    {r.label}
-                  </Text>
-                  {active && (
-                    <Ionicons name="checkmark-circle" size={16} color="#DC2626" />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+            <Text style={s.title}>Cancel {typeLabel}?</Text>
+            <Text style={s.sub}>
+              {typePrefix} #{target.id.slice(-8).toUpperCase()}
+              {target.cancelMinsLeft != null && !isRide
+                ? `  ·  ${target.cancelMinsLeft}m left to cancel`
+                : ""}
+            </Text>
 
-          {error ? <Text style={cm.error}>{error}</Text> : null}
+            {(hasFee || (isWallet && amount != null) || (!hasFee && !isWallet && isRide && !riderAssigned)) && (
+              <View style={s.infoBox}>
+                {hasFee && (
+                  <View style={s.infoRow}>
+                    <View style={[s.infoIcon, { backgroundColor: "#FEE2E2" }]}>
+                      <Ionicons name="cash-outline" size={14} color="#DC2626" />
+                    </View>
+                    <Text style={s.infoTextRed}>
+                      Rs. {cancellationFee} cancellation fee applies
+                    </Text>
+                  </View>
+                )}
+                {isWallet && amount != null && (
+                  <View style={s.infoRow}>
+                    <View style={[s.infoIcon, { backgroundColor: "#D1FAE5" }]}>
+                      <Ionicons name="wallet-outline" size={14} color="#059669" />
+                    </View>
+                    <Text style={s.infoTextGreen}>
+                      Rs. {Math.round(amount)} refunded to your wallet
+                    </Text>
+                  </View>
+                )}
+                {!hasFee && !isWallet && isRide && !riderAssigned && (
+                  <View style={s.infoRow}>
+                    <View style={[s.infoIcon, { backgroundColor: "#D1FAE5" }]}>
+                      <Ionicons name="checkmark-circle-outline" size={14} color="#059669" />
+                    </View>
+                    <Text style={s.infoTextGreen}>No cancellation fee</Text>
+                  </View>
+                )}
+              </View>
+            )}
 
-          <View style={cm.btns}>
-            <TouchableOpacity activeOpacity={0.7} style={cm.keepBtn} onPress={safeClose}>
-              <Text style={cm.keepText}>
-                {isRide ? "Keep Ride" : isParcel ? "Keep Booking" : "Keep Order"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.7}
-              style={[cm.confirmBtn, !selectedReason && { opacity: 0.5 }]}
+            <Text style={s.sectionLabel}>Why are you cancelling?</Text>
+
+            <View style={s.reasonsList}>
+              {reasons.map((r) => {
+                const active = selectedReason === r.key;
+                return (
+                  <Pressable
+                    key={r.key}
+                    onPress={() => { setSelectedReason(r.key); setError(""); }}
+                    style={({ pressed }) => [
+                      s.reasonRow,
+                      active && s.reasonRowActive,
+                      pressed && !active && s.reasonRowPressed,
+                    ]}
+                  >
+                    <View style={[s.reasonIconBox, active && s.reasonIconBoxActive]}>
+                      <Ionicons
+                        name={r.icon as any}
+                        size={17}
+                        color={active ? "#DC2626" : C.textSecondary}
+                      />
+                    </View>
+                    <Text style={[s.reasonText, active && s.reasonTextActive]} numberOfLines={1}>
+                      {r.label}
+                    </Text>
+                    <View style={[s.radioOuter, active && s.radioOuterActive]}>
+                      {active && <View style={s.radioInner} />}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {!!error && (
+              <View style={s.errorBox}>
+                <Ionicons name="alert-circle-outline" size={15} color="#DC2626" />
+                <Text style={s.errorText}>{error}</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={s.footer}>
+            <Pressable
+              style={({ pressed }) => [s.keepBtn, pressed && s.keepBtnPressed]}
+              onPress={safeClose}
+              disabled={loading}
+            >
+              <Text style={s.keepText}>{keepLabel}</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                s.confirmBtn,
+                (!selectedReason || loading) && s.confirmBtnDisabled,
+                pressed && selectedReason && !loading && s.confirmBtnPressed,
+              ]}
               onPress={handleConfirm}
               disabled={loading || !selectedReason}
             >
-              {loading
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={cm.confirmText}>Confirm Cancel</Text>}
-            </TouchableOpacity>
+              {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={17} color="#fff" />
+                  <Text style={s.confirmText}>Confirm Cancel</Text>
+                </>
+              )}
+            </Pressable>
           </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
 
-const cm = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, maxHeight: "85%" },
-  handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  headerIconWrap: { alignItems: "center", marginBottom: 14 },
-  headerIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: "#DC2626", alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: "Inter_700Bold", fontSize: 22, color: C.text, textAlign: "center", marginBottom: 4 },
-  sub: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center", marginBottom: 16 },
-  infoBox: { backgroundColor: "#FAFAFA", borderRadius: 14, padding: 14, gap: 8, marginBottom: 16, borderWidth: 1, borderColor: C.border },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  infoTextRed: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#DC2626", flex: 1 },
-  infoTextGreen: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#059669", flex: 1 },
-  reasonTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.text, marginBottom: 10 },
-  reasons: { gap: 8, marginBottom: 12 },
-  reasonChip: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    paddingVertical: 13, paddingHorizontal: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: C.border, backgroundColor: "#FAFAFA",
+const SHEET_RADIUS = 28;
+const WIDE_RADIUS = 24;
+
+const s = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(10,14,26,0.55)",
+    justifyContent: "flex-end",
+    alignItems: "center",
   },
-  reasonChipActive: { borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" },
-  reasonText: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.textSecondary, flex: 1 },
-  reasonTextActive: { color: "#DC2626" },
-  error: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#EF4444", textAlign: "center", marginBottom: 8 },
-  btns: { flexDirection: "row", gap: 12, marginTop: 8 },
-  keepBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, paddingVertical: 15, alignItems: "center" },
-  keepText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textSecondary },
-  confirmBtn: { flex: 2, backgroundColor: "#DC2626", borderRadius: 16, paddingVertical: 15, alignItems: "center", justifyContent: "center" },
-  confirmText: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" },
+
+  sheet: {
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+    width: "100%",
+    maxHeight: "92%",
+  },
+  sheetMobile: {
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+  },
+  sheetWide: {
+    maxWidth: 480,
+    borderRadius: WIDE_RADIUS,
+    marginBottom: 0,
+    alignSelf: "center",
+    paddingTop: 28,
+    paddingHorizontal: 28,
+    paddingBottom: 28,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 24px 64px rgba(10,14,26,0.22), 0 4px 16px rgba(10,14,26,0.1)",
+      } as any,
+    }),
+  },
+
+  handle: {
+    width: 38,
+    height: 4,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 22,
+  },
+
+  scrollContent: {
+    paddingBottom: 6,
+  },
+
+  iconRing: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  iconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+
+  title: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 22,
+    color: "#0F172A",
+    textAlign: "center",
+    letterSpacing: -0.3,
+    marginBottom: 5,
+  },
+  sub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    marginBottom: 20,
+    letterSpacing: 0.1,
+  },
+
+  infoBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 10,
+    marginBottom: 20,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  infoIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoTextRed: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13.5,
+    color: "#DC2626",
+    flex: 1,
+  },
+  infoTextGreen: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13.5,
+    color: "#059669",
+    flex: 1,
+  },
+
+  sectionLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: "#94A3B8",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+
+  reasonsList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  reasonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+  },
+  reasonRowActive: {
+    borderColor: "#FECACA",
+    backgroundColor: "#FEF2F2",
+  },
+  reasonRowPressed: {
+    backgroundColor: "#F1F5F9",
+  },
+  reasonIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reasonIconBoxActive: {
+    backgroundColor: "#FEE2E2",
+  },
+  reasonText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    color: "#475569",
+    flex: 1,
+  },
+  reasonTextActive: {
+    color: "#DC2626",
+    fontFamily: "Inter_600SemiBold",
+  },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioOuterActive: {
+    borderColor: "#DC2626",
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#DC2626",
+  },
+
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  errorText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#DC2626",
+    flex: 1,
+  },
+
+  footer: {
+    flexDirection: "row",
+    gap: 10,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    marginTop: 4,
+  },
+  keepBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8FAFC",
+  },
+  keepBtnPressed: {
+    backgroundColor: "#F1F5F9",
+  },
+  keepText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: "#475569",
+  },
+  confirmBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    backgroundColor: "#DC2626",
+    borderRadius: 16,
+    paddingVertical: 16,
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  confirmBtnDisabled: {
+    opacity: 0.45,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  confirmBtnPressed: {
+    backgroundColor: "#B91C1C",
+  },
+  confirmText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+    color: "#fff",
+    letterSpacing: 0.1,
+  },
 });
