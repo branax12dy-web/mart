@@ -12,6 +12,8 @@ import path from "path";
 import { logger } from "../lib/logger.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError } from "../lib/response.js";
 
+const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads/kyc");
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
 const MAX_KYC_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB per image
@@ -147,15 +149,31 @@ router.post(
     if (!backFile)   { res.status(400).json({ success: false, error: "Back side of CNIC is required" }); return; }
     if (!selfieFile) { res.status(400).json({ success: false, error: "Selfie photo is required" }); return; }
 
-    const { fullName, cnic, dateOfBirth, gender, address, city } = req.body;
+    const rawBody = req.body;
+    const fullName = typeof rawBody.fullName === "string" ? stripHtml(rawBody.fullName) : "";
+    const cnic = typeof rawBody.cnic === "string" ? rawBody.cnic : "";
+    const dateOfBirth = rawBody.dateOfBirth;
+    const gender = rawBody.gender;
+    const address = typeof rawBody.address === "string" ? stripHtml(rawBody.address) : undefined;
+    const city = typeof rawBody.city === "string" ? stripHtml(rawBody.city) : undefined;
 
-    if (!fullName?.trim())  { res.status(400).json({ error: "Full name is required" }); return; }
+    if (!fullName)          { res.status(400).json({ error: "Full name is required" }); return; }
     if (!cnic?.trim())      { res.status(400).json({ error: "CNIC number is required" }); return; }
     if (!/^\d{13}$/.test(cnic.replace(/[-\s]/g, ""))) {
       res.status(400).json({ error: "CNIC must be 13 digits (e.g. 3740512345678)" }); return;
     }
     if (!dateOfBirth)       { res.status(400).json({ error: "Date of birth is required" }); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+      res.status(400).json({ error: "Date of birth must be in YYYY-MM-DD format" }); return;
+    }
+    const dobDateMp = new Date(dateOfBirth);
+    if (isNaN(dobDateMp.getTime()) || dobDateMp > new Date()) {
+      res.status(400).json({ error: "Date of birth must be a valid past date" }); return;
+    }
     if (!gender)            { res.status(400).json({ error: "Gender is required" }); return; }
+    if (!["male", "female"].includes(gender)) {
+      res.status(400).json({ error: "Gender must be 'male' or 'female'" }); return;
+    }
 
     const cnicClean = cnic.replace(/[-\s]/g, "");
 
@@ -199,12 +217,12 @@ router.post(
         if (existing?.status === "rejected" || existing?.status === "resubmit") {
           await tx.update(kycVerificationsTable).set({
             status: "pending",
-            fullName: fullName.trim(),
+            fullName,
             cnic: cnicClean,
             dateOfBirth,
             gender,
-            address: address?.trim() ?? null,
-            city: city?.trim() ?? null,
+            address: address ?? null,
+            city: city ?? null,
             frontIdPhoto: frontUrl,
             backIdPhoto: backUrl,
             selfiePhoto: selfieUrl,
@@ -219,12 +237,12 @@ router.post(
             id,
             userId,
             status: "pending",
-            fullName: fullName.trim(),
+            fullName,
             cnic: cnicClean,
             dateOfBirth,
             gender,
-            address: address?.trim() ?? null,
-            city: city?.trim() ?? null,
+            address: address ?? null,
+            city: city ?? null,
             frontIdPhoto: frontUrl,
             backIdPhoto: backUrl,
             selfiePhoto: selfieUrl,
@@ -259,15 +277,32 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
     return;
   }
 
-  const { fullName, cnic, dateOfBirth, gender, address, city, frontIdPhoto, backIdPhoto, selfiePhoto } = req.body;
+  const rawBody = req.body;
+  const fullName = typeof rawBody.fullName === "string" ? stripHtml(rawBody.fullName) : "";
+  const cnic = typeof rawBody.cnic === "string" ? rawBody.cnic : "";
+  const dateOfBirth = rawBody.dateOfBirth;
+  const gender = rawBody.gender;
+  const address = typeof rawBody.address === "string" ? stripHtml(rawBody.address) : undefined;
+  const city = typeof rawBody.city === "string" ? stripHtml(rawBody.city) : undefined;
+  const { frontIdPhoto, backIdPhoto, selfiePhoto } = rawBody;
 
-  if (!fullName?.trim())  { res.status(400).json({ error: "Full name is required" }); return; }
+  if (!fullName)          { res.status(400).json({ error: "Full name is required" }); return; }
   if (!cnic?.trim())      { res.status(400).json({ error: "CNIC number is required" }); return; }
   if (!/^\d{13}$/.test(cnic.replace(/[-\s]/g, ""))) {
     res.status(400).json({ error: "CNIC must be 13 digits (e.g. 3740512345678)" }); return;
   }
   if (!dateOfBirth)       { res.status(400).json({ error: "Date of birth is required" }); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+    res.status(400).json({ error: "Date of birth must be in YYYY-MM-DD format" }); return;
+  }
+  const dobDate = new Date(dateOfBirth);
+  if (isNaN(dobDate.getTime()) || dobDate > new Date()) {
+    res.status(400).json({ error: "Date of birth must be a valid past date" }); return;
+  }
   if (!gender)            { res.status(400).json({ error: "Gender is required" }); return; }
+  if (!["male", "female"].includes(gender)) {
+    res.status(400).json({ error: "Gender must be 'male' or 'female'" }); return;
+  }
   if (!frontIdPhoto)      { res.status(400).json({ success: false, error: "Front side of CNIC is required" }); return; }
   if (!backIdPhoto)       { res.status(400).json({ success: false, error: "Back side of CNIC is required" }); return; }
   if (!selfiePhoto)       { res.status(400).json({ success: false, error: "Selfie photo is required" }); return; }
@@ -347,12 +382,12 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
       if (existing?.status === "rejected" || existing?.status === "resubmit") {
         await tx.update(kycVerificationsTable).set({
           status: "pending",
-          fullName: fullName.trim(),
+          fullName,
           cnic: cnicClean,
           dateOfBirth,
           gender,
-          address: address?.trim() ?? null,
-          city: city?.trim() ?? null,
+          address: address ?? null,
+          city: city ?? null,
           frontIdPhoto: frontUrl,
           backIdPhoto: backUrl,
           selfiePhoto: selfieUrl,
@@ -367,12 +402,12 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
           id,
           userId,
           status: "pending",
-          fullName: fullName.trim(),
+          fullName,
           cnic: cnicClean,
           dateOfBirth,
           gender,
-          address: address?.trim() ?? null,
-          city: city?.trim() ?? null,
+          address: address ?? null,
+          city: city ?? null,
           frontIdPhoto: frontUrl,
           backIdPhoto: backUrl,
           selfiePhoto: selfieUrl,

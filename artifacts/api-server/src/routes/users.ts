@@ -14,15 +14,23 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendV
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
 /* Avatar field is intentionally excluded — set only via POST /avatar */
+const sanitizedString = (maxLen: number, minLen = 0) =>
+  z.preprocess(
+    (v) => (typeof v === "string" ? stripHtml(v) : v),
+    minLen > 0
+      ? z.string().min(minLen, "This field cannot be empty").max(maxLen).optional()
+      : z.string().max(maxLen).optional()
+  );
+
 const profileUpdateSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty").max(100).transform(stripHtml).optional(),
+  name: sanitizedString(100, 1),
   email: z.string().email("Invalid email format").max(255).optional().or(z.literal("")),
   cnic: z.preprocess(
     (v) => typeof v === "string" ? v.replace(/[-\s]/g, "") : v,
     z.string().regex(/^\d{13}$/, "CNIC must be 13 digits (e.g. 3740512345678 or 37405-1234567-8)").optional().or(z.literal(""))
   ),
-  city: z.string().max(100).transform(stripHtml).optional(),
-  address: z.string().max(500).transform(stripHtml).optional(),
+  city: sanitizedString(100),
+  address: sanitizedString(500),
 }).strip();
 
 const deleteAccountSchema = z.object({
@@ -266,6 +274,19 @@ router.put("/profile", async (req, res) => {
       .limit(1);
     if (emailTaken) {
       sendValidationError(res, "This email address is already registered to another account.");
+      return;
+    }
+  }
+
+  const cnicClean = cnic ? cnic.replace(/[-\s]/g, "").trim() : undefined;
+  if (cnicClean && cnicClean !== (current.cnic ?? "")) {
+    const [cnicTaken] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.cnic, cnicClean), ne(usersTable.id, userId)))
+      .limit(1);
+    if (cnicTaken) {
+      sendValidationError(res, "This CNIC is already registered to another account.");
       return;
     }
   }

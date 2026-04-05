@@ -37,12 +37,25 @@ router.get("/", async (req, res) => {
   sendSuccess(res, { ...settings, updatedAt: settings!.updatedAt.toISOString() });
 });
 
+const BOOLEAN_FIELDS = new Set([
+  "notifOrders", "notifWallet", "notifDeals", "notifRides",
+  "locationSharing", "biometric", "twoFactor", "darkMode",
+]);
+const ALLOWED_FIELDS = new Set([...BOOLEAN_FIELDS, "language"]);
+
 router.put("/", async (req, res) => {
   const userId = req.customerId!;
-  const { userId: _ignored, ...updates } = req.body;
+  const raw = req.body;
 
-  if (updates.language !== undefined && !VALID_LANGUAGES.includes(updates.language)) {
-    delete updates.language;
+  const updates: Record<string, any> = {};
+  for (const key of Object.keys(raw)) {
+    if (!ALLOWED_FIELDS.has(key)) continue;
+    if (BOOLEAN_FIELDS.has(key)) {
+      if (typeof raw[key] !== "boolean") continue;
+      updates[key] = raw[key];
+    } else if (key === "language") {
+      if (VALID_LANGUAGES.includes(raw[key])) updates[key] = raw[key];
+    }
   }
 
   let [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.userId, userId)).limit(1);

@@ -11,6 +11,21 @@ AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pak
 #### Auth Gating Applied Across Screens
 - **`app/food/index.tsx`**, **`app/mart/index.tsx`**, **`app/product/[id].tsx`**, **`app/search.tsx`**, **`app/pharmacy/index.tsx`**, **`components/WishlistHeart.tsx`**, **`components/ride/RideBookingForm.tsx`**, **`app/cart/index.tsx`**: All auth-required actions (add to cart, place order, book ride, wishlist toggle, prescription upload) now show `AuthGateSheet` for guests and `RoleBlockSheet` for vendor/rider accounts instead of crashing or silently failing.
 
+#### Profile Section Audit, Fixes & Refactor
+- **`app/(tabs)/profile.tsx`** refactored from ~2390 lines to ~713 lines. Six modal components extracted into `components/profile/`:
+  - `KycModal.tsx` — KYC verification flow
+  - `EditProfileModal.tsx` — Profile editing with avatar upload
+  - `NotificationsModal.tsx` — Notification list with routing
+  - `DeleteAccountRow.tsx` — Account deletion with confirmation
+  - `PrivacyModal.tsx` — Privacy, security, 2FA, language, password change
+  - `AddressesModal.tsx` — Saved addresses CRUD
+  - `shared.ts` — Shared styles, constants, and utilities
+  - `index.ts` — Barrel exports
+- Bug fixes applied: `stripPkCode()` for phone display, `activeOpacity={1}` on modal overlays, KYC MIME caching from picker, notification `typeMap` expanded (food/mart/pharmacy/parcel/deals), `n.link` deep link fallback, platform config cities with fallback.
+- **`artifacts/api-server/src/routes/settings.ts`**: PUT endpoint now whitelists allowed fields (boolean toggles + language) and validates types before writing to DB.
+- **`artifacts/api-server/src/routes/users.ts`**: Profile update now checks CNIC uniqueness across users.
+- **`artifacts/api-server/src/routes/kyc.ts`**: Both submit endpoints validate DOB format (YYYY-MM-DD), reject future dates, and validate gender enum (male/female).
+
 #### Null/Undefined Crash Fixes
 - **`app/(tabs)/profile.tsx`**: Optional chaining on `user.name.split`, `user.avatar.startsWith`, `user.username`, `user.city`, `user.area`, `user.address`, `user.latitude`, `user.longitude`, `user.cnic`.
 
