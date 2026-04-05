@@ -904,9 +904,17 @@ function WalletScreenInner() {
         body: JSON.stringify({ phone: sendPhone.trim() }),
       });
       const data = unwrapApiResponse(await res.json());
+      if (!res.ok || !data.found) {
+        showToast("No AJKMart account found with this phone number.", "error");
+        setSendLoading(false);
+        return;
+      }
       setSendReceiverName(data.name || "");
     } catch (err) {
       if (__DEV__) console.warn("[Wallet] Receiver lookup failed:", err instanceof Error ? err.message : String(err));
+      showToast("Could not verify receiver. Please check the number and try again.", "error");
+      setSendLoading(false);
+      return;
     }
     setSendLoading(false);
     setSendStep("confirm");

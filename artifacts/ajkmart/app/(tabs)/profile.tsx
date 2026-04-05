@@ -1397,7 +1397,7 @@ function ProfileScreenInner() {
       }
     }
     setStatsLoading(false);
-  }, [user?.id]);
+  }, [user?.id, token]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

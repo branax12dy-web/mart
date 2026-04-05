@@ -792,3 +792,9 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 
 #### Payment Method Seeding
 - **`artifacts/api-server/src/routes/seed.ts`**: Seed endpoint (`POST /api/seed/products`) now upserts 15 platform settings to enable JazzCash (manual), EasyPaisa (manual), and Bank Transfer as payment methods with placeholder account details. Uses `onConflictDoUpdate` to ensure the demo always has working deposit methods. Admin can override these values in the admin panel at any time.
+
+#### Bug Fix: Profile `fetchAll` Stale Token (Bug #4)
+- **`artifacts/ajkmart/app/(tabs)/profile.tsx`**: `fetchAll` `useCallback` was declared with `[user?.id]` as its dependency array, but the callback closes over `token` from `useAuth()`. After a token refresh, the old stale token was used for all profile API calls. Fixed by adding `token` to the dependency array: `}, [user?.id, token])`.
+
+#### Bug Fix: Wallet Send — Receiver Not Found Not Caught (Bug #5)
+- **`artifacts/ajkmart/app/(tabs)/wallet.tsx`**: `handleSendContinue` called `POST /wallet/resolve-phone`, but did not check the `found` field in the response. When a phone number had no AJKMart account, the app silently advanced to the send confirmation screen with a blank receiver name — allowing the user to attempt a transfer to a non-existent account. Fixed by checking `!data.found` after the API call and showing a toast error ("No AJKMart account found with this phone number.") and returning early. Also added a `catch` block that shows a toast on network errors and returns early, preventing the confirm step from being reached.
