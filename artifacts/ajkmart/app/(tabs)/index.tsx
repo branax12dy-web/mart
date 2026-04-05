@@ -338,38 +338,6 @@ const tr = StyleSheet.create({
   ctaTxt: { fontFamily: Font.semiBold, fontSize: 12, color: "#000" },
 });
 
-function WalletStrip({ balance, onPress, appName = "AJKMart" }: { balance: number; onPress: () => void; appName?: string }) {
-  return (
-    <TouchableOpacity activeOpacity={0.7} onPress={onPress} accessibilityRole="button" accessibilityLabel={`${appName} Wallet, Rs. ${balance.toLocaleString()}, tap to open`} style={ws.wrap}>
-      <LinearGradient colors={["#0047B3", "#0066FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={ws.card}>
-        <View style={ws.left}>
-          <View style={ws.iconBox}>
-            <Ionicons name="wallet" size={16} color="#fff" />
-          </View>
-          <View>
-            <Text style={ws.lbl}>{appName} Wallet</Text>
-            <Text style={ws.bal}>Rs. {balance.toLocaleString()}</Text>
-          </View>
-        </View>
-        <View style={ws.topupBtn}>
-          <Ionicons name="add" size={14} color={C.primary} />
-          <Text style={ws.topupTxt}>Top Up</Text>
-        </View>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
-
-const ws = StyleSheet.create({
-  wrap: { marginHorizontal: H_PAD, borderRadius: 14, overflow: "hidden" },
-  card: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14 },
-  left: { flexDirection: "row", alignItems: "center", gap: 12 },
-  iconBox: { width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  lbl: { fontFamily: Font.regular, fontSize: 11, color: "rgba(255,255,255,0.75)", marginBottom: 1 },
-  bal: { fontFamily: Font.bold, fontSize: 17, color: "#fff" },
-  topupBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12 },
-  topupTxt: { fontFamily: Font.semiBold, fontSize: 12, color: C.primary },
-});
 
 function DynamicBannerCarousel() {
   const { data: banners, isLoading: bannersLoading, isError: bannersError, refetch: refetchBanners } = useQuery({
@@ -1103,25 +1071,12 @@ export default function HomeScreen() {
   const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const isGuest = !user?.id;
 
-  const { data: walletData } = useQuery({
-    queryKey: ["home-wallet-balance", user?.id],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/wallet`, { headers: authHdrs });
-      if (!r.ok) throw new Error("wallet fetch failed");
-      return r.json().then(unwrapApiResponse<{ balance: number; transactions: any[] }>);
-    },
-    enabled: !isGuest && !!token,
-    staleTime: 30000,
-    retry: 1,
-  });
-
   const handleHomeRefresh = useCallback(async () => {
     try { await refreshConfig(); } catch (err) { if (__DEV__) console.warn("[Home] Config refresh failed:", err instanceof Error ? err.message : String(err)); }
     queryClient.invalidateQueries({ queryKey: ["dynamic-banners"] });
     queryClient.invalidateQueries({ queryKey: ["flash-deals"] });
     queryClient.invalidateQueries({ queryKey: ["trending-products"] });
     if (!isGuest) {
-      queryClient.invalidateQueries({ queryKey: ["home-wallet-balance"] });
       queryClient.invalidateQueries({ queryKey: ["home-active-orders"] });
       queryClient.invalidateQueries({ queryKey: ["home-active-rides"] });
     }
@@ -1171,11 +1126,6 @@ export default function HomeScreen() {
 
   const activeServices = getActiveServices(features);
   const noServicesActive = activeServices.length === 0;
-
-  const walletBalance = walletData?.balance ?? 0;
-  const walletHasActivity = (walletData?.transactions?.length ?? 0) > 0;
-  const walletLoaded = !isGuest && walletData !== undefined;
-  const showWalletStrip = walletLoaded && (walletBalance > 0 || walletHasActivity);
 
   const handleLocationPress = () => {
     Alert.alert(
@@ -1295,16 +1245,6 @@ export default function HomeScreen() {
 
             {!isGuest && !!user?.id && (
               <ActiveTrackerStrip userId={user.id} />
-            )}
-
-            {showWalletStrip && (
-              <View style={{ marginTop: 10 }}>
-                <WalletStrip
-                  balance={walletBalance}
-                  onPress={() => router.push("/(tabs)/wallet" as Href)}
-                  appName={appName}
-                />
-              </View>
             )}
 
             {platformConfig.content.showBanner && <DynamicBannerCarousel />}
