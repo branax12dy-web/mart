@@ -911,30 +911,63 @@ const WMO_ICONS: Record<number, { icon: string; label: string }> = {
   99: { icon: "thunderstorm-outline", label: "Severe Thunderstorm" },
 };
 
-const WEATHER_CACHE_TTL = 45 * 60_000;
+const WEATHER_CACHE_TTL = 30 * 60_000;
+const SAVED_CITY_KEY = "weather_manual_city";
 
 function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; userLng?: number; cityLabel?: string }) {
-  const [weather, setWeather] = useState<{ temp: number; code: number; windSpeed: number; humidity: number } | null>(null);
+  const [weather, setWeather] = useState<{ temp: number; code: number; windSpeed: number; humidity: number; feelsLike?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [locationLabel, setLocationLabel] = useState(cityLabel || "");
-
-  useEffect(() => { if (cityLabel) setLocationLabel(cityLabel); }, [cityLabel]);
+  const [isGps, setIsGps] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        let lat: number;
-        let lng: number;
-        if (userLat != null && userLng != null && Number.isFinite(userLat) && Number.isFinite(userLng)) {
-          lat = Math.round(userLat * 10) / 10;
-          lng = Math.round(userLng * 10) / 10;
-        } else {
-          if (!cancelled) setLoading(false);
-          return;
-        }
-        const cacheKey = `weather_cache_${lat}_${lng}`;
+        let lat: number | undefined;
+        let lng: number | undefined;
+        let locName = cityLabel || "";
+        let gps = false;
 
+        try {
+          const { status } = await (await import("expo-location")).requestForegroundPermissionsAsync();
+          if (status === "granted") {
+            const loc = await (await import("expo-location")).getCurrentPositionAsync({ accuracy: 3 });
+            lat = Math.round(loc.coords.latitude * 10) / 10;
+            lng = Math.round(loc.coords.longitude * 10) / 10;
+            gps = true;
+            try {
+              const rev = await (await import("expo-location")).reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+              if (rev.length > 0) {
+                locName = [rev[0].city || rev[0].subregion, rev[0].region].filter(Boolean).join(", ") || locName;
+              }
+            } catch {}
+          }
+        } catch {}
+
+        if (lat == null || lng == null) {
+          const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch(() => null);
+          if (saved) {
+            try {
+              const p = JSON.parse(saved);
+              lat = p.lat; lng = p.lng; locName = p.name || locName;
+            } catch {}
+          }
+        }
+
+        if (lat == null || lng == null) {
+          if (userLat != null && userLng != null && Number.isFinite(userLat) && Number.isFinite(userLng)) {
+            lat = Math.round(userLat * 10) / 10;
+            lng = Math.round(userLng * 10) / 10;
+          } else {
+            if (!cancelled) setLoading(false);
+            return;
+          }
+        }
+
+        if (!cancelled) { setLocationLabel(locName); setIsGps(gps); }
+
+        const cacheKey = `weather_cache_${lat}_${lng}`;
         const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
         if (cached) {
           try {
@@ -946,7 +979,7 @@ function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; user
           } catch {}
         }
 
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m&timezone=auto`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m,apparent_temperature&timezone=auto`;
         const resp = await fetch(url);
         if (!resp.ok) throw new Error("weather fetch failed");
         const data = await resp.json();
@@ -957,6 +990,7 @@ function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; user
           code: cur.weather_code ?? 0,
           windSpeed: Math.round(cur.wind_speed_10m ?? 0),
           humidity: Math.round(cur.relative_humidity_2m ?? 0),
+          feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m),
           _ts: Date.now(),
         };
         AsyncStorage.setItem(cacheKey, JSON.stringify(w)).catch(() => {});
@@ -966,7 +1000,7 @@ function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; user
       }
     })();
     return () => { cancelled = true; };
-  }, [userLat, userLng]);
+  }, [userLat, userLng, cityLabel]);
 
   if (!loading && !weather) return null;
 
@@ -988,21 +1022,32 @@ function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; user
   }
 
   return (
-    <View style={wS.wrap}>
+    <TouchableOpacity
+      onPress={() => router.push("/weather" as Href)}
+      activeOpacity={0.7}
+      style={wS.wrap}
+    >
       <View style={wS.row}>
         <View style={wS.iconWrap}>
           <Ionicons name={wmo.icon as keyof typeof Ionicons.glyphMap} size={22} color={C.primary} />
         </View>
-        <View style={{ flex: 1, gap: 1 }}>
+        <View style={{ flex: 1, gap: 2 }}>
           <Text style={wS.label}>{wmo.label}{locationLabel ? ` · ${locationLabel}` : ""}</Text>
           <View style={wS.detailRow}>
             <Text style={wS.detail}>💧 {weather!.humidity}%</Text>
             <Text style={wS.detail}>💨 {weather!.windSpeed} km/h</Text>
+            {weather!.feelsLike != null && <Text style={wS.detail}>🌡 Feels {weather!.feelsLike}°</Text>}
           </View>
         </View>
-        <Text style={wS.temp}>{weather!.temp}°C</Text>
+        <View style={{ alignItems: "flex-end", gap: 2 }}>
+          <Text style={wS.temp}>{weather!.temp}°C</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            {isGps && <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#4ade80" }} />}
+            <Text style={{ fontFamily: Font.regular, fontSize: 9, color: C.textMuted }}>Tap for forecast</Text>
+          </View>
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -1010,7 +1055,7 @@ const wS = StyleSheet.create({
   wrap: {
     marginHorizontal: H_PAD, marginTop: 10,
     backgroundColor: C.surface, borderRadius: 14,
-    paddingHorizontal: 14, paddingVertical: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
     ...shadows.sm,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -1020,7 +1065,7 @@ const wS = StyleSheet.create({
     backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center",
   },
   label: { fontFamily: Font.semiBold, fontSize: 13, color: C.text },
-  detailRow: { flexDirection: "row", gap: 10 },
+  detailRow: { flexDirection: "row", gap: 8 },
   detail: { fontFamily: Font.regular, fontSize: 11, color: C.textMuted },
   temp: { fontFamily: Font.bold, fontSize: 22, color: C.primary },
 });
