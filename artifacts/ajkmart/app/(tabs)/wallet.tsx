@@ -501,8 +501,8 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                 ) : methodsError ? (
                   <View style={{ backgroundColor: C.redBg, borderRadius: 16, padding: 24, alignItems: "center", gap: 10, borderWidth: 1, borderColor: C.redSoft }}>
                     <Ionicons name="alert-circle-outline" size={28} color={C.danger} />
-                    <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>Methods Unavailable</Text>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, textAlign: "center" }}>Could not load payment methods. Please try again.</Text>
+                    <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>Deposit Not Available</Text>
+                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, textAlign: "center" }}>JazzCash, EasyPaisa, and Bank Transfer are not yet enabled. Please contact support to add funds.</Text>
                     <TouchableOpacity activeOpacity={0.7} onPress={() => {
                       setMethodsError(false);
                       setLoadingMethods(true);

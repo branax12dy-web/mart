@@ -2004,9 +2004,9 @@ const fld = StyleSheet.create({
 
 const chip = StyleSheet.create({
   base: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: spacing.md, paddingVertical: 7, borderRadius: radii.full, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
-  active: {},
+  active: { backgroundColor: C.primarySoft, borderColor: C.primary },
   text: { ...typography.captionMedium, color: C.textMuted },
-  textActive: {},
+  textActive: { color: C.primary },
 });
 
 const errStyle = StyleSheet.create({

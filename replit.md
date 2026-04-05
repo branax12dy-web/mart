@@ -780,3 +780,15 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 - Admin panel: `/dashboard`, `/users`, and all 25+ protected routes redirect to login without token.
 - Vendor app: All routes behind global `!user → <Login />` guard; multi-step registration embedded in Login component.
 - Rider app: `/dashboard` and all routes redirect to login; `/register` and `/forgot-password` are public.
+
+#### Bug Fix: Orders Tab Auth Gate (Consistency)
+- **`artifacts/ajkmart/app/(tabs)/orders.tsx`**: Replaced `AuthGateSheet` bottom-sheet modal (dark overlay) with the same inline full-screen gate pattern used in Wallet and Profile tabs — receipt icon, bold title, subtitle, "Sign In / Register" button, and "Continue Browsing" link. Uses `AsyncStorage.setItem("@ajkmart_auth_return_to", ...)` for deep-link return on login.
+
+#### Bug Fix: Wallet Deposit Modal Error Message
+- **`artifacts/ajkmart/app/(tabs)/wallet.tsx`**: When no deposit methods are configured (JazzCash/EasyPaisa/Bank all disabled in platform settings), the modal now says "Deposit Not Available — JazzCash, EasyPaisa, and Bank Transfer are not yet enabled. Please contact support to add funds." instead of the misleading "Could not load payment methods. Please try again."
+
+#### Bug Fix: Profile City Chip Active State
+- **`artifacts/ajkmart/app/(tabs)/profile.tsx`**: `chip.active` style was empty `{}` — no visual feedback when a city chip is selected in the registration/edit profile modal. Fixed to `{ backgroundColor: C.primarySoft, borderColor: C.primary }` and `chip.textActive` to `{ color: C.primary }` so the selected city is visually distinct.
+
+#### Payment Method Seeding
+- **`artifacts/api-server/src/routes/seed.ts`**: Seed endpoint (`POST /api/seed/products`) now upserts 15 platform settings to enable JazzCash (manual), EasyPaisa (manual), and Bank Transfer as payment methods with placeholder account details. Uses `onConflictDoUpdate` to ensure the demo always has working deposit methods. Admin can override these values in the admin panel at any time.

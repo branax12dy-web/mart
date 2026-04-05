@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable, bannersTable, flashDealsTable } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { productsTable, bannersTable, flashDealsTable, platformSettingsTable } from "@workspace/db/schema";
+import { eq, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { adminAuth } from "./admin.js";
 
@@ -280,10 +280,35 @@ router.post("/products", async (req, res) => {
     }
   }
 
+  const PAYMENT_DEFAULTS: Array<{ key: string; value: string; label: string; category: string }> = [
+    { key: "jazzcash_enabled",        value: "on",                                              label: "JazzCash Enabled",             category: "payments" },
+    { key: "jazzcash_type",           value: "manual",                                          label: "JazzCash Type",                category: "payments" },
+    { key: "jazzcash_manual_name",    value: "AJKMart Payments",                                label: "JazzCash Account Name",        category: "payments" },
+    { key: "jazzcash_manual_number",  value: "0300-0000000",                                    label: "JazzCash Number",              category: "payments" },
+    { key: "jazzcash_manual_instructions", value: "JazzCash number par payment karein aur transaction ID hamein share karein.", label: "JazzCash Instructions", category: "payments" },
+    { key: "easypaisa_enabled",       value: "on",                                              label: "EasyPaisa Enabled",            category: "payments" },
+    { key: "easypaisa_type",          value: "manual",                                          label: "EasyPaisa Type",               category: "payments" },
+    { key: "easypaisa_manual_name",   value: "AJKMart Payments",                                label: "EasyPaisa Account Name",       category: "payments" },
+    { key: "easypaisa_manual_number", value: "0300-0000000",                                    label: "EasyPaisa Number",             category: "payments" },
+    { key: "easypaisa_manual_instructions", value: "EasyPaisa number par payment karein aur transaction ID hamein share karein.", label: "EasyPaisa Instructions", category: "payments" },
+    { key: "bank_enabled",            value: "on",                                              label: "Bank Transfer Enabled",        category: "payments" },
+    { key: "bank_account_title",      value: "AJKMart Operations",                              label: "Bank Account Title",           category: "payments" },
+    { key: "bank_account_number",     value: "PK00 MEEZ 0000 0000 0000 0000",                   label: "Bank Account Number",          category: "payments" },
+    { key: "bank_name",               value: "Meezan Bank",                                     label: "Bank Name",                    category: "payments" },
+    { key: "bank_instructions",       value: "Bank account mein transfer karein aur receipt hum se share karein.", label: "Bank Instructions", category: "payments" },
+  ];
+  let seededPayments = 0;
+  for (const s of PAYMENT_DEFAULTS) {
+    await db.insert(platformSettingsTable)
+      .values({ key: s.key, value: s.value, label: s.label, category: s.category })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: s.value, label: s.label, category: s.category, updatedAt: new Date() } });
+    seededPayments++;
+  }
+
   res.json({
     success: true,
-    seeded: { mart: seededMart, food: seededFood, banners: seededBanners, deals: seededDeals },
-    message: `Seeded: ${seededMart} mart, ${seededFood} food, ${seededBanners} banners, ${seededDeals} deals`,
+    seeded: { mart: seededMart, food: seededFood, banners: seededBanners, deals: seededDeals, paymentSettings: seededPayments },
+    message: `Seeded: ${seededMart} mart, ${seededFood} food, ${seededBanners} banners, ${seededDeals} deals, ${seededPayments} payment settings`,
   });
 });
 
