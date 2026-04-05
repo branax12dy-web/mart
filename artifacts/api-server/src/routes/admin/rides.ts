@@ -661,9 +661,18 @@ router.get("/dashboard-export", async (_req, res) => {
         .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to))),
       db.select({ total: sum(ridesTable.fare) }).from(ridesTable)
         .where(and(eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, from), lte(ridesTable.createdAt, to))),
-    ]).then(([[o], [r]]) => ({
+      db.select({ cnt: count() }).from(ordersTable)
+        .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to))),
+      db.select({ cnt: count() }).from(ridesTable)
+        .where(and(eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, from), lte(ridesTable.createdAt, to))),
+      db.select({ cnt: count() }).from(notificationsTable)
+        .where(and(eq(notificationsTable.type, "sos"), gte(notificationsTable.createdAt, from), lte(notificationsTable.createdAt, to))),
+    ]).then(([[o], [r], [oCnt], [rCnt], [sosCnt]]) => ({
       date: dateStr,
       revenue: parseFloat(o?.total ?? "0") + parseFloat(r?.total ?? "0"),
+      orderCount: oCnt?.cnt ?? 0,
+      rideCount:  rCnt?.cnt  ?? 0,
+      sosCount:   sosCnt?.cnt ?? 0,
     }));
   });
   const trend = await Promise.all(trendPromises);
