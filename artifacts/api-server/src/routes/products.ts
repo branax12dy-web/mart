@@ -52,7 +52,6 @@ router.get("/flash-deals", async (req, res) => {
         inArray(productsTable.id, dealProductIds),
         eq(productsTable.approvalStatus, "approved"),
         eq(productsTable.inStock, true),
-        isNull(productsTable.deletedAt),
       ))
       .orderBy(asc(productsTable.createdAt));
 
@@ -91,7 +90,6 @@ router.get("/trending-searches", async (req, res) => {
     .where(and(
       eq(productsTable.approvalStatus, "approved"),
       eq(productsTable.inStock, true),
-      isNull(productsTable.deletedAt),
     ))
     .orderBy(desc(productsTable.reviewCount))
     .limit(limit * 3);
@@ -157,7 +155,6 @@ router.get("/search", async (req, res) => {
   const baseConditions: SQL[] = [
     eq(productsTable.approvalStatus, "approved"),
     eq(productsTable.inStock, true),
-    isNull(productsTable.deletedAt),
   ];
   if (type && typeof type === "string") baseConditions.push(eq(productsTable.type, type));
   if (category && typeof category === "string") baseConditions.push(eq(productsTable.category, category));
@@ -228,7 +225,6 @@ router.get("/", async (req, res) => {
   const conditions: SQL[] = [
     eq(productsTable.approvalStatus, "approved"),
     eq(productsTable.inStock, true),
-    isNull(productsTable.deletedAt),
   ];
   if (type) conditions.push(eq(productsTable.type, type as string));
   if (category) conditions.push(eq(productsTable.category, category as string));
