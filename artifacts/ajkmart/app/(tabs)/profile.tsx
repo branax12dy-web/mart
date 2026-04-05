@@ -431,9 +431,9 @@ function ProfileScreenInner() {
         <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
           <Ionicons name="person-outline" size={32} color={C.primary} />
         </View>
-        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>Sign in to continue</Text>
+        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>{T("signInToContinue")}</Text>
         <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 28 }}>
-          Sign in to manage your account, settings, addresses, and more.
+          {T("signInProfileSub")}
         </Text>
         <TouchableOpacity
           activeOpacity={0.7}
@@ -446,10 +446,10 @@ function ProfileScreenInner() {
           accessibilityLabel="Sign In or Register"
         >
           <Ionicons name="person-circle-outline" size={18} color="#fff" />
-          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Sign In / Register</Text>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>{T("signInRegister")}</Text>
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={{ paddingVertical: 12 }} accessibilityRole="button">
-          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textMuted }}>Continue Browsing</Text>
+          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textMuted }}>{T("continueBrowsing")}</Text>
         </TouchableOpacity>
       </View>
     );

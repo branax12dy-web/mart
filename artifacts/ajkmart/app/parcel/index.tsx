@@ -263,13 +263,13 @@ function ParcelScreenInner() {
     if (s === 0) {
       if (!senderName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!senderPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
-      if (!isValidPakistaniPhone(senderPhone)) { showToast("Phone must be a valid Pakistani number (03XXXXXXXXX, +923XXXXXXXXX, or 3XXXXXXXXX)", "error"); return false; }
+      if (!isValidPakistaniPhone(senderPhone)) { showToast(T("invalidPhoneNumber"), "error"); return false; }
       if (!pickupAddress.trim()) { showToast(T("pickupAddress"), "error"); return false; }
     }
     if (s === 1) {
       if (!receiverName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!receiverPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
-      if (!isValidPakistaniPhone(receiverPhone)) { showToast("Phone must be a valid Pakistani number (03XXXXXXXXX, +923XXXXXXXXX, or 3XXXXXXXXX)", "error"); return false; }
+      if (!isValidPakistaniPhone(receiverPhone)) { showToast(T("invalidPhoneNumber"), "error"); return false; }
       if (!dropAddress.trim()) { showToast(T("dropAddress"), "error"); return false; }
     }
     if (s === 2) {
@@ -326,7 +326,7 @@ function ParcelScreenInner() {
         Math.abs(finalPickupLat - finalDropLat) < 0.0001 &&
         Math.abs(finalPickupLng - finalDropLng) < 0.0001
       ) {
-        showToast("Pickup and drop-off locations cannot be the same", "error");
+        showToast(T("sameLocationError"), "error");
         setLoading(false);
         return;
       }
@@ -355,7 +355,7 @@ function ParcelScreenInner() {
       setConfirmed(true);
     } catch (err: unknown) {
       const errMsg = (err as { message?: string })?.message;
-      showToast(errMsg || "Could not book parcel", "error");
+      showToast(errMsg || T("couldNotBookParcel"), "error");
     } finally {
       setLoading(false);
     }
@@ -493,7 +493,7 @@ function ParcelScreenInner() {
             />
             {geoError === "pickup" && (
               <Text style={{ ...Typ.captionMedium, color: C.danger, marginTop: 4 }}>
-                Could not locate this address. Try a more specific address or use the map selector.
+                {T("addressNotFound")}
               </Text>
             )}
           </View>
@@ -536,7 +536,7 @@ function ParcelScreenInner() {
             />
             {geoError === "drop" && (
               <Text style={{ ...Typ.captionMedium, color: C.danger, marginTop: 4 }}>
-                Could not locate this address. Try a more specific address or use the map selector.
+                {T("addressNotFound")}
               </Text>
             )}
           </View>
@@ -567,26 +567,26 @@ function ParcelScreenInner() {
                 style={ss.input}
                 keyboardType="decimal-pad"
               />
-              <Text style={ss.label}>Dimensions (cm) — Optional</Text>
+              <Text style={ss.label}>{T("dimensionsLabel")}</Text>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>Length</Text>
+                  <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>{T("lengthLabel")}</Text>
                   <TextInput value={length} onChangeText={setLength} placeholder="L" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>Width</Text>
+                  <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>{T("widthLabel")}</Text>
                   <TextInput value={width} onChangeText={setWidth} placeholder="W" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>Height</Text>
+                  <Text style={[ss.label, { fontSize: 11, marginBottom: 4 }]}>{T("heightLabel")}</Text>
                   <TextInput value={height} onChangeText={setHeight} placeholder="H" placeholderTextColor={C.textMuted} style={[ss.input, { textAlign: "center" }]} keyboardType="decimal-pad" />
                 </View>
               </View>
               {volumetricWeight > 0 && (
                 <View style={{ backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginTop: 4, gap: 4 }}>
-                  <Text style={{ ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.amberDark }}>Weight Breakdown</Text>
-                  <Text style={{ ...Typ.small, color: C.amberDark }}>Actual: {actualWeight.toFixed(1)} kg  •  Volumetric: {volumetricWeight.toFixed(2)} kg</Text>
-                  <Text style={{ ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.amber }}>Chargeable: {chargeableWeight.toFixed(2)} kg</Text>
+                  <Text style={{ ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.amberDark }}>{T("weightBreakdown")}</Text>
+                  <Text style={{ ...Typ.small, color: C.amberDark }}>{T("actualWeight")}: {actualWeight.toFixed(1)} kg  •  {T("volumetricWeight")}: {volumetricWeight.toFixed(2)} kg</Text>
+                  <Text style={{ ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.amber }}>{T("chargeableWeight")}: {chargeableWeight.toFixed(2)} kg</Text>
                 </View>
               )}
               <Text style={ss.label}>{T("descriptionOptional")}</Text>
@@ -676,12 +676,12 @@ function ParcelScreenInner() {
               <View style={[{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
                 {estimatedFare > 0 && confirmedFare > 0 && confirmedFare !== estimatedFare && (
                   <View style={ss.summaryRow}>
-                    <Text style={[ss.summaryTotal, { color: C.textMuted, fontSize: 12 }]}>Estimated Fare</Text>
+                    <Text style={[ss.summaryTotal, { color: C.textMuted, fontSize: 12 }]}>{T("estimatedFareLabel")}</Text>
                     <Text style={[ss.summaryFare, { color: C.textMuted, fontSize: 12, textDecorationLine: "line-through" }]}>Rs. {estimatedFare.toLocaleString()}</Text>
                   </View>
                 )}
                 <View style={ss.summaryRow}>
-                  <Text style={ss.summaryTotal}>{confirmedFare > 0 ? "Confirmed Fare" : T("totalFare")}</Text>
+                  <Text style={ss.summaryTotal}>{confirmedFare > 0 ? T("confirmedFareLabel") : T("totalFare")}</Text>
                   <Text style={ss.summaryFare}>Rs. {(confirmedFare || estimatedFare).toLocaleString()}</Text>
                 </View>
               </View>
@@ -722,7 +722,7 @@ function ParcelScreenInner() {
         <View style={ss.locModal}>
           <View style={ss.locModalHeader}>
             <Text style={ss.locModalTitle}>
-              {showLocPicker === "pickup" ? "📍 Pickup" : "🏁 Drop"} Location
+              {showLocPicker === "pickup" ? `📍 ${T("pickup")}` : `🏁 ${T("dropOff")}`} {T("location")}
             </Text>
             <TouchableOpacity activeOpacity={0.7} onPress={() => { setShowLocPicker(null); setLocSearch(""); }} style={ss.locCloseBtn}>
               <Ionicons name="close" size={20} color={C.text} />
@@ -769,7 +769,7 @@ function ParcelScreenInner() {
                     setShowLocPicker(null);
                     setLocSearch("");
                   } catch {
-                    showToast("Could not resolve location. Please type the address manually.", "error");
+                    showToast(T("addressNotFound"), "error");
                   }
                 }}
               >
@@ -787,7 +787,7 @@ function ParcelScreenInner() {
             ))}
             {predictions.length === 0 && !locLoading && locSearch.length > 2 && (
               <View style={{ padding: 24, alignItems: "center" }}>
-                <Text style={{ color: C.textMuted, fontSize: 13 }}>No location found</Text>
+                <Text style={{ color: C.textMuted, fontSize: 13 }}>{T("noResults")}</Text>
               </View>
             )}
           </ScrollView>

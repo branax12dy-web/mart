@@ -1633,9 +1633,9 @@ function OrdersScreenInner() {
         <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
           <Ionicons name="receipt-outline" size={32} color={C.primary} />
         </View>
-        <Text style={{ fontFamily: Font.bold, fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>Sign in to continue</Text>
+        <Text style={{ fontFamily: Font.bold, fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>{T("signInToContinue")}</Text>
         <Text style={{ fontFamily: Font.regular, fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 28 }}>
-          Sign in to view your orders, track deliveries, and manage all your activity.
+          {T("signInOrdersSub")}
         </Text>
         <TouchableOpacity
           activeOpacity={0.7}
@@ -1648,10 +1648,10 @@ function OrdersScreenInner() {
           accessibilityLabel="Sign In or Register"
         >
           <Ionicons name="person-circle-outline" size={18} color="#fff" />
-          <Text style={{ fontFamily: Font.bold, fontSize: 15, color: "#fff" }}>Sign In / Register</Text>
+          <Text style={{ fontFamily: Font.bold, fontSize: 15, color: "#fff" }}>{T("signInRegister")}</Text>
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={{ paddingVertical: 12 }} accessibilityRole="button">
-          <Text style={{ fontFamily: Font.semiBold, fontSize: 14, color: C.textMuted }}>Continue Browsing</Text>
+          <Text style={{ fontFamily: Font.semiBold, fontSize: 14, color: C.textMuted }}>{T("continueBrowsing")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -1663,7 +1663,7 @@ function OrdersScreenInner() {
         <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
           <Ionicons name="alert-circle-outline" size={36} color={C.amber} />
         </View>
-        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>Customer Account Required</Text>
+        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>{T("customerAccountRequired")}</Text>
         <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22 }}>
           {`You're signed in as a ${user.role} account. Orders and bookings are only available for customer accounts.`}
         </Text>

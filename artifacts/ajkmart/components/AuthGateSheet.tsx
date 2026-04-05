@@ -8,6 +8,8 @@ import { Font } from "@/constants/typography";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { useAuth } from "@/context/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 
 const C = Colors.light;
 
@@ -19,6 +21,8 @@ interface AuthGateSheetProps {
 }
 
 export function AuthGateSheet({ visible, onClose, returnTo, message }: AuthGateSheetProps) {
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const handleSignIn = async () => {
     onClose();
     if (returnTo) {
@@ -36,18 +40,18 @@ export function AuthGateSheet({ visible, onClose, returnTo, message }: AuthGateS
           </LinearGradient>
         </View>
 
-        <Text style={s.title}>Sign in to continue</Text>
+        <Text style={s.title}>{T("signInToContinue")}</Text>
         <Text style={s.message}>
-          {message || "You need to be signed in to perform this action. Create an account or log in to get started."}
+          {message || T("signInDefaultMsg")}
         </Text>
 
         <Pressable onPress={handleSignIn} style={s.signInBtn} accessibilityRole="button">
           <Ionicons name="person-circle-outline" size={18} color="#fff" />
-          <Text style={s.signInTxt}>Sign In / Register</Text>
+          <Text style={s.signInTxt}>{T("signInRegister")}</Text>
         </Pressable>
 
         <Pressable onPress={onClose} style={s.browseBtn} accessibilityRole="button">
-          <Text style={s.browseTxt}>Continue Browsing</Text>
+          <Text style={s.browseTxt}>{T("continueBrowsing")}</Text>
         </Pressable>
       </View>
     </BottomSheet>
@@ -55,6 +59,8 @@ export function AuthGateSheet({ visible, onClose, returnTo, message }: AuthGateS
 }
 
 export function RoleBlockSheet({ visible, onClose, userRole }: { visible: boolean; onClose: () => void; userRole?: string }) {
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <View style={s.content}>
@@ -64,18 +70,18 @@ export function RoleBlockSheet({ visible, onClose, userRole }: { visible: boolea
           </View>
         </View>
 
-        <Text style={s.title}>Customer Account Required</Text>
+        <Text style={s.title}>{T("customerAccountRequired")}</Text>
         <Text style={s.message}>
           {`You're logged in as a ${userRole || "non-customer"} account. Cart, checkout, and ordering features are only available for customer accounts. Please switch to a customer account to continue.`}
         </Text>
 
         <Pressable onPress={() => { onClose(); router.back(); }} style={s.signInBtn} accessibilityRole="button">
           <Ionicons name="arrow-back" size={18} color="#fff" />
-          <Text style={s.signInTxt}>Go Back</Text>
+          <Text style={s.signInTxt}>{T("goBack")}</Text>
         </Pressable>
 
         <Pressable onPress={onClose} style={s.browseBtn} accessibilityRole="button">
-          <Text style={s.browseTxt}>Dismiss</Text>
+          <Text style={s.browseTxt}>{T("dismiss")}</Text>
         </Pressable>
       </View>
     </BottomSheet>

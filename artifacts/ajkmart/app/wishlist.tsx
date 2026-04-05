@@ -17,6 +17,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { Font } from "@/constants/typography";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { getWishlist, removeFromWishlist, type WishlistItem } from "@workspace/api-client-react";
@@ -91,6 +93,8 @@ function WishlistCard({ item, onRemove }: { item: WishlistItem; onRemove: (produ
 
 export default function WishlistScreen() {
   const { user, token } = useAuth();
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const isLoggedIn = !!user && !!token;
   const queryClient = useQueryClient();
 
@@ -115,17 +119,17 @@ export default function WishlistScreen() {
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color={C.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Wishlist</Text>
+          <Text style={styles.headerTitle}>{T("myWishlist")}</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.emptyCenter}>
           <View style={styles.emptyIcon}>
             <Ionicons name="heart-outline" size={48} color={C.textMuted} />
           </View>
-          <Text style={styles.emptyTitle}>Sign in to view your wishlist</Text>
-          <Text style={styles.emptySub}>Save your favorite products for later</Text>
+          <Text style={styles.emptyTitle}>{T("signInForWishlist")}</Text>
+          <Text style={styles.emptySub}>{T("saveFavoritesLater")}</Text>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth" as Href)} style={styles.signInBtn}>
-            <Text style={styles.signInBtnTxt}>Sign In</Text>
+            <Text style={styles.signInBtnTxt}>{T("signIn")}</Text>
           </TouchableOpacity>
         </View>
       </ScreenContainer>
@@ -138,7 +142,7 @@ export default function WishlistScreen() {
         <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={C.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Wishlist</Text>
+        <Text style={styles.headerTitle}>{T("myWishlist")}</Text>
         <View style={styles.countBadge}>
           <Text style={styles.countTxt}>{items?.length || 0}</Text>
         </View>
@@ -166,10 +170,10 @@ export default function WishlistScreen() {
             <View style={styles.emptyIcon}>
               <Ionicons name="cloud-offline-outline" size={48} color={C.textMuted} />
             </View>
-            <Text style={styles.emptyTitle}>Could not load wishlist</Text>
+            <Text style={styles.emptyTitle}>{T("couldNotLoadWishlist")}</Text>
             <TouchableOpacity activeOpacity={0.7} onPress={() => refetch()} style={styles.retryBtn}>
               <Ionicons name="refresh-outline" size={16} color={C.textInverse} />
-              <Text style={styles.retryBtnTxt}>Retry</Text>
+              <Text style={styles.retryBtnTxt}>{T("retry")}</Text>
             </TouchableOpacity>
           </View>
         ) : items && items.length === 0 ? (
@@ -177,11 +181,11 @@ export default function WishlistScreen() {
             <View style={styles.emptyIcon}>
               <Ionicons name="heart-outline" size={48} color={C.textMuted} />
             </View>
-            <Text style={styles.emptyTitle}>Your wishlist is empty</Text>
-            <Text style={styles.emptySub}>Tap the heart icon on products to save them here</Text>
+            <Text style={styles.emptyTitle}>{T("wishlistEmpty")}</Text>
+            <Text style={styles.emptySub}>{T("tapHeartToSave")}</Text>
             <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/(tabs)" as Href)} style={styles.browseBtn}>
               <Ionicons name="basket-outline" size={16} color={C.textInverse} />
-              <Text style={styles.browseBtnTxt}>Browse Products</Text>
+              <Text style={styles.browseBtnTxt}>{T("browseProducts")}</Text>
             </TouchableOpacity>
           </View>
         ) : (

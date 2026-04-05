@@ -222,6 +222,8 @@ const sl = StyleSheet.create({
 });
 
 function GuestSignInStrip() {
+  const { language } = useLanguage();
+  const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   return (
     <Link href={"/auth" as Href} asChild>
       <TouchableOpacity activeOpacity={0.8} style={gi.wrap} accessibilityRole="button">
@@ -230,8 +232,8 @@ function GuestSignInStrip() {
             <Ionicons name="person-circle-outline" size={20} color="#fff" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={gi.title}>Sign In / Register</Text>
-            <Text style={gi.sub}>Sign in to place orders & track deliveries</Text>
+            <Text style={gi.title}>{T("signInRegister")}</Text>
+            <Text style={gi.sub}>{T("signInPlaceOrders")}</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
         </LinearGradient>
