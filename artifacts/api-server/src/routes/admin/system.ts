@@ -58,9 +58,9 @@ router.get("/stats", async (_req, res) => {
     /* active rides: searching / accepted / active */
     db.select({ count: count() }).from(ridesTable)
       .where(or(eq(ridesTable.status, "searching"), eq(ridesTable.status, "accepted"), eq(ridesTable.status, "active"))),
-    /* active SOS: any sos notification that has not been resolved */
+    /* active SOS: pending (unhandled) or acknowledged (in progress) — not yet resolved */
     db.select({ count: count() }).from(notificationsTable)
-      .where(and(eq(notificationsTable.type, "sos"), ne(notificationsTable.sosStatus, "resolved"))),
+      .where(and(eq(notificationsTable.type, "sos"), or(eq(notificationsTable.sosStatus, "pending"), eq(notificationsTable.sosStatus, "acknowledged")))),
     db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.status, "delivered")),
     db.select({ total: sum(ridesTable.fare) }).from(ridesTable).where(eq(ridesTable.status, "completed")),
     db.select({ total: sum(pharmacyOrdersTable.total) }).from(pharmacyOrdersTable).where(eq(pharmacyOrdersTable.status, "delivered")),
