@@ -87,7 +87,6 @@ function KycModal({ visible, onClose }: { visible: boolean; onClose: () => void 
     return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
   };
 
-  /* Task 18: Smart DOB formatter — auto-inserts hyphens as the user types YYYYMMDD */
   const formatDob = (raw: string) => {
     const digits = raw.replace(/\D/g, "").slice(0, 8);
     if (digits.length <= 4) return digits;
@@ -343,7 +342,6 @@ function EditProfileModal({ visible, onClose }: { visible: boolean; onClose: () 
       setCity(user?.city || "");
       setError("");
     }
-    /* Task 17: Reset unsaved avatar state when the modal is dismissed without saving */
     if (!visible) {
       setAvatarError(false);
       setCnicError("");

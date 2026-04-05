@@ -50,7 +50,6 @@ router.post("/", validateBody(createAddressSchema), async (req, res) => {
 
   const id = generateId();
 
-  /* Task 12: Atomic: wrap isDefault promotion in a transaction */
   await db.transaction(async (tx) => {
     if (isDefault) {
       await tx.update(savedAddressesTable).set({ isDefault: false }).where(eq(savedAddressesTable.userId, userId));
@@ -60,7 +59,7 @@ router.post("/", validateBody(createAddressSchema), async (req, res) => {
       userId,
       label,
       address,
-      city: city || null,          /* Task 13: no hardcoded city default */
+      city: city || null,
       icon: icon || "location-outline",
       isDefault: isDefault ?? false,
     });
@@ -79,7 +78,6 @@ router.put("/:id", validateBody(updateAddressSchema), async (req, res) => {
   if (!existing) { sendNotFound(res, "Address not found", "پتہ نہیں ملا۔"); return; }
   if (existing.userId !== userId) { sendForbidden(res, "Access denied", "رسائی سے انکار۔"); return; }
 
-  /* Task 12: Atomic update */
   await db.transaction(async (tx) => {
     if (isDefault) {
       await tx.update(savedAddressesTable).set({ isDefault: false }).where(eq(savedAddressesTable.userId, userId));
@@ -90,7 +88,6 @@ router.put("/:id", validateBody(updateAddressSchema), async (req, res) => {
   sendSuccess(res, null);
 });
 
-/* Task 12: Atomic set-default using a single transaction */
 router.patch("/:id/set-default", async (req, res) => {
   const userId = req.customerId!;
   const { id } = req.params;

@@ -120,6 +120,7 @@ export interface PlatformConfig {
     maxOrdersDay: number;
     signupBonus: number;
     p2pEnabled: boolean;
+    p2pFeePct: number;
     walletCashbackPct: number;
     walletCashbackOrders: boolean;
     walletCashbackRides: boolean;
@@ -231,7 +232,7 @@ const DEFAULT: PlatformConfig = {
     topupMethods: "jazzcash,easypaisa,bank",
     referralEnabled: true, referralBonus: 100,
     loyaltyEnabled: true, loyaltyPtsPerRs100: 5,
-    maxOrdersDay: 10, signupBonus: 0, p2pEnabled: true,
+    maxOrdersDay: 10, signupBonus: 0, p2pEnabled: true, p2pFeePct: 0,
     walletCashbackPct: 0, walletCashbackOrders: true, walletCashbackRides: false, walletCashbackPharm: false,
   },
   integrations: {
@@ -434,6 +435,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           maxOrdersDay:             raw.customer?.maxOrdersDay             ?? DEFAULT.customer.maxOrdersDay,
           signupBonus:              raw.customer?.signupBonus              ?? DEFAULT.customer.signupBonus,
           p2pEnabled:               raw.customer?.p2pEnabled               ?? DEFAULT.customer.p2pEnabled,
+          p2pFeePct:                raw.customer?.p2pFeePct                ?? DEFAULT.customer.p2pFeePct,
           walletCashbackPct:        raw.customer?.walletCashbackPct        ?? DEFAULT.customer.walletCashbackPct,
           walletCashbackOrders:     raw.customer?.walletCashbackOrders     ?? DEFAULT.customer.walletCashbackOrders,
           walletCashbackRides:      raw.customer?.walletCashbackRides      ?? DEFAULT.customer.walletCashbackRides,

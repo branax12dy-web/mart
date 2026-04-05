@@ -58,20 +58,52 @@ const TX_STATUS_PENDING  = "pending";
 const TX_STATUS_APPROVED = "approved";
 const TX_STATUS_REJECTED = "rejected";
 
-function TxItem({ tx }: { tx: any }) {
+type WalletTx = {
+  id: string;
+  type: string;
+  amount: number | string;
+  description: string;
+  status?: string;
+  createdAt: string | Date;
+  reference?: string;
+};
+
+/* ── Exhaustive, centrally-maintained credit/debit type lists ─────────────── */
+const CREDIT_TYPES = new Set([
+  "credit", "refund", "cashback", "referral", "bonus", "insurance",
+  "simulated_topup",
+]);
+const DEBIT_TYPES = new Set([
+  "debit", "withdrawal", "transfer", "ride", "order", "mart", "food",
+  "pharmacy", "parcel",
+]);
+
+function isCreditTx(tx: WalletTx): boolean {
+  if (tx.type === "deposit") {
+    return (tx.status ?? TX_STATUS_PENDING) === TX_STATUS_APPROVED;
+  }
+  return CREDIT_TYPES.has(tx.type);
+}
+
+function isDebitTx(tx: WalletTx): boolean {
+  if (tx.type === "deposit") return false;
+  return DEBIT_TYPES.has(tx.type);
+}
+
+function TxItem({ tx }: { tx: WalletTx }) {
   const txStatus: string = tx.status ?? TX_STATUS_PENDING;
   const isManualTx = tx.type === "deposit" || tx.type === "withdrawal";
   const isPending  = isManualTx && txStatus === TX_STATUS_PENDING;
   const isApproved = isManualTx && txStatus === TX_STATUS_APPROVED;
   const isRejected = isManualTx && txStatus === TX_STATUS_REJECTED;
-  const isCredit   = tx.type === "credit" || (tx.type === "deposit" && isApproved);
+  const isCredit   = isCreditTx(tx);
   const date = new Date(tx.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
   const time = new Date(tx.createdAt).toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
 
   let iconName: string;
   if (tx.type === "deposit") {
     iconName = isPending ? "time-outline" : isApproved ? "checkmark-circle" : "close-circle";
-  } else if (tx.type === "credit" || tx.type === "refund" || tx.type === "cashback" || tx.type === "referral" || tx.type === "bonus") {
+  } else if (CREDIT_TYPES.has(tx.type)) {
     iconName = "arrow-down";
   } else if (tx.type === "ride") {
     iconName = "car";
@@ -151,24 +183,31 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
     { id: "bank",      label: "Bank Transfer", placeholder: "PKXX XXXX XXXX XXXX XXXX (IBAN)" },
   ];
 
-  const handleContinue = () => {
+  const goToConfirm = () => {
     const amt = parseFloat(amount);
-    if (!amount || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
-    if (amt < minWithdrawal)               { setErr(`Minimum withdrawal amount is Rs. ${minWithdrawal.toLocaleString()}`); return; }
-    if (amt > balance)                      { setErr(`Insufficient balance. Available: Rs. ${balance.toLocaleString()}`); return; }
-    if (!accountNumber.trim())              { setErr("Account number is required"); return; }
+    if (!amount || !isFinite(amt) || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
+    if (amt < (minWithdrawal ?? 0))                          { setErr(`Minimum withdrawal amount is Rs. ${(minWithdrawal ?? 0).toLocaleString()}`); return; }
+    if (amt > balance)                                        { setErr(`Insufficient balance. Available: Rs. ${balance.toLocaleString()}`); return; }
+    if (!accountNumber.trim())                                { setErr("Account number is required"); return; }
     setErr("");
     setStep("confirm");
   };
 
   const handleSubmit = async () => {
     if (submitting) return;
-    const amt = parseFloat(amount);
-    setSubmitting(true); setErr("");
+    setSubmitting(true);
+    setErr("");
     try {
+      const amt = parseFloat(amount);
+      const { randomUUID } = await import("expo-crypto");
+      const withdrawIdempotencyKey = randomUUID();
       const res = await fetch(`${API}/wallet/withdraw`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": withdrawIdempotencyKey,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ amount: amt, paymentMethod: selectedMethod, accountNumber: accountNumber.trim(), note: note.trim() || undefined }),
       });
       const data = unwrapApiResponse(await res.json());
@@ -191,182 +230,186 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
         <TouchableOpacity activeOpacity={0.7} style={[ws.sheet, { maxHeight: "90%" }]} onPress={e => e.stopPropagation()}>
           <View style={ws.handle} />
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {step === "done" && (
-              <Animated.View style={{ alignItems: "center", paddingVertical: 20, opacity: doneAnim, transform: [{ translateY: doneAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
-                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.redSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-                  <Ionicons name="arrow-up-circle" size={40} color={C.danger} />
-                </View>
-                <Text style={{ ...Typ.title, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>Your withdrawal will be processed within 1-2 business days.</Text>
-                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, width: "100%", marginTop: 20, gap: 10, borderWidth: 1, borderColor: C.border }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
-                    <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label}</Text>
+              {step === "done" && (
+                <Animated.View style={{ alignItems: "center", paddingVertical: 20, opacity: doneAnim, transform: [{ translateY: doneAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
+                  <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.redSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                    <Ionicons name="arrow-up-circle" size={40} color={C.danger} />
                   </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Account</Text>
-                    <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{accountNumber}</Text>
-                  </View>
-                  <View style={{ height: 1, backgroundColor: C.border }} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
-                    <Text style={{ ...Typ.h2, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]} accessibilityRole="button" accessibilityLabel="Done">
-                  <Text style={ws.actionBtnTxt}>Done</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-
-            {step === "method" && (
-              <View>
-                <Text style={ws.sheetTitle}>Withdraw Money</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Choose your withdrawal method</Text>
-                <View style={{ gap: 10 }}>
-                  {WITHDRAW_METHODS.map(m => (
-                    <TouchableOpacity activeOpacity={0.7} key={m.id} onPress={() => { setSelectedMethod(m.id); setErr(""); setStep("details"); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: C.surface }} accessibilityRole="button" accessibilityLabel={`Withdraw via ${m.label}`}>
-                      <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
-                        <MethodIcon id={m.id} size={26} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>{m.label}</Text>
-                        <Text style={{ ...Typ.caption, color: C.textMuted, marginTop: 2 }}>Withdraw to your {m.label} account</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {step === "details" && selectedMethod && (
-              <View>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 18 }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("method")} style={{ marginRight: 10, padding: 4 }} accessibilityRole="button" accessibilityLabel="Go back to method selection">
-                    <Ionicons name="arrow-back" size={20} color={C.text} />
-                  </TouchableOpacity>
-                  <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Withdrawal</Text>
-                </View>
-
-                <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
-                <View style={ws.amtWrap}>
-                  <Text style={ws.rupee}>Rs.</Text>
-                  <TextInput
-                    style={ws.amtInput}
-                    value={amount}
-                    onChangeText={t => { setAmount(t.replace(/[^0-9]/g, "")); setErr(""); }}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor={C.textMuted}
-                  />
-                </View>
-                <View style={ws.quickRow}>
-                  {QUICK_AMOUNTS.map(a => (
-                    <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`Rs. ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
-                      <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.amberBorder }}>
-                  <Ionicons name="wallet-outline" size={14} color={C.amber} />
-                  <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Available: Rs. {balance.toLocaleString()}</Text>
-                </View>
-
-                <Text style={ws.sheetLbl}>Your {WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Account *</Text>
-                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-                  <TextInput
-                    value={accountNumber}
-                    onChangeText={v => { setAccountNumber(v); setErr(""); }}
-                    placeholder={WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.placeholder}
-                    placeholderTextColor={C.textMuted}
-                    style={[ws.sendInput, { paddingVertical: 0 }]}
-                    autoCapitalize="characters"
-                  />
-                </View>
-
-                <Text style={ws.sheetLbl}>Note (Optional)</Text>
-                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-                  <TextInput
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder="Any additional info..."
-                    placeholderTextColor={C.textMuted}
-                    style={[ws.sendInput, { paddingVertical: 0 }]}
-                    maxLength={500}
-                  />
-                </View>
-
-                {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
-                    <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
-                    <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
-                  </View>
-                ) : null}
-
-                <TouchableOpacity activeOpacity={0.7} onPress={handleContinue} style={[ws.actionBtn, { backgroundColor: C.danger }]} accessibilityRole="button" accessibilityLabel="Review withdrawal details">
-                  <Ionicons name="arrow-forward" size={18} color={C.textInverse} />
-                  <Text style={ws.actionBtnTxt}>Review</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {step === "confirm" && selectedMethod && (
-              <View>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 18 }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => { setStep("details"); setErr(""); }} style={{ marginRight: 10, padding: 4 }} accessibilityRole="button" accessibilityLabel="Go back to edit details">
-                    <Ionicons name="arrow-back" size={20} color={C.text} />
-                  </TouchableOpacity>
-                  <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>Confirm Withdrawal</Text>
-                </View>
-
-                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, gap: 10, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
-                    <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Account</Text>
-                    <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{accountNumber.trim()}</Text>
-                  </View>
-                  {note.trim() ? (
+                  <Text style={{ ...Typ.title, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>Your withdrawal will be processed within 1-2 business days.</Text>
+                  <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, width: "100%", marginTop: 20, gap: 10, borderWidth: 1, borderColor: C.border }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Note</Text>
-                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{note.trim()}</Text>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label}</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Account</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{accountNumber}</Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: C.border }} />
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
+                      <Text style={{ ...Typ.h2, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]} accessibilityRole="button" accessibilityLabel="Done">
+                    <Text style={ws.actionBtnTxt}>Done</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+
+              {step === "method" && (
+                <View>
+                  <Text style={ws.sheetTitle}>Withdraw Money</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Choose your withdrawal method</Text>
+                  <View style={{ gap: 10 }}>
+                    {WITHDRAW_METHODS.map(m => (
+                      <TouchableOpacity activeOpacity={0.7} key={m.id} onPress={() => { setSelectedMethod(m.id); setErr(""); setStep("details"); }} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: C.surface }} accessibilityRole="button" accessibilityLabel={`Withdraw via ${m.label}`}>
+                        <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+                          <MethodIcon id={m.id} size={26} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>{m.label}</Text>
+                          <Text style={{ ...Typ.caption, color: C.textMuted, marginTop: 2 }}>Withdraw to your {m.label} account</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {step === "details" && selectedMethod && (
+                <View>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 18 }}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("method")} style={{ marginRight: 10, padding: 4 }} accessibilityRole="button" accessibilityLabel="Go back to method selection">
+                      <Ionicons name="arrow-back" size={20} color={C.text} />
+                    </TouchableOpacity>
+                    <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Withdrawal</Text>
+                  </View>
+
+                  <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
+                  <View style={ws.amtWrap}>
+                    <Text style={ws.rupee}>Rs.</Text>
+                    <TextInput
+                      style={ws.amtInput}
+                      value={amount}
+                      onChangeText={t => { setAmount(t.replace(/[^0-9]/g, "")); setErr(""); }}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={C.textMuted}
+                    />
+                  </View>
+                  <View style={ws.quickRow}>
+                    {QUICK_AMOUNTS.map(a => (
+                      <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`Rs. ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
+                        <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.amberBorder }}>
+                    <Ionicons name="wallet-outline" size={14} color={C.amber} />
+                    <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Available: Rs. {balance.toLocaleString()}</Text>
+                  </View>
+
+                  <Text style={ws.sheetLbl}>Your {WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label} Account *</Text>
+                  <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                    <TextInput
+                      value={accountNumber}
+                      onChangeText={v => { setAccountNumber(v); setErr(""); }}
+                      placeholder={WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.placeholder}
+                      placeholderTextColor={C.textMuted}
+                      style={[ws.sendInput, { paddingVertical: 0 }]}
+                      autoCapitalize="characters"
+                    />
+                  </View>
+
+                  <Text style={ws.sheetLbl}>Note (Optional)</Text>
+                  <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                    <TextInput
+                      value={note}
+                      onChangeText={setNote}
+                      placeholder="Any additional info..."
+                      placeholderTextColor={C.textMuted}
+                      style={[ws.sendInput, { paddingVertical: 0 }]}
+                      maxLength={500}
+                    />
+                  </View>
+
+                  {err ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
+                      <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
+                      <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
                     </View>
                   ) : null}
-                  <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Amount</Text>
-                    <Text style={{ ...Typ.h2, fontSize: 24, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
-                  </View>
+
+                  <TouchableOpacity activeOpacity={0.7} onPress={goToConfirm} style={[ws.actionBtn, { backgroundColor: C.danger }]} accessibilityRole="button" accessibilityLabel="Review withdrawal request">
+                    <Ionicons name="arrow-forward" size={18} color={C.textInverse} />
+                    <Text style={ws.actionBtnTxt}>Review Withdrawal</Text>
+                  </TouchableOpacity>
                 </View>
+              )}
 
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.amberBorder }}>
-                  <Ionicons name="alert-circle-outline" size={16} color={C.amber} />
-                  <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>This amount will be deducted from your wallet immediately and processed within 1-2 business days.</Text>
-                </View>
-
-                {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
-                    <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
-                    <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
+              {step === "confirm" && selectedMethod && (
+                <View>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 18 }}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("details")} style={{ marginRight: 10, padding: 4 }} accessibilityRole="button" accessibilityLabel="Go back to details">
+                      <Ionicons name="arrow-back" size={20} color={C.text} />
+                    </TouchableOpacity>
+                    <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>Confirm Withdrawal</Text>
                   </View>
-                ) : null}
 
-                <TouchableOpacity activeOpacity={0.7} onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { backgroundColor: C.danger }, submitting && { opacity: 0.6 }]} accessibilityRole="button" accessibilityLabel="Confirm and submit withdrawal" accessibilityState={{ disabled: submitting }}>
-                  {submitting ? <ActivityIndicator color={C.textInverse} /> : (
-                    <>
-                      <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
-                      <Text style={ws.actionBtnTxt}>Confirm & Submit</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-          </ScrollView>
+                  <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Review your withdrawal details before submitting</Text>
+
+                  <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, gap: 10, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{WITHDRAW_METHODS.find(m => m.id === selectedMethod)?.label}</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>{selectedMethod === "bank" ? "IBAN / Account" : "Account Number"}</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text, maxWidth: "60%" }} numberOfLines={2}>{accountNumber}</Text>
+                    </View>
+                    {note ? (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Note</Text>
+                        <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{note}</Text>
+                      </View>
+                    ) : null}
+                    <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Amount</Text>
+                      <Text style={{ ...Typ.h2, fontSize: 24, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.amberBorder }}>
+                    <Ionicons name="information-circle-outline" size={16} color={C.amber} />
+                    <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Once submitted, this request cannot be cancelled. Make sure account details are correct.</Text>
+                  </View>
+
+                  {err ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
+                      <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
+                      <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
+                    </View>
+                  ) : null}
+
+                  <TouchableOpacity activeOpacity={0.7} onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { backgroundColor: C.danger }, submitting && { opacity: 0.6 }]} accessibilityRole="button" accessibilityLabel="Confirm and submit withdrawal request" accessibilityState={{ disabled: submitting }}>
+                    {submitting ? <ActivityIndicator color={C.textInverse} /> : (
+                      <>
+                        <Ionicons name="arrow-up-outline" size={18} color={C.textInverse} />
+                        <Text style={ws.actionBtnTxt}>Confirm & Submit</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
         </TouchableOpacity>
         </KeyboardAvoidingView>
       </TouchableOpacity>
@@ -375,6 +418,9 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
 }
 
 const SUBMITTED_TX_KEY = "wallet_submitted_tx_ids";
+
+/* In-memory fallback for submitted TxIDs when AsyncStorage is unavailable */
+let inMemorySubmittedTxIds: Set<string> = new Set();
 
 function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; minTopup: number; maxTopup: number }) {
   const [step, setStep]               = useState<DepositStep>("method");
@@ -387,30 +433,36 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
   const [senderAcNo, setSenderAcNo]   = useState("");
   const [note, setNote]               = useState("");
   const [submitting, setSubmitting]   = useState(false);
-  const [submittedTxIds, setSubmittedTxIds] = useState<Set<string>>(new Set());
+  const [submittedTxIds, setSubmittedTxIds] = useState<Set<string>>(new Set(inMemorySubmittedTxIds));
   const [idempotencyKey, setIdempotencyKey] = useState<string>("");
   const [err, setErr]                 = useState("");
   const { showToast } = useToast();
 
-  // Load previously submitted TxIDs from AsyncStorage on mount
+  /* Load previously submitted TxIDs from AsyncStorage on mount */
   useEffect(() => {
     AsyncStorage.getItem(SUBMITTED_TX_KEY)
       .then(raw => {
         if (raw) {
           const ids: string[] = JSON.parse(raw);
-          setSubmittedTxIds(new Set(ids));
+          const merged = new Set([...inMemorySubmittedTxIds, ...ids]);
+          setSubmittedTxIds(merged);
+          inMemorySubmittedTxIds = merged;
         }
       })
-      .catch((err) => { if (__DEV__) console.warn("[Wallet] Failed to load submitted tx ids:", err instanceof Error ? err.message : String(err)); });
+      .catch((storageErr) => {
+        /* AsyncStorage failed — use in-memory set; warn but do not block */
+        if (__DEV__) console.warn("[Wallet] AsyncStorage read failed, using in-memory fallback:", storageErr instanceof Error ? storageErr.message : String(storageErr));
+        showToast("Storage warning: duplicate-submission guard using session memory only.", "warning");
+      });
   }, []);
 
   useEffect(() => {
     fetch(`${API}/payments/methods`)
       .then(r => r.json())
       .then(unwrapApiResponse)
-      .then((data: any) => {
+      .then((data: { methods?: PayMethod[] }) => {
         const depositable: PayMethod[] = (data.methods || [])
-          .filter((m: any) => ["jazzcash", "easypaisa", "bank"].includes(m.id));
+          .filter((m: PayMethod) => ["jazzcash", "easypaisa", "bank"].includes(m.id));
         if (depositable.length === 0) setMethodsError(true);
         else setMethods(depositable);
       })
@@ -432,33 +484,36 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
     setStep("amount");
   };
 
+  /* Regenerate idempotency key whenever user changes details and returns to amount step */
   const goToConfirm = async () => {
     const amt = parseFloat(amount);
-    if (!amount || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
-    if (amt < minTopup) { setErr(`Minimum deposit amount is Rs. ${minTopup.toLocaleString()}`); return; }
-    if (amt > maxTopup) { setErr(`Maximum deposit amount is Rs. ${maxTopup.toLocaleString()}`); return; }
+    if (!amount || !isFinite(amt) || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
+    if (amt < (minTopup ?? 0))  { setErr(`Minimum deposit amount is Rs. ${(minTopup ?? 0).toLocaleString()}`); return; }
+    if (amt > (maxTopup ?? Infinity)) { setErr(`Maximum deposit amount is Rs. ${(maxTopup ?? 0).toLocaleString()}`); return; }
     if (!txId.trim()) { setErr("Transaction ID is required"); return; }
     setErr("");
+    /* Always generate a fresh key when the user presses Review — covers the case where
+       they go back, change a field, and resubmit. */
     const { randomUUID } = await import("expo-crypto");
     setIdempotencyKey(randomUUID());
     setStep("confirm");
   };
 
   const handleSubmit = async () => {
+    /* Lock immediately — must be the very first check before any async work */
     if (submitting) return;
-    if (!selectedMethod) { setErr("No payment method selected"); return; }
+    setSubmitting(true);
+    setErr("");
+
+    if (!selectedMethod) { setErr("No payment method selected"); setSubmitting(false); return; }
     const normalizedTxId = txId.trim();
     if (submittedTxIds.has(normalizedTxId)) {
       setErr("This transaction ID has already been submitted. Please check your wallet history.");
+      setSubmitting(false);
       return;
     }
-    if (!idempotencyKey) return;
-    if (!selectedMethod) {
-      setErr("Please select a payment method before submitting.");
-      return;
-    }
-    setSubmitting(true);
-    setErr("");
+    if (!idempotencyKey) { setSubmitting(false); return; }
+
     try {
       const res = await fetch(`${API}/wallet/deposit`, {
         method: "POST",
@@ -481,18 +536,25 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
         setErr(data.error === "wallet_frozen" ? data.message : (data.error || data.message || "Request failed"));
         setSubmitting(false); return;
       }
+      /* Persist the TxID to prevent future duplicate submissions */
       const newSet = new Set(submittedTxIds).add(normalizedTxId);
       setSubmittedTxIds(newSet);
-      // Persist to AsyncStorage so dedup survives app restarts
+      inMemorySubmittedTxIds = newSet;
+
       AsyncStorage.getItem(SUBMITTED_TX_KEY)
         .then(raw => {
           const existing: string[] = raw ? JSON.parse(raw) : [];
           const merged = Array.from(new Set([...existing, normalizedTxId])).slice(-100);
           return AsyncStorage.setItem(SUBMITTED_TX_KEY, JSON.stringify(merged));
         })
-        .catch((err) => {
-          console.warn("[Wallet] Failed to persist submitted tx id (in-memory dedup still active):", err instanceof Error ? err.message : String(err));
+        .catch((storageErr) => {
+          if (__DEV__) console.warn("[Wallet] AsyncStorage write failed, in-memory fallback active:", storageErr instanceof Error ? storageErr.message : String(storageErr));
+          /* Non-blocking: show a brief warning so user knows the duplicate-submission guard
+             is session-only (in-memory set already holds the TxID). */
+          showToast("Note: Duplicate-submission guard is active only for this session (storage unavailable).", "warning");
         });
+
+
       setStep("done");
       onSuccess();
     } catch {
@@ -524,288 +586,290 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
             </View>
           )}
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {step === "done" && (
-              <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.emeraldSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-                  <Ionicons name="checkmark-circle" size={40} color={C.success} />
+              {step === "done" && (
+                <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                  <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.emeraldSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                    <Ionicons name="checkmark-circle" size={40} color={C.success} />
+                  </View>
+                  <Text style={{ ...Typ.title, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>Your wallet will be credited within 1-2 hours after verification.</Text>
+                  <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, width: "100%", marginTop: 20, gap: 10, borderWidth: 1, borderColor: C.border }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{selectedMethod?.label}</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{txId}</Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: C.border }} />
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
+                      <Text style={{ ...Typ.h2, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]} accessibilityRole="button" accessibilityLabel="Done">
+                    <Text style={ws.actionBtnTxt}>Done</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={{ ...Typ.title, color: C.text, marginBottom: 8 }}>Request Submitted!</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>Your wallet will be credited within 1-2 hours after verification.</Text>
-                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, width: "100%", marginTop: 20, gap: 10, borderWidth: 1, borderColor: C.border }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
-                    <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{selectedMethod?.label}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
-                    <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.text }}>{txId}</Text>
-                  </View>
-                  <View style={{ height: 1, backgroundColor: C.border }} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
-                    <Text style={{ ...Typ.h2, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]} accessibilityRole="button" accessibilityLabel="Done">
-                  <Text style={ws.actionBtnTxt}>Done</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+              )}
 
-            {step === "method" && (
-              <View>
-                <Text style={ws.sheetTitle}>Add Money</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Choose your deposit method</Text>
-                {loadingMethods ? (
-                  <ActivityIndicator color={C.primary} style={{ marginTop: 24 }} />
-                ) : methodsError ? (
-                  <View style={{ backgroundColor: C.redBg, borderRadius: 16, padding: 24, alignItems: "center", gap: 10, borderWidth: 1, borderColor: C.redSoft }}>
-                    <Ionicons name="alert-circle-outline" size={28} color={C.danger} />
-                    <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>Deposit Not Available</Text>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, textAlign: "center" }}>JazzCash, EasyPaisa, and Bank Transfer are not yet enabled. Please contact support to add funds.</Text>
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => {
-                      setMethodsError(false);
-                      setLoadingMethods(true);
-                      fetch(`${API}/payments/methods`)
-                        .then(r => r.json())
-                        .then(unwrapApiResponse)
-                        .then((data: any) => {
-                          const depositable: PayMethod[] = (data.methods || []).filter((m: any) => ["jazzcash", "easypaisa", "bank"].includes(m.id));
-                          if (depositable.length === 0) setMethodsError(true);
-                          else setMethods(depositable);
-                        })
-                        .catch(() => setMethodsError(true))
-                        .finally(() => setLoadingMethods(false));
-                    }} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12 }} accessibilityRole="button" accessibilityLabel="Try again to load payment methods">
-                      <Ionicons name="refresh-outline" size={15} color={C.textInverse} />
-                      <Text style={{ ...Typ.buttonSmall, color: C.textInverse }}>Try Again</Text>
+              {step === "method" && (
+                <View>
+                  <Text style={ws.sheetTitle}>Add Money</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Choose how you'd like to deposit</Text>
+                  {loadingMethods ? (
+                    <ActivityIndicator color={C.primary} style={{ marginTop: 24 }} />
+                  ) : methodsError ? (
+                    <View style={{ backgroundColor: C.redBg, borderRadius: 16, padding: 24, alignItems: "center", gap: 10, borderWidth: 1, borderColor: C.redSoft }}>
+                      <Ionicons name="alert-circle-outline" size={28} color={C.danger} />
+                      <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>Deposit Not Available</Text>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, textAlign: "center" }}>JazzCash, EasyPaisa, and Bank Transfer are not yet enabled. Please contact support to add funds.</Text>
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => {
+                        setMethodsError(false);
+                        setLoadingMethods(true);
+                        fetch(`${API}/payments/methods`)
+                          .then(r => r.json())
+                          .then(unwrapApiResponse)
+                          .then((data: { methods?: PayMethod[] }) => {
+                            const depositable: PayMethod[] = (data.methods || []).filter((m: PayMethod) => ["jazzcash", "easypaisa", "bank"].includes(m.id));
+                            if (depositable.length === 0) setMethodsError(true);
+                            else setMethods(depositable);
+                          })
+                          .catch(() => setMethodsError(true))
+                          .finally(() => setLoadingMethods(false));
+                      }} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12 }} accessibilityRole="button" accessibilityLabel="Try again to load payment methods">
+                        <Ionicons name="refresh-outline" size={15} color={C.textInverse} />
+                        <Text style={{ ...Typ.buttonSmall, color: C.textInverse }}>Try Again</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 10 }}>
+                      {methods.map(m => (
+                        <TouchableOpacity activeOpacity={0.7} key={m.id} onPress={() => selectMethod(m)} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: C.surface }} accessibilityRole="button" accessibilityLabel={`Deposit via ${m.label}`}>
+                          <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+                            <MethodIcon id={m.id} size={26} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>{m.label}</Text>
+                            <Text style={{ ...Typ.caption, color: C.textMuted, marginTop: 2 }}>{m.description || `Deposit via ${m.label}`}</Text>
+                            {m.manualNumber && <Text style={{ ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.primary, marginTop: 3 }}>{m.manualNumber}</Text>}
+                          </View>
+                          <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {step === "details" && selectedMethod && (
+                <View>
+                  <Text style={ws.sheetTitle}>{selectedMethod.label}</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Send payment to the account below</Text>
+
+                  <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 4, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
+                    {selectedMethod.manualNumber && (
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => copyToClipboard(selectedMethod.manualNumber!)} style={{ flexDirection: "row", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }} accessibilityRole="button" accessibilityLabel={`Copy account number ${selectedMethod.manualNumber}`}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ ...Typ.small, color: C.textMuted }}>Account Number</Text>
+                          <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text, marginTop: 2 }}>{selectedMethod.manualNumber}</Text>
+                        </View>
+                        <Ionicons name="copy-outline" size={18} color={C.primary} />
+                      </TouchableOpacity>
+                    )}
+                    {selectedMethod.manualName && (
+                      <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                        <Text style={{ ...Typ.small, color: C.textMuted }}>Account Title</Text>
+                        <Text style={{ ...Typ.bodyMedium, color: C.text, marginTop: 2 }}>{selectedMethod.manualName}</Text>
+                      </View>
+                    )}
+                    {selectedMethod.iban && (
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => copyToClipboard(selectedMethod.iban!)} style={{ flexDirection: "row", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }} accessibilityRole="button" accessibilityLabel="Copy IBAN">
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ ...Typ.small, color: C.textMuted }}>IBAN</Text>
+                          <Text style={{ ...Typ.captionMedium, color: C.text, marginTop: 2 }}>{selectedMethod.iban}</Text>
+                        </View>
+                        <Ionicons name="copy-outline" size={18} color={C.primary} />
+                      </TouchableOpacity>
+                    )}
+                    {selectedMethod.bankName && (
+                      <View style={{ padding: 14, borderBottomWidth: selectedMethod.manualInstructions ? 1 : 0, borderBottomColor: C.border }}>
+                        <Text style={{ ...Typ.small, color: C.textMuted }}>Bank</Text>
+                        <Text style={{ ...Typ.bodyMedium, color: C.text, marginTop: 2 }}>{selectedMethod.bankName}</Text>
+                      </View>
+                    )}
+                    {selectedMethod.manualInstructions && (
+                      <View style={{ padding: 14 }}>
+                        <Text style={{ ...Typ.caption, color: C.textSecondary }}>{selectedMethod.manualInstructions}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.blueSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.brandBlueSoft }}>
+                    <Ionicons name="information-circle-outline" size={16} color={C.primary} />
+                    <Text style={{ ...Typ.caption, color: C.textSecondary, flex: 1 }}>After payment, enter the Transaction ID in the next step</Text>
+                  </View>
+
+                  <View style={{ flexDirection: "row", gap: 12 }}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("method")} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]} accessibilityRole="button" accessibilityLabel="Back">
+                      <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity activeOpacity={0.7} onPress={goToAmount} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]} accessibilityRole="button" accessibilityLabel="Payment done, continue">
+                      <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
+                      <Text style={ws.actionBtnTxt}>Payment Done</Text>
                     </TouchableOpacity>
                   </View>
-                ) : (
-                  <View style={{ gap: 10 }}>
-                    {methods.map(m => (
-                      <TouchableOpacity activeOpacity={0.7} key={m.id} onPress={() => selectMethod(m)} style={{ flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 16, backgroundColor: C.surface }} accessibilityRole="button" accessibilityLabel={`Deposit via ${m.label}`}>
-                        <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
-                          <MethodIcon id={m.id} size={26} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text }}>{m.label}</Text>
-                          <Text style={{ ...Typ.caption, color: C.textMuted, marginTop: 2 }}>{m.description || `Deposit via ${m.label}`}</Text>
-                          {m.manualNumber && <Text style={{ ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.primary, marginTop: 3 }}>{m.manualNumber}</Text>}
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                </View>
+              )}
+
+              {step === "amount" && selectedMethod && (
+                <View>
+                  <Text style={ws.sheetTitle}>Transaction Details</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Enter your payment details</Text>
+
+                  <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
+                  <View style={ws.amtWrap}>
+                    <Text style={ws.rupee}>Rs.</Text>
+                    <TextInput
+                      style={ws.amtInput}
+                      value={amount}
+                      onChangeText={t => setAmount(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={C.textMuted}
+                    />
+                  </View>
+                  <View style={ws.quickRow}>
+                    {QUICK_AMOUNTS.map(a => (
+                      <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`Rs. ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
+                        <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                )}
-              </View>
-            )}
 
-            {step === "details" && selectedMethod && (
-              <View>
-                <Text style={ws.sheetTitle}>{selectedMethod.label}</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Send payment to the account below</Text>
-
-                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 4, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
-                  {selectedMethod.manualNumber && (
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => copyToClipboard(selectedMethod.manualNumber!)} style={{ flexDirection: "row", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }} accessibilityRole="button" accessibilityLabel={`Copy account number ${selectedMethod.manualNumber}`}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ ...Typ.small, color: C.textMuted }}>Account Number</Text>
-                        <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.text, marginTop: 2 }}>{selectedMethod.manualNumber}</Text>
-                      </View>
-                      <Ionicons name="copy-outline" size={18} color={C.primary} />
-                    </TouchableOpacity>
-                  )}
-                  {selectedMethod.manualName && (
-                    <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }}>
-                      <Text style={{ ...Typ.small, color: C.textMuted }}>Account Title</Text>
-                      <Text style={{ ...Typ.bodyMedium, color: C.text, marginTop: 2 }}>{selectedMethod.manualName}</Text>
-                    </View>
-                  )}
-                  {selectedMethod.iban && (
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => copyToClipboard(selectedMethod.iban!)} style={{ flexDirection: "row", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: C.border }} accessibilityRole="button" accessibilityLabel="Copy IBAN">
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ ...Typ.small, color: C.textMuted }}>IBAN</Text>
-                        <Text style={{ ...Typ.captionMedium, color: C.text, marginTop: 2 }}>{selectedMethod.iban}</Text>
-                      </View>
-                      <Ionicons name="copy-outline" size={18} color={C.primary} />
-                    </TouchableOpacity>
-                  )}
-                  {selectedMethod.bankName && (
-                    <View style={{ padding: 14, borderBottomWidth: selectedMethod.manualInstructions ? 1 : 0, borderBottomColor: C.border }}>
-                      <Text style={{ ...Typ.small, color: C.textMuted }}>Bank</Text>
-                      <Text style={{ ...Typ.bodyMedium, color: C.text, marginTop: 2 }}>{selectedMethod.bankName}</Text>
-                    </View>
-                  )}
-                  {selectedMethod.manualInstructions && (
-                    <View style={{ padding: 14 }}>
-                      <Text style={{ ...Typ.caption, color: C.textSecondary }}>{selectedMethod.manualInstructions}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.blueSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.brandBlueSoft }}>
-                  <Ionicons name="information-circle-outline" size={16} color={C.primary} />
-                  <Text style={{ ...Typ.caption, color: C.textSecondary, flex: 1 }}>After payment, enter the Transaction ID in the next step</Text>
-                </View>
-
-                <View style={{ flexDirection: "row", gap: 12 }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("method")} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]} accessibilityRole="button" accessibilityLabel="Back">
-                    <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.7} onPress={goToAmount} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]} accessibilityRole="button" accessibilityLabel="Payment done, continue">
-                    <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
-                    <Text style={ws.actionBtnTxt}>Payment Done</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {step === "amount" && selectedMethod && (
-              <View>
-                <Text style={ws.sheetTitle}>Transaction Details</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Enter your payment details</Text>
-
-                <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
-                <View style={ws.amtWrap}>
-                  <Text style={ws.rupee}>Rs.</Text>
-                  <TextInput
-                    style={ws.amtInput}
-                    value={amount}
-                    onChangeText={t => setAmount(t.replace(/[^0-9]/g, ""))}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor={C.textMuted}
-                  />
-                </View>
-                <View style={ws.quickRow}>
-                  {QUICK_AMOUNTS.map(a => (
-                    <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`Rs. ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
-                      <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <Text style={ws.sheetLbl}>Transaction ID *</Text>
-                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-                  <TextInput
-                    value={txId}
-                    onChangeText={setTxId}
-                    placeholder="e.g. T12345678"
-                    placeholderTextColor={C.textMuted}
-                    style={[ws.sendInput, { paddingVertical: 0 }]}
-                    maxLength={100}
-                  />
-                </View>
-
-                <Text style={ws.sheetLbl}>Your Account / Phone (Optional)</Text>
-                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-                  <TextInput
-                    value={senderAcNo}
-                    onChangeText={setSenderAcNo}
-                    placeholder={selectedMethod.id === "bank" ? "Your IBAN" : "03XX-XXXXXXX"}
-                    placeholderTextColor={C.textMuted}
-                    style={[ws.sendInput, { paddingVertical: 0 }]}
-                    maxLength={50}
-                  />
-                </View>
-
-                <Text style={ws.sheetLbl}>Note (Optional)</Text>
-                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-                  <TextInput
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder="Any additional info..."
-                    placeholderTextColor={C.textMuted}
-                    style={[ws.sendInput, { paddingVertical: 0 }]}
-                    maxLength={500}
-                  />
-                </View>
-
-                {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
-                    <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
-                    <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
+                  <Text style={ws.sheetLbl}>Transaction ID *</Text>
+                  <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                    <TextInput
+                      value={txId}
+                      onChangeText={setTxId}
+                      placeholder="e.g. T12345678"
+                      placeholderTextColor={C.textMuted}
+                      style={[ws.sendInput, { paddingVertical: 0 }]}
+                      maxLength={100}
+                    />
                   </View>
-                ) : null}
 
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("details")} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]} accessibilityRole="button" accessibilityLabel="Back">
-                    <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.7} onPress={goToConfirm} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]} accessibilityRole="button" accessibilityLabel="Review deposit">
-                    <Text style={ws.actionBtnTxt}>Review</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {step === "confirm" && selectedMethod && (
-              <View>
-                <Text style={ws.sheetTitle}>Confirm Request</Text>
-                <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Review before submitting</Text>
-
-                <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, gap: 10, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
-                    <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{selectedMethod.label}</Text>
+                  <Text style={ws.sheetLbl}>Your Account / Phone (Optional)</Text>
+                  <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                    <TextInput
+                      value={senderAcNo}
+                      onChangeText={setSenderAcNo}
+                      placeholder={selectedMethod.id === "bank" ? "Your IBAN" : "03XX-XXXXXXX"}
+                      placeholderTextColor={C.textMuted}
+                      style={[ws.sendInput, { paddingVertical: 0 }]}
+                      maxLength={50}
+                    />
                   </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
-                    <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.text, fontVariant: ["tabular-nums"] }}>{txId}</Text>
+
+                  <Text style={ws.sheetLbl}>Note (Optional)</Text>
+                  <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                    <TextInput
+                      value={note}
+                      onChangeText={setNote}
+                      placeholder="Any additional info..."
+                      placeholderTextColor={C.textMuted}
+                      style={[ws.sendInput, { paddingVertical: 0 }]}
+                      maxLength={500}
+                    />
                   </View>
-                  {senderAcNo ? (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Sender</Text>
-                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{senderAcNo}</Text>
+
+                  {err ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
+                      <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
+                      <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
                     </View>
                   ) : null}
-                  {note ? (
+
+                  <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => setStep("details")} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]} accessibilityRole="button" accessibilityLabel="Back">
+                      <Text style={[ws.actionBtnTxt, { color: C.text }]}>Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity activeOpacity={0.7} onPress={goToConfirm} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary }]} accessibilityRole="button" accessibilityLabel="Review deposit">
+                      <Text style={ws.actionBtnTxt}>Review</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {step === "confirm" && selectedMethod && (
+                <View>
+                  <Text style={ws.sheetTitle}>Confirm Request</Text>
+                  <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Review before submitting</Text>
+
+                  <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 16, padding: 16, gap: 10, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Note</Text>
-                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{note}</Text>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Method</Text>
+                      <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{selectedMethod.label}</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Transaction ID</Text>
+                      <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.text, fontVariant: ["tabular-nums"] }}>{txId}</Text>
+                    </View>
+                    {senderAcNo ? (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Sender</Text>
+                        <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{senderAcNo}</Text>
+                      </View>
+                    ) : null}
+                    {note ? (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Note</Text>
+                        <Text style={{ ...Typ.bodyMedium, fontSize: 13, color: C.text }}>{note}</Text>
+                      </View>
+                    ) : null}
+                    <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Amount</Text>
+                      <Text style={{ ...Typ.h2, fontSize: 24, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.amberBorder }}>
+                    <Ionicons name="alert-circle-outline" size={16} color={C.amber} />
+                    <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>An incorrect TxID may cause rejection. Enter the real transaction ID.</Text>
+                  </View>
+
+                  {err ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
+                      <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
+                      <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
                     </View>
                   ) : null}
-                  <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Amount</Text>
-                    <Text style={{ ...Typ.h2, fontSize: 24, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+
+                  <View style={{ flexDirection: "row", gap: 12 }}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => { setStep("amount"); setErr(""); }} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]} accessibilityRole="button" accessibilityLabel="Edit deposit details">
+                      <Text style={[ws.actionBtnTxt, { color: C.text }]}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity activeOpacity={0.7} onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary, opacity: submitting ? 0.6 : 1 }]} accessibilityRole="button" accessibilityLabel="Submit deposit request" accessibilityState={{ disabled: submitting }}>
+                      {submitting ? (
+                        <ActivityIndicator color={C.textInverse} />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
+                          <Text style={ws.actionBtnTxt}>Submit Request</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 </View>
+              )}
 
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.amberBorder }}>
-                  <Ionicons name="alert-circle-outline" size={16} color={C.amber} />
-                  <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>An incorrect TxID may cause rejection. Enter the real transaction ID.</Text>
-                </View>
-
-                {err ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: C.redBg, padding: 10, borderRadius: 10 }}>
-                    <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
-                    <Text style={{ ...Typ.caption, color: C.danger, flex: 1 }}>{err}</Text>
-                  </View>
-                ) : null}
-
-                <View style={{ flexDirection: "row", gap: 12 }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => { setStep("amount"); setErr(""); }} style={[ws.actionBtn, { flex: 1, backgroundColor: C.surfaceSecondary }]} accessibilityRole="button" accessibilityLabel="Edit deposit details">
-                    <Text style={[ws.actionBtnTxt, { color: C.text }]}>Edit</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.7} onPress={handleSubmit} disabled={submitting} style={[ws.actionBtn, { flex: 2, backgroundColor: C.primary, opacity: submitting ? 0.6 : 1 }]} accessibilityRole="button" accessibilityLabel="Submit deposit request" accessibilityState={{ disabled: submitting }}>
-                    {submitting ? (
-                      <ActivityIndicator color={C.textInverse} />
-                    ) : (
-                      <>
-                        <Ionicons name="checkmark-circle-outline" size={18} color={C.textInverse} />
-                        <Text style={ws.actionBtnTxt}>Submit Request</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-          </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </TouchableOpacity>
         </KeyboardAvoidingView>
       </TouchableOpacity>
@@ -820,7 +884,8 @@ function WalletScreenInner() {
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const qc = useQueryClient();
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  /* Fix: use insets.top for all platforms to account for notch/status bar */
+  const topPad = Platform.OS === "web" ? 67 : (insets.top > 0 ? insets.top : 44);
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
 
   const [showDeposit,  setShowDeposit]  = useState(false);
@@ -837,8 +902,7 @@ function WalletScreenInner() {
   const [sendStep,    setSendStep]    = useState<"input" | "confirm">("input");
   const [sendPhoneError, setSendPhoneError] = useState("");
   const [sendReceiverName, setSendReceiverName] = useState("");
-  const [sendPhoneNetErr, setSendPhoneNetErr] = useState(false);
-  const [sendIdempotencyKey, setSendIdempotencyKey] = useState("");
+  const [sendNetworkError, setSendNetworkError] = useState(false);
 
   const [pendingTopups,  setPendingTopups]  = useState<{ count: number; total: number }>({ count: 0, total: 0 });
 
@@ -846,6 +910,7 @@ function WalletScreenInner() {
   const appName     = platformConfig.platform.appName;
   const minTransfer = platformConfig.customer.minTransfer;
   const p2pEnabled  = platformConfig.customer.p2pEnabled;
+  const p2pFee      = platformConfig.customer.p2pFeePct ?? 0;
 
   const [walletFrozen, setWalletFrozen] = useState(false);
   const [socketBalance, setSocketBalance] = useState<number | null>(null);
@@ -856,6 +921,14 @@ function WalletScreenInner() {
     { query: { enabled: !!user?.id, retry: 2, retryDelay: (attempt: number) => Math.floor(1500 * Math.pow(1.5, attempt - 1)) } }
   );
 
+  /* Fix: fresh API data always wins over stale socket value */
+  useEffect(() => {
+    if (data?.balance !== undefined) {
+      setSocketBalance(null);
+    }
+  }, [data?.balance]);
+
+  /* Sync wallet balance from socket events */
   useEffect(() => {
     const current = user?.walletBalance;
     if (current !== undefined && current !== prevUserBalanceRef.current) {
@@ -865,6 +938,22 @@ function WalletScreenInner() {
       }
     }
   }, [user?.walletBalance, data?.balance]);
+
+  /* Subscribe to freeze/unfreeze events via socket for real-time updates */
+  useEffect(() => {
+    if (!socket) return;
+    const handleFreezeChange = (payload: { frozen: boolean }) => {
+      setWalletFrozen(payload.frozen);
+    };
+    socket.on("wallet:frozen", () => setWalletFrozen(true));
+    socket.on("wallet:unfrozen", () => setWalletFrozen(false));
+    socket.on("wallet:freeze_change", handleFreezeChange);
+    return () => {
+      socket.off("wallet:frozen");
+      socket.off("wallet:unfrozen");
+      socket.off("wallet:freeze_change", handleFreezeChange);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (walletErrorObj) {
@@ -908,6 +997,7 @@ function WalletScreenInner() {
   }, [socket]);
 
   const onRefresh = useCallback(async () => {
+    /* Clear stale socket balance immediately on refresh so API data wins */
     setSocketBalance(null);
     if (token) {
       try {
@@ -950,7 +1040,8 @@ function WalletScreenInner() {
 
   const resetSendState = () => {
     setSendPhone(""); setSendAmount(""); setSendNote("");
-    setSendStep("input"); setSendPhoneError(""); setSendReceiverName(""); setSendLoading(false); setSendPhoneNetErr(false); setSendIdempotencyKey("");
+    setSendStep("input"); setSendPhoneError(""); setSendReceiverName(""); setSendLoading(false);
+    setSendNetworkError(false);
   };
 
   const closeSendModal = () => {
@@ -969,13 +1060,12 @@ function WalletScreenInner() {
   };
 
   const handleSendContinue = async () => {
-    setSendPhoneNetErr(false);
+    setSendNetworkError(false);
     if (!validateSendPhone(sendPhone)) return;
     const num = parseFloat(sendAmount);
-    if (!sendAmount || isNaN(num) || num <= 0) { showToast("Please enter a valid amount", "error"); return; }
-    const minXfer = typeof minTransfer === "number" && isFinite(minTransfer) ? minTransfer : 100;
-    if (num < minXfer) { showToast(`Minimum transfer amount is Rs. ${minXfer.toLocaleString()}`, "error"); return; }
+    if (!num || !isFinite(num) || isNaN(num) || num < (minTransfer ?? 0)) { showToast(`Minimum transfer amount is Rs. ${(minTransfer ?? 0).toLocaleString()}`, "error"); return; }
     if (num > balance) { showToast("Insufficient wallet balance", "error"); return; }
+    setSendNetworkError(false);
     setSendLoading(true);
     try {
       const res = await fetch(`${API}/wallet/resolve-phone`, {
@@ -983,21 +1073,29 @@ function WalletScreenInner() {
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ phone: sendPhone.trim() }),
       });
+      if (!res.ok) {
+        /* Server/network error (4xx/5xx from server) — distinguish from "user not found" and show retry */
+        if (__DEV__) console.warn("[Wallet] Receiver lookup returned HTTP error:", res.status);
+        setSendNetworkError(true);
+        setSendLoading(false);
+        return;
+      }
       const data = unwrapApiResponse(await res.json());
-      if (!res.ok || !data.found) {
+      if (!data.found) {
+        /* Phone is not registered — clear, informative message; NOT a network error */
         showToast("No AJKMart account found with this phone number.", "error");
         setSendLoading(false);
         return;
       }
       setSendReceiverName(data.name || "");
     } catch (err) {
-      if (__DEV__) console.warn("[Wallet] Receiver lookup failed:", err instanceof Error ? err.message : String(err));
-      setSendPhoneNetErr(true);
+      if (__DEV__) console.warn("[Wallet] Receiver lookup failed (network):", err instanceof Error ? err.message : String(err));
+      /* True network error (fetch threw) — show inline Retry button */
+      setSendNetworkError(true);
       setSendLoading(false);
       return;
     }
     setSendLoading(false);
-    setSendIdempotencyKey(`${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
     setSendStep("confirm");
   };
 
@@ -1006,10 +1104,16 @@ function WalletScreenInner() {
     const num = parseFloat(sendAmount);
     setSendLoading(true);
     try {
+      const { randomUUID } = await import("expo-crypto");
+      const sendIdempotencyKey = randomUUID();
       const res = await fetch(`${API}/wallet/send`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null, idempotencyKey: sendIdempotencyKey || undefined }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": sendIdempotencyKey,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
       });
       const data = unwrapApiResponse(await res.json());
       if (!res.ok) {
@@ -1027,18 +1131,19 @@ function WalletScreenInner() {
     }
   };
 
-  const balance      = socketBalance ?? data?.balance ?? user?.walletBalance ?? 0;
+  /* Fix: API data takes strict priority over socket value */
+  const balance      = data?.balance ?? socketBalance ?? user?.walletBalance ?? 0;
   const transactions = data?.transactions ?? [];
-  const DEBIT_TYPES  = new Set(["debit", "withdrawal", "transfer", "ride", "order", "mart", "food", "pharmacy", "parcel", "insurance"]);
-  const CREDIT_TYPES = new Set(["credit", "refund", "cashback", "referral", "bonus", "simulated_topup"]);
-  const isDebitType  = (t: any) => DEBIT_TYPES.has(t.type);
-  const isCreditType = (t: any) => {
-    if (t.type === "deposit") return t.status === "approved";
-    return CREDIT_TYPES.has(t.type);
-  };
-  const filtered     = txFilter === "all" ? transactions : txFilter === "debit" ? transactions.filter(isDebitType) : transactions.filter(isCreditType);
-  const totalIn      = transactions.filter(isCreditType).reduce((s, t) => s + Number(t.amount), 0);
-  const totalOut     = transactions.filter(isDebitType).reduce((s, t) => s + Number(t.amount), 0);
+  const filtered     = txFilter === "all"
+    ? transactions
+    : txFilter === "debit"
+    ? transactions.filter(isDebitTx)
+    : transactions.filter(isCreditTx);
+  const totalIn      = transactions.filter(isCreditTx).reduce((s, t) => s + Number(t.amount), 0);
+  const totalOut     = transactions.filter(isDebitTx).reduce((s, t) => s + Number(t.amount), 0);
+
+  /* Sanitize QR name — truncate to 30 chars to avoid over-dense codes */
+  const qrName = (user?.name ?? "").slice(0, 30);
 
   if (!user?.id) {
     return (
@@ -1283,106 +1388,122 @@ function WalletScreenInner() {
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
           <TouchableOpacity activeOpacity={0.7} style={ws.sheet} onPress={e => e.stopPropagation()}>
             <View style={ws.handle} />
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {sendStep === "input" ? (
-              <>
-                <Text style={ws.sheetTitle}>Send Money</Text>
+                {sendStep === "input" ? (
+                  <>
+                    <Text style={ws.sheetTitle}>Send Money</Text>
 
-                <Text style={ws.sheetLbl}>Receiver's Phone Number</Text>
-                <View style={[ws.inputWrap, sendPhoneError ? { borderColor: C.redBright } : {}]}>
-                  <View style={ws.phonePrefix}>
-                    <Text style={ws.phonePrefixTxt}>+92</Text>
-                  </View>
-                  <TextInput
-                    value={sendPhone}
-                    onChangeText={(t) => { setSendPhone(t); if (sendPhoneError) setSendPhoneError(""); }}
-                    placeholder="3XX XXXXXXX"
-                    placeholderTextColor={C.textMuted}
-                    style={ws.sendInput}
-                    keyboardType="phone-pad"
-                    maxLength={10}
-                  />
-                </View>
-                {sendPhoneError ? <Text style={{ ...Typ.caption, color: C.redBright, marginTop: 2, marginBottom: 6 }}>{sendPhoneError}</Text> : null}
+                    <Text style={ws.sheetLbl}>Receiver's Phone Number</Text>
+                    <View style={[ws.inputWrap, sendPhoneError ? { borderColor: C.redBright } : {}]}>
+                      <View style={ws.phonePrefix}>
+                        <Text style={ws.phonePrefixTxt}>+92</Text>
+                      </View>
+                      <TextInput
+                        value={sendPhone}
+                        onChangeText={(t) => { setSendPhone(t); if (sendPhoneError) setSendPhoneError(""); setSendNetworkError(false); }}
+                        placeholder="3XX XXXXXXX"
+                        placeholderTextColor={C.textMuted}
+                        style={ws.sendInput}
+                        keyboardType="phone-pad"
+                        maxLength={10}
+                      />
+                    </View>
+                    {sendPhoneError ? <Text style={{ ...Typ.caption, color: C.redBright, marginTop: 2, marginBottom: 6 }}>{sendPhoneError}</Text> : null}
 
-                <Text style={ws.sheetLbl}>Amount (PKR)</Text>
-                <View style={ws.amtWrap}>
-                  <Text style={ws.rupee}>Rs.</Text>
-                  <TextInput style={ws.amtInput} value={sendAmount} onChangeText={t => setSendAmount(t.replace(/[^0-9]/g, ""))} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
-                </View>
+                    {sendNetworkError ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: C.amberBorder }}>
+                        <Ionicons name="cloud-offline-outline" size={16} color={C.amber} />
+                        <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Network error. Could not verify receiver.</Text>
+                        <TouchableOpacity activeOpacity={0.7} onPress={handleSendContinue} style={{ backgroundColor: C.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }} accessibilityRole="button" accessibilityLabel="Retry phone resolution">
+                          <Text style={{ ...Typ.caption, color: C.textInverse, fontFamily: Font.bold }}>Retry</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
 
-                <Text style={ws.sheetLbl}>Note (Optional)</Text>
-                <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
-                  <TextInput value={sendNote} onChangeText={setSendNote} placeholder="e.g. Lunch bill" placeholderTextColor={C.textMuted} style={[ws.sendInput, { paddingVertical: 0 }]} maxLength={500} />
-                </View>
+                    <Text style={ws.sheetLbl}>Amount (PKR)</Text>
+                    <View style={ws.amtWrap}>
+                      <Text style={ws.rupee}>Rs.</Text>
+                      <TextInput style={ws.amtInput} value={sendAmount} onChangeText={t => setSendAmount(t.replace(/[^0-9]/g, ""))} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
+                    </View>
 
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: sendPhoneNetErr ? 10 : 16, marginTop: 4 }}>
-                  <Ionicons name="wallet-outline" size={14} color={C.primary} />
-                  <Text style={{ ...Typ.caption, color: C.textMuted, flex: 1 }}>Available: Rs. {balance.toLocaleString()} · Min: Rs. {(typeof minTransfer === "number" && isFinite(minTransfer) ? minTransfer : 100).toLocaleString()}</Text>
-                </View>
+                    <Text style={ws.sheetLbl}>Note (Optional)</Text>
+                    <View style={[ws.inputWrap, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                      <TextInput value={sendNote} onChangeText={setSendNote} placeholder="e.g. Lunch bill" placeholderTextColor={C.textMuted} style={[ws.sendInput, { paddingVertical: 0 }]} maxLength={500} />
+                    </View>
 
-                {sendPhoneNetErr && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: C.amberBorder }}>
-                    <Ionicons name="cloud-offline-outline" size={16} color={C.amber} />
-                    <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Network error verifying receiver.</Text>
-                    <TouchableOpacity activeOpacity={0.7} onPress={handleSendContinue} accessibilityRole="button" accessibilityLabel="Retry phone verification">
-                      <Text style={{ ...Typ.captionMedium, color: C.primary, fontFamily: Font.bold }}>Retry</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, marginTop: 4 }}>
+                      <Ionicons name="wallet-outline" size={14} color={C.primary} />
+                      <Text style={{ ...Typ.caption, color: C.textMuted, flex: 1 }}>Available: Rs. {balance.toLocaleString()} · Min: Rs. {(minTransfer ?? 0).toLocaleString()}</Text>
+                    </View>
+                    {p2pFee > 0 && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                        <Ionicons name="information-circle-outline" size={14} color={C.textMuted} />
+                        <Text style={{ ...Typ.caption, color: C.textMuted }}>P2P fee: {p2pFee}% will be deducted from your wallet</Text>
+                      </View>
+                    )}
+
+                    <TouchableOpacity activeOpacity={0.7} onPress={handleSendContinue} disabled={!sendPhone || !sendAmount || sendLoading} style={[ws.actionBtn, { backgroundColor: C.purple }, (!sendPhone || !sendAmount || sendLoading) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Continue to confirm send" accessibilityState={{ disabled: !sendPhone || !sendAmount || sendLoading }}>
+                      {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
+                        <>
+                          <Ionicons name="arrow-forward" size={17} color={C.textInverse} />
+                          <Text style={ws.actionBtnTxt}>Continue</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
-                  </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => setSendStep("input")} style={{ marginRight: 10, padding: 4 }} accessibilityRole="button" accessibilityLabel="Go back">
+                        <Ionicons name="arrow-back" size={20} color={C.text} />
+                      </TouchableOpacity>
+                      <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>Confirm Transfer</Text>
+                    </View>
+
+                    <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 16, gap: 12 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>To</Text>
+                        <View style={{ alignItems: "flex-end" }}>
+                          {sendReceiverName ? <Text style={{ ...Typ.bodySemiBold, color: C.text }}>{sendReceiverName}</Text> : null}
+                          <Text style={{ ...Typ.body, fontSize: 13, color: sendReceiverName ? C.textMuted : C.text }}>+92 {sendPhone.trim()}</Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
+                        <Text style={{ ...Typ.h3, fontSize: 16, color: C.purple }}>Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
+                      </View>
+                      {p2pFee > 0 && (
+                        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                          <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>P2P Fee ({p2pFee}%)</Text>
+                          <Text style={{ ...Typ.body, fontSize: 13, color: C.danger }}>Rs. {(Math.round(parseFloat(sendAmount || "0") * p2pFee) / 100).toLocaleString()}</Text>
+                        </View>
+                      )}
+                      {sendNote ? (
+                        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                          <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Note</Text>
+                          <Text style={{ ...Typ.body, fontSize: 13, color: C.text }}>{sendNote}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => setSendStep("input")} style={{ alignSelf: "center", marginBottom: 12 }} accessibilityRole="button" accessibilityLabel="Edit transfer details">
+                      <Text style={{ ...Typ.buttonSmall, color: C.primary }}>Edit Details</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity activeOpacity={0.7} onPress={handleSendConfirm} disabled={sendLoading} style={[ws.actionBtn, { backgroundColor: C.purple }, sendLoading && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={`Send Rs. ${parseFloat(sendAmount || "0").toLocaleString()}`} accessibilityState={{ disabled: sendLoading }}>
+                      {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
+                        <>
+                          <Ionicons name="send" size={17} color={C.textInverse} />
+                          <Text style={ws.actionBtnTxt}>Send Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
                 )}
-
-                <TouchableOpacity activeOpacity={0.7} onPress={handleSendContinue} disabled={!sendPhone || !sendAmount || sendLoading} style={[ws.actionBtn, { backgroundColor: C.purple }, (!sendPhone || !sendAmount || sendLoading) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Continue to confirm send" accessibilityState={{ disabled: !sendPhone || !sendAmount || sendLoading }}>
-                  {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
-                    <>
-                      <Ionicons name="arrow-forward" size={17} color={C.textInverse} />
-                      <Text style={ws.actionBtnTxt}>Continue</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setSendStep("input")} style={{ marginRight: 10, padding: 4 }} accessibilityRole="button" accessibilityLabel="Go back">
-                    <Ionicons name="arrow-back" size={20} color={C.text} />
-                  </TouchableOpacity>
-                  <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>Confirm Transfer</Text>
-                </View>
-
-                <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 16, gap: 12 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>To</Text>
-                    <View style={{ alignItems: "flex-end" }}>
-                      {sendReceiverName ? <Text style={{ ...Typ.bodySemiBold, color: C.text }}>{sendReceiverName}</Text> : null}
-                      <Text style={{ ...Typ.body, fontSize: 13, color: sendReceiverName ? C.textMuted : C.text }}>+92 {sendPhone.trim()}</Text>
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
-                    <Text style={{ ...Typ.h3, fontSize: 16, color: C.purple }}>Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
-                  </View>
-                  {sendNote ? (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Note</Text>
-                      <Text style={{ ...Typ.body, fontSize: 13, color: C.text }}>{sendNote}</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <TouchableOpacity activeOpacity={0.7} onPress={() => setSendStep("input")} style={{ alignSelf: "center", marginBottom: 12 }} accessibilityRole="button" accessibilityLabel="Edit transfer details">
-                  <Text style={{ ...Typ.buttonSmall, color: C.primary }}>Edit Details</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity activeOpacity={0.7} onPress={handleSendConfirm} disabled={sendLoading} style={[ws.actionBtn, { backgroundColor: C.purple }, sendLoading && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={`Send Rs. ${parseFloat(sendAmount || "0").toLocaleString()}`} accessibilityState={{ disabled: sendLoading }}>
-                  {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
-                    <>
-                      <Ionicons name="send" size={17} color={C.textInverse} />
-                      <Text style={ws.actionBtnTxt}>Send Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
+              </ScrollView>
+            </KeyboardAvoidingView>
           </TouchableOpacity>
           </KeyboardAvoidingView>
         </TouchableOpacity>
@@ -1399,10 +1520,11 @@ function WalletScreenInner() {
             <View style={{ backgroundColor: C.surfaceSecondary, borderRadius: 20, padding: 24, alignItems: "center", marginBottom: 16, gap: 12, borderWidth: 1, borderColor: C.border }}>
               <View style={{ width: 140, height: 140, borderRadius: 16, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border }}>
                 <QRCode
-                  value={JSON.stringify({ type: "ajkmart_pay", phone: user?.phone, id: user?.id, name: (user?.name || "").slice(0, 32) })}
+                  value={JSON.stringify({ type: "ajkmart_pay", phone: user?.phone, id: user?.id, name: qrName })}
                   size={120}
                   color={C.primary}
                   backgroundColor={C.surface}
+                  ecl="M"
                 />
               </View>
               <Text style={{ ...Typ.price, color: C.text }}>{user?.name || "AJKMart User"}</Text>
@@ -1472,4 +1594,3 @@ const ws = StyleSheet.create({
   actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4 },
   actionBtnTxt: { ...Typ.h3, fontSize: 16, color: C.textInverse },
 });
-

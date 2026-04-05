@@ -104,7 +104,6 @@ router.get("/:id/debt", async (req, res) => {
   sendSuccess(res, { debtBalance: parseFloat(user.cancellationDebt ?? "0") });
 });
 
-/* Task 14: export-data error handling — wrap DB queries in try/catch */
 router.post("/export-data", async (req, res) => {
   const userId = req.customerId!;
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -193,7 +192,6 @@ async function saveAvatarBuffer(userId: string, buffer: Buffer, mime: string) {
   return avatarUrl;
 }
 
-/* Task 15: rate-limited avatar upload */
 router.post("/avatar", avatarUpload.single("avatar"), async (req, res) => {
   const userId = req.customerId!;
 
@@ -236,7 +234,6 @@ router.post("/avatar", avatarUpload.single("avatar"), async (req, res) => {
   }
 });
 
-/* Task 3 (email uniqueness), Task 5 (no avatar via profile update), Task 15 (rate limit) */
 router.put("/profile", async (req, res) => {
   const userId = req.customerId!;
 
@@ -261,7 +258,6 @@ router.put("/profile", async (req, res) => {
     return;
   }
 
-  /* Task 3: Email uniqueness check */
   if (email && email.trim() && email.trim() !== current.email) {
     const [emailTaken] = await db
       .select({ id: usersTable.id })
@@ -318,8 +314,6 @@ router.put("/profile", async (req, res) => {
   }, "پروفائل کامیابی سے اپ ڈیٹ ہو گیا۔");
 });
 
-/* Task 2: fix delete-account — tokenVersion increment already invalidates access tokens;
-   set isBanned: false on the scrambled-phone account so the original phone can re-register */
 router.delete("/delete-account", async (req, res) => {
   const userId = req.customerId!;
 
@@ -454,8 +448,6 @@ router.delete("/sessions/all", async (req, res) => {
   sendSuccess(res, null, "تمام دیگر سیشنز سے سائن آؤٹ ہو گیا۔");
 });
 
-/* Task 1: Fix session revocation — only mark the target session as revoked;
-   do NOT revoke all refresh tokens (no sessionId link in refresh_tokens table) */
 router.delete("/sessions/:sessionId", async (req, res) => {
   const userId = req.customerId!;
   const sessionId = req.params["sessionId"]!;

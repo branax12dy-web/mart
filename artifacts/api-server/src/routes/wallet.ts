@@ -12,36 +12,49 @@ import { getIO } from "../lib/socketio.js";
 import { z } from "zod";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError, sendErrorWithData } from "../lib/response.js";
 
+/* ── IS_PRODUCTION guard — independent of NODE_ENV for simulate-topup hardening ── */
+const IS_PRODUCTION = process.env["IS_PRODUCTION"] === "true" || process.env["NODE_ENV"] === "production";
+
 type IdempotencyEntry =
   | { state: "in_flight"; ts: number }
   | { state: "success"; ts: number; statusCode: number; body: unknown }
   | { state: "failed"; ts: number };
 
-/* In-memory idempotency store for deposit requests.
+/* In-memory idempotency store shared by deposit, send, and withdraw routes.
+   Namespaced by route prefix to avoid key collisions:
+     deposit:<userId>:<key>
+     send:<userId>:<key>
+     withdraw:<userId>:<key>
    - "in_flight": concurrent duplicate → 409
    - "success": replays the original response body and status code
    - "failed": key is removed so the client can retry with the same key
    TTL = 10 min; swept every 5 min. */
-const depositIdempotencyCache = new Map<string, IdempotencyEntry>();
-const sendIdempotencyCache = new Map<string, IdempotencyEntry>();
+const idempotencyCache = new Map<string, IdempotencyEntry>();
 const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
-  for (const [key, entry] of depositIdempotencyCache) {
-    if (now - entry.ts > IDEMPOTENCY_TTL_MS) depositIdempotencyCache.delete(key);
-  }
-  for (const [key, entry] of sendIdempotencyCache) {
-    if (now - entry.ts > IDEMPOTENCY_TTL_MS) sendIdempotencyCache.delete(key);
+  for (const [key, entry] of idempotencyCache) {
+    if (now - entry.ts > IDEMPOTENCY_TTL_MS) idempotencyCache.delete(key);
   }
 }, 5 * 60 * 1000);
 
-const amountSchema = z.union([z.number().positive(), z.string().min(1)])
+/* ── Amount decimal precision validator ─────────────────────────────────────
+   Rejects amounts with more than 2 decimal places (e.g. 100.001 → 400).
+   Uses string representation to avoid floating-point artefacts. */
+function hasValidDecimalPrecision(value: number): boolean {
+  const str = value.toString();
+  const dotIndex = str.indexOf(".");
+  if (dotIndex === -1) return true;
+  return str.length - dotIndex - 1 <= 2;
+}
+
+const amountField = z.union([z.number().positive(), z.string().min(1)])
   .transform(v => parseFloat(String(v)))
-  .refine(v => !isNaN(v) && v > 0, "Invalid amount")
-  .refine(v => Math.round(v * 100) === v * 100, "Amount cannot have more than 2 decimal places");
+  .refine(v => !isNaN(v) && isFinite(v) && v > 0, "Invalid amount")
+  .refine(hasValidDecimalPrecision, "Amount must have at most 2 decimal places");
 
 const depositSchema = z.object({
-  amount: amountSchema,
+  amount: amountField,
   paymentMethod: z.string().min(1, "paymentMethod required"),
   transactionId: z.string().min(1, "transactionId required"),
   idempotencyKey: z.string().uuid("idempotencyKey must be a UUID"),
@@ -51,13 +64,12 @@ const depositSchema = z.object({
 
 const sendSchema = z.object({
   receiverPhone: z.string().min(1, "receiverPhone is required"),
-  amount: amountSchema,
+  amount: amountField,
   note: z.string().max(500).optional(),
-  idempotencyKey: z.string().uuid().optional(),
 });
 
 const withdrawSchema = z.object({
-  amount: amountSchema,
+  amount: amountField,
   paymentMethod: z.enum(["jazzcash", "easypaisa", "bank"], { errorMap: () => ({ message: "paymentMethod must be jazzcash, easypaisa, or bank" }) }),
   accountNumber: z.string().min(1, "accountNumber required"),
   note: z.string().max(500).optional(),
@@ -71,10 +83,13 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 
 const router: IRouter = Router();
 
+/* ── deriveStatus — reads structured status prefix stored at the start of reference ──
+   Format: "<status>:<rest>" where status is one of: approved | rejected | pending
+   This is robust against admin note text that might contain the word "approved" etc. */
 function deriveStatus(reference: string | null): "pending" | "approved" | "rejected" {
-  const ref = reference ?? "";
-  if (ref.startsWith("approved")) return "approved";
-  if (ref.startsWith("rejected")) return "rejected";
+  const ref = (reference ?? "").split(":")[0] ?? "";
+  if (ref === "approved") return "approved";
+  if (ref === "rejected") return "rejected";
   return "pending";
 }
 
@@ -98,21 +113,26 @@ function isWalletFrozen(user: { blockedServices: string }): boolean {
 router.get("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (!user) { sendNotFound(res, "User not found"); return; }
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
 
-  if (isWalletFrozen(user)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
+    if (isWalletFrozen(user)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
 
-  const transactions = await db
-    .select()
-    .from(walletTransactionsTable)
-    .where(eq(walletTransactionsTable.userId, userId))
-    .orderBy(desc(walletTransactionsTable.createdAt));
+    const transactions = await db
+      .select()
+      .from(walletTransactionsTable)
+      .where(eq(walletTransactionsTable.userId, userId))
+      .orderBy(desc(walletTransactionsTable.createdAt));
 
-  sendSuccess(res, {
-    balance: parseFloat(user.walletBalance ?? "0"),
-    transactions: transactions.map(mapTx),
-  });
+    sendSuccess(res, {
+      balance: parseFloat(user.walletBalance ?? "0"),
+      transactions: transactions.map(mapTx),
+    });
+  } catch (e: unknown) {
+    logger.error("[wallet GET /] DB error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
 });
 
 /* ── POST /wallet/topup — ADMIN ONLY ────────────────────────────────────────
@@ -127,8 +147,11 @@ router.post("/topup", adminAuth, async (req, res) => {
   if (!amount) { sendValidationError(res, "amount required"); return; }
 
   const topupAmt = parseFloat(amount);
-  if (isNaN(topupAmt) || topupAmt <= 0) {
+  if (isNaN(topupAmt) || !isFinite(topupAmt) || topupAmt <= 0) {
     sendValidationError(res, "Invalid amount"); return;
+  }
+  if (!hasValidDecimalPrecision(topupAmt)) {
+    sendValidationError(res, "Amount must have at most 2 decimal places"); return;
   }
 
   const s = await getPlatformSettings();
@@ -175,7 +198,14 @@ router.post("/topup", adminAuth, async (req, res) => {
     const transactions = await db.select().from(walletTransactionsTable).where(eq(walletTransactionsTable.userId, userId));
     sendSuccess(res, { balance: result, transactions: transactions.map(mapTx) });
   } catch (e: unknown) {
-    sendValidationError(res, (e as Error).message);
+    const msg = (e as Error).message ?? "";
+    /* Known business rule errors bubble up as-is; unexpected errors are sanitized */
+    if (msg.startsWith("Wallet balance limit") || msg === "User not found") {
+      sendValidationError(res, msg);
+    } else {
+      logger.error("[wallet /topup] Unexpected error:", e);
+      sendError(res, "Something went wrong, please try again.", 500);
+    }
   }
 });
 
@@ -189,8 +219,13 @@ router.post("/deposit", customerAuth, async (req, res) => {
     sendError(res, `Too many deposit requests. Try again in ${depositLimit.minutesLeft} minute(s).`, 429); return;
   }
 
-  const [depositUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (depositUser && isWalletFrozen(depositUser)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
+  try {
+    const [depositUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (depositUser && isWalletFrozen(depositUser)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
+  } catch (e: unknown) {
+    logger.error("[wallet /deposit] DB error checking frozen:", e);
+    sendError(res, "Something went wrong, please try again.", 500); return;
+  }
 
   const parsed = depositSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -201,7 +236,7 @@ router.post("/deposit", customerAuth, async (req, res) => {
   const { amount: amt, paymentMethod, transactionId, idempotencyKey, accountNumber, note } = parsed.data;
 
   const cacheKey = `deposit:${userId}:${idempotencyKey}`;
-  const existing = depositIdempotencyCache.get(cacheKey);
+  const existing = idempotencyCache.get(cacheKey);
   if (existing) {
     if (existing.state === "in_flight") {
       sendError(res, "Duplicate request — this deposit is already being processed.", 409);
@@ -213,31 +248,37 @@ router.post("/deposit", customerAuth, async (req, res) => {
     }
     /* state === "failed": key already removed below, allow retry with same key */
   }
-  depositIdempotencyCache.set(cacheKey, { state: "in_flight", ts: Date.now() });
+  idempotencyCache.set(cacheKey, { state: "in_flight", ts: Date.now() });
 
   /* ── Duplicate Transaction ID check ──
      Normalize TxID (trim + uppercase) both on check and on storage
      to prevent bypass via whitespace/casing variations. */
   const normalizedTxId = transactionId.trim().toUpperCase().replace(/\s+/g, "");
   if (!normalizedTxId) {
-    depositIdempotencyCache.delete(cacheKey);
+    idempotencyCache.delete(cacheKey);
     sendValidationError(res, "transactionId cannot be empty"); return;
   }
 
   const txidSuffix = `:txid:${normalizedTxId}`;
-  const existingDeposit = await db.select({ id: walletTransactionsTable.id })
-    .from(walletTransactionsTable)
-    .where(and(
-      eq(walletTransactionsTable.type, "deposit"),
-      sql`${walletTransactionsTable.reference} LIKE ${'%' + txidSuffix}`,
-      sql`RIGHT(${walletTransactionsTable.reference}, ${txidSuffix.length}) = ${txidSuffix}`,
-    ))
-    .limit(1);
+  try {
+    const existingDeposit = await db.select({ id: walletTransactionsTable.id })
+      .from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.type, "deposit"),
+        sql`${walletTransactionsTable.reference} LIKE ${'%' + txidSuffix}`,
+        sql`RIGHT(${walletTransactionsTable.reference}, ${txidSuffix.length}) = ${txidSuffix}`,
+      ))
+      .limit(1);
 
-  if (existingDeposit.length > 0) {
-    depositIdempotencyCache.delete(cacheKey);
-    sendError(res, "This Transaction ID has already been used. Please check your transaction history or use a different TxID.", 409);
-    return;
+    if (existingDeposit.length > 0) {
+      idempotencyCache.delete(cacheKey);
+      sendError(res, "This Transaction ID has already been used. Please check your transaction history or use a different TxID.", 409);
+      return;
+    }
+  } catch (e: unknown) {
+    idempotencyCache.delete(cacheKey);
+    logger.error("[wallet /deposit] DB error checking duplicate TxID:", e);
+    sendError(res, "Something went wrong, please try again.", 500); return;
   }
 
   const s = await getPlatformSettings();
@@ -246,9 +287,9 @@ router.post("/deposit", customerAuth, async (req, res) => {
   const maxTopup      = parseFloat(s["wallet_max_topup"]   ?? "25000");
   const autoApproveThreshold = Math.max(0, parseFloat(s["wallet_deposit_auto_approve"] ?? "0"));
 
-  if (!walletEnabled) { depositIdempotencyCache.delete(cacheKey); sendError(res, "Wallet service is currently disabled", 503); return; }
-  if (amt < minTopup) { depositIdempotencyCache.delete(cacheKey); sendValidationError(res, `Minimum deposit is Rs. ${minTopup}`); return; }
-  if (amt > maxTopup) { depositIdempotencyCache.delete(cacheKey); sendValidationError(res, `Maximum single deposit is Rs. ${maxTopup}`); return; }
+  if (!walletEnabled) { idempotencyCache.delete(cacheKey); sendError(res, "Wallet service is currently disabled", 503); return; }
+  if (amt < minTopup) { idempotencyCache.delete(cacheKey); sendValidationError(res, `Minimum deposit is Rs. ${minTopup}`); return; }
+  if (amt > maxTopup) { idempotencyCache.delete(cacheKey); sendValidationError(res, `Maximum single deposit is Rs. ${maxTopup}`); return; }
 
   const txId = generateId();
   const desc = [
@@ -261,10 +302,10 @@ router.post("/deposit", customerAuth, async (req, res) => {
   const shouldAutoApprove = autoApproveThreshold > 0 && amt <= autoApproveThreshold;
 
   const setIdempotencyResult = (statusCode: number, body: unknown) => {
-    depositIdempotencyCache.set(cacheKey, { state: "success", ts: Date.now(), statusCode, body });
+    idempotencyCache.set(cacheKey, { state: "success", ts: Date.now(), statusCode, body });
   };
   const setIdempotencyFailed = () => {
-    depositIdempotencyCache.delete(cacheKey);
+    idempotencyCache.delete(cacheKey);
   };
 
   if (shouldAutoApprove) {
@@ -290,7 +331,14 @@ router.post("/deposit", customerAuth, async (req, res) => {
       });
     } catch (e: unknown) {
       setIdempotencyFailed();
-      sendValidationError(res, (e as Error).message); return;
+      const msg = (e as Error).message ?? "";
+      if (msg.startsWith("Wallet limit")) {
+        sendValidationError(res, msg);
+      } else {
+        logger.error("[wallet /deposit auto-approve] DB error:", e);
+        sendError(res, "Something went wrong, please try again.", 500);
+      }
+      return;
     }
 
     const depositLang = await getUserLanguage(userId);
@@ -318,7 +366,8 @@ router.post("/deposit", customerAuth, async (req, res) => {
       });
     } catch (e: unknown) {
       setIdempotencyFailed();
-      sendValidationError(res, (e as Error).message); return;
+      logger.error("[wallet /deposit pending] DB error:", e);
+      sendError(res, "Something went wrong, please try again.", 500); return;
     }
 
     const pendingLang = await getUserLanguage(userId);
@@ -338,20 +387,25 @@ router.post("/deposit", customerAuth, async (req, res) => {
 /* ── GET /wallet/deposits — Customer deposit history ────────────────────── */
 router.get("/deposits", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const deposits = await db.select()
-    .from(walletTransactionsTable)
-    .where(and(eq(walletTransactionsTable.userId, userId), eq(walletTransactionsTable.type, "deposit")))
-    .orderBy(desc(walletTransactionsTable.createdAt));
+  try {
+    const deposits = await db.select()
+      .from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.userId, userId), eq(walletTransactionsTable.type, "deposit")))
+      .orderBy(desc(walletTransactionsTable.createdAt));
 
-  const mapped = deposits.map(d => {
-    const ref = d.reference ?? "pending";
-    const isPending = ref === "pending" || ref.startsWith("pending:");
-    const status = isPending ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
-    const refNo = ref.startsWith("approved:") || ref.startsWith("rejected:") ? ref.split(":").slice(1).join(":") : "";
-    return { ...d, amount: parseFloat(String(d.amount)), status, refNo };
-  });
+    const mapped = deposits.map(d => {
+      const ref = d.reference ?? "pending";
+      const isPending = ref === "pending" || ref.startsWith("pending:");
+      const status = isPending ? "pending" : ref.startsWith("approved:") ? "approved" : ref.startsWith("rejected:") ? "rejected" : ref;
+      const refNo = ref.startsWith("approved:") || ref.startsWith("rejected:") ? ref.split(":").slice(1).join(":") : "";
+      return { ...d, amount: parseFloat(String(d.amount)), status, refNo };
+    });
 
-  sendSuccess(res, { deposits: mapped });
+    sendSuccess(res, { deposits: mapped });
+  } catch (e: unknown) {
+    logger.error("[wallet /deposits] DB error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
 });
 
 /* ── POST /wallet/resolve-phone ─────────────────────────────────────────── */
@@ -363,8 +417,10 @@ router.post("/resolve-phone", customerAuth, async (req, res) => {
       .from(usersTable).where(eq(usersTable.phone, phone.trim())).limit(1);
     if (!user) { sendSuccess(res, { found: false, name: null }); return; }
     sendSuccess(res, { found: true, name: user.name || null });
-  } catch {
-    sendSuccess(res, { found: false, name: null });
+  } catch (e: unknown) {
+    logger.error("[wallet /resolve-phone] DB error:", e);
+    /* Return a network-style error so the client can distinguish from "not found" */
+    sendError(res, "Something went wrong, please try again.", 500);
   }
 });
 
@@ -372,29 +428,34 @@ router.post("/resolve-phone", customerAuth, async (req, res) => {
 router.post("/send", customerAuth, async (req, res) => {
   const senderUserId = req.customerId!;
 
-  const [sendUser] = await db.select({ blockedServices: usersTable.blockedServices }).from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1);
-  if (sendUser && isWalletFrozen(sendUser)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
-
   const parsed = sendSchema.safeParse(req.body);
   if (!parsed.success) {
     const firstError = parsed.error.errors[0]?.message ?? "Invalid input";
     sendValidationError(res, firstError); return;
   }
 
-  const { receiverPhone, amount: sendAmt, note, idempotencyKey } = parsed.data;
+  const { receiverPhone, amount: sendAmt, note } = parsed.data;
 
+  /* Idempotency for /send — accept key from Idempotency-Key header (preferred) or body field */
+  const idempotencyKey =
+    (req.headers["idempotency-key"] as string | undefined) ??
+    (typeof req.body["idempotencyKey"] === "string" ? req.body["idempotencyKey"] : undefined);
+
+  let sendCacheKey: string | null = null;
   if (idempotencyKey) {
-    const cacheKey = `send:${senderUserId}:${idempotencyKey}`;
-    const existing = sendIdempotencyCache.get(cacheKey);
+    sendCacheKey = `send:${senderUserId}:${idempotencyKey}`;
+    const existing = idempotencyCache.get(sendCacheKey);
     if (existing) {
       if (existing.state === "in_flight") {
-        sendError(res, "Duplicate request — this transfer is already being processed.", 409); return;
+        sendError(res, "Duplicate request — this transfer is already being processed.", 409);
+        return;
       }
       if (existing.state === "success") {
-        res.status((existing as any).statusCode ?? 200).json((existing as any).body); return;
+        res.status(existing.statusCode).json(existing.body);
+        return;
       }
     }
-    sendIdempotencyCache.set(cacheKey, { state: "in_flight", ts: Date.now() });
+    idempotencyCache.set(sendCacheKey, { state: "in_flight", ts: Date.now() });
   }
 
   const s = await getPlatformSettings();
@@ -406,32 +467,44 @@ router.post("/send", customerAuth, async (req, res) => {
   const p2pDailyLimit  = parseFloat(s["wallet_p2p_daily_limit"]  ?? "10000");
   const p2pFeePct      = Math.max(0, Math.min(50, parseFloat(s["wallet_p2p_fee_pct"] ?? "0")));
 
+  const clearKey = () => { if (sendCacheKey) idempotencyCache.delete(sendCacheKey); };
+
   if (!p2pEnabled) {
+    clearKey();
     sendForbidden(res, "P2P money transfers are currently disabled by admin."); return;
   }
   if (!walletEnabled) {
+    clearKey();
     sendError(res, "Wallet service is currently disabled", 503); return;
   }
   if (sendAmt < minWithdrawal) {
+    clearKey();
     sendValidationError(res, `Minimum transfer is Rs. ${minWithdrawal}`); return;
   }
   if (sendAmt > maxWithdrawal) {
+    clearKey();
     sendValidationError(res, `Maximum single transfer is Rs. ${maxWithdrawal}`); return;
   }
 
   const maxBalance = parseFloat(s["wallet_max_balance"] ?? "50000");
 
-  const [receiverPre] = await db.select({ id: usersTable.id, name: usersTable.name, blockedServices: usersTable.blockedServices })
-    .from(usersTable).where(eq(usersTable.phone, receiverPhone.trim())).limit(1);
-  if (!receiverPre) { sendNotFound(res, "Receiver not found. Phone number check karein."); return; }
-  if (receiverPre.id === senderUserId) { sendValidationError(res, "Apne aap ko transfer nahi kar sakte"); return; }
-  if (isWalletFrozen(receiverPre)) { sendErrorWithData(res, "Receiver's wallet is currently frozen. Transfer cannot be completed.", { walletFrozen: true }, 403); return; }
-
   try {
+    const [receiverPre] = await db.select({ id: usersTable.id, name: usersTable.name, blockedServices: usersTable.blockedServices })
+      .from(usersTable).where(eq(usersTable.phone, receiverPhone.trim())).limit(1);
+    if (!receiverPre) { clearKey(); sendNotFound(res, "Receiver not found. Phone number check karein."); return; }
+    if (receiverPre.id === senderUserId) { clearKey(); sendValidationError(res, "Apne aap ko transfer nahi kar sakte"); return; }
+    if (isWalletFrozen(receiverPre)) { clearKey(); sendErrorWithData(res, "Receiver's wallet is currently frozen. Transfer cannot be completed.", { walletFrozen: true }, 403); return; }
+
     const result = await db.transaction(async (tx) => {
+      /* Lock sender row first */
       const [sender] = await tx.select().from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1).for("update");
       if (!sender) throw new Error("Sender not found");
       if (isWalletFrozen(sender)) throw Object.assign(new Error("Your wallet has been temporarily frozen. Contact support."), { walletFrozen: true });
+
+      /* Re-validate frozen check inside transaction so mid-flight admin freeze is caught */
+      if (isWalletFrozen(sender)) {
+        throw Object.assign(new Error("Your wallet has been temporarily frozen. Contact support."), { walletFrozen: "sender" });
+      }
 
       const feeAmt = p2pFeePct > 0 ? Math.round(sendAmt * p2pFeePct) / 100 : 0;
       const totalDebit = sendAmt + feeAmt;
@@ -456,9 +529,10 @@ router.post("/send", customerAuth, async (req, res) => {
         throw new Error(`Daily wallet limit is Rs. ${dailyLimit}. Aaj aap ne Rs. ${todayTotal.toFixed(0)} kharch kiye hain.`);
       }
 
+      /* Lock receiver row before any read/write */
       const [receiver] = await tx.select().from(usersTable).where(eq(usersTable.id, receiverPre.id)).limit(1).for("update");
       if (!receiver) throw new Error("Receiver not found");
-      if (isWalletFrozen(receiver)) throw Object.assign(new Error("Receiver's wallet is currently frozen. Transfer cannot be completed."), { walletFrozen: true });
+      if (isWalletFrozen(receiver)) throw Object.assign(new Error("Receiver's wallet is currently frozen. Transfer cannot be completed."), { walletFrozen: "receiver" });
 
       const [deducted] = await tx.update(usersTable)
         .set({ walletBalance: sql`wallet_balance - ${totalDebit.toFixed(2)}` })
@@ -509,28 +583,27 @@ router.post("/send", customerAuth, async (req, res) => {
     }).catch(e => logger.error("receiver send notif insert failed:", e));
 
     const { receiverId: _rid, senderName: _sn, ...responseData } = result;
-
-    if (idempotencyKey) {
-      const cacheKey = `send:${senderUserId}:${idempotencyKey}`;
-      const body = { success: true, data: responseData };
-      sendIdempotencyCache.set(cacheKey, { state: "success", ts: Date.now(), statusCode: 200, body });
-    }
-
+    if (sendCacheKey) idempotencyCache.set(sendCacheKey, { state: "success", ts: Date.now(), statusCode: 200, body: responseData });
     sendSuccess(res, responseData);
   } catch (e: unknown) {
-    if (idempotencyKey) {
-      sendIdempotencyCache.delete(`send:${senderUserId}:${idempotencyKey}`);
+    if (sendCacheKey) idempotencyCache.delete(sendCacheKey);
+    const err = e as any;
+    if (err.walletFrozen === "sender") {
+      sendForbidden(res, "wallet_frozen", err.message); return;
     }
-    if ((e as any).walletFrozen) {
-      sendForbidden(res, "wallet_frozen", (e as Error).message); return;
+    if (err.walletFrozen === "receiver") {
+      sendErrorWithData(res, err.message, { walletFrozen: true }, 403); return;
     }
-    const msg = (e instanceof Error) ? e.message : "Unknown error";
-    const isDbError = /deadlock|duplicate key|FATAL|ERROR:|ECONNRESET|ETIMEDOUT|connection|timeout/i.test(msg) && !/balance|limit|frozen|found|disabled|transfer|wallet/i.test(msg);
-    if (isDbError) {
-      logger.error("/wallet/send unexpected DB error:", e);
-      sendError(res, "Transaction failed due to a temporary error. Please try again.", 500);
+    const knownErrors = [
+      "Insufficient", "Daily", "Sender not found", "Receiver not found",
+      "limit", "Apne aap", "transfer nahi"
+    ];
+    const isKnown = knownErrors.some(k => (err.message ?? "").includes(k));
+    if (isKnown) {
+      sendValidationError(res, err.message);
     } else {
-      sendValidationError(res, msg);
+      logger.error("[wallet /send] Unexpected error:", e);
+      sendError(res, "Something went wrong, please try again.", 500);
     }
   }
 });
@@ -538,11 +611,6 @@ router.post("/send", customerAuth, async (req, res) => {
 /* ── POST /wallet/withdraw — Customer requests a withdrawal ─────────────── */
 router.post("/withdraw", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-
-  const [withdrawUser] = await db.select({ blockedServices: usersTable.blockedServices, walletBalance: usersTable.walletBalance })
-    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (!withdrawUser) { sendNotFound(res, "User not found"); return; }
-  if (isWalletFrozen(withdrawUser)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
 
   const parsed = withdrawSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -552,17 +620,56 @@ router.post("/withdraw", customerAuth, async (req, res) => {
 
   const { amount: amt, paymentMethod, accountNumber, note } = parsed.data;
 
+  /* Idempotency for /withdraw — accept key from Idempotency-Key header (preferred) or body field */
+  const idempotencyKey =
+    (req.headers["idempotency-key"] as string | undefined) ??
+    (typeof req.body["idempotencyKey"] === "string" ? req.body["idempotencyKey"] : undefined);
+
+  let withdrawCacheKey: string | null = null;
+  if (idempotencyKey) {
+    withdrawCacheKey = `withdraw:${userId}:${idempotencyKey}`;
+    const existing = idempotencyCache.get(withdrawCacheKey);
+    if (existing) {
+      if (existing.state === "in_flight") {
+        sendError(res, "Duplicate request — this withdrawal is already being processed.", 409);
+        return;
+      }
+      if (existing.state === "success") {
+        res.status(existing.statusCode).json(existing.body);
+        return;
+      }
+    }
+    idempotencyCache.set(withdrawCacheKey, { state: "in_flight", ts: Date.now() });
+  }
+
+  const clearKey = () => { if (withdrawCacheKey) idempotencyCache.delete(withdrawCacheKey); };
+
+  let withdrawUser: { blockedServices: string; walletBalance: string } | undefined;
+  try {
+    const [u] = await db.select({ blockedServices: usersTable.blockedServices, walletBalance: usersTable.walletBalance })
+      .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!u) { clearKey(); sendNotFound(res, "User not found"); return; }
+    withdrawUser = u;
+  } catch (e: unknown) {
+    clearKey();
+    logger.error("[wallet /withdraw] DB error fetching user:", e);
+    sendError(res, "Something went wrong, please try again.", 500); return;
+  }
+
+  if (isWalletFrozen(withdrawUser)) { clearKey(); sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
+
   const s = await getPlatformSettings();
   const walletEnabled  = (s["feature_wallet"]        ?? "on") === "on";
   const minWithdrawal  = parseFloat(s["wallet_min_withdrawal"] ?? "200");
   const maxWithdrawal  = parseFloat(s["wallet_max_withdrawal"] ?? "10000");
 
-  if (!walletEnabled) { sendError(res, "Wallet service is currently disabled", 503); return; }
-  if (amt < minWithdrawal) { sendValidationError(res, `Minimum withdrawal is Rs. ${minWithdrawal}`); return; }
-  if (amt > maxWithdrawal) { sendValidationError(res, `Maximum single withdrawal is Rs. ${maxWithdrawal}`); return; }
+  if (!walletEnabled) { clearKey(); sendError(res, "Wallet service is currently disabled", 503); return; }
+  if (amt < minWithdrawal) { clearKey(); sendValidationError(res, `Minimum withdrawal is Rs. ${minWithdrawal}`); return; }
+  if (amt > maxWithdrawal) { clearKey(); sendValidationError(res, `Maximum single withdrawal is Rs. ${maxWithdrawal}`); return; }
 
   const balance = parseFloat(String(withdrawUser.walletBalance ?? "0"));
   if (balance < amt) {
+    clearKey();
     sendValidationError(res, `Insufficient wallet balance. Available: Rs. ${balance.toFixed(0)}`); return;
   }
 
@@ -589,13 +696,13 @@ router.post("/withdraw", customerAuth, async (req, res) => {
       });
     });
   } catch (e: unknown) {
-    const msg = (e instanceof Error) ? e.message : "Unknown error";
-    const isDbError = /deadlock|duplicate key|FATAL|ERROR:|ECONNRESET|ETIMEDOUT|connection|timeout/i.test(msg) && !/balance|limit|frozen|found|disabled|withdrawal/i.test(msg);
-    if (isDbError) {
-      logger.error("/wallet/withdraw unexpected DB error:", e);
-      sendError(res, "Withdrawal failed due to a temporary error. Please try again.", 500);
-    } else {
+    clearKey();
+    const msg = (e instanceof Error) ? e.message : "";
+    if (msg.startsWith("Insufficient") || msg.includes("frozen") || msg.includes("limit")) {
       sendValidationError(res, msg);
+    } else {
+      logger.error("[wallet /withdraw] Unexpected error:", e);
+      sendError(res, "Something went wrong, please try again.", 500);
     }
     return;
   }
@@ -608,18 +715,22 @@ router.post("/withdraw", customerAuth, async (req, res) => {
     type: "wallet", icon: "wallet-outline",
   }).catch(e => logger.error("withdrawal notif insert failed:", e));
 
-  sendSuccess(res, { txId, status: "pending", amount: amt });
+  const responseBody = { txId, status: "pending", amount: amt };
+  if (withdrawCacheKey) idempotencyCache.set(withdrawCacheKey, { state: "success", ts: Date.now(), statusCode: 200, body: responseBody });
+  sendSuccess(res, responseBody);
 });
 
 /* ── POST /wallet/simulate-topup — Customer self-service simulated top-up
    For demo/testing purposes. Allowed amounts: 500, 1000, 2000, 5000 PKR.
    Daily limit: Rs. 10,000. Labeled clearly as simulated.
+   Hardened: blocked in IS_PRODUCTION regardless of NODE_ENV.
 ──────────────────────────────────────────────────────────────────────── */
 const SIMULATE_ALLOWED = [500, 1000, 2000, 5000];
 const SIMULATE_DAILY_LIMIT = 10000;
 
 router.post("/simulate-topup", customerAuth, async (req, res) => {
-  if (process.env.DISABLE_SIMULATION === "true" || process.env.NODE_ENV === "production") {
+  if (IS_PRODUCTION) {
+    logger.warn("[SECURITY] /wallet/simulate-topup hit on production instance — blocked");
     sendForbidden(res, "Not available in production"); return;
   }
   const userId = req.customerId!;
@@ -629,54 +740,64 @@ router.post("/simulate-topup", customerAuth, async (req, res) => {
     sendValidationError(res, `Invalid amount. Choose from: ${SIMULATE_ALLOWED.join(", ")}`); return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (!user) { sendNotFound(res, "User not found"); return; }
-  if (isWalletFrozen(user)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+    if (isWalletFrozen(user)) { sendForbidden(res, "wallet_frozen", "Your wallet has been temporarily frozen. Contact support."); return; }
 
-  /* Check daily simulated topup total */
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const todayTxns = await db.select({ s: sum(walletTransactionsTable.amount) })
-    .from(walletTransactionsTable)
-    .where(and(
-      eq(walletTransactionsTable.userId, userId),
-      eq(walletTransactionsTable.type, "simulated_topup"),
-      gte(walletTransactionsTable.createdAt, todayStart),
-    ));
-  const todayTotal = parseFloat(todayTxns[0]?.s ?? "0") || 0;
-  if (todayTotal + amount > SIMULATE_DAILY_LIMIT) {
-    sendError(res, `Daily simulation limit is Rs. ${SIMULATE_DAILY_LIMIT}. You have Rs. ${SIMULATE_DAILY_LIMIT - todayTotal} remaining today.`, 429); return;
-  }
+    /* Check daily simulated topup total */
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayTxns = await db.select({ s: sum(walletTransactionsTable.amount) })
+      .from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.userId, userId),
+        eq(walletTransactionsTable.type, "simulated_topup"),
+        gte(walletTransactionsTable.createdAt, todayStart),
+      ));
+    const todayTotal = parseFloat(todayTxns[0]?.s ?? "0") || 0;
+    if (todayTotal + amount > SIMULATE_DAILY_LIMIT) {
+      sendError(res, `Daily simulation limit is Rs. ${SIMULATE_DAILY_LIMIT}. You have Rs. ${SIMULATE_DAILY_LIMIT - todayTotal} remaining today.`, 429); return;
+    }
 
-  const newBalance = await db.transaction(async (tx) => {
-    const [updated] = await tx.update(usersTable)
-      .set({ walletBalance: sql`wallet_balance + ${amount}`, updatedAt: new Date() })
-      .where(eq(usersTable.id, userId))
-      .returning({ walletBalance: usersTable.walletBalance });
-    await tx.insert(walletTransactionsTable).values({
-      id: generateId(), userId, type: "simulated_topup",
-      amount: amount.toFixed(2),
-      description: `Simulated top-up — Rs. ${amount} (Demo Mode)`,
-      reference: `sim:${Date.now()}`,
-      paymentMethod: "simulation",
+    const newBalance = await db.transaction(async (tx) => {
+      const [updated] = await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${amount}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, userId))
+        .returning({ walletBalance: usersTable.walletBalance });
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId, type: "simulated_topup",
+        amount: amount.toFixed(2),
+        description: `Simulated top-up — Rs. ${amount} (Demo Mode)`,
+        reference: `sim:${Date.now()}`,
+        paymentMethod: "simulation",
+      });
+      return parseFloat(updated?.walletBalance ?? "0");
     });
-    return parseFloat(updated?.walletBalance ?? "0");
-  });
 
-  broadcastWalletUpdate(userId, newBalance);
-  sendSuccess(res, { amount, newBalance });
+    broadcastWalletUpdate(userId, newBalance);
+    sendSuccess(res, { amount, newBalance });
+  } catch (e: unknown) {
+    logger.error("[wallet /simulate-topup] Unexpected error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
 });
 
 /* ── GET /wallet/pending-topups — Customer pending topup count ────────── */
 router.get("/pending-topups", customerAuth, async (req, res) => {
   const userId = req.customerId!;
-  const pending = await db.select()
-    .from(walletTransactionsTable)
-    .where(and(
-      eq(walletTransactionsTable.userId, userId),
-      eq(walletTransactionsTable.type, "deposit"),
-      sql`(${walletTransactionsTable.reference} = 'pending' OR ${walletTransactionsTable.reference} LIKE 'pending:%')`,
-    ));
-  sendSuccess(res, { count: pending.length, total: pending.reduce((s, t) => s + parseFloat(t.amount), 0) });
+  try {
+    const pending = await db.select()
+      .from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.userId, userId),
+        eq(walletTransactionsTable.type, "deposit"),
+        sql`(${walletTransactionsTable.reference} = 'pending' OR ${walletTransactionsTable.reference} LIKE 'pending:%')`,
+      ));
+    sendSuccess(res, { count: pending.length, total: pending.reduce((s, t) => s + parseFloat(t.amount), 0) });
+  } catch (e: unknown) {
+    logger.error("[wallet /pending-topups] DB error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
 });
 
 export default router;

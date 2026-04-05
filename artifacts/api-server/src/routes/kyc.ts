@@ -133,7 +133,6 @@ router.post(
   async (req, res) => {
     const userId = req.customerId!;
 
-    /* Task 11: Role guard */
     const { allowed, reason } = await canSubmitKyc(userId);
     if (!allowed) {
       sendForbidden(res, reason ?? "KYC not required for your account type.");
@@ -162,8 +161,6 @@ router.post(
 
     try {
       await db.transaction(async (tx) => {
-        /* Task 8: Use a transaction to prevent race conditions */
-
         /* Block re-submission if already approved */
         const [existing] = await tx
           .select({ id: kycVerificationsTable.id, status: kycVerificationsTable.status })
@@ -176,7 +173,7 @@ router.post(
           throw Object.assign(new Error("KYC already verified"), { statusCode: 400 });
         }
 
-        /* Task 7: Block duplicate CNIC across different users */
+        /* Block duplicate CNIC across different users */
         const [cnicDuplicate] = await tx
           .select({ userId: kycVerificationsTable.userId })
           .from(kycVerificationsTable)
@@ -256,7 +253,6 @@ router.post(
 router.post("/submit-base64", customerAuth, async (req, res) => {
   const userId = req.customerId!;
 
-  /* Task 11: Role guard */
   const { allowed, reason } = await canSubmitKyc(userId);
   if (!allowed) {
     sendForbidden(res, reason ?? "KYC not required for your account type.");
@@ -278,7 +274,6 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
 
   const cnicClean = cnic.replace(/[-\s]/g, "");
 
-  /* Task 6: Parse and validate base64 images (MIME + size) */
   function base64ToBuffer(dataUrl: string, fieldName: string): { buffer: Buffer; mime: string } {
     const match = dataUrl.match(/^data:(image\/[\w]+);base64,(.+)$/);
     if (!match) throw Object.assign(new Error(`Invalid image data for ${fieldName}`), { statusCode: 400 });
@@ -298,7 +293,7 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
     /* Magic byte MIME verification — reject if bytes match no known format OR mismatch */
     const actualMime = detectMime(buffer);
     const mimeOk = actualMime === claimedMime
-      || (actualMime === "image/webp" && claimedMime === "image/jpeg"); // RIFF+WEBP edge-case
+      || (actualMime === "image/webp" && claimedMime === "image/jpeg");
     if (!actualMime) {
       throw Object.assign(new Error(`${fieldName}: File appears corrupted or is not a valid image`), { statusCode: 400 });
     }
@@ -310,13 +305,11 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
   }
 
   try {
-    const front  = base64ToBuffer(frontIdPhoto, "Front CNIC photo");
-    const back   = base64ToBuffer(backIdPhoto, "Back CNIC photo");
+    const front = base64ToBuffer(frontIdPhoto, "Front CNIC photo");
+    const back  = base64ToBuffer(backIdPhoto, "Back CNIC photo");
     const selfie = base64ToBuffer(selfiePhoto, "Selfie photo");
 
     await db.transaction(async (tx) => {
-      /* Task 8: Transaction for race-condition safety */
-
       const [existing] = await tx
         .select({ id: kycVerificationsTable.id, status: kycVerificationsTable.status })
         .from(kycVerificationsTable)
@@ -328,7 +321,7 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
         throw Object.assign(new Error("KYC already verified"), { statusCode: 400 });
       }
 
-      /* Task 7: Block duplicate CNIC across different users */
+      /* Block duplicate CNIC across different users */
       const [cnicDuplicate] = await tx
         .select({ userId: kycVerificationsTable.userId })
         .from(kycVerificationsTable)
@@ -469,10 +462,7 @@ router.get("/admin/:id", adminAuth, async (req, res) => {
 });
 
 /* ─── Admin: POST /api/kyc/admin/:id/approve ─── */
-/* Task 9: Don't overwrite user name if they've already set it
-   Task 10: Remove adminId || "admin" fallback */
 router.post("/admin/:id/approve", adminAuth, async (req, res) => {
-  /* Task 10: adminId must come from the verified admin token — no fallback */
   if (!req.adminId) {
     res.status(403).json({ error: "Admin identity could not be verified." });
     return;
@@ -500,7 +490,6 @@ router.post("/admin/:id/approve", adminAuth, async (req, res) => {
     .set({ status: "approved", reviewedBy: adminId, reviewedAt: now, updatedAt: now })
     .where(eq(kycVerificationsTable.id, record.id));
 
-  /* Task 9: Only sync name from KYC if user's name is currently null/empty */
   const syncName = (!currentUser?.name || currentUser.name.trim() === "") ? (record.fullName ?? undefined) : undefined;
 
   await db
@@ -521,9 +510,7 @@ router.post("/admin/:id/approve", adminAuth, async (req, res) => {
 });
 
 /* ─── Admin: POST /api/kyc/admin/:id/reject ─── */
-/* Task 10: Remove adminId || "admin" fallback */
 router.post("/admin/:id/reject", adminAuth, async (req, res) => {
-  /* Task 10: adminId must come from the verified admin token */
   if (!req.adminId) {
     res.status(403).json({ error: "Admin identity could not be verified." });
     return;
