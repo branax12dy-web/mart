@@ -452,6 +452,12 @@ function CartScreenInner() {
 
   const [gwBackgrounded, setGwBackgrounded] = useState(false);
   const [deliveryBlocked, setDeliveryBlocked] = useState<string | null>(null);
+  const [gwMobileError, setGwMobileError] = useState<string | null>(null);
+  const gwCancellingRef = useRef(false);
+
+  useEffect(() => {
+    if (gwMobileError) setGwMobileError(null);
+  }, [gwMobile]);
 
   const mountedRef = useRef(true);
   const gwPollRef = useRef<{ active: boolean; intervalId?: ReturnType<typeof setInterval> }>({ active: false });
@@ -565,7 +571,10 @@ function CartScreenInner() {
     }
   }, [grandTotal, orderRules.maxCodAmount, payMethod]);
 
-  const selectedAddr = addresses.find(a => a.id === selectedAddrId);
+  const [gpsAddress, setGpsAddress] = useState<SavedAddress | null>(null);
+  const selectedAddr = selectedAddrId === "__gps__"
+    ? (addresses.find(a => a.id === "__gps__") ?? gpsAddress)
+    : addresses.find(a => a.id === selectedAddrId);
   const deliveryLine = selectedAddr
     ? `${selectedAddr.label} — ${selectedAddr.address}, ${selectedAddr.city}`
     : "";
@@ -602,6 +611,7 @@ function CartScreenInner() {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
           };
+          setGpsAddress(gpsAddr);
           setAddresses(prev => [gpsAddr, ...prev.filter(a => a.id !== "__gps__")]);
           setSelectedAddrId("__gps__");
           gpsResolved.current = true;
@@ -741,12 +751,30 @@ function CartScreenInner() {
     }
   };
 
-  const removePromo = () => {
+  const clearPromoState = () => {
     setPromoCode(null);
     setPromoDiscount(0);
     setPromoApplied(false);
     setPromoInput("");
     setPromoError(null);
+  };
+
+  const prevCartTypeRef = useRef(cartType);
+  useEffect(() => {
+    if (prevCartTypeRef.current !== cartType && prevCartTypeRef.current !== "none" && cartType !== "none") {
+      clearPromoState();
+    }
+    prevCartTypeRef.current = cartType;
+  }, [cartType]);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      clearPromoState();
+    }
+  }, [items.length]);
+
+  const removePromo = () => {
+    clearPromoState();
   };
 
   const placeOrder = async (finalPayMethod: PayMethod) => {
@@ -800,7 +828,10 @@ function CartScreenInner() {
     }
 
     if (finalPayMethod === "wallet") {
-      const serverDeducted = parseFloat(String(order?.total ?? grandTotal));
+      const rawServerTotal = order?.total;
+      const parsed = rawServerTotal != null ? parseFloat(String(rawServerTotal)) : NaN;
+      const serverDeducted = !isNaN(parsed) && parsed > 0 ? parsed : grandTotal;
+      if (isNaN(parsed) && __DEV__) console.warn("[Cart] wallet deduction: server total missing/invalid, using grandTotal fallback");
       updateUser({ walletBalance: (user?.walletBalance ?? 0) - serverDeducted });
     }
 
@@ -848,7 +879,15 @@ function CartScreenInner() {
       return;
     }
     if (items.length === 0) { showToast(T("cartEmpty"), "error"); return; }
-    if (cartType === "pharmacy") { router.push("/pharmacy"); return; }
+    if (cartType === "pharmacy") {
+      const pharmacyItems = items.filter(i => i.type === "pharmacy");
+      clearCart();
+      router.push({
+        pathname: "/pharmacy",
+        params: { cartItems: JSON.stringify(pharmacyItems) },
+      });
+      return;
+    }
     const isPickup = payMethod === "pickup";
     if (!isPickup && !deliveryLine) {
       showToast(T("selectDeliveryAddress"), "error");
@@ -1013,10 +1052,13 @@ function CartScreenInner() {
   };
 
   const handleGwPay = async () => {
-    if (!gwMobile || gwMobile.replace(/\D/g, "").length < 10) {
-      showToast(T("validMobileRequired"), "error");
+    const digits = gwMobile.replace(/\D/g, "");
+    if (digits.length !== 11 || !digits.startsWith("03")) {
+      setGwMobileError("Enter a valid 11-digit number starting with 03");
       return;
     }
+    setGwMobileError(null);
+    if (gwCancellingRef.current) return;
     setGwPaying(true);
     setGwStep("waiting");
     setGwBackgrounded(false);
@@ -1071,7 +1113,21 @@ function CartScreenInner() {
       });
       const rawData = await r.json() as any;
       if (!r.ok) {
-        await cancelPendingOrder(realOrderId);
+        gwCancellingRef.current = true;
+        let cancelOk = false;
+        for (let ci = 0; ci < 3; ci++) {
+          try {
+            await cancelPendingOrder(realOrderId);
+            cancelOk = true;
+            break;
+          } catch {
+            if (ci < 2) await new Promise(r => setTimeout(r, 1000 * (ci + 1)));
+          }
+        }
+        gwCancellingRef.current = false;
+        if (!cancelOk) {
+          showToast("Could not cancel the order after payment failure. Please contact support.", "error");
+        }
         throw new Error(rawData.error || "Could not initiate payment");
       }
       const data = unwrapApiResponse(rawData) as any;
@@ -1086,22 +1142,18 @@ function CartScreenInner() {
   };
 
   const cancelPendingOrder = async (orderId: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ reason: "payment_failed" }),
-      });
-      if (res.status === 404) return;
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (__DEV__) console.warn("[cancelPendingOrder] failed:", data.error);
-      }
-    } catch (err: any) {
-      if (__DEV__) console.warn("[cancelPendingOrder] network error:", err.message);
+    const res = await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ reason: "payment_failed" }),
+    });
+    if (res.status === 404) return;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Cancel failed with status ${res.status}`);
     }
   };
 
@@ -1109,7 +1161,10 @@ function CartScreenInner() {
   const gwLogo = payMethod === "jazzcash" ? "🔴" : "🟢";
   const gwColor = payMethod === "jazzcash" ? C.red : C.greenBright;
 
-  type NumPadBtn = { label: string; action: () => void; isOk?: boolean };
+  const gwMobileDigits = gwMobile.replace(/\D/g, "");
+  const gwMobileValid = gwMobileDigits.length === 11 && gwMobileDigits.startsWith("03");
+
+  type NumPadBtn = { label: string; action: () => void; isOk?: boolean; disabled?: boolean };
   const numPadRows: NumPadBtn[][] = [
     [
       { label: "1", action: () => gwMobile.length < 11 && setGwMobile(p => p + "1") },
@@ -1129,7 +1184,7 @@ function CartScreenInner() {
     [
       { label: "⌫", action: () => setGwMobile(p => p.slice(0, -1)) },
       { label: "0", action: () => gwMobile.length < 11 && setGwMobile(p => p + "0") },
-      { label: "✓", action: handleGwPay, isOk: true },
+      { label: "✓", action: handleGwPay, isOk: true, disabled: !gwMobileValid },
     ],
   ];
 
@@ -1160,6 +1215,9 @@ function CartScreenInner() {
                   </Text>
                 </View>
               </View>
+              {gwMobileError && (
+                <Text style={{ ...Typ.caption, color: C.red, marginBottom: 8, marginLeft: 2 }}>{gwMobileError}</Text>
+              )}
               <View style={{ gap: 8, marginBottom: 16 }}>
                 {numPadRows.map((row, ri) => (
                   <View key={ri} style={{ flexDirection: "row", gap: 8 }}>
@@ -1167,10 +1225,12 @@ function CartScreenInner() {
                       <TouchableOpacity activeOpacity={0.7}
                         key={ci}
                         onPress={btn.action}
+                        disabled={btn.disabled}
                         style={{
                           flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: "center", justifyContent: "center",
                           backgroundColor: btn.isOk ? gwColor : C.surfaceSecondary,
                           borderWidth: 1, borderColor: btn.isOk ? "transparent" : C.border,
+                          opacity: btn.disabled ? 0.4 : 1,
                         }}
                       >
                         <Text style={{ ...Typ.title, color: btn.isOk ? C.textInverse : C.text }}>{btn.label}</Text>
@@ -1249,7 +1309,13 @@ function CartScreenInner() {
                   setGwStep("input");
                   setShowGwModal(false);
                   setGwBackgrounded(false);
-                  if (oid) await cancelPendingOrder(oid);
+                  if (oid) {
+                    try {
+                      await cancelPendingOrder(oid);
+                    } catch {
+                      showToast("Could not cancel the order. Please contact support.", "error");
+                    }
+                  }
                   showToast(T("orderCancelledSuccess"), "info");
                 }}
                 style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
@@ -1394,7 +1460,7 @@ function CartScreenInner() {
             <Ionicons name="arrow-back" size={22} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>{cartType === "food" ? "Food Order" : "Mart Order"}</Text>
+            <Text style={styles.headerTitle}>{cartType === "food" ? "Food Order" : cartType === "pharmacy" ? "Pharmacy Order" : "Mart Order"}</Text>
             <Text style={styles.headerSub}>{items.length} item{items.length !== 1 ? "s" : ""} in cart</Text>
           </View>
           <TouchableOpacity activeOpacity={0.7} onPress={() => setShowClearConfirm(true)} style={styles.clearBtn}>
@@ -1704,11 +1770,16 @@ function CartScreenInner() {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity activeOpacity={0.7} style={[styles.checkoutBtn, (loading || addrLoading || promoLoading) && { opacity: 0.7 }]} onPress={handleCheckout} disabled={loading || addrLoading || promoLoading}>
+          <TouchableOpacity activeOpacity={0.7} style={[styles.checkoutBtn, (loading || addrLoading || promoLoading || deliveryBlocked) && { opacity: 0.5 }]} onPress={handleCheckout} disabled={!!(loading || addrLoading || promoLoading || deliveryBlocked)}>
             {loading ? <ActivityIndicator color={C.textInverse} size="small" /> : promoLoading ? (
               <>
                 <ActivityIndicator color={C.textInverse} size="small" />
                 <Text style={styles.checkoutBtnTxt}>Validating promo...</Text>
+              </>
+            ) : deliveryBlocked ? (
+              <>
+                <Ionicons name="alert-circle" size={18} color={C.textInverse} />
+                <Text style={styles.checkoutBtnTxt}>Delivery Blocked</Text>
               </>
             ) : (
               <>
@@ -1726,6 +1797,7 @@ function CartScreenInner() {
         selected={selectedAddrId}
         onSelect={(a) => {
           if (a.id === "__gps__") {
+            setGpsAddress(a);
             setAddresses(prev => {
               const without = prev.filter(x => x.id !== "__gps__");
               return [a, ...without];

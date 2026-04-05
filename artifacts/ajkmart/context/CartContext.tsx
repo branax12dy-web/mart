@@ -72,9 +72,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     authTokenRef.current = token;
   }, [token]);
 
-  const save = (newItems: CartItem[]) => {
-    setItems(newItems);
-    AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(newItems));
+  const save = (updater: CartItem[] | ((prev: CartItem[]) => CartItem[])) => {
+    if (typeof updater === "function") {
+      setItems(prev => {
+        const newItems = updater(prev);
+        AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(newItems));
+        return newItems;
+      });
+    } else {
+      setItems(updater);
+      AsyncStorage.setItem("@ajkmart_cart", JSON.stringify(updater));
+    }
   };
 
   const resetAckState = useCallback(() => {
@@ -99,7 +107,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const ackId = payload?.orderId ?? payload?.id;
       const pending = pendingOrderIdRef.current;
       if (!pending) return;
-      if (ackId && ackId !== pending) return;
+      if (!ackId) return;
+      if (ackId !== pending) return;
       if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
       const data = pendingOrderDataRef.current;
       pendingOrderIdRef.current = null;
@@ -122,7 +131,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const ackId = payload?.orderId ?? payload?.id;
       const pending = pharmacyPendingOrderIdRef.current;
       if (!pending) return;
-      if (ackId && ackId !== pending) return;
+      if (!ackId) return;
+      if (ackId !== pending) return;
       pharmacyPendingOrderIdRef.current = null;
       setItems(current => {
         const remaining = current.filter(i => i.type !== "pharmacy");
@@ -233,46 +243,57 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return validateCartItems(items);
   }, [items]);
 
+  const MAX_ITEM_QTY = 99;
+
   const addItem = (item: CartItem) => {
-    const existing = items.find(i => i.productId === item.productId);
-    if (existing) {
-      save(items.map(i => i.productId === item.productId ? { ...i, quantity: i.quantity + 1 } : i));
-      return;
-    }
+    save(prev => {
+      const existing = prev.find(i => i.productId === item.productId);
+      if (existing) {
+        if (existing.quantity >= MAX_ITEM_QTY) {
+          setTimeout(() => Alert.alert("Limit Reached", `Maximum quantity per item is ${MAX_ITEM_QTY}.`), 0);
+          return prev;
+        }
+        return prev.map(i => i.productId === item.productId ? { ...i, quantity: Math.min(i.quantity + 1, MAX_ITEM_QTY) } : i);
+      }
 
-    const types = [...new Set(items.map(i => i.type))];
-    const currentType = types.length === 1 ? types[0] : null;
+      const types = [...new Set(prev.map(i => i.type))];
+      const currentType = types.length === 1 ? types[0] : null;
 
-    if (items.length > 0 && currentType === null) {
-      Alert.alert("Mixed Cart", "Your cart has mixed items. Please clear your cart before adding new items.", [{ text: "OK" }]);
-      return;
-    }
+      if (prev.length > 0 && currentType === null) {
+        setTimeout(() => Alert.alert("Mixed Cart", "Your cart has mixed items. Please clear your cart before adding new items.", [{ text: "OK" }]), 0);
+        return prev;
+      }
 
-    if (currentType && currentType !== item.type && items.length > 0) {
-      const nameFor = (t: string) => t === "mart" ? "Mart" : t === "food" ? "Food" : "Pharmacy";
-      Alert.alert(
-        "Mixed Cart",
-        `Your cart has items from ${nameFor(currentType)}. Adding ${nameFor(item.type)} items will clear your cart. Continue?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Yes, Clear & Add",
-            style: "destructive",
-            onPress: () => { save([item]); },
-          },
-        ]
-      );
-      return;
-    }
+      if (currentType && currentType !== item.type && prev.length > 0) {
+        const nameFor = (t: string) => t === "mart" ? "Mart" : t === "food" ? "Food" : "Pharmacy";
+        setTimeout(() => Alert.alert(
+          "Mixed Cart",
+          `Your cart has items from ${nameFor(currentType)}. Adding ${nameFor(item.type)} items will clear your cart. Continue?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Yes, Clear & Add",
+              style: "destructive",
+              onPress: () => { save([item]); },
+            },
+          ]
+        ), 0);
+        return prev;
+      }
 
-    save([...items, item]);
+      return [...prev, item];
+    });
   };
 
-  const removeItem = (productId: string) => save(items.filter(i => i.productId !== productId));
+  const removeItem = (productId: string) => save(prev => prev.filter(i => i.productId !== productId));
 
   const updateQuantity = (productId: string, qty: number) => {
     if (qty <= 0) return removeItem(productId);
-    save(items.map(i => i.productId === productId ? { ...i, quantity: qty } : i));
+    if (qty > MAX_ITEM_QTY) {
+      Alert.alert("Limit Reached", `Maximum quantity per item is ${MAX_ITEM_QTY}.`);
+      return;
+    }
+    save(prev => prev.map(i => i.productId === productId ? { ...i, quantity: qty } : i));
   };
 
   const clearCart = () => {
@@ -305,11 +326,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const setPendingOrderId = (id: string | null, data?: AckSuccessData | null) => {
     pendingOrderIdRef.current = id;
     pendingOrderDataRef.current = data ?? null;
+    if (id) ackResolvedRef.current = false;
   };
 
   const ackFallbackIvRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ackResolvedRef = useRef(false);
 
   const resolveOrderAck = (oid: string) => {
+    if (ackResolvedRef.current) return;
+    ackResolvedRef.current = true;
     const data = pendingOrderDataRef.current;
     if (ackStuckTimerRef.current) { clearTimeout(ackStuckTimerRef.current); ackStuckTimerRef.current = null; }
     if (ackFallbackTimerRef.current) { clearTimeout(ackFallbackTimerRef.current); ackFallbackTimerRef.current = null; }

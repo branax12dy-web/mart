@@ -104,7 +104,7 @@ const MedCard = React.memo(function MedCard({ med, qty, onAdd, onRemove }: {
 function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const topPad = Math.max(insets.top, 12);
-  const { category: routeCategory } = useLocalSearchParams<{ category?: string }>();
+  const { category: routeCategory, cartItems: cartItemsParam } = useLocalSearchParams<{ category?: string; cartItems?: string }>();
   const { user, updateUser, token } = useAuth();
   const { items: globalCartItems, addItem: addToGlobalCart, removeItem: removeFromGlobalCart, updateQuantity, clearCart, setPharmacyPendingOrderId } = useCart();
   const { showToast } = useToast();
@@ -127,6 +127,31 @@ function PharmacyScreenInner() {
   const [uploadFailed, setUploadFailed] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
+
+  const restoredFromCartRef = React.useRef(false);
+  useEffect(() => {
+    if (restoredFromCartRef.current || !cartItemsParam) return;
+    restoredFromCartRef.current = true;
+    try {
+      const parsed = JSON.parse(cartItemsParam);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: any) => {
+          if (item?.productId && item?.name && item?.price != null) {
+            addToGlobalCart({
+              productId: item.productId,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity ?? 1,
+              image: item.image,
+              type: "pharmacy",
+            });
+          }
+        });
+      }
+    } catch {
+      if (__DEV__) console.warn("[Pharmacy] Could not parse cartItems param");
+    }
+  }, [cartItemsParam]);
 
   const pharmacyCartItems = globalCartItems.filter(i => i.type === "pharmacy");
 
