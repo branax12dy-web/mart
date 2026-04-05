@@ -460,6 +460,22 @@ router.post("/users/:id/2fa/disable", async (req, res) => {
   sendSuccess(res, { success: true, message: `2FA disabled for user ${user.name ?? user.phone}` });
 });
 
+router.post("/users/:id/reset-wallet-pin", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+  if (!user.walletPinHash) { sendValidationError(res, "This user has no MPIN set"); return; }
+
+  await db.update(usersTable).set({
+    walletPinHash: null,
+    walletPinAttempts: 0,
+    walletPinLockedUntil: null,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, userId));
+
+  sendSuccess(res, { success: true, message: `Wallet MPIN reset for ${user.name ?? user.phone}. User will need to create a new MPIN.` });
+});
+
 /* ── Admin Accounts (Sub-Admins) ── */
 router.patch("/users/:id/request-correction", async (req, res) => {
   const { field, note } = req.body as { field?: string; note?: string };

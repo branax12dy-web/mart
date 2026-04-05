@@ -156,12 +156,341 @@ function MethodIcon({ id, size = 24 }: { id: string; size?: number }) {
   return <Ionicons name="business" size={size} color={C.blueDeep} />;
 }
 
+function MpinInput({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+  const inputRef = useRef<TextInput>(null);
+  useEffect(() => { if (autoFocus) setTimeout(() => inputRef.current?.focus(), 300); }, []);
+  return (
+    <View style={{ alignItems: "center", gap: 16 }}>
+      <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
+        {[0, 1, 2, 3].map(i => (
+          <View key={i} style={{ width: 48, height: 56, borderRadius: 14, borderWidth: 2, borderColor: value.length > i ? C.primary : C.border, backgroundColor: value.length > i ? C.primarySoft : C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontFamily: Font.bold, fontSize: 24, color: C.text }}>{value[i] ? "●" : ""}</Text>
+          </View>
+        ))}
+      </View>
+      <TextInput
+        ref={inputRef}
+        value={value}
+        onChangeText={t => { if (/^\d{0,4}$/.test(t)) onChange(t); }}
+        keyboardType="number-pad"
+        maxLength={4}
+        secureTextEntry
+        style={{ position: "absolute", opacity: 0, height: 1, width: 1 }}
+        autoFocus={autoFocus}
+      />
+      <TouchableOpacity activeOpacity={0.7} onPress={() => inputRef.current?.focus()} style={{ paddingVertical: 8 }}>
+        <Text style={{ ...Typ.caption, color: C.primary }}>Tap to enter PIN</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function MpinSetupModal({ token, onClose, onSuccess }: { token: string | null; onClose: () => void; onSuccess: () => void }) {
+  const [step, setStep] = useState<"create" | "confirm">("create");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { showToast } = useToast();
+
+  const handleCreate = () => {
+    if (pin.length !== 4) { setError("Enter 4-digit MPIN"); return; }
+    setError("");
+    setStep("confirm");
+  };
+
+  const handleConfirm = async () => {
+    if (confirmPin !== pin) { setError("PINs do not match"); setConfirmPin(""); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/wallet/pin/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ pin }),
+      });
+      const data = unwrapApiResponse(await res.json());
+      if (!res.ok) { setError(data.message || "Failed to create MPIN"); setLoading(false); return; }
+      showToast("MPIN created successfully!", "success");
+      onSuccess();
+      onClose();
+    } catch { setError("Network error. Try again."); }
+    setLoading(false);
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} style={ws.overlay} onPress={onClose}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
+          <TouchableOpacity activeOpacity={1} style={ws.sheet} onPress={e => e.stopPropagation()}>
+            <View style={ws.handle} />
+            <View style={{ alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="shield-checkmark" size={28} color={C.primary} />
+              </View>
+              <Text style={{ ...Typ.title, color: C.text }}>{step === "create" ? "Create MPIN" : "Confirm MPIN"}</Text>
+              <Text style={{ ...Typ.body, color: C.textSecondary, textAlign: "center" }}>
+                {step === "create" ? "Set a 4-digit MPIN to secure your wallet transactions" : "Re-enter your MPIN to confirm"}
+              </Text>
+            </View>
+            {step === "create" ? (
+              <>
+                <MpinInput value={pin} onChange={setPin} autoFocus />
+                {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={handleCreate} disabled={pin.length !== 4} style={[ws.actionBtn, { opacity: pin.length !== 4 ? 0.5 : 1, marginTop: 20 }]}>
+                  <Text style={ws.actionBtnTxt}>Continue</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <MpinInput value={confirmPin} onChange={setConfirmPin} autoFocus />
+                {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={handleConfirm} disabled={confirmPin.length !== 4 || loading} style={[ws.actionBtn, { opacity: confirmPin.length !== 4 ? 0.5 : 1, marginTop: 20 }]}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={ws.actionBtnTxt}>Create MPIN</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => { setStep("create"); setConfirmPin(""); setError(""); }} style={{ alignItems: "center", marginTop: 12 }}>
+                  <Text style={{ ...Typ.bodySemiBold, color: C.primary }}>Go Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function MpinVerifyModal({ token, onClose, onVerified }: { token: string | null; onClose: () => void; onVerified: (pinToken: string) => void }) {
+  const [pin, setPin] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
+
+  const handleVerify = async () => {
+    if (pin.length !== 4) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/wallet/pin/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ pin }),
+      });
+      const data = unwrapApiResponse(await res.json());
+      if (!res.ok) {
+        if (data.error === "pin_locked") { setError(data.message || "MPIN locked. Try again later."); }
+        else { setError(data.message || "Wrong MPIN"); }
+        setPin("");
+        setLoading(false);
+        return;
+      }
+      onVerified(data.pinToken);
+      onClose();
+    } catch { setError("Network error. Try again."); }
+    setLoading(false);
+  };
+
+  useEffect(() => { if (pin.length === 4) handleVerify(); }, [pin]);
+
+  if (showForgot) {
+    return <MpinForgotModal token={token} onClose={() => setShowForgot(false)} onReset={() => { setShowForgot(false); onClose(); }} />;
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} style={ws.overlay} onPress={onClose}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
+          <TouchableOpacity activeOpacity={1} style={ws.sheet} onPress={e => e.stopPropagation()}>
+            <View style={ws.handle} />
+            <View style={{ alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="lock-closed" size={28} color={C.amber} />
+              </View>
+              <Text style={{ ...Typ.title, color: C.text }}>Enter MPIN</Text>
+              <Text style={{ ...Typ.body, color: C.textSecondary, textAlign: "center" }}>Enter your 4-digit MPIN to proceed</Text>
+            </View>
+            <MpinInput value={pin} onChange={setPin} autoFocus />
+            {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
+            {loading && <ActivityIndicator color={C.primary} style={{ marginTop: 12 }} />}
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setShowForgot(true)} style={{ alignItems: "center", marginTop: 20 }}>
+              <Text style={{ ...Typ.bodySemiBold, color: C.primary }}>Forgot MPIN?</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function MpinForgotModal({ token, onClose, onReset }: { token: string | null; onClose: () => void; onReset: () => void }) {
+  const [step, setStep] = useState<"request" | "verify">("request");
+  const [otp, setOtp] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  const [devOtp, setDevOtp] = useState("");
+  const { showToast } = useToast();
+
+  const requestOtp = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/wallet/pin/forgot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = unwrapApiResponse(await res.json());
+      if (!res.ok) { setError(data.message || "Failed to send OTP"); setLoading(false); return; }
+      setMaskedPhone(data.phone || "");
+      if (data._dev_otp) setDevOtp(data._dev_otp);
+      setStep("verify");
+    } catch { setError("Network error. Try again."); }
+    setLoading(false);
+  };
+
+  const resetPin = async () => {
+    if (otp.length < 4) { setError("Enter the OTP sent to your phone"); return; }
+    if (newPin.length !== 4) { setError("Enter a 4-digit new MPIN"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/wallet/pin/reset-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ otp, newPin }),
+      });
+      const data = unwrapApiResponse(await res.json());
+      if (!res.ok) { setError(data.message || "Reset failed"); setLoading(false); return; }
+      showToast("MPIN reset successfully!", "success");
+      onReset();
+    } catch { setError("Network error. Try again."); }
+    setLoading(false);
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} style={ws.overlay} onPress={onClose}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
+          <TouchableOpacity activeOpacity={1} style={ws.sheet} onPress={e => e.stopPropagation()}>
+            <View style={ws.handle} />
+            <View style={{ alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.redSoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="key" size={28} color={C.red} />
+              </View>
+              <Text style={{ ...Typ.title, color: C.text }}>Reset MPIN</Text>
+            </View>
+            {step === "request" ? (
+              <>
+                <Text style={{ ...Typ.body, color: C.textSecondary, textAlign: "center", marginBottom: 16 }}>
+                  We'll send an OTP to your registered phone number to verify your identity.
+                </Text>
+                {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginBottom: 8 }}>{error}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={requestOtp} disabled={loading} style={ws.actionBtn}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={ws.actionBtnTxt}>Send OTP</Text>}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={{ ...Typ.body, color: C.textSecondary, textAlign: "center", marginBottom: 4 }}>
+                  OTP sent to {maskedPhone}
+                </Text>
+                {!!devOtp && (
+                  <View style={{ backgroundColor: C.amberSoft, borderRadius: 8, padding: 8, marginBottom: 8 }}>
+                    <Text style={{ ...Typ.captionMedium, color: C.amberDark, textAlign: "center" }}>Dev OTP: {devOtp}</Text>
+                  </View>
+                )}
+                <TextInput value={otp} onChangeText={setOtp} placeholder="Enter OTP" keyboardType="number-pad" maxLength={6} style={[ws.input, { marginBottom: 12 }]} placeholderTextColor={C.textMuted} />
+                <Text style={{ ...Typ.captionMedium, color: C.textSecondary, marginBottom: 4 }}>New MPIN</Text>
+                <MpinInput value={newPin} onChange={setNewPin} />
+                {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={resetPin} disabled={loading || otp.length < 4 || newPin.length !== 4} style={[ws.actionBtn, { opacity: otp.length < 4 || newPin.length !== 4 ? 0.5 : 1, marginTop: 16 }]}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={ws.actionBtnTxt}>Reset MPIN</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function MpinChangeModal({ token, onClose, onSuccess }: { token: string | null; onClose: () => void; onSuccess: () => void }) {
+  const [oldPin, setOldPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [step, setStep] = useState<"old" | "new">("old");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { showToast } = useToast();
+
+  const handleChange = async () => {
+    if (newPin.length !== 4) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/wallet/pin/change`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ oldPin, newPin }),
+      });
+      const data = unwrapApiResponse(await res.json());
+      if (!res.ok) { setError(data.message || "Failed to change MPIN"); setLoading(false); return; }
+      showToast("MPIN changed successfully!", "success");
+      onSuccess();
+      onClose();
+    } catch { setError("Network error. Try again."); }
+    setLoading(false);
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} style={ws.overlay} onPress={onClose}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
+          <TouchableOpacity activeOpacity={1} style={ws.sheet} onPress={e => e.stopPropagation()}>
+            <View style={ws.handle} />
+            <View style={{ alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="key" size={28} color={C.primary} />
+              </View>
+              <Text style={{ ...Typ.title, color: C.text }}>{step === "old" ? "Current MPIN" : "New MPIN"}</Text>
+              <Text style={{ ...Typ.body, color: C.textSecondary, textAlign: "center" }}>
+                {step === "old" ? "Enter your current MPIN" : "Enter your new 4-digit MPIN"}
+              </Text>
+            </View>
+            {step === "old" ? (
+              <>
+                <MpinInput value={oldPin} onChange={setOldPin} autoFocus />
+                {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={() => { if (oldPin.length === 4) { setError(""); setStep("new"); } }} disabled={oldPin.length !== 4} style={[ws.actionBtn, { opacity: oldPin.length !== 4 ? 0.5 : 1, marginTop: 20 }]}>
+                  <Text style={ws.actionBtnTxt}>Continue</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <MpinInput value={newPin} onChange={setNewPin} autoFocus />
+                {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={handleChange} disabled={newPin.length !== 4 || loading} style={[ws.actionBtn, { opacity: newPin.length !== 4 ? 0.5 : 1, marginTop: 20 }]}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={ws.actionBtnTxt}>Change MPIN</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => { setStep("old"); setNewPin(""); setError(""); }} style={{ alignItems: "center", marginTop: 12 }}>
+                  <Text style={{ ...Typ.bodySemiBold, color: C.primary }}>Go Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 type WithdrawMethod = { id: string; label: string; placeholder: string };
 type WithdrawStep = "method" | "details" | "confirm" | "done";
 
 const NOTE_MAX_LENGTH = 200;
 
-function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdrawal }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; balance: number; minWithdrawal: number }) {
+function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdrawal, pinToken }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; balance: number; minWithdrawal: number; pinToken?: string | null }) {
   const [step, setStep]               = useState<WithdrawStep>("method");
   const [withdrawMethods, setWithdrawMethods] = useState<WithdrawMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
@@ -226,6 +555,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
           "Content-Type": "application/json",
           "Idempotency-Key": idempotencyKey,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(pinToken ? { "x-wallet-pin-token": pinToken } : {}),
         },
         body: JSON.stringify({ amount: amt, paymentMethod: selectedMethod?.id, accountNumber: accountNumber.trim(), note: note.trim() || undefined }),
       });
@@ -938,6 +1268,14 @@ function WalletScreenInner() {
   const [lastRefreshed,  setLastRefreshed]  = useState<Date | null>(null);
   const [txFilter,    setTxFilter]    = useState<TxFilter>("all");
 
+  const [walletHidden, setWalletHidden] = useState(false);
+  const [pinSetup, setPinSetup] = useState(false);
+  const [showMpinSetup, setShowMpinSetup] = useState(false);
+  const [showMpinChange, setShowMpinChange] = useState(false);
+  const [showMpinVerify, setShowMpinVerify] = useState(false);
+  const [pendingPinAction, setPendingPinAction] = useState<"send" | "withdraw" | null>(null);
+  const [activePinToken, setActivePinToken] = useState<string | null>(null);
+
   const [sendPhone,   setSendPhone]   = useState("");
   const [sendAmount,  setSendAmount]  = useState("");
   const [sendNote,    setSendNote]    = useState("");
@@ -1017,6 +1355,13 @@ function WalletScreenInner() {
   }, [walletErrorObj, data]);
 
   useEffect(() => {
+    if (data) {
+      if (typeof data.pinSetup === "boolean") setPinSetup(data.pinSetup);
+      if (typeof data.walletHidden === "boolean") setWalletHidden(data.walletHidden);
+    }
+  }, [data]);
+
+  useEffect(() => {
     if (token) {
       fetch(`${API}/wallet`, { headers: { Authorization: `Bearer ${token}` } })
         .then(async r => {
@@ -1072,6 +1417,35 @@ function WalletScreenInner() {
     }
   }, [token]);
 
+  const toggleWalletVisibility = async () => {
+    const newHidden = !walletHidden;
+    setWalletHidden(newHidden);
+    try {
+      await fetch(`${API}/wallet/visibility`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ hidden: newHidden }),
+      });
+    } catch { setWalletHidden(!newHidden); }
+  };
+
+  const handlePinVerified = (pinToken: string) => {
+    setActivePinToken(pinToken);
+    if (pendingPinAction === "send") setShowSend(true);
+    else if (pendingPinAction === "withdraw") setShowWithdraw(true);
+    setPendingPinAction(null);
+  };
+
+  const openWithPinCheck = (action: "send" | "withdraw") => {
+    if (pinSetup) {
+      setPendingPinAction(action);
+      setShowMpinVerify(true);
+    } else {
+      if (action === "send") setShowSend(true);
+      else setShowWithdraw(true);
+    }
+  };
+
   const handleDepositSuccess = () => {
     qc.invalidateQueries({ queryKey: walletQueryKey });
     showToast("Deposit request submitted! It will be approved within 1-2 hours.", "success");
@@ -1092,6 +1466,7 @@ function WalletScreenInner() {
   const closeSendModal = () => {
     setShowSend(false);
     resetSendState();
+    setActivePinToken(null);
   };
 
   const validateSendPhone = (phone: string): boolean => {
@@ -1170,6 +1545,7 @@ function WalletScreenInner() {
           "Content-Type": "application/json",
           "Idempotency-Key": sendIdempotencyKey,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(activePinToken ? { "x-wallet-pin-token": activePinToken } : {}),
         },
         body: JSON.stringify({ receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
       });
@@ -1292,9 +1668,14 @@ function WalletScreenInner() {
                   <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.2)", opacity: 0.7 }} />
                 </View>
               ) : (
-                <Text style={{ fontFamily: Font.bold, fontSize: 40, color: "#FFFFFF", marginBottom: 4 }}>
-                  {`Rs. ${balance.toLocaleString()}`}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                  <Text style={{ fontFamily: Font.bold, fontSize: 40, color: "#FFFFFF" }}>
+                    {walletHidden ? "Rs. ••••••" : `Rs. ${balance.toLocaleString()}`}
+                  </Text>
+                  <TouchableOpacity activeOpacity={0.7} onPress={toggleWalletVisibility} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={walletHidden ? "Show balance" : "Hide balance"}>
+                    <Ionicons name={walletHidden ? "eye-off" : "eye"} size={22} color="rgba(255,255,255,0.7)" />
+                  </TouchableOpacity>
+                </View>
               )}
               <Text style={{ ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 24 }}>{T("availableBalance")}</Text>
 
@@ -1305,14 +1686,14 @@ function WalletScreenInner() {
                   </View>
                   <Text style={[ws.actionCardTxt, { color: "rgba(255,255,255,0.9)" }]}>{T("topUp")}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.7} onPress={() => setShowWithdraw(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel="Withdraw money">
+                <TouchableOpacity activeOpacity={0.7} onPress={() => openWithPinCheck("withdraw")} style={ws.actionCard} accessibilityRole="button" accessibilityLabel="Withdraw money">
                   <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
                     <Ionicons name="arrow-up-outline" size={18} color="#FFFFFF" />
                   </View>
                   <Text style={[ws.actionCardTxt, { color: "rgba(255,255,255,0.9)" }]}>Withdraw</Text>
                 </TouchableOpacity>
                 {p2pEnabled && (
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setShowSend(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("send")}>
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => openWithPinCheck("send")} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("send")}>
                     <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
                       <Ionicons name="send-outline" size={18} color="#FFFFFF" />
                     </View>
@@ -1360,6 +1741,33 @@ function WalletScreenInner() {
             </View>
             <Text style={ws.statLbl}>{T("transactions")}</Text>
             <Text style={[ws.statAmt, { color: C.primary }]}>{transactions.length}</Text>
+          </View>
+        </View>
+
+        <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
+          <View style={{ backgroundColor: C.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: C.border }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="shield-checkmark" size={18} color={C.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ ...Typ.bodySemiBold, color: C.text }}>Wallet Security</Text>
+                <Text style={{ ...Typ.caption, color: C.textMuted }}>{pinSetup ? "MPIN active" : "Set up MPIN for secure transactions"}</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {!pinSetup ? (
+                <TouchableOpacity activeOpacity={0.7} onPress={() => setShowMpinSetup(true)} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: C.primary, borderRadius: 12, paddingVertical: 10 }}>
+                  <Ionicons name="lock-closed" size={16} color="#fff" />
+                  <Text style={{ ...Typ.bodySemiBold, color: "#fff" }}>Create MPIN</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity activeOpacity={0.7} onPress={() => setShowMpinChange(true)} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: C.surfaceSecondary, borderRadius: 12, paddingVertical: 10, borderWidth: 1, borderColor: C.border }}>
+                  <Ionicons name="key" size={16} color={C.primary} />
+                  <Text style={{ ...Typ.bodySemiBold, color: C.primary }}>Change MPIN</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </View>
 
@@ -1441,10 +1849,12 @@ function WalletScreenInner() {
           token={token}
           balance={balance}
           minWithdrawal={platformConfig.customer.minWithdrawal}
-          onClose={() => setShowWithdraw(false)}
+          pinToken={activePinToken}
+          onClose={() => { setShowWithdraw(false); setActivePinToken(null); }}
           onSuccess={() => {
             qc.invalidateQueries({ queryKey: walletQueryKey });
             showToast("Withdrawal request submitted! It will be processed within 1-2 business days.", "success");
+            setActivePinToken(null);
           }}
           onFrozen={() => setWalletFrozen(true)}
         />
@@ -1616,6 +2026,30 @@ function WalletScreenInner() {
         </TouchableOpacity>
       </Modal>
 
+      {showMpinSetup && (
+        <MpinSetupModal
+          token={token}
+          onClose={() => setShowMpinSetup(false)}
+          onSuccess={() => { setPinSetup(true); qc.invalidateQueries({ queryKey: walletQueryKey }); }}
+        />
+      )}
+
+      {showMpinChange && (
+        <MpinChangeModal
+          token={token}
+          onClose={() => setShowMpinChange(false)}
+          onSuccess={() => qc.invalidateQueries({ queryKey: walletQueryKey })}
+        />
+      )}
+
+      {showMpinVerify && (
+        <MpinVerifyModal
+          token={token}
+          onClose={() => { setShowMpinVerify(false); setPendingPinAction(null); }}
+          onVerified={handlePinVerified}
+        />
+      )}
+
     </View>
   );
 }
@@ -1664,6 +2098,7 @@ const ws = StyleSheet.create({
   phonePrefixTxt: { ...Typ.button, color: C.text },
   sendInput: { flex: 1, ...Typ.body, fontSize: 15, color: C.text, paddingHorizontal: 14, paddingVertical: 13 },
 
-  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4 },
+  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4, backgroundColor: C.primary },
   actionBtnTxt: { ...Typ.h3, fontSize: 16, color: C.textInverse },
+  input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, ...Typ.body, color: C.text, fontSize: 16, textAlign: "center" },
 });

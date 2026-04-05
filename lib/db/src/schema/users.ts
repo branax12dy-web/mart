@@ -81,6 +81,11 @@ export const usersTable = pgTable("users", {
   vehiclePhoto:      text("vehicle_photo"),
   documents:         text("documents"),
   biometricEnabled:  boolean("biometric_enabled").notNull().default(false),
+  /* ── Wallet MPIN security ── */
+  walletPinHash:       text("wallet_pin_hash"),
+  walletPinAttempts:   integer("wallet_pin_attempts").notNull().default(0),
+  walletPinLockedUntil: timestamp("wallet_pin_locked_until"),
+  walletHidden:        boolean("wallet_hidden").notNull().default(false),
   /* ── 2FA / TOTP fields ── */
   totpSecret:        text("totp_secret"),
   totpEnabled:       boolean("totp_enabled").notNull().default(false),

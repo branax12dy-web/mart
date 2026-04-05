@@ -40,6 +40,38 @@ AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pak
 #### Home Screen Service Navigation
 - **`app/(tabs)/index.tsx`**: Service grid/list no longer redirects guests to `/auth`; guests navigate directly to service screens where action-level auth gates handle protected operations. Lock badge icons removed.
 
+### Wallet MPIN Security & Hide/Unhide — Completed Changes
+
+#### Database Schema (`lib/db/src/schema/users.ts`)
+- **`wallet_pin_hash`**: Bcrypt-hashed 4-digit MPIN for wallet transaction security
+- **`wallet_pin_attempts`**: Failed MPIN attempt counter (locks after 5 failed attempts)
+- **`wallet_pin_locked_until`**: Timestamp for MPIN lock expiry (30-minute lockout)
+- **`wallet_hidden`**: Boolean flag for hiding wallet balance display
+
+#### API — MPIN Routes (`artifacts/api-server/src/routes/wallet.ts`)
+- **POST `/wallet/pin/setup`**: Create 4-digit MPIN (bcrypt hashed, 10 rounds). Rejects if already set.
+- **POST `/wallet/pin/verify`**: Verify MPIN, returns temporary `pinToken` (5-min TTL). Tracks failed attempts (5 max → 30-min lockout).
+- **POST `/wallet/pin/change`**: Change MPIN (requires old PIN verification). Invalidates all existing pinTokens.
+- **POST `/wallet/pin/forgot`**: Send OTP to registered phone for MPIN reset. Rate-limited (3 per 5 min).
+- **POST `/wallet/pin/reset-confirm`**: Verify OTP and set new MPIN. Validates OTP hash + expiry.
+- **PATCH `/wallet/visibility`**: Toggle wallet balance hide/unhide (persisted server-side).
+- **GET `/wallet`**: Response now includes `pinSetup` (boolean) and `walletHidden` (boolean).
+- **`/send` and `/withdraw`**: Require `x-wallet-pin-token` header when user has MPIN set and `wallet_mpin_enabled` platform setting is on. Token is single-use.
+
+#### Admin — MPIN Management
+- **POST `/admin/users/:id/reset-wallet-pin`** (`artifacts/api-server/src/routes/admin/users.ts`): Admin force-resets user's MPIN (clears hash, attempts, lock).
+- **Admin User Detail** (`artifacts/admin/src/pages/users.tsx`): Shows "Wallet MPIN" card with reset button when user has MPIN set.
+- **Platform Config** (`artifacts/api-server/src/routes/platform-config.ts`): `wallet_mpin_enabled` setting exposed as `customer.mpinEnabled`.
+
+#### Customer App — MPIN UI (`artifacts/ajkmart/app/(tabs)/wallet.tsx`)
+- **Balance Hide/Unhide**: Eye icon toggle next to balance amount. Shows "Rs. ••••••" when hidden. Persisted via PATCH `/wallet/visibility`.
+- **MPIN Setup Modal**: 4-digit PIN entry with visual dot indicators, create → confirm flow.
+- **MPIN Verify Modal**: Auto-submits on 4th digit. Shows remaining attempts on wrong PIN. "Forgot MPIN?" link.
+- **MPIN Forgot Modal**: Two-step OTP flow — request OTP → enter OTP + new PIN.
+- **MPIN Change Modal**: Two-step — enter current PIN → enter new PIN.
+- **Security Card**: Shows "Wallet Security" section with "Create MPIN" or "Change MPIN" button based on setup status.
+- **Transaction Protection**: Send/Withdraw buttons trigger MPIN verification first when PIN is set. Pin token passed via `x-wallet-pin-token` header.
+
 ### Demo Data & Admin Data Management Controls — Completed Changes
 
 #### API — System Data Management Endpoints (`artifacts/api-server/src/routes/system.ts`)

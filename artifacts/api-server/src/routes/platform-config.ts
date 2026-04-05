@@ -192,6 +192,7 @@ router.get("/", async (req, res) => {
       p2pEnabled:               (s["wallet_p2p_enabled"]                    ?? "on") === "on",
       p2pFeePct:                parseFloat(s["wallet_p2p_fee_pct"]                ?? "0"),
       depositAutoApprove:       parseFloat(s["wallet_deposit_auto_approve"]        ?? "0"),
+      mpinEnabled:              (s["wallet_mpin_enabled"]                          ?? "on") === "on",
     },
     rider: {
       keepPct:            (Number(s["rider_keep_pct"]) || 80),

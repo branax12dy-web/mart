@@ -11,6 +11,7 @@ import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { getIO } from "../lib/socketio.js";
 import { z } from "zod";
 import { sendSuccess, sendCreated, sendAccepted, sendError, sendNotFound, sendForbidden, sendValidationError, sendErrorWithData } from "../lib/response.js";
+import bcrypt from "bcryptjs";
 
 /* ── IS_PRODUCTION guard — independent of NODE_ENV for simulate-topup hardening ── */
 const IS_PRODUCTION = process.env["IS_PRODUCTION"] === "true" || process.env["NODE_ENV"] === "production";
@@ -140,6 +141,8 @@ router.get("/", customerAuth, async (req, res) => {
     sendSuccess(res, {
       balance: parseFloat(user.walletBalance ?? "0"),
       transactions: transactions.map(mapTx),
+      pinSetup: !!user.walletPinHash,
+      walletHidden: !!user.walletHidden,
     });
   } catch (e: unknown) {
     logger.error("[wallet GET /] DB error:", e);
@@ -466,6 +469,21 @@ router.post("/resolve-phone", customerAuth, async (req, res) => {
 router.post("/send", customerAuth, async (req, res) => {
   const senderUserId = req.customerId!;
 
+  const s0 = await getPlatformSettings();
+  if ((s0["wallet_mpin_enabled"] ?? "on") === "on") {
+    const [senderUser] = await db.select().from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1);
+    if (senderUser?.walletPinHash) {
+      const pinToken = req.headers["x-wallet-pin-token"] as string | undefined;
+      if (!pinToken) { sendForbidden(res, "pin_required", "MPIN verification required for this transaction"); return; }
+      const entry = pinVerifyTokens.get(pinToken);
+      if (!entry || entry.userId !== senderUserId || (Date.now() - entry.ts > PIN_TOKEN_TTL_MS)) {
+        sendForbidden(res, "pin_expired", "MPIN verification expired. Please verify again.");
+        return;
+      }
+      pinVerifyTokens.delete(pinToken);
+    }
+  }
+
   const sendRateLimit = await checkAvailableRateLimit(`send:${senderUserId}`, 5, 1);
   if (sendRateLimit.limited) {
     sendError(res, `Too many transfer requests. Try again in ${sendRateLimit.minutesLeft} minute(s).`, 429); return;
@@ -754,6 +772,21 @@ router.get("/withdrawal-methods", customerAuth, async (_req, res) => {
 router.post("/withdraw", customerAuth, async (req, res) => {
   const userId = req.customerId!;
 
+  const sW = await getPlatformSettings();
+  if ((sW["wallet_mpin_enabled"] ?? "on") === "on") {
+    const [wUser] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (wUser?.walletPinHash) {
+      const pinToken = req.headers["x-wallet-pin-token"] as string | undefined;
+      if (!pinToken) { sendForbidden(res, "pin_required", "MPIN verification required for this transaction"); return; }
+      const entry = pinVerifyTokens.get(pinToken);
+      if (!entry || entry.userId !== userId || (Date.now() - entry.ts > PIN_TOKEN_TTL_MS)) {
+        sendForbidden(res, "pin_expired", "MPIN verification expired. Please verify again.");
+        return;
+      }
+      pinVerifyTokens.delete(pinToken);
+    }
+  }
+
   const withdrawRateLimit = await checkAvailableRateLimit(`withdraw:${userId}`, 3, 10);
   if (withdrawRateLimit.limited) {
     sendError(res, `Too many withdrawal requests. Try again in ${withdrawRateLimit.minutesLeft} minute(s).`, 429); return;
@@ -951,5 +984,257 @@ router.get("/pending-topups", customerAuth, async (req, res) => {
     sendError(res, "Something went wrong, please try again.", 500);
   }
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MPIN Security System
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const MPIN_MAX_ATTEMPTS = 5;
+const MPIN_LOCK_DURATION_MS = 30 * 60 * 1000;
+const MPIN_BCRYPT_ROUNDS = 10;
+
+const mpinSchema = z.string().regex(/^\d{4}$/, "MPIN must be exactly 4 digits");
+
+const pinVerifyTokens = new Map<string, { userId: string; ts: number }>();
+const PIN_TOKEN_TTL_MS = 5 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of pinVerifyTokens) {
+    if (now - entry.ts > PIN_TOKEN_TTL_MS) pinVerifyTokens.delete(key);
+  }
+}, 2 * 60 * 1000);
+
+function isWalletPinLocked(user: { walletPinLockedUntil: Date | null }): boolean {
+  if (!user.walletPinLockedUntil) return false;
+  return user.walletPinLockedUntil.getTime() > Date.now();
+}
+
+router.post("/pin/setup", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+    if (user.walletPinHash) { sendError(res, "MPIN already set. Use change PIN instead.", 409); return; }
+
+    const parsed = mpinSchema.safeParse(req.body.pin);
+    if (!parsed.success) { sendValidationError(res, "MPIN must be exactly 4 digits"); return; }
+
+    const hash = await bcrypt.hash(parsed.data, MPIN_BCRYPT_ROUNDS);
+    await db.update(usersTable).set({
+      walletPinHash: hash,
+      walletPinAttempts: 0,
+      walletPinLockedUntil: null,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, userId));
+
+    sendCreated(res, { message: "MPIN created successfully", pinSetup: true });
+  } catch (e: unknown) {
+    logger.error("[wallet /pin/setup] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+router.post("/pin/verify", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+    if (!user.walletPinHash) { sendError(res, "MPIN not set up yet", 400); return; }
+
+    if (isWalletPinLocked(user)) {
+      const remainMin = Math.ceil((user.walletPinLockedUntil!.getTime() - Date.now()) / 60000);
+      sendForbidden(res, "pin_locked", `MPIN locked. Try again in ${remainMin} minute(s).`);
+      return;
+    }
+
+    const parsed = mpinSchema.safeParse(req.body.pin);
+    if (!parsed.success) { sendValidationError(res, "MPIN must be exactly 4 digits"); return; }
+
+    const valid = await bcrypt.compare(parsed.data, user.walletPinHash);
+    if (!valid) {
+      const newAttempts = (user.walletPinAttempts ?? 0) + 1;
+      const locked = newAttempts >= MPIN_MAX_ATTEMPTS;
+      await db.update(usersTable).set({
+        walletPinAttempts: newAttempts,
+        walletPinLockedUntil: locked ? new Date(Date.now() + MPIN_LOCK_DURATION_MS) : null,
+        updatedAt: new Date(),
+      }).where(eq(usersTable.id, userId));
+
+      if (locked) {
+        sendForbidden(res, "pin_locked", "Too many wrong attempts. MPIN locked for 30 minutes.");
+      } else {
+        sendError(res, `Wrong MPIN. ${MPIN_MAX_ATTEMPTS - newAttempts} attempt(s) remaining.`, 401);
+      }
+      return;
+    }
+
+    await db.update(usersTable).set({
+      walletPinAttempts: 0,
+      walletPinLockedUntil: null,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, userId));
+
+    const tokenId = generateId();
+    pinVerifyTokens.set(tokenId, { userId, ts: Date.now() });
+
+    sendSuccess(res, { verified: true, pinToken: tokenId });
+  } catch (e: unknown) {
+    logger.error("[wallet /pin/verify] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+router.post("/pin/change", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+    if (!user.walletPinHash) { sendError(res, "MPIN not set up yet", 400); return; }
+
+    if (isWalletPinLocked(user)) {
+      sendForbidden(res, "pin_locked", "MPIN is locked. Try again later.");
+      return;
+    }
+
+    const oldParsed = mpinSchema.safeParse(req.body.oldPin);
+    const newParsed = mpinSchema.safeParse(req.body.newPin);
+    if (!oldParsed.success || !newParsed.success) {
+      sendValidationError(res, "Both old and new MPIN must be exactly 4 digits");
+      return;
+    }
+
+    if (oldParsed.data === newParsed.data) {
+      sendValidationError(res, "New MPIN must be different from old MPIN");
+      return;
+    }
+
+    const valid = await bcrypt.compare(oldParsed.data, user.walletPinHash);
+    if (!valid) {
+      sendError(res, "Current MPIN is incorrect", 401);
+      return;
+    }
+
+    const hash = await bcrypt.hash(newParsed.data, MPIN_BCRYPT_ROUNDS);
+    await db.update(usersTable).set({
+      walletPinHash: hash,
+      walletPinAttempts: 0,
+      walletPinLockedUntil: null,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, userId));
+
+    pinVerifyTokens.forEach((v, k) => { if (v.userId === userId) pinVerifyTokens.delete(k); });
+
+    sendSuccess(res, { message: "MPIN changed successfully" });
+  } catch (e: unknown) {
+    logger.error("[wallet /pin/change] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+router.post("/pin/forgot", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+    if (!user.walletPinHash) { sendError(res, "MPIN not set up yet", 400); return; }
+    if (!user.phone) { sendError(res, "No phone number linked to this account", 400); return; }
+
+    const rateLimited = await checkAvailableRateLimit(`pin-forgot:${userId}`, 3, 5);
+    if (rateLimited.limited) {
+      sendError(res, `Too many requests. Try again in ${rateLimited.minutesLeft} minute(s).`, 429);
+      return;
+    }
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otpHash = await import("crypto").then(c => c.createHash("sha256").update(otp).digest("hex"));
+    await db.update(usersTable).set({
+      otpCode: otpHash,
+      otpExpiry: new Date(Date.now() + 5 * 60 * 1000),
+      otpUsed: false,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, userId));
+
+    logger.info(`[wallet /pin/forgot] OTP for ${user.phone}: ${otp}`);
+
+    const responseData: Record<string, unknown> = {
+      message: "OTP sent to your phone number",
+      phone: user.phone.replace(/^(\d{2})\d+(\d{2})$/, "$1****$2"),
+    };
+
+    if (user.devOtpEnabled) {
+      responseData["_dev_otp"] = otp;
+    }
+
+    sendSuccess(res, responseData);
+  } catch (e: unknown) {
+    logger.error("[wallet /pin/forgot] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+router.post("/pin/reset-confirm", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+
+    const { otp, newPin } = req.body;
+    if (!otp || typeof otp !== "string") { sendValidationError(res, "OTP is required"); return; }
+
+    const newParsed = mpinSchema.safeParse(newPin);
+    if (!newParsed.success) { sendValidationError(res, "New MPIN must be exactly 4 digits"); return; }
+
+    if (!user.otpCode || !user.otpExpiry || user.otpUsed) {
+      sendError(res, "No active OTP found. Request a new one.", 400);
+      return;
+    }
+    if (user.otpExpiry.getTime() < Date.now()) {
+      sendError(res, "OTP has expired. Request a new one.", 400);
+      return;
+    }
+
+    const otpHash = await import("crypto").then(c => c.createHash("sha256").update(otp).digest("hex"));
+    if (otpHash !== user.otpCode) {
+      sendError(res, "Invalid OTP", 401);
+      return;
+    }
+
+    const hash = await bcrypt.hash(newParsed.data, MPIN_BCRYPT_ROUNDS);
+    await db.update(usersTable).set({
+      walletPinHash: hash,
+      walletPinAttempts: 0,
+      walletPinLockedUntil: null,
+      otpUsed: true,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, userId));
+
+    pinVerifyTokens.forEach((v, k) => { if (v.userId === userId) pinVerifyTokens.delete(k); });
+
+    sendSuccess(res, { message: "MPIN reset successfully", pinSetup: true });
+  } catch (e: unknown) {
+    logger.error("[wallet /pin/reset-confirm] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+router.patch("/visibility", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const hidden = req.body.hidden;
+    if (typeof hidden !== "boolean") { sendValidationError(res, "hidden must be a boolean"); return; }
+
+    await db.update(usersTable).set({
+      walletHidden: hidden,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, userId));
+
+    sendSuccess(res, { walletHidden: hidden });
+  } catch (e: unknown) {
+    logger.error("[wallet /visibility] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+export { pinVerifyTokens };
 
 export default router;

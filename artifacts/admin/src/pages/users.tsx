@@ -296,6 +296,15 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const resetWalletPinMutation = useMutation({
+    mutationFn: () => fetcher(`/users/${user.id}/reset-wallet-pin`, { method: "POST", body: "{}" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      toast({ title: "MPIN reset", description: "User's wallet MPIN has been cleared. They will need to create a new one." });
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
   const identityMutation = useMutation({
     mutationFn: (body: any) => fetcher(`/users/${user.id}/identity`, { method: "PATCH", body: JSON.stringify(body) }),
     onSuccess: () => {
@@ -553,6 +562,25 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
                 disabled={disable2faMutation.isPending}
               >
                 {disable2faMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Disabling...</> : "Disable 2FA"}
+              </Button>
+            </div>
+          )}
+
+          {user.walletPinHash && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-3">
+              <Shield className="w-5 h-5 text-emerald-600 flex-shrink-0"/>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-emerald-800">Wallet MPIN</p>
+                <p className="text-xs text-emerald-700">User has MPIN set — reset only if they cannot recover it</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs"
+                onClick={() => resetWalletPinMutation.mutate()}
+                disabled={resetWalletPinMutation.isPending}
+              >
+                {resetWalletPinMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Resetting...</> : "Reset MPIN"}
               </Button>
             </div>
           )}
