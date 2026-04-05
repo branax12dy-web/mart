@@ -366,6 +366,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "wallet_daily_limit",           value: "20000",    label: "Daily Transaction Limit (Rs.)",        category: "payment" },
   { key: "wallet_cashback_pct",          value: "0",        label: "Wallet Cashback (%)",                  category: "payment" },
   { key: "wallet_topup_methods",         value: "jazzcash,easypaisa,bank,rider", label: "Accepted Top-Up Methods", category: "payment" },
+  { key: "wallet_mpin_enabled",          value: "on",       label: "MPIN Enforcement (Wallet Send/Withdraw)", category: "features" },
   { key: "wallet_p2p_enabled",           value: "on",       label: "Allow P2P Money Transfer",             category: "payment" },
   { key: "wallet_p2p_daily_limit",       value: "10000",    label: "P2P Daily Send Limit (Rs.)",           category: "payment" },
   { key: "wallet_kyc_required",          value: "off",      label: "KYC Required Before Activation",       category: "payment" },

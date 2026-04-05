@@ -6,7 +6,7 @@ import {
   Ban, KeyRound, Save, AlertTriangle, MapPin, CreditCard, Truck, Building2,
   Download, FileText, CalendarDays, Eye, AlertCircle, MessageSquare,
   Users as UsersIcon, Loader2, AtSign, Phone, Mail, User as UserIcon,
-  Gavel,
+  Gavel, Lock,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -123,6 +123,21 @@ function UserActivityModal({ userId, userName, user: userData, onClose }: { user
                 {userData.bankAccount && <span className="font-mono text-xs font-bold text-sky-900">{userData.bankAccount}</span>}
               </div>
             )}
+            <div className="flex items-center gap-2 col-span-2">
+              <Lock className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+              <span className="text-muted-foreground text-xs">MPIN Status:</span>
+              {(() => {
+                const hasMpin = !!userData.walletPinHash;
+                const isLocked = !!userData.walletPinLockedUntil && new Date(userData.walletPinLockedUntil).getTime() > Date.now();
+                if (!hasMpin) return <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-600 border-gray-300">Not Set</Badge>;
+                if (isLocked) {
+                  const lockedUntil = new Date(userData.walletPinLockedUntil);
+                  const minsLeft = Math.ceil((lockedUntil.getTime() - Date.now()) / 60000);
+                  return <Badge variant="outline" className="text-[10px] bg-red-100 text-red-700 border-red-300">Locked · {minsLeft} min left</Badge>;
+                }
+                return <Badge variant="outline" className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300">Active</Badge>;
+              })()}
+            </div>
           </div>
         </div>
 
@@ -253,6 +268,7 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
   const [editUsername, setEditUsername] = useState<string>(user.username || "");
   const [editEmail,   setEditEmail]    = useState<string>(user.email || "");
   const [editName,    setEditName]     = useState<string>(user.name || "");
+  const [showMpinResetConfirm, setShowMpinResetConfirm] = useState(false);
 
   const securityMutation = useMutation({
     mutationFn: (body: any) => fetcher(`/users/${user.id}/security`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -566,22 +582,79 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
             </div>
           )}
 
-          {user.walletPinHash && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-3">
-              <Shield className="w-5 h-5 text-emerald-600 flex-shrink-0"/>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-emerald-800">Wallet MPIN</p>
-                <p className="text-xs text-emerald-700">User has MPIN set — reset only if they cannot recover it</p>
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Lock className="w-4 h-4 text-emerald-600"/> MPIN Status
+            </h3>
+            {(() => {
+              const hasMpin = !!user.walletPinHash;
+              const isLocked = !!user.walletPinLockedUntil && new Date(user.walletPinLockedUntil).getTime() > Date.now();
+              const lockedUntil = isLocked ? new Date(user.walletPinLockedUntil) : null;
+
+              const statusLabel = !hasMpin ? "Not Set" : isLocked ? "Locked" : "Active";
+              const statusColor = !hasMpin ? "bg-gray-50 border-gray-200" : isLocked ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200";
+              const statusTextColor = !hasMpin ? "text-gray-600" : isLocked ? "text-red-700" : "text-emerald-700";
+              const badgeClass = !hasMpin ? "bg-gray-100 text-gray-600 border-gray-300" : isLocked ? "bg-red-100 text-red-700 border-red-300" : "bg-emerald-100 text-emerald-700 border-emerald-300";
+
+              return (
+                <div className={`rounded-xl p-3 border ${statusColor}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Shield className={`w-5 h-5 flex-shrink-0 ${statusTextColor}`}/>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className={`text-sm font-semibold ${statusTextColor}`}>Wallet MPIN</p>
+                          <Badge variant="outline" className={`text-[10px] font-bold ${badgeClass}`}>{statusLabel}</Badge>
+                        </div>
+                        {!hasMpin && <p className="text-xs text-gray-500 mt-0.5">User has not configured a wallet MPIN yet</p>}
+                        {hasMpin && !isLocked && <p className="text-xs text-emerald-600 mt-0.5">MPIN is active — reset only if user cannot recover it</p>}
+                        {isLocked && lockedUntil && (
+                          <p className="text-xs text-red-600 mt-0.5">
+                            Locked until {lockedUntil.toLocaleString()} ({Math.ceil((lockedUntil.getTime() - Date.now()) / 60000)} min remaining)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {hasMpin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className={`rounded-lg text-xs ${isLocked ? "border-red-300 text-red-700 hover:bg-red-100" : "border-emerald-300 text-emerald-700 hover:bg-emerald-100"}`}
+                        onClick={() => setShowMpinResetConfirm(true)}
+                        disabled={resetWalletPinMutation.isPending}
+                      >
+                        {resetWalletPinMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Resetting...</> : "Reset MPIN"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {showMpinResetConfirm && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5"/>
+                <div>
+                  <p className="text-sm font-bold text-amber-800">Confirm MPIN Reset</p>
+                  <p className="text-xs text-amber-700 mt-1">This will clear the user's wallet MPIN. They will need to create a new one before making any wallet transactions that require MPIN verification.</p>
+                </div>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs"
-                onClick={() => resetWalletPinMutation.mutate()}
-                disabled={resetWalletPinMutation.isPending}
-              >
-                {resetWalletPinMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Resetting...</> : "Reset MPIN"}
-              </Button>
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="outline" className="rounded-lg text-xs" onClick={() => setShowMpinResetConfirm(false)}>Cancel</Button>
+                <Button
+                  size="sm"
+                  className="rounded-lg text-xs bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => {
+                    resetWalletPinMutation.mutate();
+                    setShowMpinResetConfirm(false);
+                  }}
+                  disabled={resetWalletPinMutation.isPending}
+                >
+                  {resetWalletPinMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Resetting...</> : "Yes, Reset MPIN"}
+                </Button>
+              </div>
             </div>
           )}
 

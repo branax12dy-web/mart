@@ -48,6 +48,7 @@ export const TOGGLE_KEYS = new Set([
   "payment_auto_cancel","payment_receipt_required",
   "wallet_p2p_enabled","wallet_kyc_required",
   "wallet_allowed_mart","wallet_allowed_food","wallet_allowed_pharmacy","wallet_allowed_parcel","wallet_allowed_rides",
+  "wallet_mpin_enabled",
   "wallet_cashback_on_orders","wallet_cashback_on_rides","wallet_cashback_on_pharmacy",
   "content_tracker_banner_enabled",
   "content_show_banner",
@@ -247,6 +248,7 @@ export function renderSection(
     ];
     const accountFeatures = [
       { fkey: "feature_wallet",       label: "Digital Wallet",         icon: "💰", desc: "Wallet top-up, send, and all wallet payments across all services", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "both" as const },
+      { fkey: "wallet_mpin_enabled", label: "MPIN Enforcement",       icon: "🔐", desc: "Require MPIN verification for wallet send and withdraw operations", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
       { fkey: "feature_referral",     label: "Referral Program",       icon: "🎁", desc: "Refer & Earn card visibility + referral bonus tracking in app",    apps: "📱 Customer only",                        enforcement: "client" as const },
       { fkey: "feature_new_users",    label: "New User Registration",  icon: "👤", desc: "Blocks all new sign-ups at auth API — existing users unaffected",  apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const },
       { fkey: "user_require_approval",label: "Require Account Approval", icon: "🔒", desc: "New accounts are inactive until manually approved by an admin — use with caution", apps: "📱 Customer  •  🏪 Vendor  •  🏍️ Rider", enforcement: "api" as const, danger: true },
@@ -269,6 +271,7 @@ export function renderSection(
       { label: "Pharmacy orders",     key: "feature_pharmacy",      enforced: "✅ API" },
       { label: "Parcel shipments",    key: "feature_parcel",        enforced: "✅ API" },
       { label: "Wallet (all ops)",    key: "feature_wallet",        enforced: "✅ API" },
+      { label: "MPIN enforcement",   key: "wallet_mpin_enabled",   enforced: "✅ API" },
       { label: "Referral card/bonus", key: "feature_referral",      enforced: "📱 Client" },
       { label: "New user sign-up",    key: "feature_new_users",      enforced: "✅ API" },
       { label: "Account approval",    key: "user_require_approval",  enforced: "✅ API",          inverted: true  },
