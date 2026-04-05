@@ -86,8 +86,18 @@ router.patch("/orders/:id/status", async (req, res) => {
     });
     if (!txResult) { sendError(res, "Order has already been refunded", 409); return; }
     order = txResult;
-    /* Notifications after successful commit */
-    await sendUserNotification(preOrder.userId, "Order Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya — Order #${orderId.slice(-6).toUpperCase()}`, "mart", "wallet-outline");
+    /* Refund + cancellation consolidated into ONE notification after successful commit
+       (avoids sending two separate push notifications for the same event) */
+    await sendUserNotification(
+      preOrder.userId,
+      "Order Cancelled & Refunded 💰",
+      `Order #${orderId.slice(-6).toUpperCase()} cancel ho gaya. Rs. ${refundAmt.toFixed(0)} aapki wallet mein wapas aa gaya.`,
+      "mart",
+      "wallet-outline",
+    );
+    /* Skip the generic "cancelled" status notification below */
+    sendSuccess(res, order);
+    return;
   } else {
     const [updated] = await db.update(ordersTable)
       .set({ status, updatedAt: new Date() })

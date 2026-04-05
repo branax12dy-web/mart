@@ -95,7 +95,16 @@ function Router() {
     <Switch>
       {/* Public Route */}
       <Route path="/login" component={Login} />
-      <Route path="/" component={Login} />
+      <Route path="/">
+        {() => {
+          const token = localStorage.getItem("ajkmart_admin_token");
+          if (token) {
+            window.location.replace((import.meta.env.BASE_URL?.replace(/\/$/, "") || "") + "/dashboard");
+            return null;
+          }
+          return <Login />;
+        }}
+      </Route>
 
       {/* Protected Routes */}
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>

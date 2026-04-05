@@ -131,21 +131,35 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const T = (key: TranslationKey) => tDual(key, language);
 
   const [sosCount, setSosCount] = useState(0);
+  /* Track admin token so the socket reconnects whenever it rotates (e.g. cross-tab login) */
+  const [socketToken, setSocketToken] = useState(() => localStorage.getItem("ajkmart_admin_token") ?? "");
   const socketRef = useRef<Socket | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+
+  /* Update socketToken on cross-tab storage changes */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "ajkmart_admin_token") setSocketToken(e.newValue ?? "");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   useEffect(() => {
     fetcher("/sos/alerts?limit=1")
       .then((data: { activeCount?: number }) => { if (typeof data.activeCount === "number") setSosCount(data.activeCount); })
       .catch(() => {});
 
-    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    /* auth as a callback so socket.io calls it on every connection attempt
+       (initial + every reconnect), ensuring the latest stored token is used.
+       The effect also re-runs whenever socketToken changes, forcing a full
+       disconnect + reconnect with the fresh credential. */
+    const getAdminToken = () => localStorage.getItem("ajkmart_admin_token") ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: { adminToken: token },
-      extraHeaders: { "x-admin-token": token },
+      auth: (cb: (data: Record<string, string>) => void) => cb({ adminToken: getAdminToken() }),
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
@@ -156,7 +170,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     });
     socket.on("sos:resolved", () => setSosCount(c => Math.max(0, c - 1)));
     return () => { socket.disconnect(); socketRef.current = null; };
-  }, []);
+  }, [socketToken]);
 
   useEffect(() => { setIsMobileMenuOpen(false); }, [location]);
 

@@ -32,6 +32,8 @@ import {
   rateRide,
 } from "@workspace/api-client-react";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 
 function haversineKm(
   lat1: number,
@@ -72,6 +74,8 @@ export function RideTracker({
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { showToast } = useToast();
+  const { language } = useLanguage();
+  const tl = (key: TranslationKey) => tDual(key, language);
 
   const slideUp = useRef(new Animated.Value(50)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
@@ -1375,14 +1379,14 @@ export function RideTracker({
                           ? "Rickshaw"
                           : rideType,
                 },
-                { lbl: "Distance", val: `${(ride?.distance ?? 0).toFixed(1)} km` },
+                { lbl: tl("distance"), val: `${(ride?.distance ?? 0).toFixed(1)} km` },
                 {
-                  lbl: "Payment",
+                  lbl: tl("payment"),
                   val:
                     ride?.paymentMethod === "wallet" ? "Wallet" : ride?.paymentMethod === "jazzcash" ? "JazzCash" : ride?.paymentMethod === "easypaisa" ? "EasyPaisa" : "Cash",
                 },
                 {
-                  lbl: "Driver",
+                  lbl: tl("driver"),
                   val: ride?.riderName || "AJK Driver",
                 },
               ].map((r) => (

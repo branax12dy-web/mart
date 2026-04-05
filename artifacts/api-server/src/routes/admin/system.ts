@@ -96,6 +96,55 @@ router.get("/stats", async (_req, res) => {
     })),
   });
 });
+router.get("/dashboard-export", async (_req, res) => {
+  const now = new Date();
+  const [userCount] = await db.select({ count: count() }).from(usersTable);
+  const [orderCount] = await db.select({ count: count() }).from(ordersTable);
+  const [rideCount] = await db.select({ count: count() }).from(ridesTable);
+  const [pharmCount] = await db.select({ count: count() }).from(pharmacyOrdersTable);
+  const [parcelCount] = await db.select({ count: count() }).from(parcelBookingsTable);
+
+  const [totalRevenue] = await db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.status, "delivered"));
+  const [rideRevenue] = await db.select({ total: sum(ridesTable.fare) }).from(ridesTable).where(eq(ridesTable.status, "completed"));
+  const [pharmRevenue] = await db.select({ total: sum(pharmacyOrdersTable.total) }).from(pharmacyOrdersTable).where(eq(pharmacyOrdersTable.status, "delivered"));
+
+  const ordersRevenue = parseFloat(totalRevenue?.total ?? "0");
+  const ridesRevenue  = parseFloat(rideRevenue?.total ?? "0");
+  const pharmacyRevenue = parseFloat(pharmRevenue?.total ?? "0");
+
+  const recentOrders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(20);
+  const recentRides  = await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(20);
+
+  const payload = {
+    exportedAt: now.toISOString(),
+    summary: {
+      users: userCount?.count ?? 0,
+      orders: orderCount?.count ?? 0,
+      rides: rideCount?.count ?? 0,
+      pharmacyOrders: pharmCount?.count ?? 0,
+      parcelBookings: parcelCount?.count ?? 0,
+      revenue: {
+        orders: ordersRevenue,
+        rides: ridesRevenue,
+        pharmacy: pharmacyRevenue,
+        total: ordersRevenue + ridesRevenue + pharmacyRevenue,
+      },
+    },
+    recentOrders: recentOrders.map(o => ({
+      id: o.id, status: o.status, total: parseFloat(String(o.total)),
+      type: o.type, createdAt: o.createdAt.toISOString(),
+    })),
+    recentRides: recentRides.map(r => ({
+      id: r.id, status: r.status, fare: parseFloat(r.fare),
+      type: r.type, createdAt: r.createdAt.toISOString(),
+    })),
+  };
+
+  res.setHeader("Content-Disposition", `attachment; filename="dashboard-export-${now.toISOString().slice(0, 10)}.json"`);
+  res.setHeader("Content-Type", "application/json");
+  res.json(payload);
+});
+
 router.get("/platform-settings", async (_req, res) => {
   /* Always seed new defaults (onConflictDoNothing keeps existing values intact) */
   await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();

@@ -7,6 +7,7 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
 import { PullToRefresh } from "../components/PullToRefresh";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { fc, fd, CARD, CARD_HEADER, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, ROW, BADGE_GREEN, BADGE_RED, BADGE_BLUE, BADGE_GRAY, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 
 const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","Habib Bank","NBP","Faysal Bank","Allied Bank","Other"];
@@ -148,11 +149,12 @@ export default function Wallet() {
   const [toast, setToast] = useState("");
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["vendor-wallet"],
     queryFn: () => api.getWallet(),
     refetchInterval: 30000,
     enabled: config.features.wallet,
+    retry: 2,
   });
 
   const transactions: any[] = data?.transactions || [];
@@ -189,6 +191,14 @@ export default function Wallet() {
   }, [qc]);
 
   return (
+    <ErrorBoundary fallback={(reset) => (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-gray-50">
+        <div className="text-5xl mb-4">⚠️</div>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">Wallet section failed to load</h2>
+        <p className="text-gray-500 text-sm mb-5">An unexpected error occurred. Tap retry to reload this section.</p>
+        <button onClick={reset} className="px-5 py-2 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700">Retry</button>
+      </div>
+    )}>
     <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-gray-50 md:bg-transparent">
       <PageHeader
         title={T("wallet")}
@@ -290,7 +300,14 @@ export default function Wallet() {
             <span className="text-xs text-gray-400 font-medium">50</span>
           </div>
 
-          {isLoading ? (
+          {isError ? (
+            <div className="px-4 py-10 text-center">
+              <p className="text-3xl mb-2">⚠️</p>
+              <p className="font-bold text-gray-700 text-sm">Could not load transactions</p>
+              <p className="text-xs text-gray-400 mt-1 mb-3">Check your connection and try again</p>
+              <button onClick={() => refetch()} className="h-9 px-6 bg-orange-500 text-white font-bold rounded-xl text-sm">Retry</button>
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-3">
               {[1,2,3,4,5].map(i => <div key={i} className="h-16 skeleton rounded-xl"/>)}
             </div>
@@ -355,5 +372,6 @@ export default function Wallet() {
         </div>
       )}
     </PullToRefresh>
+    </ErrorBoundary>
   );
 }

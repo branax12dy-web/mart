@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import Papa from "papaparse";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
@@ -86,44 +87,43 @@ export default function Products() {
   const [pasteText, setPasteText] = useState("");
   const [showPaste, setShowPaste] = useState(false);
   const [bulkCat, setBulkCat]   = useState("");
-
-  function parseCSVLine(line: string): string[] {
-    const result: string[] = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
-        else if (ch === '"') { inQuotes = false; }
-        else { cur += ch; }
-      } else {
-        if (ch === '"') { inQuotes = true; }
-        else if (ch === ',') { result.push(cur); cur = ""; }
-        else { cur += ch; }
-      }
-    }
-    result.push(cur);
-    return result;
-  }
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
 
   const parsePaste = () => {
-    const lines = pasteText.trim().split("\n").filter(Boolean);
-    const parsed = lines.map(line => {
-      const tabCols = line.split("\t");
-      const parts = tabCols.length > 1 ? tabCols : parseCSVLine(line);
-      return {
-        name:        (parts[0] || "").trim(),
-        price:       (parts[1] || "").trim(),
+    const isTabSeparated = pasteText.includes("\t") && !pasteText.startsWith('"');
+    const delimiter = isTabSeparated ? "\t" : ",";
+    const result = Papa.parse<string[]>(pasteText.trim(), {
+      delimiter,
+      skipEmptyLines: true,
+      quoteChar: '"',
+    });
+
+    const rowErrors: string[] = [];
+    const parsed: typeof bulkRows = [];
+
+    result.data.forEach((parts, idx) => {
+      if (result.errors.some(e => e.row === idx)) {
+        rowErrors.push(`Row ${idx + 1}: parse error — ${result.errors.find(e => e.row === idx)?.message}`);
+        return;
+      }
+      const name  = (parts[0] || "").trim();
+      const price = (parts[1] || "").trim();
+      if (!name) { rowErrors.push(`Row ${idx + 1}: name is empty — skipped`); return; }
+      if (!price || Number.isNaN(Number(price))) { rowErrors.push(`Row ${idx + 1}: invalid price "${price}" — skipped`); return; }
+      parsed.push({
+        name,
+        price,
         description: (parts[2] || "").trim(),
         image:       (parts[3] || "").trim(),
         category:    (parts[4] || bulkCat || "").trim(),
         unit:        (parts[5] || "").trim(),
         stock:       (parts[6] || "").trim(),
         type:        (parts[7] || "mart").trim() || "mart",
-      };
-    }).filter(r => r.name && r.price);
-    if (parsed.length > 0) { setBulkRows(r => [...r, ...parsed]); setShowPaste(false); setPasteText(""); showToast(`✅ Parsed ${parsed.length} rows`); }
+      });
+    });
+
+    setParseErrors(rowErrors);
+    if (parsed.length > 0) { setBulkRows(r => [...r, ...parsed]); setShowPaste(false); setPasteText(""); showToast(`✅ Parsed ${parsed.length} rows${rowErrors.length ? ` (${rowErrors.length} skipped)` : ""}`); }
     else showToast("❌ No valid rows found — check format");
   };
 
@@ -285,6 +285,17 @@ export default function Products() {
                 <button onClick={() => setShowPaste(false)} className="flex-1 h-9 border border-blue-200 text-blue-500 font-bold rounded-xl text-sm android-press min-h-0">Cancel</button>
                 <button onClick={parsePaste} disabled={!pasteText.trim()} className="flex-1 h-9 bg-blue-500 text-white font-bold rounded-xl text-sm android-press min-h-0">Parse & Import</button>
               </div>
+            </div>
+          )}
+          {parseErrors.length > 0 && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-2xl">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-bold text-red-700">⚠️ {parseErrors.length} row{parseErrors.length !== 1 ? "s" : ""} skipped</p>
+                <button onClick={() => setParseErrors([])} className="text-xs text-red-400 hover:underline">Dismiss</button>
+              </div>
+              <ul className="space-y-0.5">
+                {parseErrors.map((e, i) => <li key={i} className="text-xs text-red-600 font-mono">{e}</li>)}
+              </ul>
             </div>
           )}
         </div>

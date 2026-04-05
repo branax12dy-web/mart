@@ -1,4 +1,4 @@
-import { Component, type ReactNode, useEffect } from "react";
+import { Component, type ReactNode, useEffect, useState, useRef } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
@@ -23,6 +23,7 @@ import Wallet from "./pages/Wallet";
 import Analytics from "./pages/Analytics";
 import Notifications from "./pages/Notifications";
 import Reviews from "./pages/Reviews";
+import Promos from "./pages/Promos";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -93,6 +94,31 @@ function AppRoutes() {
     }
   }, [user]);
 
+  const MAINTENANCE_GRACE_MS = 5 * 60 * 1000; /* 5-minute grace period */
+  const maintenanceSince = useRef<number | null>(null);
+  const [maintenanceBlocked, setMaintenanceBlocked] = useState(false);
+  const [maintenanceSecs, setMaintenanceSecs] = useState(0);
+
+  useEffect(() => {
+    if (config.platform.appStatus !== "maintenance") {
+      maintenanceSince.current = null;
+      setMaintenanceBlocked(false);
+      return;
+    }
+    if (maintenanceSince.current === null) {
+      maintenanceSince.current = Date.now();
+    }
+    const tick = () => {
+      const elapsed = Date.now() - (maintenanceSince.current ?? Date.now());
+      const remaining = Math.max(0, Math.ceil((MAINTENANCE_GRACE_MS - elapsed) / 1000));
+      setMaintenanceSecs(remaining);
+      if (elapsed >= MAINTENANCE_GRACE_MS) setMaintenanceBlocked(true);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [config.platform.appStatus]);
+
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
       <div className="text-center">
@@ -110,9 +136,14 @@ function AppRoutes() {
 
   return (
     <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
-      {/* ── Maintenance overlay (fullscreen) ── */}
-      {config.platform.appStatus === "maintenance" && (
+      {/* ── Maintenance overlay: shown immediately but blocks after 5-min grace ── */}
+      {config.platform.appStatus === "maintenance" && maintenanceBlocked && (
         <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />
+      )}
+      {config.platform.appStatus === "maintenance" && !maintenanceBlocked && maintenanceSecs > 0 && (
+        <div className="fixed top-0 inset-x-0 z-50 bg-amber-500 text-white text-center py-2 px-4 text-xs font-bold shadow">
+          ⚠️ {config.platform.appName} is in maintenance mode. Full screen in {Math.floor(maintenanceSecs / 60)}:{String(maintenanceSecs % 60).padStart(2, "0")}
+        </div>
       )}
 
       {/* ── Announcement bar (top, dismissable) ── */}
@@ -139,6 +170,7 @@ function AppRoutes() {
                 <Route path="/wallet" component={Wallet} />
                 <Route path="/analytics" component={Analytics} />
                 <Route path="/reviews" component={Reviews} />
+                <Route path="/promos" component={Promos} />
                 <Route path="/store" component={Store} />
                 <Route path="/notifications" component={Notifications} />
                 <Route path="/profile" component={Profile} />

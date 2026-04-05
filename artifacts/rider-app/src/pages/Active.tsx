@@ -406,24 +406,35 @@ function TurnByTurnPanel({ fromLat, fromLng, toLat, toLng, label, riderLat, ride
   const [currentStep, setCurrentStep] = useState(0);
   const stepListRef = useRef<HTMLDivElement | null>(null);
   const rerouteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   const fetchRoute = async (lat?: number, lng?: number) => {
-    if (loading) return;
+    /* Cancel any in-flight OSRM request before starting a new one */
+    if (fetchAbortRef.current) {
+      fetchAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    fetchAbortRef.current = abortController;
+
     setLoading(true);
     setError(null);
     const startLat = lat ?? fromLat;
     const startLng = lng ?? fromLng;
     try {
       const data = await apiFetch(
-        `/rider/osrm-route?fromLat=${startLat}&fromLng=${startLng}&toLat=${toLat}&toLng=${toLng}`
+        `/rider/osrm-route?fromLat=${startLat}&fromLng=${startLng}&toLat=${toLat}&toLng=${toLng}`,
+        { signal: abortController.signal }
       ) as OsrmRoute & { error?: string };
-      if (data.error) { setError(data.error); setLoading(false); return; }
+      if (data.error) { setError(data.error); return; }
       setRoute(data);
       setCurrentStep(0);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Could not fetch route");
+      if (e instanceof Error && e.name !== "AbortError") {
+        setError(e.message || "Could not fetch route");
+      }
+    } finally {
+      if (!abortController.signal.aborted) setLoading(false);
     }
-    setLoading(false);
   };
 
   /* Real-time step progression: advance current step as rider position updates */
@@ -639,7 +650,8 @@ export default function Active() {
   const [showOtpModal, setShowOtpModal]            = useState(false);
   const [otpInput, setOtpInput]                    = useState("");
   const [cancelTarget, setCancelTarget]            = useState<"order" | "ride">("order");
-  const [proofPhoto, setProofPhoto]                = useState<string | null>(null);
+  const [proofPhoto, setProofPhoto]                = useState<string | null>(null);   /* preview dataURL */
+  const [proofFile, setProofFile]                  = useState<File | null>(null);     /* actual File for multipart upload */
   const [proofFileName, setProofFileName]          = useState<string>("");
   const [proofUploading, setProofUploading]        = useState(false);
   const [showNoPhotoWarning, setShowNoPhotoWarning] = useState(false);
@@ -891,38 +903,44 @@ export default function Active() {
     const file = e.target.files?.[0];
     if (!file) return;
     setProofFileName(file.name);
-    const compressImage = (dataUrl: string, maxWidth: number, quality: number): Promise<string> => {
-      return new Promise((resolve) => {
+
+    /* Enforce 5 MB client-side size limit before any compression */
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Photo is too large (max 5 MB). Please take a smaller photo.", true);
+      setProofFileName("");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    /* Compress for preview dataURL (display only — NOT used for upload) */
+    const compressForPreview = (dataUrl: string): Promise<string> =>
+      new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-          const scale = Math.min(1, maxWidth / img.width);
+          const scale = Math.min(1, 1280 / img.width);
           const canvas = document.createElement("canvas");
           canvas.width = Math.round(img.width * scale);
           canvas.height = Math.round(img.height * scale);
           const ctx = canvas.getContext("2d");
           if (!ctx) { resolve(dataUrl); return; }
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", quality));
+          resolve(canvas.toDataURL("image/jpeg", 0.7));
         };
         img.onerror = () => resolve(dataUrl);
         img.src = dataUrl;
       });
-    };
+
+    /* Store the original File object for multipart upload */
+    setProofFile(file);
+
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const raw = ev.target?.result as string;
       if (!raw) return;
-      const compressed = await compressImage(raw, 1280, 0.7);
-      const sizeBytes = Math.round((compressed.length - (compressed.indexOf(",") + 1)) * 0.75);
-      if (sizeBytes > 5 * 1024 * 1024) {
-        showToast("Photo is still too large after compression. Please take a smaller photo.", true);
-        setProofFileName("");
-        if (e.target) e.target.value = "";
-        return;
-      }
-      setProofPhoto(compressed);
+      const preview = await compressForPreview(raw);
+      setProofPhoto(preview);
     };
-    reader.onerror = () => { setProofFileName(""); };
+    reader.onerror = () => { setProofFileName(""); setProofFile(null); };
     reader.readAsDataURL(file);
   };
 
@@ -937,10 +955,11 @@ export default function Active() {
       return;
     }
     let photoUrl: string | undefined;
-    if (proofPhoto) {
+    if (proofFile) {
+      /* Use multipart/form-data upload to avoid large base64 JSON payload */
       setProofUploading(true);
       try {
-        const uploadRes = await api.uploadFile({ file: proofPhoto, filename: proofFileName || "proof.jpg" });
+        const uploadRes = await api.uploadProof(proofFile);
         photoUrl = uploadRes.url;
       } catch (e: unknown) {
         showToast(e instanceof Error ? e.message : "Photo upload failed. Please try again.", true);
@@ -974,10 +993,13 @@ export default function Active() {
       if (vars.status === "delivered") {
         setProofPhoto(null);
         setProofFileName("");
+        setProofFile(null);
         if (photoInputRef.current) photoInputRef.current.value = "";
         showToast(T("orderDeliveredEarnings"));
       } else if (vars.status === "cancelled") {
         setProofPhoto(null);
+        setProofFile(null);
+        setProofFileName("");
         setShowCancelConfirm(false);
         showToast(T("orderCancelledMsg"));
       } else {
@@ -1447,7 +1469,7 @@ export default function Active() {
                             </span>
                           </div>
                         </div>
-                        <button onClick={() => { setProofPhoto(null); setProofFileName(""); setShowNoPhotoWarning(false); }}
+                        <button onClick={() => { setProofPhoto(null); setProofFileName(""); setProofFile(null); setShowNoPhotoWarning(false); if (photoInputRef.current) photoInputRef.current.value = ""; }}
                           className="w-full text-xs text-blue-600 font-bold py-2.5 border-2 border-blue-200 rounded-xl bg-white flex items-center justify-center gap-1.5 active:bg-blue-50 transition-colors">
                           <Camera size={12}/> {T("retakePhoto")}
                         </button>

@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
 import { PullToRefresh } from "../components/PullToRefresh";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { fc, fd, CARD, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 import { io, type Socket } from "socket.io-client";
 
@@ -248,7 +249,7 @@ export default function Orders() {
   }, [user?.id]);
 
   const apiStatus = tab === "new" ? "pending" : tab;
-  const { data, isLoading, refetch } = useQuery({ queryKey: ["vendor-orders", tab], queryFn: () => api.getOrders(apiStatus), refetchInterval: 15000 });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ["vendor-orders", tab], queryFn: () => api.getOrders(apiStatus), refetchInterval: 15000, retry: 2 });
   const orders = data?.orders || [];
 
   const countQ = useQuery({ queryKey: ["vendor-orders-count"], queryFn: () => api.getOrders("pending"), refetchInterval: 15000, enabled: tab !== "new" });
@@ -288,6 +289,14 @@ export default function Orders() {
   }, [qc]);
 
   return (
+    <ErrorBoundary fallback={(reset) => (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-gray-50">
+        <div className="text-5xl mb-4">⚠️</div>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">Orders section failed to load</h2>
+        <p className="text-gray-500 text-sm mb-5">An unexpected error occurred. Tap retry to reload this section.</p>
+        <button onClick={reset} className="px-5 py-2 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700">Retry</button>
+      </div>
+    )}>
     <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-gray-50 md:bg-transparent">
       <PageHeader title={T("orders")} subtitle={`${orders.length} ${subtitleTab} order${orders.length !== 1 ? "s" : ""}`} actions={RefreshBtn} />
 
@@ -310,9 +319,17 @@ export default function Orders() {
 
       {/* ── Order List ── */}
       <div className="px-4 py-4 space-y-3 md:px-0 md:py-4">
-        {isLoading ? (
+        {isError && (
+          <div className={`${CARD} px-4 py-6 text-center`}>
+            <p className="text-3xl mb-2">⚠️</p>
+            <p className="font-bold text-gray-700 text-sm">Could not load orders</p>
+            <p className="text-xs text-gray-400 mt-1 mb-3">Check your connection and try again</p>
+            <button onClick={() => refetch()} className="h-9 px-6 bg-orange-500 text-white font-bold rounded-xl text-sm android-press">Retry</button>
+          </div>
+        )}
+        {!isError && isLoading ? (
           [1,2,3].map(i => <div key={i} className="h-20 skeleton rounded-2xl"/>)
-        ) : orders.length === 0 ? (
+        ) : !isError && orders.length === 0 ? (
           <div className={`${CARD} px-4 py-16 text-center`}>
             <p className="text-5xl mb-3">{TAB_KEYS.find(tb => tb.key === tab)?.icon}</p>
             <p className="font-bold text-gray-700 text-base">{T("noNewOrders")}</p>
@@ -611,5 +628,6 @@ export default function Orders() {
         </div>
       )}
     </PullToRefresh>
+    </ErrorBoundary>
   );
 }

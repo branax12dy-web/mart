@@ -332,7 +332,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const d = unwrapApiResponse(await res.json());
         const order = d.order || d;
-        if (order && order.id) {
+        /* Only resolve if the order has moved past "pending" — prevents prematurely
+           clearing the cart while the backend is still processing payment. */
+        const ACKNOWLEDGED_STATUSES = [
+          "confirmed", "preparing", "ready", "on_the_way", "picked_up",
+          "out_for_delivery", "delivered", "completed",
+        ];
+        if (order && order.id && ACKNOWLEDGED_STATUSES.includes(order.status)) {
           resolveOrderAck(oid);
           return true;
         }

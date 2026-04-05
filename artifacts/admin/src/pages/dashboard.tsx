@@ -66,13 +66,13 @@ export default function Dashboard() {
 
   const trend: { date: string; revenue: number }[] = Array.isArray(trendData?.trend) ? trendData.trend : [];
 
-  /* Generate a simple sparkline dataset from trend data or use fallback */
+  /* Generate sparkline datasets from real API data only; use all-zeros if data is unavailable */
   const revenueSparkData = trend.length >= 2
     ? trend.slice(-7).map(t => t.revenue || 0)
-    : [20, 45, 30, 60, 40, 80, 65];
-  const ridesSparkData = [10, 22, 18, 35, 28, 45, 38];
-  const ordersSparkData = [5, 12, 9, 25, 18, 30, 24];
-  const sosSparkData = [1, 0, 2, 1, 3, 0, 1];
+    : Array(7).fill(0);
+  const ridesSparkData = Array(7).fill(0);
+  const ordersSparkData = Array(7).fill(0);
+  const sosSparkData = Array(7).fill(0);
 
   if (isLoading) {
     return (

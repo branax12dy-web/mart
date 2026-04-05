@@ -15,6 +15,14 @@ import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+/* ── Fix Leaflet's broken default icon paths in Vite ── */
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
 export type MapProvider = "osm" | "mapbox" | "google";
 
 /* ── Normalised data types shared by both providers ──────────────────────── */

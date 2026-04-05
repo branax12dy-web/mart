@@ -30,6 +30,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import { useApiCall } from "@/hooks/useApiCall";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
 import { ServiceListSkeleton, FareEstimateSkeleton, HistoryRowSkeleton } from "@/components/ride/Skeletons";
@@ -112,6 +114,8 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { user, updateUser, token } = useAuth();
   const { showToast } = useToast();
+  const { language } = useLanguage();
+  const tl = (key: TranslationKey) => tDual(key, language);
   const { config } = usePlatformConfig();
   const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
   const { requireCustomerRole, roleBlockProps } = useRoleGate();
@@ -2995,7 +2999,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       />
       <MapPickerModal
         visible={showMapPicker}
-        label={mapPickerTarget === "pickup" ? "Pickup" : mapPickerTarget === "drop" ? "Drop-off" : `Stop ${(mapPickerTarget as number) + 1}`}
+        label={mapPickerTarget === "pickup" ? tl("pickup") : mapPickerTarget === "drop" ? tl("dropOff") : `Stop ${(mapPickerTarget as number) + 1}`}
         initialLat={
           mapPickerTarget === "pickup" ? (pickupObj?.lat ?? 33.7294)
           : mapPickerTarget === "drop" ? (dropObj?.lat ?? 33.7294)

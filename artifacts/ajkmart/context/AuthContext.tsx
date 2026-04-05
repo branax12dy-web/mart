@@ -82,14 +82,35 @@ async function secureDelete(key: string) {
   try { await AsyncStorage.removeItem(key); } catch {}
 }
 
-/* Purge legacy AsyncStorage tokens and signal that re-authentication is required.
-   Legacy tokens stored in AsyncStorage are unencrypted and must not be used.
-   Returns true if legacy tokens were found (caller must force logout). */
-async function purgeLegacyInsecureTokens(): Promise<boolean> {
+/* Migrate legacy AsyncStorage tokens to SecureStore and remove the unencrypted copies.
+   Using a versioned SecureStore key ensures we only migrate once per device.
+   Returns true if legacy tokens were found and migrated (or already migrated). */
+const MIGRATED_KEY = "ajkmart_legacy_migration_v1";
+async function migrateLegacyInsecureTokens(): Promise<boolean> {
   try {
+    /* Check if already migrated on this device */
+    const alreadyMigrated = await SecureStore.getItemAsync(MIGRATED_KEY).catch(() => null);
+    if (alreadyMigrated === "1") return false;
+
     const [[, legacyToken], [, legacyRefresh]] = await AsyncStorage.multiGet([LEGACY_TOKEN_KEY, LEGACY_REFRESH_KEY]);
     const hadLegacy = !!(legacyToken || legacyRefresh);
-    await AsyncStorage.multiRemove([LEGACY_TOKEN_KEY, LEGACY_REFRESH_KEY]);
+
+    if (hadLegacy) {
+      /* Migrate tokens to SecureStore if not already present */
+      const existingToken = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+      const existingRefresh = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY).catch(() => null);
+      if (!existingToken && legacyToken) {
+        await SecureStore.setItemAsync(TOKEN_KEY, legacyToken).catch(() => {});
+      }
+      if (!existingRefresh && legacyRefresh) {
+        await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, legacyRefresh).catch(() => {});
+      }
+      /* Remove the insecure copies */
+      await AsyncStorage.multiRemove([LEGACY_TOKEN_KEY, LEGACY_REFRESH_KEY]).catch(() => {});
+    }
+
+    /* Mark migration as complete for this device */
+    await SecureStore.setItemAsync(MIGRATED_KEY, "1").catch(() => {});
     return hadLegacy;
   } catch {
     return false;
@@ -279,14 +300,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadAuth = async () => {
       try {
-        /* Purge any legacy unencrypted AsyncStorage tokens. If found, they are
-           deleted and the user must log in again — no migration to SecureStore. */
-        const hadLegacy = await purgeLegacyInsecureTokens();
-        if (hadLegacy) {
-          await AsyncStorage.multiRemove([USER_KEY, BIOMETRIC_KEY]);
-          setIsLoading(false);
-          return;
-        }
+        /* Migrate any legacy unencrypted AsyncStorage tokens to SecureStore.
+           If migration succeeds the tokens are now available via SecureStore below. */
+        await migrateLegacyInsecureTokens();
 
         const [[, storedUser], [, bioPref]] = await AsyncStorage.multiGet([
           USER_KEY,

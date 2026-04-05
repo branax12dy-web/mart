@@ -485,6 +485,16 @@ function ParcelScreenInner() {
             <TextInput
               value={pickupAddress}
               onChangeText={v => { setPickupAddress(v); setPickupLat(undefined); setPickupLng(undefined); if (geoError === "pickup") setGeoError(null); }}
+              onBlur={async () => {
+                if (!pickupAddress.trim() || pickupLat !== undefined) return;
+                try {
+                  const GEOCODE_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+                  const geoRes = await fetch(`${GEOCODE_BASE}/maps/geocode?address=${encodeURIComponent(pickupAddress)}`);
+                  const geo = await geoRes.json();
+                  if (geo?.lat && geo?.lng) { setPickupLat(geo.lat); setPickupLng(geo.lng); setGeoError(null); }
+                  else setGeoError("pickup");
+                } catch { setGeoError("pickup"); }
+              }}
               placeholder="e.g. Chowk Adalat, Muzaffarabad"
               placeholderTextColor={C.textMuted}
               style={[ss.input, geoError === "pickup" && { borderColor: C.danger, borderWidth: 1.5 }]}
@@ -518,6 +528,16 @@ function ParcelScreenInner() {
             <TextInput
               value={dropAddress}
               onChangeText={v => { setDropAddress(v); setDropLat(undefined); setDropLng(undefined); if (geoError === "drop") setGeoError(null); }}
+              onBlur={async () => {
+                if (!dropAddress.trim() || dropLat !== undefined) return;
+                try {
+                  const GEOCODE_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+                  const geoRes = await fetch(`${GEOCODE_BASE}/maps/geocode?address=${encodeURIComponent(dropAddress)}`);
+                  const geo = await geoRes.json();
+                  if (geo?.lat && geo?.lng) { setDropLat(geo.lat); setDropLng(geo.lng); setGeoError(null); }
+                  else setGeoError("drop");
+                } catch { setGeoError("drop"); }
+              }}
               placeholder="e.g. Commercial Area, Mirpur"
               placeholderTextColor={C.textMuted}
               style={[ss.input, geoError === "drop" && { borderColor: C.danger, borderWidth: 1.5 }]}

@@ -5,7 +5,7 @@ import {
   Wallet, Shield, Plus, Pencil, Trash2, Save, X,
   ToggleRight, ToggleLeft, RefreshCw, CheckCircle2,
   AlertTriangle, WrenchIcon, Eye, EyeOff, ScrollText, CalendarDays, ChevronLeft, ChevronRight,
-  Zap, Activity,
+  Zap, Activity, Download,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -77,9 +77,20 @@ function AuditLogTab() {
           <Input type="date" value={dateTo}   onChange={e => { setDateTo(e.target.value); setPage(1); }}   className="h-9 rounded-xl text-xs w-32" />
           {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(""); setDateTo(""); }} className="text-xs text-primary hover:underline">Clear</button>}
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9 rounded-xl gap-2 ml-auto">
-          <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-        </Button>
+        <div className="flex gap-2 ml-auto">
+          <Button variant="outline" size="sm" onClick={() => {
+            const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = `audit-log-${new Date().toISOString().slice(0,10)}.json`; a.click();
+            URL.revokeObjectURL(url);
+          }} disabled={logs.length === 0} className="h-9 rounded-xl gap-2">
+            <Download className="w-4 h-4" /> Export
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9 rounded-xl gap-2">
+            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
       </div>
 
       <Card className="rounded-2xl border-border/50 overflow-hidden">

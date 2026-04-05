@@ -101,17 +101,19 @@ function triggerLogout(reason: string) {
   } catch {}
 }
 
-let _refreshPromise: Promise<boolean> | null = null;
+let _refreshPromise: Promise<RefreshResult> | null = null;
 
-async function attemptTokenRefresh(): Promise<boolean> {
+async function attemptTokenRefresh(): Promise<RefreshResult> {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = _doRefresh();
   try { return await _refreshPromise; } finally { _refreshPromise = null; }
 }
 
-async function _doRefresh(): Promise<boolean> {
+type RefreshResult = "refreshed" | "auth_failed" | "transient";
+
+async function _doRefresh(): Promise<RefreshResult> {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+  if (!refreshToken) return "auth_failed";
   try {
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: "POST",
@@ -119,21 +121,25 @@ async function _doRefresh(): Promise<boolean> {
       body: JSON.stringify({ refreshToken }),
     });
     if (!res.ok) {
+      /* 5xx / network-level: transient, keep tokens, let apiFetch retry */
+      if (res.status >= 500) return "transient";
+      /* 401 / 403: refresh token is invalid — must re-authenticate */
       clearTokens();
-      return false;
+      return "auth_failed";
     }
     const data = await res.json();
     if (data.token) {
       sessionSet(data.token);
-      /* Sweep all legacy rider keys — broader than two hardcoded names */
       sweepLegacyTokens();
     }
     if (data.refreshToken) localSet(data.refreshToken);
-    return true;
+    return "refreshed";
   } catch {
-    return false;
+    /* Network errors (offline, timeout) are transient */
+    return "transient";
   }
 }
+
 
 interface ApiEnvelope<T = unknown> {
   success: boolean;
@@ -143,7 +149,7 @@ interface ApiEnvelope<T = unknown> {
   code?: string;
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}, _retry = true): Promise<any> {
+export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudget = 2): Promise<any> {
   const token = getToken();
   const isFormData = opts.body instanceof FormData;
   const headers: Record<string, string> = {
@@ -169,11 +175,17 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retry = tr
     clearTimeout(timeoutId);
   }
 
-  if (res.status === 401 && _retry) {
-    const refreshed = await attemptTokenRefresh();
-    if (refreshed) {
-      return apiFetch(path, opts, false);
+  if (res.status === 401 && _retryBudget > 0) {
+    const refreshResult = await attemptTokenRefresh();
+    if (refreshResult === "refreshed") {
+      return apiFetch(path, opts, _retryBudget - 1);
     }
+    if (refreshResult === "transient" && _retryBudget > 1) {
+      /* Transient server error during refresh — wait briefly and retry once more */
+      await new Promise((r) => setTimeout(r, 800));
+      return apiFetch(path, opts, _retryBudget - 1);
+    }
+    /* auth_failed or budget exhausted — session is definitely invalid */
     triggerLogout("session_expired");
     const err = await res.json().catch(() => ({ error: "Session expired" }));
     throw Object.assign(new Error(err.error || "Session expired. Please log in again."), { status: 401 });
@@ -239,6 +251,14 @@ export const api = {
     apiFetch("/auth/email-register", { method: "POST", body: JSON.stringify({ ...data, role: "rider" }) }),
   uploadFile: (data: { file: string; filename?: string; mimeType?: string }) =>
     apiFetch("/uploads", { method: "POST", body: JSON.stringify(data) }),
+  /* Multipart/form-data upload — avoids large base64 payload; used for delivery proof.
+     Calls /uploads/proof which is gated by riderAuth and handles multipart parsing. */
+  uploadProof: (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name || "proof.jpg");
+    form.append("purpose", "delivery_proof");
+    return apiFetch("/uploads/proof", { method: "POST", body: form });
+  },
   forgotPassword: (data: { method: "phone" | "email"; phone?: string; email?: string; captchaToken?: string }) =>
     apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify(data) }),
   resetPassword: (data: { phone?: string; email?: string; otp: string; newPassword: string; totpCode?: string; captchaToken?: string }) =>

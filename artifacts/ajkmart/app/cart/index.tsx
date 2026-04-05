@@ -924,13 +924,35 @@ function CartScreenInner() {
     </Modal>
   );
 
-  useEffect(() => {
-    if (!pendingAck || !ackStuck || orderSuccess) return;
-    dismissAck();
-    router.replace("/(tabs)/orders");
-  }, [pendingAck, ackStuck, orderSuccess]);
+  if (pendingAck && ackStuck && !orderSuccess) {
+    return (
+      <View style={[styles.container, { backgroundColor: C.background, justifyContent: "center", alignItems: "center", padding: 32 }]}>
+        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: C.warnBg ?? "#FFF3E0", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+          <Ionicons name="time-outline" size={32} color={C.gold ?? "#F59E0B"} />
+        </View>
+        <Text style={{ ...Typ.title, color: C.text, textAlign: "center", marginBottom: 8 }}>Order confirmation delayed</Text>
+        <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted, textAlign: "center", maxWidth: 280, marginBottom: 24 }}>
+          The server is taking longer than expected. Your order may have been placed — check your orders before retrying.
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => { dismissAck(); router.push("/(tabs)/orders"); }}
+          style={{ backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, width: "100%", alignItems: "center", marginBottom: 12 }}
+        >
+          <Text style={{ ...Typ.buttonMedium, color: C.textInverse }}>Check My Orders</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => dismissAck()}
+          style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
+        >
+          <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Retry / Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
-  if (pendingAck && !orderSuccess && !ackStuck) {
+  if (pendingAck && !orderSuccess) {
     return (
       <View style={[styles.container, { backgroundColor: C.background, justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color={C.primary} />
