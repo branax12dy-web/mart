@@ -39,6 +39,106 @@ router.get("/rides", async (_req, res) => {
   });
 });
 
+const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending:     ["searching", "bargaining", "accepted", "cancelled"],
+  searching:   ["bargaining", "accepted", "cancelled"],
+  bargaining:  ["searching", "accepted", "cancelled"],
+  accepted:    ["arrived", "in_transit", "cancelled"],
+  arrived:     ["in_transit", "cancelled"],
+  in_transit:  ["completed", "cancelled"],
+  ongoing:     ["completed", "cancelled"],
+  completed:   [],
+  cancelled:   [],
+};
+
+router.get("/rides-enriched", async (req, res) => {
+  const page = Math.max(1, parseInt(req.query["page"] as string || "1", 10));
+  const limit = Math.min(500, Math.max(1, parseInt(req.query["limit"] as string || "50", 10)));
+  const offset = (page - 1) * limit;
+  const statusQ = req.query["status"] as string | undefined;
+  const typeQ = req.query["type"] as string | undefined;
+  const searchQ = (req.query["search"] as string || "").trim().toLowerCase();
+  const customerQ = (req.query["customer"] as string || "").trim().toLowerCase();
+  const riderQ = (req.query["rider"] as string || "").trim().toLowerCase();
+  const dateFromQ = req.query["dateFrom"] as string | undefined;
+  const dateToQ = req.query["dateTo"] as string | undefined;
+  const sortByQ = (req.query["sortBy"] as string) === "fare" ? "fare" : "date";
+  const sortDirQ = (req.query["sortDir"] as string) === "asc" ? "asc" : "desc";
+
+  const conditions: ReturnType<typeof eq>[] = [];
+  if (statusQ && statusQ !== "all") conditions.push(eq(ridesTable.status, statusQ));
+  if (typeQ && typeQ !== "all") conditions.push(eq(ridesTable.type, typeQ));
+  if (dateFromQ) conditions.push(gte(ridesTable.createdAt, new Date(dateFromQ)) as ReturnType<typeof eq>);
+  if (dateToQ) {
+    const toDate = new Date(dateToQ);
+    toDate.setHours(23, 59, 59, 999);
+    conditions.push(lte(ridesTable.createdAt, toDate) as ReturnType<typeof eq>);
+  }
+  if (searchQ) {
+    conditions.push(or(
+      ilike(ridesTable.id, `%${searchQ}%`),
+      ilike(ridesTable.pickupAddress, `%${searchQ}%`),
+      ilike(ridesTable.dropAddress, `%${searchQ}%`),
+      ilike(ridesTable.riderName, `%${searchQ}%`),
+    )! as ReturnType<typeof eq>);
+  }
+  if (riderQ) {
+    conditions.push(or(
+      ilike(ridesTable.riderName, `%${riderQ}%`),
+      ilike(ridesTable.riderPhone, `%${riderQ}%`),
+    )! as ReturnType<typeof eq>);
+  }
+  if (customerQ) {
+    conditions.push(sql`${ridesTable.userId} IN (SELECT ${usersTable.id} FROM ${usersTable} WHERE LOWER(${usersTable.name}) LIKE ${'%' + customerQ + '%'} OR LOWER(${usersTable.phone}) LIKE ${'%' + customerQ + '%'})` as ReturnType<typeof eq>);
+  }
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [totalResult] = await db.select({ cnt: count() }).from(ridesTable).where(whereClause);
+  const total = Number(totalResult?.cnt ?? 0);
+
+  const orderCol = sortByQ === "fare" ? ridesTable.fare : ridesTable.createdAt;
+  const orderFn = sortDirQ === "asc" ? asc : desc;
+  const rides = await db.select().from(ridesTable).where(whereClause).orderBy(orderFn(orderCol)).limit(limit).offset(offset);
+
+  type RideRow = typeof rides[number];
+  const userIds = [...new Set(rides.map((r: RideRow) => r.userId).concat(rides.map((r: RideRow) => r.riderId).filter((id): id is string => id != null)))];
+  const users = userIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable)
+        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map((id: string) => sql`${id}`), sql`, `)}]::text[])`)
+    : [];
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+  const rideIds = rides.map((r: RideRow) => r.id);
+  const bidCounts = rideIds.length > 0
+    ? await db.select({ rideId: rideBidsTable.rideId, total: count(rideBidsTable.id) })
+        .from(rideBidsTable)
+        .where(sql`${rideBidsTable.rideId} = ANY(ARRAY[${sql.join(rideIds.map((id: string) => sql`${id}`), sql`, `)}]::text[])`)
+        .groupBy(rideBidsTable.rideId)
+    : [];
+  const bidCountMap = Object.fromEntries(bidCounts.map(b => [b.rideId, Number(b.total)]));
+
+  sendSuccess(res, {
+    rides: rides.map((r: RideRow) => ({
+      ...r,
+      fare:        parseFloat(r.fare),
+      distance:    parseFloat(r.distance),
+      offeredFare: r.offeredFare ? parseFloat(r.offeredFare) : null,
+      counterFare: r.counterFare ? parseFloat(r.counterFare) : null,
+      createdAt:   r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+      updatedAt:   r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
+      userName:    userMap[r.userId]?.name  || null,
+      userPhone:   userMap[r.userId]?.phone || null,
+      riderName:   r.riderName || (r.riderId ? userMap[r.riderId]?.name : null) || null,
+      riderPhone:  r.riderPhone || (r.riderId ? userMap[r.riderId]?.phone : null) || null,
+      totalBids:   bidCountMap[r.id] ?? 0,
+    })),
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  });
+});
+
 router.patch("/rides/:id/status", async (req, res) => {
   const { status, riderName, riderPhone } = req.body;
 
@@ -47,17 +147,29 @@ router.patch("/rides/:id/status", async (req, res) => {
     return;
   }
 
-  if (status === "completed") {
-    const [existing] = await db.select({ riderId: ridesTable.riderId })
-      .from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
-    if (!existing) { sendNotFound(res, "Ride not found"); return; }
-    if (!existing.riderId) {
-      sendError(res, "Cannot force-complete a ride with no assigned rider. Assign a rider first.", 400); return;
-    }
+  const [existing] = await db.select({ riderId: ridesTable.riderId, status: ridesTable.status })
+    .from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
+  if (!existing) { sendNotFound(res, "Ride not found"); return; }
+
+  if (existing.status === "completed" || existing.status === "cancelled") {
+    sendValidationError(res, `Cannot change status of a ride that is already ${existing.status}`);
+    return;
+  }
+
+  const allowed = VALID_STATUS_TRANSITIONS[existing.status];
+  if (!allowed || !allowed.includes(status)) {
+    sendValidationError(res, `Invalid transition: ${existing.status} → ${status}. ${allowed ? `Allowed: ${allowed.join(", ")}` : "No transitions allowed from this status."}`);
+    return;
+  }
+
+  if (status === "completed" && !existing.riderId) {
+    sendError(res, "Cannot force-complete a ride with no assigned rider. Assign a rider first.", 400);
+    return;
   }
 
   const updateData: Record<string, unknown> = { status, updatedAt: new Date() };
   if (status === "completed") updateData.completedAt = new Date();
+  if (status === "cancelled") updateData.cancelledAt = new Date();
   if (riderName) updateData.riderName = riderName;
   if (riderPhone) updateData.riderPhone = riderPhone;
 
@@ -131,6 +243,7 @@ router.patch("/rides/:id/status", async (req, res) => {
     ioRide.to(`user:${ride.userId}`).emit("order:update", ridePayload);
   }
   emitRideUpdate(ride.id);
+  emitRideDispatchUpdate({ rideId: ride.id, action: `status_${status}`, status });
 
   /* Audit: record terminal ride status transitions for compliance trail */
   if (["completed", "cancelled"].includes(status)) {
@@ -749,7 +862,14 @@ router.post("/rides/:id/cancel", async (req, res) => {
   }
 
   addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Admin cancelled ride ${rideId}${reason ? ` — ${reason}` : ""}${refunded ? " (wallet refunded)" : ""}`, result: "success" });
+  emitRideUpdate(rideId);
   emitRideDispatchUpdate({ rideId, action: "cancel", status: "cancelled" });
+  const ioCan = getIO();
+  if (ioCan) {
+    const cancelPayload = { id: rideId, status: "cancelled", updatedAt: new Date().toISOString() };
+    ioCan.to(getSocketRoom(rideId, "ride")).emit("order:update", cancelPayload);
+    ioCan.to(`user:${ride.userId}`).emit("order:update", cancelPayload);
+  }
   sendSuccess(res, { rideId, refunded });
 });
 
@@ -821,7 +941,14 @@ router.post("/rides/:id/reassign", async (req, res) => {
   await sendUserNotification(ride.userId, "Rider Changed", `Aapki ride ka rider change ho gaya hai${resolvedName ? ` — ${resolvedName}` : ""}.`, "ride", "swap-horizontal-outline");
 
   addAuditEntry({ action: "ride_reassign", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Admin reassigned ride ${rideId} from ${oldRiderId ?? "none"} to ${riderId} (${resolvedName})`, result: "success" });
+  emitRideUpdate(rideId);
   emitRideDispatchUpdate({ rideId, action: "reassign", status: updated!.status });
+  const ioReassign = getIO();
+  if (ioReassign) {
+    const reassignPayload = { id: rideId, status: updated!.status, riderId, riderName: resolvedName, updatedAt: updated!.updatedAt instanceof Date ? updated!.updatedAt.toISOString() : updated!.updatedAt };
+    ioReassign.to(getSocketRoom(rideId, "ride")).emit("order:update", reassignPayload);
+    ioReassign.to(`user:${ride.userId}`).emit("order:update", reassignPayload);
+  }
   sendSuccess(res, { ride: { ...updated, fare: parseFloat(updated!.fare), distance: parseFloat(updated!.distance) } });
 });
 

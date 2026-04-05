@@ -35,8 +35,35 @@ import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { StatusBadge } from "@/components/AdminShared";
 
+interface EnrichedRide {
+  id: string;
+  status: string;
+  type: string;
+  userId: string;
+  riderId: string | null;
+  userName: string | null;
+  userPhone: string | null;
+  riderName: string | null;
+  riderPhone: string | null;
+  pickupAddress: string;
+  dropAddress: string;
+  pickupLat: string | null;
+  pickupLng: string | null;
+  dropLat: string | null;
+  dropLng: string | null;
+  fare: number;
+  distance: number;
+  offeredFare: number | null;
+  counterFare: number | null;
+  paymentMethod: string;
+  bargainStatus: string | null;
+  totalBids: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const STATUS_LABELS: Record<string, string> = {
-  bargaining: "Bargaining", searching: "Searching", accepted: "Accepted",
+  pending: "Pending", bargaining: "Bargaining", searching: "Searching", accepted: "Accepted",
   arrived: "Arrived", in_transit: "In Transit", completed: "Completed", cancelled: "Cancelled",
 };
 const SVC_ICONS: Record<string, string> = { bike: "🏍️", car: "🚗", rickshaw: "🛺", daba: "🚐", school_shift: "🚌" };
@@ -131,6 +158,7 @@ function RideDetailModal({
   const handleCancel = () => {
     cancelMut.mutate({ id: rideId, reason: cancelReason || undefined }, {
       onSuccess: () => { toast({ title: "Ride cancelled" }); onClose(); },
+      onError: (e: Error) => { toast({ title: "Failed to cancel ride", description: e.message, variant: "destructive" }); },
     });
   };
 
@@ -631,7 +659,7 @@ function DispatchMap({ rides }: { rides: any[] }) {
           <span className="text-[10px] text-blue-600 font-semibold">{geoRides.length} active pickup{geoRides.length !== 1 ? "s" : ""}</span>
         </div>
       </div>
-      <div style={{ height: 340 }}>
+      <div className="h-[240px] sm:h-[340px]">
         <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom={true}>
           <TileLayer url={tile.url} attribution={tile.attribution} maxZoom={19} />
           <FitBounds positions={positions} />
@@ -750,7 +778,41 @@ function DispatchMonitor() {
       {/* Live Dispatch Map */}
       {rides.some(r => r.pickupLat) && <DispatchMap rides={rides} />}
 
-      <Card className="rounded-2xl overflow-hidden border-border/50 shadow-sm">
+      {/* Mobile Dispatch Cards */}
+      <div className="block md:hidden space-y-3">
+        {rides.map((r: any) => {
+          const elapsed = Math.floor((Date.now() - new Date(r.createdAt).getTime()) / 1000);
+          return (
+            <Card key={r.id} className="rounded-2xl p-4 space-y-2 border-border/50 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-sm">#{r.id.slice(-6).toUpperCase()}</span>
+                  <Badge variant="outline" className={`text-[10px] font-bold uppercase ${svcClr(r.type)}`}>
+                    {svcIcon(r.type)} {svcName(r.type)}
+                  </Badge>
+                </div>
+                <Badge variant="outline" className={`text-[10px] font-bold uppercase ${r.status === "bargaining" ? "bg-orange-100 text-orange-700 border-orange-200 animate-pulse" : "bg-amber-100 text-amber-700 border-amber-200 animate-pulse"}`}>
+                  {r.status === "bargaining" ? "💬 Bargaining" : "🔍 Searching"}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <p className="font-medium">{r.customerName}</p>
+                <span className={`font-bold ${elapsed > 120 ? "text-red-600" : elapsed > 60 ? "text-amber-600" : "text-green-600"}`}>
+                  {formatElapsed(elapsed)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>{r.notifiedRiders} notified</span>
+                <span>{r.totalBids} bids</span>
+                <span className="ml-auto font-bold text-foreground">{formatCurrency(r.offeredFare ?? r.fare)}</span>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Desktop Dispatch Table */}
+      <Card className="rounded-2xl overflow-hidden border-border/50 shadow-sm hidden md:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -1039,6 +1101,12 @@ function ServicesManager() {
   };
 
   const handleSubmit = async () => {
+    if (!form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return; }
+    if (!form.icon.trim()) { toast({ title: "Icon is required", variant: "destructive" }); return; }
+    if (!editId && !form.key.trim()) { toast({ title: "Key is required for new services", variant: "destructive" }); return; }
+    if (isNaN(Number(form.baseFare)) || Number(form.baseFare) < 0) { toast({ title: "Base fare must be a valid non-negative number", variant: "destructive" }); return; }
+    if (isNaN(Number(form.perKm)) || Number(form.perKm) < 0) { toast({ title: "Per KM rate must be a valid non-negative number", variant: "destructive" }); return; }
+    if (isNaN(Number(form.minFare)) || Number(form.minFare) < 0) { toast({ title: "Min fare must be a valid non-negative number", variant: "destructive" }); return; }
     const payload = { ...form, baseFare: Number(form.baseFare), perKm: Number(form.perKm), minFare: Number(form.minFare), maxPassengers: Number(form.maxPassengers), sortOrder: services.length };
     try {
       if (editId) {
@@ -1356,7 +1424,6 @@ function SchoolRoutesManager() {
 export default function Rides() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
-  const { data, isLoading } = useRidesEnriched();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -1372,7 +1439,21 @@ export default function Rides() {
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(1);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 50;
+
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [debouncedCustomer, setDebouncedCustomer] = useState("");
+  const [debouncedRider, setDebouncedRider] = useState("");
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 300); return () => clearTimeout(t); }, [search]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedCustomer(customerFilter), 300); return () => clearTimeout(t); }, [customerFilter]);
+  useEffect(() => { const t = setTimeout(() => setDebouncedRider(riderFilter), 300); return () => clearTimeout(t); }, [riderFilter]);
+
+  const { data, isLoading } = useRidesEnriched({
+    page, limit: PAGE_SIZE,
+    status: statusFilter, type: typeFilter,
+    search: debouncedSearch, customer: debouncedCustomer, rider: debouncedRider,
+    dateFrom, dateTo, sortBy, sortDir,
+  });
 
   const [secAgo, setSecAgo] = useState(0);
   useEffect(() => { if (!isLoading) setSecAgo(0); }, [isLoading]);
@@ -1397,63 +1478,12 @@ export default function Rides() {
     return () => { socket.disconnect(); };
   }, [queryClient]);
 
-  const rides: any[] = data?.rides || [];
+  const rides: EnrichedRide[] = (data?.rides as EnrichedRide[]) || [];
+  const serverTotal: number = data?.total ?? rides.length;
+  const totalPages: number = data?.totalPages ?? Math.ceil(serverTotal / PAGE_SIZE);
+  const pageRides = rides;
 
-  const filtered = useMemo(() => {
-    let result = [...rides];
-
-    if (statusFilter !== "all") result = result.filter(r => r.status === statusFilter);
-    if (typeFilter !== "all") result = result.filter(r => r.type === typeFilter);
-    if (dateFrom) result = result.filter(r => new Date(r.createdAt) >= new Date(dateFrom));
-    if (dateTo) {
-      const to = new Date(dateTo);
-      to.setHours(23, 59, 59, 999);
-      result = result.filter(r => new Date(r.createdAt) <= to);
-    }
-
-    if (customerFilter) {
-      const q = customerFilter.toLowerCase();
-      result = result.filter(r =>
-        (r.userName || "").toLowerCase().includes(q) ||
-        (r.userPhone || "").toLowerCase().includes(q)
-      );
-    }
-    if (riderFilter) {
-      const q = riderFilter.toLowerCase();
-      result = result.filter(r =>
-        (r.riderName || "").toLowerCase().includes(q) ||
-        (r.riderPhone || "").toLowerCase().includes(q)
-      );
-    }
-
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(r =>
-        r.id.toLowerCase().includes(q) ||
-        (r.userName || "").toLowerCase().includes(q) ||
-        (r.userPhone || "").toLowerCase().includes(q) ||
-        (r.riderName || "").toLowerCase().includes(q) ||
-        (r.pickupAddress || "").toLowerCase().includes(q) ||
-        (r.dropAddress || "").toLowerCase().includes(q)
-      );
-    }
-
-    result.sort((a, b) => {
-      if (sortBy === "fare") {
-        return sortDir === "desc" ? b.fare - a.fare : a.fare - b.fare;
-      }
-      return sortDir === "desc"
-        ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    });
-
-    return result;
-  }, [rides, statusFilter, typeFilter, dateFrom, dateTo, search, customerFilter, riderFilter, sortBy, sortDir]);
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const pageRides = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  useEffect(() => { setPage(1); }, [statusFilter, typeFilter, dateFrom, dateTo, search, customerFilter, riderFilter, sortBy, sortDir]);
+  useEffect(() => { setPage(1); }, [statusFilter, typeFilter, debouncedSearch, debouncedCustomer, debouncedRider, dateFrom, dateTo, sortBy, sortDir]);
 
   const bargaining = rides.filter(r => r.status === "bargaining");
   const searching = rides.filter(r => r.status === "searching");
@@ -1541,7 +1571,7 @@ export default function Rides() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
         <TabBtn id="rides" icon={Car} label="All Rides" count={rides.length} />
         <TabBtn id="dispatch" icon={Radio} label="Dispatch Monitor" count={bargaining.length + searching.length} urgent />
         <TabBtn id="settings" icon={Settings2} label="Ride Settings" />
@@ -1585,7 +1615,7 @@ export default function Rides() {
               <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} placeholder="To" className="text-sm" />
             </div>
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">{filtered.length} ride{filtered.length !== 1 ? "s" : ""} found</p>
+              <p className="text-xs text-muted-foreground">{serverTotal} ride{serverTotal !== 1 ? "s" : ""} found</p>
               <div className="flex gap-2">
                 <button onClick={() => toggleSort("date")} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border ${sortBy === "date" ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground border-border/50"}`}>
                   <Clock className="w-3 h-3" /> Date {sortBy === "date" && (sortDir === "desc" ? "↓" : "↑")}
@@ -1597,8 +1627,48 @@ export default function Rides() {
             </div>
           </Card>
 
-          {/* Table */}
-          <Card className="rounded-2xl overflow-hidden border-border/50 shadow-sm">
+          {/* Mobile Card Layout */}
+          <div className="block md:hidden space-y-3">
+            {pageRides.length === 0 ? (
+              <Card className="p-8 rounded-2xl text-center text-muted-foreground">No rides found</Card>
+            ) : pageRides.map(r => (
+              <Card key={r.id} className="rounded-2xl p-4 space-y-3 border-border/50 shadow-sm active:bg-muted/20 cursor-pointer" onClick={() => setSelectedRideId(r.id)}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-sm">#{r.id.slice(-6).toUpperCase()}</span>
+                    <Badge variant="outline" className={`text-[10px] font-bold uppercase ${svcClr(r.type)}`}>
+                      {svcIcon(r.type)} {svcName(r.type)}
+                    </Badge>
+                  </div>
+                  <StatusBadge status={r.status} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <p className="text-muted-foreground text-[10px] uppercase font-semibold">Customer</p>
+                    <p className="font-medium truncate">{r.userName || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-[10px] uppercase font-semibold">Rider</p>
+                    <p className="font-medium truncate">{r.riderName || "—"}</p>
+                  </div>
+                </div>
+                <div className="text-xs space-y-0.5">
+                  <p className="truncate"><MapPin className="w-3 h-3 inline text-green-600 mr-1" />{r.pickupAddress || "—"}</p>
+                  <p className="truncate text-muted-foreground"><MapPin className="w-3 h-3 inline text-red-600 mr-1" />{r.dropAddress || "—"}</p>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-base">{formatCurrency(r.counterFare ?? r.fare)}</span>
+                  <span className={`font-medium capitalize ${r.paymentMethod === "wallet" ? "text-blue-600" : "text-green-600"}`}>
+                    {r.paymentMethod === "wallet" ? "💳 Wallet" : "💵 Cash"}
+                  </span>
+                  <span className="text-muted-foreground">{formatDate(r.createdAt)}</span>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop Table */}
+          <Card className="rounded-2xl overflow-hidden border-border/50 shadow-sm hidden md:block">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1622,7 +1692,7 @@ export default function Rides() {
                 <TableBody>
                   {pageRides.length === 0 ? (
                     <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No rides found</TableCell></TableRow>
-                  ) : pageRides.map((r: any) => (
+                  ) : pageRides.map(r => (
                     <TableRow key={r.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => setSelectedRideId(r.id)}>
                       <TableCell>
                         <span className="font-mono font-bold text-sm">#{r.id.slice(-6).toUpperCase()}</span>
@@ -1677,7 +1747,7 @@ export default function Rides() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-2">
               <p className="text-xs text-muted-foreground">
-                Page {page} of {totalPages} ({filtered.length} rides)
+                Page {page} of {totalPages} ({serverTotal} rides)
               </p>
               <div className="flex items-center gap-2">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}

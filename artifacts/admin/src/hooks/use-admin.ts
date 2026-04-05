@@ -439,10 +439,28 @@ export const fetchOrdersExport = async (filters?: OrdersEnrichedFilters): Promis
   return fetcher(url);
 };
 
-export const useRidesEnriched = () => {
+export const useRidesEnriched = (params?: {
+  page?: number; limit?: number; status?: string; type?: string;
+  search?: string; customer?: string; rider?: string;
+  dateFrom?: string; dateTo?: string;
+  sortBy?: string; sortDir?: string;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.status && params.status !== "all") qs.set("status", params.status);
+  if (params?.type && params.type !== "all") qs.set("type", params.type);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.customer) qs.set("customer", params.customer);
+  if (params?.rider) qs.set("rider", params.rider);
+  if (params?.dateFrom) qs.set("dateFrom", params.dateFrom);
+  if (params?.dateTo) qs.set("dateTo", params.dateTo);
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortDir) qs.set("sortDir", params.sortDir);
+  const query = qs.toString();
   return useQuery({
-    queryKey: ["admin-rides-enriched"],
-    queryFn: () => fetcher("/rides-enriched"),
+    queryKey: ["admin-rides-enriched", params?.page ?? 1, params?.limit ?? 50, params?.status ?? "all", params?.type ?? "all", params?.search ?? "", params?.customer ?? "", params?.rider ?? "", params?.dateFrom ?? "", params?.dateTo ?? "", params?.sortBy ?? "date", params?.sortDir ?? "desc"],
+    queryFn: () => fetcher(query ? `/rides-enriched?${query}` : "/rides-enriched"),
     refetchInterval: RIDES_REFETCH_INTERVAL,
   });
 };
