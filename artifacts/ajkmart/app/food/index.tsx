@@ -32,7 +32,7 @@ import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/compo
 const C = Colors.light;
 
 const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
-  const { addItem, cartType, itemCount, clearCart, items, updateQuantity, removeItem } = useCart();
+  const { addItem, cartType, itemCount, clearCartAndAdd, items, updateQuantity, removeItem } = useCart();
   const [added, setAdded] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,7 +79,7 @@ const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
         targetService="Food"
         currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "mart" ? "Mart" : "Another service"}
         onCancel={() => setShowSwitchModal(false)}
-        onConfirm={() => { setShowSwitchModal(false); clearCart(); doAdd(); }}
+        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: item.id, name: item.name, price: item.price, quantity: 1, image: item.image, type: "food" }); }}
       />
       <View style={styles.foodImageBox}>
         {item.image
@@ -144,6 +144,10 @@ function FoodScreenInner() {
   const { category: routeCategory } = useLocalSearchParams<{ category?: string }>();
   const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
   const topPad = Math.max(insets.top, 12);
+
+  useEffect(() => {
+    setSelectedCat(routeCategory || undefined);
+  }, [routeCategory]);
 
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -269,11 +273,11 @@ function FoodScreenInner() {
             <View style={styles.errorIcon}>
               <Ionicons name="cloud-offline-outline" size={48} color={C.textMuted} />
             </View>
-            <Text style={styles.errorTitle}>Could not load</Text>
-            <Text style={styles.errorSub}>Check your internet and retry</Text>
+            <Text style={styles.errorTitle}>{T("couldNotLoad")}</Text>
+            <Text style={styles.errorSub}>{T("checkInternetRetry")}</Text>
             <TouchableOpacity activeOpacity={0.7} onPress={handleRefetch} style={styles.retryBtn}>
               <Ionicons name="refresh-outline" size={16} color={C.textInverse} />
-              <Text style={styles.retryBtnTxt}>Retry</Text>
+              <Text style={styles.retryBtnTxt}>{T("retry")}</Text>
             </TouchableOpacity>
           </View>
         ) : items.length === 0 ? (
@@ -281,8 +285,8 @@ function FoodScreenInner() {
             <View style={styles.emptyIcon}>
               <Ionicons name="restaurant-outline" size={48} color={C.border} />
             </View>
-            <Text style={styles.emptyTitle}>No food items yet</Text>
-            <Text style={styles.emptyText}>Vendors are adding menu items soon</Text>
+            <Text style={styles.emptyTitle}>{T("noFoodItemsYet")}</Text>
+            <Text style={styles.emptyText}>{T("vendorsAddingSoon")}</Text>
           </View>
         ) : (
           <>

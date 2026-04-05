@@ -33,6 +33,7 @@ interface CartContextType {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
   clearCart: () => void;
+  clearCartAndAdd: (item: CartItem) => void;
   clearCartOnAck: () => void;
   restoreCart: (snapshot: CartItem[]) => void;
   validateCart: () => Promise<CartValidationResult>;
@@ -167,6 +168,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (prevTokenRef.current && !token) {
       resetAckState();
       setItems([]);
+      AsyncStorage.removeItem("@ajkmart_cart");
     }
     prevTokenRef.current = token;
   }, [token]);
@@ -301,6 +303,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     save([]);
   };
 
+  const clearCartAndAdd = (item: CartItem) => {
+    resetAckState();
+    save([item]);
+  };
+
   const restoreCart = (snapshot: CartItem[]) => {
     resetAckState();
     save([...snapshot]);
@@ -408,7 +415,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     <CartContext.Provider value={{
       items, itemCount, total, cartType,
       addItem, removeItem, updateQuantity,
-      clearCart, clearCartOnAck, restoreCart, validateCart, isValidating,
+      clearCart, clearCartAndAdd, clearCartOnAck, restoreCart, validateCart, isValidating,
       pendingAck, setPendingAck,
       ackStuck,
       orderSuccess, clearOrderSuccess,

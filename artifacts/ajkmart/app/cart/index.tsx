@@ -549,7 +549,9 @@ function CartScreenInner() {
     pharmacy: deliveryFeeConfig.pharmacy,
     parcel:   deliveryFeeConfig.parcel,
   };
-  const rawDeliveryFee = deliveryFeeByType[cartType] ?? deliveryFeeConfig.mart;
+  const rawDeliveryFee = cartType === "none" ? 0
+    : cartType === "mixed" ? Math.max(...[...new Set(items.map(i => i.type))].map(t => deliveryFeeByType[t] ?? 0))
+    : deliveryFeeByType[cartType] ?? deliveryFeeConfig.mart;
   const deliveryFee = (freeDeliveryEnabled && total >= freeDeliveryAbove) ? 0 : rawDeliveryFee;
   const gstAmount   = finance.gstEnabled ? Math.round(total * finance.gstPct / 100) : 0;
   const cashbackAmt = finance.cashbackEnabled ? Math.min(Math.round(total * finance.cashbackPct / 100), finance.cashbackMaxRs) : 0;

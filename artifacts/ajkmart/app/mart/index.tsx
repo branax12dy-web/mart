@@ -21,6 +21,8 @@ import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import { useGetProducts, useGetCategories, getFlashDeals } from "@workspace/api-client-react";
@@ -48,11 +50,12 @@ function QuantityStepper({ quantity, onIncrement, onDecrement }: { quantity: num
   );
 }
 
-function AddToCartButton({ onPress, added }: { onPress: () => void; added: boolean }) {
+function AddToCartButton({ onPress, added, disabled }: { onPress: () => void; added: boolean; disabled?: boolean }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePress = (e: { stopPropagation?: () => void }) => {
     e?.stopPropagation?.();
+    if (disabled) return;
     Animated.sequence([
       Animated.timing(scale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
       Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 4 }),
@@ -61,8 +64,8 @@ function AddToCartButton({ onPress, added }: { onPress: () => void; added: boole
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity activeOpacity={0.7} onPress={handlePress} style={[styles.addBtn, added && styles.addBtnDone]}>
+    <Animated.View style={{ transform: [{ scale }], opacity: disabled ? 0.4 : 1 }}>
+      <TouchableOpacity activeOpacity={disabled ? 1 : 0.7} onPress={handlePress} style={[styles.addBtn, added && styles.addBtnDone, disabled && { backgroundColor: C.textMuted }]}>
         <Ionicons name={added ? "checkmark" : "add"} size={16} color={C.textInverse} />
       </TouchableOpacity>
     </Animated.View>
@@ -70,7 +73,9 @@ function AddToCartButton({ onPress, added }: { onPress: () => void; added: boole
 }
 
 const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
-  const { addItem, cartType, itemCount, clearCart } = useCart();
+  const { addItem, cartType, itemCount, clearCartAndAdd } = useCart();
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
   const [added, setAdded] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const origPrice = Number(product.originalPrice) || 0;
@@ -116,7 +121,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
         targetService="Mart"
         currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : "Another service"}
         onCancel={() => setShowSwitchModal(false)}
-        onConfirm={() => { setShowSwitchModal(false); clearCart(); doAdd(); }}
+        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image, type: "mart" }); }}
       />
       <View style={styles.flashImg}>
         {product.image
@@ -136,7 +141,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
         {product?.unit && <Text style={styles.flashUnit}>{product.unit}</Text>}
         {remaining != null && (
           <Text style={styles.flashStockTxt}>
-            {remaining > 0 ? `${remaining} left · ${soldCount} sold` : "Sold out"}
+            {remaining > 0 ? `${remaining} left · ${soldCount} sold` : T("soldOutLabel")}
           </Text>
         )}
         <View style={styles.flashFooter}>
@@ -146,7 +151,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
             )}
             <Text style={styles.flashPrice}>Rs. {product?.price ?? 0}</Text>
           </View>
-          <AddToCartButton onPress={handleAdd} added={added} />
+          <AddToCartButton onPress={handleAdd} added={added} disabled={remaining === 0} />
         </View>
       </View>
     </TouchableOpacity>
@@ -154,7 +159,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
 });
 
 const ProductCard = React.memo(function ProductCard({ product }: { product: any }) {
-  const { addItem, cartType, itemCount, clearCart, items, updateQuantity, removeItem } = useCart();
+  const { addItem, cartType, itemCount, clearCartAndAdd, items, updateQuantity, removeItem } = useCart();
   const [added, setAdded] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const origPrice = Number(product.originalPrice) || 0;
@@ -200,7 +205,7 @@ const ProductCard = React.memo(function ProductCard({ product }: { product: any 
         targetService="Mart"
         currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : "Another service"}
         onCancel={() => setShowSwitchModal(false)}
-        onConfirm={() => { setShowSwitchModal(false); clearCart(); doAdd(); }}
+        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: product.id, name: product.name ?? "—", price: product.price ?? 0, quantity: 1, image: product.image, type: "mart" }); }}
       />
       <View style={styles.productImg}>
         {product.image
@@ -256,6 +261,14 @@ function MartScreenInner() {
   const { focus, category: routeCategory } = useLocalSearchParams<{ focus?: string; category?: string }>();
   const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
   const searchInputRef = useRef<TextInput>(null);
+
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
+
+  useEffect(() => {
+    setSelectedCat(routeCategory || undefined);
+  }, [routeCategory]);
+
   useEffect(() => {
     if (focus === "search") {
       setTimeout(() => searchInputRef.current?.focus(), 300);
@@ -309,8 +322,8 @@ function MartScreenInner() {
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.hdrTitle}>{appName} Mart</Text>
-            <Text style={styles.hdrSub}>Fresh groceries delivered fast</Text>
+            <Text style={styles.hdrTitle}>{appName} {T("martTitle")}</Text>
+            <Text style={styles.hdrSub}>{T("freshGroceriesDelivered")}</Text>
           </View>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/cart")} style={styles.cartBtn}>
             <Ionicons name="bag-outline" size={22} color={C.textInverse} />
@@ -329,7 +342,7 @@ function MartScreenInner() {
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search groceries..."
+            placeholder={T("searchGroceries")}
             placeholderTextColor={C.textMuted}
             maxLength={200}
           />
@@ -345,14 +358,14 @@ function MartScreenInner() {
         <View style={{ backgroundColor: C.amberSoft, flexDirection: "row", alignItems: "center", padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: C.amberBorder }}>
           <Ionicons name="warning-outline" size={18} color={C.amber} />
           <View style={{ flex: 1 }}>
-            <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.amberDark }}>{cartType === "pharmacy" ? "Pharmacy cart active" : cartType === "food" ? "Food cart active" : "Another cart active"}</Text>
-            <Text style={{ ...Typ.caption, color: C.amberDark }}>Adding Mart items will clear your existing cart</Text>
+            <Text style={{ ...Typ.buttonSmall, fontFamily: Font.bold, color: C.amberDark }}>{cartType === "pharmacy" ? T("pharmacyCartActive") : cartType === "food" ? T("foodCartActive") : T("anotherCartActive")}</Text>
+            <Text style={{ ...Typ.caption, color: C.amberDark }}>{T("addingMartClearCart")}</Text>
           </View>
           <TouchableOpacity activeOpacity={0.7}
             onPress={() => setClearBannerConfirm(true)}
             style={{ backgroundColor: C.amber, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
           >
-            <Text style={{ ...Typ.captionBold, color: C.textInverse }}>Clear Cart</Text>
+            <Text style={{ ...Typ.captionBold, color: C.textInverse }}>{T("clearCart")}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -372,7 +385,7 @@ function MartScreenInner() {
             style={[styles.catChip, !selectedCat && styles.catChipActive]}
           >
             <Ionicons name="grid-outline" size={14} color={!selectedCat ? C.textInverse : C.primary} />
-            <Text style={[styles.catChipTxt, !selectedCat && styles.catChipTxtActive]}>All</Text>
+            <Text style={[styles.catChipTxt, !selectedCat && styles.catChipTxtActive]}>{T("all")}</Text>
           </TouchableOpacity>
           {categories.map(cat => (
             <TouchableOpacity activeOpacity={0.7}
@@ -389,7 +402,7 @@ function MartScreenInner() {
             style={[styles.catChip, { borderStyle: "dashed" as any }]}
           >
             <Ionicons name="apps-outline" size={14} color={C.primary} />
-            <Text style={styles.catChipTxt}>Browse All</Text>
+            <Text style={styles.catChipTxt}>{T("browseAllCategories")}</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -411,11 +424,11 @@ function MartScreenInner() {
             <View style={styles.errorIcon}>
               <Ionicons name="cloud-offline-outline" size={48} color={C.textMuted} />
             </View>
-            <Text style={styles.errorTitle}>Could not load</Text>
-            <Text style={styles.errorSub}>Check your internet and retry</Text>
+            <Text style={styles.errorTitle}>{T("couldNotLoad")}</Text>
+            <Text style={styles.errorSub}>{T("checkInternetRetry")}</Text>
             <TouchableOpacity activeOpacity={0.7} onPress={handleRefetch} style={styles.retryBtn}>
               <Ionicons name="refresh-outline" size={16} color={C.textInverse} />
-              <Text style={styles.retryBtnTxt}>Retry</Text>
+              <Text style={styles.retryBtnTxt}>{T("retry")}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -427,11 +440,11 @@ function MartScreenInner() {
                     <View style={styles.flashIconWrap}>
                       <Ionicons name="flash" size={14} color={C.gold} />
                     </View>
-                    <Text style={styles.secTitle}>Flash Deals</Text>
+                    <Text style={styles.secTitle}>{T("flashDeals")}</Text>
                   </View>
                   <View style={styles.timerBadge}>
                     <Ionicons name="time-outline" size={11} color={C.red} />
-                    <Text style={styles.timerTxt}>Today only</Text>
+                    <Text style={styles.timerTxt}>{T("todayOnly")}</Text>
                   </View>
                 </View>
 
@@ -445,7 +458,7 @@ function MartScreenInner() {
 
             <View style={styles.secRow}>
               <Text style={styles.secTitle}>
-                {search ? `Results for "${search}"` : selectedCat ? "Category Items" : "All Products"}
+                {search ? `${T("resultsFor")} "${search}"` : selectedCat ? T("categoryItemsLabel") : T("allProductsLabel")}
               </Text>
               <View style={styles.itemCountBadge}>
                 <Text style={styles.itemCountTxt}>{products.length}</Text>
@@ -457,8 +470,8 @@ function MartScreenInner() {
                 <View style={styles.emptyIconWrap}>
                   <Ionicons name="storefront-outline" size={48} color={C.border} />
                 </View>
-                <Text style={styles.emptyTitle}>No products found</Text>
-                <Text style={styles.emptyTxt}>Try a different search or category</Text>
+                <Text style={styles.emptyTitle}>{T("noProductsFound")}</Text>
+                <Text style={styles.emptyTxt}>{T("tryDifferentSearch")}</Text>
               </View>
             ) : (
               <View style={styles.productsGrid}>
