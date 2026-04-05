@@ -23,6 +23,8 @@ import {
   View,
   StyleSheet,
 } from "react-native";
+import Reanimated, { FadeInDown } from "react-native-reanimated";
+import { RT } from "@/constants/rideTokens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
@@ -256,8 +258,6 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   const liveAnim = useRef(new Animated.Value(1)).current;
   const bookBtnScale = useRef(new Animated.Value(1)).current;
   const bargainPanelH = useRef(new Animated.Value(0)).current;
-  const svcIndicatorX = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     const pulse = Animated.loop(
       Animated.sequence([
@@ -277,16 +277,6 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       friction: 20,
     }).start();
   }, [showBargain]);
-
-  useEffect(() => {
-    const idx = Math.max(0, services.findIndex((s) => s.key === rideType));
-    Animated.spring(svcIndicatorX, {
-      toValue: idx * 10,
-      useNativeDriver: false,
-      tension: 220,
-      friction: 14,
-    }).start();
-  }, [rideType, services]);
 
   const handleMapPickerConfirm = useCallback((result: MapPickerResult) => {
     setShowMapPicker(false);
@@ -1418,16 +1408,34 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           </View>
         )}
 
-        <Text
-          style={{
-            fontFamily: Font.bold,
-            fontSize: 15,
-            color: C.text,
-            marginBottom: 10,
-          }}
-        >
-          Service Type
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <Text
+            style={{
+              fontFamily: Font.bold,
+              fontSize: 15,
+              color: C.text,
+            }}
+          >
+            Choose Service
+          </Text>
+          {services.length > 1 && (
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              {services.map((svc) => (
+                <View
+                  key={svc.key}
+                  style={{
+                    width: svc.key === rideType ? 18 : 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: svc.key === rideType
+                      ? (svc.color ?? C.primary)
+                      : (colorScheme === "dark" ? "rgba(255,255,255,0.15)" : C.borderLight),
+                  }}
+                />
+              ))}
+            </View>
+          )}
+        </View>
         {servicesLoading ? (
           <ServiceListSkeleton />
         ) : (
@@ -1435,10 +1443,10 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ marginHorizontal: -16, marginBottom: 8 }}
+            style={{ marginHorizontal: -16, marginBottom: 6 }}
             contentContainerStyle={{
               paddingHorizontal: 16,
-              gap: 8,
+              gap: 10,
               flexDirection: "row",
             }}
           >
@@ -1448,60 +1456,97 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               const feats: string[] = [];
               if (svc.perKm > 0) feats.push(`Rs. ${svc.perKm}/km`);
               if (svc.maxPassengers > 1) feats.push(`${svc.maxPassengers} seats`);
-              if (svc.allowBargaining) feats.push("Bargain OK");
-              if (svc.description) feats.push(svc.description);
-              const cardInner = (
+              if (svc.allowBargaining) feats.push("Negotiate");
+              if (svc.isParcel) feats.push("Parcel");
+              const cardContent = (
                 <View
                   style={{
-                    borderRadius: active ? 15 : 16,
-                    padding: 12,
-                    backgroundColor: active ? `${accentColor}0A` : C.textInverse,
-                    ...(active ? {} : { borderWidth: 1.5, borderColor: C.border }),
+                    borderRadius: 18,
+                    padding: 14,
+                    backgroundColor: active
+                      ? (colorScheme === "dark" ? `${accentColor}18` : `${accentColor}0C`)
+                      : (colorScheme === "dark" ? "rgba(255,255,255,0.05)" : C.textInverse),
+                    borderWidth: active ? 0 : 1.5,
+                    borderColor: colorScheme === "dark" ? "rgba(255,255,255,0.10)" : C.border,
                     overflow: "hidden",
-                    minHeight: 120,
+                    minHeight: 136,
+                    minWidth: 116,
                   }}
                 >
                   {active && (
-                    <View style={{ position: "absolute", top: 8, right: 8 }}>
-                      <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: accentColor, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="checkmark" size={10} color="#fff" />
-                      </View>
+                    <View style={{
+                      position: "absolute",
+                      top: 10,
+                      right: 10,
+                      width: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      backgroundColor: accentColor,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 2,
+                    }}>
+                      <Ionicons name="checkmark" size={11} color="#fff" />
                     </View>
                   )}
                   <View
                     style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      backgroundColor: active ? `${accentColor}18` : C.surfaceSecondary,
+                      width: 48,
+                      height: 48,
+                      borderRadius: 16,
+                      backgroundColor: active
+                        ? `${accentColor}22`
+                        : (colorScheme === "dark" ? "rgba(255,255,255,0.08)" : C.surfaceSecondary),
                       alignItems: "center",
                       justifyContent: "center",
-                      marginBottom: 8,
+                      marginBottom: 10,
+                      borderWidth: active ? 1 : 0,
+                      borderColor: `${accentColor}50`,
                     }}
                   >
-                    <Text style={{ fontSize: 24 }}>{svc.icon}</Text>
+                    <Text style={{ fontSize: 26 }}>{svc.icon}</Text>
                   </View>
-                  <Text style={{ fontFamily: Font.bold, fontSize: 14, color: active ? accentColor : C.text }}>
+                  <Text style={{
+                    fontFamily: Font.bold,
+                    fontSize: 14,
+                    color: active ? accentColor : (colorScheme === "dark" ? "rgba(255,255,255,0.92)" : C.text),
+                    marginBottom: 4,
+                  }}>
                     {svc.name}
                   </Text>
                   {svc.nameUrdu ? (
-                    <Text style={{ fontSize: 10, color: C.textMuted, fontFamily: Font.regular }}>
+                    <Text style={{ fontSize: 10, color: colorScheme === "dark" ? "rgba(255,255,255,0.40)" : C.textMuted, fontFamily: Font.regular, marginBottom: 4 }}>
                       {svc.nameUrdu}
                     </Text>
                   ) : null}
-                  <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: active ? accentColor : C.textSecondary, marginTop: 2 }}>
-                    Rs. {svc.minFare}
-                  </Text>
-                  <View style={{ gap: 3, marginTop: 6 }}>
+                  <View style={{
+                    backgroundColor: active ? `${accentColor}22` : (colorScheme === "dark" ? "rgba(255,255,255,0.08)" : C.surfaceSecondary),
+                    borderRadius: 8,
+                    paddingHorizontal: 7,
+                    paddingVertical: 3,
+                    alignSelf: "flex-start",
+                    marginBottom: 6,
+                    borderWidth: 1,
+                    borderColor: active ? `${accentColor}45` : "transparent",
+                  }}>
+                    <Text style={{ fontFamily: Font.bold, fontSize: 12, color: active ? accentColor : (colorScheme === "dark" ? "rgba(255,255,255,0.65)" : C.textSecondary) }}>
+                      Rs. {svc.minFare}+
+                    </Text>
+                  </View>
+                  <View style={{ gap: 3 }}>
                     {feats.slice(0, 2).map((f) => (
                       <View key={f} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                         <Ionicons
                           name="checkmark-circle"
                           size={10}
-                          color={active ? accentColor : C.textMuted}
+                          color={active ? accentColor : (colorScheme === "dark" ? "rgba(255,255,255,0.35)" : C.textMuted)}
                         />
                         <Text
-                          style={{ fontFamily: Font.regular, fontSize: 10, color: C.textSecondary }}
+                          style={{
+                            fontFamily: Font.regular,
+                            fontSize: 10,
+                            color: colorScheme === "dark" ? "rgba(255,255,255,0.50)" : C.textSecondary,
+                          }}
                           numberOfLines={1}
                         >
                           {f}
@@ -1512,53 +1557,26 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 </View>
               );
               return (
-                <TouchableOpacity activeOpacity={0.7}
-                  key={svc.key}
-                  onPress={() => setRideType(svc.key)}
-                  style={{
-                    width: 130,
-                    borderRadius: 17,
-                  }}
-                >
-                  {active ? (
-                    <LinearGradient
-                      colors={[accentColor, `${accentColor}70`, `${accentColor}30`]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={{ borderRadius: 17, padding: 1.5 }}
-                    >
-                      {cardInner}
-                    </LinearGradient>
-                  ) : cardInner}
-                </TouchableOpacity>
+                <Reanimated.View key={svc.key} entering={FadeInDown.delay(services.indexOf(svc) * 60).springify().damping(16)}>
+                  <TouchableOpacity activeOpacity={0.75}
+                    onPress={() => setRideType(svc.key)}
+                    style={{ borderRadius: 20 }}
+                  >
+                    {active ? (
+                      <LinearGradient
+                        colors={[`${accentColor}90`, `${accentColor}55`, `${accentColor}25`]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={{ borderRadius: 20, padding: 2 }}
+                      >
+                        {cardContent}
+                      </LinearGradient>
+                    ) : cardContent}
+                  </TouchableOpacity>
+                </Reanimated.View>
               );
             })}
           </ScrollView>
-          {services.length > 1 && (
-            <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 10, height: 6, gap: 4 }}>
-              <Animated.View
-                style={{
-                  position: "absolute",
-                  left: svcIndicatorX,
-                  width: 20,
-                  height: 6,
-                  borderRadius: 3,
-                  backgroundColor: services.find((s) => s.key === rideType)?.color ?? C.primary,
-                }}
-              />
-              {services.map((svc) => (
-                <View
-                  key={svc.key}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: svc.key === rideType ? "transparent" : C.borderLight,
-                  }}
-                />
-              ))}
-            </View>
-          )}
           </React.Fragment>
         )}
 
@@ -2239,7 +2257,79 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
           </Text>
         </View>
 
-        <TouchableOpacity activeOpacity={0.7}
+        {/* Dual CTA: Book Now + Offer Your Fare (when bargaining available and no offer set yet) */}
+        {selectedSvc?.allowBargaining && !isParcelService(rideType, selectedSvc) && !showBargain && estimate && (
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+            {/* Book Now — solid primary */}
+            <TouchableOpacity activeOpacity={0.8}
+              onPress={handleBook}
+              disabled={booking || !estimate}
+              onPressIn={() => Animated.spring(bookBtnScale, { toValue: 0.96, useNativeDriver: false, tension: 300, friction: 10 }).start()}
+              onPressOut={() => Animated.spring(bookBtnScale, { toValue: 1, useNativeDriver: false, tension: 300, friction: 10 }).start()}
+              style={{ flex: 3, opacity: booking || !estimate ? 0.6 : 1 }}
+            >
+              <Animated.View style={{ transform: [{ scale: bookBtnScale }], borderRadius: 18, overflow: "hidden" }}>
+                <LinearGradient
+                  colors={["#E5A800", "#FCD34D", "#E5A800"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    borderRadius: 18,
+                    paddingVertical: 18,
+                    paddingHorizontal: 16,
+                  }}
+                >
+                  {booking ? (
+                    <ActivityIndicator color="#0A0F1E" />
+                  ) : (
+                    <>
+                      <Text style={{ fontFamily: Font.bold, fontSize: 15, color: "#0A0F1E" }}>
+                        Book Now
+                      </Text>
+                      {estimate && (
+                        <View style={{ backgroundColor: "rgba(10,15,30,0.15)", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 }}>
+                          <Text style={{ fontFamily: Font.bold, fontSize: 13, color: "#0A0F1E" }}>
+                            Rs. {estimate.fare}
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                </LinearGradient>
+              </Animated.View>
+            </TouchableOpacity>
+            {/* Offer Your Fare — outlined */}
+            <TouchableOpacity activeOpacity={0.8}
+              onPress={() => setShowBargain(true)}
+              style={{
+                flex: 2,
+                borderRadius: 18,
+                paddingVertical: 18,
+                paddingHorizontal: 12,
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                gap: 6,
+                borderWidth: 1.5,
+                borderColor: RT.accentBorder,
+                backgroundColor: RT.accentBg,
+              }}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={RT.accent} />
+              <Text style={{ fontFamily: Font.semiBold, fontSize: 14, color: RT.accent }}>
+                Offer Your Fare
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Standard single CTA when bargain has a set fare, or service doesn't allow bargaining */}
+        {(!(selectedSvc?.allowBargaining && !isParcelService(rideType, selectedSvc) && !showBargain && estimate) || (showBargain && offeredFare)) && (
+        <TouchableOpacity activeOpacity={0.8}
           onPress={handleBook}
           disabled={booking || !estimate}
           onPressIn={() => Animated.spring(bookBtnScale, { toValue: 0.96, useNativeDriver: false, tension: 300, friction: 10 }).start()}
@@ -2248,9 +2338,9 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
         >
           <Animated.View style={{ transform: [{ scale: bookBtnScale }], borderRadius: 18, overflow: "hidden" }}>
             <LinearGradient
-              colors={showBargain && offeredFare ? ["#E05A00", "#FF7B1A"] : ["#003399", "#0052CC", "#1A72E8"]}
+              colors={showBargain && offeredFare ? [RT.accent, "#E5A800"] : ["#E5A800", RT.accent, "#E5A800"]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
+              end={{ x: 1, y: 0 }}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -2262,27 +2352,28 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               }}
             >
               {booking ? (
-                <ActivityIndicator color={C.textInverse} />
+                <ActivityIndicator color={RT.dark} />
               ) : (
                 <>
                   {showBargain && offeredFare ? (
-                    <Ionicons name="chatbubble-ellipses" size={20} color={C.textInverse} />
+                    <Ionicons name="chatbubble-ellipses" size={20} color={RT.dark} />
                   ) : (
                     <Text style={{ fontSize: 22 }}>{selectedSvc?.icon ?? "🚗"}</Text>
                   )}
-                  <Text style={{ fontFamily: Font.bold, fontSize: 16, color: C.textInverse, letterSpacing: 0.3 }}>
+                  <Text style={{ fontFamily: Font.bold, fontSize: 16, color: RT.dark, letterSpacing: 0.3 }}>
                     {showBargain && offeredFare
                       ? `Send Offer · Rs. ${offeredFare}`
                       : `Book ${selectedSvc?.name ?? rideType}${estimate ? ` · Rs. ${estimate.fare}` : ""}`}
                   </Text>
                   {!booking && estimate && !(showBargain && offeredFare) && (
-                    <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.8)" />
+                    <Ionicons name="arrow-forward" size={18} color="rgba(10,15,30,0.6)" />
                   )}
                 </>
               )}
             </LinearGradient>
           </Animated.View>
         </TouchableOpacity>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>

@@ -200,7 +200,7 @@ export function RideStatusSkeleton() {
           </View>
           {/* Action buttons row skeleton */}
           <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-            {[0, 1, 2].map((i) => (
+            {[0, 1].map((i) => (
               <View key={i} style={{ alignItems: "center", gap: 6 }}>
                 <SkeletonPulse dark={dark} style={{ width: 60, height: 60, borderRadius: 30 }} />
                 <SkeletonPulse dark={dark} style={{ width: 40, height: 10, borderRadius: 5 }} />
@@ -222,6 +222,42 @@ export function HistoryRowSkeleton({ dark }: { dark?: boolean }) {
         <SkeletonPulse dark={dark} style={{ width: "45%", height: 11, borderRadius: 6 }} />
       </View>
       <SkeletonPulse dark={dark} style={{ width: 52, height: 20, borderRadius: 10 }} />
+    </View>
+  );
+}
+
+export function BidCardSkeleton() {
+  return (
+    <View style={{ gap: 12, marginTop: 6 }}>
+      {[0, 1].map((i) => (
+        <View
+          key={i}
+          style={{
+            borderRadius: 22,
+            padding: 18,
+            backgroundColor: "rgba(255,255,255,0.05)",
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.10)",
+            gap: 16,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <SkeletonPulse dark style={{ width: 56, height: 56, borderRadius: 28 }} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <SkeletonPulse dark style={{ width: 110, height: 16, borderRadius: 8 }} />
+              <SkeletonPulse dark style={{ width: 80, height: 12, borderRadius: 6 }} />
+            </View>
+            <View style={{ alignItems: "flex-end", gap: 6 }}>
+              <SkeletonPulse dark style={{ width: 70, height: 30, borderRadius: 12 }} />
+              <SkeletonPulse dark style={{ width: 50, height: 10, borderRadius: 5 }} />
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <SkeletonPulse dark style={{ flex: 3, height: 48, borderRadius: 16 }} />
+            <SkeletonPulse dark style={{ flex: 2, height: 48, borderRadius: 16 }} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }

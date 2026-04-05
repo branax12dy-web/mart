@@ -18,8 +18,10 @@ import {
   useColorScheme,
   useWindowDimensions,
 } from "react-native";
+import Reanimated, { ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
+import { RT } from "@/constants/rideTokens";
 import { useToast } from "@/context/ToastContext";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
@@ -1707,93 +1709,167 @@ export function RideTracker({
     <View style={{ flex: 1, backgroundColor: C.background }}>
       {/* Dark gradient header */}
       <LinearGradient
-        colors={["#1E293B", "#0F172A"]}
+        colors={RT.headerGrad}
         style={{
-          paddingTop: topPad + 16,
-          paddingBottom: 20,
+          paddingTop: topPad + 12,
+          paddingBottom: 16,
           paddingHorizontal: 20,
         }}
       >
         <View
-          style={{ flexDirection: "row", alignItems: "center", gap: 14 }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
         >
           <TouchableOpacity activeOpacity={0.7}
             onPress={() => router.push("/(tabs)")}
             hitSlop={8}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 12,
-              backgroundColor: "rgba(255,255,255,0.1)",
+              width: 38,
+              height: 38,
+              borderRadius: 13,
+              backgroundColor: "rgba(255,255,255,0.10)",
               alignItems: "center",
               justifyContent: "center",
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.10)",
             }}
           >
             <Ionicons name="chevron-back" size={20} color="#fff" />
           </TouchableOpacity>
           <View
             style={{
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               borderRadius: 16,
-              backgroundColor: `${hdrCfg.color}25`,
+              backgroundColor: `${hdrCfg.color}22`,
               alignItems: "center",
               justifyContent: "center",
-              borderWidth: 1,
-              borderColor: `${hdrCfg.color}50`,
+              borderWidth: 1.5,
+              borderColor: `${hdrCfg.color}55`,
+              shadowColor: hdrCfg.color,
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.35,
+              shadowRadius: 8,
+              elevation: 5,
             }}
           >
             <Ionicons
               name={hdrCfg.icon}
-              size={26}
+              size={24}
               color={hdrCfg.color}
             />
           </View>
           <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                fontFamily: "Inter_700Bold",
-                fontSize: 18,
-                color: "#fff",
-              }}
-            >
-              {hdrCfg.title}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text
+                style={{
+                  fontFamily: "Inter_700Bold",
+                  fontSize: 17,
+                  color: "#fff",
+                }}
+              >
+                {hdrCfg.title}
+              </Text>
+              {/* LIVE badge */}
+              <View style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                backgroundColor: "rgba(16,185,129,0.15)",
+                borderRadius: 8,
+                paddingHorizontal: 7,
+                paddingVertical: 3,
+                borderWidth: 1,
+                borderColor: "rgba(16,185,129,0.35)",
+              }}>
+                <Animated.View style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: "#10B981",
+                  transform: [{ scale: livePulse }],
+                  opacity: livePulseOp,
+                }} />
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 9, color: "#10B981", letterSpacing: 0.8 }}>
+                  LIVE
+                </Text>
+              </View>
+            </View>
             <Text
               style={{
                 fontFamily: "Inter_400Regular",
-                fontSize: 13,
-                color: "rgba(255,255,255,0.5)",
-                marginTop: 3,
+                fontSize: 12,
+                color: "rgba(255,255,255,0.45)",
+                marginTop: 2,
               }}
             >
               {hdrCfg.sub}
             </Text>
           </View>
-          {/* LIVE badge */}
-          <View style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 5,
-            backgroundColor: "rgba(16,185,129,0.18)",
-            borderRadius: 10,
-            paddingHorizontal: 10,
-            paddingVertical: 5,
-            borderWidth: 1,
-            borderColor: "rgba(16,185,129,0.35)",
-          }}>
-            <Animated.View style={{
-              width: 7,
-              height: 7,
-              borderRadius: 3.5,
-              backgroundColor: "#10B981",
-              transform: [{ scale: livePulse }],
-              opacity: livePulseOp,
-            }} />
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "#10B981", letterSpacing: 0.8 }}>
-              {tl("liveLabel")}
-            </Text>
-          </View>
+          {/* SOS — always visible in header */}
+          {sosEnabled && (
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={async () => {
+                if (sosSent) return;
+                setSosLoading(true);
+                try {
+                  const resp = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                    body: JSON.stringify({ rideId }),
+                  });
+                  if (resp.ok) {
+                    setSosSent(true);
+                  } else {
+                    showToast("SOS failed — please call emergency contacts directly");
+                  }
+                } catch {
+                  showToast("SOS failed — please call emergency contacts directly");
+                }
+                setSosLoading(false);
+              }}
+              disabled={sosLoading || sosSent}
+            >
+              <View style={{ alignItems: "center", justifyContent: "center" }}>
+                {!sosSent && (
+                  <Animated.View style={{
+                    position: "absolute",
+                    width: 54,
+                    height: 54,
+                    borderRadius: 27,
+                    backgroundColor: RT.sosBg,
+                    transform: [{ scale: sosRing }],
+                    opacity: sosRingOp,
+                  }} />
+                )}
+                <LinearGradient
+                  colors={sosSent ? ["#4B5563", "#374151"] : [RT.red, "#B91C1C"]}
+                  style={{
+                    width: 46,
+                    height: 46,
+                    borderRadius: 23,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: sosSent ? 0 : 1.5,
+                    borderColor: RT.sosBorder,
+                    shadowColor: sosSent ? "transparent" : RT.sosRed,
+                    shadowOffset: { width: 0, height: 3 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 8,
+                    elevation: sosSent ? 0 : 6,
+                  }}
+                >
+                  {sosLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: "#fff", letterSpacing: 0.5 }}>
+                      {sosSent ? "✓" : "SOS"}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Elapsed timer strip */}
@@ -1801,20 +1877,20 @@ export function RideTracker({
           flexDirection: "row",
           alignItems: "center",
           gap: 8,
-          marginTop: 14,
-          paddingTop: 12,
+          marginTop: 12,
+          paddingTop: 10,
           borderTopWidth: 1,
-          borderTopColor: "rgba(255,255,255,0.08)",
+          borderTopColor: "rgba(255,255,255,0.07)",
         }}>
-          <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.4)" />
-          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+          <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.35)" />
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
             {tl("tripElapsed")}
           </Text>
-          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "rgba(255,255,255,0.75)" }}>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
             {elapsedStr}
           </Text>
           <View style={{ flex: 1 }} />
-          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
             #{rideId.slice(-6).toUpperCase()}
           </Text>
         </View>
@@ -2001,133 +2077,160 @@ export function RideTracker({
 
           {/* ── OTP placeholder — rider arrived but OTP not yet received (brief window) ── */}
           {status === "arrived" && !tripOtp && (
-            <View
+            <LinearGradient
+              colors={["rgba(245,158,11,0.18)", "rgba(217,119,6,0.10)"]}
               style={{
-                backgroundColor: "#FFFBEB",
-                borderRadius: 20,
+                borderRadius: 22,
                 padding: 20,
-                borderWidth: 2,
-                borderColor: "#F59E0B",
+                borderWidth: 1.5,
+                borderColor: "rgba(245,158,11,0.45)",
                 alignItems: "center",
-                gap: 12,
+                gap: 14,
               }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Ionicons name="shield-checkmark-outline" size={24} color="#D97706" />
-                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#92400E" }}>
-                  {tl("securityCodeGenerating")}
-                </Text>
+                <View style={{
+                  width: 38, height: 38, borderRadius: 13,
+                  backgroundColor: "rgba(245,158,11,0.20)",
+                  alignItems: "center", justifyContent: "center",
+                  borderWidth: 1, borderColor: "rgba(245,158,11,0.40)",
+                }}>
+                  <Ionicons name="shield-checkmark-outline" size={20} color="#F59E0B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#FCD34D" }}>
+                    {tl("securityCodeGenerating")}
+                  </Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: "rgba(252,211,77,0.6)", marginTop: 2 }}>
+                    Your OTP is being generated...
+                  </Text>
+                </View>
+                <ActivityIndicator size="small" color="#F59E0B" />
               </View>
               <View style={{ flexDirection: "row", gap: 10, justifyContent: "center" }}>
                 {[0, 1, 2, 3].map((i) => (
                   <View
                     key={i}
                     style={{
-                      width: 56,
-                      height: 64,
-                      borderRadius: 14,
-                      backgroundColor: "#FDE68A",
-                      borderWidth: 2,
-                      borderColor: "#F59E0B",
+                      width: 58,
+                      height: 70,
+                      borderRadius: 16,
+                      backgroundColor: "rgba(245,158,11,0.12)",
+                      borderWidth: 1.5,
+                      borderColor: "rgba(245,158,11,0.35)",
                     }}
                   />
                 ))}
               </View>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#B45309", textAlign: "center" }}>
-                {tl("securityCodeReady")}
-              </Text>
-            </View>
+            </LinearGradient>
           )}
 
           {/* ── OTP Security Card — shown when driver has arrived ── */}
           {status === "arrived" && tripOtp && (
-            <View
+            <Reanimated.View entering={ZoomIn.springify().damping(14)}>
+            <LinearGradient
+              colors={["rgba(245,158,11,0.20)", "rgba(217,119,6,0.10)"]}
               style={{
-                backgroundColor: "#FFFBEB",
-                borderRadius: 20,
-                padding: 20,
-                borderWidth: 2,
-                borderColor: "#F59E0B",
+                borderRadius: 22,
+                overflow: "hidden",
+                borderWidth: 1.5,
+                borderColor: "rgba(245,158,11,0.50)",
+                shadowColor: "#F59E0B",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.25,
+                shadowRadius: 12,
+                elevation: 6,
               }}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <View
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 12,
-                    backgroundColor: "#FDE68A",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Ionicons name="shield-checkmark" size={20} color="#D97706" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#92400E" }}>
-                    {tl("tripSecurityCode")}
-                  </Text>
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#B45309", marginTop: 1 }}>
-                    {tl("shareWithDriver")}
-                  </Text>
-                </View>
-              </View>
-
-              {/* 4-digit OTP display */}
-              <View style={{ flexDirection: "row", gap: 10, justifyContent: "center", marginBottom: 16 }}>
-                {tripOtp.split("").map((digit, idx) => (
-                  <View
-                    key={idx}
+              <View style={{ padding: 20 }}>
+                {/* Header */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 }}>
+                  <LinearGradient
+                    colors={["rgba(245,158,11,0.40)", "rgba(245,158,11,0.20)"]}
                     style={{
-                      width: 56,
-                      height: 64,
-                      borderRadius: 14,
-                      backgroundColor: "#fff",
-                      borderWidth: 2,
-                      borderColor: "#F59E0B",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      shadowColor: "#F59E0B",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.15,
-                      shadowRadius: 4,
-                      elevation: 3,
+                      width: 44, height: 44, borderRadius: 15,
+                      alignItems: "center", justifyContent: "center",
+                      borderWidth: 1, borderColor: "rgba(245,158,11,0.50)",
                     }}
                   >
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 32, color: "#92400E" }}>
-                      {digit}
+                    <Ionicons name="shield-checkmark" size={22} color="#FCD34D" />
+                  </LinearGradient>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: "#FCD34D" }}>
+                      {tl("tripSecurityCode")}
+                    </Text>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(252,211,77,0.60)", marginTop: 2 }}>
+                      {tl("shareWithDriver")}
                     </Text>
                   </View>
-                ))}
-              </View>
+                  <View style={{
+                    backgroundColor: "rgba(16,185,129,0.20)",
+                    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+                    borderWidth: 1, borderColor: "rgba(16,185,129,0.40)",
+                  }}>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "#10B981", letterSpacing: 0.6 }}>SECURE</Text>
+                  </View>
+                </View>
 
-              {/* Copy button */}
-              <TouchableOpacity activeOpacity={0.7}
-                onPress={async () => {
-                  await Clipboard.setStringAsync(tripOtp);
-                  setOtpCopied(true);
-                  setTimeout(() => setOtpCopied(false), 2500);
-                }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  backgroundColor: otpCopied ? "#10B981" : "#F59E0B",
-                  paddingVertical: 10,
-                  borderRadius: 12,
-                }}
-              >
-                <Ionicons
-                  name={otpCopied ? "checkmark-circle" : "copy-outline"}
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>
-                  {otpCopied ? tl("copiedExclaim") : tl("copyCode")}
-                </Text>
-              </TouchableOpacity>
-            </View>
+                {/* 4-digit OTP display */}
+                <View style={{ flexDirection: "row", gap: 10, justifyContent: "center", marginBottom: 18 }}>
+                  {tripOtp.split("").map((digit, idx) => (
+                    <LinearGradient
+                      key={idx}
+                      colors={["rgba(255,255,255,0.12)", "rgba(255,255,255,0.05)"]}
+                      style={{
+                        width: 62,
+                        height: 76,
+                        borderRadius: 18,
+                        borderWidth: 2,
+                        borderColor: "rgba(245,158,11,0.55)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        shadowColor: "#F59E0B",
+                        shadowOffset: { width: 0, height: 3 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 6,
+                        elevation: 4,
+                      }}
+                    >
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 36, color: "#FCD34D" }}>
+                        {digit}
+                      </Text>
+                    </LinearGradient>
+                  ))}
+                </View>
+
+                {/* Copy button */}
+                <TouchableOpacity activeOpacity={0.7}
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(tripOtp);
+                    setOtpCopied(true);
+                    setTimeout(() => setOtpCopied(false), 2500);
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    backgroundColor: otpCopied ? "rgba(16,185,129,0.20)" : "rgba(245,158,11,0.20)",
+                    paddingVertical: 12,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: otpCopied ? "rgba(16,185,129,0.45)" : "rgba(245,158,11,0.40)",
+                  }}
+                >
+                  <Ionicons
+                    name={otpCopied ? "checkmark-circle" : "copy-outline"}
+                    size={16}
+                    color={otpCopied ? "#10B981" : "#FCD34D"}
+                  />
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: otpCopied ? "#10B981" : "#FCD34D" }}>
+                    {otpCopied ? tl("copiedExclaim") : tl("copyCode")}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+            </Reanimated.View>
           )}
 
           {ride?.riderName && (
@@ -2524,74 +2627,6 @@ export function RideTracker({
                       </LinearGradient>
                     </TouchableOpacity>
                     <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: "#F43F5E" }}>Cancel</Text>
-                  </View>
-                )}
-                {sosEnabled && (
-                  <View style={{ alignItems: "center", gap: 6 }}>
-                    <TouchableOpacity activeOpacity={0.7}
-                      onPress={async () => {
-                        if (sosSent) return;
-                        setSosLoading(true);
-                        try {
-                          const resp = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/sos`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                            body: JSON.stringify({ rideId }),
-                          });
-                          if (resp.ok) {
-                            setSosSent(true);
-                          } else {
-                            showToast("SOS failed — please call emergency contacts directly");
-                          }
-                        } catch {
-                          showToast("SOS failed — please call emergency contacts directly");
-                        }
-                        setSosLoading(false);
-                      }}
-                      disabled={sosLoading || sosSent}
-                      style={{ opacity: sosSent ? 0.65 : 1 }}
-                    >
-                      <View style={{ alignItems: "center", justifyContent: "center" }}>
-                        {/* Pulsing ring around SOS */}
-                        {!sosSent && (
-                          <Animated.View style={{
-                            position: "absolute",
-                            width: 72,
-                            height: 72,
-                            borderRadius: 36,
-                            backgroundColor: "rgba(239,68,68,0.3)",
-                            transform: [{ scale: sosRing }],
-                            opacity: sosRingOp,
-                          }} />
-                        )}
-                        <LinearGradient
-                          colors={sosSent ? ["#6B7280", "#4B5563"] : ["#EF4444", "#B91C1C"]}
-                          style={{
-                            width: 60,
-                            height: 60,
-                            borderRadius: 30,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            shadowColor: sosSent ? "#6B7280" : "#EF4444",
-                            shadowOffset: { width: 0, height: 4 },
-                            shadowOpacity: 0.45,
-                            shadowRadius: 8,
-                            elevation: 6,
-                          }}
-                        >
-                          {sosLoading ? (
-                            <ActivityIndicator color="#fff" size="small" />
-                          ) : (
-                            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff", letterSpacing: 0.5 }}>
-                              {sosSent ? "✓" : "SOS"}
-                            </Text>
-                          )}
-                        </LinearGradient>
-                      </View>
-                    </TouchableOpacity>
-                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: sosSent ? C.textMuted : "#EF4444" }}>
-                      {sosSent ? tl("sosSentShort") : "SOS"}
-                    </Text>
                   </View>
                 )}
               </View>

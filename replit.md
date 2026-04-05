@@ -3,6 +3,17 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Ride Booking Flow — Visual & UX Overhaul
+
+The customer app's ride journey screens (RideBookingForm, NegotiationScreen, RideTracker, CancelModal) received a full InDrive-inspired dark-accent redesign. Key additions:
+- `constants/rideTokens.ts` — ride-scoped design tokens (dark bg, amber accent, emerald, SOS red)
+- Amber gradient CTAs ("Book Now" + "Offer Your Fare"), consistent across all ride screens
+- Negotiation screen: radar/pulse animation, bid cards with Accept + Counter actions, BidCardSkeleton
+- RideTracker: persistent SOS in header, prominent OTP card, dark gradient header
+- CancelModal: dark ride-mode treatment (amber accents, translucent footer)
+- Reanimated entry animations on service cards, bid cards, and OTP card
+- All SSE/socket/OTP/SOS/cancel API wiring preserved
+
 ### Admin Orders Module Refactoring — Completed Changes
 
 #### Modular Component Structure (`artifacts/admin/src/pages/orders/`)

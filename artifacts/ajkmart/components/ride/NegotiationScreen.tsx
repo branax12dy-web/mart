@@ -14,11 +14,14 @@ import {
   View,
   useColorScheme,
 } from "react-native";
+import Reanimated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useToast } from "@/context/ToastContext";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
+import { RT } from "@/constants/rideTokens";
+import { BidCardSkeleton } from "@/components/ride/Skeletons";
 import {
   acceptRideBid as acceptRideBidApi,
   customerCounterOffer as customerCounterOfferApi,
@@ -52,9 +55,6 @@ interface NegotiationRide {
   riderName?: string;
   pickupAddress?: string;
   dropAddress?: string;
-  /** ISO string for the server-side broadcast deadline.
-   * When present, the countdown is derived from real server time
-   * rather than a locally-drifting elapsed counter. */
   broadcastExpiresAt?: string | null;
 }
 
@@ -90,12 +90,15 @@ export function NegotiationScreen({
   const ring1 = useRef(new Animated.Value(1)).current;
   const ring2 = useRef(new Animated.Value(1)).current;
   const ring3 = useRef(new Animated.Value(1)).current;
-  const ring1Op = useRef(new Animated.Value(0.55)).current;
-  const ring2Op = useRef(new Animated.Value(0.38)).current;
+  const ring4 = useRef(new Animated.Value(1)).current;
+  const ring1Op = useRef(new Animated.Value(0.6)).current;
+  const ring2Op = useRef(new Animated.Value(0.4)).current;
   const ring3Op = useRef(new Animated.Value(0.22)).current;
+  const ring4Op = useRef(new Animated.Value(0.12)).current;
 
   const livePulse = useRef(new Animated.Value(1)).current;
   const livePulseOp = useRef(new Animated.Value(1)).current;
+  const centerBounce = useRef(new Animated.Value(1)).current;
 
   const updateOfferSlide = useRef(new Animated.Value(0)).current;
 
@@ -108,7 +111,13 @@ export function NegotiationScreen({
   const [cancelling, setCancelling] = useState(false);
   const [offerError, setOfferError] = useState("");
   const [connectionLost, setConnectionLost] = useState(false);
+  const [bidsInitializing, setBidsInitializing] = useState(true);
   const consecutiveFailsRef = useRef(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => setBidsInitializing(false), 3500);
+    return () => clearTimeout(t);
+  }, []);
 
   const rideApiBase = API_BASE;
 
@@ -116,57 +125,36 @@ export function NegotiationScreen({
     const pulse = (
       scale: Animated.Value,
       op: Animated.Value,
-      d: number,
+      delay: number,
       resetOp: number,
     ) =>
       Animated.loop(
         Animated.sequence([
-          Animated.delay(d),
+          Animated.delay(delay),
           Animated.parallel([
-            Animated.timing(scale, {
-              toValue: 1.55,
-              duration: 1300,
-              useNativeDriver: true,
-            }),
-            Animated.timing(op, {
-              toValue: 0,
-              duration: 1300,
-              useNativeDriver: true,
-            }),
+            Animated.timing(scale, { toValue: 1.7, duration: 1500, useNativeDriver: true }),
+            Animated.timing(op, { toValue: 0, duration: 1500, useNativeDriver: true }),
           ]),
           Animated.parallel([
-            Animated.timing(scale, {
-              toValue: 1,
-              duration: 0,
-              useNativeDriver: true,
-            }),
-            Animated.timing(op, {
-              toValue: resetOp,
-              duration: 0,
-              useNativeDriver: true,
-            }),
+            Animated.timing(scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+            Animated.timing(op, { toValue: resetOp, duration: 0, useNativeDriver: true }),
           ]),
         ]),
       );
-    const a1 = pulse(ring1, ring1Op, 0, 0.55);
-    const a2 = pulse(ring2, ring2Op, 350, 0.38);
-    const a3 = pulse(ring3, ring3Op, 700, 0.22);
-    a1.start();
-    a2.start();
-    a3.start();
-    return () => {
-      a1.stop();
-      a2.stop();
-      a3.stop();
-    };
+    const a1 = pulse(ring1, ring1Op, 0, 0.6);
+    const a2 = pulse(ring2, ring2Op, 380, 0.4);
+    const a3 = pulse(ring3, ring3Op, 760, 0.22);
+    const a4 = pulse(ring4, ring4Op, 1140, 0.12);
+    a1.start(); a2.start(); a3.start(); a4.start();
+    return () => { a1.stop(); a2.stop(); a3.stop(); a4.stop(); };
   }, []);
 
   useEffect(() => {
     const livePulseAnim = Animated.loop(
       Animated.sequence([
         Animated.parallel([
-          Animated.timing(livePulse, { toValue: 1.4, duration: 600, useNativeDriver: true }),
-          Animated.timing(livePulseOp, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+          Animated.timing(livePulse, { toValue: 1.5, duration: 600, useNativeDriver: true }),
+          Animated.timing(livePulseOp, { toValue: 0.2, duration: 600, useNativeDriver: true }),
         ]),
         Animated.parallel([
           Animated.timing(livePulse, { toValue: 1, duration: 600, useNativeDriver: true }),
@@ -175,7 +163,16 @@ export function NegotiationScreen({
       ]),
     );
     livePulseAnim.start();
-    return () => livePulseAnim.stop();
+
+    const bounceAnim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(centerBounce, { toValue: 1.08, duration: 900, useNativeDriver: true }),
+        Animated.timing(centerBounce, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    bounceAnim.start();
+
+    return () => { livePulseAnim.stop(); bounceAnim.stop(); };
   }, []);
 
   useEffect(() => {
@@ -225,9 +222,6 @@ export function NegotiationScreen({
       ? `${elapsed}s`
       : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
-  /* Derive remaining time from the server-provided expiry when available
-     to avoid drift from the local elapsed counter.  Fall back to the
-     locally-counted value when the server hasn't sent the deadline yet. */
   const remaining = ride?.broadcastExpiresAt
     ? Math.max(0, Math.floor((new Date(ride.broadcastExpiresAt).getTime() - Date.now()) / 1000))
     : Math.max(0, broadcastTimeoutSec - elapsed);
@@ -247,8 +241,7 @@ export function NegotiationScreen({
   const validateOffer = (val: string): string => {
     const amt = parseFloat(val);
     if (isNaN(amt) || amt <= 0) return "Please enter a valid amount";
-    if (amt < minCounterOffer)
-      return `Minimum offer is Rs. ${minCounterOffer}`;
+    if (amt < minCounterOffer) return `Minimum offer is Rs. ${minCounterOffer}`;
     return "";
   };
 
@@ -259,9 +252,7 @@ export function NegotiationScreen({
       setRide(() => d as unknown as NegotiationRide);
     } catch (e: any) {
       const msg =
-        e?.response?.data?.error ||
-        e?.message ||
-        "Could not accept bid. Please try again.";
+        e?.response?.data?.error || e?.message || "Could not accept bid. Please try again.";
       showToast(msg, "error");
     }
     setAcceptBidId(null);
@@ -284,20 +275,14 @@ export function NegotiationScreen({
       setShowUpdateOffer(false);
     } catch (e: any) {
       const msg =
-        e?.response?.data?.error ||
-        e?.message ||
-        "Could not update offer. Please try again.";
+        e?.response?.data?.error || e?.message || "Could not update offer. Please try again.";
       showToast(msg, "error");
     }
     setUpdateOfferLoading(false);
   };
 
   const openUnifiedCancelModal = () => {
-    const riderAssigned = [
-      "accepted",
-      "arrived",
-      "in_transit",
-    ].includes(ride?.status || "");
+    const riderAssigned = ["accepted", "arrived", "in_transit"].includes(ride?.status || "");
     setCancelModalTarget({
       id: rideId,
       type: "ride",
@@ -317,889 +302,700 @@ export function NegotiationScreen({
     outputRange: [0, 0.5, 1],
   });
 
-  const isDark = colorScheme === "dark";
-  const headerGradient: [string, string] = isDark
-    ? ["#1A2744", "#0F172A"]
-    : ["#1E3A5F", "#132847"];
-  const cardBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)";
-  const cardBgBest = isDark ? "rgba(16,185,129,0.14)" : "rgba(16,185,129,0.16)";
-  const cardBorder = isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.2)";
-  const textPrimary = "#FFFFFF";
-  const textSecondary = isDark ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.75)";
-  const textMuted = isDark ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.55)";
-
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-    <View style={{ flex: 1, backgroundColor: C.background }}>
-      <LinearGradient
-        colors={headerGradient}
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: 0,
-        }}
-      />
+      <View style={{ flex: 1, backgroundColor: RT.dark }}>
+        <LinearGradient
+          colors={RT.headerGrad}
+          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }}
+        />
 
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: topPad + 16,
-          paddingHorizontal: 20,
-          paddingBottom: 14,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
-          >
-            <TouchableOpacity activeOpacity={0.7}
-              onPress={() => router.push("/(tabs)")}
-              hitSlop={8}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 12,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="chevron-back" size={20} color="#fff" />
-            </TouchableOpacity>
-            <View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text
-                  style={{
-                    fontFamily: "Inter_700Bold",
-                    fontSize: 18,
-                    color: textPrimary,
-                  }}
-                >
-                  Live Negotiation
-                </Text>
-                {/* LIVE badge */}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(16,185,129,0.18)", borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: "rgba(16,185,129,0.35)" }}>
-                  <Animated.View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981", transform: [{ scale: livePulse }], opacity: livePulseOp }} />
-                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 9, color: "#10B981", letterSpacing: 0.8 }}>LIVE</Text>
-                </View>
-              </View>
-              <Text
+        {/* Header */}
+        <View style={{ paddingTop: topPad + 16, paddingHorizontal: 20, paddingBottom: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push("/(tabs)")}
+                hitSlop={8}
                 style={{
-                  fontFamily: "Inter_400Regular",
-                  fontSize: 12,
-                  color: textSecondary,
-                  marginTop: 2,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 13,
+                  backgroundColor: "rgba(255,255,255,0.10)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.10)",
                 }}
               >
-                #{rideId.slice(-8).toUpperCase()} · {elapsedStr}
-              </Text>
+                <Ionicons name="chevron-back" size={20} color="#fff" />
+              </TouchableOpacity>
+              <View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: RT.textPrimary }}>
+                    Live Negotiation
+                  </Text>
+                  <View style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 5,
+                    backgroundColor: RT.emeraldBg,
+                    borderRadius: 10,
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderWidth: 1,
+                    borderColor: RT.emeraldBorder,
+                  }}>
+                    <Animated.View style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: RT.emerald,
+                      transform: [{ scale: livePulse }],
+                      opacity: livePulseOp,
+                    }} />
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 9, color: RT.emerald, letterSpacing: 0.8 }}>LIVE</Text>
+                  </View>
+                </View>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: RT.textMuted, marginTop: 2 }}>
+                  #{rideId.slice(-8).toUpperCase()} · {elapsedStr}
+                </Text>
+              </View>
             </View>
-          </View>
-          {/* Offer pill */}
-          <View
-            style={{
-              backgroundColor: "rgba(251,191,36,0.15)",
-              borderRadius: 14,
+
+            {/* Your offer pill */}
+            <View style={{
+              backgroundColor: RT.accentBg,
+              borderRadius: 16,
               paddingHorizontal: 16,
               paddingVertical: 10,
               alignItems: "center",
-              borderWidth: 1,
-              borderColor: "rgba(251,191,36,0.3)",
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: "Inter_700Bold",
-                fontSize: 20,
-                color: "#FCD34D",
-              }}
-            >
-              Rs. {offeredFare}
-            </Text>
-            <Text
-              style={{
-                fontFamily: "Inter_400Regular",
-                fontSize: 10,
-                color: "rgba(251,191,36,0.7)",
-              }}
-            >
-              Your Offer
+              borderWidth: 1.5,
+              borderColor: RT.accentBorder,
+            }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: RT.accent }}>
+                Rs. {offeredFare}
+              </Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: "rgba(252,211,77,0.65)" }}>
+                Your Offer
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Timer bar */}
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 12, gap: 10 }}>
+          <Ionicons name="timer-outline" size={16} color={timerUrgent ? RT.red : RT.textMuted} />
+          <View style={{ flex: 1, height: 5, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden" }}>
+            <Animated.View style={{
+              height: 5,
+              borderRadius: 3,
+              width: `${Math.max(timerPct * 100, 0)}%`,
+              backgroundColor: timerUrgent ? RT.red : RT.accent,
+            }} />
+          </View>
+          <View style={{
+            backgroundColor: timerUrgent ? RT.redBg : RT.accentBg,
+            borderRadius: 10,
+            paddingHorizontal: 10,
+            paddingVertical: 3,
+            borderWidth: 1,
+            borderColor: timerUrgent ? RT.redBorder : RT.accentBorder,
+          }}>
+            <Text style={{
+              fontFamily: "Inter_700Bold",
+              fontSize: 13,
+              color: timerUrgent ? RT.red : RT.accent,
+              minWidth: 38,
+              textAlign: "center",
+            }}>
+              {timerStr}
             </Text>
           </View>
         </View>
-      </View>
 
-      {/* Timer bar */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 20,
-          paddingBottom: 10,
-          gap: 10,
-        }}
-      >
-        <Ionicons
-          name="timer-outline"
-          size={16}
-          color={timerUrgent ? "#EF4444" : "rgba(255,255,255,0.6)"}
-        />
-        <View
-          style={{
-            flex: 1,
-            height: 4,
-            backgroundColor: "rgba(255,255,255,0.1)",
-            borderRadius: 2,
-            overflow: "hidden",
-          }}
+        <ScrollView
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 160, gap: 14 }}
+          showsVerticalScrollIndicator={false}
         >
-          <View
-            style={{
-              height: 4,
-              borderRadius: 2,
-              width: `${Math.max(timerPct * 100, 0)}%`,
-              backgroundColor: timerUrgent ? "#EF4444" : "#FCD34D",
-            }}
-          />
-        </View>
-        {/* Timer pill */}
-        <View style={{
-          backgroundColor: timerUrgent ? "rgba(239,68,68,0.2)" : "rgba(252,211,77,0.15)",
-          borderRadius: 10,
-          paddingHorizontal: 10,
-          paddingVertical: 3,
-          borderWidth: 1,
-          borderColor: timerUrgent ? "rgba(239,68,68,0.35)" : "rgba(252,211,77,0.3)",
-        }}>
-          <Text
-            style={{
-              fontFamily: "Inter_700Bold",
-              fontSize: 13,
-              color: timerUrgent ? "#EF4444" : "#FCD34D",
-              minWidth: 36,
-              textAlign: "center",
-            }}
-          >
-            {timerStr}
-          </Text>
-        </View>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingBottom: 140,
-          gap: 14,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Broadcast waiting / no bids */}
-        {!hasBids && (
-          <View style={{ alignItems: "center", paddingVertical: 48 }}>
-            <View
-              style={{
-                width: 180,
-                height: 180,
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 16,
-              }}
-            >
-              <Animated.View
-                style={{
+          {/* Broadcast waiting / no bids */}
+          {!hasBids && (
+            <View style={{ alignItems: "center", paddingVertical: 40 }}>
+              {/* Radar / ripple animation */}
+              <View style={{ width: 220, height: 220, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+                {/* 4 rings for more impressive radar effect */}
+                <Animated.View style={{
                   position: "absolute",
-                  width: 180,
-                  height: 180,
-                  borderRadius: 90,
-                  backgroundColor: "rgba(251,191,36,0.05)",
+                  width: 220,
+                  height: 220,
+                  borderRadius: 110,
+                  borderWidth: 1.5,
+                  borderColor: "rgba(252,211,77,0.25)",
+                  transform: [{ scale: ring4 }],
+                  opacity: ring4Op,
+                }} />
+                <Animated.View style={{
+                  position: "absolute",
+                  width: 170,
+                  height: 170,
+                  borderRadius: 85,
+                  borderWidth: 1.5,
+                  borderColor: "rgba(252,211,77,0.35)",
                   transform: [{ scale: ring3 }],
                   opacity: ring3Op,
-                }}
-              />
-              <Animated.View
-                style={{
+                }} />
+                <Animated.View style={{
                   position: "absolute",
-                  width: 130,
-                  height: 130,
-                  borderRadius: 65,
-                  backgroundColor: "rgba(251,191,36,0.09)",
+                  width: 120,
+                  height: 120,
+                  borderRadius: 60,
+                  borderWidth: 2,
+                  borderColor: "rgba(252,211,77,0.5)",
                   transform: [{ scale: ring2 }],
                   opacity: ring2Op,
-                }}
-              />
-              <Animated.View
-                style={{
+                }} />
+                <Animated.View style={{
                   position: "absolute",
-                  width: 90,
-                  height: 90,
-                  borderRadius: 45,
-                  backgroundColor: "rgba(251,191,36,0.15)",
+                  width: 78,
+                  height: 78,
+                  borderRadius: 39,
+                  borderWidth: 2,
+                  borderColor: "rgba(252,211,77,0.65)",
                   transform: [{ scale: ring1 }],
                   opacity: ring1Op,
-                }}
-              />
-              {/* Center icon */}
-              <View
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 32,
-                  backgroundColor: "rgba(251,191,36,0.25)",
+                }} />
+
+                {/* Center icon with bounce */}
+                <Animated.View style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 36,
+                  backgroundColor: "rgba(252,211,77,0.18)",
                   alignItems: "center",
                   justifyContent: "center",
                   borderWidth: 2,
-                  borderColor: "rgba(251,191,36,0.4)",
-                }}
-              >
-                <Ionicons name="chatbubbles" size={30} color="#FCD34D" />
+                  borderColor: "rgba(252,211,77,0.45)",
+                  transform: [{ scale: centerBounce }],
+                  shadowColor: RT.accent,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.45,
+                  shadowRadius: 20,
+                  elevation: 8,
+                }}>
+                  <Ionicons name="radio-outline" size={34} color={RT.accent} />
+                </Animated.View>
               </View>
-            </View>
-            <Text
-              style={{
-                fontFamily: "Inter_700Bold",
-                fontSize: 20,
-                color: "#fff",
-                textAlign: "center",
-              }}
-            >
-              Waiting for Riders
-            </Text>
-            <Text
-              style={{
-                fontFamily: "Inter_400Regular",
-                fontSize: 13,
-                color: "rgba(255,255,255,0.5)",
-                textAlign: "center",
-                marginTop: 8,
-                lineHeight: 20,
-                maxWidth: 260,
-              }}
-            >
-              Riders are reviewing your offer. You'll see bids appear here.
-            </Text>
 
-            {/* Broadcast elapsed timer pill */}
-            <View style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: "rgba(255,255,255,0.07)",
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 7,
-              marginTop: 14,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.1)",
-            }}>
-              <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#FCD34D" }} />
-              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-                Broadcasting · {elapsedStr}
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: RT.textPrimary, textAlign: "center" }}>
+                Broadcasting Your Offer
               </Text>
-            </View>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: RT.textSecondary, textAlign: "center", marginTop: 8, lineHeight: 20, maxWidth: 260 }}>
+                Nearby riders are reviewing your offer of{" "}
+                <Text style={{ fontFamily: "Inter_700Bold", color: RT.accent }}>Rs. {offeredFare}</Text>
+                . Bids will appear here instantly.
+              </Text>
 
-            {connectionLost && (
+              {/* Broadcast elapsed pill */}
               <View style={{
-                flexDirection: "row", alignItems: "center", gap: 8,
-                backgroundColor: "rgba(239,68,68,0.15)", borderRadius: 12,
-                paddingHorizontal: 14, paddingVertical: 8, marginTop: 12,
-                borderWidth: 1, borderColor: "rgba(239,68,68,0.25)",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 7,
+                backgroundColor: "rgba(255,255,255,0.07)",
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                marginTop: 16,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.10)",
               }}>
-                <Ionicons name="cloud-offline-outline" size={16} color="#EF4444" />
-                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#FCA5A5" }}>
-                  Connection lost — tap below to reconnect
+                <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: RT.accent }} />
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 12, color: RT.textSecondary }}>
+                  Broadcasting · {elapsedStr}
                 </Text>
               </View>
-            )}
-            {(remaining <= 0 || connectionLost) && (
-              <TouchableOpacity activeOpacity={0.7}
-                onPress={async () => {
-                  try {
-                    const res = await fetch(`${rideApiBase}/rides/${rideId}/retry`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                      },
-                    });
-                    if (res.ok) {
-                      setConnectionLost(false);
-                      showToast("Searching for more riders...", "success");
-                    } else {
-                      showToast("Could not refresh. Please try again.", "error");
-                    }
-                  } catch {
-                    setConnectionLost(true);
-                    showToast("Connection issue. Please try again.", "error");
-                  }
-                }}
-                style={{
-                  marginTop: 12,
+
+              {connectionLost && (
+                <View style={{
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 8,
-                  backgroundColor: "rgba(251,191,36,0.2)",
-                  borderRadius: 14,
-                  paddingHorizontal: 20,
-                  paddingVertical: 12,
+                  backgroundColor: RT.redBg,
+                  borderRadius: 12,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  marginTop: 12,
                   borderWidth: 1,
-                  borderColor: "rgba(251,191,36,0.3)",
-                }}
-              >
-                <Ionicons name="refresh-outline" size={18} color="#FCD34D" />
-                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#FCD34D" }}>
-                  {connectionLost ? "Reconnect & Search Again" : "Refresh & Search Again"}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+                  borderColor: RT.redBorder,
+                }}>
+                  <Ionicons name="cloud-offline-outline" size={16} color={RT.red} />
+                  <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: "#FCA5A5" }}>
+                    Connection lost — tap below to reconnect
+                  </Text>
+                </View>
+              )}
 
-        {/* Bids */}
-        {hasBids && (
-          <>
-            {/* Bids header */}
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 4,
-              }}
-            >
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: "#10B981",
-                }}
-              />
-              <Text
-                style={{
-                  fontFamily: "Inter_600SemiBold",
-                  fontSize: 13,
-                  color: "rgba(255,255,255,0.7)",
-                }}
-              >
-                {bids.length} Bid{bids.length > 1 ? "s" : ""} Received
-              </Text>
-            </View>
-
-            {sortedBids.map((bid: RideBid, bidIndex: number) => {
-              const isAccepting = acceptBidId === bid.id;
-              const isBestOffer = bidIndex === 0;
-              return (
-                <View
-                  key={bid.id}
+              {(remaining <= 0 || connectionLost) && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={async () => {
+                    try {
+                      const res = await fetch(`${rideApiBase}/rides/${rideId}/retry`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                      });
+                      if (res.ok) {
+                        setConnectionLost(false);
+                        showToast("Searching for more riders...", "success");
+                      } else {
+                        showToast("Could not refresh. Please try again.", "error");
+                      }
+                    } catch {
+                      setConnectionLost(true);
+                      showToast("Connection issue. Please try again.", "error");
+                    }
+                  }}
                   style={{
-                    borderRadius: 20,
-                    overflow: "hidden",
-                    borderWidth: isBestOffer ? 1.5 : 1,
-                    borderColor: isBestOffer ? "rgba(16,185,129,0.45)" : cardBorder,
+                    marginTop: 14,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    backgroundColor: RT.accentBg,
+                    borderRadius: 16,
+                    paddingHorizontal: 22,
+                    paddingVertical: 14,
+                    borderWidth: 1.5,
+                    borderColor: RT.accentBorder,
                   }}
                 >
-                  <LinearGradient
-                    colors={isBestOffer ? [cardBgBest, "rgba(255,255,255,0.04)"] : [cardBg, "rgba(255,255,255,0.03)"]}
-                    style={{ padding: 18 }}
-                  >
-                    {isBestOffer && (
-                      <View style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 5,
-                        marginBottom: 10,
-                      }}>
-                        <Ionicons name="ribbon" size={12} color="#10B981" />
-                        <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: "#10B981", letterSpacing: 0.5 }}>
-                          BEST OFFER
-                        </Text>
-                      </View>
-                    )}
+                  <Ionicons name="refresh-outline" size={18} color={RT.accent} />
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: RT.accent }}>
+                    {connectionLost ? "Reconnect & Search Again" : "Refresh & Search Again"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 12,
-                        marginBottom: 14,
-                      }}
+          {/* Bids loading skeleton — first 3.5 seconds with no bids */}
+          {bidsInitializing && !hasBids && (
+            <BidCardSkeleton />
+          )}
+
+          {/* Bids */}
+          {hasBids && (
+            <>
+              {/* Bids count header */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: RT.emerald }} />
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: RT.textSecondary }}>
+                  {bids.length} Bid{bids.length > 1 ? "s" : ""} Received
+                </Text>
+                <View style={{ flex: 1 }} />
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: RT.textMuted }}>
+                  Sorted by price
+                </Text>
+              </View>
+
+              {sortedBids.map((bid: RideBid, bidIndex: number) => {
+                const isAccepting = acceptBidId === bid.id;
+                const isBestOffer = bidIndex === 0;
+                const fareGap = Math.round(bid.fare - offeredFare);
+
+                return (
+                  <Reanimated.View
+                    key={bid.id}
+                    entering={FadeInDown.delay(bidIndex * 80).springify().damping(18)}
+                    style={{
+                      borderRadius: 22,
+                      overflow: "hidden",
+                      borderWidth: isBestOffer ? 1.5 : 1,
+                      borderColor: isBestOffer ? RT.emeraldBorder : RT.darkCardBorder,
+                    }}
+                  >
+                    <LinearGradient
+                      colors={
+                        isBestOffer
+                          ? ["rgba(16,185,129,0.12)", "rgba(16,185,129,0.04)"]
+                          : ["rgba(255,255,255,0.06)", "rgba(255,255,255,0.02)"]
+                      }
+                      style={{ padding: 18 }}
                     >
-                      {/* Avatar circle */}
-                      <View style={{ position: "relative" }}>
-                        <View
-                          style={{
-                            width: 52,
-                            height: 52,
-                            borderRadius: 26,
-                            backgroundColor: isBestOffer ? "rgba(16,185,129,0.2)" : "rgba(251,191,36,0.15)",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            borderWidth: 2,
-                            borderColor: isBestOffer ? "rgba(16,185,129,0.5)" : "rgba(251,191,36,0.3)",
-                          }}
-                        >
-                          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: isBestOffer ? "#10B981" : "#FCD34D" }}>
-                            {(bid.riderName ?? "R").charAt(0).toUpperCase()}
+                      {isBestOffer && (
+                        <View style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 5,
+                          marginBottom: 12,
+                          backgroundColor: "rgba(16,185,129,0.15)",
+                          alignSelf: "flex-start",
+                          borderRadius: 8,
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                        }}>
+                          <Ionicons name="ribbon" size={12} color={RT.emerald} />
+                          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: RT.emerald, letterSpacing: 0.8 }}>
+                            BEST OFFER
                           </Text>
                         </View>
-                        {/* Online dot */}
-                        <View style={{
-                          position: "absolute",
-                          bottom: 0,
-                          right: 0,
-                          width: 14,
-                          height: 14,
-                          borderRadius: 7,
-                          backgroundColor: "#10B981",
-                          borderWidth: 2,
-                          borderColor: "#0F172A",
-                        }} />
-                      </View>
+                      )}
 
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontFamily: "Inter_700Bold",
-                            fontSize: 16,
-                            color: textPrimary,
-                          }}
-                        >
-                          {bid.riderName}
-                        </Text>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
-                          {bid.ratingAvg != null && (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(245,158,11,0.15)", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 }}>
-                              <Ionicons name="star" size={11} color="#F59E0B" />
-                              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: "#FCD34D" }}>
-                                {bid.ratingAvg.toFixed(1)}
-                              </Text>
-                              {(bid.totalRides ?? 0) > 0 && (
-                                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: textMuted }}>
-                                  · {bid.totalRides}
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                        {/* Avatar */}
+                        <View style={{ position: "relative" }}>
+                          <LinearGradient
+                            colors={
+                              isBestOffer
+                                ? ["rgba(16,185,129,0.35)", "rgba(16,185,129,0.15)"]
+                                : ["rgba(252,211,77,0.25)", "rgba(252,211,77,0.10)"]
+                            }
+                            style={{
+                              width: 56,
+                              height: 56,
+                              borderRadius: 28,
+                              alignItems: "center",
+                              justifyContent: "center",
+                              borderWidth: 2,
+                              borderColor: isBestOffer ? "rgba(16,185,129,0.55)" : "rgba(252,211,77,0.35)",
+                            }}
+                          >
+                            <Text style={{
+                              fontFamily: "Inter_700Bold",
+                              fontSize: 22,
+                              color: isBestOffer ? RT.emerald : RT.accent,
+                            }}>
+                              {(bid.riderName ?? "R").charAt(0).toUpperCase()}
+                            </Text>
+                          </LinearGradient>
+                          <View style={{
+                            position: "absolute",
+                            bottom: 0,
+                            right: 0,
+                            width: 14,
+                            height: 14,
+                            borderRadius: 7,
+                            backgroundColor: RT.emerald,
+                            borderWidth: 2.5,
+                            borderColor: RT.dark,
+                          }} />
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 16, color: RT.textPrimary }}>
+                            {bid.riderName ?? "Rider"}
+                          </Text>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: 5, flexWrap: "wrap" }}>
+                            {bid.ratingAvg != null && (
+                              <View style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 3,
+                                backgroundColor: "rgba(245,158,11,0.15)",
+                                borderRadius: 8,
+                                paddingHorizontal: 7,
+                                paddingVertical: 3,
+                              }}>
+                                <Ionicons name="star" size={11} color="#F59E0B" />
+                                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: RT.accent }}>
+                                  {bid.ratingAvg.toFixed(1)}
                                 </Text>
-                              )}
-                            </View>
-                          )}
-                          {bid.vehiclePlate && (
-                            <View style={{ backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: cardBorder }}>
-                              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "rgba(255,255,255,0.75)", letterSpacing: 1 }}>
-                                {bid.vehiclePlate}
+                                {(bid.totalRides ?? 0) > 0 && (
+                                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: RT.textMuted }}>
+                                    · {bid.totalRides} trips
+                                  </Text>
+                                )}
+                              </View>
+                            )}
+                            {bid.vehiclePlate && (
+                              <View style={{
+                                backgroundColor: "rgba(255,255,255,0.10)",
+                                borderRadius: 7,
+                                paddingHorizontal: 7,
+                                paddingVertical: 3,
+                                borderWidth: 1,
+                                borderColor: RT.darkCardBorder,
+                              }}>
+                                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: "rgba(255,255,255,0.8)", letterSpacing: 1.2 }}>
+                                  {bid.vehiclePlate}
+                                </Text>
+                              </View>
+                            )}
+                            {bid.vehicleType && (
+                              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: RT.textMuted }}>
+                                {bid.vehicleType}
                               </Text>
-                            </View>
-                          )}
-                          {bid.vehicleType && (
-                            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: textMuted }}>
-                              {bid.vehicleType}
+                            )}
+                          </View>
+                          {bid.note ? (
+                            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: RT.textSecondary, marginTop: 5, fontStyle: "italic" }}>
+                              "{bid.note}"
+                            </Text>
+                          ) : null}
+                          {bid.ratingAvg == null && bid.totalRides === 0 && (
+                            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: RT.textMuted, marginTop: 3 }}>
+                              New rider
                             </Text>
                           )}
                         </View>
-                        {bid.note ? (
-                          <Text
-                            style={{
-                              fontFamily: "Inter_400Regular",
-                              fontSize: 12,
-                              color: textSecondary,
-                              marginTop: 4,
-                              fontStyle: "italic",
-                            }}
-                          >
-                            "{bid.note}"
-                          </Text>
-                        ) : null}
-                        {bid.ratingAvg == null && bid.totalRides === 0 && (
-                          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: textMuted, marginTop: 2 }}>
-                            New rider
-                          </Text>
-                        )}
-                      </View>
 
-                      {/* Fare badge */}
-                      <View style={{ alignItems: "flex-end" }}>
-                        <View style={{
-                          backgroundColor: "rgba(252,211,77,0.15)",
-                          borderRadius: 12,
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderWidth: 1,
-                          borderColor: "rgba(252,211,77,0.3)",
-                          marginBottom: 4,
-                        }}>
-                          <Text
-                            style={{
-                              fontFamily: "Inter_700Bold",
-                              fontSize: 20,
-                              color: "#FCD34D",
-                            }}
-                          >
-                            Rs. {Math.round(bid.fare)}
+                        {/* Fare badge */}
+                        <View style={{ alignItems: "flex-end" }}>
+                          <View style={{
+                            backgroundColor: RT.accentBg,
+                            borderRadius: 14,
+                            paddingHorizontal: 13,
+                            paddingVertical: 8,
+                            borderWidth: 1,
+                            borderColor: RT.accentBorder,
+                            marginBottom: 4,
+                          }}>
+                            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: RT.accent }}>
+                              Rs. {Math.round(bid.fare)}
+                            </Text>
+                          </View>
+                          <Text style={{
+                            fontFamily: "Inter_500Medium",
+                            fontSize: 10,
+                            color: bid.fare <= offeredFare ? RT.emerald : RT.textMuted,
+                            textAlign: "right",
+                          }}>
+                            {bid.fare === offeredFare
+                              ? "Matches your offer"
+                              : fareGap > 0
+                                ? `+Rs. ${fareGap} above`
+                                : `-Rs. ${Math.abs(fareGap)} saved`}
                           </Text>
                         </View>
-                        <Text
-                          style={{
-                            fontFamily: "Inter_400Regular",
-                            fontSize: 10,
-                            color: bid.fare <= offeredFare ? "#10B981" : "rgba(255,255,255,0.4)",
-                            textAlign: "right",
-                          }}
-                        >
-                          {bid.fare === offeredFare
-                            ? "Matches offer"
-                            : bid.fare > offeredFare
-                              ? `+Rs. ${Math.round(bid.fare - offeredFare)}`
-                              : `-Rs. ${Math.round(offeredFare - bid.fare)} saved`}
-                        </Text>
                       </View>
-                    </View>
 
-                    {/* Accept + Counter button row */}
-                    <View style={{ flexDirection: "row", gap: 10 }}>
-                      {/* Accept */}
-                      <TouchableOpacity activeOpacity={0.7}
-                        onPress={() => acceptBid(bid.id)}
-                        disabled={acceptBidId !== null}
-                        style={{ flex: 3, opacity: acceptBidId !== null ? 0.6 : 1 }}
-                      >
-                        <LinearGradient
-                          colors={["#10B981", "#059669"]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
+                      {/* Accept + Counter row */}
+                      <View style={{ flexDirection: "row", gap: 10 }}>
+                        {/* Accept */}
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={() => acceptBid(bid.id)}
+                          disabled={acceptBidId !== null}
+                          style={{ flex: 3, opacity: acceptBidId !== null ? 0.6 : 1 }}
+                        >
+                          <LinearGradient
+                            colors={["#10B981", "#059669"]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={{
+                              borderRadius: 16,
+                              paddingVertical: 15,
+                              alignItems: "center",
+                              flexDirection: "row",
+                              justifyContent: "center",
+                              gap: 7,
+                            }}
+                          >
+                            {isAccepting ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <>
+                                <Ionicons name="checkmark-circle" size={17} color="#fff" />
+                                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>
+                                  Accept · Rs. {Math.round(bid.fare)}
+                                </Text>
+                              </>
+                            )}
+                          </LinearGradient>
+                        </TouchableOpacity>
+
+                        {/* Counter */}
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            setUpdateOfferInput(String(Math.round(bid.fare)));
+                            setShowUpdateOffer(true);
+                          }}
+                          disabled={acceptBidId !== null}
                           style={{
-                            borderRadius: 14,
-                            paddingVertical: 14,
+                            flex: 2,
+                            borderRadius: 16,
+                            paddingVertical: 15,
                             alignItems: "center",
-                            flexDirection: "row",
                             justifyContent: "center",
+                            flexDirection: "row",
                             gap: 6,
+                            borderWidth: 1.5,
+                            borderColor: RT.accentBorder,
+                            backgroundColor: RT.accentBg,
+                            opacity: acceptBidId !== null ? 0.5 : 1,
                           }}
                         >
-                          {isAccepting ? (
-                            <ActivityIndicator color="#fff" size="small" />
-                          ) : (
-                            <>
-                              <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 13, color: "#fff" }}>
-                                Accept · Rs. {Math.round(bid.fare)}
-                              </Text>
-                            </>
-                          )}
-                        </LinearGradient>
-                      </TouchableOpacity>
+                          <Ionicons name="swap-horizontal" size={15} color={RT.accent} />
+                          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: RT.accent }}>
+                            Counter
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </LinearGradient>
+                  </Reanimated.View>
+                );
+              })}
+            </>
+          )}
 
-                      {/* Counter */}
-                      <TouchableOpacity activeOpacity={0.7}
-                        onPress={() => {
-                          setUpdateOfferInput(String(Math.round(bid.fare)));
-                          setShowUpdateOffer(true);
-                        }}
-                        disabled={acceptBidId !== null}
-                        style={{
-                          flex: 2,
-                          borderRadius: 14,
-                          paddingVertical: 14,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexDirection: "row",
-                          gap: 6,
-                          borderWidth: 1.5,
-                          borderColor: "rgba(251,191,36,0.55)",
-                          backgroundColor: "rgba(251,191,36,0.08)",
-                          opacity: acceptBidId !== null ? 0.5 : 1,
-                        }}
-                      >
-                        <Ionicons name="swap-horizontal" size={14} color="#FCD34D" />
-                        <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#FCD34D" }}>
-                          Counter
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </LinearGradient>
-                </View>
-              );
-            })}
-          </>
-        )}
-
-        {/* Counter-offer panel — animated slide-up */}
-        <View
-          style={{
-            borderRadius: 18,
-            overflow: "hidden",
-            borderWidth: 1,
-            borderColor: cardBorder,
-          }}
-        >
-          <LinearGradient
-            colors={[cardBg, "rgba(255,255,255,0.03)"]}
-            style={{ overflow: "hidden" }}
-          >
-            <TouchableOpacity activeOpacity={0.7}
-              onPress={() => {
-                setShowUpdateOffer((v) => !v);
-                setOfferError("");
-              }}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: 16,
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 10,
-                }}
+          {/* Counter-offer panel */}
+          <View style={{ borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: RT.darkCardBorder }}>
+            <LinearGradient colors={["rgba(255,255,255,0.06)", "rgba(255,255,255,0.02)"]} style={{ overflow: "hidden" }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => { setShowUpdateOffer((v) => !v); setOfferError(""); }}
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16 }}
               >
-                <View style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 10,
-                  backgroundColor: "rgba(251,191,36,0.15)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}>
-                  <Ionicons
-                    name="create-outline"
-                    size={16}
-                    color="#FCD34D"
-                  />
-                </View>
-                <Text
-                  style={{
-                    fontFamily: "Inter_600SemiBold",
-                    fontSize: 14,
-                    color: textPrimary,
-                  }}
-                >
-                  Update Your Offer
-                </Text>
-              </View>
-              <View style={{
-                width: 24,
-                height: 24,
-                borderRadius: 8,
-                backgroundColor: "rgba(255,255,255,0.08)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}>
-                <Ionicons
-                  name={showUpdateOffer ? "chevron-up" : "chevron-down"}
-                  size={14}
-                  color="rgba(255,255,255,0.5)"
-                />
-              </View>
-            </TouchableOpacity>
-
-            {/* Animated slide-up body */}
-            <Animated.View
-              style={{
-                maxHeight: updateOfferMaxHeight,
-                opacity: updateOfferOpacity,
-                overflow: "hidden",
-              }}
-            >
-              <View
-                style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}
-              >
-                <View style={{
-                  height: 1,
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  marginBottom: 4,
-                }} />
-                <Text
-                  style={{
-                    fontFamily: "Inter_400Regular",
-                    fontSize: 12,
-                    color: textMuted,
-                  }}
-                >
-                  A new offer cancels all pending bids · Min: Rs. {minCounterOffer}
-                </Text>
-
-                {/* Range indicator */}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: textMuted }}>
-                    Rs. {minCounterOffer}
-                  </Text>
-                  <View style={{ flex: 1, height: 3, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 2 }}>
-                    <View style={{
-                      width: updateOfferInput ? `${Math.min(100, Math.max(0, (parseFloat(updateOfferInput) - minCounterOffer) / (offeredFare * 2 - minCounterOffer) * 100))}%` : "0%",
-                      height: 3,
-                      backgroundColor: "#FCD34D",
-                      borderRadius: 2,
-                    }} />
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 11,
+                    backgroundColor: RT.accentBg,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1,
+                    borderColor: RT.accentBorder,
+                  }}>
+                    <Ionicons name="create-outline" size={17} color={RT.accent} />
                   </View>
-                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: textMuted }}>
-                    Rs. {Math.ceil(offeredFare * 1.5)}
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: RT.textPrimary }}>
+                    Update Your Offer
                   </Text>
                 </View>
+                <View style={{ width: 24, height: 24, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name={showUpdateOffer ? "chevron-up" : "chevron-down"} size={14} color={RT.textMuted} />
+                </View>
+              </TouchableOpacity>
 
-                {offerError ? (
-                  <Text
-                    style={{
-                      fontFamily: "Inter_500Medium",
-                      fontSize: 12,
-                      color: "#EF4444",
-                    }}
-                  >
-                    {offerError}
+              <Animated.View style={{ maxHeight: updateOfferMaxHeight, opacity: updateOfferOpacity, overflow: "hidden" }}>
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
+                  <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)", marginBottom: 4 }} />
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: RT.textMuted }}>
+                    A new offer cancels all pending bids · Min: Rs. {minCounterOffer}
                   </Text>
-                ) : null}
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <View
-                    style={{
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: RT.textMuted }}>Rs. {minCounterOffer}</Text>
+                    <View style={{ flex: 1, height: 3, backgroundColor: "rgba(255,255,255,0.10)", borderRadius: 2 }}>
+                      <View style={{
+                        width: updateOfferInput ? `${Math.min(100, Math.max(0, (parseFloat(updateOfferInput) - minCounterOffer) / (offeredFare * 2 - minCounterOffer) * 100))}%` : "0%",
+                        height: 3,
+                        backgroundColor: RT.accent,
+                        borderRadius: 2,
+                      }} />
+                    </View>
+                    <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: RT.textMuted }}>Rs. {Math.ceil(offeredFare * 1.5)}</Text>
+                  </View>
+
+                  {offerError ? (
+                    <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: RT.red }}>{offerError}</Text>
+                  ) : null}
+
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <View style={{
                       flex: 1,
                       flexDirection: "row",
                       alignItems: "center",
                       backgroundColor: "rgba(255,255,255,0.08)",
-                      borderRadius: 12,
+                      borderRadius: 13,
                       paddingHorizontal: 14,
                       borderWidth: 1,
-                      borderColor: offerError
-                        ? "rgba(239,68,68,0.5)"
-                        : "rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontFamily: "Inter_700Bold",
-                        fontSize: 14,
-                        color: "rgba(255,255,255,0.5)",
-                      }}
+                      borderColor: offerError ? "rgba(239,68,68,0.5)" : "rgba(255,255,255,0.12)",
+                    }}>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: RT.textMuted }}>Rs.</Text>
+                      <TextInput
+                        value={updateOfferInput}
+                        onChangeText={(v) => { setUpdateOfferInput(v); setOfferError(""); }}
+                        keyboardType="numeric"
+                        placeholder={String(Math.ceil(offeredFare * 1.1))}
+                        placeholderTextColor="rgba(255,255,255,0.2)"
+                        maxLength={7}
+                        style={{
+                          flex: 1,
+                          fontFamily: "Inter_700Bold",
+                          fontSize: 20,
+                          color: "#fff",
+                          paddingVertical: 12,
+                          paddingHorizontal: 6,
+                        }}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={sendUpdateOffer}
+                      disabled={updateOfferLoading || !updateOfferInput}
+                      style={{ opacity: !updateOfferInput || updateOfferLoading ? 0.5 : 1 }}
                     >
-                      Rs.
-                    </Text>
-                    <TextInput
-                      value={updateOfferInput}
-                      onChangeText={(v) => {
-                        setUpdateOfferInput(v);
-                        setOfferError("");
-                      }}
-                      keyboardType="numeric"
-                      placeholder={String(Math.ceil(offeredFare * 1.1))}
-                      placeholderTextColor="rgba(255,255,255,0.2)"
-                      maxLength={7}
-                      style={{
-                        flex: 1,
-                        fontFamily: "Inter_700Bold",
-                        fontSize: 18,
-                        color: "#fff",
-                        paddingVertical: 12,
-                        paddingHorizontal: 6,
-                      }}
-                    />
+                      <LinearGradient
+                        colors={["#F59E0B", "#D97706"]}
+                        style={{ borderRadius: 13, paddingHorizontal: 20, height: "100%", alignItems: "center", justifyContent: "center", minHeight: 52 }}
+                      >
+                        {updateOfferLoading ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Send</Text>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity activeOpacity={0.7}
-                    onPress={sendUpdateOffer}
-                    disabled={updateOfferLoading || !updateOfferInput}
-                    style={{
-                      opacity: !updateOfferInput || updateOfferLoading ? 0.5 : 1,
-                    }}
-                  >
-                    <LinearGradient
-                      colors={["#F59E0B", "#D97706"]}
-                      style={{
-                        borderRadius: 12,
-                        paddingHorizontal: 20,
-                        height: "100%",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        minHeight: 48,
-                      }}
-                    >
-                      {updateOfferLoading ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <Text
-                          style={{
-                            fontFamily: "Inter_700Bold",
-                            fontSize: 13,
-                            color: "#fff",
-                          }}
-                        >
-                          Send
-                        </Text>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            </Animated.View>
-          </LinearGradient>
-        </View>
-      </ScrollView>
+              </Animated.View>
+            </LinearGradient>
+          </View>
+        </ScrollView>
 
-      {/* Cancel button bottom */}
-      <View
-        style={{
+        {/* Cancel — subtle text link at bottom */}
+        <View style={{
           position: "absolute",
           bottom: 0,
           left: 0,
           right: 0,
           paddingHorizontal: 20,
           paddingBottom: Math.max(insets.bottom, 24) + 8,
-        }}
-      >
-        <LinearGradient
-          colors={["transparent", "rgba(15,23,42,0.95)"]}
-          style={{ position: "absolute", top: -20, left: 0, right: 0, bottom: 0 }}
-        />
-        <TouchableOpacity activeOpacity={0.7}
-          onPress={() => openUnifiedCancelModal()}
-          disabled={cancelling}
-          style={{
-            alignItems: "center",
-            padding: 16,
-            borderRadius: 16,
-            borderWidth: 1.5,
-            borderColor: "rgba(239,68,68,0.3)",
-            backgroundColor: "rgba(239,68,68,0.1)",
-          }}
-        >
-          {cancelling ? (
-            <ActivityIndicator color="#EF4444" size="small" />
-          ) : (
-            <Text
-              style={{
-                fontFamily: "Inter_600SemiBold",
-                fontSize: 15,
-                color: "#EF4444",
-              }}
-            >
-              Cancel Offer
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+          alignItems: "center",
+        }}>
+          <LinearGradient
+            colors={["transparent", "rgba(10,15,30,0.97)"]}
+            style={{ position: "absolute", top: -32, left: 0, right: 0, bottom: 0 }}
+          />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => openUnifiedCancelModal()}
+            disabled={cancelling}
+            style={{ paddingVertical: 12, paddingHorizontal: 24 }}
+          >
+            {cancelling ? (
+              <ActivityIndicator color={RT.red} size="small" />
+            ) : (
+              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: RT.textMuted }}>
+                Cancel Offer
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
 
-      {cancelModalTarget && (
-        <CancelModal
-          target={cancelModalTarget}
-          cancellationFee={cancellationFee}
-          apiBase={rideApiBase}
-          token={token}
-          onClose={() => setCancelModalTarget(null)}
-          onDone={(result) => {
-            setRide((r: NegotiationRide | null) =>
-              r ? { ...r, status: "cancelled" } : r,
-            );
-          }}
-        />
-      )}
-    </View>
+        {cancelModalTarget && (
+          <CancelModal
+            target={cancelModalTarget}
+            cancellationFee={cancellationFee}
+            apiBase={rideApiBase}
+            token={token}
+            onClose={() => setCancelModalTarget(null)}
+            onDone={(result) => {
+              setRide((r: NegotiationRide | null) =>
+                r ? { ...r, status: "cancelled" } : r,
+              );
+            }}
+          />
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 }

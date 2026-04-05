@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
@@ -173,6 +174,12 @@ export function CancelModal({
     ? slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] })
     : 1;
 
+  const rideSheet: ViewStyle = isRide ? {
+    backgroundColor: "#0E1526",
+    borderTopColor: "rgba(252,211,77,0.18)",
+    borderTopWidth: 1,
+  } : {};
+
   return (
     <Modal visible transparent animationType="none" onRequestClose={safeClose} statusBarTranslucent>
       <Animated.View style={[s.overlay, { opacity: fadeAnim }]}>
@@ -183,6 +190,7 @@ export function CancelModal({
             s.sheet,
             isWide ? s.sheetWide : s.sheetMobile,
             !isWide && { paddingBottom: Math.max(insets.bottom, 20) },
+            rideSheet,
             {
               transform: [
                 { translateY: sheetTranslate },
@@ -191,7 +199,7 @@ export function CancelModal({
             },
           ]}
         >
-          {!isWide && <View style={s.handle} />}
+          {!isWide && <View style={[s.handle, isRide && { backgroundColor: "rgba(252,211,77,0.30)" }]} />}
 
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -205,8 +213,8 @@ export function CancelModal({
               </View>
             </View>
 
-            <Text style={s.title}>Cancel {typeLabel}?</Text>
-            <Text style={s.sub}>
+            <Text style={[s.title, isRide && { color: "#F1F5F9" }]}>Cancel {typeLabel}?</Text>
+            <Text style={[s.sub, isRide && { color: "rgba(241,245,249,0.55)" }]}>
               {typePrefix} #{target.id.slice(-8).toUpperCase()}
               {target.cancelMinsLeft != null && !isRide
                 ? `  ·  ${target.cancelMinsLeft}m left to cancel`
@@ -214,7 +222,7 @@ export function CancelModal({
             </Text>
 
             {(hasFee || (isWallet && amount != null) || (!hasFee && !isWallet && isRide && !riderAssigned)) && (
-              <View style={s.infoBox}>
+              <View style={[s.infoBox, isRide && { backgroundColor: "rgba(252,211,77,0.08)", borderColor: "rgba(252,211,77,0.22)" }]}>
                 {hasFee && (
                   <View style={s.infoRow}>
                     <View style={[s.infoIcon, { backgroundColor: "#FEE2E2" }]}>
@@ -246,7 +254,7 @@ export function CancelModal({
               </View>
             )}
 
-            <Text style={s.sectionLabel}>Why are you cancelling?</Text>
+            <Text style={[s.sectionLabel, isRide && { color: "rgba(252,211,77,0.60)" }]}>Why are you cancelling?</Text>
 
             <View style={s.reasonsList}>
               {reasons.map((r) => {
@@ -259,20 +267,21 @@ export function CancelModal({
                       s.reasonRow,
                       active && s.reasonRowActive,
                       pressed && !active && s.reasonRowPressed,
+                      isRide && { backgroundColor: active ? "rgba(252,211,77,0.12)" : "rgba(255,255,255,0.05)", borderColor: active ? "rgba(252,211,77,0.40)" : "rgba(255,255,255,0.10)" },
                     ]}
                   >
-                    <View style={[s.reasonIconBox, active && s.reasonIconBoxActive]}>
+                    <View style={[s.reasonIconBox, active && s.reasonIconBoxActive, isRide && { backgroundColor: active ? "rgba(252,211,77,0.18)" : "rgba(255,255,255,0.08)" }]}>
                       <Ionicons
                         name={r.icon as any}
                         size={17}
-                        color={active ? "#DC2626" : C.textSecondary}
+                        color={active ? (isRide ? "#FCD34D" : "#DC2626") : (isRide ? "rgba(241,245,249,0.50)" : C.textSecondary)}
                       />
                     </View>
-                    <Text style={[s.reasonText, active && s.reasonTextActive]} numberOfLines={1}>
+                    <Text style={[s.reasonText, active && s.reasonTextActive, isRide && { color: active ? "#FCD34D" : "rgba(241,245,249,0.75)" }, active && isRide && { fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
                       {r.label}
                     </Text>
-                    <View style={[s.radioOuter, active && s.radioOuterActive]}>
-                      {active && <View style={s.radioInner} />}
+                    <View style={[s.radioOuter, active && s.radioOuterActive, isRide && { borderColor: active ? "#FCD34D" : "rgba(255,255,255,0.25)" }]}>
+                      {active && <View style={[s.radioInner, isRide && { backgroundColor: "#FCD34D" }]} />}
                     </View>
                   </Pressable>
                 );
@@ -287,13 +296,13 @@ export function CancelModal({
             )}
           </ScrollView>
 
-          <View style={s.footer}>
+          <View style={[s.footer, isRide && { borderTopColor: "rgba(255,255,255,0.08)" }]}>
             <Pressable
-              style={({ pressed }) => [s.keepBtn, pressed && s.keepBtnPressed]}
+              style={({ pressed }) => [s.keepBtn, pressed && s.keepBtnPressed, isRide && { backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.14)" }]}
               onPress={safeClose}
               disabled={loading}
             >
-              <Text style={s.keepText}>{keepLabel}</Text>
+              <Text style={[s.keepText, isRide && { color: "rgba(241,245,249,0.80)" }]}>{keepLabel}</Text>
             </Pressable>
 
             <Pressable
