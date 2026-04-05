@@ -6,6 +6,34 @@ export const getToken = () => {
   return localStorage.getItem("ajkmart_admin_token");
 };
 
+export const uploadAdminImage = async (file: File): Promise<string> => {
+  const token = getToken();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(",")[1];
+        const res = await fetch(`${getApiBase()}/uploads/admin`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "x-admin-token": token } : {}),
+          },
+          body: JSON.stringify({ base64, mimeType: file.type }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Upload failed");
+        const data = json.data !== undefined ? json.data : json;
+        resolve(data.url as string);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+};
+
 export const fetcher = async (endpoint: string, options: RequestInit = {}) => {
   const token = getToken();
 

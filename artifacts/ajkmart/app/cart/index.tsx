@@ -76,7 +76,7 @@ interface PaymentMethodsApiResponse {
 }
 
 function AddressPickerModal({
-  visible, addresses, selected, onSelect, onClose, onAddressCreated, token,
+  visible, addresses, selected, onSelect, onClose, onAddressCreated, token, addrLoaded,
 }: {
   visible: boolean;
   addresses: SavedAddress[];
@@ -85,6 +85,7 @@ function AddressPickerModal({
   onClose: () => void;
   onAddressCreated: (a: SavedAddress) => void;
   token: string | null | undefined;
+  addrLoaded: React.MutableRefObject<boolean>;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [newLabel, setNewLabel] = useState("Home");
@@ -107,6 +108,9 @@ function AddressPickerModal({
     setSaving(true);
     setFormError(null);
     try {
+      const loadedAddresses = addrLoaded.current ? addresses : [];
+      const hasDefault = loadedAddresses.some(a => a.isDefault);
+      const shouldBeDefault = addrLoaded.current && (loadedAddresses.length === 0 || !hasDefault);
       const res = await fetch(`${API_BASE}/addresses`, {
         method: "POST",
         headers: {
@@ -118,7 +122,7 @@ function AddressPickerModal({
           address: newAddress.trim(),
           city: newCity.trim(),
           icon: newLabel.toLowerCase().includes("work") ? "briefcase-outline" : newLabel.toLowerCase().includes("office") ? "business-outline" : "home-outline",
-          isDefault: addresses.length === 0,
+          isDefault: shouldBeDefault,
         }),
       });
       if (!res.ok) {
@@ -307,6 +311,7 @@ function CartScreenInner() {
   const [selectedAddrId, setSelectedAddrId] = useState<string>("");
   const [showAddrPicker, setShowAddrPicker] = useState(false);
   const [addrLoading, setAddrLoading] = useState(false);
+  const addrLoaded = useRef(false);
 
   const [allPayMethods, setAllPayMethods] = useState<PaymentMethod[]>([
     { id: "cash",   label: "Cash on Delivery",    logo: "💵", available: true,  description: "Pay on delivery" },
@@ -331,7 +336,9 @@ function CartScreenInner() {
   const gwPollRef = useRef<{ active: boolean; intervalId?: ReturnType<typeof setInterval> }>({ active: false });
   const gwTxnRef  = useRef<string | null>(null);
   const gwOrderId = useRef<string | null>(null);
-  const promoRevalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const promoRevalidateTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const promoRevalidateSeq     = useRef(0);
+  const promoRevalidateAbort   = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -353,34 +360,8 @@ function CartScreenInner() {
         }
         if (mountedRef.current) setGwBackgrounded(true);
       } else if (nextState === "active" && gwBackgrounded) {
-        setGwBackgrounded(false);
-        const oid = gwOrderId.current;
-        if (!oid) return;
-        (async () => {
-          try {
-            const r = await fetch(`${API_BASE}/payments/${encodeURIComponent(oid)}/status`, {
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-            });
-            const d = unwrapApiResponse(await r.json()) as any;
-            if (!mountedRef.current) return;
-            if (d.status === "completed" || d.status === "success") {
-              const successData = { id: (oid ?? "").slice(-6).toUpperCase(), time: "30-45 min", payMethod };
-              setPendingOrderId(oid, successData);
-              setPendingAck(true);
-              startAckStuckTimer(60000);
-              setGwStep("done");
-              setShowGwModal(false);
-            } else if (d.status === "failed" || d.status === "expired") {
-              setGwStep("input");
-              await cancelPendingOrder(oid);
-              showToast(d.message || T("paymentNotSuccessful"), "error");
-            } else {
-              showToast(T("paymentPending") || "Payment still processing — approve in your JazzCash/EasyPaisa app, then return here", "info");
-            }
-          } catch {
-            showToast(T("paymentServerError") || "Could not check payment status", "error");
-          }
-        })();
+        /* Keep gwBackgrounded = true so the Resume/Cancel UI remains visible.
+           The user must explicitly tap "Resume Payment" or "Cancel Order". */
       }
     });
     return () => sub.remove();
@@ -444,6 +425,7 @@ function CartScreenInner() {
 
   useEffect(() => {
     if (!user?.id) return;
+    addrLoaded.current = false;
     setAddrLoading(true);
     fetch(`${API_BASE}/addresses`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(r => r.json())
@@ -451,6 +433,7 @@ function CartScreenInner() {
       .then(d => {
         const addrs: SavedAddress[] = d.addresses || [];
         setAddresses(addrs);
+        addrLoaded.current = true;
         const def = addrs.find(a => a.isDefault) || addrs[0];
         if (def) setSelectedAddrId(def.id);
       })
@@ -465,23 +448,35 @@ function CartScreenInner() {
   useEffect(() => {
     if (promoApplied && promoCode) {
       if (promoRevalidateTimer.current) clearTimeout(promoRevalidateTimer.current);
+      if (promoRevalidateAbort.current) promoRevalidateAbort.current.abort();
       promoRevalidateTimer.current = setTimeout(() => {
         revalidatePromo(promoCode);
       }, 800);
     }
     return () => {
       if (promoRevalidateTimer.current) clearTimeout(promoRevalidateTimer.current);
+      if (promoRevalidateAbort.current) promoRevalidateAbort.current.abort();
     };
   }, [cartFingerprint]);
 
   const revalidatePromo = async (code: string) => {
+    promoRevalidateSeq.current += 1;
+    const seq = promoRevalidateSeq.current;
+    if (promoRevalidateAbort.current) {
+      promoRevalidateAbort.current.abort();
+    }
+    const controller = new AbortController();
+    promoRevalidateAbort.current = controller;
     setPromoLoading(true);
     try {
       const orderType = (cartType === "mixed" || cartType === "pharmacy" || cartType === "none") ? "mart" : cartType;
       const res = await fetch(`${API_BASE}/orders/validate-promo?code=${encodeURIComponent(code)}&total=${total}&type=${orderType}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
       });
+      if (!mountedRef.current || seq !== promoRevalidateSeq.current) return;
       const data = unwrapApiResponse(await res.json());
+      if (!mountedRef.current || seq !== promoRevalidateSeq.current) return;
       if (data.valid) {
         setPromoDiscount(data.discount);
       } else {
@@ -490,13 +485,15 @@ function CartScreenInner() {
         setPromoApplied(false);
         showToast(T("promoInvalidRemoved"), "error");
       }
-    } catch {
+    } catch (err: unknown) {
+      if ((err as any)?.name === "AbortError") return;
+      if (!mountedRef.current || seq !== promoRevalidateSeq.current) return;
       showToast(T("promoNetworkError"), "error");
       setPromoCode(null);
       setPromoDiscount(0);
       setPromoApplied(false);
     } finally {
-      setPromoLoading(false);
+      if (seq === promoRevalidateSeq.current) setPromoLoading(false);
     }
   };
 
@@ -902,13 +899,77 @@ function CartScreenInner() {
             </>
           )}
 
-          {gwStep === "waiting" && (
+          {gwStep === "waiting" && !gwBackgrounded && (
             <View style={{ alignItems: "center", paddingVertical: 24 }}>
               <ActivityIndicator size="large" color={gwColor} />
               <Text style={{ ...Typ.h3, fontSize: 16, color: C.text, marginTop: 20 }}>Payment Processing...</Text>
               <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, marginTop: 8, textAlign: "center" }}>
                 {`A ${gwName} notification will be sent to ${gwMobile} — please approve`}
               </Text>
+            </View>
+          )}
+
+          {gwStep === "waiting" && gwBackgrounded && (
+            <View style={{ alignItems: "center", paddingVertical: 24, gap: 16 }}>
+              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#FFF3E0", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="hourglass-outline" size={32} color="#F59E0B" />
+              </View>
+              <Text style={{ ...Typ.h3, fontSize: 16, color: C.text, textAlign: "center" }}>
+                Waiting for {gwName} Approval
+              </Text>
+              <Text style={{ ...Typ.body, fontSize: 13, color: C.textSecondary, textAlign: "center", maxWidth: 260 }}>
+                You left the {gwName} app. Did you approve the payment?
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setGwBackgrounded(false);
+                  const oid = gwOrderId.current;
+                  if (!oid) return;
+                  (async () => {
+                    try {
+                      const r = await fetch(`${API_BASE}/payments/${encodeURIComponent(oid)}/status`, {
+                        headers: token ? { Authorization: `Bearer ${token}` } : {},
+                      });
+                      const d = unwrapApiResponse(await r.json()) as any;
+                      if (!mountedRef.current) return;
+                      if (d.status === "completed" || d.status === "success") {
+                        const successData = { id: (oid ?? "").slice(-6).toUpperCase(), time: "30-45 min", payMethod };
+                        setPendingOrderId(oid, successData);
+                        setPendingAck(true);
+                        startAckStuckTimer(60000);
+                        setGwStep("done");
+                        setShowGwModal(false);
+                      } else if (d.status === "failed" || d.status === "expired") {
+                        setGwStep("input");
+                        await cancelPendingOrder(oid);
+                        showToast(d.message || T("paymentNotSuccessful"), "error");
+                      } else {
+                        showToast(T("paymentPending") || "Payment still pending in your app", "info");
+                      }
+                    } catch {
+                      showToast(T("paymentServerError") || "Could not check payment status", "error");
+                    }
+                  })();
+                }}
+                style={{ backgroundColor: gwColor, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
+              >
+                <Text style={{ ...Typ.buttonMedium, color: C.textInverse }}>Resume Payment</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={async () => {
+                  const oid = gwOrderId.current;
+                  setGwStep("input");
+                  setShowGwModal(false);
+                  setGwBackgrounded(false);
+                  if (oid) await cancelPendingOrder(oid);
+                  showToast("Order cancelled", "info");
+                }}
+                style={{ borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 32, width: "100%", alignItems: "center" }}
+              >
+                <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Cancel Order</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1357,6 +1418,7 @@ function CartScreenInner() {
         onSelect={(a) => setSelectedAddrId(a.id)}
         onClose={() => setShowAddrPicker(false)}
         token={token}
+        addrLoaded={addrLoaded}
         onAddressCreated={(a) => {
           setAddresses(prev => [...prev, a]);
           setSelectedAddrId(a.id);

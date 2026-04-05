@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { PackageSearch, Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight, Download, Filter, CheckCircle, XCircle, Clock } from "lucide-react";
-import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, usePendingProducts, useApproveProduct, useRejectProduct } from "@/hooks/use-admin";
+import { useState, useRef } from "react";
+import { PackageSearch, Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight, Download, Filter, CheckCircle, XCircle, Clock, Upload, X, ImageIcon } from "lucide-react";
+import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, usePendingProducts, useApproveProduct, useRejectProduct, useCategories } from "@/hooks/use-admin";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,11 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+import { uploadAdminImage } from "@/lib/api";
 
 const EMPTY_FORM = {
   name: "", description: "", price: "", originalPrice: "",
   category: "", type: "mart", unit: "", vendorName: "",
-  inStock: true, deliveryTime: "30-45 min"
+  inStock: true, deliveryTime: "30-45 min", image: ""
 };
 
 function RejectModal({ product, onClose }: { product: any; onClose: () => void }) {
@@ -64,11 +65,13 @@ export default function Products() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { data, isLoading } = useProducts();
   const { data: pendingData, isLoading: pendingLoading } = usePendingProducts();
+  const { data: categoriesData } = useCategories();
   const createMutation = useCreateProduct();
   const updateMutation = useUpdateProduct();
   const deleteMutation = useDeleteProduct();
   const approveMutation = useApproveProduct();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [tab, setTab] = useState<"all" | "pending">("all");
   const [search, setSearch]         = useState("");
@@ -80,10 +83,47 @@ export default function Products() {
   const [formData, setFormData]       = useState({ ...EMPTY_FORM });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const [imageUploading, setImageUploading] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryDropOpen, setCategoryDropOpen] = useState(false);
+
+  const categories = categoriesData || [];
+  const filteredCategories = categories.filter(c =>
+    c.name.toLowerCase().includes(categorySearch.toLowerCase()) ||
+    c.id.toLowerCase().includes(categorySearch.toLowerCase())
+  );
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only JPEG, PNG, and WebP images are allowed", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Image must be under 10MB", variant: "destructive" });
+      return;
+    }
+    setImagePreview(URL.createObjectURL(file));
+    setImageUploading(true);
+    try {
+      const url = await uploadAdminImage(file);
+      setFormData(prev => ({ ...prev, image: url }));
+      toast({ title: "Image uploaded ✅" });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+      setImagePreview(formData.image || "");
+    } finally {
+      setImageUploading(false);
+    }
+  };
 
   const openAdd = () => {
     setEditingId(null);
     setFormData({ ...EMPTY_FORM });
+    setImagePreview("");
+    setCategorySearch("");
     setIsFormOpen(true);
   };
 
@@ -95,13 +135,20 @@ export default function Products() {
       originalPrice: prod.originalPrice ? String(prod.originalPrice) : "",
       category: prod.category || "", type: prod.type || "mart",
       unit: prod.unit || "", vendorName: prod.vendorName || "",
-      inStock: prod.inStock, deliveryTime: prod.deliveryTime || "30-45 min"
+      inStock: prod.inStock, deliveryTime: prod.deliveryTime || "30-45 min",
+      image: prod.image || "",
     });
+    setImagePreview(prod.image || "");
+    setCategorySearch(prod.category || "");
     setIsFormOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.category.trim()) {
+      toast({ title: "Category required", description: "Please search and select a category from the dropdown", variant: "destructive" });
+      return;
+    }
     const payload = {
       ...formData,
       price: Number(formData.price),
@@ -223,14 +270,100 @@ export default function Products() {
             <DialogTitle className="font-display text-2xl">{editingId ? T("editProduct") : T("addNewProduct")}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+            {/* Image Uploader */}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Product Image</label>
+              <div
+                className="relative border-2 border-dashed border-border rounded-xl overflow-hidden cursor-pointer hover:border-primary/60 transition-colors"
+                style={{ height: imagePreview ? 160 : 100 }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {imagePreview ? (
+                  <>
+                    <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
+                    {imageUploading && (
+                      <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span className="text-white text-xs font-semibold">Uploading...</span>
+                      </div>
+                    )}
+                    {!imageUploading && (
+                      <button
+                        type="button"
+                        className="absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center text-white transition-colors"
+                        onClick={e => { e.stopPropagation(); setImagePreview(""); setFormData(prev => ({ ...prev, image: "" })); }}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+                    <ImageIcon className="w-7 h-7" />
+                    <span className="text-xs font-medium">Click to upload image (JPEG/PNG/WebP, max 10MB)</span>
+                  </div>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                className="hidden"
+                onChange={handleImageSelect}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Name *</label>
                 <Input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. Fresh Milk" />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <label className="text-sm font-semibold">Category *</label>
-                <Input required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. dairy, vegetables" />
+                <div className="relative">
+                  <Input
+                    value={categorySearch}
+                    onChange={e => {
+                      setCategorySearch(e.target.value);
+                      setCategoryDropOpen(true);
+                      if (!e.target.value.trim()) {
+                        setFormData(prev => ({ ...prev, category: "" }));
+                      }
+                    }}
+                    onFocus={() => setCategoryDropOpen(true)}
+                    onBlur={() => setTimeout(() => {
+                      setCategoryDropOpen(false);
+                      if (!formData.category) setCategorySearch("");
+                    }, 150)}
+                    className="h-11 rounded-xl pr-8"
+                    placeholder="Search and select a category..."
+                  />
+                  {formData.category && (
+                    <div className="mt-1 text-xs text-muted-foreground px-1">
+                      Selected: <span className="font-semibold text-primary">{formData.category}</span>
+                    </div>
+                  )}
+                  {categoryDropOpen && filteredCategories.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                      {filteredCategories.slice(0, 8).map(cat => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center gap-2"
+                          onMouseDown={() => {
+                            setCategorySearch(cat.name);
+                            setFormData(prev => ({ ...prev, category: cat.id }));
+                            setCategoryDropOpen(false);
+                          }}
+                        >
+                          {cat.icon && <span>{cat.icon}</span>}
+                          <span className="font-medium">{cat.name}</span>
+                          <span className="text-muted-foreground text-xs ml-auto">{cat.id}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Type *</label>
@@ -282,8 +415,8 @@ export default function Products() {
               <Button type="button" variant="outline" className="h-11 px-6 rounded-xl" onClick={() => setIsFormOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="h-11 px-8 rounded-xl">
-                {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingId ? 'Save Changes' : 'Create Product'}
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending || imageUploading} className="h-11 px-8 rounded-xl">
+                {imageUploading ? "Uploading image..." : (createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingId ? 'Save Changes' : 'Create Product'}
               </Button>
             </div>
           </form>

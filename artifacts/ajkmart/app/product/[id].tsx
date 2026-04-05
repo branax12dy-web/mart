@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -155,13 +156,22 @@ function WriteReviewModal({
 
   const handleSubmit = async () => {
     if (rating === 0) { setError("Please select a star rating"); return; }
+    if (comment.trim().length > 0 && comment.trim().length < 10) {
+      setError("Review comment must be at least 10 characters, or leave it empty");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
       const photoUrls: string[] = [];
-      for (const photo of photos) {
-        const uploadRes = await uploadImage(photo.base64, "image/jpeg");
-        if (uploadRes.url) photoUrls.push(uploadRes.url);
+      for (let i = 0; i < photos.length; i++) {
+        try {
+          const uploadRes = await uploadImage(photos[i]!.base64, "image/jpeg");
+          if (uploadRes.url) photoUrls.push(uploadRes.url);
+        } catch (uploadErr: unknown) {
+          const uploadMsg = uploadErr instanceof Error ? uploadErr.message : "Upload failed";
+          throw new Error(`Photo ${i + 1} failed to upload: ${uploadMsg}`);
+        }
       }
 
       await submitProductReview({
@@ -175,8 +185,10 @@ function WriteReviewModal({
       setRating(0);
       setComment("");
       setPhotos([]);
+      setError("");
       onSuccess();
       onClose();
+      Alert.alert("Review Submitted", "Thank you! Your review has been submitted successfully.");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e || "Failed to submit review");
       if (msg.includes("purchased")) {
@@ -449,8 +461,13 @@ function ProductDetailScreenInner() {
     };
   }, []);
 
-  const origPrice = Number(product?.originalPrice) || 0;
-  const price = product?.price || 0;
+  const baseOrigPrice = Number(product?.originalPrice) || 0;
+  const basePrice = product?.price || 0;
+  const selectedVariantObj = variants?.find((v: any) => v.id === selectedVariant) ?? null;
+  const price = selectedVariantObj ? Number(selectedVariantObj.price) : basePrice;
+  const origPrice = selectedVariantObj
+    ? (selectedVariantObj.originalPrice ? Number(selectedVariantObj.originalPrice) : baseOrigPrice)
+    : baseOrigPrice;
   const discount = origPrice > 0 && origPrice > price
     ? Math.round(((origPrice - price) / origPrice) * 100)
     : 0;
@@ -716,14 +733,16 @@ function ProductDetailScreenInner() {
             )}
           </View>
 
-          {(product.rating != null || product.reviewCount != null) && (
+          {(product.rating != null && product.rating > 0) ? (
             <View style={styles.ratingSection}>
-              <StarRating rating={product.rating || 0} />
-              <Text style={styles.ratingNum}>{(product.rating || 0).toFixed(1)}</Text>
-              {product.reviewCount != null && (
+              <StarRating rating={product.rating} />
+              <Text style={styles.ratingNum}>{product.rating.toFixed(1)}</Text>
+              {product.reviewCount != null && product.reviewCount > 0 && (
                 <Text style={styles.reviewCount}>({product.reviewCount} reviews)</Text>
               )}
             </View>
+          ) : (
+            <Text style={[styles.reviewCount, { marginTop: 4 }]}>No ratings yet</Text>
           )}
 
           {variants && variants.length > 0 && (
@@ -831,19 +850,19 @@ function ProductDetailScreenInner() {
               </TouchableOpacity>
             </View>
 
-            {(summary.total > 0 || (product.rating != null)) && (
+            {summary.total > 0 && (
               <View style={styles.ratingOverview}>
                 <View style={styles.ratingBig}>
-                  <Text style={styles.ratingBigNum}>{summary.total > 0 ? summary.average.toFixed(1) : (product.rating || 0).toFixed(1)}</Text>
-                  <StarRating rating={summary.total > 0 ? summary.average : (product.rating || 0)} size={18} />
+                  <Text style={styles.ratingBigNum}>{summary.average.toFixed(1)}</Text>
+                  <StarRating rating={summary.average} size={18} />
                   <Text style={styles.ratingBigSub}>
-                    {summary.total > 0 ? summary.total : (product.reviewCount || 0)} review{(summary.total > 0 ? summary.total : (product.reviewCount || 0)) !== 1 ? "s" : ""}
+                    {summary.total} review{summary.total !== 1 ? "s" : ""}
                   </Text>
                 </View>
                 <View style={styles.ratingBars}>
                   {[5, 4, 3, 2, 1].map(star => {
                     const count = summary.distribution[star] || 0;
-                    const pct = summary.total > 0 ? Math.round((count / summary.total) * 100) : (star === 5 ? 60 : star === 4 ? 25 : star === 3 ? 10 : star === 2 ? 3 : 2);
+                    const pct = Math.round((count / summary.total) * 100);
                     return (
                       <View key={star} style={styles.ratingBarRow}>
                         <Text style={styles.ratingBarLabel}>{star}</Text>

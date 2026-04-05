@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { productsTable, productVariantsTable, flashDealsTable, reviewsTable } from "@workspace/db/schema";
-import { eq, ilike, and, SQL, gte, lte, gt, desc, asc, sql, isNotNull, inArray } from "drizzle-orm";
+import { eq, ilike, and, SQL, gte, lte, gt, desc, asc, sql, isNotNull, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendCreated, sendNotFound, sendError, sendInternalError } from "../lib/response.js";
@@ -15,7 +15,7 @@ function mapProduct(p: typeof productsTable.$inferSelect) {
     ...p,
     price: parseFloat(p.price),
     originalPrice: p.originalPrice ? parseFloat(p.originalPrice) : undefined,
-    rating: p.rating ? parseFloat(p.rating) : 4.0,
+    rating: p.rating ? parseFloat(p.rating) : null,
   };
 }
 
@@ -25,32 +25,36 @@ router.get("/flash-deals", async (req, res) => {
   const now = new Date();
 
   try {
-    const conditions: SQL[] = [
-      eq(productsTable.approvalStatus, "approved"),
-      eq(productsTable.inStock, true),
-      isNotNull(productsTable.originalPrice),
-      gt(productsTable.originalPrice, productsTable.price),
-      isNotNull(productsTable.dealExpiresAt),
-      gt(productsTable.dealExpiresAt, now),
-    ];
-
-    const products = await db.select().from(productsTable)
-      .where(and(...conditions))
-      .orderBy(asc(productsTable.dealExpiresAt))
-      .limit(limit);
-
     const activeDeals = await db.select({
       productId: flashDealsTable.productId,
       dealStock: flashDealsTable.dealStock,
       soldCount: flashDealsTable.soldCount,
+      endTime: flashDealsTable.endTime,
     }).from(flashDealsTable).where(
       and(
         eq(flashDealsTable.isActive, true),
         lte(flashDealsTable.startTime, now),
         gte(flashDealsTable.endTime, now),
+        gt(flashDealsTable.dealStock, flashDealsTable.soldCount),
       )
-    );
+    ).limit(limit);
+
+    if (activeDeals.length === 0) {
+      sendSuccess(res, { products: [], total: 0 });
+      return;
+    }
+
+    const dealProductIds = activeDeals.map(d => d.productId);
     const dealMap = new Map(activeDeals.map(d => [d.productId, d]));
+
+    const products = await db.select().from(productsTable)
+      .where(and(
+        inArray(productsTable.id, dealProductIds),
+        eq(productsTable.approvalStatus, "approved"),
+        eq(productsTable.inStock, true),
+        isNull(productsTable.deletedAt),
+      ))
+      .orderBy(asc(productsTable.createdAt));
 
     sendSuccess(res, {
       products: products.map(p => {
@@ -62,11 +66,11 @@ router.get("/flash-deals", async (req, res) => {
           ...p,
           price,
           originalPrice: origPrice,
-          rating: p.rating ? parseFloat(p.rating) : 4.0,
+          rating: p.rating ? parseFloat(p.rating) : null,
           discountPercent: discount,
-          dealExpiresAt: p.dealExpiresAt!.toISOString(),
           dealStock: dealInfo?.dealStock ?? null,
           soldCount: dealInfo?.soldCount ?? 0,
+          dealExpiresAt: dealInfo?.endTime?.toISOString() ?? null,
         };
       }),
       total: products.length,
@@ -87,6 +91,7 @@ router.get("/trending-searches", async (req, res) => {
     .where(and(
       eq(productsTable.approvalStatus, "approved"),
       eq(productsTable.inStock, true),
+      isNull(productsTable.deletedAt),
     ))
     .orderBy(desc(productsTable.reviewCount))
     .limit(limit * 3);
@@ -152,6 +157,7 @@ router.get("/search", async (req, res) => {
   const baseConditions: SQL[] = [
     eq(productsTable.approvalStatus, "approved"),
     eq(productsTable.inStock, true),
+    isNull(productsTable.deletedAt),
   ];
   if (type && typeof type === "string") baseConditions.push(eq(productsTable.type, type));
   if (category && typeof category === "string") baseConditions.push(eq(productsTable.category, category));
@@ -222,6 +228,7 @@ router.get("/", async (req, res) => {
   const conditions: SQL[] = [
     eq(productsTable.approvalStatus, "approved"),
     eq(productsTable.inStock, true),
+    isNull(productsTable.deletedAt),
   ];
   if (type) conditions.push(eq(productsTable.type, type as string));
   if (category) conditions.push(eq(productsTable.category, category as string));

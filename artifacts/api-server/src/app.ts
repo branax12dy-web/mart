@@ -35,8 +35,8 @@ app.use(cors());
 /* Large JSON parser for upload-capable routes (base64 image payloads).
    Must be registered BEFORE the tight global parser so these paths are
    matched first and the 256kb global limit is never applied to them. */
-const UPLOAD_PATHS = ["/api/uploads", "/api/users/avatar"];
-app.use(UPLOAD_PATHS, express.json({ limit: "8mb" }));
+const UPLOAD_PATHS = ["/api/uploads", "/api/users/avatar", "/api/admin/uploads/admin"];
+app.use(UPLOAD_PATHS, express.json({ limit: "10mb" }));
 
 /* Tight global JSON limit for all other API routes (mitigates oversized-body DoS). */
 app.use(express.json({ limit: "256kb" }));

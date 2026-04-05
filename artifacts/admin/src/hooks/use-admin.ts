@@ -223,6 +223,26 @@ export const useUserActivity = (userId: string | null) => {
 };
 
 // Products
+export const useCategories = () => {
+  return useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const apiBase = window.location.origin;
+      const res = await fetch(`${apiBase}/api/categories`);
+      if (!res.ok) throw new Error("Failed to fetch categories");
+      const json = await res.json();
+      const payload = json.data ?? json;
+      const list: any[] = Array.isArray(payload) ? payload : (payload.categories ?? []);
+      return list.map((c: any) => ({
+        id: String(c.id),
+        name: String(c.name),
+        icon: c.icon ?? undefined,
+      })) as { id: string; name: string; icon?: string }[];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const useProducts = () => {
   return useQuery({
     queryKey: ["admin-products"],

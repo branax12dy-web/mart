@@ -23,7 +23,8 @@ import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
-import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
+import { useGetProducts, useGetCategories, getFlashDeals } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { WishlistHeart } from "@/components/WishlistHeart";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
@@ -73,9 +74,12 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
   const [added, setAdded] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const origPrice = Number(product.originalPrice) || 0;
-  const discount = origPrice > 0
+  const discount = origPrice > 0 && origPrice > product.price
     ? Math.round(((origPrice - product.price) / origPrice) * 100)
-    : 0;
+    : product.discountPercent || 0;
+  const dealStock = product.dealStock ?? null;
+  const soldCount = product.soldCount ?? 0;
+  const remaining = dealStock != null ? Math.max(0, dealStock - soldCount) : null;
 
   useEffect(() => () => { if (addedTimerRef.current) clearTimeout(addedTimerRef.current); }, []);
 
@@ -130,6 +134,11 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
       <View style={styles.flashBody}>
         <Text style={styles.flashName} numberOfLines={2}>{product?.name ?? "—"}</Text>
         {product?.unit && <Text style={styles.flashUnit}>{product.unit}</Text>}
+        {remaining != null && (
+          <Text style={styles.flashStockTxt}>
+            {remaining > 0 ? `${remaining} left · ${soldCount} sold` : "Sold out"}
+          </Text>
+        )}
         <View style={styles.flashFooter}>
           <View>
             <Text style={styles.flashOrigPrice}>Rs. {product?.originalPrice ?? 0}</Text>
@@ -262,21 +271,29 @@ function MartScreenInner() {
 
   const { data: catData } = useGetCategories({ type: "mart" });
   const { data, isLoading, isError, refetch, isRefetching } = useGetProducts({ type: "mart", search: debouncedSearch || undefined, category: selectedCat });
+  const { data: flashDealsData, refetch: refetchFlashDeals } = useQuery({
+    queryKey: ["flash-deals"],
+    queryFn: () => getFlashDeals({ limit: 20 }),
+    staleTime: 2 * 60 * 1000,
+    enabled: !debouncedSearch && !selectedCat,
+  });
 
   const categories = useMemo(() => catData?.categories || [], [catData]);
   const products   = useMemo(() => data?.products   || [], [data]);
-  const flashDeals = useMemo(
-    () => products.filter(p => Number(p.originalPrice) > p.price),
-    [products]
-  );
+  const flashDeals = useMemo(() => flashDealsData || [], [flashDealsData]);
   const allProducts = products;
+
+  const handleRefetchAll = useCallback(() => {
+    refetch();
+    refetchFlashDeals();
+  }, [refetch, refetchFlashDeals]);
 
   const handleSelectCat = useCallback((id: string) => {
     setSelectedCat(prev => prev === id ? undefined : id);
   }, []);
 
   const handleClearSearch = useCallback(() => setSearch(""), []);
-  const handleRefetch = useCallback(() => refetch(), [refetch]);
+  const handleRefetch = useCallback(() => handleRefetchAll(), [handleRefetchAll]);
 
   return (
     <View style={styles.container}>
@@ -346,7 +363,7 @@ function MartScreenInner() {
         onCancel={() => setClearBannerConfirm(false)}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={C.primary} />}>
+      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={handleRefetchAll} tintColor={C.primary} />}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingTop: 14 }} contentContainerStyle={styles.catRow}>
           <TouchableOpacity activeOpacity={0.7}
             onPress={() => setSelectedCat(undefined)}
@@ -494,7 +511,8 @@ const styles = StyleSheet.create({
   flashBadgeSub: { ...Typ.tiny, fontSize: 8, color: C.textInverse, marginTop: -1 },
   flashBody: { padding: 12 },
   flashName: { ...Typ.buttonSmall, color: C.text, marginBottom: 2, minHeight: 36 },
-  flashUnit: { ...Typ.small, color: C.textMuted, marginBottom: 8 },
+  flashUnit: { ...Typ.small, color: C.textMuted, marginBottom: 4 },
+  flashStockTxt: { ...Typ.tiny, color: C.red, fontFamily: Font.bold, marginBottom: 6 },
   flashFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
   flashOrigPrice: { ...Typ.small, color: C.textMuted, textDecorationLine: "line-through" },
   flashPrice: { ...Typ.h3, fontSize: 16, color: C.red },

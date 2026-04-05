@@ -1,4 +1,6 @@
 import { Router } from "express";
+import path from "path";
+import fs from "fs";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -534,5 +536,26 @@ router.delete("/promo-codes/:id", async (req, res) => {
 /* ══════════════════════════════════════
    VENDOR MANAGEMENT
 ══════════════════════════════════════ */
+
+/* ── POST /uploads/admin — base64 image upload for admin panel ── */
+router.post("/uploads/admin", async (req, res) => {
+  try {
+    const { base64, mimeType } = req.body as { base64?: string; mimeType?: string };
+    if (!base64 || !mimeType) { sendError(res, "base64 and mimeType are required", 400); return; }
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowed.includes(mimeType)) { sendError(res, "Only JPEG, PNG, and WebP images are allowed", 400); return; }
+    const ext = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length > 10 * 1024 * 1024) { sendError(res, "Image must be under 10MB", 400); return; }
+    const uniqueName = `admin_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const uploadsDir = path.resolve(process.cwd(), "uploads");
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+    fs.writeFileSync(path.join(uploadsDir, uniqueName), buffer);
+    const url = `/api/uploads/${uniqueName}`;
+    sendSuccess(res, { url });
+  } catch (e: any) {
+    sendError(res, e.message || "Upload failed", 500);
+  }
+});
 
 export default router;
