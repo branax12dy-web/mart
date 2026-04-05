@@ -563,26 +563,37 @@ router.patch("/riders/:id/online", async (req, res) => {
   sendSuccess(res, { isOnline });
 });
 
-/* ── GET /admin/revenue-trend — 7-day rolling revenue for dashboard sparkline ── */
+/* ── GET /admin/revenue-trend — 7-day rolling revenue + counts for dashboard sparklines ── */
 router.get("/revenue-trend", async (_req, res) => {
-  const days: { date: string; revenue: number }[] = [];
   const now = new Date();
-  for (let i = 6; i >= 0; i--) {
+  const dayPromises = Array.from({ length: 7 }, (_, idx) => {
+    const i = 6 - idx;
     const d = new Date(now);
     d.setDate(d.getDate() - i);
     const from = new Date(d); from.setHours(0, 0, 0, 0);
     const to   = new Date(d); to.setHours(23, 59, 59, 999);
-    const [row] = await db.select({ total: sum(ordersTable.total) })
-      .from(ordersTable)
-      .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
-    const [rideRow] = await db.select({ total: sum(ridesTable.fare) })
-      .from(ridesTable)
-      .where(and(eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, from), lte(ridesTable.createdAt, to)));
-    days.push({
-      date: d.toISOString().slice(0, 10),
-      revenue: parseFloat(row?.total ?? "0") + parseFloat(rideRow?.total ?? "0"),
-    });
-  }
+    const dateStr = d.toISOString().slice(0, 10);
+    return Promise.all([
+      db.select({ total: sum(ordersTable.total) })
+        .from(ordersTable)
+        .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to))),
+      db.select({ total: sum(ridesTable.fare) })
+        .from(ridesTable)
+        .where(and(eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, from), lte(ridesTable.createdAt, to))),
+      db.select({ cnt: count() })
+        .from(ordersTable)
+        .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to))),
+      db.select({ cnt: count() })
+        .from(ridesTable)
+        .where(and(eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, from), lte(ridesTable.createdAt, to))),
+    ]).then(([[orderRev], [rideRev], [orderCnt], [rideCnt]]) => ({
+      date: dateStr,
+      revenue: parseFloat(orderRev?.total ?? "0") + parseFloat(rideRev?.total ?? "0"),
+      orderCount: orderCnt?.cnt ?? 0,
+      rideCount:  rideCnt?.cnt  ?? 0,
+    }));
+  });
+  const days = await Promise.all(dayPromises);
   sendSuccess(res, { trend: days });
 });
 
@@ -622,23 +633,47 @@ router.get("/leaderboard", async (_req, res) => {
   });
 });
 
-/* ── GET /admin/dashboard-export — export current dashboard stats as JSON ── */
+/* ── GET /admin/dashboard-export — export dashboard stats + 7-day trend as JSON ── */
 router.get("/dashboard-export", async (_req, res) => {
-  const [userCount] = await db.select({ count: count() }).from(usersTable);
-  const [orderCount] = await db.select({ count: count() }).from(ordersTable);
-  const [rideCount]  = await db.select({ count: count() }).from(ridesTable);
-  const [revenue]    = await db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.status, "delivered"));
-  const [rideRev]    = await db.select({ total: sum(ridesTable.fare) }).from(ridesTable).where(eq(ridesTable.status, "completed"));
+  const now = new Date();
+  const [[userCount], [orderCount], [rideCount], [revenue], [rideRev]] = await Promise.all([
+    db.select({ count: count() }).from(usersTable),
+    db.select({ count: count() }).from(ordersTable),
+    db.select({ count: count() }).from(ridesTable),
+    db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.status, "delivered")),
+    db.select({ total: sum(ridesTable.fare) }).from(ridesTable).where(eq(ridesTable.status, "completed")),
+  ]);
+
+  const trendPromises = Array.from({ length: 7 }, (_, idx) => {
+    const i = 6 - idx;
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const from = new Date(d); from.setHours(0, 0, 0, 0);
+    const to   = new Date(d); to.setHours(23, 59, 59, 999);
+    const dateStr = d.toISOString().slice(0, 10);
+    return Promise.all([
+      db.select({ total: sum(ordersTable.total) }).from(ordersTable)
+        .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to))),
+      db.select({ total: sum(ridesTable.fare) }).from(ridesTable)
+        .where(and(eq(ridesTable.status, "completed"), gte(ridesTable.createdAt, from), lte(ridesTable.createdAt, to))),
+    ]).then(([[o], [r]]) => ({
+      date: dateStr,
+      revenue: parseFloat(o?.total ?? "0") + parseFloat(r?.total ?? "0"),
+    }));
+  });
+  const trend = await Promise.all(trendPromises);
+
   const snapshot = {
-    exportedAt: new Date().toISOString(),
+    exportedAt: now.toISOString(),
     users: userCount?.count ?? 0,
     orders: orderCount?.count ?? 0,
     rides: rideCount?.count ?? 0,
     totalRevenue: parseFloat(revenue?.total ?? "0") + parseFloat(rideRev?.total ?? "0"),
     orderRevenue: parseFloat(revenue?.total ?? "0"),
     rideRevenue:  parseFloat(rideRev?.total ?? "0"),
+    trend,
   };
-  res.setHeader("Content-Disposition", `attachment; filename="dashboard-${new Date().toISOString().slice(0,10)}.json"`);
+  res.setHeader("Content-Disposition", `attachment; filename="dashboard-${now.toISOString().slice(0, 10)}.json"`);
   sendSuccess(res, snapshot);
 });
 

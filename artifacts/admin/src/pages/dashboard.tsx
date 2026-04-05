@@ -3,9 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Users, ShoppingBag, Car, Pill, Box, Package, TrendingUp, ArrowRight, Wallet, Download, Trophy, Star, AlertTriangle, DollarSign } from "lucide-react";
 import { Link } from "wouter";
 import { useStats, useRevenueTrend, useLeaderboard } from "@/hooks/use-admin";
-import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fetcher } from "@/lib/api";
@@ -13,9 +12,10 @@ import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PullToRefresh } from "@/components/PullToRefresh";
 
-function exportDashboard() {
+function exportDashboard(trend: { date: string; revenue: number }[]) {
   fetcher("/dashboard-export").then((data: any) => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const enriched = { ...data, trend: data.trend ?? trend };
+    const blob = new Blob([JSON.stringify(enriched, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -48,11 +48,33 @@ function Sparkline({ data, color = "#6366F1" }: { data: number[]; color?: string
   );
 }
 
+/* Clickable hero card wrapper — adds hover lift + cursor */
+function HeroCardLink({ href, children, className = "" }: { href: string; children: React.ReactNode; className?: string }) {
+  return (
+    <Link href={href}>
+      <div className={`cursor-pointer transition-transform hover:-translate-y-0.5 ${className}`}>
+        {children}
+      </div>
+    </Link>
+  );
+}
+
+/* "Updated X min ago" helper */
+function updatedAgo(ts: number): string {
+  if (!ts) return "";
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5)  return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  const m = Math.floor(diff / 60);
+  if (m < 60)    return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
 export default function Dashboard() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const qc = useQueryClient();
-  const { data, isLoading } = useStats();
+  const { data, isLoading, dataUpdatedAt } = useStats();
   const { data: trendData } = useRevenueTrend();
   const { data: lbData }    = useLeaderboard();
 
@@ -64,14 +86,18 @@ export default function Dashboard() {
     ]);
   }, [qc]);
 
-  const trend: { date: string; revenue: number }[] = Array.isArray(trendData?.trend) ? trendData.trend : [];
+  const trend: { date: string; revenue: number; orderCount?: number; rideCount?: number }[] =
+    Array.isArray(trendData?.trend) ? trendData.trend : [];
 
-  /* Generate sparkline datasets from real API data only; use all-zeros if data is unavailable */
   const revenueSparkData = trend.length >= 2
     ? trend.slice(-7).map(t => t.revenue || 0)
     : Array(7).fill(0);
-  const ridesSparkData = Array(7).fill(0);
-  const ordersSparkData = Array(7).fill(0);
+  const ridesSparkData = trend.length >= 2
+    ? trend.slice(-7).map(t => t.rideCount ?? 0)
+    : Array(7).fill(0);
+  const ordersSparkData = trend.length >= 2
+    ? trend.slice(-7).map(t => t.orderCount ?? 0)
+    : Array(7).fill(0);
   const sosSparkData = Array(7).fill(0);
 
   if (isLoading) {
@@ -84,21 +110,17 @@ export default function Dashboard() {
           </div>
           <SkeletonBlock className="h-9 w-24" />
         </div>
-        {/* Hero stat cards skeleton */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map(i => (
             <SkeletonBlock key={i} className="h-28" />
           ))}
         </div>
-        {/* Revenue breakdown skeleton */}
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {[1, 2, 3, 4].map(i => (
             <SkeletonBlock key={i} className="h-24" />
           ))}
         </div>
-        {/* Chart skeleton */}
         <SkeletonBlock className="h-56" />
-        {/* Table skeletons */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {[1, 2].map(i => (
             <div key={i} className="bg-white rounded-2xl overflow-hidden border border-border/50 shadow-sm">
@@ -120,70 +142,85 @@ export default function Dashboard() {
   const vendors = lbData?.vendors || [];
   const riders  = lbData?.riders  || [];
 
-  /* SOS count from stats (may not exist on older API versions) */
-  const statsData = data as Record<string, unknown> | undefined;
-  const activeSosCount = typeof statsData?.activeSos === "number" ? statsData.activeSos : 0;
+  const statsData       = data as Record<string, unknown> | undefined;
+  const activeSosCount  = typeof statsData?.activeSos    === "number" ? statsData.activeSos    : 0;
+  const pendingOrders   = typeof statsData?.pendingOrders === "number" ? statsData.pendingOrders : 0;
+  const activeRides     = typeof statsData?.activeRides  === "number" ? statsData.activeRides  : 0;
+
+  const lastUpdated = dataUpdatedAt ? updatedAgo(dataUpdatedAt) : "";
 
   return (
     <PullToRefresh onRefresh={handleRefresh} className="space-y-6 sm:space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">{T("overview")}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">{T("welcomeBack")}</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {T("welcomeBack")}
+            {lastUpdated && (
+              <span className="ml-2 text-xs text-muted-foreground/60">· Updated {lastUpdated}</span>
+            )}
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={exportDashboard} className="h-9 rounded-xl gap-2 shrink-0">
+        <Button variant="outline" size="sm" onClick={() => exportDashboard(trend)} className="h-9 rounded-xl gap-2 shrink-0">
           <Download className="w-4 h-4" /> {T("export")}
         </Button>
       </div>
 
       {/* 4 Hero Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Revenue */}
-        <Card className="rounded-2xl border-0 shadow-md bg-gradient-to-br from-indigo-600 to-indigo-800 text-white overflow-hidden relative">
-          <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
-          <CardContent className="p-5 relative">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
-                <DollarSign className="w-5 h-5 text-white" />
+        {/* Total Revenue → /transactions */}
+        <HeroCardLink href="/transactions">
+          <Card className="rounded-2xl border-0 shadow-md bg-gradient-to-br from-indigo-600 to-indigo-800 text-white overflow-hidden relative">
+            <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
+            <CardContent className="p-5 relative">
+              <div className="flex items-start justify-between mb-3">
+                <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                  <DollarSign className="w-5 h-5 text-white" />
+                </div>
+                <Sparkline data={revenueSparkData} color="rgba(255,255,255,0.8)" />
               </div>
-              <Sparkline data={revenueSparkData} color="rgba(255,255,255,0.8)" />
-            </div>
-            <p className="text-white/70 text-xs font-medium mb-1">Total Revenue</p>
-            <h3 className="text-xl font-bold">{formatCurrency(data?.revenue?.total || 0)}</h3>
-          </CardContent>
-        </Card>
+              <p className="text-white/70 text-xs font-medium mb-1">Total Revenue</p>
+              <h3 className="text-xl font-bold">{formatCurrency(data?.revenue?.total || 0)}</h3>
+            </CardContent>
+          </Card>
+        </HeroCardLink>
 
-        {/* Active Rides */}
-        <Card className="rounded-2xl border-0 shadow-md bg-gradient-to-br from-emerald-500 to-emerald-700 text-white overflow-hidden relative">
-          <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
-          <CardContent className="p-5 relative">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
-                <Car className="w-5 h-5 text-white" />
+        {/* Active Rides → /rides */}
+        <HeroCardLink href="/rides">
+          <Card className="rounded-2xl border-0 shadow-md bg-gradient-to-br from-emerald-500 to-emerald-700 text-white overflow-hidden relative">
+            <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
+            <CardContent className="p-5 relative">
+              <div className="flex items-start justify-between mb-3">
+                <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                  <Car className="w-5 h-5 text-white" />
+                </div>
+                <Sparkline data={ridesSparkData} color="rgba(255,255,255,0.8)" />
               </div>
-              <Sparkline data={ridesSparkData} color="rgba(255,255,255,0.8)" />
-            </div>
-            <p className="text-white/70 text-xs font-medium mb-1">Active Rides</p>
-            <h3 className="text-xl font-bold">{(data?.rides || 0).toLocaleString()}</h3>
-          </CardContent>
-        </Card>
+              <p className="text-white/70 text-xs font-medium mb-1">Active Rides</p>
+              <h3 className="text-xl font-bold">{activeRides.toLocaleString()}</h3>
+            </CardContent>
+          </Card>
+        </HeroCardLink>
 
-        {/* Pending Orders */}
-        <Card className="rounded-2xl border-0 shadow-md bg-gradient-to-br from-amber-500 to-orange-600 text-white overflow-hidden relative">
-          <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
-          <CardContent className="p-5 relative">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
-                <ShoppingBag className="w-5 h-5 text-white" />
+        {/* Pending Orders → /orders */}
+        <HeroCardLink href="/orders">
+          <Card className="rounded-2xl border-0 shadow-md bg-gradient-to-br from-amber-500 to-orange-600 text-white overflow-hidden relative">
+            <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10" />
+            <CardContent className="p-5 relative">
+              <div className="flex items-start justify-between mb-3">
+                <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                  <ShoppingBag className="w-5 h-5 text-white" />
+                </div>
+                <Sparkline data={ordersSparkData} color="rgba(255,255,255,0.8)" />
               </div>
-              <Sparkline data={ordersSparkData} color="rgba(255,255,255,0.8)" />
-            </div>
-            <p className="text-white/70 text-xs font-medium mb-1">Pending Orders</p>
-            <h3 className="text-xl font-bold">{(data?.orders || 0).toLocaleString()}</h3>
-          </CardContent>
-        </Card>
+              <p className="text-white/70 text-xs font-medium mb-1">Pending Orders</p>
+              <h3 className="text-xl font-bold">{pendingOrders.toLocaleString()}</h3>
+            </CardContent>
+          </Card>
+        </HeroCardLink>
 
-        {/* Active SOS */}
+        {/* Active SOS → /sos-alerts */}
         <Link href="/sos-alerts">
           <Card className={`rounded-2xl border-0 shadow-md overflow-hidden relative cursor-pointer transition-transform hover:-translate-y-0.5 ${activeSosCount > 0 ? "bg-gradient-to-br from-red-600 to-red-800" : "bg-gradient-to-br from-slate-500 to-slate-700"} text-white`}>
             {activeSosCount > 0 && (
@@ -204,7 +241,7 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* Revenue Section */}
+      {/* Revenue Breakdown */}
       <div>
         <h2 className="text-lg sm:text-xl font-display font-bold text-foreground mb-3 sm:mb-4">{T("revenueBreakdown")}</h2>
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -231,7 +268,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Revenue Sparkline — 7-day trend */}
+      {/* 7-Day Revenue Trend chart */}
       {trend.length > 0 && (
         <Card className="rounded-2xl border-border/50 shadow-sm p-4 sm:p-6">
           <h2 className="text-base sm:text-lg font-bold mb-4 flex items-center gap-2">
