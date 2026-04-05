@@ -58,6 +58,29 @@ function useIsWide() {
   return wide;
 }
 
+/* On mobile Chrome the browser toolbar eats into 100vh / window height.
+   window.innerHeight is the *visible* area, so we use that on web. */
+function useVisibleHeight() {
+  const getH = () =>
+    Platform.OS === "web" && typeof window !== "undefined"
+      ? window.innerHeight
+      : Dimensions.get("window").height;
+
+  const [h, setH] = useState(getH);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      const sub = Dimensions.addEventListener("change", () => setH(getH()));
+      return () => sub.remove();
+    }
+    const onResize = () => setH(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return h;
+}
+
 export function CancelModal({
   target,
   cancellationFee,
@@ -78,6 +101,7 @@ export function CancelModal({
   const [error, setError] = useState("");
   const insets = useSafeAreaInsets();
   const isWide = useIsWide();
+  const visibleHeight = useVisibleHeight();
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -180,6 +204,11 @@ export function CancelModal({
     borderTopWidth: 1,
   } : {};
 
+  /* Cap the sheet at 88% of the *actual visible* viewport so the footer
+     never gets pushed below the browser's address bar on mobile Chrome. */
+  const sheetMaxHeight = Math.floor(visibleHeight * 0.88);
+  const bottomPad = Math.max(insets.bottom, Platform.OS === "web" ? 12 : 20);
+
   return (
     <Modal visible transparent animationType="none" onRequestClose={safeClose} statusBarTranslucent>
       <Animated.View style={[s.overlay, { opacity: fadeAnim }]}>
@@ -189,7 +218,8 @@ export function CancelModal({
           style={[
             s.sheet,
             isWide ? s.sheetWide : s.sheetMobile,
-            !isWide && { paddingBottom: Math.max(insets.bottom, 20) },
+            { maxHeight: isWide ? undefined : sheetMaxHeight },
+            !isWide && { paddingBottom: bottomPad },
             rideSheet,
             {
               transform: [
@@ -201,11 +231,13 @@ export function CancelModal({
         >
           {!isWide && <View style={[s.handle, isRide && { backgroundColor: "rgba(252,211,77,0.30)" }]} />}
 
+          {/* Scrollable content — flex: 1 ensures it shrinks to give footer room */}
           <ScrollView
             showsVerticalScrollIndicator={false}
             bounces={false}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={s.scrollContent}
+            style={s.scrollArea}
           >
             <View style={s.iconRing}>
               <View style={s.iconCircle}>
@@ -254,7 +286,9 @@ export function CancelModal({
               </View>
             )}
 
-            <Text style={[s.sectionLabel, isRide && { color: "rgba(252,211,77,0.60)" }]}>Why are you cancelling?</Text>
+            <Text style={[s.sectionLabel, isRide && { color: "rgba(252,211,77,0.60)" }]}>
+              Why are you cancelling?
+            </Text>
 
             <View style={s.reasonsList}>
               {reasons.map((r) => {
@@ -296,6 +330,7 @@ export function CancelModal({
             )}
           </ScrollView>
 
+          {/* Footer is OUTSIDE the ScrollView so it's always pinned at the bottom */}
           <View style={[s.footer, isRide && { borderTopColor: "rgba(255,255,255,0.08)" }]}>
             <Pressable
               style={({ pressed }) => [s.keepBtn, pressed && s.keepBtnPressed, isRide && { backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.14)" }]}
@@ -343,9 +378,9 @@ const s = StyleSheet.create({
 
   sheet: {
     backgroundColor: "#FFFFFF",
-    overflow: "hidden",
     width: "100%",
-    maxHeight: "92%",
+    /* flex column so ScrollView shrinks and footer stays pinned */
+    flexDirection: "column",
   },
   sheetMobile: {
     borderTopLeftRadius: SHEET_RADIUS,
@@ -355,6 +390,7 @@ const s = StyleSheet.create({
   },
   sheetWide: {
     maxWidth: 480,
+    maxHeight: "88%",
     borderRadius: WIDE_RADIUS,
     marginBottom: 0,
     alignSelf: "center",
@@ -374,21 +410,25 @@ const s = StyleSheet.create({
     backgroundColor: "#E2E8F0",
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 22,
+    marginBottom: 18,
   },
 
+  /* ScrollView fills the space between handle and footer */
+  scrollArea: {
+    flex: 1,
+  },
   scrollContent: {
     paddingBottom: 6,
   },
 
   iconRing: {
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
   iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 22,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     backgroundColor: "#DC2626",
     alignItems: "center",
     justifyContent: "center",
@@ -401,18 +441,18 @@ const s = StyleSheet.create({
 
   title: {
     fontFamily: "Inter_700Bold",
-    fontSize: 22,
+    fontSize: 21,
     color: "#0F172A",
     textAlign: "center",
     letterSpacing: -0.3,
-    marginBottom: 5,
+    marginBottom: 4,
   },
   sub: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
     color: "#64748B",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 18,
     letterSpacing: 0.1,
   },
 
@@ -424,7 +464,7 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   infoRow: {
     flexDirection: "row",
@@ -462,13 +502,13 @@ const s = StyleSheet.create({
 
   reasonsList: {
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   reasonRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 14,
     borderRadius: 16,
     borderWidth: 1.5,
@@ -530,7 +570,7 @@ const s = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: "#FECACA",
   },
@@ -541,20 +581,23 @@ const s = StyleSheet.create({
     flex: 1,
   },
 
+  /* Footer is always pinned — never inside the scroll */
   footer: {
     flexDirection: "row",
     gap: 10,
     paddingTop: 14,
+    paddingBottom: 4,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
-    marginTop: 4,
+    marginTop: 2,
+    flexShrink: 0,
   },
   keepBtn: {
     flex: 1,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 15,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F8FAFC",
@@ -575,7 +618,7 @@ const s = StyleSheet.create({
     gap: 7,
     backgroundColor: "#DC2626",
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 15,
     shadowColor: "#DC2626",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
