@@ -290,7 +290,7 @@ function ActiveTrackerStrip({ userId, tabBarHeight = 0 }: { userId: string; tabB
     items.push({
       label: `${activeOrders.length} Active Order${activeOrders.length > 1 ? "s" : ""}`,
       sublabel: "Tap to track",
-      route: activeOrders[0]?.id ? `/order?orderId=${activeOrders[0].id}` : "/(tabs)/orders",
+      route: activeOrders[0]?.id ? `/orders/${activeOrders[0].id}` : "/(tabs)/orders",
       c1: "#F59E0B", c2: "#D97706",
       icon: "bag-outline",
     });

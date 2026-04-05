@@ -12,6 +12,29 @@ const _riderLocLastEmit = new Map<string, number>();
 
 let _io: SocketIOServer | null = null;
 
+/* ── Per-connection verified-session cache ────────────────────────────────
+   JWT verification is CPU-expensive (HMAC-SHA256).  Within a single socket
+   connection the token never changes, so we cache the decoded payload keyed
+   by socket ID and clear the entry on disconnect.
+   Value shape: { payload: JwtPayload | null } — null means the token was
+   invalid; we store that too so we never retry a known-bad token.          */
+type CachedSession = { userId: string; role?: string; roles?: string[] } | null;
+const _sessionCache = new Map<string, CachedSession>();
+
+function getCachedSession(socketId: string, token: string | null): CachedSession {
+  if (_sessionCache.has(socketId)) return _sessionCache.get(socketId)!;
+  if (!token) {
+    _sessionCache.set(socketId, null);
+    return null;
+  }
+  const payload = verifyUserJwt(token);
+  const session: CachedSession = payload?.userId
+    ? { userId: payload.userId, role: payload.role, roles: payload.roles }
+    : null;
+  _sessionCache.set(socketId, session);
+  return session;
+}
+
 /**
  * Pending ride-room buffers: while a socket is in the async authorization
  * window for a ride room, outbound rider:location payloads destined for that
@@ -66,14 +89,14 @@ function isAuthorizedForAdminFleet(
 
 function isAuthorizedForVendorRoom(
   vendorId: string,
+  socketId: string,
   headers: Record<string, string | string[] | undefined>,
   auth: Record<string, unknown>,
 ): boolean {
   const bearer = getTokenFromHandshake(headers, auth);
-  if (!bearer) return false;
-  const payload = verifyUserJwt(bearer);
-  if (!payload) return false;
-  return payload.userId === vendorId && payload.role === "vendor";
+  const session = getCachedSession(socketId, bearer);
+  if (!session) return false;
+  return session.userId === vendorId && session.role === "vendor";
 }
 
 /** Verify user is a participant of an order (customer or assigned rider) */
@@ -194,7 +217,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
           }
         } else if (room.startsWith("vendor:")) {
           const vendorId = room.slice("vendor:".length);
-          if (isAuthorizedForVendorRoom(vendorId, headers, auth)) {
+          if (isAuthorizedForVendorRoom(vendorId, socket.id, headers, auth)) {
             socket.join(room);
           } else {
             logger.debug({ socketId: socket.id, room }, "Socket denied vendor room (unauthorized)");
@@ -229,22 +252,20 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
       }
     }
 
-    /* Auto-join personal rooms for all authenticated users */
+    /* Auto-join personal rooms for all authenticated users.
+       Also primes the session cache for this connection. */
     const userToken = getTokenFromHandshake(headers, auth);
-    if (userToken) {
-      const userPayload = verifyUserJwt(userToken);
-      if (userPayload?.userId) {
-        socket.join(`rider:${userPayload.userId}`);
-        socket.join(`user:${userPayload.userId}`);
-      }
+    const cachedSession = getCachedSession(socket.id, userToken);
+    if (cachedSession?.userId) {
+      socket.join(`rider:${cachedSession.userId}`);
+      socket.join(`user:${cachedSession.userId}`);
     }
 
     /* Heartbeat: rider sends rider:heartbeat with batteryLevel, isOnline status is kept alive.
        Server relays the heartbeat to admin-fleet AND persists batteryLevel, lastSeen, lastActive,
        and isOnline to DB — all fire-and-forget so the socket never blocks. */
     socket.on("rider:heartbeat", (payload: { batteryLevel?: number; isOnline?: boolean }) => {
-      if (!userToken) return;
-      const riderPay = verifyUserJwt(userToken);
+      const riderPay = cachedSession;
       if (!riderPay?.userId || riderPay.role !== "rider") return;
       const batteryLevel = typeof payload?.batteryLevel === "number" ? payload.batteryLevel : null;
       const isOnline = payload?.isOnline !== false;
@@ -273,15 +294,12 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
 
     /* SOS relay: rider sends rider:sos event, server broadcasts to admin-fleet */
     socket.on("rider:sos", (payload: { latitude?: number; longitude?: number; rideId?: string | null }) => {
-      if (!userToken) return;
-      const sosPay = verifyUserJwt(userToken);
-      if (!sosPay?.userId) return;
-      /* Only riders (role === "rider") may emit SOS */
-      if (sosPay.role !== "rider") return;
+      /* Use cached session — no redundant JWT verification */
+      if (!cachedSession?.userId || cachedSession.role !== "rider") return;
       if (typeof payload?.latitude !== "number" || typeof payload?.longitude !== "number") return;
       /* Rebroadcast to admin-fleet with enriched payload */
       _io!.to("admin-fleet").emit("rider:sos", {
-        userId: sosPay.userId,
+        userId: cachedSession.userId,
         name: "Rider",
         phone: null,
         latitude: payload.latitude,
@@ -305,13 +323,12 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
 
     /* Rider reply chat relay: rider sends message back to admin */
     socket.on("rider:chat", (payload: { message: string }) => {
-      if (!userToken) return;
-      const riderPay = verifyUserJwt(userToken);
-      if (!riderPay?.userId || riderPay.role !== "rider") return;
+      /* Use cached session — no redundant JWT verification */
+      if (!cachedSession?.userId || cachedSession.role !== "rider") return;
       if (typeof payload?.message !== "string" || !payload.message.trim()) return;
       /* Broadcast the rider's reply to all admin-fleet clients */
       _io!.to("admin-fleet").emit("rider:chat", {
-        userId: riderPay.userId,
+        userId: cachedSession.userId,
         message: payload.message.trim(),
         sentAt: new Date().toISOString(),
         from: "rider",
@@ -332,7 +349,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
         }
       } else if (room.startsWith("vendor:")) {
         const vendorId = room.slice("vendor:".length);
-        if (isAuthorizedForVendorRoom(vendorId, headers, auth)) {
+        if (isAuthorizedForVendorRoom(vendorId, socket.id, headers, auth)) {
           socket.join(room);
           logger.debug({ socketId: socket.id, room }, "Socket joined vendor room");
         } else {
@@ -379,25 +396,25 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
         if (key.startsWith(prefix)) _pendingRideJoins.delete(key);
       }
 
-      const disconnectToken = getTokenFromHandshake(headers, auth);
-      if (disconnectToken) {
-        const disconnectPayload = verifyUserJwt(disconnectToken);
-        if (disconnectPayload?.userId && disconnectPayload.role === "rider") {
-          const riderId = disconnectPayload.userId;
-          const deleteWithRetry = (attempt: number) => {
-            db.delete(liveLocationsTable)
-              .where(eq(liveLocationsTable.userId, riderId))
-              .catch((err) => {
-                if (attempt < 3) {
-                  setTimeout(() => deleteWithRetry(attempt + 1), 1000 * attempt);
-                } else {
-                  logger.warn({ err, riderId }, "Failed to clean up stale live_location on disconnect after retries");
-                }
-              });
-          };
-          deleteWithRetry(1);
-          _riderLocLastEmit.delete(riderId);
-        }
+      /* Evict session cache entry — no longer needed after disconnect */
+      _sessionCache.delete(socket.id);
+
+      /* Use the already-resolved session (cached from connection handshake) */
+      if (cachedSession?.userId && cachedSession.role === "rider") {
+        const riderId = cachedSession.userId;
+        const deleteWithRetry = (attempt: number) => {
+          db.delete(liveLocationsTable)
+            .where(eq(liveLocationsTable.userId, riderId))
+            .catch((err) => {
+              if (attempt < 3) {
+                setTimeout(() => deleteWithRetry(attempt + 1), 1000 * attempt);
+              } else {
+                logger.warn({ err, riderId }, "Failed to clean up stale live_location on disconnect after retries");
+              }
+            });
+        };
+        deleteWithRetry(1);
+        _riderLocLastEmit.delete(riderId);
       }
 
       logger.debug({ socketId: socket.id }, "Socket disconnected");

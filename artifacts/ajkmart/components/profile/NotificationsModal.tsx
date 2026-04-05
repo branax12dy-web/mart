@@ -50,13 +50,13 @@ export function NotificationsModal({ visible, userId, token, onClose }: {
     const meta = n.meta || {};
     const type: string = n.type || "";
     if ((type === "order" || type === "food" || type === "mart") && meta.orderId) {
-      router.push(`/order?orderId=${meta.orderId}`);
+      router.push({ pathname: "/orders/[id]", params: { id: meta.orderId } });
     } else if (type === "ride" && meta.rideId) {
       router.push(`/ride?rideId=${meta.rideId}`);
     } else if (type === "parcel" && meta.bookingId) {
-      router.push(`/order?orderId=${meta.bookingId}&type=parcel`);
+      router.push({ pathname: "/orders/[id]", params: { id: meta.bookingId, type: "parcel" } });
     } else if (type === "pharmacy" && meta.orderId) {
-      router.push(`/order?orderId=${meta.orderId}&type=pharmacy`);
+      router.push({ pathname: "/orders/[id]", params: { id: meta.orderId, type: "pharmacy" } });
     } else if (type === "wallet") {
       router.push("/(tabs)/wallet");
     } else if (type === "deal" || type === "deals") {

@@ -20,6 +20,11 @@ import {
   type AdminRequest, revokeAllUserSessions,
 } from "../admin-shared.js";
 import { sendSuccess, sendError, sendNotFound, sendValidationError, sendErrorWithData } from "../../lib/response.js";
+import {
+  ORDER_VALID_STATUSES, RIDE_VALID_STATUSES, PARCEL_VALID_STATUSES, PHARMACY_ORDER_VALID_STATUSES,
+  getSocketRoom,
+} from "@workspace/service-constants";
+import { getIO } from "../../lib/socketio.js";
 
 const router = Router();
 router.get("/orders", async (req, res) => {
@@ -44,6 +49,11 @@ router.get("/orders", async (req, res) => {
 router.patch("/orders/:id/status", async (req, res) => {
   const { status } = req.body;
   const orderId = req.params["id"]!;
+
+  if (!status || !(ORDER_VALID_STATUSES as readonly string[]).includes(status)) {
+    sendValidationError(res, `Invalid order status "${status}". Valid statuses: ${ORDER_VALID_STATUSES.join(", ")}`);
+    return;
+  }
 
   /* For wallet-paid → cancelled: do status update + wallet refund in ONE transaction */
   const [preOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
@@ -96,6 +106,19 @@ router.patch("/orders/:id/status", async (req, res) => {
       "wallet-outline",
     );
     /* Skip the generic "cancelled" status notification below */
+    const io = getIO();
+    if (io) {
+      const payload = { id: orderId, status: "cancelled", updatedAt: order.updatedAt instanceof Date ? order.updatedAt.toISOString() : order.updatedAt };
+      io.to(getSocketRoom(orderId, order.type ?? "mart")).emit("order:update", payload);
+      io.to(`user:${preOrder.userId}`).emit("order:update", payload);
+    }
+    addAuditEntry({
+      action: "order_status_cancelled_refunded",
+      adminId: (req as any).admin?.id,
+      ip: getClientIp(req),
+      details: `Order #${orderId.slice(-6).toUpperCase()} cancelled + wallet refund Rs.${parseFloat(String(preOrder.total)).toFixed(0)} issued`,
+      result: "success",
+    });
     sendSuccess(res, order);
     return;
   } else {
@@ -132,6 +155,24 @@ router.patch("/orders/:id/status", async (req, res) => {
         });
       });
     }
+  }
+
+  const io = getIO();
+  if (io) {
+    const payload = { id: orderId, status: order.status, updatedAt: order.updatedAt instanceof Date ? order.updatedAt.toISOString() : order.updatedAt };
+    io.to(getSocketRoom(orderId, order.type ?? "mart")).emit("order:update", payload);
+    io.to(`user:${order.userId}`).emit("order:update", payload);
+  }
+
+  /* Audit: record terminal status transitions for compliance trail */
+  if (["delivered", "cancelled"].includes(status)) {
+    addAuditEntry({
+      action: `order_status_${status}`,
+      adminId: (req as any).admin?.id,
+      ip: getClientIp(req),
+      details: `Order #${orderId.slice(-6).toUpperCase()} marked ${status}`,
+      result: "success",
+    });
   }
 
   sendSuccess(res, { ...order, total: parseFloat(String(order.total)) });
@@ -215,6 +256,14 @@ router.post("/orders/:id/refund", async (req, res) => {
     "wallet-outline"
   );
 
+  addAuditEntry({
+    action: "order_refunded",
+    adminId: (req as any).admin?.id,
+    ip: getClientIp(req),
+    details: `Order #${order.id.slice(-6).toUpperCase()} admin refund Rs.${refundAmt.toFixed(0)}${reason ? ` — ${reason}` : ""}`,
+    result: "success",
+  });
+
   sendSuccess(res, { success: true, refundedAmount: refundAmt, orderId: order.id });
 });
 router.get("/pharmacy-orders", async (_req, res) => {
@@ -236,6 +285,10 @@ router.get("/pharmacy-orders", async (_req, res) => {
 
 router.patch("/pharmacy-orders/:id/status", async (req, res) => {
   const { status } = req.body;
+  if (!status || !(PHARMACY_ORDER_VALID_STATUSES as readonly string[]).includes(status)) {
+    sendValidationError(res, `Invalid pharmacy order status "${status}". Valid statuses: ${PHARMACY_ORDER_VALID_STATUSES.join(", ")}`);
+    return;
+  }
   const [order] = await db
     .update(pharmacyOrdersTable)
     .set({ status, updatedAt: new Date() })
@@ -258,6 +311,23 @@ router.patch("/pharmacy-orders/:id/status", async (req, res) => {
     }).catch(() => {});
     const pharmRefundLang = await getUserLanguage(order.userId);
     await sendUserNotification(order.userId, t("notifPharmacyRefund", pharmRefundLang), t("notifPharmacyRefundBody", pharmRefundLang).replace("{amount}", refundAmt.toFixed(0)), "pharmacy", "wallet-outline");
+  }
+
+  const ioPharm = getIO();
+  if (ioPharm) {
+    const pharmPayload = { id: order.id, status: order.status, updatedAt: order.updatedAt instanceof Date ? order.updatedAt.toISOString() : order.updatedAt };
+    ioPharm.to(getSocketRoom(order.id, "pharmacy")).emit("order:update", pharmPayload);
+    ioPharm.to(`user:${order.userId}`).emit("order:update", pharmPayload);
+  }
+
+  if (["delivered", "cancelled"].includes(status)) {
+    addAuditEntry({
+      action: `pharmacy_order_${status}`,
+      adminId: (req as any).admin?.id,
+      ip: getClientIp(req),
+      details: `Pharmacy Order #${order.id.slice(-6).toUpperCase()} marked ${status}`,
+      result: "success",
+    });
   }
 
   sendSuccess(res, { ...order, total: parseFloat(order.total) });
@@ -283,6 +353,10 @@ router.get("/parcel-bookings", async (_req, res) => {
 
 router.patch("/parcel-bookings/:id/status", async (req, res) => {
   const { status } = req.body;
+  if (!status || !(PARCEL_VALID_STATUSES as readonly string[]).includes(status)) {
+    sendValidationError(res, `Invalid parcel status "${status}". Valid statuses: ${PARCEL_VALID_STATUSES.join(", ")}`);
+    return;
+  }
   const [booking] = await db
     .update(parcelBookingsTable)
     .set({ status, updatedAt: new Date() })
@@ -305,6 +379,23 @@ router.patch("/parcel-bookings/:id/status", async (req, res) => {
     }).catch(() => {});
     const parcelRefundLang = await getUserLanguage(booking.userId);
     await sendUserNotification(booking.userId, t("notifParcelRefund", parcelRefundLang), t("notifParcelRefundBody", parcelRefundLang).replace("{amount}", refundAmt.toFixed(0)), "parcel", "wallet-outline");
+  }
+
+  const ioParcel = getIO();
+  if (ioParcel) {
+    const parcelPayload = { id: booking.id, status: booking.status, updatedAt: booking.updatedAt instanceof Date ? booking.updatedAt.toISOString() : booking.updatedAt };
+    ioParcel.to(getSocketRoom(booking.id, "parcel")).emit("order:update", parcelPayload);
+    ioParcel.to(`user:${booking.userId}`).emit("order:update", parcelPayload);
+  }
+
+  if (["completed", "cancelled"].includes(status)) {
+    addAuditEntry({
+      action: `parcel_booking_${status}`,
+      adminId: (req as any).admin?.id,
+      ip: getClientIp(req),
+      details: `Parcel Booking #${booking.id.slice(-6).toUpperCase()} marked ${status}`,
+      result: "success",
+    });
   }
 
   sendSuccess(res, { ...booking, fare: parseFloat(booking.fare) });

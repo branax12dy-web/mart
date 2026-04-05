@@ -438,7 +438,7 @@ function PharmacyScreenInner() {
             <TouchableOpacity activeOpacity={0.7} style={[s.successBtn, { flex: 1, backgroundColor: C.purpleBg }]} onPress={() => { setConfirmed(false); router.push("/(tabs)"); }}>
               <Text style={[s.successBtnTxt, { color: C.purple }]}>{T("backToHome")}</Text>
             </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.7} style={[s.successBtn, { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }]} onPress={() => { setConfirmed(false); router.push({ pathname: "/order", params: { orderId: confirmedOrderId, type: "pharmacy" } }); }}>
+            <TouchableOpacity activeOpacity={0.7} style={[s.successBtn, { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }]} onPress={() => { setConfirmed(false); router.push({ pathname: "/orders/[id]", params: { id: confirmedOrderId, type: "pharmacy" } }); }}>
               <Ionicons name="navigate-outline" size={15} color={C.textInverse} />
               <Text style={s.successBtnTxt}>Track Order</Text>
             </TouchableOpacity>

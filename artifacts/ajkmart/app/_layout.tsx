@@ -267,6 +267,7 @@ function RootLayoutNav() {
         <Stack.Screen name="parcel/index"   options={{ headerShown: false }} />
         <Stack.Screen name="categories/index" options={{ headerShown: false }} />
         <Stack.Screen name="order/index"    options={{ headerShown: false }} />
+        <Stack.Screen name="orders/[id]"    options={{ headerShown: false }} />
       </Stack>
     </>
   );

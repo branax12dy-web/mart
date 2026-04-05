@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import type { Socket } from "socket.io-client";
 import {
   ActivityIndicator,
   Linking,
@@ -13,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,7 +28,8 @@ import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey, type Language } from "@workspace/i18n";
-import { useGetOrders } from "@workspace/api-client-react";
+import { useGetOrders, getGetOrdersQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
@@ -38,38 +41,19 @@ import {
   EmptyState,
   FilterChip,
 } from "@/components/user-shared";
+import {
+  ORDER_STATUS_MAP,
+  RIDE_STATUS_MAP,
+  PARCEL_STATUS_MAP,
+  RIDE_STEPS,
+} from "@/lib/orderUtils";
 
 const C = Colors.light;
 
-const ORDER_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  pending:          { color: C.amber, bg: C.amberSoft, icon: "time-outline",            labelKey: "pending" },
-  confirmed:        { color: C.brandBlue, bg: C.brandBlueSoft, icon: "checkmark-circle-outline", labelKey: "confirmed" },
-  preparing:        { color: C.purple, bg: C.purpleSoft, icon: "flame-outline",            labelKey: "preparing" },
-  ready:            { color: C.indigo, bg: C.indigoSoft, icon: "bag-check-outline",       labelKey: "readyForPickup" },
-  picked_up:        { color: C.cyan, bg: C.cyanSoft, icon: "cube-outline",            labelKey: "onTheWay" },
-  out_for_delivery: { color: C.emerald, bg: C.emeraldSoft, icon: "bicycle-outline",          labelKey: "onTheWay" },
-  delivered:        { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",   labelKey: "delivered" },
-  cancelled:        { color: C.red, bg: C.redSoft, icon: "close-circle-outline",     labelKey: "cancelled" },
-};
-
-const RIDE_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  searching:   { color: C.amber, bg: C.amberSoft, icon: "search-outline",            labelKey: "searching" },
-  bargaining:  { color: C.amber, bg: C.amberSoft, icon: "swap-horizontal-outline",   labelKey: "bargaining" },
-  accepted:    { color: C.brandBlue, bg: C.brandBlueSoft, icon: "person-outline",            labelKey: "statusAccepted" },
-  arrived:    { color: C.purple, bg: C.purpleSoft, icon: "location-outline",          labelKey: "arrived" },
-  in_transit: { color: C.emerald, bg: C.emeraldSoft, icon: "car-outline",               labelKey: "inTransit" },
-  ongoing:    { color: C.emerald, bg: C.emeraldSoft, icon: "car-outline",               labelKey: "inTransit" },
-  completed:  { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",    labelKey: "completed" },
-  cancelled:  { color: C.red, bg: C.redSoft, icon: "close-circle-outline",      labelKey: "cancelled" },
-};
-
-const PARCEL_STATUS: Record<string, { color: string; bg: string; icon: string; labelKey: TranslationKey }> = {
-  pending:    { color: C.amber, bg: C.amberSoft, icon: "time-outline",              labelKey: "pending" },
-  accepted:   { color: C.brandBlue, bg: C.brandBlueSoft, icon: "person-outline",            labelKey: "statusAccepted" },
-  in_transit: { color: C.emerald, bg: C.emeraldSoft, icon: "cube-outline",              labelKey: "inTransit" },
-  completed:  { color: C.gray, bg: C.graySoft, icon: "checkmark-done-outline",    labelKey: "delivered" },
-  cancelled:  { color: C.red, bg: C.redSoft, icon: "close-circle-outline",      labelKey: "cancelled" },
-};
+/* Single source of truth: all status maps imported from @/lib/orderUtils */
+const ORDER_STATUS = ORDER_STATUS_MAP;
+const RIDE_STATUS  = RIDE_STATUS_MAP;
+const PARCEL_STATUS = PARCEL_STATUS_MAP;
 
 const TABS = [
   { key: "all",      labelKey: "all" as TranslationKey,       icon: "layers-outline" },
@@ -82,7 +66,7 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
-function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, ratingWindowHours, serverNow, onRate, onCancel, onReorder }: {
+function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, ratingWindowHours, serverNow, onRate, onCancel, onReorder, onCardPress }: {
   order: any;
   liveTracking: boolean;
   reviews: boolean;
@@ -93,10 +77,12 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   onRate: (o: any) => void;
   onCancel: (o: any) => void;
   onReorder?: (o: any) => void;
+  onCardPress?: () => void;
 }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const [itemsExpanded, setItemsExpanded] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isFood = order.type === "food";
   const isDelivered = order.status === "delivered";
@@ -116,13 +102,19 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   const canRate = reviews && isDelivered && !order._reviewed && hourssinceDelivery <= ratingWindowHours;
 
   const handleCardPress = () => {
-    router.push(`/order?orderId=${order.id}`);
+    if (onCardPress) { onCardPress(); return; }
+    router.push({ pathname: "/orders/[id]", params: { id: order.id } });
   };
+
+  const hoverProps = Platform.OS === "web"
+    ? { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }
+    : {};
 
   return (
     <TouchableOpacity activeOpacity={0.7}
       onPress={handleCardPress}
-      style={styles.card}
+      {...(hoverProps as object)}
+      style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
       accessibilityRole="button"
       accessibilityLabel={`${isFood ? T("food") : T("mart")} order ${order.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${order.total?.toLocaleString()}`}
     >
@@ -227,7 +219,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       )}
 
       {isDelivered && order.paymentMethod !== "cash" && order.paymentMethod !== "cod" && !order.refundStatus && (
-        <TouchableOpacity activeOpacity={0.7} style={styles.refundRequestBtn} onPress={() => router.push(`/order?orderId=${order.id}&action=refund`)} accessibilityRole="button" accessibilityLabel="Request refund for this order">
+        <TouchableOpacity activeOpacity={0.7} style={styles.refundRequestBtn} onPress={() => router.push({ pathname: "/orders/[id]", params: { id: order.id, action: "refund" } })} accessibilityRole="button" accessibilityLabel="Request refund for this order">
           <Ionicons name="return-down-back-outline" size={14} color={C.purple} />
           <Text style={styles.refundRequestBtnText}>{T("requestRefund") || "Request Refund"}</Text>
         </TouchableOpacity>
@@ -255,18 +247,19 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
   );
 }
 
-const RIDE_STEPS = ["accepted", "arrived", "in_transit", "completed"];
-const RIDE_STEP_LABELS = ["Accepted", "Arrived", "On Route", "Done"];
+const RIDE_STEP_LABELS = ["Searching", "Accepted", "Arrived", "On Route", "Done"];
 
-function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
+function RideCard({ ride, liveTracking, reviews, onRate, onCancel, onCardPress }: {
   ride: any;
   liveTracking: boolean;
   reviews: boolean;
   onRate: (o: any) => void;
   onCancel: (o: any) => void;
+  onCardPress?: () => void;
 }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const [hovered, setHovered] = useState(false);
   const cfg = RIDE_STATUS[ride.status] || RIDE_STATUS["searching"]!;
   const isActive    = !["completed", "cancelled"].includes(ride.status);
   const isCompleted = ride.status === "completed";
@@ -276,17 +269,23 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   const showStepper = isActive && rideStepIdx >= 0;
 
   const handleCardPress = () => {
+    if (onCardPress) { onCardPress(); return; }
     if (isActive) {
       router.push(`/ride?rideId=${ride.id}`);
     } else {
-      router.push({ pathname: "/order", params: { orderId: ride.id, type: "ride" } });
+      router.push({ pathname: "/orders/[id]", params: { id: ride.id, type: "ride" } });
     }
   };
+
+  const hoverProps = Platform.OS === "web"
+    ? { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }
+    : {};
 
   return (
     <TouchableOpacity activeOpacity={0.7}
       onPress={handleCardPress}
-      style={styles.card}
+      {...(hoverProps as object)}
+      style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
       accessibilityRole="button"
       accessibilityLabel={`${ride.type || "car"} ride ${ride.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${(ride.fare != null ? Number(ride.fare) : 0).toLocaleString()}`}
     >
@@ -475,17 +474,19 @@ function RideCard({ ride, liveTracking, reviews, onRate, onCancel }: {
   );
 }
 
-function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCancel }: {
+function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCancel, onCardPress }: {
   order: any;
   reviews: boolean;
   cancelWindowMin: number;
   serverNow?: number;
   onRate: (o: any) => void;
   onCancel: (o: any) => void;
+  onCardPress?: () => void;
 }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const [itemsExpanded, setItemsExpanded] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const cfg = ORDER_STATUS[order.status] || ORDER_STATUS["pending"]!;
   const isDelivered = order.status === "delivered";
 
@@ -496,10 +497,15 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
   const canCancel = order.status === "pending" && minutesSincePlaced <= cancelWindowMin;
   const cancelMinsLeft = Math.max(0, Math.ceil(cancelWindowMin - minutesSincePlaced));
 
+  const hoverProps = Platform.OS === "web"
+    ? { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }
+    : {};
+
   return (
     <TouchableOpacity activeOpacity={0.7}
-      style={styles.card}
-      onPress={() => router.push({ pathname: "/order", params: { orderId: order.id, type: "pharmacy" } })}
+      {...(hoverProps as object)}
+      style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
+      onPress={() => { if (onCardPress) { onCardPress(); return; } router.push({ pathname: "/orders/[id]", params: { id: order.id, type: "pharmacy" } }); }}
       accessibilityRole="button"
       accessibilityLabel={`Pharmacy order ${order.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${(order.total != null ? Number(order.total) : 0).toLocaleString()}`}
     >
@@ -575,9 +581,10 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
   );
 }
 
-function ParcelCard({ booking }: { booking: any }) {
+function ParcelCard({ booking, onCardPress }: { booking: any; onCardPress?: () => void }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const [hovered, setHovered] = useState(false);
   const cfg = PARCEL_STATUS[booking.status] || PARCEL_STATUS["pending"]!;
   const isActive = !["completed", "cancelled"].includes(booking.status);
   const parcelLabel = booking.parcelType
@@ -585,13 +592,19 @@ function ParcelCard({ booking }: { booking: any }) {
     : T("parcel");
 
   const handleCardPress = () => {
-    router.push(`/order?orderId=${booking.id}&type=parcel`);
+    if (onCardPress) { onCardPress(); return; }
+    router.push({ pathname: "/orders/[id]", params: { id: booking.id, type: "parcel" } });
   };
+
+  const hoverProps = Platform.OS === "web"
+    ? { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }
+    : {};
 
   return (
     <TouchableOpacity activeOpacity={0.7}
       onPress={handleCardPress}
-      style={styles.card}
+      {...(hoverProps as object)}
+      style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
       accessibilityRole="button"
       accessibilityLabel={`Parcel ${parcelLabel} ${booking.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}`}
     >
@@ -879,6 +892,123 @@ const rm = StyleSheet.create({
 });
 
 
+function EmptyDetailPanel() {
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, backgroundColor: C.background }}>
+      <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+        <Ionicons name="receipt-outline" size={32} color={C.primary} />
+      </View>
+      <Text style={{ ...Typ.bodySemiBold, color: C.textSecondary, textAlign: "center" }}>Select an order to view details</Text>
+    </View>
+  );
+}
+
+function OrderDetailPanel({ id, type, orders, rides, pharmOrders, parcels, onClose }: {
+  id: string; type: string;
+  orders: any[]; rides: any[]; pharmOrders: any[]; parcels: any[];
+  onClose: () => void;
+}) {
+  const { language } = useLanguage();
+  const T = (key: TranslationKey) => tDual(key, language);
+
+  const order = (() => {
+    if (type === "ride") return rides.find(r => r.id === id) ?? null;
+    if (type === "pharmacy") return pharmOrders.find(o => o.id === id) ?? null;
+    if (type === "parcel") return parcels.find(b => b.id === id) ?? null;
+    return orders.find(o => o.id === id) ?? null;
+  })();
+
+  const cfg = (() => {
+    if (type === "ride") return RIDE_STATUS[order?.status] || RIDE_STATUS["searching"]!;
+    if (type === "parcel") return PARCEL_STATUS[order?.status] || PARCEL_STATUS["pending"]!;
+    return ORDER_STATUS[order?.status] || ORDER_STATUS["pending"]!;
+  })();
+
+  const items: any[] = order?.items || [];
+  const total = order?.total ?? order?.fare ?? order?.estimatedFare ?? 0;
+
+  if (!order) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <Ionicons name="alert-circle-outline" size={40} color={C.textMuted} />
+        <Text style={{ ...Typ.body, color: C.textMuted, marginTop: 12 }}>Order not found</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: C.background }} contentContainerStyle={{ padding: 24 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <Text style={{ ...Typ.h2, fontSize: 18, color: C.text }}>#{id.slice(-8).toUpperCase()}</Text>
+        <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={{ padding: 6 }} accessibilityRole="button" accessibilityLabel="Close detail panel">
+          <Ionicons name="close" size={22} color={C.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: cfg.bg, borderRadius: 14, padding: 14, marginBottom: 20 }}>
+        <Ionicons name={cfg.icon as any} size={22} color={cfg.color} />
+        <View>
+          <Text style={{ ...Typ.h3, color: cfg.color, fontSize: 16 }}>{T(cfg.labelKey)}</Text>
+          {order.createdAt && (
+            <Text style={{ ...Typ.caption, color: C.textMuted, marginTop: 2 }}>
+              {new Date(order.createdAt).toLocaleDateString()}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      {items.length > 0 && (
+        <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 16 }}>
+          {items.map((item, i) => (
+            <View key={i} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: i < items.length - 1 ? 1 : 0, borderBottomColor: C.borderLight }}>
+              <Text style={{ ...Typ.body, color: C.text, flex: 1 }} numberOfLines={2}>{item.quantity}× {item.name}</Text>
+              <Text style={{ ...Typ.bodySemiBold, color: C.text }}>Rs. {item.price * item.quantity}</Text>
+            </View>
+          ))}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 10, marginTop: 4, borderTopWidth: 1, borderTopColor: C.borderLight }}>
+            <Text style={{ ...Typ.bodySemiBold, color: C.text }}>Total</Text>
+            <Text style={{ ...Typ.h3, color: C.primary, fontSize: 16 }}>Rs. {Number(total).toLocaleString()}</Text>
+          </View>
+        </View>
+      )}
+
+      {(type === "ride" || type === "parcel") && (order.pickupAddress || order.dropAddress) && (
+        <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 16 }}>
+          {order.pickupAddress && (
+            <View style={{ flexDirection: "row", gap: 10, alignItems: "center", marginBottom: 8 }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: C.emerald }} />
+              <Text style={{ ...Typ.body, color: C.text, flex: 1 }} numberOfLines={2}>{order.pickupAddress}</Text>
+            </View>
+          )}
+          {order.dropAddress && (
+            <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: C.red }} />
+              <Text style={{ ...Typ.body, color: C.text, flex: 1 }} numberOfLines={2}>{order.dropAddress}</Text>
+            </View>
+          )}
+          {Number(total) > 0 && (
+            <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 10, marginTop: 8, borderTopWidth: 1, borderTopColor: C.borderLight }}>
+              <Text style={{ ...Typ.bodySemiBold, color: C.text }}>Fare</Text>
+              <Text style={{ ...Typ.h3, color: C.primary, fontSize: 16 }}>Rs. {Number(total).toLocaleString()}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => router.push({ pathname: "/orders/[id]", params: { id, type } })}
+        style={{ backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="Open full order detail page"
+      >
+        <Ionicons name="open-outline" size={16} color={C.textInverse} />
+        <Text style={{ ...Typ.bodySemiBold, color: C.textInverse }}>Open Full Details</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
 function SectionHeader({ title, count, active }: { title: string; count: number; active?: boolean }) {
   return (
     <View style={styles.secRow}>
@@ -893,7 +1023,9 @@ function SectionHeader({ title, count, active }: { title: string; count: number;
 
 function OrdersScreenInner() {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const { user, token } = useAuth();
+  const queryClient = useQueryClient();
   const { addItem } = useCart();
   const { showToast } = useToast();
   const { config } = usePlatformConfig();
@@ -904,8 +1036,13 @@ function OrdersScreenInner() {
   const [reviewTarget, setReviewTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
+  const [selectedOrder, setSelectedOrder] = useState<{ id: string; type: string } | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
+
+  /* Responsive breakpoints: ≥768 = tablet, ≥1080 = desktop wide */
+  const isTablet = Platform.OS === "web" && screenWidth >= 768;
+  const isWide   = Platform.OS === "web" && screenWidth >= 1080;
 
   const orderRules = config.orderRules;
 
@@ -1014,6 +1151,81 @@ function OrdersScreenInner() {
   const [parcelError, setParcelError] = useState(false);
   const isFetchingParcelRef = useRef(false);
   const [serverNow, setServerNow] = useState<number>(Date.now());
+
+  const listSocketRef = useRef<Socket | null>(null);
+  useEffect(() => {
+    if (!user?.id || !token) return;
+    const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
+    if (!domain) return;
+
+    let socket: Socket | null = null;
+    let unmounted = false;
+
+    import("socket.io-client").then(({ io }) => {
+      if (unmounted) return;
+      socket = io(`https://${domain}`, {
+        path: "/api/socket.io",
+        auth: { token },
+        extraHeaders: { Authorization: `Bearer ${token}` },
+        transports: ["polling", "websocket"],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 16000,
+      });
+      listSocketRef.current = socket;
+
+      socket.on("order:update", (updated: { id: string; status?: string; [key: string]: any }) => {
+        if (!updated?.id) return;
+        /* Mart/food: patch React Query cache in-place to avoid full network round-trip */
+        queryClient.setQueryData(
+          getGetOrdersQueryKey({ userId: user?.id || "" }),
+          (old: any) => {
+            if (!old?.orders) return old;
+            const idx = old.orders.findIndex((o: any) => o.id === updated.id);
+            if (idx === -1) return old;
+            const next = [...old.orders];
+            next[idx] = { ...next[idx], ...updated };
+            return { ...old, orders: next };
+          }
+        );
+        /* Rides: patch in-place */
+        setRidesData((prev: any) => {
+          if (!prev?.rides) return prev;
+          const idx = prev.rides.findIndex((r: any) => r.id === updated.id);
+          if (idx === -1) return prev;
+          const next = [...prev.rides];
+          next[idx] = { ...next[idx], ...updated };
+          return { ...prev, rides: next };
+        });
+        /* Pharmacy: patch in-place */
+        setPharmData((prev: any) => {
+          if (!prev?.orders) return prev;
+          const idx = prev.orders.findIndex((o: any) => o.id === updated.id);
+          if (idx === -1) return prev;
+          const next = [...prev.orders];
+          next[idx] = { ...next[idx], ...updated };
+          return { ...prev, orders: next };
+        });
+        /* Parcels: patch in-place */
+        setParcelData((prev: any) => {
+          if (!prev?.bookings) return prev;
+          const idx = prev.bookings.findIndex((b: any) => b.id === updated.id);
+          if (idx === -1) return prev;
+          const next = [...prev.bookings];
+          next[idx] = { ...next[idx], ...updated };
+          return { ...prev, bookings: next };
+        });
+      });
+    });
+
+    return () => {
+      unmounted = true;
+      socket?.disconnect();
+      listSocketRef.current = null;
+    };
+  }, [user?.id, token]);
+
 
   const fetchServerTime = useCallback(async () => {
     try {
@@ -1371,20 +1583,24 @@ function OrdersScreenInner() {
         {anyActive > 0 && (
           <>
             <SectionHeader title={T("activeLabel")} count={anyActive} active />
-            {activeOrders.map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} serverNow={serverNow} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} />)}
-            {activeRides.map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} />)}
-            {activePharm.map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} serverNow={serverNow} onRate={handleRate} onCancel={handleCancelPharmacy} />)}
-            {activeParcel.map(b => <ParcelCard key={b.id} booking={b} />)}
+            <View style={isWide ? styles.cardGrid : undefined}>
+              {activeOrders.map(o => <View key={o.id} style={isWide ? styles.cardGridItem : undefined}><OrderCard order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} serverNow={serverNow} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} onCardPress={isWide ? () => setSelectedOrder({ id: o.id, type: o.type || "mart" }) : undefined} /></View>)}
+              {activeRides.map(r => <View key={r.id} style={isWide ? styles.cardGridItem : undefined}><RideCard ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} onCardPress={isWide ? () => setSelectedOrder({ id: r.id, type: "ride" }) : undefined} /></View>)}
+              {activePharm.map(o => <View key={o.id} style={isWide ? styles.cardGridItem : undefined}><PharmacyCard order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} serverNow={serverNow} onRate={handleRate} onCancel={handleCancelPharmacy} onCardPress={isWide ? () => setSelectedOrder({ id: o.id, type: "pharmacy" }) : undefined} /></View>)}
+              {activeParcel.map(b => <View key={b.id} style={isWide ? styles.cardGridItem : undefined}><ParcelCard booking={b} onCardPress={isWide ? () => setSelectedOrder({ id: b.id, type: "parcel" }) : undefined} /></View>)}
+            </View>
           </>
         )}
 
         {anyPast > 0 && (
           <>
             <SectionHeader title={T("historyLabel")} count={anyPast} />
-            {pastOrders.slice(0, historyLimit).map(o => <OrderCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} serverNow={serverNow} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} />)}
-            {pastRides.slice(0, historyLimit).map(r => <RideCard key={r.id} ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} />)}
-            {pastPharm.slice(0, historyLimit).map(o => <PharmacyCard key={o.id} order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} serverNow={serverNow} onRate={handleRate} onCancel={handleCancelPharmacy} />)}
-            {pastParcel.slice(0, historyLimit).map(b => <ParcelCard key={b.id} booking={b} />)}
+            <View style={isWide ? styles.cardGrid : undefined}>
+              {pastOrders.slice(0, historyLimit).map(o => <View key={o.id} style={isWide ? styles.cardGridItem : undefined}><OrderCard order={{ ...o, _reviewed: reviewedIds.has(o.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} refundDays={orderRules.refundDays} ratingWindowHours={orderRules.ratingWindowHours} serverNow={serverNow} onRate={handleRate} onCancel={handleCancel} onReorder={handleReorder} onCardPress={isWide ? () => setSelectedOrder({ id: o.id, type: o.type || "mart" }) : undefined} /></View>)}
+              {pastRides.slice(0, historyLimit).map(r => <View key={r.id} style={isWide ? styles.cardGridItem : undefined}><RideCard ride={{ ...r, _reviewed: reviewedIds.has(r.id) }} liveTracking={config.features.liveTracking} reviews={config.features.reviews} onRate={handleRate} onCancel={handleCancelRide} onCardPress={isWide ? () => setSelectedOrder({ id: r.id, type: "ride" }) : undefined} /></View>)}
+              {pastPharm.slice(0, historyLimit).map(o => <View key={o.id} style={isWide ? styles.cardGridItem : undefined}><PharmacyCard order={{ ...o, _reviewed: reviewedIds.has(o.id) }} reviews={config.features.reviews} cancelWindowMin={orderRules.cancelWindowMin} serverNow={serverNow} onRate={handleRate} onCancel={handleCancelPharmacy} onCardPress={isWide ? () => setSelectedOrder({ id: o.id, type: "pharmacy" }) : undefined} /></View>)}
+              {pastParcel.slice(0, historyLimit).map(b => <View key={b.id} style={isWide ? styles.cardGridItem : undefined}><ParcelCard booking={b} onCardPress={isWide ? () => setSelectedOrder({ id: b.id, type: "parcel" }) : undefined} /></View>)}
+            </View>
             {anyPast > historyLimit && (
               <TouchableOpacity activeOpacity={0.7}
                 onPress={() => setHistoryLimit(l => l + 5)}
@@ -1548,7 +1764,21 @@ function OrdersScreenInner() {
         </View>
       )}
 
-      {renderContent()}
+      <View style={{ flex: 1, flexDirection: isWide ? "row" : "column" }}>
+        <View style={isWide
+          ? { width: 420, borderRightWidth: 1, borderRightColor: C.border, overflow: "hidden" }
+          : isTablet ? { flex: 1, alignSelf: "center", width: "100%", maxWidth: 720 } : { flex: 1 }
+        }>
+          {renderContent()}
+        </View>
+        {isWide && (
+          <View style={{ flex: 1 }}>
+            {selectedOrder
+              ? <OrderDetailPanel id={selectedOrder.id} type={selectedOrder.type} orders={allOrders} rides={rides} pharmOrders={pharmOrders} parcels={parcels} onClose={() => setSelectedOrder(null)} />
+              : <EmptyDetailPanel />}
+          </View>
+        )}
+      </View>
 
       {reviewTarget && user && (
         <ReviewModal
@@ -1801,5 +2031,10 @@ const styles = StyleSheet.create({
   },
   sectionErrTxt: { flex: 1, ...Typ.bodyMedium, fontSize: 13, color: C.redDark },
   sectionErrRetry: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.red },
+
+  cardGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  cardGridItem: { flexBasis: "48%", flexGrow: 1, minWidth: 280 },
 });
+
+export const webPointer = Platform.select<object>({ web: { cursor: "pointer" } }) ?? {};
 

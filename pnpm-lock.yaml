@@ -601,6 +601,9 @@ importers:
       '@workspace/i18n':
         specifier: workspace:*
         version: link:../../lib/i18n
+      '@workspace/service-constants':
+        specifier: workspace:*
+        version: link:../../lib/service-constants
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3

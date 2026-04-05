@@ -19,7 +19,8 @@ import {
   ensureDefaultRideServices, formatSvc,
   type AdminRequest, auditLog,
 } from "../admin-shared.js";
-import { emitRideDispatchUpdate } from "../../lib/socketio.js";
+import { emitRideDispatchUpdate, getIO } from "../../lib/socketio.js";
+import { RIDE_VALID_STATUSES, getSocketRoom } from "@workspace/service-constants";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../lib/response.js";
 
 const router = Router();
@@ -39,6 +40,11 @@ router.get("/rides", async (_req, res) => {
 
 router.patch("/rides/:id/status", async (req, res) => {
   const { status, riderName, riderPhone } = req.body;
+
+  if (!status || !(RIDE_VALID_STATUSES as readonly string[]).includes(status)) {
+    sendValidationError(res, `Invalid ride status "${status}". Valid statuses: ${RIDE_VALID_STATUSES.join(", ")}`);
+    return;
+  }
 
   if (status === "completed") {
     const [existing] = await db.select({ riderId: ridesTable.riderId })
@@ -115,6 +121,24 @@ router.patch("/rides/:id/status", async (req, res) => {
       await tx.insert(walletTransactionsTable).values({ id: generateId(), userId: ride.userId, type: "credit", amount: refundAmt.toFixed(2), description: `Refund — Ride #${ride.id.slice(-6).toUpperCase()} cancelled by admin` });
     }).catch(() => {});
     await sendUserNotification(ride.userId, "Ride Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya.`, "ride", "wallet-outline");
+  }
+
+  const ioRide = getIO();
+  if (ioRide) {
+    const ridePayload = { id: ride.id, status: ride.status, updatedAt: ride.updatedAt instanceof Date ? ride.updatedAt.toISOString() : ride.updatedAt };
+    ioRide.to(getSocketRoom(ride.id, "ride")).emit("order:update", ridePayload);
+    ioRide.to(`user:${ride.userId}`).emit("order:update", ridePayload);
+  }
+
+  /* Audit: record terminal ride status transitions for compliance trail */
+  if (["completed", "cancelled"].includes(status)) {
+    addAuditEntry({
+      action: `ride_status_${status}`,
+      adminId: (req as any).admin?.id,
+      ip: getClientIp(req),
+      details: `Ride #${ride.id.slice(-6).toUpperCase()} marked ${status}`,
+      result: "success",
+    });
   }
 
   sendSuccess(res, { ...ride, fare: parseFloat(ride.fare), distance: parseFloat(ride.distance) });

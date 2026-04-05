@@ -69,3 +69,39 @@ export const ADMIN_SERVICE_LIST = SERVICE_KEYS.map((k) => ({
   color: SERVICE_METADATA[k].color,
   colorLight: SERVICE_METADATA[k].colorLight,
 }));
+
+/**
+ * Returns the socket.io room name for an order.
+ * Ride and parcel orders join `ride:{id}`; all other services join `order:{id}`.
+ * Used by both the API server (emit targets) and the frontend (subscribe room).
+ */
+export function getSocketRoom(orderId: string, orderType: string): string {
+  return orderType === "ride" || orderType === "parcel"
+    ? `ride:${orderId}`
+    : `order:${orderId}`;
+}
+
+/* Shared order status enumerations — single source of truth for API validation and frontend display */
+
+export const ORDER_VALID_STATUSES = [
+  "pending", "confirmed", "preparing", "ready", "picked_up",
+  "out_for_delivery", "delivered", "cancelled",
+] as const;
+export type OrderStatus = typeof ORDER_VALID_STATUSES[number];
+
+export const RIDE_VALID_STATUSES = [
+  "searching", "bargaining", "accepted", "arrived",
+  "in_transit", "ongoing", "completed", "cancelled",
+] as const;
+export type RideStatus = typeof RIDE_VALID_STATUSES[number];
+
+export const PARCEL_VALID_STATUSES = [
+  "pending", "accepted", "in_transit", "completed", "cancelled",
+] as const;
+export type ParcelStatus = typeof PARCEL_VALID_STATUSES[number];
+
+export const PHARMACY_ORDER_VALID_STATUSES = [
+  "pending", "confirmed", "preparing", "ready", "picked_up",
+  "out_for_delivery", "delivered", "cancelled",
+] as const;
+export type PharmacyOrderStatus = typeof PHARMACY_ORDER_VALID_STATUSES[number];

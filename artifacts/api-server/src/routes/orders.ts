@@ -4,7 +4,7 @@ import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, prod
 import { eq, and, gte, count, desc, SQL, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
-import { addSecurityEvent, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
+import { addSecurityEvent, addAuditEntry, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
 import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
 import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
 import { isInServiceZone } from "../lib/geofence.js";
@@ -781,6 +781,13 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
     }
 
     broadcastOrderUpdate(mapOrder(order), (order as any).vendorId);
+
+    addAuditEntry({
+      action: "order_cancel",
+      ip: getClientIp(req),
+      details: `Customer [${userId}] cancelled order ${order.id}${reason ? ` — reason: ${reason}` : ""}${isWallet && refundAmount > 0 ? ` (refunded Rs.${refundAmount.toFixed(0)})` : ""}`,
+      result: "success",
+    });
 
     if (reason) {
       req.log?.info({ orderId: order.id, reason }, "Order cancelled with reason");
