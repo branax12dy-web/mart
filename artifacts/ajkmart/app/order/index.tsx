@@ -172,11 +172,14 @@ export default function OrderDetailScreen() {
     return () => { if (ivRef !== null) clearInterval(ivRef); };
   }, [order?.status, orderId, token, isParcel, isRide, isPharmacyType]);
 
-  /* Socket.io: real-time rider location for active delivery/parcel/pharmacy orders */
+  /* Socket.io: real-time updates for active orders.
+     - Live-tracking states: receives rider:location (map updates)
+     - All non-terminal states: receives order:update (admin/vendor status sync)
+     This replaces the old approach that only connected for live-tracking states. */
   useEffect(() => {
-    if (!orderId || !token) return;
-    const isActive = LIVE_TRACKING_STATUSES.includes(order?.status ?? "");
-    if (!isActive) return;
+    if (!orderId || !token || !order) return;
+    const isTerminal = ["delivered", "cancelled", "completed"].includes(order.status ?? "");
+    if (isTerminal) return;
 
     /* Ride/parcel orders use ride:{orderId}; delivery orders use order:{orderId} */
     const room = isRide || isParcel ? `ride:${orderId}` : `order:${orderId}`;
@@ -202,6 +205,15 @@ export default function OrderDetailScreen() {
         }
         if (mountedRef.current) {
           animateToLocation(payload.latitude, payload.longitude);
+        }
+      });
+      /* Real-time order status sync: Admin/vendor status changes (e.g. Confirmed →
+         Preparing → Shipped → Delivered / Cancelled) are pushed here so the
+         customer sees the update instantly without waiting for the 10-second poll. */
+      socket.on("order:update", (updated: any) => {
+        if (!updated || updated.id !== orderId) return;
+        if (mountedRef.current) {
+          setOrder((prev: any) => prev ? { ...prev, ...updated } : updated);
         }
       });
     });

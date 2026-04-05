@@ -1155,7 +1155,9 @@ function OrdersScreenInner() {
     setLastRefreshed(new Date());
   }, [fetchServerTime, refetchOrders, fetchRides, fetchPharmacy, fetchParcel]);
 
-  const rawOrders = [...(ordersData?.orders || [])].reverse();
+  /* API already returns orders newest-first (ORDER BY createdAt DESC).
+     Do NOT reverse — that would flip to oldest-first. */
+  const rawOrders = [...(ordersData?.orders || [])];
   const allOrders = rawOrders.filter(o =>
     (o.type === "mart" && martActive) || (o.type === "food" && foodActive)
   );

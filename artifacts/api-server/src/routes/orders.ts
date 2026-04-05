@@ -42,6 +42,14 @@ function broadcastOrderUpdate(order: ReturnType<typeof mapOrder>, vendorId?: str
   if (order.riderId) {
     io.to(`rider:${order.riderId}`).emit("order:update", order);
   }
+  /* Push status change to the customer in real-time so the app reflects
+     admin/vendor updates instantly without waiting for the 10-second poll. */
+  if (order.userId) {
+    io.to(`user:${order.userId}`).emit("order:update", order);
+  }
+  /* Also emit to the order-specific room so open order-detail screens
+     that joined order:{id} receive live status updates. */
+  io.to(`order:${order.id}`).emit("order:update", order);
 }
 
 function broadcastWalletUpdate(userId: string, newBalance: number) {
@@ -94,7 +102,10 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     deliveryAddress: o.deliveryAddress,
     paymentMethod: o.paymentMethod,
     paymentStatus: o.paymentStatus ?? "pending",
-    refundStatus: o.refundedAt ? "refunded" : o.paymentStatus === "refund_requested" ? "requested" : null,
+    refundStatus: o.refundedAt ? "refunded"
+      : o.paymentStatus === "refund_approved" ? "approved"
+      : o.paymentStatus === "refund_requested" ? "requested"
+      : null,
     riderId: o.riderId,
     riderName: o.riderName ?? null,
     riderPhone: o.riderPhone ?? null,
@@ -250,7 +261,19 @@ router.get("/:id", customerAuth, async (req, res) => {
   const deliveryFee = calcDeliveryFee(s, order.type, itemsTotal);
   const gstAmount   = calcGst(s, itemsTotal);
   const codFee      = calcCodFee(s, order.paymentMethod, itemsTotal + deliveryFee + gstAmount);
-  sendSuccess(res, mapOrder(order, deliveryFee, gstAmount, codFee));
+
+  /* Fetch vendor display name so the order detail screen can show it */
+  let vendorName: string | null = null;
+  if (order.vendorId) {
+    const [vendor] = await db
+      .select({ name: usersTable.name })
+      .from(usersTable)
+      .where(eq(usersTable.id, order.vendorId))
+      .limit(1);
+    vendorName = vendor?.name ?? null;
+  }
+
+  sendSuccess(res, { ...mapOrder(order, deliveryFee, gstAmount, codFee), vendorName });
 });
 
 /* ── GET /orders/:id/track — Live rider location for active food/mart orders ── */
@@ -272,7 +295,9 @@ router.get("/:id/track", customerAuth, async (req, res) => {
   if (!order) { sendNotFound(res, "Order not found"); return; }
   if (order.userId !== userId) { sendForbidden(res, "Access denied"); return; }
 
-  const TRACKABLE = ["picked_up", "out_for_delivery", "in_transit"];
+  /* Include all statuses where a rider may be en-route so parcel/ride
+     orders in "accepted"/"arrived" state also return live coordinates. */
+  const TRACKABLE = ["picked_up", "out_for_delivery", "in_transit", "accepted", "arrived"];
   let riderLat: number | null = null;
   let riderLng: number | null = null;
   let riderLocAge: number | null = null;
