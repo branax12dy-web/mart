@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
+import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
 import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -260,6 +261,7 @@ function MartScreenInner() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const topPad = Math.max(insets.top, 12);
+  const { searchOpacity, searchTranslateY, searchMaxHeight, subtitleOpacity, subtitleMaxHeight, scrollHandler, scrollEventThrottle } = useCollapsibleHeader({ expandedHeight: 130, collapsedHeight: 56, scrollThreshold: 80, searchBarHeight: 48 });
   const { focus, category: routeCategory } = useLocalSearchParams<{ focus?: string; category?: string }>();
   const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
   const [sortBy, setSortBy] = useState<string>("default");
@@ -326,7 +328,7 @@ function MartScreenInner() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.hdrTitle}>{appName} {T("martTitle")}</Text>
-            <Text style={styles.hdrSub}>{T("freshGroceriesDelivered")}</Text>
+            <Animated.Text style={[styles.hdrSub, { opacity: subtitleOpacity, maxHeight: subtitleMaxHeight }]}>{T("freshGroceriesDelivered")}</Animated.Text>
           </View>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/cart")} style={styles.cartBtn}>
             <Ionicons name="bag-outline" size={22} color={C.textInverse} />
@@ -338,23 +340,25 @@ function MartScreenInner() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.searchWrap}>
-          <Ionicons name="search-outline" size={17} color={C.textMuted} />
-          <TextInput
-            ref={searchInputRef}
-            style={styles.searchInput}
-            value={search}
-            onChangeText={setSearch}
-            placeholder={T("searchGroceries")}
-            placeholderTextColor={C.textMuted}
-            maxLength={200}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity activeOpacity={0.7} onPress={handleClearSearch}>
-              <Ionicons name="close-circle" size={18} color={C.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
+          <View style={styles.searchWrap}>
+            <Ionicons name="search-outline" size={17} color={C.textMuted} />
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchInput}
+              value={search}
+              onChangeText={setSearch}
+              placeholder={T("searchGroceries")}
+              placeholderTextColor={C.textMuted}
+              maxLength={200}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity activeOpacity={0.7} onPress={handleClearSearch}>
+                <Ionicons name="close-circle" size={18} color={C.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       </LinearGradient>
 
       {showCartBanner && (
@@ -381,7 +385,7 @@ function MartScreenInner() {
         onCancel={() => setClearBannerConfirm(false)}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={handleRefetchAll} tintColor={C.primary} />}>
+      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={handleRefetchAll} tintColor={C.primary} />} onScroll={scrollHandler} scrollEventThrottle={scrollEventThrottle}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingTop: 14 }} contentContainerStyle={styles.catRow}>
           <TouchableOpacity activeOpacity={0.7}
             onPress={() => setSelectedCat(undefined)}
@@ -513,8 +517,8 @@ export default withErrorBoundary(withServiceGuard("mart", MartScreenInner));
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
 
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
-  hdrRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  header: { paddingHorizontal: 16, paddingBottom: 10 },
+  hdrRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.overlayLight15, alignItems: "center", justifyContent: "center" },
   hdrTitle: { ...Typ.title, color: C.textInverse },
   hdrSub: { ...Typ.caption, color: C.overlayLight75, marginTop: 2 },

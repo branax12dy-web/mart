@@ -1874,7 +1874,7 @@ export default withErrorBoundary(CartScreenInner);
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  header: { paddingHorizontal: 16, paddingBottom: 14 },
+  header: { paddingHorizontal: 16, paddingBottom: 10 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.overlayLight15, alignItems: "center", justifyContent: "center" },
   headerTitle: { ...Typ.title, color: C.textInverse },

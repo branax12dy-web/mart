@@ -1,5 +1,10 @@
 # AJKMart Super App — Workspace
 
+### Collapsible Header System
+- **`artifacts/ajkmart/hooks/useCollapsibleHeader.ts`**: Reusable hook that tracks scroll position via `Animated.event` and provides interpolated values for header collapse animations (opacity, translateY, maxHeight for search bars, subtitles, and stats rows). Configurable expanded/collapsed heights and scroll thresholds.
+- Applied to: Home (search bar collapses), Food/Mart/Pharmacy (subtitle + search bar collapse), Orders (subtitle + stats row collapse). Wallet/Cart/ScreenHeader/Product detail received static spacing tightening.
+- Uses `useNativeDriver: false` for layout-affecting animations (maxHeight). Scroll events composed through SmartRefresh's `onScroll` passthrough.
+
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 

@@ -19,6 +19,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "react-native-qrcode-svg";
@@ -1414,6 +1415,7 @@ function WalletScreenInner() {
   /* Fix: use insets.top for all platforms to account for notch/status bar */
   const topPad = Platform.OS === "web" ? 67 : (insets.top > 0 ? insets.top : 44);
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
+  const { searchOpacity: actionsOpacity, searchMaxHeight: actionsMaxHeight, subtitleOpacity: balanceLabelOpacity, subtitleMaxHeight: balanceLabelMaxHeight, scrollHandler: walletScrollHandler, scrollEventThrottle: walletScrollThrottle } = useCollapsibleHeader({ expandedHeight: 200, collapsedHeight: 80, scrollThreshold: 100, searchBarHeight: 70 });
 
   const [showDeposit,  setShowDeposit]  = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
@@ -1774,56 +1776,52 @@ function WalletScreenInner() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
-      <SmartRefresh
-        onRefresh={onRefresh}
-        lastUpdated={lastRefreshed}
-        showsVerticalScrollIndicator={false}
-      >
-        <LinearGradient colors={[C.primaryDark, C.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ paddingTop: topPad + 20, paddingHorizontal: 20, paddingBottom: 28 }}>
-          {walletError && !data && !walletFrozen && (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="No network connection, tap to retry">
-              <Ionicons name="cloud-offline-outline" size={20} color={C.red} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.redDeep }}>No network connection</Text>
-                <Text style={{ ...Typ.caption, color: C.redDeepest, marginTop: 2 }}>Showing last known balance. Tap to retry.</Text>
-              </View>
-              <Ionicons name="refresh-outline" size={16} color={C.red} />
-            </TouchableOpacity>
-          )}
-
-          {walletFrozen ? (
-            <View style={{ alignItems: "center", paddingVertical: 24, gap: 14 }}>
-              <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="lock-closed" size={36} color={C.amber} />
-              </View>
-              <Text style={{ ...Typ.title, color: C.amberDark }}>Wallet Frozen</Text>
-              <Text style={{ ...Typ.body, color: C.amberDark, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>
-                Your wallet has been temporarily frozen. Please contact support to resolve this issue.
-              </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: C.amberBorder, width: "100%", marginTop: 4 }}>
-                <Ionicons name="headset-outline" size={16} color={C.amber} />
-                <Text style={{ ...Typ.captionMedium, color: C.amberDark, flex: 1 }}>Contact support to unfreeze your wallet</Text>
-              </View>
+      <LinearGradient colors={[C.primaryDark, C.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ paddingTop: topPad + 12, paddingHorizontal: 20, paddingBottom: 14 }}>
+        {walletError && !data && !walletFrozen && (
+          <TouchableOpacity activeOpacity={0.7} onPress={() => refetch()} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="No network connection, tap to retry">
+            <Ionicons name="cloud-offline-outline" size={20} color={C.red} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.redDeep }}>No network connection</Text>
+              <Text style={{ ...Typ.caption, color: C.redDeepest, marginTop: 2 }}>Showing last known balance. Tap to retry.</Text>
             </View>
-          ) : (
-            <>
-              <Text style={{ ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 4 }}>{appName} {T("wallet")}</Text>
-              {isLoading && !data ? (
-                <View style={{ marginBottom: 4 }}>
-                  <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.2)", opacity: 0.7 }} />
-                </View>
-              ) : (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 }}>
-                  <Text style={{ fontFamily: Font.bold, fontSize: 40, color: "#FFFFFF" }}>
-                    {walletHidden ? "Rs. ••••••" : `Rs. ${balance.toLocaleString()}`}
-                  </Text>
-                  <TouchableOpacity activeOpacity={0.7} onPress={toggleWalletVisibility} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={walletHidden ? "Show balance" : "Hide balance"}>
-                    <Ionicons name={walletHidden ? "eye-off" : "eye"} size={22} color="rgba(255,255,255,0.7)" />
-                  </TouchableOpacity>
-                </View>
-              )}
-              <Text style={{ ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 24 }}>{T("availableBalance")}</Text>
+            <Ionicons name="refresh-outline" size={16} color={C.red} />
+          </TouchableOpacity>
+        )}
 
+        {walletFrozen ? (
+          <View style={{ alignItems: "center", paddingVertical: 24, gap: 14 }}>
+            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="lock-closed" size={36} color={C.amber} />
+            </View>
+            <Text style={{ ...Typ.title, color: C.amberDark }}>Wallet Frozen</Text>
+            <Text style={{ ...Typ.body, color: C.amberDark, textAlign: "center", lineHeight: 20, maxWidth: 280 }}>
+              Your wallet has been temporarily frozen. Please contact support to resolve this issue.
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: C.amberBorder, width: "100%", marginTop: 4 }}>
+              <Ionicons name="headset-outline" size={16} color={C.amber} />
+              <Text style={{ ...Typ.captionMedium, color: C.amberDark, flex: 1 }}>Contact support to unfreeze your wallet</Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text style={{ ...Typ.body, fontSize: 12, color: "rgba(255,255,255,0.75)", marginBottom: 2 }}>{appName} {T("wallet")}</Text>
+            {isLoading && !data ? (
+              <View style={{ marginBottom: 4 }}>
+                <View style={{ height: 44, width: 180, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.2)", opacity: 0.7 }} />
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 2 }}>
+                <Text style={{ fontFamily: Font.bold, fontSize: 34, color: "#FFFFFF" }}>
+                  {walletHidden ? "Rs. ••••••" : `Rs. ${balance.toLocaleString()}`}
+                </Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={toggleWalletVisibility} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={walletHidden ? "Show balance" : "Hide balance"}>
+                  <Ionicons name={walletHidden ? "eye-off" : "eye"} size={22} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              </View>
+            )}
+            <Animated.Text style={{ ...Typ.body, fontSize: 12, color: "rgba(255,255,255,0.75)", marginBottom: 10, opacity: balanceLabelOpacity, maxHeight: balanceLabelMaxHeight }}>{T("availableBalance")}</Animated.Text>
+
+            <Animated.View style={{ opacity: actionsOpacity, maxHeight: actionsMaxHeight, overflow: "hidden" }}>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <TouchableOpacity activeOpacity={0.7} onPress={() => setShowDeposit(true)} style={ws.actionCard} accessibilityRole="button" accessibilityLabel={T("topUp")}>
                   <View style={[ws.actionCardIcon, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
@@ -1854,16 +1852,25 @@ function WalletScreenInner() {
               </View>
 
               {pendingTopups.count > 0 && (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, marginTop: 16, padding: 12, borderWidth: 1, borderColor: C.amberBorder }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, marginTop: 12, padding: 12, borderWidth: 1, borderColor: C.amberBorder }}>
                   <Ionicons name="time-outline" size={14} color={C.amber} />
                   <Text style={{ ...Typ.captionMedium, color: C.amberDark, flex: 1 }}>
                     {pendingTopups.count} pending ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
                   </Text>
                 </View>
               )}
-            </>
-          )}
-        </LinearGradient>
+            </Animated.View>
+          </>
+        )}
+      </LinearGradient>
+
+      <SmartRefresh
+        onRefresh={onRefresh}
+        lastUpdated={lastRefreshed}
+        showsVerticalScrollIndicator={false}
+        onScroll={walletScrollHandler}
+        scrollEventThrottle={walletScrollThrottle}
+      >
 
         <View style={{ flexDirection: "row", paddingHorizontal: 20, gap: 10, marginTop: 16 }}>
           <View style={ws.statCard}>

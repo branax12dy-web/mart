@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors, { typography } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
+import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -147,6 +148,7 @@ function FoodScreenInner() {
   const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
   const [sortBy, setSortBy] = useState<string>("default");
   const topPad = Math.max(insets.top, 12);
+  const { searchOpacity, searchTranslateY, searchMaxHeight, subtitleOpacity, subtitleMaxHeight, scrollHandler, scrollEventThrottle } = useCollapsibleHeader({ expandedHeight: 130, collapsedHeight: 56, scrollThreshold: 80, searchBarHeight: 48 });
 
   useEffect(() => {
     setSelectedCat(routeCategory || undefined);
@@ -184,7 +186,7 @@ function FoodScreenInner() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>{T("foodDelivery")}</Text>
-            <Text style={styles.headerSub}>{T("orderFromRestaurants")}</Text>
+            <Animated.Text style={[styles.headerSub, { opacity: subtitleOpacity, maxHeight: subtitleMaxHeight }]}>{T("orderFromRestaurants")}</Animated.Text>
           </View>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/cart")} style={styles.cartBtn}>
             <Ionicons name="bag-outline" size={22} color={C.textInverse} />
@@ -195,22 +197,24 @@ function FoodScreenInner() {
             )}
           </TouchableOpacity>
         </View>
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={17} color={C.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            value={search}
-            onChangeText={setSearch}
-            placeholder={T("searchFoodPlaceholder")}
-            placeholderTextColor={C.textMuted}
-            maxLength={200}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity activeOpacity={0.7} onPress={handleClearSearch}>
-              <Ionicons name="close-circle" size={18} color={C.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search-outline" size={17} color={C.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              value={search}
+              onChangeText={setSearch}
+              placeholder={T("searchFoodPlaceholder")}
+              placeholderTextColor={C.textMuted}
+              maxLength={200}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity activeOpacity={0.7} onPress={handleClearSearch}>
+                <Ionicons name="close-circle" size={18} color={C.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       </LinearGradient>
 
       {showCartBanner && (
@@ -237,7 +241,7 @@ function FoodScreenInner() {
         onCancel={() => setClearBannerConfirm(false)}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={C.food} />}>
+      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={C.food} />} onScroll={scrollHandler} scrollEventThrottle={scrollEventThrottle}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => setSelectedCat(undefined)} style={[styles.catChip, !selectedCat && styles.catChipActive]}>
             <Ionicons name="fast-food-outline" size={14} color={!selectedCat ? C.textInverse : C.food} />
@@ -334,8 +338,8 @@ export default withErrorBoundary(withServiceGuard("food", FoodScreenInner));
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  header: { paddingHorizontal: 16, paddingBottom: 10 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.overlayLight20, alignItems: "center", justifyContent: "center" },
   headerTitle: { ...typography.h3, fontSize: 20, color: C.textInverse },
   headerSub: { ...typography.caption, color: C.overlayLight80, marginTop: 2 },

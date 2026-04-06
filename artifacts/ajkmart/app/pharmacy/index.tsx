@@ -10,6 +10,7 @@ import React, { useCallback, useMemo, useState, useEffect, useRef } from "react"
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   Image,
   Modal,
@@ -25,6 +26,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
+import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
@@ -107,6 +109,7 @@ function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
   const { goBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
+  const { searchOpacity, searchTranslateY, searchMaxHeight, subtitleOpacity, subtitleMaxHeight, scrollHandler, scrollEventThrottle } = useCollapsibleHeader({ expandedHeight: 130, collapsedHeight: 56, scrollThreshold: 80, searchBarHeight: 46 });
   const { category: routeCategory, cartItems: cartItemsParam } = useLocalSearchParams<{ category?: string; cartItems?: string }>();
   const { user, updateUser, token } = useAuth();
   const { items: globalCartItems, addItem: addToGlobalCart, removeItem: removeFromGlobalCart, updateQuantity, clearCart, setPharmacyPendingOrderId } = useCart();
@@ -503,14 +506,14 @@ function PharmacyScreenInner() {
     <View style={s.root}>
       <AuthGateSheet {...authSheetProps} />
       <RoleBlockSheet {...roleBlockProps} />
-      <LinearGradient colors={[C.purpleVivid, C.purple, C.purpleMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
+      <LinearGradient colors={[C.purpleVivid, C.purple, C.purpleMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 10 }]}>
         <View style={s.hdrRow}>
           <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={s.backBtn}>
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={s.hdrTitle}>💊 {T("pharmacy")}</Text>
-            <Text style={s.hdrSub}>{T("medicinesDeliveredTo")}</Text>
+            <Animated.Text style={[s.hdrSub, { opacity: subtitleOpacity, maxHeight: subtitleMaxHeight }]}>{T("medicinesDeliveredTo")}</Animated.Text>
           </View>
           {cartCount > 0 && (
             <TouchableOpacity activeOpacity={0.7} onPress={() => setShowCheckout(true)} style={s.cartPill}>
@@ -519,22 +522,24 @@ function PharmacyScreenInner() {
             </TouchableOpacity>
           )}
         </View>
-        <View style={s.searchBar}>
-          <Ionicons name="search-outline" size={16} color={C.textMuted} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder={T("searchMedicines")}
-            placeholderTextColor={C.textMuted}
-            style={s.searchInput}
-            maxLength={200}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => setSearch("")}>
-              <Ionicons name="close-circle" size={16} color={C.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
+          <View style={s.searchBar}>
+            <Ionicons name="search-outline" size={16} color={C.textMuted} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder={T("searchMedicines")}
+              placeholderTextColor={C.textMuted}
+              style={s.searchInput}
+              maxLength={200}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setSearch("")}>
+                <Ionicons name="close-circle" size={16} color={C.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       </LinearGradient>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsScroll} contentContainerStyle={s.tabsRow}>
@@ -567,6 +572,7 @@ function PharmacyScreenInner() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}
         refreshControl={<RefreshControl refreshing={loadingMeds} onRefresh={loadMeds} tintColor={C.purple} colors={[C.purple]} />}
+        onScroll={scrollHandler} scrollEventThrottle={scrollEventThrottle}
       >
         {loadingMeds ? (
           <>
@@ -849,8 +855,8 @@ export default withServiceGuard("pharmacy", PharmacyScreenInner);
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.background },
 
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
-  hdrRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  header: { paddingHorizontal: 16, paddingBottom: 10 },
+  hdrRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.overlayLight20, alignItems: "center", justifyContent: "center" },
   hdrTitle: { ...Typ.title, color: C.textInverse },
   hdrSub: { ...Typ.caption, color: C.overlayLight80, marginTop: 2 },

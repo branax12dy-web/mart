@@ -6,6 +6,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { Socket } from "socket.io-client";
 import {
   ActivityIndicator,
+  Animated,
   Linking,
   Modal,
   Platform,
@@ -31,6 +32,7 @@ import { tDual, type TranslationKey, type Language } from "@workspace/i18n";
 import { useGetOrders, getGetOrdersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
+import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
@@ -1053,6 +1055,7 @@ function OrdersScreenInner() {
   const [selectedOrder, setSelectedOrder] = useState<{ id: string; type: string } | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const TAB_H  = Platform.OS === "web" ? 84 : 49;
+  const { statsOpacity, statsMaxHeight, subtitleOpacity, subtitleMaxHeight, scrollHandler, scrollEventThrottle } = useCollapsibleHeader({ expandedHeight: 140, collapsedHeight: 60, scrollThreshold: 80, statsRowHeight: 40 });
 
   /* Responsive breakpoints: ≥768 = tablet, ≥1080 = desktop wide */
   const isTablet = Platform.OS === "web" && screenWidth >= 768;
@@ -1572,6 +1575,8 @@ function OrdersScreenInner() {
         lastUpdated={lastRefreshed}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
+        onScroll={scrollHandler}
+        scrollEventThrottle={scrollEventThrottle}
       >
         {showRidesErr && (
           <TouchableOpacity activeOpacity={0.7} onPress={fetchRides} style={styles.sectionErrBanner} accessibilityRole="button" accessibilityLabel="Could not load ride orders, tap to retry">
@@ -1690,9 +1695,9 @@ function OrdersScreenInner() {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.headerTitle}>{T("myOrders")}</Text>
-            <Text style={styles.headerSub}>
+            <Animated.Text style={[styles.headerSub, { opacity: subtitleOpacity, maxHeight: subtitleMaxHeight }]}>
               {totalCount > 0 ? `${totalCount} total bookings` : "Track all your activity"}
-            </Text>
+            </Animated.Text>
           </View>
           {globalActiveCount > 0 && (
             <View style={styles.headerActivePill}>
@@ -1703,7 +1708,7 @@ function OrdersScreenInner() {
         </View>
 
         {totalCount > 0 && (
-          <View style={styles.headerStats}>
+          <Animated.View style={[styles.headerStats, { opacity: statsOpacity, maxHeight: statsMaxHeight, overflow: "hidden" }]}>
             {martOrders.length > 0 && (
               <View style={styles.headerStat}>
                 <Ionicons name="storefront-outline" size={12} color="rgba(255,255,255,0.8)" />
@@ -1734,7 +1739,7 @@ function OrdersScreenInner() {
                 <Text style={styles.headerStatText}>{parcels.length} Parcels</Text>
               </View>
             )}
-          </View>
+          </Animated.View>
         )}
       </LinearGradient>
 
@@ -1843,9 +1848,9 @@ export default withErrorBoundary(OrdersScreenInner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 18 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
-  headerTitle: { ...Typ.h2, fontSize: 26, color: C.textInverse, marginBottom: 2 },
+  header: { paddingHorizontal: 20, paddingBottom: 12 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
+  headerTitle: { ...Typ.h2, fontSize: 22, color: C.textInverse, marginBottom: 2 },
   headerSub: { ...Typ.body, fontSize: 13, color: "rgba(255,255,255,0.7)" },
   headerActivePill: {
     flexDirection: "row", alignItems: "center", gap: 6,

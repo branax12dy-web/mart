@@ -55,7 +55,7 @@ export function ScreenHeader({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
   solid: {
     backgroundColor: C.surface,

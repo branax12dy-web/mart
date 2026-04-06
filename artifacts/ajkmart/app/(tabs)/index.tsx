@@ -25,6 +25,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Colors, { spacing, radii, shadows, typography, getFontFamily } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
+import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -1067,6 +1068,7 @@ export default function HomeScreen() {
   const topPad = Math.max(insets.top, 12);
   const TAB_H = Platform.OS === "web" ? 72 : 49;
   const hdOp = useRef(new Animated.Value(0)).current;
+  const { searchOpacity, searchTranslateY, searchMaxHeight, scrollHandler, scrollEventThrottle } = useCollapsibleHeader({ expandedHeight: 120, collapsedHeight: 56, scrollThreshold: 80, searchBarHeight: 44 });
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const { config: platformConfig, loading: configLoading, refresh: refreshConfig } = usePlatformConfig();
@@ -1205,17 +1207,19 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <TouchableOpacity activeOpacity={0.7}
-            onPress={() => router.push("/search")}
-            style={s.searchBar}
-            accessibilityRole="search"
-            accessibilityLabel={T("search")}
-          >
-            <Ionicons name="search" size={16} color={C.textMuted} />
-            <Text style={s.searchText}>{T("search")}</Text>
-            <View style={s.searchDivider} />
-            <Ionicons name="camera-outline" size={16} color={C.textMuted} />
-          </TouchableOpacity>
+          <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
+            <TouchableOpacity activeOpacity={0.7}
+              onPress={() => router.push("/search")}
+              style={s.searchBar}
+              accessibilityRole="search"
+              accessibilityLabel={T("search")}
+            >
+              <Ionicons name="search" size={16} color={C.textMuted} />
+              <Text style={s.searchText}>{T("search")}</Text>
+              <View style={s.searchDivider} />
+              <Ionicons name="camera-outline" size={16} color={C.textMuted} />
+            </TouchableOpacity>
+          </Animated.View>
         </LinearGradient>
       </Animated.View>
 
@@ -1224,6 +1228,8 @@ export default function HomeScreen() {
         lastUpdated={lastRefreshed}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.scroll}
+        onScroll={scrollHandler}
+        scrollEventThrottle={scrollEventThrottle}
       >
         {contentBanner ? (
           <View style={s.promoBanner}>
@@ -1370,8 +1376,8 @@ export default function HomeScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.background },
 
-  header: { paddingHorizontal: H_PAD, paddingBottom: 12 },
-  hdrRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  header: { paddingHorizontal: H_PAD, paddingBottom: 8 },
+  hdrRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   locBtn: { flexDirection: "row", alignItems: "center", gap: 4, flex: 1, marginRight: 12 },
   locTxt: { fontFamily: Font.semiBold, fontSize: 13, color: "#fff", flex: 1 },
 

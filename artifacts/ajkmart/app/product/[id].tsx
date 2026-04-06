@@ -1170,7 +1170,7 @@ const styles = StyleSheet.create({
   stickyHeader: {
     position: "absolute", top: 0, left: 0, right: 0, zIndex: 20,
     backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   stickyHeaderInner: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 16, gap: 12,
