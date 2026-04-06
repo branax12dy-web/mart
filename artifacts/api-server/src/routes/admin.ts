@@ -13,6 +13,7 @@ import conditionsRoutes from "./admin/conditions.js";
 import popupsRoutes from "./admin/popups.js";
 import supportChatAdminRoutes from "./admin/support-chat.js";
 import faqAdminRoutes from "./admin/faq.js";
+import communicationAdminRoutes from "./admin/communication.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -22,6 +23,7 @@ export {
   ensurePromotionsTables,
   ensureSupportMessagesTable,
   ensureFaqsTable,
+  ensureCommunicationTables,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,
@@ -49,5 +51,6 @@ router.use(conditionsRoutes);
 router.use(popupsRoutes);
 router.use("/support-chat", supportChatAdminRoutes);
 router.use("/faqs", faqAdminRoutes);
+router.use(communicationAdminRoutes);
 
 export default router;

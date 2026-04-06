@@ -30,6 +30,7 @@ import Notifications from "./pages/Notifications";
 import SecuritySettings from "./pages/SecuritySettings";
 import VanDriver from "./pages/VanDriver";
 import NotFound from "./pages/not-found";
+import Chat from "./pages/Chat";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, networkMode: 'offlineFirst' } } });
 
@@ -176,6 +177,7 @@ function AppRoutes() {
           <Route path="/profile" component={Profile} />
           <Route path="/settings/security" component={SecuritySettings} />
           <Route path="/van" component={VanDriver} />
+          <Route path="/chat" component={Chat} />
           <Route component={NotFound} />
         </Switch>
       </div>

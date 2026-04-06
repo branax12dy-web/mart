@@ -8,8 +8,9 @@ import {
   rideServiceTypesTable,
   popularLocationsTable,
   refreshTokensTable,
+  communicationRolesTable,
 } from "@workspace/db/schema";
-import { eq, count, sql } from "drizzle-orm";
+import { eq, and, count, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
@@ -1201,4 +1202,219 @@ export async function ensureFaqsTable() {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS faqs_sort_order_idx ON faqs (sort_order)`);
   } catch { /* table likely already exists */ }
   _faqsMigrated = true;
+}
+
+let _commMigrated = false;
+export async function ensureCommunicationTables() {
+  if (_commMigrated) return;
+  try {
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS ajk_id TEXT UNIQUE`);
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS comm_blocked BOOLEAN NOT NULL DEFAULT FALSE`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS users_ajk_id_idx ON users (ajk_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS communication_requests (
+        id TEXT PRIMARY KEY,
+        sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        receiver_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS comm_req_sender_idx ON communication_requests (sender_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS comm_req_receiver_idx ON communication_requests (receiver_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS comm_conversations (
+        id TEXT PRIMARY KEY,
+        participant1_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        participant2_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'direct',
+        status TEXT NOT NULL DEFAULT 'active',
+        context_type TEXT,
+        context_id TEXT,
+        last_message_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS conv_p1_idx ON comm_conversations (participant1_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS conv_p2_idx ON comm_conversations (participant2_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES comm_conversations(id) ON DELETE CASCADE,
+        sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT,
+        original_content TEXT,
+        translated_content TEXT,
+        message_type TEXT NOT NULL DEFAULT 'text',
+        voice_note_url TEXT,
+        voice_note_transcript TEXT,
+        voice_note_duration INTEGER,
+        voice_note_waveform TEXT,
+        image_url TEXT,
+        file_url TEXT,
+        file_name TEXT,
+        file_size INTEGER,
+        delivery_status TEXT NOT NULL DEFAULT 'sent',
+        read_at TIMESTAMP,
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        is_flagged BOOLEAN NOT NULL DEFAULT FALSE,
+        flag_reason TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS msg_conv_idx ON chat_messages (conversation_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS msg_sender_idx ON chat_messages (sender_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS call_logs (
+        id TEXT PRIMARY KEY,
+        caller_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        callee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id TEXT REFERENCES comm_conversations(id),
+        duration INTEGER,
+        status TEXT NOT NULL DEFAULT 'initiated',
+        started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        ended_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS communication_roles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        permissions JSONB,
+        role_pair_rules JSONB,
+        category_rules JSONB,
+        time_windows JSONB,
+        message_limits JSONB,
+        is_preset BOOLEAN NOT NULL DEFAULT FALSE,
+        created_by_ai BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS communication_flags (
+        id TEXT PRIMARY KEY,
+        message_id TEXT REFERENCES chat_messages(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        keyword TEXT,
+        reviewed_by_admin_id TEXT,
+        resolved_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ai_moderation_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        action_type TEXT NOT NULL,
+        input_text TEXT,
+        output_text TEXT,
+        tokens_used INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    /* Backfill AJK IDs for existing users — processes all, with collision-safe retry */
+    let offset = 0;
+    const batchSize = 500;
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    while (true) {
+      const batch = await db.select({ id: usersTable.id }).from(usersTable).where(sql`${usersTable.ajkId} IS NULL`).limit(batchSize);
+      if (batch.length === 0) break;
+      for (const u of batch) {
+        for (let attempt = 0; attempt < 10; attempt++) {
+          let ajkId = "AJK-";
+          for (let i = 0; i < 6; i++) ajkId += chars.charAt(Math.floor(Math.random() * chars.length));
+          try {
+            await db.update(usersTable).set({ ajkId }).where(and(eq(usersTable.id, u.id), sql`${usersTable.ajkId} IS NULL`));
+            break;
+          } catch {
+            if (attempt === 9) logger.warn({ userId: u.id }, "[migration] Failed to assign AJK ID after 10 retries");
+          }
+        }
+      }
+      offset += batch.length;
+      if (batch.length < batchSize) break;
+    }
+    if (offset > 0) logger.info({ count: offset }, "[migration] AJK ID backfill complete");
+
+    /* Seed default communication settings */
+    const defaultSettings: Record<string, string> = {
+      comm_enabled: "on",
+      comm_chat_enabled: "on",
+      comm_voice_calls_enabled: "on",
+      comm_voice_notes_enabled: "on",
+      comm_translation_enabled: "on",
+      comm_chat_assist_enabled: "on",
+      comm_hide_phone: "on",
+      comm_hide_email: "on",
+      comm_hide_cnic: "on",
+      comm_hide_bank: "on",
+      comm_hide_address: "on",
+      comm_max_message_length: "2000",
+      comm_max_voice_duration: "60",
+      comm_max_file_size: "5242880",
+      comm_allowed_file_types: "jpg,jpeg,png,gif,pdf,doc,docx",
+      comm_daily_message_limit: "500",
+      comm_daily_ai_limit: "50",
+      comm_request_expiry_hours: "72",
+      comm_time_window_start: "00:00",
+      comm_time_window_end: "23:59",
+      comm_flag_keywords: "",
+      comm_stun_servers: "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302",
+      comm_turn_server: "",
+      comm_turn_user: "",
+      comm_turn_pass: "",
+    };
+
+    for (const [key, value] of Object.entries(defaultSettings)) {
+      await db.insert(platformSettingsTable).values({
+        key,
+        value,
+        label: key.replace(/^comm_/, "").replace(/_/g, " "),
+        category: "communication",
+      }).onConflictDoNothing();
+    }
+
+    /* Seed preset communication role templates */
+    const presets = [
+      { name: "Order Support", description: "Chat only during active order + 30 min", permissions: { chat: true, voiceCall: false, voiceNote: false }, rolePairRules: { customer_vendor: true }, isPreset: true },
+      { name: "General Inquiry", description: "Chat anytime customer↔vendor", permissions: { chat: true, voiceCall: false, voiceNote: true }, rolePairRules: { customer_vendor: true }, isPreset: true },
+      { name: "Delivery Support", description: "Chat+call during active delivery rider↔customer", permissions: { chat: true, voiceCall: true, voiceNote: true }, rolePairRules: { customer_rider: true }, isPreset: true },
+      { name: "Vendor-Rider Coordination", description: "Chat+call during order rider↔vendor", permissions: { chat: true, voiceCall: true, voiceNote: false }, rolePairRules: { vendor_rider: true }, isPreset: true },
+    ];
+
+    const [existingPreset] = await db.select({ id: communicationRolesTable.id }).from(communicationRolesTable).where(eq(communicationRolesTable.isPreset, true)).limit(1);
+    if (!existingPreset) {
+      for (const p of presets) {
+        await db.insert(communicationRolesTable).values({
+          id: generateId(),
+          name: p.name,
+          description: p.description,
+          permissions: p.permissions,
+          rolePairRules: p.rolePairRules,
+          isPreset: true,
+        });
+      }
+    }
+
+    logger.info("[migration] Communication tables ensured");
+  } catch (e) {
+    logger.error({ err: e }, "[migration] Communication tables migration failed — will retry next startup");
+    return;
+  }
+  _commMigrated = true;
 }

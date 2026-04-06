@@ -22,6 +22,47 @@
 - Applied to: Home (search bar collapses), Food/Mart/Pharmacy (subtitle + search bar collapse), Orders (subtitle + stats row collapse). Wallet/Cart/ScreenHeader/Product detail received static spacing tightening.
 - Uses `useNativeDriver: false` for layout-affecting animations (maxHeight). Scroll events composed through SmartRefresh's `onScroll` passthrough.
 
+### Communication System — Completed
+
+Full in-app communication system with chat, voice calling, AI moderation/translation, and admin control panel.
+
+#### Database Schema (`lib/db/src/schema/communication.ts`)
+- `communication_requests` — Request-based communication initiation between users
+- `comm_conversations` — Conversation threads between two users
+- `chat_messages` — Messages with content moderation (original + masked content), delivery status tracking, voice note transcript
+- `call_logs` — Voice call history with duration, status, ICE server config
+- `communication_roles` — Role templates for permission control (chat, voiceCall, voiceNote, fileSharing) + role-pair rules + category rules + time windows + message limits
+- `communication_flags` — Flagged message tracking for admin review
+- `ai_moderation_logs` — AI usage tracking (translation, compose assist, transcription)
+- Users table: `ajkId` (unique AJK-XXXXXX format), `commBlocked` boolean
+
+#### Backend Services
+- **Content Moderation** (`artifacts/api-server/src/services/contentModeration.ts`): Regex-based filtering for Pakistani phone numbers, emails, CNIC, IBAN, bank accounts, addresses. Configurable via admin settings.
+- **AI Service** (`artifacts/api-server/src/services/communicationAI.ts`): Translation, compose assist, role template generation via gpt-5-nano (Replit AI Integrations). Audio transcription via gpt-4o-mini-transcribe. Exponential backoff retry on 429/503/500 (3 attempts).
+
+#### API Routes
+- **User** (`/api/communication/*`): AJK ID lookup, user search, request CRUD, conversations, messages (originalContent stripped from user responses), read receipts, translate, compose-assist, call initiate/answer/end/reject, call history, voice note upload with transcript masking
+- **Admin** (`/api/admin/communication/*`): Dashboard stats, conversations browser (with originalContent visible), call history, AI logs, flagged messages, role templates (AI-assisted creation with role-pair matrix), user block/unblock, settings CRUD, CSV export, gold AJK ID assignment
+
+#### Socket.IO Events & Security
+- `comm:typing:start/stop` — validated against conversation membership via `isAuthorizedForConversationRoom`
+- `comm:message:delivered` — verifies emitter is conversation participant and recipient (not sender) before DB update
+- `comm:call:offer/answer/ice-candidate/end` — standard signaling relay
+- `comm:message:new/sent/read`, `comm:request:new/accepted/rejected`, `comm:call:incoming/answered/ended/rejected`
+- Conversation rooms (`conversation:{id}`) with membership authorization on join
+
+#### Frontend
+- **Admin Panel** (`artifacts/admin/src/pages/communication.tsx`): 8-tab interface (Dashboard, Settings, AJK IDs, Conversations, Calls, AI Logs, Flagged, Roles). Role template editor includes feature permissions, role-pair matrix (6 pairs), category rules (food/mart/pharmacy/parcel), time windows, and message limits. Gold AJK ID assignment with search.
+- **Vendor App** (`artifacts/vendor-app/src/pages/Chat.tsx`): Full chat UI with conversations list, requests, AJK ID search, message thread, WebRTC voice calls (RTCPeerConnection, SDP/ICE), typing indicators, delivery status. Typed interfaces throughout.
+- **Rider App** (`artifacts/rider-app/src/pages/Chat.tsx`): Same as vendor with emerald theme. Typed interfaces throughout.
+- **Mobile App** (`artifacts/ajkmart/app/chat/`): `index.tsx` (conversations list + requests), `[id].tsx` (chat detail + WebRTC voice calls with RTCPeerConnection, SDP/ICE, mute/unmute), `search.tsx` (AJK ID user search)
+
+#### WebRTC Voice Calling
+- P2P architecture with STUN/TURN server configuration via admin settings
+- Opus codec for low-bandwidth optimization (Edge/2G compatible)
+- Call signaling via Socket.IO events, full SDP/ICE exchange on all platforms (web + Expo)
+- Mute/unmute, call timer, incoming call alerts, connection state monitoring
+
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 

@@ -40,6 +40,7 @@ import {
   HelpCircle,
   BarChart2,
   Bug,
+  Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -120,6 +121,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navSupportChat",     href: "/support-chat",      icon: MessageCircle },
       { nameKey: "navFaqMgmt",         href: "/faq-management",    icon: HelpCircle },
       { nameKey: "navSearchAnalytics", href: "/search-analytics",  icon: BarChart2 },
+      { nameKey: "navCommunication" as TranslationKey, href: "/communication", icon: Radio },
     ],
   },
   {

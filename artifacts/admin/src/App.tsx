@@ -49,6 +49,7 @@ import SupportChat from "@/pages/support-chat";
 import FaqManagement from "@/pages/faq-management";
 import SearchAnalytics from "@/pages/search-analytics";
 import ErrorMonitor from "@/pages/error-monitor";
+import Communication from "@/pages/communication";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -152,6 +153,7 @@ function Router() {
       <Route path="/faq-management"><ProtectedRoute component={FaqManagement} /></Route>
       <Route path="/search-analytics"><ProtectedRoute component={SearchAnalytics} /></Route>
       <Route path="/error-monitor"><ProtectedRoute component={ErrorMonitor} /></Route>
+      <Route path="/communication"><ProtectedRoute component={Communication} /></Route>
 
       <Route component={NotFound} />
     </Switch>

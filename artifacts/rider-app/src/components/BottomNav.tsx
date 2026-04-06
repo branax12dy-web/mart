@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { Home, MapPin, Wallet, Bell, User } from "lucide-react";
+import { Home, MapPin, Wallet, Bell, User, MessageCircle } from "lucide-react";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { usePlatformConfig, getRiderModules } from "../lib/useConfig";
@@ -13,6 +13,7 @@ interface NavItem { href: string; labelKey: TranslationKey; Icon: React.Componen
 const navItems: NavItem[] = [
   { href: "/",               labelKey: "home",              Icon: Home    },
   { href: "/active",         labelKey: "active",            Icon: MapPin  },
+  { href: "/chat",           labelKey: "chat" as TranslationKey, Icon: MessageCircle },
   { href: "/wallet",         labelKey: "wallet",            Icon: Wallet, moduleKey: "wallet" },
   { href: "/notifications",  labelKey: "alerts",            Icon: Bell    },
   { href: "/profile",        labelKey: "profile",           Icon: User    },

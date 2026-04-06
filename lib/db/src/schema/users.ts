@@ -96,6 +96,8 @@ export const usersTable = pgTable("users", {
   autoSuspendReason: text("auto_suspend_reason"),
   adminOverrideSuspension: boolean("admin_override_suspension").notNull().default(false),
   commissionOverride: text("commission_override"),
+  ajkId:             text("ajk_id").unique(),
+  commBlocked:       boolean("comm_blocked").notNull().default(false),
   lastLoginAt:       timestamp("last_login_at"),
   lastActive:        timestamp("last_active"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
@@ -108,6 +110,7 @@ export const usersTable = pgTable("users", {
   index("users_roles_idx").on(t.roles),
   index("users_is_online_idx").on(t.isOnline),
   index("users_roles_is_online_idx").on(t.roles, t.isOnline),
+  index("users_ajk_id_idx").on(t.ajkId),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ createdAt: true, updatedAt: true });

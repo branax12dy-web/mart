@@ -3,7 +3,7 @@ import type { Server as HttpServer } from "http";
 import { logger } from "./logger.js";
 import { verifyUserJwt, verifyAdminJwt } from "../middleware/security.js";
 import { db } from "@workspace/db";
-import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable, usersTable, locationHistoryTable } from "@workspace/db/schema";
+import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable, usersTable, locationHistoryTable, callLogsTable, conversationsTable, chatMessagesTable } from "@workspace/db/schema";
 import { eq, or, and, sql, lt, lte } from "drizzle-orm";
 
 /* ── Server-side GPS broadcast throttle: max 1 emit per rider per 1500ms ── */
@@ -187,6 +187,20 @@ async function isAuthorizedForRideRoom(
   return false;
 }
 
+async function isAuthorizedForConversationRoom(convId: string, userId: string): Promise<boolean> {
+  try {
+    const [conv] = await db
+      .select({ p1: conversationsTable.participant1Id, p2: conversationsTable.participant2Id })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, convId))
+      .limit(1);
+    if (!conv) return false;
+    return conv.p1 === userId || conv.p2 === userId;
+  } catch {
+    return false;
+  }
+}
+
 export function initSocketIO(httpServer: HttpServer): SocketIOServer {
   const isDev = process.env.NODE_ENV !== "production";
   _io = new SocketIOServer(httpServer, {
@@ -248,6 +262,15 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
               logger.debug({ socketId: socket.id, room }, "Socket denied order room (not a participant)");
             }
           }).catch((e: Error) => logger.warn({ socketId: socket.id, room, err: e.message }, "[socketio] order room auth check failed"));
+        } else if (room.startsWith("conversation:")) {
+          const convId = room.slice("conversation:".length);
+          const bearer2 = getTokenFromHandshake(headers, auth);
+          const sess2 = getCachedSession(socket.id, bearer2);
+          if (sess2?.userId) {
+            isAuthorizedForConversationRoom(convId, sess2.userId).then(ok => {
+              if (ok) socket.join(room);
+            }).catch(() => {});
+          }
         }
       }
     }
@@ -382,7 +405,80 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
             logger.debug({ socketId: socket.id, room }, "Socket join denied order room (not a participant)");
           }
         }).catch((e: Error) => logger.warn({ socketId: socket.id, room, err: e.message }, "[socketio] order room join auth check failed"));
+      } else if (room.startsWith("conversation:")) {
+        const convId = room.slice("conversation:".length);
+        if (cachedSession?.userId) {
+          isAuthorizedForConversationRoom(convId, cachedSession.userId).then(ok => {
+            if (ok) socket.join(room);
+          }).catch(() => {});
+        }
       }
+    });
+
+    /* ── Communication system events ── */
+    socket.on("comm:typing:start", async (payload: { conversationId: string; userId: string }) => {
+      if (!cachedSession?.userId || cachedSession.userId !== payload?.userId || !payload?.conversationId) return;
+      const ok = await isAuthorizedForConversationRoom(payload.conversationId, cachedSession.userId).catch(() => false);
+      if (!ok) return;
+      socket.to(`conversation:${payload.conversationId}`).emit("comm:typing:start", { userId: payload.userId, conversationId: payload.conversationId });
+    });
+
+    socket.on("comm:typing:stop", async (payload: { conversationId: string; userId: string }) => {
+      if (!cachedSession?.userId || cachedSession.userId !== payload?.userId || !payload?.conversationId) return;
+      const ok = await isAuthorizedForConversationRoom(payload.conversationId, cachedSession.userId).catch(() => false);
+      if (!ok) return;
+      socket.to(`conversation:${payload.conversationId}`).emit("comm:typing:stop", { userId: payload.userId, conversationId: payload.conversationId });
+    });
+
+    socket.on("comm:call:offer", async (payload: { callId: string; targetUserId: string; sdp: unknown }) => {
+      if (!cachedSession?.userId || !payload?.callId || !payload?.targetUserId) return;
+      try {
+        const [call] = await db.select().from(callLogsTable).where(and(eq(callLogsTable.id, payload.callId), or(eq(callLogsTable.callerId, cachedSession.userId), eq(callLogsTable.calleeId, cachedSession.userId)))).limit(1);
+        if (!call) return;
+      } catch { return; }
+      _io!.to(`user:${payload.targetUserId}`).emit("comm:call:offer", { callId: payload.callId, sdp: payload.sdp, callerId: cachedSession.userId });
+    });
+
+    socket.on("comm:call:answer", async (payload: { callId: string; targetUserId: string; sdp: unknown }) => {
+      if (!cachedSession?.userId || !payload?.callId || !payload?.targetUserId) return;
+      try {
+        const [call] = await db.select().from(callLogsTable).where(and(eq(callLogsTable.id, payload.callId), or(eq(callLogsTable.callerId, cachedSession.userId), eq(callLogsTable.calleeId, cachedSession.userId)))).limit(1);
+        if (!call) return;
+      } catch { return; }
+      _io!.to(`user:${payload.targetUserId}`).emit("comm:call:answer", { callId: payload.callId, sdp: payload.sdp });
+    });
+
+    socket.on("comm:call:ice-candidate", async (payload: { callId: string; targetUserId: string; candidate: unknown }) => {
+      if (!cachedSession?.userId || !payload?.callId || !payload?.targetUserId) return;
+      try {
+        const [call] = await db.select().from(callLogsTable).where(and(eq(callLogsTable.id, payload.callId), or(eq(callLogsTable.callerId, cachedSession.userId), eq(callLogsTable.calleeId, cachedSession.userId)))).limit(1);
+        if (!call) return;
+      } catch { return; }
+      _io!.to(`user:${payload.targetUserId}`).emit("comm:call:ice-candidate", { callId: payload.callId, candidate: payload.candidate });
+    });
+
+    socket.on("comm:call:end", async (payload: { callId: string; targetUserId: string }) => {
+      if (!cachedSession?.userId || !payload?.callId || !payload?.targetUserId) return;
+      try {
+        const [call] = await db.select().from(callLogsTable).where(and(eq(callLogsTable.id, payload.callId), or(eq(callLogsTable.callerId, cachedSession.userId), eq(callLogsTable.calleeId, cachedSession.userId)))).limit(1);
+        if (!call) return;
+      } catch { return; }
+      _io!.to(`user:${payload.targetUserId}`).emit("comm:call:ended", { callId: payload.callId });
+    });
+
+    socket.on("comm:message:delivered", async (payload: { messageId: string; senderId: string }) => {
+      if (!cachedSession?.userId || !payload?.messageId || !payload?.senderId) return;
+      try {
+        const [msg] = await db.select({ senderId: chatMessagesTable.senderId, conversationId: chatMessagesTable.conversationId }).from(chatMessagesTable).where(eq(chatMessagesTable.id, payload.messageId)).limit(1);
+        if (!msg || msg.senderId !== payload.senderId) return;
+        const ok = await isAuthorizedForConversationRoom(msg.conversationId, cachedSession.userId);
+        if (!ok) return;
+        if (msg.senderId === cachedSession.userId) return;
+        await db.update(chatMessagesTable)
+          .set({ deliveryStatus: "delivered", updatedAt: new Date() })
+          .where(and(eq(chatMessagesTable.id, payload.messageId), sql`${chatMessagesTable.deliveryStatus} = 'sent'`));
+        _io!.to(`user:${payload.senderId}`).emit("comm:message:delivered", { messageId: payload.messageId });
+      } catch {}
     });
 
     socket.on("leave", (room: string) => {

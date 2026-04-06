@@ -2097,6 +2097,16 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
   const userId = generateId();
 
+  const ajkChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let ajkId = "";
+  for (let attempt = 0; attempt < 10; attempt++) {
+    ajkId = "AJK-";
+    for (let i = 0; i < 6; i++) ajkId += ajkChars.charAt(Math.floor(Math.random() * ajkChars.length));
+    const [dup] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.ajkId, ajkId)).limit(1);
+    if (!dup) break;
+    if (attempt === 9) throw new Error("Failed to generate unique AJK ID after 10 attempts");
+  }
+
   await db.insert(usersTable).values({
     id: userId,
     phone: normalizedPhone,
@@ -2112,6 +2122,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     walletBalance: "0",
     isActive: !needsApproval,
     approvalStatus: needsApproval ? "pending" : "approved",
+    ajkId,
     cnic: cnicValue || null,
     nationalId: cnicValue || null,
     vehicleType: vehicleType ? normalizeVehicleTypeForStorage(vehicleType) : null,

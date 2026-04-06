@@ -40,6 +40,7 @@ import supportChatRouter from "./support-chat.js";
 import publicVendorsRouter from "./public-vendors.js";
 import statsRouter from "./stats.js";
 import errorReportsRouter from "./error-reports.js";
+import communicationRouter from "./communication.js";
 
 const router: IRouter = Router();
 
@@ -90,5 +91,6 @@ router.use("/vendors", publicVendorsRouter);
 router.use("/stats", statsRouter);
 router.use("/error-reports", errorReportsRouter);
 router.use("/admin/error-reports", errorReportsRouter);
+router.use("/communication", communicationRouter);
 
 export default router;
