@@ -66,6 +66,10 @@ app.use("/api/{*path}", (req: Request, res: Response) => {
   });
 });
 
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({ error: "Not Found" });
+});
+
 interface AppError { status?: number; statusCode?: number; code?: string; message?: string }
 function isAppError(e: unknown): e is AppError {
   return typeof e === "object" && e !== null;

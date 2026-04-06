@@ -853,7 +853,7 @@ router.get("/leaderboard", async (_req, res) => {
   .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
   .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered")))
   .where(ilike(usersTable.roles, "%vendor%"))
-  .groupBy(usersTable.id)
+  .groupBy(usersTable.id, vendorProfilesTable.storeName)
   .orderBy(sql`coalesce(sum(${ordersTable.total}),0) desc`)
   .limit(5);
 
