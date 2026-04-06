@@ -1165,11 +1165,37 @@ export async function ensureSupportMessagesTable() {
         user_id TEXT NOT NULL,
         message TEXT NOT NULL,
         is_from_support BOOLEAN NOT NULL DEFAULT FALSE,
+        is_read_by_admin BOOLEAN NOT NULL DEFAULT FALSE,
+        is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS support_messages_user_id_idx ON support_messages (user_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS support_messages_created_at_idx ON support_messages (created_at)`);
+    await db.execute(sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_read_by_admin BOOLEAN NOT NULL DEFAULT FALSE`);
+    await db.execute(sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_resolved BOOLEAN NOT NULL DEFAULT FALSE`);
   } catch { /* table likely already exists */ }
   _supportMessagesMigrated = true;
+}
+
+let _faqsMigrated = false;
+export async function ensureFaqsTable() {
+  if (_faqsMigrated) return;
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS faqs (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL DEFAULT 'General',
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS faqs_category_idx ON faqs (category)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS faqs_sort_order_idx ON faqs (sort_order)`);
+  } catch { /* table likely already exists */ }
+  _faqsMigrated = true;
 }

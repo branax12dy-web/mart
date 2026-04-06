@@ -8,6 +8,38 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Admin Customer Support Features — Completed
+
+Three new admin management pages added under the "Customer Support" sidebar group (cyan color):
+
+#### 1. Support Chat Inbox (`/support-chat`)
+- **Page**: `artifacts/admin/src/pages/support-chat.tsx`
+- **API**: `artifacts/api-server/src/routes/admin/support-chat.ts`
+- Endpoints: `GET /admin/support-chat/conversations`, `GET /admin/support-chat/conversations/:userId`, `POST /admin/support-chat/conversations/:userId/reply`, `PATCH /admin/support-chat/conversations/:userId/resolve`
+- Real-time updates via Socket.IO (`support_message` event); sidebar shows unread counts
+- Mark conversations resolved/reopened; admin replies appear in customer chat instantly
+
+#### 2. FAQ Management (`/faq-management`)
+- **Page**: `artifacts/admin/src/pages/faq-management.tsx`
+- **API**: `artifacts/api-server/src/routes/admin/faq.ts`
+- Full CRUD for FAQ entries; categories: Orders, Payment, Delivery, Account, Offers, Pharmacy, Rides, Parcel, Van, General
+- Toggle active/inactive (hidden from customers); sort order control; search and filter by category
+- `GET /api/platform-config/faqs` now reads from DB with fallback to hardcoded defaults
+
+#### 3. Search Analytics (`/search-analytics`)
+- **Page**: `artifacts/admin/src/pages/search-analytics.tsx`
+- Displays trending search terms from `/api/products/trending-searches`
+- Shows top 20 trending products from `/api/recommendations/trending` with period selector (Today, 7d, 30d)
+- Engagement breakdown guide (views, wishlist, cart, trending score, ratings, conversions)
+
+#### DB Changes
+- **`lib/db/src/schema/faqs.ts`** — new FAQs table (id, category, question, answer, is_active, sort_order, created_at, updated_at)
+- **`lib/db/src/schema/support_messages.ts`** — added `is_read_by_admin` and `is_resolved` columns
+- `ensureFaqsTable()` and updated `ensureSupportMessagesTable()` run at server startup for safe migrations
+
+#### i18n Keys Added (all 3 languages)
+- `navSupportChat`, `navFaqMgmt`, `navSearchAnalytics`, `navCustomerSupport`
+
 ### Pro Offers & Promotions Engine — Completed
 
 Enterprise-grade campaign manager and promotions system replacing scattered promo codes / flash deals with a unified Promotions Hub.

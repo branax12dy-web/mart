@@ -36,6 +36,9 @@ import {
   Bus,
   Truck,
   Megaphone,
+  MessageCircle,
+  HelpCircle,
+  BarChart2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -106,6 +109,15 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { nameKey: "navBanners",  href: "/banners", icon: Layers },
       { nameKey: "navPopups",   href: "/popups",  icon: Megaphone },
+    ],
+  },
+  {
+    labelKey: "navCustomerSupport",
+    color: "#06B6D4",
+    items: [
+      { nameKey: "navSupportChat",     href: "/support-chat",      icon: MessageCircle },
+      { nameKey: "navFaqMgmt",         href: "/faq-management",    icon: HelpCircle },
+      { nameKey: "navSearchAnalytics", href: "/search-analytics",  icon: BarChart2 },
     ],
   },
   {

@@ -53,3 +53,4 @@ export * from "./campaigns";
 export * from "./offers";
 export * from "./offer_templates";
 export * from "./support_messages";
+export * from "./faqs";

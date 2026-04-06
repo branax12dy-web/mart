@@ -11,6 +11,8 @@ import serviceZonesRoutes from "./admin/service-zones.js";
 import deliveryAccessRoutes from "./admin/delivery-access.js";
 import conditionsRoutes from "./admin/conditions.js";
 import popupsRoutes from "./admin/popups.js";
+import supportChatAdminRoutes from "./admin/support-chat.js";
+import faqAdminRoutes from "./admin/faq.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -19,6 +21,7 @@ export {
   ensureOrdersGpsColumns,
   ensurePromotionsTables,
   ensureSupportMessagesTable,
+  ensureFaqsTable,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,
@@ -44,5 +47,7 @@ router.use("/service-zones", serviceZonesRoutes);
 router.use(deliveryAccessRoutes);
 router.use(conditionsRoutes);
 router.use(popupsRoutes);
+router.use("/support-chat", supportChatAdminRoutes);
+router.use("/faqs", faqAdminRoutes);
 
 export default router;

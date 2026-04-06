@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
 import { getPlatformSettings } from "./admin.js";
 import { sendSuccess } from "../lib/response.js";
+import { db } from "@workspace/db";
+import { faqsTable } from "@workspace/db/schema";
+import { eq, asc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -322,82 +325,37 @@ router.get("/", async (req, res) => {
   });
 });
 
+const FALLBACK_FAQS = [
+  { id: "1", category: "Orders", question: "How do I track my order?", answer: "Go to the Orders tab in the app. You can see real-time status updates for all your orders. For delivery orders, you can also track the rider's live location.", isActive: true, sortOrder: 0 },
+  { id: "2", category: "Orders", question: "Can I cancel my order?", answer: "You can cancel your order within a few minutes of placing it. Go to Orders, select the order, and tap Cancel. After that window, please contact our support team.", isActive: true, sortOrder: 1 },
+  { id: "3", category: "Payment", question: "What payment methods are accepted?", answer: "We accept Cash on Delivery (COD), AJKMart Wallet, JazzCash, and EasyPaisa. Wallet payments get instant confirmation.", isActive: true, sortOrder: 0 },
+  { id: "4", category: "Payment", question: "How do I add money to my wallet?", answer: "Go to the Wallet tab, tap Top Up, and choose your preferred payment method (JazzCash, EasyPaisa, or bank transfer). Top-ups are usually processed within minutes.", isActive: true, sortOrder: 1 },
+  { id: "5", category: "Delivery", question: "What are the delivery charges?", answer: "Delivery charges vary by service type and your location. Free delivery is available on orders above the minimum threshold. Check the cart screen for exact delivery fees.", isActive: true, sortOrder: 0 },
+  { id: "6", category: "Delivery", question: "How long does delivery take?", answer: "Food orders are typically delivered in 25–45 minutes. Grocery/Mart orders take 30–60 minutes. Pharmacy orders are delivered in 20–40 minutes. Actual times may vary.", isActive: true, sortOrder: 1 },
+  { id: "7", category: "Account", question: "How do I reset my password?", answer: "On the login screen, tap 'Forgot Password'. Enter your registered phone number or email, and you'll receive an OTP to reset your password.", isActive: true, sortOrder: 0 },
+  { id: "8", category: "Account", question: "How do I update my profile information?", answer: "Go to the Profile tab, then tap the pencil/edit icon at the top. You can update your name, email, address, and other personal details.", isActive: true, sortOrder: 1 },
+  { id: "9", category: "Offers", question: "How do I use a promo code?", answer: "During checkout, you'll find a promo code field. Enter your code and tap Apply. The discount will be automatically applied to your order total.", isActive: true, sortOrder: 0 },
+  { id: "10", category: "Offers", question: "Why is my promo code not working?", answer: "Promo codes may have expired, reached their usage limit, or have minimum order requirements. Check the offer details in the Offers section for full terms.", isActive: true, sortOrder: 1 },
+  { id: "11", category: "Pharmacy", question: "Do I need a prescription for medicine orders?", answer: "Some medicines require a prescription. You can upload a photo of your prescription during checkout. Our pharmacist will verify it before processing your order.", isActive: true, sortOrder: 0 },
+  { id: "12", category: "Rides", question: "How do I book a ride?", answer: "Tap the Rides service on the home screen. Enter your pickup and drop-off location, select your vehicle type, and confirm the fare estimate.", isActive: true, sortOrder: 0 },
+];
+
 router.get("/faqs", async (_req, res) => {
-  const faqs = [
-    {
-      id: "1",
-      category: "Orders",
-      question: "How do I track my order?",
-      answer: "Go to the Orders tab in the app. You can see real-time status updates for all your orders. For delivery orders, you can also track the rider's live location.",
-    },
-    {
-      id: "2",
-      category: "Orders",
-      question: "Can I cancel my order?",
-      answer: "You can cancel your order within a few minutes of placing it. Go to Orders, select the order, and tap Cancel. After that window, please contact our support team.",
-    },
-    {
-      id: "3",
-      category: "Payment",
-      question: "What payment methods are accepted?",
-      answer: "We accept Cash on Delivery (COD), AJKMart Wallet, JazzCash, and EasyPaisa. Wallet payments get instant confirmation.",
-    },
-    {
-      id: "4",
-      category: "Payment",
-      question: "How do I add money to my wallet?",
-      answer: "Go to the Wallet tab, tap Top Up, and choose your preferred payment method (JazzCash, EasyPaisa, or bank transfer). Top-ups are usually processed within minutes.",
-    },
-    {
-      id: "5",
-      category: "Delivery",
-      question: "What are the delivery charges?",
-      answer: "Delivery charges vary by service type and your location. Free delivery is available on orders above the minimum threshold. Check the cart screen for exact delivery fees.",
-    },
-    {
-      id: "6",
-      category: "Delivery",
-      question: "How long does delivery take?",
-      answer: "Food orders are typically delivered in 25–45 minutes. Grocery/Mart orders take 30–60 minutes. Pharmacy orders are delivered in 20–40 minutes. Actual times may vary.",
-    },
-    {
-      id: "7",
-      category: "Account",
-      question: "How do I reset my password?",
-      answer: "On the login screen, tap 'Forgot Password'. Enter your registered phone number or email, and you'll receive an OTP to reset your password.",
-    },
-    {
-      id: "8",
-      category: "Account",
-      question: "How do I update my profile information?",
-      answer: "Go to the Profile tab, then tap the pencil/edit icon at the top. You can update your name, email, address, and other personal details.",
-    },
-    {
-      id: "9",
-      category: "Offers",
-      question: "How do I use a promo code?",
-      answer: "During checkout, you'll find a promo code field. Enter your code and tap Apply. The discount will be automatically applied to your order total.",
-    },
-    {
-      id: "10",
-      category: "Offers",
-      question: "Why is my promo code not working?",
-      answer: "Promo codes may have expired, reached their usage limit, or have minimum order requirements. Check the offer details in the Offers section for full terms.",
-    },
-    {
-      id: "11",
-      category: "Pharmacy",
-      question: "Do I need a prescription for medicine orders?",
-      answer: "Some medicines require a prescription. You can upload a photo of your prescription during checkout. Our pharmacist will verify it before processing your order.",
-    },
-    {
-      id: "12",
-      category: "Rides",
-      question: "How do I book a ride?",
-      answer: "Tap the Rides service on the home screen. Enter your pickup and drop-off location, select your vehicle type, and confirm the fare estimate.",
-    },
-  ];
-  sendSuccess(res, { faqs });
+  try {
+    const dbFaqs = await db
+      .select()
+      .from(faqsTable)
+      .where(eq(faqsTable.isActive, true))
+      .orderBy(asc(faqsTable.sortOrder), asc(faqsTable.createdAt));
+
+    const faqs = dbFaqs.length > 0
+      ? dbFaqs.map(f => ({ id: f.id, category: f.category, question: f.question, answer: f.answer }))
+      : FALLBACK_FAQS.map(f => ({ id: f.id, category: f.category, question: f.question, answer: f.answer }));
+
+    sendSuccess(res, { faqs });
+  } catch {
+    sendSuccess(res, { faqs: FALLBACK_FAQS.map(f => ({ id: f.id, category: f.category, question: f.question, answer: f.answer })) });
+  }
 });
 
 export default router;
