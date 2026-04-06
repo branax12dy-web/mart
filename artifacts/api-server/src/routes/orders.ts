@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable } from "@workspace/db/schema";
-import { eq, and, gte, count, sum, desc, SQL, sql, inArray } from "drizzle-orm";
+import { eq, and, gte, count, sum, desc, SQL, sql, inArray, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, addAuditEntry, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
@@ -77,7 +77,7 @@ async function notifyOnlineRidersOfOrder(orderId: string, orderType: string): Pr
       .innerJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
       .where(and(
         eq(liveLocationsTable.role, "rider"),
-        eq(usersTable.role, "rider"),
+        ilike(usersTable.roles, "%rider%"),
         eq(usersTable.isOnline, true),
         gte(liveLocationsTable.updatedAt, tenMinAgo),
       ));

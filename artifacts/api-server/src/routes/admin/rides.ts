@@ -5,6 +5,7 @@ import {
   walletTransactionsTable,
   notificationsTable,
   ordersTable, ridesTable, rideBidsTable, rideServiceTypesTable, popularLocationsTable, schoolRoutesTable, schoolSubscriptionsTable, liveLocationsTable, rideEventLogsTable, rideNotifiedRidersTable, locationLogsTable, locationHistoryTable,
+  vendorProfilesTable, riderProfilesTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
 import {
@@ -629,13 +630,14 @@ router.get("/live-riders", async (_req, res) => {
       name:         usersTable.name,
       phone:        usersTable.phone,
       isOnline:     usersTable.isOnline,
-      vehicleType:  usersTable.vehicleType,
+      vehicleType:  riderProfilesTable.vehicleType,
       city:         usersTable.city,
-      role:         usersTable.role,
+      roles:        usersTable.roles,
       lastActive:   usersTable.lastActive,
     })
     .from(liveLocationsTable)
     .leftJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
+    .leftJoin(riderProfilesTable, eq(liveLocationsTable.userId, riderProfilesTable.userId))
     .where(or(eq(liveLocationsTable.role, "rider"), eq(liveLocationsTable.role, "service_provider")));
 
   const enriched = locs.map(loc => {
@@ -649,7 +651,7 @@ router.get("/live-riders", async (_req, res) => {
       isOnline:     loc.isOnline    ?? false,
       vehicleType:  loc.vehicleType ?? null,
       city:         loc.city        ?? null,
-      role:         loc.role        ?? "rider",
+      role:         loc.roles       ?? "rider",
       batteryLevel: loc.batteryLevel ?? null,
       lastSeen:     loc.lastSeen    instanceof Date ? loc.lastSeen.toISOString()    : (loc.lastSeen    ?? null),
       onlineSince:  loc.onlineSince instanceof Date ? loc.onlineSince.toISOString() : (loc.onlineSince ?? null),
@@ -784,14 +786,15 @@ router.get("/revenue-trend", async (_req, res) => {
 router.get("/leaderboard", async (_req, res) => {
   const vendors = await db.select({
     id:     usersTable.id,
-    name:   usersTable.storeName,
+    name:   vendorProfilesTable.storeName,
     phone:  usersTable.phone,
     totalOrders: sql<number>`count(${ordersTable.id})`,
     totalRevenue: sql<number>`coalesce(sum(${ordersTable.total}),0)`,
   })
   .from(usersTable)
+  .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
   .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered")))
-  .where(eq(usersTable.role, "vendor"))
+  .where(ilike(usersTable.roles, "%vendor%"))
   .groupBy(usersTable.id)
   .orderBy(sql`coalesce(sum(${ordersTable.total}),0) desc`)
   .limit(5);
@@ -805,7 +808,7 @@ router.get("/leaderboard", async (_req, res) => {
   })
   .from(usersTable)
   .leftJoin(ridesTable, and(eq(ridesTable.riderId, usersTable.id), eq(ridesTable.status, "completed")))
-  .where(eq(usersTable.role, "rider"))
+  .where(ilike(usersTable.roles, "%rider%"))
   .groupBy(usersTable.id)
   .orderBy(sql`count(${ridesTable.id}) desc`)
   .limit(5);
@@ -1040,10 +1043,10 @@ router.post("/rides/:id/reassign", async (req, res) => {
 
   if (!riderId) { sendValidationError(res, "riderId is required to reassign"); return; }
 
-  const [riderUser] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role, isActive: usersTable.isActive, approvalStatus: usersTable.approvalStatus, isOnline: usersTable.isOnline })
+  const [riderUser] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, isActive: usersTable.isActive, approvalStatus: usersTable.approvalStatus, isOnline: usersTable.isOnline })
     .from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
   if (!riderUser) { sendNotFound(res, "Rider not found"); return; }
-  if (riderUser.role !== "rider") { sendValidationError(res, "Selected user is not a rider"); return; }
+  if (!(riderUser.roles ?? "").includes("rider")) { sendValidationError(res, "Selected user is not a rider"); return; }
   if (riderUser.isActive === false) { sendValidationError(res, "Cannot assign ride to a deactivated rider account"); return; }
   if (riderUser.approvalStatus === "rejected") { sendValidationError(res, "Cannot assign ride to a rejected/blocked rider"); return; }
   if (riderUser.isOnline === false) { sendValidationError(res, "Cannot assign ride to an offline rider. Rider must be online to receive assignments."); return; }

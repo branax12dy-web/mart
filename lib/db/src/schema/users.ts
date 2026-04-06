@@ -8,7 +8,6 @@ export const usersTable = pgTable("users", {
   phone:           text("phone").unique(),
   name:            text("name"),
   email:           text("email").unique(),
-  role:            text("role").notNull().default("customer"),
   roles:           text("roles").notNull().default("customer"),
   avatar:          text("avatar"),
   walletBalance:   decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0"),
@@ -49,37 +48,6 @@ export const usersTable = pgTable("users", {
   bankAccount:       text("bank_account"),
   bankAccountTitle:  text("bank_account_title"),
   nationalId:        text("national_id"),
-  /* ── DEPRECATED: Vendor store fields ────────────────────────────────────────
-     These columns have been migrated to the vendor_profiles table.
-     They are kept here for backward compatibility during migration only.
-     New code should JOIN vendor_profiles. Phase 3 will DROP these columns.
-  ── */
-  storeName:         text("store_name"),
-  storeCategory:     text("store_category"),
-  storeBanner:       text("store_banner"),
-  storeDescription:  text("store_description"),
-  storeHours:        text("store_hours"),
-  storeAnnouncement: text("store_announcement"),
-  storeMinOrder:     decimal("store_min_order", { precision: 10, scale: 2 }).default("0"),
-  storeDeliveryTime: text("store_delivery_time"),
-  storeIsOpen:       boolean("store_is_open").notNull().default(true),
-  storeAddress:      text("store_address"),
-  storeLat:          decimal("store_lat", { precision: 10, scale: 6 }),
-  storeLng:          decimal("store_lng", { precision: 10, scale: 6 }),
-  businessType:      text("business_type"),
-  businessName:      text("business_name"),
-  ntn:               text("ntn"),
-  /* ── DEPRECATED: Rider vehicle fields ───────────────────────────────────────
-     These columns have been migrated to the rider_profiles table.
-     They are kept here for backward compatibility during migration only.
-     New code should JOIN rider_profiles. Phase 3 will DROP these columns.
-  ── */
-  vehicleType:       text("vehicle_type"),
-  vehiclePlate:      text("vehicle_plate"),
-  vehicleRegNo:      text("vehicle_reg_no"),
-  drivingLicense:    text("driving_license"),
-  vehiclePhoto:      text("vehicle_photo"),
-  documents:         text("documents"),
   biometricEnabled:  boolean("biometric_enabled").notNull().default(false),
   /* ── Wallet MPIN security ── */
   walletPinHash:       text("wallet_pin_hash"),
@@ -128,10 +96,10 @@ export const usersTable = pgTable("users", {
   /* DB-level floor: wallet can never go below zero.
      Application layer already enforces this; the DB constraint is the final guard. */
   check("users_wallet_non_negative", sql`${t.walletBalance} >= 0`),
-  /* Performance indexes for fleet/admin queries that filter by role and/or online status */
-  index("users_role_idx").on(t.role),
+  /* Performance indexes for fleet/admin queries that filter by roles and/or online status */
+  index("users_roles_idx").on(t.roles),
   index("users_is_online_idx").on(t.isOnline),
-  index("users_role_is_online_idx").on(t.role, t.isOnline),
+  index("users_roles_is_online_idx").on(t.roles, t.isOnline),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ createdAt: true, updatedAt: true });

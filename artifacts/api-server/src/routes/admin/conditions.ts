@@ -189,7 +189,7 @@ router.post("/conditions", async (req, res) => {
       return;
     }
 
-    const [user] = await db.select({ id: usersTable.id, role: usersTable.role, roles: usersTable.roles })
+    const [user] = await db.select({ id: usersTable.id, roles: usersTable.roles })
       .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!user) { sendNotFound(res, "User not found"); return; }
 
@@ -199,7 +199,7 @@ router.post("/conditions", async (req, res) => {
     const [condition] = await db.insert(accountConditionsTable).values({
       id,
       userId,
-      userRole: user.role,
+      userRole: user.roles?.split(",")[0]?.trim() || "customer",
       conditionType,
       severity,
       category,
@@ -618,7 +618,7 @@ router.post("/condition-rules/evaluate/:userId", async (req, res) => {
 
     const applicableRules = rules.filter(r => {
       const modeList = (r.modeApplicability || "default").split(",").map(s => s.trim());
-      return modeList.includes(currentMode) && r.targetRole === (user.role || "customer");
+      return modeList.includes(currentMode) && r.targetRole === (user.roles?.split(",")[0]?.trim() || "customer");
     });
 
     const existingConditions = await db.select().from(accountConditionsTable)
@@ -667,7 +667,7 @@ router.post("/condition-rules/evaluate/:userId", async (req, res) => {
         await db.insert(accountConditionsTable).values({
           id: condId,
           userId: userId!,
-          userRole: user.role || "customer",
+          userRole: user.roles?.split(",")[0]?.trim() || "customer",
           conditionType: rule.conditionType as any,
           severity: rule.severity as any,
           category,

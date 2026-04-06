@@ -13,6 +13,10 @@ import { sendSuccess, sendError, sendNotFound } from "../lib/response.js";
 
 const router: IRouter = Router();
 
+/* NOTE (#45): SOS alerts are stored in the notifications table with type='sos'.
+   No separate sos_alerts table is needed — this approach keeps SOS and general
+   notifications in a single unified query surface for the admin panel. */
+
 /* ── POST /sos — Customer or rider triggers SOS alert ─────────────────── */
 router.post("/", customerAuth, async (req, res) => {
   const settings = await getCachedSettings();
@@ -23,7 +27,7 @@ router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const { rideId, lat, lng, message } = req.body;
 
-  const [user] = await db.select({ name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+  const [user] = await db.select({ name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles })
     .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
 
   const locationStr = (lat && lng) ? ` · Location: ${parseFloat(lat).toFixed(5)},${parseFloat(lng).toFixed(5)}` : "";
@@ -34,7 +38,7 @@ router.post("/", customerAuth, async (req, res) => {
   const sosLang = await getUserLanguage(userId);
 
   const now = new Date();
-  const title = `🆘 ${t("sosAlert", sosLang)} — ${user?.name || "Unknown"} (${user?.role || "user"})`;
+  const title = `🆘 ${t("sosAlert", sosLang)} — ${user?.name || "Unknown"} (${user?.roles || "user"})`;
   const body  = `Phone: ${user?.phone || "N/A"}${rideStr}${locationStr}${msgStr}`;
   const link  = rideId ? `/rides/${rideId}` : `/users/${userId}`;
 

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { deliveryWhitelistTable, deliveryAccessRequestsTable, systemAuditLogTable, usersTable, notificationsTable, platformSettingsTable } from "@workspace/db/schema";
+import { deliveryWhitelistTable, deliveryAccessRequestsTable, systemAuditLogTable, usersTable, notificationsTable, platformSettingsTable, vendorProfilesTable } from "@workspace/db/schema";
 import { eq, and, or, desc, ilike, count, sql } from "drizzle-orm";
 import {
   type AdminRequest,
@@ -39,7 +39,7 @@ router.get("/delivery-access", async (req, res) => {
         or(
           ilike(usersTable.name, `%${search}%`),
           ilike(usersTable.phone, `%${search}%`),
-          ilike(usersTable.storeName, `%${search}%`),
+          ilike(vendorProfilesTable.storeName, `%${search}%`),
         )!,
       );
     }
@@ -68,11 +68,12 @@ router.get("/delivery-access", async (req, res) => {
         updatedAt: deliveryWhitelistTable.updatedAt,
         userName: usersTable.name,
         userPhone: usersTable.phone,
-        userRole: usersTable.role,
-        storeName: usersTable.storeName,
+        userRoles: usersTable.roles,
+        storeName: vendorProfilesTable.storeName,
       })
       .from(deliveryWhitelistTable)
       .leftJoin(usersTable, eq(deliveryWhitelistTable.targetId, usersTable.id))
+      .leftJoin(vendorProfilesTable, eq(deliveryWhitelistTable.targetId, vendorProfilesTable.userId))
       .where(whereClause)
       .orderBy(desc(deliveryWhitelistTable.createdAt))
       .limit(limit)
@@ -314,10 +315,11 @@ router.get("/delivery-access/requests", async (req, res) => {
         notes: deliveryAccessRequestsTable.notes,
         vendorName: usersTable.name,
         vendorPhone: usersTable.phone,
-        storeName: usersTable.storeName,
+        storeName: vendorProfilesTable.storeName,
       })
       .from(deliveryAccessRequestsTable)
       .leftJoin(usersTable, eq(deliveryAccessRequestsTable.vendorId, usersTable.id))
+      .leftJoin(vendorProfilesTable, eq(deliveryAccessRequestsTable.vendorId, vendorProfilesTable.userId))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(deliveryAccessRequestsTable.requestedAt));
 

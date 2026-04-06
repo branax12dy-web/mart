@@ -56,14 +56,14 @@ async function saveKycPhoto(userId: string, type: string, buffer: Buffer, mime: 
  *  platform config has wallet_kyc_required=on. */
 async function canSubmitKyc(userId: string): Promise<{ allowed: boolean; reason?: string }> {
   const [user] = await db
-    .select({ role: usersTable.role })
+    .select({ roles: usersTable.roles })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
 
   if (!user) return { allowed: false, reason: "User not found" };
 
-  const role = user.role ?? "customer";
+  const role = user.roles?.split(",")[0]?.trim() ?? "customer";
   if (role === "rider" || role === "vendor") return { allowed: true };
 
   /* Customer: check platform config */

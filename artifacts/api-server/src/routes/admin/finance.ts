@@ -5,6 +5,7 @@ import {
   walletTransactionsTable,
   notificationsTable,
   ordersTable, ridesTable, productsTable, riderPenaltiesTable, rideRatingsTable, reviewsTable,
+  vendorProfilesTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne, inArray } from "drizzle-orm";
 import {
@@ -64,11 +65,24 @@ router.get("/transactions-enriched", async (_req, res) => {
   sendSuccess(res, { transactions: enriched, total: transactions.length, totalCredit, totalDebit });
 });
 
-/* ── Delete User ── */
+/* ── Vendors list ── */
 router.get("/vendors", async (_req, res) => {
-  const vendors = await db.select().from(usersTable).where(
-    or(ilike(usersTable.roles, "%vendor%"), eq(usersTable.role, "vendor"))
-  ).orderBy(desc(usersTable.createdAt));
+  const vendors = await db.select({
+    id: usersTable.id, phone: usersTable.phone, name: usersTable.name,
+    email: usersTable.email, roles: usersTable.roles,
+    walletBalance: usersTable.walletBalance, isActive: usersTable.isActive,
+    isBanned: usersTable.isBanned, approvalStatus: usersTable.approvalStatus,
+    approvalNote: usersTable.approvalNote,
+    createdAt: usersTable.createdAt, lastLoginAt: usersTable.lastLoginAt,
+    storeName: vendorProfilesTable.storeName,
+    storeCategory: vendorProfilesTable.storeCategory,
+    storeIsOpen: vendorProfilesTable.storeIsOpen,
+    storeDescription: vendorProfilesTable.storeDescription,
+  })
+  .from(usersTable)
+  .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
+  .where(ilike(usersTable.roles, "%vendor%"))
+  .orderBy(desc(usersTable.createdAt));
 
   const vendorIds = vendors.map(v => v.id);
   let orderStats: { vendorId: string | null; totalOrders: number; totalRevenue: string | null; pendingOrders: number }[] = [];
@@ -93,7 +107,7 @@ router.get("/vendors", async (_req, res) => {
         walletBalance: parseFloat(v.walletBalance ?? "0"),
         isActive: v.isActive, isBanned: v.isBanned,
         approvalStatus: v.approvalStatus, approvalNote: v.approvalNote,
-        roles: v.roles, role: v.role,
+        roles: v.roles,
         createdAt: v.createdAt.toISOString(),
         lastLoginAt: v.lastLoginAt ? v.lastLoginAt.toISOString() : null,
         totalOrders: Number(stats.totalOrders ?? 0),
@@ -176,7 +190,7 @@ router.post("/vendors/:id/credit", async (req, res) => {
 ══════════════════════════════════════ */
 router.get("/riders", async (_req, res) => {
   const riders = await db.select().from(usersTable).where(
-    or(ilike(usersTable.roles, "%rider%"), eq(usersTable.role, "rider"))
+    ilike(usersTable.roles, "%rider%")
   ).orderBy(desc(usersTable.createdAt));
 
   const riderIds = riders.map(r => r.id);
@@ -209,7 +223,7 @@ router.get("/riders", async (_req, res) => {
       penaltyTotal: penaltyMap.get(r.id) ?? 0,
       avgRating: ratingMap.get(r.id)?.avg ?? 0,
       ratingCount: ratingMap.get(r.id)?.count ?? 0,
-      roles: r.roles, role: r.role,
+      roles: r.roles,
       isOnline: (r as any).isOnline ?? false,
       createdAt: r.createdAt.toISOString(),
       lastLoginAt: r.lastLoginAt ? r.lastLoginAt.toISOString() : null,
@@ -353,7 +367,7 @@ router.get("/withdrawal-requests", async (req, res) => {
     .orderBy(desc(walletTransactionsTable.createdAt))
     .limit(300);
   const enriched = await Promise.all(txns.map(async t => {
-    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles })
       .from(usersTable).where(eq(usersTable.id, t.userId)).limit(1);
     const ref = t.reference ?? "pending";
     const status = ref === "pending" ? "pending" : ref.startsWith("paid:") ? "paid" : ref.startsWith("rejected:") ? "rejected" : ref;
@@ -493,7 +507,7 @@ router.get("/deposit-requests", async (req, res) => {
     .orderBy(desc(walletTransactionsTable.createdAt))
     .limit(200);
   const enriched = await Promise.all(txns.map(async t => {
-    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, role: usersTable.role })
+    const [user] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles })
       .from(usersTable).where(eq(usersTable.id, t.userId)).limit(1);
     const ref = t.reference ?? "pending";
     const isPending = ref === "pending" || ref.startsWith("pending:");
@@ -617,9 +631,9 @@ router.post("/deposit-requests/bulk-approve", async (req, res) => {
     const ref = tx.reference ?? "pending";
     const isPending = ref === "pending" || ref.startsWith("pending:");
     if (!isPending) { sendError(res, `Deposit ${txId} already processed (${ref})`, 409); return; }
-    const [user] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, tx.userId)).limit(1);
+    const [user] = await db.select({ roles: usersTable.roles }).from(usersTable).where(eq(usersTable.id, tx.userId)).limit(1);
     if (!user) { sendValidationError(res, `User not found for deposit ${txId}`); return; }
-    if (user.role !== "customer") { sendValidationError(res, `Deposit ${txId} belongs to a ${user.role}, not a customer. Bulk actions are for customer deposits only.`); return; }
+    if (!(user.roles ?? "customer").includes("customer")) { sendValidationError(res, `Deposit ${txId} belongs to a ${user.roles}, not a customer. Bulk actions are for customer deposits only.`); return; }
     const amt = parseFloat(String(tx.amount));
     if (!Number.isFinite(amt) || amt <= 0) { sendValidationError(res, `Invalid amount for deposit ${txId}`); return; }
     const txidSuffix = (tx.reference && tx.reference.includes("txid:")) ? `:${tx.reference.split("txid:").pop()}` : "";
@@ -679,9 +693,9 @@ router.post("/deposit-requests/bulk-reject", async (req, res) => {
     const ref = tx.reference ?? "pending";
     const isPending = ref === "pending" || ref.startsWith("pending:");
     if (!isPending) { sendError(res, `Deposit ${txId} already processed (${ref})`, 409); return; }
-    const [user] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, tx.userId)).limit(1);
+    const [user] = await db.select({ roles: usersTable.roles }).from(usersTable).where(eq(usersTable.id, tx.userId)).limit(1);
     if (!user) { sendValidationError(res, `User not found for deposit ${txId}`); return; }
-    if (user.role !== "customer") { sendValidationError(res, `Deposit ${txId} belongs to a ${user.role}, not a customer. Bulk actions are for customer deposits only.`); return; }
+    if (!(user.roles ?? "customer").includes("customer")) { sendValidationError(res, `Deposit ${txId} belongs to a ${user.roles}, not a customer. Bulk actions are for customer deposits only.`); return; }
     const txidSuffix = (tx.reference && tx.reference.includes("txid:")) ? `:${tx.reference.split("txid:").pop()}` : "";
     preChecked.push({ tx, rejRef: `rejected:${rejReason}${txidSuffix}` });
   }
@@ -724,7 +738,7 @@ router.post("/riders/:id/credit", async (req, res) => {
   }
   const [rider] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
   if (!rider) { sendNotFound(res, "Rider not found"); return; }
-  const roles = (rider.role || rider.roles || "").split(",").map((r: string) => r.trim());
+  const roles = (rider.roles || "").split(",").map((r: string) => r.trim());
   if (!roles.includes("rider")) { sendValidationError(res, "User is not a rider"); return; }
   const amt = Number(amount);
   const txType = type === "bonus" ? "bonus" : "credit";

@@ -31,6 +31,8 @@ export const productsTable = pgTable("products", {
   index("products_category_idx").on(t.category),
   index("products_in_stock_idx").on(t.inStock),
   index("products_type_idx").on(t.type),
+  index("products_name_idx").on(t.name),
+  index("products_price_idx").on(t.price),
   /* Product price must be positive */
   check("products_price_positive", sql`${t.price} > 0`),
 ]);

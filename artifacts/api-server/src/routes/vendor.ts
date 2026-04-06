@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable, riderProfilesTable, vendorProfilesTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull, avg } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -274,7 +274,7 @@ router.patch("/orders/:id/status", async (req, res) => {
           .select({ id: usersTable.id })
           .from(usersTable)
           .where(and(
-            eq(usersTable.role, "rider"),
+            ilike(usersTable.roles, "%rider%"),
             eq(usersTable.isOnline, true),
           ));
         for (const { id: riderId } of onlineRiders) {
@@ -681,12 +681,13 @@ router.get("/orders/available-riders", requireRole("vendor"), async (req, res) =
   const riders = await db
     .select({
       id: usersTable.id, name: usersTable.name, phone: usersTable.phone,
-      vehicleType: usersTable.vehicleType, walletBalance: usersTable.walletBalance,
+      vehicleType: riderProfilesTable.vehicleType, walletBalance: usersTable.walletBalance,
       lat: liveLocationsTable.latitude, lng: liveLocationsTable.longitude,
     })
     .from(usersTable)
     .innerJoin(liveLocationsTable, eq(usersTable.id, liveLocationsTable.userId))
-    .where(and(eq(usersTable.role, "rider"), eq(usersTable.isOnline, true)));
+    .leftJoin(riderProfilesTable, eq(usersTable.id, riderProfilesTable.userId))
+    .where(and(ilike(usersTable.roles, "%rider%"), eq(usersTable.isOnline, true)));
 
   const withDist = riders
     .map(r => {
@@ -711,7 +712,7 @@ router.post("/orders/:id/assign-rider", requireRole("vendor"), async (req, res) 
   if (!riderId) { sendValidationError(res, "riderId required"); return; }
 
   const [rider] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, isOnline: usersTable.isOnline })
-    .from(usersTable).where(and(eq(usersTable.id, riderId), eq(usersTable.role, "rider"))).limit(1);
+    .from(usersTable).where(and(eq(usersTable.id, riderId), ilike(usersTable.roles, "%rider%"))).limit(1);
   if (!rider) { sendNotFound(res, "Rider not found"); return; }
   if (!rider.isOnline) { sendError(res, "Rider is currently offline", 400); return; }
 
@@ -759,7 +760,7 @@ router.post("/orders/:id/auto-assign", requireRole("vendor"), async (req, res) =
     .select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, lat: liveLocationsTable.latitude, lng: liveLocationsTable.longitude })
     .from(usersTable)
     .innerJoin(liveLocationsTable, eq(usersTable.id, liveLocationsTable.userId))
-    .where(and(eq(usersTable.role, "rider"), eq(usersTable.isOnline, true)));
+    .where(and(ilike(usersTable.roles, "%rider%"), eq(usersTable.isOnline, true)));
 
   if (riders.length === 0) { sendNotFound(res, "No riders online"); return; }
 
@@ -897,8 +898,9 @@ router.post("/delivery-access/request", async (req, res) => {
     });
 
     const [vendor] = await db
-      .select({ name: usersTable.name, storeName: usersTable.storeName })
+      .select({ name: usersTable.name, storeName: vendorProfilesTable.storeName })
       .from(usersTable)
+      .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
       .where(eq(usersTable.id, vendorId))
       .limit(1);
 

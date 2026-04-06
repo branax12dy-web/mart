@@ -796,9 +796,9 @@ export async function customerAuth(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  const dbRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+  const dbRoles = (user.roles || "customer").split(",").map((r: string) => r.trim());
   if (!dbRoles.includes("customer")) {
-    writeAuthAuditLog("auth_denied_role", { userId: user.id, ip, metadata: { required: "customer", actual: user.roles || user.role, url: req.url } });
+    writeAuthAuditLog("auth_denied_role", { userId: user.id, ip, metadata: { required: "customer", actual: user.roles, url: req.url } });
     res.status(403).json({ success: false, code: "ROLE_DENIED", error: "Access denied. Customer account required.", message: "رسائی سے انکار۔ کسٹمر اکاؤنٹ ضروری ہے۔" });
     return;
   }
@@ -847,7 +847,7 @@ export async function riderAuth(req: Request, res: Response, next: NextFunction)
     return;
   }
 
-  const dbRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+  const dbRoles = (user.roles || "customer").split(",").map((r: string) => r.trim());
   if (!dbRoles.includes("rider")) {
     writeAuthAuditLog("auth_denied_role", { userId: user.id, ip, metadata: { required: "rider", actual: user.roles } });
     res.status(403).json({ success: false, code: "ROLE_DENIED", error: "Access denied. Rider account required.", message: "رسائی سے انکار۔ رائیڈر اکاؤنٹ ضروری ہے۔" });
@@ -936,7 +936,7 @@ export function requireRole(
     }
 
     if (allowedRoles.length > 0) {
-      const dbRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+      const dbRoles = (user.roles || "customer").split(",").map((r: string) => r.trim());
       const hasRole = allowedRoles.some(r => dbRoles.includes(r));
       if (!hasRole) {
         writeAuthAuditLog("auth_denied_role", { userId: user.id, ip, metadata: { required: allowedRoles, actual: user.roles, url: req.url } });
@@ -949,7 +949,7 @@ export function requireRole(
     req.customerPhone = user.phone ?? "";
     req.customerUser  = user;
 
-    const dbRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    const dbRoles = (user.roles || "customer").split(",").map((r: string) => r.trim());
     if (dbRoles.includes("rider")) {
       req.riderId   = user.id;
       req.riderUser = user;

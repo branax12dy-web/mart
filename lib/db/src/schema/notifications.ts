@@ -3,6 +3,10 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 
+/* NOTE (#45): SOS alerts intentionally use this notifications table with type='sos'.
+   The sosStatus, acknowledgedAt/By, resolvedAt/By, and resolutionNotes columns below
+   are SOS-specific lifecycle fields. A separate sos_alerts table is not needed —
+   the existing approach keeps admin inbox and SOS alerts in one unified query surface. */
 export const notificationsTable = pgTable("notifications", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),

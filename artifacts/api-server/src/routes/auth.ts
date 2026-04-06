@@ -1103,7 +1103,7 @@ router.post("/vendor-register", async (req, res) => {
 
   if (!autoApprove) {
     const admins = await db.select({ id: usersTable.id }).from(usersTable)
-      .where(or(eq(usersTable.role, "admin"), sql`${usersTable.roles} LIKE '%admin%'`));
+      .where(ilike(usersTable.roles, "%admin%"));
     const adminNotifs = admins.map(a => ({
       id: generateId(),
       userId: a.id,

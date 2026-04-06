@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { usersTable, productsTable, reviewsTable } from "@workspace/db/schema";
-import { eq, and, sql, isNotNull } from "drizzle-orm";
+import { usersTable, productsTable, reviewsTable, vendorProfilesTable } from "@workspace/db/schema";
+import { eq, and, sql, isNotNull, ilike } from "drizzle-orm";
 import { sendSuccess, sendNotFound } from "../lib/response.js";
 
 const router: IRouter = Router();
@@ -9,25 +9,26 @@ const router: IRouter = Router();
 router.get("/", async (req, res) => {
   const { category } = req.query as Record<string, string | undefined>;
 
-  const conditions = [eq(usersTable.role, "vendor")];
+  const conditions: ReturnType<typeof eq>[] = [ilike(usersTable.roles, "%vendor%") as ReturnType<typeof eq>];
   if (category) {
-    conditions.push(eq(usersTable.storeCategory, category));
+    conditions.push(eq(vendorProfilesTable.storeCategory, category) as ReturnType<typeof eq>);
   }
 
   const vendors = await db
     .select({
       id: usersTable.id,
       name: usersTable.name,
-      storeName: usersTable.storeName,
-      storeCategory: usersTable.storeCategory,
-      storeBanner: usersTable.storeBanner,
-      storeDeliveryTime: usersTable.storeDeliveryTime,
-      storeIsOpen: usersTable.storeIsOpen,
-      storeMinOrder: usersTable.storeMinOrder,
+      storeName: vendorProfilesTable.storeName,
+      storeCategory: vendorProfilesTable.storeCategory,
+      storeBanner: vendorProfilesTable.storeBanner,
+      storeDeliveryTime: vendorProfilesTable.storeDeliveryTime,
+      storeIsOpen: vendorProfilesTable.storeIsOpen,
+      storeMinOrder: vendorProfilesTable.storeMinOrder,
       avatar: usersTable.avatar,
       city: usersTable.city,
     })
     .from(usersTable)
+    .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
     .where(and(...conditions));
 
   const vendorIds = vendors.map(v => v.id);
@@ -77,27 +78,28 @@ router.get("/", async (req, res) => {
 router.get("/:id/store", async (req, res) => {
   const { id } = req.params;
 
-  const vendor = await db
+  const [vendor] = await db
     .select({
       id: usersTable.id,
       name: usersTable.name,
-      storeName: usersTable.storeName,
-      storeCategory: usersTable.storeCategory,
-      storeBanner: usersTable.storeBanner,
-      storeDescription: usersTable.storeDescription,
-      storeDeliveryTime: usersTable.storeDeliveryTime,
-      storeIsOpen: usersTable.storeIsOpen,
-      storeMinOrder: usersTable.storeMinOrder,
-      storeAnnouncement: usersTable.storeAnnouncement,
-      storeHours: usersTable.storeHours,
+      storeName: vendorProfilesTable.storeName,
+      storeCategory: vendorProfilesTable.storeCategory,
+      storeBanner: vendorProfilesTable.storeBanner,
+      storeDescription: vendorProfilesTable.storeDescription,
+      storeDeliveryTime: vendorProfilesTable.storeDeliveryTime,
+      storeIsOpen: vendorProfilesTable.storeIsOpen,
+      storeMinOrder: vendorProfilesTable.storeMinOrder,
+      storeAnnouncement: vendorProfilesTable.storeAnnouncement,
+      storeHours: vendorProfilesTable.storeHours,
       avatar: usersTable.avatar,
       city: usersTable.city,
     })
     .from(usersTable)
-    .where(and(eq(usersTable.id, id), eq(usersTable.role, "vendor")))
+    .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
+    .where(and(eq(usersTable.id, id), ilike(usersTable.roles, "%vendor%")))
     .limit(1);
 
-  if (!vendor.length) {
+  if (!vendor) {
     sendNotFound(res, "Vendor not found");
     return;
   }
@@ -107,21 +109,20 @@ router.get("/:id/store", async (req, res) => {
     .from(productsTable)
     .where(and(eq(productsTable.vendorId, id), eq(productsTable.approvalStatus, "approved"), eq(productsTable.inStock, true)));
 
-  const v = vendor[0]!;
   sendSuccess(res, {
     vendor: {
-      id: v.id,
-      name: v.storeName || v.name,
-      storeName: v.storeName,
-      storeCategory: v.storeCategory,
-      storeBanner: v.storeBanner,
-      storeDescription: v.storeDescription,
-      storeDeliveryTime: v.storeDeliveryTime,
-      storeIsOpen: v.storeIsOpen ?? true,
-      storeMinOrder: v.storeMinOrder ? parseFloat(String(v.storeMinOrder)) : 0,
-      storeAnnouncement: v.storeAnnouncement,
-      avatar: v.avatar,
-      city: v.city,
+      id: vendor.id,
+      name: vendor.storeName || vendor.name,
+      storeName: vendor.storeName,
+      storeCategory: vendor.storeCategory,
+      storeBanner: vendor.storeBanner,
+      storeDescription: vendor.storeDescription,
+      storeDeliveryTime: vendor.storeDeliveryTime,
+      storeIsOpen: vendor.storeIsOpen ?? true,
+      storeMinOrder: vendor.storeMinOrder ? parseFloat(String(vendor.storeMinOrder)) : 0,
+      storeAnnouncement: vendor.storeAnnouncement,
+      avatar: vendor.avatar,
+      city: vendor.city,
     },
     products: products.map(p => ({
       ...p,

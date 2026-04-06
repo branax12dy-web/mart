@@ -77,7 +77,7 @@ router.get("/users/search-riders", async (req, res) => {
   const onlineOnly = (req.query?.onlineOnly as string) === "true";
 
   const conditions = [
-    eq(usersTable.role, "rider"),
+    ilike(usersTable.roles, "%rider%") as ReturnType<typeof eq>,
     eq(usersTable.isActive, true),
     ne(usersTable.approvalStatus, "rejected"),
   ];
@@ -340,11 +340,11 @@ router.patch("/users/:id/security", async (req, res) => {
 
   const adminReq = req as AdminRequest;
   if (willBeBanned && !alreadyBanned) {
-    const [existingUser] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, id!)).limit(1);
+    const [existingUser] = await db.select({ roles: usersTable.roles }).from(usersTable).where(eq(usersTable.id, id!)).limit(1);
     await db.insert(accountConditionsTable).values({
       id: generateId(),
       userId: id!,
-      userRole: existingUser?.role || "customer",
+      userRole: existingUser?.roles?.split(",")[0]?.trim() || "customer",
       conditionType: "ban_hard",
       severity: "ban",
       category: "ban",
@@ -554,11 +554,11 @@ router.patch("/users/bulk-ban", async (req, res) => {
   const adminReq = req as AdminRequest;
   for (const id of ids) {
     if (action === "ban") {
-      const [u] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
+      const [u] = await db.select({ roles: usersTable.roles }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
       await db.insert(accountConditionsTable).values({
         id: generateId(),
         userId: id,
-        userRole: u?.role || "customer",
+        userRole: u?.roles?.split(",")[0]?.trim() || "customer",
         conditionType: "ban_hard",
         severity: "ban",
         category: "ban",
