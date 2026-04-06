@@ -147,6 +147,10 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
       throw Object.assign(new Error(msg || "Access denied"), { status: 403, code });
     }
     const err = await res.json().catch(() => ({ error: res.statusText }));
+    try {
+      const { reportApiError } = await import("./error-reporter");
+      reportApiError(path, res.status, err.error || "Request failed");
+    } catch {}
     throw new Error(err.error || "Request failed");
   }
   const json = await res.json();

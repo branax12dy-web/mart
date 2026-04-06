@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { initSentry, setSentryUser } from "@/lib/sentry";
 import { initAnalytics, identifyUser } from "@/lib/analytics";
 import { registerPush } from "@/lib/push";
+import { initErrorReporter, reportError } from "@/lib/error-reporter";
 
 // Layout & Pages
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -47,6 +48,7 @@ import PromotionsHub from "@/pages/promotions-hub";
 import SupportChat from "@/pages/support-chat";
 import FaqManagement from "@/pages/faq-management";
 import SearchAnalytics from "@/pages/search-analytics";
+import ErrorMonitor from "@/pages/error-monitor";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -149,6 +151,7 @@ function Router() {
       <Route path="/support-chat"><ProtectedRoute component={SupportChat} /></Route>
       <Route path="/faq-management"><ProtectedRoute component={FaqManagement} /></Route>
       <Route path="/search-analytics"><ProtectedRoute component={SearchAnalytics} /></Route>
+      <Route path="/error-monitor"><ProtectedRoute component={ErrorMonitor} /></Route>
 
       <Route component={NotFound} />
     </Switch>
@@ -162,6 +165,8 @@ function LanguageInit() {
 
 function IntegrationsInit() {
   useEffect(() => {
+    initErrorReporter();
+
     const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
     fetch(`${base}/api/platform-config`)
       .then(r => r.ok ? r.json() : null)

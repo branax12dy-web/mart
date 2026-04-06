@@ -39,6 +39,7 @@ import {
   MessageCircle,
   HelpCircle,
   BarChart2,
+  Bug,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -50,7 +51,7 @@ import { fetcher, isTokenExpired, clearToken, getToken } from "@/lib/api";
 type NavGroup = {
   labelKey: TranslationKey;
   color: string;
-  items: { nameKey: TranslationKey; href: string; icon: React.ElementType; sosBadge?: boolean }[];
+  items: { nameKey: TranslationKey; href: string; icon: React.ElementType; sosBadge?: boolean; errorBadge?: boolean }[];
 };
 
 const NAV_GROUPS: NavGroup[] = [
@@ -91,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
     color: "#EF4444",
     items: [
       { nameKey: "navSosAlerts",       href: "/sos-alerts",  icon: AlertTriangle, sosBadge: true },
+      { nameKey: "navErrorMonitor",    href: "/error-monitor", icon: Bug, errorBadge: true },
       { nameKey: "navAuditLogs",       href: "/security",    icon: FileText },
       { nameKey: "navUserPermissions", href: "/users",       icon: Lock },
     ],
@@ -159,6 +161,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   });
 
   const [sosCount, setSosCount] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
   const [socketToken, setSocketToken] = useState(() => sessionStorage.getItem("ajkmart_admin_token") ?? "");
   const socketRef = useRef<Socket | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
@@ -195,6 +198,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       .then((data: { activeCount?: number }) => { if (typeof data.activeCount === "number") setSosCount(data.activeCount); })
       .catch(() => {});
 
+    fetcher("/error-reports/new-count")
+      .then((data: { count?: number }) => { if (typeof data.count === "number") setErrorCount(data.count); })
+      .catch(() => {});
+
+    const errorInterval = setInterval(() => {
+      fetcher("/error-reports/new-count")
+        .then((data: { count?: number }) => { if (typeof data.count === "number") setErrorCount(data.count); })
+        .catch(() => {});
+    }, 60000);
+    const cleanupErrorInterval = () => clearInterval(errorInterval);
+
     const getAdminToken = () => sessionStorage.getItem("ajkmart_admin_token") ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
@@ -209,7 +223,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
     });
     socket.on("sos:resolved", () => setSosCount(c => Math.max(0, c - 1)));
-    return () => { socket.disconnect(); socketRef.current = null; };
+    return () => { socket.disconnect(); socketRef.current = null; cleanupErrorInterval(); };
   }, [socketToken]);
 
   useEffect(() => {
@@ -390,6 +404,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                     const active = isActive(item.href);
                     const Icon = item.icon;
                     const showSosBadge = item.sosBadge && sosCount > 0;
+                    const showErrorBadge = item.errorBadge && errorCount > 0;
+                    const hasBadge = showSosBadge || showErrorBadge;
 
                     return (
                       <Link key={item.href} href={item.href} onClick={() => isMobile && setIsMobileMenuOpen(false)}>
@@ -422,7 +438,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                           <div className="relative shrink-0" style={{ margin: showMini ? 0 : "0 10px 0 6px" }}>
                             <Icon
                               className="w-[18px] h-[18px] transition-colors duration-150"
-                              style={{ color: active ? group.color : showSosBadge ? "#EF4444" : "rgba(255,255,255,0.38)" }}
+                              style={{ color: active ? group.color : showSosBadge ? "#EF4444" : showErrorBadge ? "#F59E0B" : "rgba(255,255,255,0.38)" }}
                             />
                             {showSosBadge && (
                               <>
@@ -431,6 +447,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                                   {sosCount > 9 ? "9+" : sosCount}
                                 </span>
                               </>
+                            )}
+                            {showErrorBadge && !showSosBadge && (
+                              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-amber-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                                {errorCount > 99 ? "99+" : errorCount}
+                              </span>
                             )}
                           </div>
 
@@ -450,7 +471,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                                   {sosCount > 9 ? "9+" : sosCount}
                                 </span>
                               )}
-                              {active && !showSosBadge && (
+                              {showErrorBadge && !showSosBadge && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ background: "rgba(245,158,11,0.2)", color: "#FCD34D" }}>
+                                  {errorCount > 99 ? "99+" : errorCount}
+                                </span>
+                              )}
+                              {active && !hasBadge && (
                                 <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: `${group.color}60` }} />
                               )}
                             </>

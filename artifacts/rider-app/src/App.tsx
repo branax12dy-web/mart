@@ -10,6 +10,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { registerPush } from "./lib/push";
 import { initSentry, setSentryUser } from "./lib/sentry";
 import { initAnalytics, trackEvent, identifyUser } from "./lib/analytics";
+import { initErrorReporter } from "./lib/error-reporter";
 import { api } from "./lib/api";
 import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
@@ -43,6 +44,8 @@ function AppRoutes() {
       await api.batchLocation(pings.map(({ id, ...rest }) => rest));
     });
   }, []);
+
+  useEffect(() => { initErrorReporter(); }, []);
 
   /* ── Sentry + Analytics init from platform config ── */
   useEffect(() => {

@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { captureBackendError, detectErrorType } from "./lib/error-capture.js";
 import { rateLimitMiddleware, securityHeadersMiddleware } from "./middleware/security.js";
 
 const app: Express = express();
@@ -47,6 +48,24 @@ app.use(rateLimitMiddleware);
 app.use("/api/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 app.use("/api", router);
 
+app.use("/api/{*path}", (req: Request, res: Response) => {
+  captureBackendError({
+    errorType: "route_error",
+    errorMessage: `404 Not Found: ${req.method} ${req.url}`,
+    statusCode: 404,
+    functionName: req.url?.split("?")[0] || undefined,
+    moduleName: `${req.method} unmatched`,
+    metadata: { method: req.method, url: req.url?.split("?")[0] },
+  });
+
+  res.status(404).json({
+    success: false,
+    error: "Resource not found.",
+    message: "وسیلہ نہیں ملا۔",
+    code: "NOT_FOUND",
+  });
+});
+
 interface AppError { status?: number; statusCode?: number; code?: string; message?: string }
 function isAppError(e: unknown): e is AppError {
   return typeof e === "object" && e !== null;
@@ -88,6 +107,19 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
     code,
     ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
   }, "Unhandled route error");
+
+  const fallbackType = statusCode >= 500 ? "route_error" : "api_error";
+  const detectedType = detectErrorType(err, fallbackType);
+
+  captureBackendError({
+    errorType: detectedType,
+    errorMessage: appErr.message || message,
+    statusCode,
+    functionName: req.url?.split("?")[0] || undefined,
+    moduleName: `${req.method} handler`,
+    stackTrace: err instanceof Error ? err.stack : undefined,
+    metadata: { code, method: req.method, url: req.url?.split("?")[0] },
+  });
 
   if (!res.headersSent) {
     res.status(statusCode).json({

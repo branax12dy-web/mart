@@ -87,6 +87,10 @@ export const fetcher = async (endpoint: string, options: RequestInit = {}) => {
         window.location.href = import.meta.env.BASE_URL + "login";
       }
     }
+    try {
+      const { reportApiError } = await import("./error-reporter");
+      reportApiError(endpoint, res.status, json.error || "An error occurred");
+    } catch {}
     throw new Error(json.error || "An error occurred");
   }
 

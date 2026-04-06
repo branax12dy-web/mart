@@ -20,6 +20,7 @@ let _authTokenGetter: AuthTokenGetter | null = null;
 let _onUnauthorized: ((statusCode?: number, errorMsg?: string) => void) | null = null;
 let _refreshTokenGetter: (() => Promise<string | null> | string | null) | null = null;
 let _onTokenRefreshed: ((newToken: string, newRefreshToken: string) => void) | null = null;
+let _onApiError: ((url: string, status: number, message: string) => void) | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -66,6 +67,10 @@ export function setRefreshTokenGetter(getter: (() => Promise<string | null> | st
  */
 export function setOnTokenRefreshed(callback: ((newToken: string, newRefreshToken: string) => void) | null): void {
   _onTokenRefreshed = callback;
+}
+
+export function setOnApiError(handler: ((url: string, status: number, message: string) => void) | null): void {
+  _onApiError = handler;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -467,6 +472,10 @@ export async function customFetch<T = unknown>(
       if (response.status === 403 && _onUnauthorized) {
         const errMsg = getStringField(errorData, "error") || getStringField(errorData, "message") || undefined;
         _onUnauthorized(403, errMsg);
+      }
+      if (_onApiError) {
+        const errMsg = getStringField(errorData, "error") || getStringField(errorData, "message") || "API error";
+        _onApiError(requestInfo.url, response.status, errMsg);
       }
       throw new ApiError(response, errorData, requestInfo);
     }

@@ -7,6 +7,7 @@ export {
   setOnUnauthorized,
   setRefreshTokenGetter,
   setOnTokenRefreshed,
+  setOnApiError,
 } from "./custom-fetch";
 export type { AuthTokenGetter } from "./custom-fetch";
 export {

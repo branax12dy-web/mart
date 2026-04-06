@@ -232,6 +232,10 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
     }
     const error = new Error(err.error || "Request failed");
     Object.assign(error, { responseData: err, status: res.status });
+    try {
+      const { reportApiError } = await import("./error-reporter");
+      reportApiError(path, res.status, err.error || "Request failed");
+    } catch {}
     throw error;
   }
   const json = await res.json() as ApiEnvelope;

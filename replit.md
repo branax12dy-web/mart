@@ -25,6 +25,34 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Built-in Error Monitoring System
+
+Automatic error detection and reporting across all 5 apps (Customer, Rider, Vendor, Admin, API Server):
+
+- **Database**: `error_reports` table with enums for source_app, error_type, severity, status
+  - Schema: `lib/db/src/schema/error_reports.ts`
+- **API Endpoints**: 
+  - `POST /api/error-reports` — receives error reports from all frontend apps (no auth required)
+  - `GET /api/admin/error-reports` — admin-only, filterable list with pagination
+  - `GET /api/admin/error-reports/new-count` — count of "new" status errors (for sidebar badge)
+  - `PATCH /api/admin/error-reports/:id` — admin updates error status
+  - Routes: `artifacts/api-server/src/routes/error-reports.ts`
+- **Backend Auto-Capture**: Express global error handler in `app.ts` auto-logs all unhandled errors
+  - Utility: `artifacts/api-server/src/lib/error-capture.ts`
+- **Frontend Auto-Capture**: Each app has an error reporter utility that hooks into:
+  - React Error Boundaries (component crashes)
+  - `window.onerror` and `unhandledrejection` listeners
+  - `console.error` override (for UI errors)
+  - API fetch interceptors (for failed API calls)
+  - Files: `artifacts/admin/src/lib/error-reporter.ts`, `artifacts/rider-app/src/lib/error-reporter.ts`, `artifacts/vendor-app/src/lib/error-reporter.ts`, `artifacts/ajkmart/utils/error-reporter.ts`
+- **Admin Panel**: "Error Monitor" page at `/error-monitor`
+  - Page: `artifacts/admin/src/pages/error-monitor.tsx`
+  - Sidebar nav item with badge showing count of "new" errors
+  - Filterable by date range, source app, severity, status, error type
+  - Expandable rows showing full stack trace and metadata
+  - Admin can change error status (New → Acknowledged → In Progress → Resolved)
+- **Auto-Classification**: DB/auth/payment errors → Critical; 500s → Critical; 4xx → Medium; UI errors → Minor
+
 ### Admin Customer Support Features — Completed
 
 Three new admin management pages added under the "Customer Support" sidebar group (cyan color):

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { setBaseUrl } from "@workspace/api-client-react";
+import { setBaseUrl, setOnApiError } from "@workspace/api-client-react";
 import * as Linking from "expo-linking";
 import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
 import { router, Stack, useSegments } from "expo-router";
@@ -13,10 +13,12 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { reportError as reportErrorToBackend } from "@/utils/error-reporter";
 import { PwaInstallBanner } from "@/components/PwaInstallBanner";
 import { registerServiceWorker } from "@/utils/register-service-worker";
 import { initSentry, setSentryUser } from "@/utils/sentry";
 import { initAnalytics, trackScreen, identifyUser } from "@/utils/analytics";
+import { initErrorReporter } from "@/utils/error-reporter";
 import { registerPush } from "@/utils/push";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
@@ -230,6 +232,20 @@ function RootLayoutNav() {
     prevUserRef.current = uid;
   }, [user?.id]);
 
+  useEffect(() => {
+    initErrorReporter();
+    setOnApiError((url, status, message) => {
+      reportErrorToBackend({
+        errorType: "api_error",
+        errorMessage: message,
+        functionName: url,
+        moduleName: "API Call",
+        statusCode: status,
+        metadata: { path: url, status },
+      });
+    });
+  }, []);
+
   /* ── Init Sentry + Analytics from platform-config (web only) ── */
   useEffect(() => {
     const integ = config?.integrations;
@@ -354,7 +370,14 @@ export default function RootLayout() {
   return (
     <WebShell>
       <SafeAreaProvider>
-        <ErrorBoundary>
+        <ErrorBoundary onError={(error, stackTrace) => {
+            reportErrorToBackend({
+              errorType: "frontend_crash",
+              errorMessage: error.message || "Component crash",
+              stackTrace: error.stack || stackTrace,
+              componentName: "ErrorBoundary",
+            });
+          }}>
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>

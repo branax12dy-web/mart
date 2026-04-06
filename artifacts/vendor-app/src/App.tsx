@@ -7,6 +7,7 @@ import { useLanguage } from "./lib/useLanguage";
 import { registerPush } from "./lib/push";
 import { initSentry, setSentryUser } from "./lib/sentry";
 import { initAnalytics, trackEvent, identifyUser } from "./lib/analytics";
+import { initErrorReporter } from "./lib/error-reporter";
 import { BottomNav } from "./components/BottomNav";
 import { PwaInstallBanner } from "./components/PwaInstallBanner";
 import { SideNav } from "./components/SideNav";
@@ -66,6 +67,8 @@ function AppRoutes() {
   const { user, loading } = useAuth();
   const { config } = usePlatformConfig();
   useLanguage(); /* initialises RTL + language from API on mount */
+
+  useEffect(() => { initErrorReporter(); }, []);
 
   /* ── Sentry + Analytics init from platform config ── */
   useEffect(() => {
