@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   AlertTriangle, Bug, Server, Monitor, Code, Zap,
   ChevronDown, ChevronRight, RefreshCw, Filter, X, CheckCircle2,
-  Flame, ShieldAlert, Inbox,
+  Flame, ShieldAlert, Inbox, CheckCheck,
 } from "lucide-react";
 
 type ErrorReport = {
@@ -25,13 +28,7 @@ type ErrorReport = {
   acknowledgedAt: string | null;
 };
 
-type Pagination = {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-};
-
+type Pagination = { page: number; limit: number; total: number; totalPages: number };
 type Tab = "new" | "unresolved" | "completed";
 
 const SOURCE_APPS = [
@@ -42,14 +39,12 @@ const SOURCE_APPS = [
   { value: "admin", label: "Admin" },
   { value: "api", label: "API Server" },
 ];
-
 const SEVERITIES = [
   { value: "", label: "All Severities" },
   { value: "critical", label: "Critical" },
   { value: "medium", label: "Medium" },
   { value: "minor", label: "Minor" },
 ];
-
 const ERROR_TYPES = [
   { value: "", label: "All Types" },
   { value: "frontend_crash", label: "Frontend Crash" },
@@ -60,25 +55,19 @@ const ERROR_TYPES = [
   { value: "unhandled_exception", label: "Unhandled Exception" },
 ];
 
-const SEVERITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  critical: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/30" },
-  medium:   { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/30" },
-  minor:    { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" },
+const SEVERITY_STYLE: Record<string, string> = {
+  critical: "bg-red-100 text-red-700 border-red-200",
+  medium:   "bg-amber-100 text-amber-700 border-amber-200",
+  minor:    "bg-blue-100 text-blue-700 border-blue-200",
 };
-
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  new:           { bg: "bg-red-500/15", text: "text-red-300" },
-  acknowledged:  { bg: "bg-amber-500/15", text: "text-amber-300" },
-  in_progress:   { bg: "bg-blue-500/15", text: "text-blue-300" },
-  resolved:      { bg: "bg-green-500/15", text: "text-green-300" },
+const STATUS_STYLE: Record<string, string> = {
+  new:          "bg-red-100 text-red-700",
+  acknowledged: "bg-amber-100 text-amber-700",
+  in_progress:  "bg-blue-100 text-blue-700",
+  resolved:     "bg-green-100 text-green-700",
 };
-
 const SOURCE_ICONS: Record<string, typeof Monitor> = {
-  customer: Monitor,
-  rider: Zap,
-  vendor: Code,
-  admin: Bug,
-  api: Server,
+  customer: Monitor, rider: Zap, vendor: Code, admin: Bug, api: Server,
 };
 
 const TAB_STATUS_FILTERS: Record<Tab, string[]> = {
@@ -87,44 +76,15 @@ const TAB_STATUS_FILTERS: Record<Tab, string[]> = {
   completed:  ["resolved"],
 };
 
-function SeverityBadge({ severity }: { severity: string }) {
-  const c = SEVERITY_COLORS[severity] || SEVERITY_COLORS.medium;
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${c.bg} ${c.text} ${c.border}`}>
-      {severity}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const c = STATUS_COLORS[status] || STATUS_COLORS.new;
-  const label = status.replace(/_/g, " ");
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${c.bg} ${c.text}`}>
-      {label}
-    </span>
-  );
-}
-
-function SourceBadge({ source }: { source: string }) {
-  const Icon = SOURCE_ICONS[source] || Server;
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/5 text-white/70 border border-white/10 capitalize">
-      <Icon className="w-3 h-3" />
-      {source === "api" ? "API Server" : source}
-    </span>
-  );
-}
-
-function ErrorTypeLabel({ type }: { type: string }) {
-  const label = type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  return <span className="text-[12px] text-white/50">{label}</span>;
-}
+const TABS: { id: Tab; label: string; icon: typeof Flame; activeClass: string; badgeClass: string }[] = [
+  { id: "new",        label: "New",        icon: Flame,        activeClass: "border-red-500 text-red-600 bg-red-50",    badgeClass: "bg-red-100 text-red-700" },
+  { id: "unresolved", label: "Unresolved", icon: ShieldAlert,  activeClass: "border-amber-500 text-amber-600 bg-amber-50", badgeClass: "bg-amber-100 text-amber-700" },
+  { id: "completed",  label: "Completed",  icon: CheckCircle2, activeClass: "border-green-500 text-green-600 bg-green-50",  badgeClass: "bg-green-100 text-green-700" },
+];
 
 function formatTimestamp(ts: string): string {
   const d = new Date(ts);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
+  const diff = Date.now() - d.getTime();
   if (diff < 60000) return "Just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -133,17 +93,14 @@ function formatTimestamp(ts: string): string {
 
 function useTabCount(tab: Tab, sourceApp: string, severity: string, errorType: string) {
   const statuses = TAB_STATUS_FILTERS[tab];
-  const params = new URLSearchParams();
-  params.set("page", "1");
-  params.set("limit", "1");
-  statuses.forEach(s => params.append("status", s));
-  if (sourceApp) params.set("sourceApp", sourceApp);
-  if (severity) params.set("severity", severity);
-  if (errorType) params.set("errorType", errorType);
-
+  const p = new URLSearchParams({ page: "1", limit: "1" });
+  statuses.forEach(s => p.append("status", s));
+  if (sourceApp) p.set("sourceApp", sourceApp);
+  if (severity) p.set("severity", severity);
+  if (errorType) p.set("errorType", errorType);
   const { data } = useQuery({
-    queryKey: ["error-reports-tab-count", tab, sourceApp, severity, errorType],
-    queryFn: () => fetcher(`/error-reports?${params.toString()}`),
+    queryKey: ["error-count", tab, sourceApp, severity, errorType],
+    queryFn: () => fetcher(`/error-reports?${p}`),
     refetchInterval: 15000,
   });
   return (data?.pagination?.total ?? 0) as number;
@@ -163,10 +120,7 @@ export default function ErrorMonitor() {
   const [fixingAll, setFixingAll] = useState(false);
 
   const tabStatuses = TAB_STATUS_FILTERS[activeTab];
-
-  const params = new URLSearchParams();
-  params.set("page", String(page));
-  params.set("limit", "30");
+  const params = new URLSearchParams({ page: String(page), limit: "30" });
   tabStatuses.forEach(s => params.append("status", s));
   if (sourceApp) params.set("sourceApp", sourceApp);
   if (severity) params.set("severity", severity);
@@ -176,32 +130,24 @@ export default function ErrorMonitor() {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["error-reports", activeTab, page, sourceApp, severity, errorType, dateFrom, dateTo],
-    queryFn: () => fetcher(`/error-reports?${params.toString()}`),
+    queryFn: () => fetcher(`/error-reports?${params}`),
     refetchInterval: 30000,
   });
 
   const reports: ErrorReport[] = data?.reports || [];
   const pagination: Pagination = data?.pagination || { page: 1, limit: 30, total: 0, totalPages: 0 };
 
-  const newCount     = useTabCount("new",        sourceApp, severity, errorType);
+  const newCount        = useTabCount("new",        sourceApp, severity, errorType);
   const unresolvedCount = useTabCount("unresolved", sourceApp, severity, errorType);
   const completedCount  = useTabCount("completed",  sourceApp, severity, errorType);
-
-  const tabCounts: Record<Tab, number> = {
-    new:        newCount,
-    unresolved: unresolvedCount,
-    completed:  completedCount,
-  };
+  const tabCounts: Record<Tab, number> = { new: newCount, unresolved: unresolvedCount, completed: completedCount };
 
   const updateMutation = useMutation({
     mutationFn: ({ id, newStatus }: { id: string; newStatus: string }) =>
-      fetcher(`/error-reports/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
-      }),
+      fetcher(`/error-reports/${id}`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["error-reports"] });
-      queryClient.invalidateQueries({ queryKey: ["error-reports-tab-count"] });
+      queryClient.invalidateQueries({ queryKey: ["error-count"] });
       queryClient.invalidateQueries({ queryKey: ["error-reports-count"] });
     },
   });
@@ -220,7 +166,7 @@ export default function ErrorMonitor() {
         }),
       });
       queryClient.invalidateQueries({ queryKey: ["error-reports"] });
-      queryClient.invalidateQueries({ queryKey: ["error-reports-tab-count"] });
+      queryClient.invalidateQueries({ queryKey: ["error-count"] });
       queryClient.invalidateQueries({ queryKey: ["error-reports-count"] });
       setActiveTab("completed");
       setPage(1);
@@ -229,107 +175,84 @@ export default function ErrorMonitor() {
     }
   };
 
-  const switchTab = (tab: Tab) => {
-    setActiveTab(tab);
-    setPage(1);
-    setExpandedId(null);
-  };
-
-  const hasActiveFilters = sourceApp || severity || errorType || dateFrom || dateTo;
-
-  const clearFilters = () => {
-    setSourceApp(""); setSeverity(""); setErrorType("");
-    setDateFrom(""); setDateTo(""); setPage(1);
-  };
-
-  const TABS: { id: Tab; label: string; icon: typeof Flame; color: string; badge: string }[] = [
-    { id: "new",        label: "New",        icon: Flame,       color: "text-red-400",   badge: "bg-red-500/20 text-red-300" },
-    { id: "unresolved", label: "Unresolved", icon: ShieldAlert, color: "text-amber-400", badge: "bg-amber-500/20 text-amber-300" },
-    { id: "completed",  label: "Completed",  icon: CheckCircle2,color: "text-green-400", badge: "bg-green-500/20 text-green-300" },
-  ];
-
+  const switchTab = (tab: Tab) => { setActiveTab(tab); setPage(1); setExpandedId(null); };
+  const hasFilters = !!(sourceApp || severity || errorType || dateFrom || dateTo);
+  const clearFilters = () => { setSourceApp(""); setSeverity(""); setErrorType(""); setDateFrom(""); setDateTo(""); setPage(1); };
   const canFixAll = activeTab !== "completed" && pagination.total > 0;
 
   return (
-    <div className="min-h-screen p-4 md:p-6 space-y-4">
+    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-6 space-y-5">
+
+      {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Bug className="w-6 h-6 text-red-400" />
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Bug className="w-6 h-6 text-red-500" />
             Error Monitor
           </h1>
-          <p className="text-sm text-white/40 mt-1">
-            Real-time error tracking across all apps
-          </p>
+          <p className="text-sm text-gray-500 mt-0.5">Real-time error tracking across all apps</p>
         </div>
-
         <div className="flex items-center gap-2 flex-wrap">
           {canFixAll && (
-            <button
+            <Button
               onClick={handleFixAll}
               disabled={fixingAll}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30 transition-colors disabled:opacity-50"
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
             >
-              <CheckCircle2 className={`w-4 h-4 ${fixingAll ? "animate-spin" : ""}`} />
+              <CheckCheck className={`w-4 h-4 ${fixingAll ? "animate-spin" : ""}`} />
               {fixingAll ? "Fixing…" : `Fix All (${pagination.total})`}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowFilters(f => !f)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              showFilters || hasActiveFilters
-                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-                : "bg-white/5 text-white/60 hover:bg-white/10 border border-white/10"
-            }`}
+            className={hasFilters ? "border-indigo-400 text-indigo-600 bg-indigo-50" : ""}
           >
-            <Filter className="w-4 h-4" />
+            <Filter className="w-4 h-4 mr-1.5" />
             Filters
-            {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-indigo-400" />}
-          </button>
-          <button
-            onClick={() => refetch()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-white/5 text-white/60 hover:bg-white/10 border border-white/10 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+            {hasFilters && <span className="ml-1.5 w-2 h-2 rounded-full bg-indigo-500 inline-block" />}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
+      {/* ── Filter Bar ── */}
       {showFilters && (
-        <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4 space-y-3">
+        <Card className="p-4 space-y-3 border-indigo-100 bg-indigo-50/40">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-white/60">Filters</span>
-            {hasActiveFilters && (
-              <button onClick={clearFilters} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+            <span className="text-sm font-semibold text-gray-600">Filters</span>
+            {hasFilters && (
+              <button onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1">
                 <X className="w-3 h-3" /> Clear all
               </button>
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <select value={sourceApp} onChange={e => { setSourceApp(e.target.value); setPage(1); }}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
-              {SOURCE_APPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
-              {SEVERITIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select value={errorType} onChange={e => { setErrorType(e.target.value); setPage(1); }}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
-              {ERROR_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            {[
+              { value: sourceApp, onChange: (v: string) => { setSourceApp(v); setPage(1); }, options: SOURCE_APPS },
+              { value: severity,  onChange: (v: string) => { setSeverity(v);  setPage(1); }, options: SEVERITIES },
+              { value: errorType, onChange: (v: string) => { setErrorType(v); setPage(1); }, options: ERROR_TYPES },
+            ].map((sel, i) => (
+              <select key={i} value={sel.value} onChange={e => sel.onChange(e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300">
+                {sel.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            ))}
             <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              placeholder="From date"
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50" />
+              className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400" />
             <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-              placeholder="To date"
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50" />
+              className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400" />
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="flex items-center gap-1 border-b border-white/10 pb-0">
+      {/* ── Tabs ── */}
+      <div className="flex items-stretch border-b border-gray-200">
         {TABS.map(tab => {
           const Icon = tab.icon;
           const count = tabCounts[tab.id];
@@ -338,16 +261,18 @@ export default function ErrorMonitor() {
             <button
               key={tab.id}
               onClick={() => switchTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-all -mb-px ${
                 isActive
-                  ? `${tab.color} border-current bg-white/[0.04]`
-                  : "text-white/40 border-transparent hover:text-white/60 hover:bg-white/[0.02]"
+                  ? `${tab.activeClass} border-b-2`
+                  : "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               <Icon className="w-4 h-4" />
               {tab.label}
               {count > 0 && (
-                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${tab.badge}`}>
+                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
+                  isActive ? tab.badgeClass : "bg-gray-100 text-gray-600"
+                }`}>
                   {count > 999 ? "999+" : count}
                 </span>
               )}
@@ -356,82 +281,90 @@ export default function ErrorMonitor() {
         })}
       </div>
 
-      <div className="bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden">
+      {/* ── Error List ── */}
+      <Card className="overflow-hidden border-gray-200 shadow-sm">
         {isLoading && reports.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : reports.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-white/30">
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
             {activeTab === "completed" ? (
-              <>
-                <CheckCircle2 className="w-12 h-12 mb-3 text-green-500/40" />
-                <p className="text-lg font-semibold">No completed errors</p>
-                <p className="text-sm mt-1">Resolved errors will appear here</p>
-              </>
+              <><CheckCircle2 className="w-12 h-12 mb-3 text-green-400" /><p className="text-lg font-semibold text-gray-600">No completed errors</p><p className="text-sm mt-1">Resolved errors will appear here</p></>
             ) : activeTab === "unresolved" ? (
-              <>
-                <ShieldAlert className="w-12 h-12 mb-3 text-amber-500/40" />
-                <p className="text-lg font-semibold">No unresolved errors</p>
-                <p className="text-sm mt-1">Acknowledged and in-progress errors appear here</p>
-              </>
+              <><ShieldAlert className="w-12 h-12 mb-3 text-amber-400" /><p className="text-lg font-semibold text-gray-600">No unresolved errors</p><p className="text-sm mt-1">Acknowledged / in-progress errors appear here</p></>
             ) : (
-              <>
-                <Inbox className="w-12 h-12 mb-3 text-green-500/40" />
-                <p className="text-lg font-semibold">No new errors</p>
-                <p className="text-sm mt-1">All systems running smoothly</p>
-              </>
+              <><Inbox className="w-12 h-12 mb-3 text-green-400" /><p className="text-lg font-semibold text-gray-600">No new errors</p><p className="text-sm mt-1">All systems are running smoothly</p></>
             )}
           </div>
         ) : (
-          <div>
+          <div className="divide-y divide-gray-100">
             {reports.map(report => {
               const isExpanded = expandedId === report.id;
+              const Icon = SOURCE_ICONS[report.sourceApp] || Server;
+              const sevStyle = SEVERITY_STYLE[report.severity] || SEVERITY_STYLE.medium;
+              const statusStyle = STATUS_STYLE[report.status] || STATUS_STYLE.new;
+              const leftAccent = report.severity === "critical"
+                ? "border-l-4 border-l-red-400"
+                : report.severity === "medium"
+                ? "border-l-4 border-l-amber-400"
+                : "border-l-4 border-l-blue-400";
+
               return (
-                <div key={report.id} className="border-b border-white/5 last:border-b-0">
+                <div key={report.id} className={`bg-white ${leftAccent} hover:bg-gray-50 transition-colors`}>
+                  {/* Row */}
                   <div
-                    className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                    className="flex items-start gap-3 px-4 py-3.5 cursor-pointer"
                     onClick={() => setExpandedId(isExpanded ? null : report.id)}
                   >
-                    <div className="mt-1 shrink-0">
-                      {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-white/30" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-white/30" />
-                      )}
+                    <div className="mt-1 shrink-0 text-gray-400">
+                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </div>
 
                     <div className="flex-1 min-w-0 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <SeverityBadge severity={report.severity} />
-                        <SourceBadge source={report.sourceApp} />
-                        <ErrorTypeLabel type={report.errorType} />
-                        <StatusBadge status={report.status} />
+                      {/* Badges row */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${sevStyle}`}>
+                          {report.severity}
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600 border border-gray-200 capitalize">
+                          <Icon className="w-3 h-3" />
+                          {report.sourceApp === "api" ? "API Server" : report.sourceApp}
+                        </span>
+                        <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+                          {report.errorType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${statusStyle}`}>
+                          {report.status.replace(/_/g, " ")}
+                        </span>
                       </div>
 
-                      <p className="text-sm text-white/80 font-medium truncate">
+                      {/* Message */}
+                      <p className="text-sm text-gray-800 font-medium leading-snug line-clamp-2">
                         {report.errorMessage}
                       </p>
 
-                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/35">
+                      {/* Meta row */}
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
                         <span>{formatTimestamp(report.timestamp)}</span>
                         {report.functionName && (
-                          <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded">{report.functionName}</span>
+                          <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.functionName}</span>
                         )}
                         {report.componentName && (
-                          <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded">{report.componentName}</span>
+                          <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.componentName}</span>
                         )}
                         {report.shortImpact && (
-                          <span className="text-white/25">{report.shortImpact}</span>
+                          <span className="text-gray-400 italic">{report.shortImpact}</span>
                         )}
                       </div>
                     </div>
 
+                    {/* Status changer */}
                     <div className="shrink-0" onClick={e => e.stopPropagation()}>
                       <select
                         value={report.status}
                         onChange={e => updateMutation.mutate({ id: report.id, newStatus: e.target.value })}
-                        className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/70 focus:outline-none focus:border-indigo-500/50"
+                        className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-indigo-400 shadow-sm"
                       >
                         <option value="new">New</option>
                         <option value="acknowledged">Acknowledged</option>
@@ -441,43 +374,39 @@ export default function ErrorMonitor() {
                     </div>
                   </div>
 
+                  {/* Expanded detail */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 pl-11 space-y-3">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Timestamp</span>
-                          <p className="text-xs text-white/70 mt-0.5">{new Date(report.timestamp).toLocaleString()}</p>
-                        </div>
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Module</span>
-                          <p className="text-xs text-white/70 mt-0.5 font-mono">{report.moduleName || "—"}</p>
-                        </div>
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Function</span>
-                          <p className="text-xs text-white/70 mt-0.5 font-mono">{report.functionName || "—"}</p>
-                        </div>
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Component</span>
-                          <p className="text-xs text-white/70 mt-0.5 font-mono">{report.componentName || "—"}</p>
-                        </div>
+                    <div className="px-4 pb-5 pl-11 space-y-4 bg-gray-50 border-t border-gray-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
+                        {[
+                          { label: "Timestamp",  value: new Date(report.timestamp).toLocaleString() },
+                          { label: "Module",     value: report.moduleName    || "—", mono: true },
+                          { label: "Function",   value: report.functionName  || "—", mono: true },
+                          { label: "Component",  value: report.componentName || "—", mono: true },
+                        ].map(f => (
+                          <div key={f.label}>
+                            <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">{f.label}</p>
+                            <p className={`text-xs text-gray-700 ${f.mono ? "font-mono" : ""}`}>{f.value}</p>
+                          </div>
+                        ))}
                       </div>
 
                       <div>
-                        <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Error Message</span>
-                        <p className="text-xs text-white/70 mt-0.5 whitespace-pre-wrap break-all">{report.errorMessage}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Error Message</p>
+                        <p className="text-xs text-gray-700 whitespace-pre-wrap break-all bg-white border border-gray-200 rounded-lg p-3">{report.errorMessage}</p>
                       </div>
 
                       {report.shortImpact && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Impact</span>
-                          <p className="text-xs text-white/70 mt-0.5">{report.shortImpact}</p>
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Impact</p>
+                          <p className="text-xs text-gray-700">{report.shortImpact}</p>
                         </div>
                       )}
 
                       {report.stackTrace && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Stack Trace</span>
-                          <pre className="mt-1 text-[11px] text-white/50 bg-black/30 border border-white/5 rounded-lg p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-all font-mono">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Stack Trace</p>
+                          <pre className="text-[11px] text-gray-600 bg-gray-900 text-green-300 border border-gray-300 rounded-lg p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-all font-mono">
                             {report.stackTrace}
                           </pre>
                         </div>
@@ -485,25 +414,25 @@ export default function ErrorMonitor() {
 
                       {report.metadata && Object.keys(report.metadata).length > 0 && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Metadata</span>
-                          <pre className="mt-1 text-[11px] text-white/50 bg-black/30 border border-white/5 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Metadata</p>
+                          <pre className="text-[11px] text-gray-600 bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
                             {JSON.stringify(report.metadata, null, 2)}
                           </pre>
                         </div>
                       )}
 
                       {(report.acknowledgedAt || report.resolvedAt) && (
-                        <div className="flex gap-4">
+                        <div className="flex gap-6">
                           {report.acknowledgedAt && (
                             <div>
-                              <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Acknowledged At</span>
-                              <p className="text-xs text-white/70 mt-0.5">{new Date(report.acknowledgedAt).toLocaleString()}</p>
+                              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Acknowledged At</p>
+                              <p className="text-xs text-gray-700">{new Date(report.acknowledgedAt).toLocaleString()}</p>
                             </div>
                           )}
                           {report.resolvedAt && (
                             <div>
-                              <span className="text-[10px] uppercase tracking-wider text-white/30 font-bold">Resolved At</span>
-                              <p className="text-xs text-white/70 mt-0.5">{new Date(report.resolvedAt).toLocaleString()}</p>
+                              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Resolved At</p>
+                              <p className="text-xs text-green-700 font-semibold">{new Date(report.resolvedAt).toLocaleString()}</p>
                             </div>
                           )}
                         </div>
@@ -516,30 +445,23 @@ export default function ErrorMonitor() {
           </div>
         )}
 
+        {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-white/5">
-            <span className="text-xs text-white/40">
-              Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
+            <span className="text-xs text-gray-500">
+              Page {pagination.page} of {pagination.totalPages} &middot; {pagination.total} total
             </span>
             <div className="flex gap-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="px-3 py-1 rounded-lg text-xs bg-white/5 text-white/60 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10"
-              >
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
                 Previous
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                disabled={page >= pagination.totalPages}
-                className="px-3 py-1 rounded-lg text-xs bg-white/5 text-white/60 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10"
-              >
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page >= pagination.totalPages}>
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
