@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { errorReportsTable } from "@workspace/db/schema";
-import { eq, desc, and, gte, lte, count, type SQL } from "drizzle-orm";
+import { eq, desc, and, gte, lte, count, inArray, ne, type SQL } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendError, sendNotFound, sendValidationError } from "../lib/response.js";
 import { adminAuth, type AdminRequest } from "./admin-shared.js";
@@ -108,9 +108,13 @@ router.get("/", adminAuth, async (req, res) => {
       conditions.push(eq(errorReportsTable.severity, severity as typeof VALID_SEVERITIES[number]));
     }
 
-    const status = req.query["status"] as string | undefined;
-    if (status && (VALID_STATUSES as readonly string[]).includes(status)) {
-      conditions.push(eq(errorReportsTable.status, status as typeof VALID_STATUSES[number]));
+    const statusParam = req.query["status"];
+    const statusValues = (Array.isArray(statusParam) ? statusParam : statusParam ? [statusParam] : []) as string[];
+    const validStatusValues = statusValues.filter(s => (VALID_STATUSES as readonly string[]).includes(s)) as typeof VALID_STATUSES[number][];
+    if (validStatusValues.length === 1) {
+      conditions.push(eq(errorReportsTable.status, validStatusValues[0]!));
+    } else if (validStatusValues.length > 1) {
+      conditions.push(inArray(errorReportsTable.status, validStatusValues));
     }
 
     const errorType = req.query["errorType"] as string | undefined;
@@ -167,6 +171,50 @@ router.get("/new-count", adminAuth, async (_req, res) => {
   } catch (err) {
     logger.error({ err }, "Failed to fetch new error count");
     sendError(res, "Failed to fetch new error count", 500);
+  }
+});
+
+router.post("/bulk-resolve", adminAuth, async (req, res) => {
+  try {
+    const { sourceApp, severity, errorType, statusFilter } = req.body as {
+      sourceApp?: string;
+      severity?: string;
+      errorType?: string;
+      statusFilter?: string[];
+    };
+
+    const conditions: SQL[] = [];
+
+    if (sourceApp && (VALID_SOURCE_APPS as readonly string[]).includes(sourceApp)) {
+      conditions.push(eq(errorReportsTable.sourceApp, sourceApp as SourceApp));
+    }
+    if (severity && (VALID_SEVERITIES as readonly string[]).includes(severity)) {
+      conditions.push(eq(errorReportsTable.severity, severity as typeof VALID_SEVERITIES[number]));
+    }
+    if (errorType && (VALID_ERROR_TYPES as readonly string[]).includes(errorType)) {
+      conditions.push(eq(errorReportsTable.errorType, errorType as ErrorType));
+    }
+
+    if (statusFilter && statusFilter.length > 0) {
+      const validStatuses = statusFilter.filter(s => (VALID_STATUSES as readonly string[]).includes(s));
+      if (validStatuses.length > 0) {
+        conditions.push(inArray(errorReportsTable.status, validStatuses as typeof VALID_STATUSES[number][]));
+      }
+    } else {
+      conditions.push(ne(errorReportsTable.status, "resolved"));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const updated = await db.update(errorReportsTable)
+      .set({ status: "resolved", resolvedAt: new Date() })
+      .where(where)
+      .returning({ id: errorReportsTable.id });
+
+    sendSuccess(res, { resolvedCount: updated.length });
+  } catch (err) {
+    logger.error({ err }, "Failed to bulk resolve error reports");
+    sendError(res, "Failed to bulk resolve error reports", 500);
   }
 });
 

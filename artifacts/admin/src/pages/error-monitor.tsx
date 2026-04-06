@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
 import {
   AlertTriangle, Bug, Server, Monitor, Code, Zap,
-  ChevronDown, ChevronRight, RefreshCw, Filter, X,
+  ChevronDown, ChevronRight, RefreshCw, Filter, X, CheckCircle2,
+  Flame, ShieldAlert, Inbox,
 } from "lucide-react";
 
 type ErrorReport = {
@@ -31,6 +32,8 @@ type Pagination = {
   totalPages: number;
 };
 
+type Tab = "new" | "unresolved" | "completed";
+
 const SOURCE_APPS = [
   { value: "", label: "All Sources" },
   { value: "customer", label: "Customer" },
@@ -45,14 +48,6 @@ const SEVERITIES = [
   { value: "critical", label: "Critical" },
   { value: "medium", label: "Medium" },
   { value: "minor", label: "Minor" },
-];
-
-const STATUSES = [
-  { value: "", label: "All Statuses" },
-  { value: "new", label: "New" },
-  { value: "acknowledged", label: "Acknowledged" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "resolved", label: "Resolved" },
 ];
 
 const ERROR_TYPES = [
@@ -84,6 +79,12 @@ const SOURCE_ICONS: Record<string, typeof Monitor> = {
   vendor: Code,
   admin: Bug,
   api: Server,
+};
+
+const TAB_STATUS_FILTERS: Record<Tab, string[]> = {
+  new:        ["new"],
+  unresolved: ["acknowledged", "in_progress"],
+  completed:  ["resolved"],
 };
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -124,47 +125,73 @@ function formatTimestamp(ts: string): string {
   const d = new Date(ts);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
-
   if (diff < 60000) return "Just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
-  return d.toLocaleDateString("en-US", {
-    month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
+function useTabCount(tab: Tab, sourceApp: string, severity: string, errorType: string) {
+  const statuses = TAB_STATUS_FILTERS[tab];
+  const params = new URLSearchParams();
+  params.set("page", "1");
+  params.set("limit", "1");
+  statuses.forEach(s => params.append("status", s));
+  if (sourceApp) params.set("sourceApp", sourceApp);
+  if (severity) params.set("severity", severity);
+  if (errorType) params.set("errorType", errorType);
+
+  const { data } = useQuery({
+    queryKey: ["error-reports-tab-count", tab, sourceApp, severity, errorType],
+    queryFn: () => fetcher(`/error-reports?${params.toString()}`),
+    refetchInterval: 15000,
   });
+  return (data?.pagination?.total ?? 0) as number;
 }
 
 export default function ErrorMonitor() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<Tab>("new");
   const [page, setPage] = useState(1);
   const [sourceApp, setSourceApp] = useState("");
   const [severity, setSeverity] = useState("");
-  const [status, setStatus] = useState("");
   const [errorType, setErrorType] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [fixingAll, setFixingAll] = useState(false);
+
+  const tabStatuses = TAB_STATUS_FILTERS[activeTab];
 
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("limit", "30");
+  tabStatuses.forEach(s => params.append("status", s));
   if (sourceApp) params.set("sourceApp", sourceApp);
   if (severity) params.set("severity", severity);
-  if (status) params.set("status", status);
   if (errorType) params.set("errorType", errorType);
   if (dateFrom) params.set("dateFrom", new Date(dateFrom).toISOString());
   if (dateTo) params.set("dateTo", new Date(dateTo + "T23:59:59").toISOString());
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["error-reports", page, sourceApp, severity, status, errorType, dateFrom, dateTo],
+    queryKey: ["error-reports", activeTab, page, sourceApp, severity, errorType, dateFrom, dateTo],
     queryFn: () => fetcher(`/error-reports?${params.toString()}`),
     refetchInterval: 30000,
   });
 
   const reports: ErrorReport[] = data?.reports || [];
   const pagination: Pagination = data?.pagination || { page: 1, limit: 30, total: 0, totalPages: 0 };
+
+  const newCount     = useTabCount("new",        sourceApp, severity, errorType);
+  const unresolvedCount = useTabCount("unresolved", sourceApp, severity, errorType);
+  const completedCount  = useTabCount("completed",  sourceApp, severity, errorType);
+
+  const tabCounts: Record<Tab, number> = {
+    new:        newCount,
+    unresolved: unresolvedCount,
+    completed:  completedCount,
+  };
 
   const updateMutation = useMutation({
     mutationFn: ({ id, newStatus }: { id: string; newStatus: string }) =>
@@ -174,16 +201,54 @@ export default function ErrorMonitor() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["error-reports-tab-count"] });
       queryClient.invalidateQueries({ queryKey: ["error-reports-count"] });
     },
   });
 
-  const hasActiveFilters = sourceApp || severity || status || errorType || dateFrom || dateTo;
+  const handleFixAll = async () => {
+    if (fixingAll) return;
+    setFixingAll(true);
+    try {
+      await fetcher("/error-reports/bulk-resolve", {
+        method: "POST",
+        body: JSON.stringify({
+          sourceApp: sourceApp || undefined,
+          severity: severity || undefined,
+          errorType: errorType || undefined,
+          statusFilter: TAB_STATUS_FILTERS[activeTab],
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["error-reports-tab-count"] });
+      queryClient.invalidateQueries({ queryKey: ["error-reports-count"] });
+      setActiveTab("completed");
+      setPage(1);
+    } finally {
+      setFixingAll(false);
+    }
+  };
+
+  const switchTab = (tab: Tab) => {
+    setActiveTab(tab);
+    setPage(1);
+    setExpandedId(null);
+  };
+
+  const hasActiveFilters = sourceApp || severity || errorType || dateFrom || dateTo;
 
   const clearFilters = () => {
-    setSourceApp(""); setSeverity(""); setStatus(""); setErrorType("");
+    setSourceApp(""); setSeverity(""); setErrorType("");
     setDateFrom(""); setDateTo(""); setPage(1);
   };
+
+  const TABS: { id: Tab; label: string; icon: typeof Flame; color: string; badge: string }[] = [
+    { id: "new",        label: "New",        icon: Flame,       color: "text-red-400",   badge: "bg-red-500/20 text-red-300" },
+    { id: "unresolved", label: "Unresolved", icon: ShieldAlert, color: "text-amber-400", badge: "bg-amber-500/20 text-amber-300" },
+    { id: "completed",  label: "Completed",  icon: CheckCircle2,color: "text-green-400", badge: "bg-green-500/20 text-green-300" },
+  ];
+
+  const canFixAll = activeTab !== "completed" && pagination.total > 0;
 
   return (
     <div className="min-h-screen p-4 md:p-6 space-y-4">
@@ -194,11 +259,21 @@ export default function ErrorMonitor() {
             Error Monitor
           </h1>
           <p className="text-sm text-white/40 mt-1">
-            {pagination.total} total error{pagination.total !== 1 ? "s" : ""} captured
+            Real-time error tracking across all apps
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {canFixAll && (
+            <button
+              onClick={handleFixAll}
+              disabled={fixingAll}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30 transition-colors disabled:opacity-50"
+            >
+              <CheckCircle2 className={`w-4 h-4 ${fixingAll ? "animate-spin" : ""}`} />
+              {fixingAll ? "Fixing…" : `Fix All (${pagination.total})`}
+            </button>
+          )}
           <button
             onClick={() => setShowFilters(f => !f)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -209,9 +284,7 @@ export default function ErrorMonitor() {
           >
             <Filter className="w-4 h-4" />
             Filters
-            {hasActiveFilters && (
-              <span className="w-2 h-2 rounded-full bg-indigo-400" />
-            )}
+            {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-indigo-400" />}
           </button>
           <button
             onClick={() => refetch()}
@@ -233,7 +306,7 @@ export default function ErrorMonitor() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <select value={sourceApp} onChange={e => { setSourceApp(e.target.value); setPage(1); }}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
               {SOURCE_APPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -241,10 +314,6 @@ export default function ErrorMonitor() {
             <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
               {SEVERITIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
-              {STATUSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <select value={errorType} onChange={e => { setErrorType(e.target.value); setPage(1); }}
               className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:border-indigo-500/50">
@@ -260,6 +329,33 @@ export default function ErrorMonitor() {
         </div>
       )}
 
+      <div className="flex items-center gap-1 border-b border-white/10 pb-0">
+        {TABS.map(tab => {
+          const Icon = tab.icon;
+          const count = tabCounts[tab.id];
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => switchTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
+                isActive
+                  ? `${tab.color} border-current bg-white/[0.04]`
+                  : "text-white/40 border-transparent hover:text-white/60 hover:bg-white/[0.02]"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+              {count > 0 && (
+                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${tab.badge}`}>
+                  {count > 999 ? "999+" : count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden">
         {isLoading && reports.length === 0 ? (
           <div className="flex items-center justify-center py-20">
@@ -267,11 +363,25 @@ export default function ErrorMonitor() {
           </div>
         ) : reports.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-white/30">
-            <AlertTriangle className="w-12 h-12 mb-3" />
-            <p className="text-lg font-semibold">No errors found</p>
-            <p className="text-sm mt-1">
-              {hasActiveFilters ? "Try adjusting your filters" : "All systems running smoothly"}
-            </p>
+            {activeTab === "completed" ? (
+              <>
+                <CheckCircle2 className="w-12 h-12 mb-3 text-green-500/40" />
+                <p className="text-lg font-semibold">No completed errors</p>
+                <p className="text-sm mt-1">Resolved errors will appear here</p>
+              </>
+            ) : activeTab === "unresolved" ? (
+              <>
+                <ShieldAlert className="w-12 h-12 mb-3 text-amber-500/40" />
+                <p className="text-lg font-semibold">No unresolved errors</p>
+                <p className="text-sm mt-1">Acknowledged and in-progress errors appear here</p>
+              </>
+            ) : (
+              <>
+                <Inbox className="w-12 h-12 mb-3 text-green-500/40" />
+                <p className="text-lg font-semibold">No new errors</p>
+                <p className="text-sm mt-1">All systems running smoothly</p>
+              </>
+            )}
           </div>
         ) : (
           <div>
@@ -306,14 +416,10 @@ export default function ErrorMonitor() {
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/35">
                         <span>{formatTimestamp(report.timestamp)}</span>
                         {report.functionName && (
-                          <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded">
-                            {report.functionName}
-                          </span>
+                          <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded">{report.functionName}</span>
                         )}
                         {report.componentName && (
-                          <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded">
-                            {report.componentName}
-                          </span>
+                          <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded">{report.componentName}</span>
                         )}
                         {report.shortImpact && (
                           <span className="text-white/25">{report.shortImpact}</span>
