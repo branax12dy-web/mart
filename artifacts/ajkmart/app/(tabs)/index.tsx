@@ -859,6 +859,90 @@ const tr2 = StyleSheet.create({
   errorTxt: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
 });
 
+/* ────────────────────────────────────
+   Offers Strip
+──────────────────────────────────── */
+const OFFER_STRIP_CONFIGS = [
+  { type: "all",         label: "All Offers",    emoji: "🏷️", colors: ["#7C3AED","#4F46E5"] as [string,string] },
+  { type: "flashDeals",  label: "Flash Deals",   emoji: "⚡", colors: ["#DC2626","#B91C1C"] as [string,string] },
+  { type: "freeDelivery",label: "Free Delivery", emoji: "🚚", colors: ["#0891B2","#0E7490"] as [string,string] },
+  { type: "cashback",    label: "Cashback",      emoji: "💰", colors: ["#D97706","#B45309"] as [string,string] },
+  { type: "newUserSpecials", label: "New User",  emoji: "⭐", colors: ["#DB2777","#BE185D"] as [string,string] },
+];
+
+function OffersStrip() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["public-offers-home"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/promotions/public`);
+      if (!r.ok) return null;
+      return r.json().then((j: any) => j?.data ?? j);
+    },
+    staleTime: 120000,
+  });
+
+  const count: number = data?.offers?.length ?? 0;
+  if (!isLoading && count === 0) return null;
+
+  return (
+    <View style={os.wrap}>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => router.push("/offers" as Href)}
+        style={os.header}
+        accessibilityRole="button"
+        accessibilityLabel="View all offers"
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={os.title}>🎯 Offers & Deals</Text>
+          {count > 0 && <View style={os.countBubble}><Text style={os.countTxt}>{count}</Text></View>}
+        </View>
+        <View style={os.viewAllBtn}>
+          <Text style={os.viewAllTxt}>View All</Text>
+          <Ionicons name="arrow-forward" size={12} color={C.primary} />
+        </View>
+      </TouchableOpacity>
+      {isLoading ? (
+        <View style={os.row}>
+          {[0,1,2].map(i => <View key={i} style={os.skeletonCard} />)}
+        </View>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={os.row}>
+          {OFFER_STRIP_CONFIGS.map(cfg => (
+            <TouchableOpacity
+              key={cfg.type}
+              activeOpacity={0.8}
+              onPress={() => router.push("/offers" as Href)}
+              accessibilityRole="button"
+              accessibilityLabel={cfg.label}
+            >
+              <LinearGradient colors={cfg.colors} style={os.card} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <Text style={os.cardEmoji}>{cfg.emoji}</Text>
+                <Text style={os.cardLabel}>{cfg.label}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+const os = StyleSheet.create({
+  wrap: { marginTop: 16 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: H_PAD, marginBottom: 10 },
+  title: { fontFamily: Font.bold, fontSize: 16, color: C.text },
+  countBubble: { backgroundColor: C.primary, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
+  countTxt: { fontFamily: Font.bold, fontSize: 10, color: "#fff" },
+  viewAllBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
+  viewAllTxt: { fontFamily: Font.semiBold, fontSize: 12, color: C.primary },
+  row: { paddingHorizontal: H_PAD, gap: 10 },
+  card: { width: 100, height: 72, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 4, ...shadows.sm },
+  cardEmoji: { fontSize: 22 },
+  cardLabel: { fontFamily: Font.semiBold, fontSize: 10, color: "#fff", textAlign: "center" },
+  skeletonCard: { width: 100, height: 72, borderRadius: 14, backgroundColor: C.surfaceSecondary },
+});
+
 const WMO_ICONS: Record<number, { icon: string; label: string }> = {
   0: { icon: "sunny-outline", label: "Clear" },
   1: { icon: "partly-sunny-outline", label: "Mostly Clear" },
@@ -1274,6 +1358,8 @@ export default function HomeScreen() {
             {platformConfig.content.showBanner && <DynamicBannerCarousel />}
 
             <FlashDealsSection T={T} />
+
+            <OffersStrip />
 
             <TrendingSection />
 

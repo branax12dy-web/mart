@@ -25,6 +25,7 @@ import Analytics from "./pages/Analytics";
 import Notifications from "./pages/Notifications";
 import Reviews from "./pages/Reviews";
 import Promos from "./pages/Promos";
+import Campaigns from "./pages/Campaigns";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -173,6 +174,7 @@ function AppRoutes() {
                 <Route path="/analytics" component={Analytics} />
                 <Route path="/reviews" component={Reviews} />
                 <Route path="/promos" component={Promos} />
+                <Route path="/campaigns" component={Campaigns} />
                 <Route path="/store" component={Store} />
                 <Route path="/notifications" component={Notifications} />
                 <Route path="/profile" component={Profile} />

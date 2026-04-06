@@ -43,6 +43,7 @@ import DeliveryAccess from "@/pages/delivery-access";
 import AccountConditions from "@/pages/account-conditions";
 import ConditionRules from "@/pages/condition-rules";
 import Popups from "@/pages/popups";
+import PromotionsHub from "@/pages/promotions-hub";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -141,6 +142,7 @@ function Router() {
       <Route path="/account-conditions"><ProtectedRoute component={AccountConditions} /></Route>
       <Route path="/condition-rules"><ProtectedRoute component={ConditionRules} /></Route>
       <Route path="/popups"><ProtectedRoute component={Popups} /></Route>
+      <Route path="/promotions"><ProtectedRoute component={PromotionsHub} /></Route>
 
       <Route component={NotFound} />
     </Switch>

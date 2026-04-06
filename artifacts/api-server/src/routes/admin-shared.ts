@@ -616,6 +616,221 @@ export async function ensureRideBidsMigration() {
   _rideBidsMigrated = true;
 }
 
+let _promotionsMigrated = false;
+export async function ensurePromotionsTables() {
+  if (_promotionsMigrated) return;
+  try {
+    /* campaigns */
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS campaigns (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        theme TEXT NOT NULL DEFAULT 'general',
+        color_from TEXT NOT NULL DEFAULT '#7C3AED',
+        color_to TEXT NOT NULL DEFAULT '#4F46E5',
+        banner_image TEXT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        budget_cap DECIMAL(12,2),
+        budget_spent DECIMAL(12,2) NOT NULL DEFAULT 0,
+        start_date TIMESTAMPTZ NOT NULL,
+        end_date TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_by TEXT,
+        approved_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_status_idx ON campaigns (status)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_start_date_idx ON campaigns (start_date)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_end_date_idx ON campaigns (end_date)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_priority_idx ON campaigns (priority)`);
+
+    /* offers */
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS offers (
+        id TEXT PRIMARY KEY,
+        campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        type TEXT NOT NULL,
+        code TEXT UNIQUE,
+        discount_pct DECIMAL(5,2),
+        discount_flat DECIMAL(10,2),
+        min_order_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        max_discount DECIMAL(10,2),
+        buy_qty INTEGER,
+        get_qty INTEGER,
+        cashback_pct DECIMAL(5,2),
+        cashback_max DECIMAL(10,2),
+        free_delivery BOOLEAN NOT NULL DEFAULT FALSE,
+        targeting_rules JSONB NOT NULL DEFAULT '{}',
+        stackable BOOLEAN NOT NULL DEFAULT FALSE,
+        usage_limit INTEGER,
+        usage_per_user INTEGER NOT NULL DEFAULT 1,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        applies_to TEXT NOT NULL DEFAULT 'all',
+        vendor_id TEXT,
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_by TEXT,
+        approved_by TEXT,
+        start_date TIMESTAMPTZ NOT NULL,
+        end_date TIMESTAMPTZ NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS offers_status_idx ON offers (status)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS offers_campaign_id_idx ON offers (campaign_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS offers_type_idx ON offers (type)`);
+
+    /* offer_redemptions */
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS offer_redemptions (
+        id TEXT PRIMARY KEY,
+        offer_id TEXT NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        order_id TEXT,
+        discount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS offer_redemptions_offer_id_idx ON offer_redemptions (offer_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS offer_redemptions_user_id_idx ON offer_redemptions (user_id)`);
+
+    /* campaign_participations */
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS campaign_participations (
+        id TEXT PRIMARY KEY,
+        campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        vendor_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaign_participations_campaign_id_idx ON campaign_participations (campaign_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaign_participations_vendor_id_idx ON campaign_participations (vendor_id)`);
+
+    /* offer_templates */
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS offer_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        type TEXT NOT NULL,
+        code TEXT,
+        discount_pct DECIMAL(5,2),
+        discount_flat DECIMAL(10,2),
+        min_order_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        max_discount DECIMAL(10,2),
+        buy_qty INTEGER,
+        get_qty INTEGER,
+        cashback_pct DECIMAL(5,2),
+        cashback_max DECIMAL(10,2),
+        free_delivery BOOLEAN NOT NULL DEFAULT FALSE,
+        targeting_rules JSONB NOT NULL DEFAULT '{}',
+        stackable BOOLEAN NOT NULL DEFAULT FALSE,
+        usage_limit INTEGER,
+        usage_per_user INTEGER NOT NULL DEFAULT 1,
+        applies_to TEXT NOT NULL DEFAULT 'all',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const isIdempotent = /already exists|duplicate column|42701|42P07/i.test(msg);
+    if (!isIdempotent) {
+      logger.error({ err: e }, "[migration] promotions tables migration FAILED — will retry on next request");
+      return;
+    }
+    logger.debug({ err: e }, "[migration] promotions tables already exist (idempotent)");
+  }
+
+  /* ── Backfill legacy promo_codes → offers (idempotent via UNIQUE code constraint) ── */
+  try {
+    await db.execute(sql`
+      INSERT INTO offers (
+        id, name, description, type, code, discount_pct, discount_flat,
+        min_order_amount, max_discount, usage_limit, used_count, applies_to,
+        free_delivery, targeting_rules, stackable, usage_per_user, status,
+        start_date, end_date, created_at, updated_at
+      )
+      SELECT
+        'migrated_promo_' || id,
+        COALESCE(description, 'Promo ' || code),
+        description,
+        CASE WHEN discount_pct IS NOT NULL THEN 'percentage' ELSE 'flat_discount' END,
+        code,
+        discount_pct,
+        discount_flat,
+        COALESCE(min_order_amount, 0),
+        max_discount,
+        usage_limit,
+        used_count,
+        COALESCE(applies_to, 'all'),
+        FALSE,
+        '{}'::jsonb,
+        FALSE,
+        1,
+        CASE WHEN is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) THEN 'live' ELSE 'expired' END,
+        created_at,
+        COALESCE(expires_at, created_at + INTERVAL '10 years'),
+        created_at,
+        created_at
+      FROM promo_codes
+      ON CONFLICT (code) DO NOTHING
+    `);
+    logger.info("[migration] legacy promo_codes backfill complete (idempotent)");
+  } catch (e2: unknown) {
+    logger.warn({ err: e2 }, "[migration] promo_codes backfill skipped (non-critical)");
+  }
+
+  /* ── Backfill legacy flash_deals → offers (idempotent via id-based codes) ── */
+  try {
+    await db.execute(sql`
+      INSERT INTO offers (
+        id, name, type, discount_pct, discount_flat,
+        min_order_amount, usage_limit, used_count, applies_to,
+        free_delivery, targeting_rules, stackable, usage_per_user, status,
+        start_date, end_date, created_at, updated_at
+      )
+      SELECT
+        'migrated_flash_' || id,
+        COALESCE(title, 'Flash Deal'),
+        'percentage',
+        discount_pct,
+        discount_flat,
+        0,
+        deal_stock,
+        sold_count,
+        'mart',
+        FALSE,
+        '{}'::jsonb,
+        FALSE,
+        1,
+        CASE WHEN is_active = TRUE AND end_time > NOW() THEN 'live' ELSE 'expired' END,
+        start_time,
+        end_time,
+        created_at,
+        created_at
+      FROM flash_deals
+      ON CONFLICT (id) DO NOTHING
+    `);
+    logger.info("[migration] legacy flash_deals backfill complete (idempotent)");
+  } catch (e3: unknown) {
+    logger.warn({ err: e3 }, "[migration] flash_deals backfill skipped (non-critical)");
+  }
+
+  _promotionsMigrated = true;
+}
+
 /* ── Platform settings in-memory cache (10s TTL) ──────────────────────────
  * Prevents hammering the DB on every fare-calculation request while still
  * ensuring admin updates take effect within seconds.  Call

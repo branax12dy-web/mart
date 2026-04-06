@@ -17,6 +17,7 @@ export {
   ensureAuthMethodColumn,
   ensureRideBidsMigration,
   ensureOrdersGpsColumns,
+  ensurePromotionsTables,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,

@@ -49,3 +49,6 @@ export * from "./account_conditions";
 export * from "./popup_campaigns";
 export * from "./popup_impressions";
 export * from "./popup_templates";
+export * from "./campaigns";
+export * from "./offers";
+export * from "./offer_templates";

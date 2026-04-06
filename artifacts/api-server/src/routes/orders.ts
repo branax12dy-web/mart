@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable } from "@workspace/db/schema";
-import { eq, and, gte, count, desc, SQL, sql, inArray } from "drizzle-orm";
+import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable } from "@workspace/db/schema";
+import { eq, and, gte, count, sum, desc, SQL, sql, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { addSecurityEvent, addAuditEntry, getClientIp, getCachedSettings, customerAuth, idorGuard } from "../middleware/security.js";
@@ -133,16 +133,108 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
 }
 
 /* ── Promo code helper ─────────────────────────────────────────────────────── */
-async function validatePromoCode(code: string, orderTotal: number, orderType: string): Promise<{
-  valid: boolean; discount: number; discountType: "pct" | "flat" | null; error?: string;
-  promoId?: string; maxDiscount?: number | null;
-}> {
+type ValidatePromoResult = {
+  valid: boolean;
+  discount: number;
+  discountType: "pct" | "flat" | null;
+  freeDelivery?: boolean;
+  error?: string;
+  promoId?: string;
+  offerId?: string;
+  maxDiscount?: number | null;
+};
+
+async function validatePromoCode(
+  code: string,
+  orderTotal: number,
+  orderType: string,
+  userId?: string,
+): Promise<ValidatePromoResult> {
+  const upperCode = code.toUpperCase().trim();
+  const now = new Date();
+
+  /* ── 1. Check new unified offers engine first ── */
+  const [offer] = await db.select().from(offersTable)
+    .where(and(eq(offersTable.code, upperCode), eq(offersTable.status, "live")))
+    .limit(1);
+
+  if (offer) {
+    if (now < offer.startDate || now > offer.endDate) {
+      return { valid: false, discount: 0, discountType: null, error: "This offer has expired." };
+    }
+    if (offer.usageLimit !== null && offer.usedCount >= offer.usageLimit) {
+      return { valid: false, discount: 0, discountType: null, error: "This offer has reached its usage limit." };
+    }
+    const minAmt = parseFloat(String(offer.minOrderAmount ?? "0"));
+    if (orderTotal < minAmt) {
+      return { valid: false, discount: 0, discountType: null, error: `Minimum order Rs. ${minAmt} required for this offer.` };
+    }
+    const appliesTo = (offer.appliesTo ?? "all").toLowerCase().trim();
+    if (appliesTo !== "all" && appliesTo !== orderType.toLowerCase().trim()) {
+      return { valid: false, discount: 0, discountType: null, error: `This offer is valid only for ${appliesTo} orders.` };
+    }
+
+    /* ── Targeting rules enforcement ── */
+    const rules = (offer.targetingRules ?? {}) as Record<string, unknown>;
+    if (userId) {
+      const [userRow] = await db.select({ createdAt: usersTable.createdAt }).from(usersTable)
+        .where(eq(usersTable.id, userId)).limit(1);
+      const isNewUser = userRow ? (Date.now() - userRow.createdAt.getTime()) < 30 * 24 * 60 * 60 * 1000 : false;
+      if (rules.newUsersOnly && !isNewUser) {
+        return { valid: false, discount: 0, discountType: null, error: "This offer is for new users only." };
+      }
+      const [orderCountRow] = await db.select({ c: count() }).from(ordersTable)
+        .where(eq(ordersTable.userId, userId));
+      const totalOrders = Number(orderCountRow?.c ?? 0);
+      if (rules.returningUsersOnly && totalOrders === 0) {
+        return { valid: false, discount: 0, discountType: null, error: "This offer is for returning customers only." };
+      }
+      if (rules.highValueUser) {
+        const [spendRow] = await db.select({ s: sum(ordersTable.total) }).from(ordersTable)
+          .where(eq(ordersTable.userId, userId));
+        const totalSpend = parseFloat(String(spendRow?.s ?? "0"));
+        if (totalSpend < 5000) {
+          return { valid: false, discount: 0, discountType: null, error: "This offer is for high-value customers only." };
+        }
+      }
+
+      /* ── Per-user usage limit enforcement (exclude bookmark records) ── */
+      const usagePerUser = offer.usagePerUser ? Number(offer.usagePerUser) : null;
+      if (usagePerUser !== null && usagePerUser > 0) {
+        const [redemptionRow] = await db.select({ c: count() }).from(offerRedemptionsTable)
+          .where(and(
+            eq(offerRedemptionsTable.offerId, offer.id),
+            eq(offerRedemptionsTable.userId, userId),
+            sql`${offerRedemptionsTable.orderId} IS NOT NULL`,
+          ));
+        const userRedemptions = Number(redemptionRow?.c ?? 0);
+        if (userRedemptions >= usagePerUser) {
+          return { valid: false, discount: 0, discountType: null, error: `You have already used this offer the maximum allowed times (${usagePerUser}).` };
+        }
+      }
+    }
+
+    let discount = 0;
+    let discountType: "pct" | "flat" = "flat";
+    const freeDelivery = offer.freeDelivery ?? false;
+    if (offer.discountPct) {
+      discountType = "pct";
+      discount = Math.round(orderTotal * parseFloat(String(offer.discountPct)) / 100);
+      if (offer.maxDiscount) discount = Math.min(discount, parseFloat(String(offer.maxDiscount)));
+    } else if (offer.discountFlat) {
+      discount = parseFloat(String(offer.discountFlat));
+    }
+    discount = Math.min(discount, orderTotal);
+    return { valid: true, discount, discountType, freeDelivery, offerId: offer.id, maxDiscount: offer.maxDiscount ? parseFloat(String(offer.maxDiscount)) : null };
+  }
+
+  /* ── 2. Fall back to legacy promo_codes ── */
   const [promo] = await db.select().from(promoCodesTable)
-    .where(eq(promoCodesTable.code, code.toUpperCase().trim())).limit(1);
+    .where(eq(promoCodesTable.code, upperCode)).limit(1);
 
   if (!promo)                                          return { valid: false, discount: 0, discountType: null, error: "Yeh promo code exist nahi karta." };
   if (!promo.isActive)                                 return { valid: false, discount: 0, discountType: null, error: "Yeh promo code active nahi hai." };
-  if (promo.expiresAt && new Date() > promo.expiresAt) return { valid: false, discount: 0, discountType: null, error: "Yeh promo code expire ho gaya hai." };
+  if (promo.expiresAt && now > promo.expiresAt)        return { valid: false, discount: 0, discountType: null, error: "Yeh promo code expire ho gaya hai." };
   if (promo.usageLimit !== null && promo.usedCount >= promo.usageLimit)
     return { valid: false, discount: 0, discountType: null, error: "Yeh promo code apni limit reach kar chuka hai." };
   if (promo.minOrderAmount && orderTotal < parseFloat(String(promo.minOrderAmount)))
@@ -232,7 +324,7 @@ router.get("/validate-promo", customerAuth, async (req, res) => {
   const total = parseFloat(String(req.query["total"] || "0"));
   const type  = String(req.query["type"]  || "mart");
   if (!code) { sendValidationError(res, "code required"); return; }
-  const result = await validatePromoCode(code, total, type);
+  const result = await validatePromoCode(code, total, type, req.customerId);
   sendSuccess(res, result);
 });
 
@@ -538,21 +630,90 @@ router.post("/", customerAuth, async (req, res) => {
     : 0;
   const deliveryFee = calcDeliveryFee(s, type, itemsTotal, itemWeight);
   const gstAmount   = calcGst(s, itemsTotal);
-  const codFee      = calcCodFee(s, paymentMethod, itemsTotal + deliveryFee + gstAmount);
 
   let promoDiscount = 0;
   let promoId: string | null = null;
+  let promoOfferId: string | null = null;
+  let promoFreeDelivery = false;
   const promoCode = req.body.promoCode as string | undefined;
+  const incomingAutoOfferId = req.body.autoApplyOfferId as string | undefined;
+
   if (promoCode) {
-    const promoResult = await validatePromoCode(promoCode, itemsTotal, type ?? "mart");
+    const promoResult = await validatePromoCode(promoCode, itemsTotal, type ?? "mart", userId);
     if (!promoResult.valid) {
       sendValidationError(res, promoResult.error ?? "Invalid promo code"); return;
     }
     promoDiscount = promoResult.discount;
     promoId = promoResult.promoId ?? null;
+    promoOfferId = promoResult.offerId ?? null;
+    promoFreeDelivery = promoResult.freeDelivery ?? false;
+  } else if (incomingAutoOfferId) {
+    /* Auto-apply (codeless) offer: validate directly by ID with full targeting/usage checks */
+    const [autoOffer] = await db.select().from(offersTable).where(eq(offersTable.id, incomingAutoOfferId)).limit(1);
+    if (autoOffer) {
+      /* Security: reject code-gated offers from auto-apply path to prevent abuse */
+      if (autoOffer.code) {
+        sendValidationError(res, "This offer requires a promo code. Please enter the code manually."); return;
+      }
+
+      const now = new Date();
+      const isLive = autoOffer.status === "live" && now >= autoOffer.startDate && now <= autoOffer.endDate;
+      const minAmt = parseFloat(String(autoOffer.minOrderAmount ?? "0"));
+      const appliesTo = (autoOffer.appliesTo ?? "all").toLowerCase().trim();
+      const typeMatch = appliesTo === "all" || appliesTo === (type ?? "mart").toLowerCase();
+
+      /* Global usage exhaustion check (fix #3) */
+      const globalExhausted = autoOffer.usageLimit !== null
+        && autoOffer.usedCount >= (autoOffer.usageLimit ?? Infinity);
+
+      if (isLive && itemsTotal >= minAmt && typeMatch && !globalExhausted) {
+        /* Targeting rules */
+        const rules = (autoOffer.targetingRules ?? {}) as Record<string, unknown>;
+        const [userRow] = await db.select({ createdAt: usersTable.createdAt }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+        const isNewUser = userRow ? (Date.now() - userRow.createdAt.getTime()) < 30 * 24 * 60 * 60 * 1000 : false;
+        const [cntRow] = await db.select({ c: count() }).from(ordersTable).where(eq(ordersTable.userId, userId));
+        const totalOrders = Number(cntRow?.c ?? 0);
+        const [spendRow2] = await db.select({ s: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.userId, userId));
+        const totalSpend = parseFloat(String(spendRow2?.s ?? "0"));
+
+        const targetingOk = !(rules.newUsersOnly && !isNewUser)
+          && !(rules.returningUsersOnly && totalOrders === 0)
+          && !(rules.highValueUser && totalSpend < 5000);
+
+        /* Per-user usage (exclude bookmark records) */
+        const usagePerUser = autoOffer.usagePerUser ? Number(autoOffer.usagePerUser) : null;
+        let usageOk = true;
+        if (usagePerUser !== null && usagePerUser > 0) {
+          const [rRow] = await db.select({ c: count() }).from(offerRedemptionsTable)
+            .where(and(
+              eq(offerRedemptionsTable.offerId, autoOffer.id),
+              eq(offerRedemptionsTable.userId, userId),
+              sql`${offerRedemptionsTable.orderId} IS NOT NULL`,
+            ));
+          usageOk = Number(rRow?.c ?? 0) < usagePerUser;
+        }
+
+        if (targetingOk && usageOk) {
+          let disc = 0;
+          if (autoOffer.discountPct) {
+            disc = Math.round(itemsTotal * parseFloat(String(autoOffer.discountPct)) / 100);
+            if (autoOffer.maxDiscount) disc = Math.min(disc, parseFloat(String(autoOffer.maxDiscount)));
+          } else if (autoOffer.discountFlat) {
+            disc = parseFloat(String(autoOffer.discountFlat));
+          }
+          promoDiscount = Math.min(disc, itemsTotal);
+          promoOfferId = autoOffer.id;
+          promoFreeDelivery = autoOffer.freeDelivery ?? false;
+        }
+      }
+    }
   }
 
-  const total = Math.max(0, itemsTotal + deliveryFee + gstAmount + codFee - promoDiscount);
+  /* Apply free delivery from promo offer — waive the delivery fee entirely */
+  const effectiveDeliveryFee = promoFreeDelivery ? 0 : deliveryFee;
+  const codFee = calcCodFee(s, paymentMethod, itemsTotal + effectiveDeliveryFee + gstAmount);
+
+  const total = Math.max(0, itemsTotal + effectiveDeliveryFee + gstAmount + codFee - promoDiscount);
 
   /* ── Prep time from admin Order settings ── */
   const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
@@ -749,12 +910,23 @@ router.post("/", customerAuth, async (req, res) => {
         if (promoId) {
           await tx.update(promoCodesTable)
             .set({ usedCount: sql`${promoCodesTable.usedCount} + 1` })
-            .where(eq(promoCodesTable.id, promoId))
-            .catch(() => {});
+            .where(eq(promoCodesTable.id, promoId));
+        }
+        if (promoOfferId && newOrder) {
+          await tx.update(offersTable)
+            .set({ usedCount: sql`${offersTable.usedCount} + 1` })
+            .where(eq(offersTable.id, promoOfferId));
+          await tx.insert(offerRedemptionsTable).values({
+            id: generateId(),
+            offerId: promoOfferId,
+            userId,
+            orderId: newOrder.id,
+            discount: promoDiscount.toFixed(2),
+          });
         }
         return newOrder!;
       });
-      const mapped = { ...mapOrder(order, deliveryFee, gstAmount, codFee), promoDiscount };
+      const mapped = { ...mapOrder(order, effectiveDeliveryFee, gstAmount, codFee), promoDiscount };
 
       /* ── Emit new-order to admin/vendor IMMEDIATELY after DB commit ── */
       broadcastNewOrder(mapped, (order as any).vendorId);
@@ -794,9 +966,21 @@ router.post("/", customerAuth, async (req, res) => {
           .set({ usedCount: sql`${promoCodesTable.usedCount} + 1` })
           .where(eq(promoCodesTable.id, promoId));
       }
+      if (promoOfferId && newOrder) {
+        await tx.update(offersTable)
+          .set({ usedCount: sql`${offersTable.usedCount} + 1` })
+          .where(eq(offersTable.id, promoOfferId));
+        await tx.insert(offerRedemptionsTable).values({
+          id: generateId(),
+          offerId: promoOfferId,
+          userId,
+          orderId: newOrder.id,
+          discount: promoDiscount.toFixed(2),
+        });
+      }
       return [newOrder];
     });
-    const mapped = { ...mapOrder(order!, deliveryFee, gstAmount, codFee), promoDiscount };
+    const mapped = { ...mapOrder(order!, effectiveDeliveryFee, gstAmount, codFee), promoDiscount };
 
     /* ── Emit to admin IMMEDIATELY after DB commit (Task 7: <500ms latency) ── */
     broadcastNewOrder(mapped, (order as any)?.vendorId);

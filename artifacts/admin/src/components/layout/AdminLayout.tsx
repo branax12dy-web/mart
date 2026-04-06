@@ -67,10 +67,10 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: "navInventory",
     color: "#0EA5E9",
     items: [
-      { nameKey: "navVendors",    href: "/vendors",     icon: Store },
-      { nameKey: "navProducts",   href: "/products",    icon: PackageSearch },
-      { nameKey: "navCategories", href: "/categories",  icon: FolderTree },
-      { nameKey: "navFlashDeals", href: "/flash-deals", icon: Zap },
+      { nameKey: "navVendors",         href: "/vendors",     icon: Store },
+      { nameKey: "navProducts",        href: "/products",    icon: PackageSearch },
+      { nameKey: "navCategories",      href: "/categories",  icon: FolderTree },
+      { nameKey: "navPromotionsHub",   href: "/promotions",  icon: Megaphone },
     ],
   },
   {

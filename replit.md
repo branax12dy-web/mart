@@ -8,6 +8,44 @@
 ### Overview
 AJKMart is a full-stack "Super App" designed for Azad Jammu & Kashmir (AJK), Pakistan. It integrates multiple services including Grocery Shopping (Mart), Food Delivery, Taxi/Bike Booking (Rides), Pharmacy, and Parcel Delivery, all unified by a digital wallet. The project aims to provide a comprehensive, localized service platform for the region.
 
+### Pro Offers & Promotions Engine — Completed
+
+Enterprise-grade campaign manager and promotions system replacing scattered promo codes / flash deals with a unified Promotions Hub.
+
+#### Database Schema (`lib/db/src/schema/`)
+- **`campaigns.ts`** — Campaign grouping table with theme, colors, budget, status lifecycle, priority ordering
+- **`offers.ts`** — Unified offers table with 9 offer types (percentage, flat_discount, bogo, free_delivery, combo, first_order, cashback, happy_hour, category), targeting rules JSON, offer_redemptions and campaign_participations tables
+- Backward compatible: existing `promo_codes` and `flash_deals` tables preserved
+
+#### API (`artifacts/api-server/src/routes/promotions.ts`)
+- **Public**: `GET /promotions/public` (live offers with grouped sections), `GET /promotions/for-you` (personalized), `POST /promotions/validate` (code validation)
+- **Admin CRUD**: campaigns and offers CRUD, bulk pause/activate, clone offers, analytics aggregation, AI recommendation engine
+- **Approval workflow**: `POST /offers/:id/submit` (marketing → pending_approval), `POST /offers/:id/approve` + `POST /offers/:id/reject` (manager/super only via `managerAuth` middleware)
+- **Bookmarking**: `POST /promotions/bookmarks/:offerId` (toggle) + `GET /promotions/bookmarks` — stored as `offer_redemptions` with `orderId=NULL` and `discount='0'`; all real redemption queries exclude bookmarks via `orderId IS NOT NULL`
+- **Security**: Non-manager roles restricted to `draft`/`pending_approval` status on create/update; `GET /offers/pending` registered before `GET /offers/:id` to prevent Express route collision
+- **Vendor**: `GET /promotions/vendor/campaigns`, `POST /promotions/vendor/campaigns/:id/participate`, `DELETE /promotions/vendor/participations/:id`
+- Mounted at `/promotions` and `/admin/promotions`
+
+#### Admin UI (`artifacts/admin/src/pages/promotions-hub.tsx`)
+- Tabs: Offers, Campaigns, Analytics, AI Insights
+- Template selector for 9 offer types
+- Targeting rules, bulk actions, campaign color editor
+- AI recommendations panel, offer analytics
+- Approval Queue panel (orange) showing pending offers with approve/reject buttons
+- Submit for Approval button on draft offer cards
+- Status filter dropdown with all statuses including `pending_approval` and `rejected`
+- Admin sidebar: "Promotions Hub" entry (Megaphone icon) replacing Flash Deals nav
+- i18n key `navPromotionsHub` added to all 3 language blocks (en, ur, en-PK)
+
+#### Customer App (`artifacts/ajkmart/`)
+- **`app/offers.tsx`** — Dedicated Offers & Deals screen with tabs (All, Flash, Free Ship, Cashback, New User, Saved 🔖), horizontal grouped sections, For You personalized section, offer detail bottom sheet with "Use Now" → cart routing, bookmark toggle icon on each offer card
+- **`app/(tabs)/index.tsx`** — `OffersStrip` component added to home screen (between Flash Deals and Trending), shows offer count badge and category quick-access cards
+
+#### Vendor App (`artifacts/vendor-app/`)
+- **`src/pages/Campaigns.tsx`** — New Campaigns page: browse active platform campaigns, join via participation request, withdraw pending requests, status tracking (pending/approved/rejected)
+- Navigation: Campaigns route added to SideNav and BottomNav (🎯 icon)
+- i18n key `campaignsLabel` added to all 3 language blocks
+
 ### Ride Booking Flow — Visual & UX Overhaul
 
 The customer app's ride journey screens (RideBookingForm, NegotiationScreen, RideTracker, CancelModal) received a full InDrive-inspired dark-accent redesign. Key additions:

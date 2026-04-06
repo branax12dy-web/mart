@@ -35,6 +35,7 @@ import vanRouter from "./van.js";
 import webhooksRouter from "./webhooks.js";
 import deliveryEligibilityRouter from "./delivery-eligibility.js";
 import popupsRouter from "./popups.js";
+import promotionsRouter from "./promotions.js";
 
 const router: IRouter = Router();
 
@@ -78,5 +79,7 @@ router.use("/van", vanRouter);
 router.use("/webhooks", webhooksRouter);
 router.use("/delivery/eligibility", deliveryEligibilityRouter);
 router.use("/popups", popupsRouter);
+router.use("/promotions", promotionsRouter);
+router.use("/admin/promotions", promotionsRouter);
 
 export default router;

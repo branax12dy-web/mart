@@ -3,12 +3,12 @@ import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
 const navItems: { href: string; labelKey: TranslationKey; icon: string }[] = [
-  { href: "/",          labelKey: "dashboard",  icon: "📊" },
-  { href: "/orders",    labelKey: "orders",     icon: "📦" },
-  { href: "/products",  labelKey: "products",   icon: "🍽️" },
-  { href: "/promos",    labelKey: "promosLabel", icon: "🏷️" },
-  { href: "/wallet",    labelKey: "wallet",     icon: "💰" },
-  { href: "/profile",   labelKey: "account",    icon: "👤" },
+  { href: "/",           labelKey: "dashboard",      icon: "📊" },
+  { href: "/orders",     labelKey: "orders",         icon: "📦" },
+  { href: "/products",   labelKey: "products",       icon: "🍽️" },
+  { href: "/campaigns",  labelKey: "campaignsLabel", icon: "🎯" },
+  { href: "/wallet",     labelKey: "wallet",         icon: "💰" },
+  { href: "/profile",    labelKey: "account",        icon: "👤" },
 ];
 
 export function BottomNav() {

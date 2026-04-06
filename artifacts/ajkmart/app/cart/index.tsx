@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
 import * as Location from "expo-location";
 import React, { useState, useEffect, useRef } from "react";
@@ -35,6 +35,8 @@ import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/compo
 
 const C = Colors.light;
 type PayMethod = "cash" | "wallet" | "jazzcash" | "easypaisa" | "pickup";
+type CartAvailableOffer = { id: string; name: string; code?: string; discountPct?: number; discountFlat?: number; type: string; minOrderAmount?: number };
+type AutoApplyOffer = { offerId: string; name: string; discount: number; freeDelivery: boolean; savingsMessage: string };
 
 interface PaymentMethod {
   id: PayMethod;
@@ -401,6 +403,7 @@ function AddressPickerModal({
 function CartScreenInner() {
   const insets = useSafeAreaInsets();
   const { goBack } = useSmartBack();
+  const { promoCode: incomingPromoCode } = useLocalSearchParams<{ promoCode?: string }>();
   const { user, updateUser, token, socket } = useAuth();
   const {
     items, total, cartType, updateQuantity, clearCart, clearCartOnAck, restoreCart, addItem, validateCart, isValidating,
@@ -447,6 +450,11 @@ function CartScreenInner() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoApplied, setPromoApplied] = useState(false);
 
+  const [availableOffers, setAvailableOffers] = useState<CartAvailableOffer[]>([]);
+  const [autoApplyOffer, setAutoApplyOffer] = useState<AutoApplyOffer | null>(null);
+  const [autoApplyDismissed, setAutoApplyDismissed] = useState(false);
+  const [autoApplyActive, setAutoApplyActive] = useState(false);
+
   const [showGwModal, setShowGwModal] = useState(false);
   const [gwMobile, setGwMobile] = useState("");
   const [gwPaying, setGwPaying] = useState(false);
@@ -477,6 +485,60 @@ function CartScreenInner() {
       if (gwPollRef.current.intervalId) clearInterval(gwPollRef.current.intervalId);
     };
   }, []);
+
+  // Auto-apply promo code passed from offers screen (via route params)
+  useEffect(() => {
+    if (incomingPromoCode && !promoApplied) {
+      setPromoInput(incomingPromoCode.toUpperCase());
+    }
+  }, [incomingPromoCode]);
+
+  // Fetch available offers to show best-offer suggestions in the promo section
+  useEffect(() => {
+    if (!token || promoApplied) return;
+    const ctrl = new AbortController();
+    fetch(`${API_BASE}/promotions/public?limit=5`, { signal: ctrl.signal, headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (!mountedRef.current) return;
+        const offers: CartAvailableOffer[] = json?.data?.offers ?? json?.offers ?? [];
+        const codedOffers = offers.filter(o => o.code && (!o.minOrderAmount || o.minOrderAmount <= total));
+        setAvailableOffers(codedOffers.slice(0, 3));
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [token, promoApplied, total]);
+
+  // Auto-apply best offer: call promotions engine to find the best eligible offer for this cart
+  useEffect(() => {
+    if (!token || promoApplied || autoApplyDismissed || total <= 0) return;
+    const ctrl = new AbortController();
+    const orderType = cartType === "mixed" ? "mart" : cartType;
+    fetch(`${API_BASE}/promotions/auto-apply`, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ orderTotal: total, orderType }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (!mountedRef.current) return;
+        const d = json?.data ?? json;
+        if (d?.applied && d?.offer) {
+          setAutoApplyOffer({
+            offerId: d.offer.id,
+            name: d.offer.name,
+            discount: d.discount,
+            freeDelivery: d.freeDelivery ?? false,
+            savingsMessage: d.savingsMessage ?? `Save Rs. ${d.discount}`,
+          });
+        } else {
+          setAutoApplyOffer(null);
+        }
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [token, promoApplied, autoApplyDismissed, total, cartType]);
 
   useEffect(() => {
     if (!token || items.length === 0) { setDeliveryBlocked(null); return; }
@@ -557,7 +619,9 @@ function CartScreenInner() {
   const deliveryFee = (freeDeliveryEnabled && total >= freeDeliveryAbove) ? 0 : rawDeliveryFee;
   const gstAmount   = finance.gstEnabled ? Math.round(total * finance.gstPct / 100) : 0;
   const cashbackAmt = finance.cashbackEnabled ? Math.min(Math.round(total * finance.cashbackPct / 100), finance.cashbackMaxRs) : 0;
-  const grandTotal  = Math.max(0, total + deliveryFee + gstAmount - promoDiscount);
+  const autoApplyDiscount = (autoApplyActive && autoApplyOffer && !promoApplied) ? autoApplyOffer.discount : 0;
+  const effectiveDeliveryFee = (autoApplyActive && autoApplyOffer?.freeDelivery && !promoApplied) ? 0 : deliveryFee;
+  const grandTotal  = Math.max(0, total + effectiveDeliveryFee + gstAmount - promoDiscount - autoApplyDiscount);
   const walletCashbackApplies = payMethod === "wallet" && customer.walletCashbackPct > 0 && customer.walletCashbackOrders;
   const walletCashbackAmt = walletCashbackApplies ? Math.round(grandTotal * customer.walletCashbackPct / 100) : 0;
 
@@ -809,8 +873,9 @@ function CartScreenInner() {
           paymentMethod: finalPayMethod,
           idempotencyKey: idemKey,
           ...(promoCode ? { promoCode } : {}),
+          ...(autoApplyActive && autoApplyOffer && !promoCode ? { autoApplyOfferId: autoApplyOffer.offerId } : {}),
           ...orderGpsPayload,
-        } as any);
+        } as Parameters<typeof createOrder>[0] & { autoApplyOfferId?: string });
         lastError = null;
         break;
       } catch (err: any) {
@@ -1661,6 +1726,62 @@ function CartScreenInner() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Promo Code</Text>
+
+          {/* Auto-apply best offer banner */}
+          {!promoApplied && autoApplyOffer && !autoApplyDismissed && (
+            <View style={{ backgroundColor: "#F0FDF4", borderRadius: 14, borderWidth: 1, borderColor: "#86EFAC", padding: 14, marginBottom: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#166534" }}>✨ Best Offer Found</Text>
+                <TouchableOpacity onPress={() => { setAutoApplyDismissed(true); setAutoApplyActive(false); }}>
+                  <Ionicons name="close-circle-outline" size={18} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              <Text style={{ fontSize: 12, color: "#15803D", marginBottom: 10 }} numberOfLines={2}>
+                {autoApplyOffer.savingsMessage}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setAutoApplyActive(true)}
+                  style={{
+                    flex: 1, backgroundColor: autoApplyActive ? "#16A34A" : "#22C55E",
+                    borderRadius: 10, paddingVertical: 9, alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
+                    {autoApplyActive ? "✓ Applied" : "Apply Now"}
+                  </Text>
+                </TouchableOpacity>
+                {autoApplyActive && (
+                  <TouchableOpacity
+                    onPress={() => setAutoApplyActive(false)}
+                    style={{ flex: 1, backgroundColor: "#FEE2E2", borderRadius: 10, paddingVertical: 9, alignItems: "center" }}
+                  >
+                    <Text style={{ color: "#DC2626", fontWeight: "700", fontSize: 13 }}>Remove</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+
+          {!promoApplied && availableOffers.length > 0 && (
+            <View style={{ marginBottom: 10 }}>
+              <Text style={{ ...Typ.caption, color: C.textSecondary, marginBottom: 6 }}>💡 Available offers for your cart</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row" }}>
+                {availableOffers.map(o => (
+                  <TouchableOpacity
+                    key={o.id}
+                    activeOpacity={0.75}
+                    onPress={() => { setPromoInput(o.code ?? ""); setPromoError(null); }}
+                    style={{ backgroundColor: C.primaryLight ?? "#EDE9FF", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8, borderWidth: 1, borderColor: C.primary + "40" }}
+                  >
+                    <Text style={{ ...Typ.smallBold, color: C.primary, fontFamily: Font.bold }}>
+                      {o.code} · {o.discountPct ? `${o.discountPct}% off` : o.discountFlat ? `Rs.${o.discountFlat} off` : "Offer"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
           <View style={[styles.summaryCard, { padding: 14 }]}>
             {promoApplied ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
