@@ -1108,6 +1108,42 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 #### Pull-to-Refresh
 - Added `RefreshControl` to categories (refetches both categories + products), pharmacy (refetches medicines), order detail (re-fetches order from server), product detail (refetches product data). Home tab and others already had it via `SmartRefresh` component.
 
+### Popup Banner & Announcement System — Task #4
+
+#### Database Schema (`lib/db/src/schema/`)
+- **`popup_campaigns.ts`** — Main campaigns table with: title, body, mediaUrl, ctaText/ctaLink, popupType (modal/bottom_sheet/top_banner/floating_card), displayFrequency (once/daily/every_session), maxImpressions, priority, startDate/endDate, targeting JSON, status (draft/scheduled/live/paused/expired), colors (colorFrom/colorTo/textColor), animation, stylePreset, templateId.
+- **`popup_impressions.ts`** — Impression tracking table: campaignId, userId, sessionId, action (view/click/dismiss), userAgent, ipAddress, seenAt.
+- **`popup_templates.ts`** — Reusable templates table with category, default content, and style presets.
+- All tables exported from `lib/db/src/schema/index.ts` and pushed to DB.
+
+#### API Server (`artifacts/api-server/src/routes/`)
+- **`admin/popups.ts`** — Full admin CRUD: GET/POST/PATCH/DELETE campaigns; templates CRUD; campaign clone; bulk status update; priority reorder; per-campaign analytics (views, unique viewers, clicks, CTR, dismiss rate); AI content generation (`/ai-generate`) using OpenAI with intelligent fallback; seeds 10 built-in templates on startup.
+- **`popups.ts`** — Public routes: `GET /popups/active` (targeting engine evaluates roles, newUsers, min/maxOrderCount, date range, frequency caps, total impression limits); `POST /popups/impression` (tracks view/click/dismiss with session/IP/UA).
+- Both registered in `routes/admin.ts` and `routes/index.ts`.
+
+#### Admin Panel UI (`artifacts/admin/src/pages/popups.tsx`)
+- Campaign list with colored gradient previews, status badges, analytics inline, toggle/clone/edit/delete actions.
+- 6-step campaign builder: Template Gallery → Content (AI Assist) → Style (type picker, gradient color pickers, animation) → Targeting (roles, new users, order count range) → Schedule (dates, frequency, caps, priority, status) → Live Preview.
+- AI content assistant modal powered by `/ai-generate` endpoint.
+- Templates tab: Visual gallery of 10 built-in templates with one-click apply.
+- Analytics tab: Per-campaign metrics (views, unique viewers, clicks, CTR, dismiss rate) with recent activity log.
+- Registered at `/popups` route in `artifacts/admin/src/App.tsx`.
+- Added "Marketing" nav group to `AdminLayout.tsx` sidebar with Banners + Popups (Megaphone icon).
+
+#### Customer App Popup Engine (`artifacts/ajkmart/components/PopupEngine.tsx`)
+- Fetches eligible campaigns from `/api/popups/active` on app open.
+- Frequency capping via `AsyncStorage`: `once` = ever, `daily` = per day, `every_session` = always.
+- Animated display for all 4 types: `modal` (fullscreen gradient + scale-in), `bottom_sheet` (slides up, tap backdrop to dismiss), `top_banner` (slides down, auto-dismiss after 4s), `floating_card` (center modal with shadow, scale-in).
+- Queue system: displays multiple eligible popups in priority order.
+- Impression tracking: sends view/click/dismiss to `/api/popups/impression` with sessionId.
+- CTA handling: internal deep links via `expo-router`, external URLs via `Linking.openURL`.
+- Integrated into `artifacts/ajkmart/app/_layout.tsx` (inside authenticated `RootLayoutNav`).
+
+#### Vendor & Rider App Popup Display
+- **`artifacts/vendor-app/src/components/PopupEngine.tsx`** — Web equivalent with localStorage frequency capping, all 4 popup types using Tailwind CSS, same targeting/impression flow.
+- **`artifacts/rider-app/src/components/PopupEngine.tsx`** — Rider-scoped version with same architecture.
+- Both integrated into respective `App.tsx` files.
+
 ### COD / Delivery Eligibility Bug — Resolved
 - `delivery_access_mode` platform setting defaults to `"all"` when absent from DB (no whitelist restrictions). Cart eligibility check + server-side order creation both honor this default.
 - Fixed stale-state bug in cart's "Self-Pickup Instead" CTA: `handleCheckout` now accepts optional `overridePayMethod` so pickup intent is applied immediately without relying on async state update.

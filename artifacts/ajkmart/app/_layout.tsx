@@ -7,6 +7,7 @@ import { router, Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, TouchableOpacity, StyleSheet, Text, View } from "react-native";
+import { PopupEngine } from "@/components/PopupEngine";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -255,6 +256,7 @@ function RootLayoutNav() {
     <>
       <AuthGuard />
       <MagicLinkHandler />
+      {_domain && <PopupEngine apiBase={`https://${_domain}/api`} triggerKey={segments.join("/")} />}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index"          options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)"         options={{ headerShown: false }} />

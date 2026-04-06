@@ -12,6 +12,7 @@ import { PwaInstallBanner } from "./components/PwaInstallBanner";
 import { SideNav } from "./components/SideNav";
 import { BOTTOM_PADDING } from "./lib/ui";
 import { AnnouncementBar } from "./components/AnnouncementBar";
+import { PopupEngine } from "./components/PopupEngine";
 import { MaintenanceScreen } from "./components/MaintenanceScreen";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -148,6 +149,7 @@ function AppRoutes() {
 
       {/* ── Announcement bar (top, dismissable) ── */}
       <AnnouncementBar message={config.content.announcement} />
+      <PopupEngine />
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Desktop Sidebar (hidden on mobile) ── */}

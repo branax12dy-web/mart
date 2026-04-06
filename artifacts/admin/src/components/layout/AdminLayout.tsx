@@ -35,6 +35,7 @@ import {
   User,
   Bus,
   Truck,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -100,13 +101,20 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    labelKey: "navMarketing",
+    color: "#EC4899",
+    items: [
+      { nameKey: "navBanners",  href: "/banners", icon: Layers },
+      { nameKey: "navPopups",   href: "/popups",  icon: Megaphone },
+    ],
+  },
+  {
     labelKey: "navConfig",
     color: "#F59E0B",
     items: [
       { nameKey: "navSettings",        href: "/settings",       icon: Settings2 },
       { nameKey: "navFeatureToggles",  href: "/app-management", icon: ToggleLeft },
-      { nameKey: "navDeliveryAccess", href: "/delivery-access", icon: Truck },
-      { nameKey: "navBanners",         href: "/banners",        icon: Layers },
+      { nameKey: "navDeliveryAccess",  href: "/delivery-access", icon: Truck },
     ],
   },
 ];

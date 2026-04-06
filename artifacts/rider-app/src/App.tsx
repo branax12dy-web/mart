@@ -14,6 +14,7 @@ import { api } from "./lib/api";
 import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
 import { PwaInstallBanner } from "./components/PwaInstallBanner";
+import { PopupEngine } from "./components/PopupEngine";
 import { MaintenanceScreen } from "./components/MaintenanceScreen";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -159,6 +160,7 @@ function AppRoutes() {
       <div className="sticky top-0 z-50 flex flex-col max-h-[30vh] overflow-y-auto">
         <AnnouncementBar message={config.content.announcement} />
       </div>
+      <PopupEngine />
 
       <div className="flex-1" style={{ paddingBottom: "calc(64px + max(8px, env(safe-area-inset-bottom, 8px)))" }}>
         <Switch>

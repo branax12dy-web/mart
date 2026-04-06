@@ -46,3 +46,6 @@ export * from "./location_history";
 export * from "./map_api_usage_log";
 export * from "./delivery_whitelist";
 export * from "./account_conditions";
+export * from "./popup_campaigns";
+export * from "./popup_impressions";
+export * from "./popup_templates";
