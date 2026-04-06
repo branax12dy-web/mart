@@ -1499,36 +1499,64 @@ function CartScreenInner() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Items</Text>
-          {items.map(item => (
-            <TouchableOpacity activeOpacity={0.7} key={item.productId} onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.productId } })} style={styles.cartItem}>
-              <View style={[styles.itemThumb, { backgroundColor: item.type === "food" ? C.amberSoft : C.blueSoft }]}>
-                {item.image ? (
-                  <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                ) : (
-                  <Ionicons
-                    name={item.type === "food" ? "restaurant-outline" : "basket-outline"}
-                    size={20}
-                    color={item.type === "food" ? C.amber : C.brandBlue}
-                  />
-                )}
-              </View>
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
-                <Text style={styles.itemUnit}>Rs. {item.price} each</Text>
-              </View>
-              <View style={styles.qtyControl}>
-                <TouchableOpacity activeOpacity={0.7} onPress={(e) => { e?.stopPropagation?.(); updateQuantity(item.productId, item.quantity - 1); }} style={styles.qtyBtn}>
-                  <Ionicons name={item.quantity === 1 ? "trash-outline" : "remove"} size={14} color={item.quantity === 1 ? C.danger : C.primary} />
-                </TouchableOpacity>
-                <Text style={styles.qtyText}>{item.quantity}</Text>
-                <TouchableOpacity activeOpacity={0.7} onPress={(e) => { e?.stopPropagation?.(); updateQuantity(item.productId, item.quantity + 1); }} style={styles.qtyBtn}>
-                  <Ionicons name="add" size={14} color={C.primary} />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.itemTotal}>Rs. {item.price * item.quantity}</Text>
-            </TouchableOpacity>
-          ))}
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Your Items</Text>
+            <View style={styles.itemCountBadge}>
+              <Text style={styles.itemCountText}>{items.reduce((s, i) => s + i.quantity, 0)}</Text>
+            </View>
+          </View>
+          {items.map((item, idx) => {
+            const typeConfig: Record<string, { label: string; color: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
+              food: { label: "Food", color: C.amber, bg: C.amberSoft, icon: "restaurant" },
+              mart: { label: "Mart", color: C.brandBlue, bg: C.blueSoft, icon: "storefront" },
+              pharmacy: { label: "Pharma", color: "#8B5CF6", bg: "#F3E8FF", icon: "medical" },
+            };
+            const tc = typeConfig[item.type] || typeConfig.mart;
+            const unitPrice = Number(item?.price ?? 0);
+            const qty = Number(item?.quantity ?? 1);
+            const lineTotal = unitPrice * qty;
+            return (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                key={item.productId}
+                onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.productId } })}
+                style={[styles.cartItem, idx === items.length - 1 && { marginBottom: 0 }]}
+              >
+                <View style={[styles.itemThumb, { backgroundColor: tc.bg }]}>
+                  {item.image ? (
+                    <Image source={{ uri: item.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  ) : (
+                    <Ionicons name={tc.icon} size={24} color={tc.color} />
+                  )}
+                  <View style={[styles.typeBadge, { backgroundColor: tc.color }]}>
+                    <Text style={styles.typeBadgeText}>{tc.label}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+                  <View style={styles.itemPriceRow}>
+                    <Text style={styles.itemUnitPrice}>Rs. {unitPrice.toLocaleString()}</Text>
+                    <Text style={styles.itemUnitSep}> × </Text>
+                    <Text style={styles.itemQtyInline}>{qty}</Text>
+                  </View>
+
+                  <View style={styles.itemBottomRow}>
+                    <View style={styles.qtyControl}>
+                      <TouchableOpacity activeOpacity={0.7} onPress={(e) => { e?.stopPropagation?.(); updateQuantity(item.productId, qty - 1); }} style={[styles.qtyBtn, qty === 1 && styles.qtyBtnDanger]}>
+                        <Ionicons name={qty === 1 ? "trash-outline" : "remove"} size={14} color={qty === 1 ? C.danger : C.primary} />
+                      </TouchableOpacity>
+                      <Text style={styles.qtyText}>{qty}</Text>
+                      <TouchableOpacity activeOpacity={0.7} onPress={(e) => { e?.stopPropagation?.(); updateQuantity(item.productId, qty + 1); }} style={styles.qtyBtn}>
+                        <Ionicons name="add" size={14} color={C.primary} />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.itemTotal}>Rs. {lineTotal.toLocaleString()}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.section}>
@@ -1861,15 +1889,26 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 16, paddingTop: 18 },
   sectionTitle: { ...Typ.h3, fontSize: 16, color: C.text, marginBottom: 12 },
 
-  cartItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, backgroundColor: C.surface, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: C.borderLight, shadowColor: C.text, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  itemThumb: { width: 56, height: 56, borderRadius: 14, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  itemInfo: { flex: 1 },
-  itemName: { ...Typ.bodySemiBold, color: C.text, marginBottom: 3 },
-  itemUnit: { ...Typ.caption, color: C.textMuted },
-  qtyControl: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.surfaceSecondary, borderRadius: 12, paddingHorizontal: 4, paddingVertical: 4 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  itemCountBadge: { backgroundColor: C.primary, borderRadius: 12, minWidth: 24, height: 24, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
+  itemCountText: { ...Typ.smallBold, color: C.textInverse, fontSize: 12 },
+
+  cartItem: { flexDirection: "row", gap: 12, padding: 12, backgroundColor: C.surface, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: C.borderLight, shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  itemThumb: { width: 72, height: 72, borderRadius: 14, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  typeBadge: { position: "absolute", top: 4, left: 4, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  typeBadgeText: { fontSize: 9, fontFamily: Font.bold, color: C.textInverse, letterSpacing: 0.5, textTransform: "uppercase" },
+  itemInfo: { flex: 1, justifyContent: "space-between" },
+  itemName: { ...Typ.bodySemiBold, color: C.text, fontSize: 14, lineHeight: 20 },
+  itemPriceRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  itemUnitPrice: { ...Typ.caption, color: C.textSecondary, fontSize: 12 },
+  itemUnitSep: { ...Typ.caption, color: C.textMuted, fontSize: 12 },
+  itemQtyInline: { ...Typ.captionMedium, color: C.textSecondary, fontSize: 12 },
+  itemBottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
+  qtyControl: { flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: C.surfaceSecondary, borderRadius: 12, paddingHorizontal: 3, paddingVertical: 3 },
   qtyBtn: { width: 30, height: 30, borderRadius: 9, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
-  qtyText: { ...Typ.button, fontFamily: Font.bold, color: C.text, minWidth: 20, textAlign: "center" },
-  itemTotal: { ...Typ.button, fontFamily: Font.bold, color: C.text, minWidth: 60, textAlign: "right" },
+  qtyBtnDanger: { borderColor: C.danger + "44", backgroundColor: C.danger + "0D" },
+  qtyText: { ...Typ.button, fontFamily: Font.bold, color: C.text, minWidth: 24, textAlign: "center", fontSize: 14 },
+  itemTotal: { ...Typ.title, fontFamily: Font.bold, color: C.text, fontSize: 15 },
 
   addrCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, backgroundColor: C.surface, borderRadius: 16, borderWidth: 1.5, borderColor: C.border },
   addrCardIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.blueSoft, alignItems: "center", justifyContent: "center" },
