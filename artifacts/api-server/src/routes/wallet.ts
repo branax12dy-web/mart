@@ -1,7 +1,7 @@
 import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { usersTable, walletTransactionsTable, notificationsTable } from "@workspace/db/schema";
+import { usersTable, walletTransactionsTable, notificationsTable, adminAccountsTable } from "@workspace/db/schema";
 import { eq, and, gte, sum, desc, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings, adminAuth } from "./admin.js";
@@ -13,6 +13,7 @@ import { z } from "zod";
 import { sendSuccess, sendCreated, sendAccepted, sendError, sendNotFound, sendForbidden, sendValidationError, sendErrorWithData } from "../lib/response.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { verifyTotpToken, decryptTotpSecret } from "../services/totp.js";
 
 /* ── IS_PRODUCTION guard — independent of NODE_ENV for simulate-topup hardening ── */
 const IS_PRODUCTION = process.env["IS_PRODUCTION"] === "true" || process.env["NODE_ENV"] === "production";
@@ -1163,6 +1164,9 @@ router.post("/pin/change", customerAuth, async (req, res) => {
   }
 });
 
+/* ── MPIN reset cooldown duration (SIM-swap protection) ── */
+const MPIN_RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000; /* 24 hours */
+
 router.post("/pin/forgot", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   try {
@@ -1191,6 +1195,10 @@ router.post("/pin/forgot", customerAuth, async (req, res) => {
     const responseData: Record<string, unknown> = {
       message: "OTP sent to your phone number",
       phone: user.phone.replace(/^(\d{2})\d+(\d{2})$/, "$1****$2"),
+      /* Inform the client whether TOTP verification will be required at reset-confirm */
+      requiresTotp: !!(user.totpEnabled && user.totpSecret),
+      /* Inform the client whether a 24-hour cooldown applies (no TOTP on account) */
+      cooldownApplies: !(user.totpEnabled && user.totpSecret),
     };
 
     if (user.devOtpEnabled) {
@@ -1210,7 +1218,7 @@ router.post("/pin/reset-confirm", customerAuth, async (req, res) => {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!user) { sendNotFound(res, "User not found"); return; }
 
-    const { otp, newPin } = req.body;
+    const { otp, newPin, totpCode } = req.body;
     if (!otp || typeof otp !== "string") { sendValidationError(res, "OTP is required"); return; }
 
     const newParsed = mpinSchema.safeParse(newPin);
@@ -1231,18 +1239,123 @@ router.post("/pin/reset-confirm", customerAuth, async (req, res) => {
       return;
     }
 
-    const hash = await bcrypt.hash(newParsed.data, MPIN_BCRYPT_ROUNDS);
+    const hasTotpEnabled = !!(user.totpEnabled && user.totpSecret);
+
+    if (hasTotpEnabled) {
+      /* ── Path A: TOTP-enabled accounts ──
+         Require the TOTP code alongside the OTP. If both verify, reset immediately. */
+      if (!totpCode || typeof totpCode !== "string") {
+        sendValidationError(res, "TOTP code is required for accounts with two-factor authentication enabled");
+        return;
+      }
+      let decryptedSecret: string;
+      try {
+        decryptedSecret = decryptTotpSecret(user.totpSecret!);
+      } catch {
+        logger.error(`[wallet /pin/reset-confirm] TOTP decrypt failed for user ${userId}`);
+        sendError(res, "Two-factor authentication configuration error. Contact support.", 500);
+        return;
+      }
+      if (!verifyTotpToken(totpCode, decryptedSecret)) {
+        sendError(res, "Invalid TOTP code. Please check your authenticator app and try again.", 401);
+        return;
+      }
+
+      /* Both OTP + TOTP verified — reset immediately */
+      const hash = await bcrypt.hash(newParsed.data, MPIN_BCRYPT_ROUNDS);
+      await db.update(usersTable).set({
+        walletPinHash: hash,
+        walletPinAttempts: 0,
+        walletPinLockedUntil: null,
+        mpinResetPendingAt: null,
+        mpinResetNewHashPending: null,
+        otpUsed: true,
+        updatedAt: new Date(),
+      }).where(eq(usersTable.id, userId));
+
+      sendSuccess(res, { message: "MPIN reset successfully", pinSetup: true, cooldown: false });
+    } else {
+      /* ── Path B: No TOTP — mandatory 24-hour cooldown (SIM-swap protection) ──
+         Store the new hashed MPIN as pending and set the cooldown timestamp.
+         The actual walletPinHash is NOT updated yet. An admin notification is
+         emitted so the security team can manually review if needed.
+         The client must call POST /wallet/pin/reset-activate after cooldown elapses. */
+      const hash = await bcrypt.hash(newParsed.data, MPIN_BCRYPT_ROUNDS);
+      const pendingAt = new Date();
+      await db.update(usersTable).set({
+        mpinResetPendingAt: pendingAt,
+        mpinResetNewHashPending: hash,
+        otpUsed: true,
+        updatedAt: new Date(),
+      }).where(eq(usersTable.id, userId));
+
+      /* Notify all admins for manual review */
+      const admins = await db
+        .select({ id: adminAccountsTable.id })
+        .from(adminAccountsTable)
+        .limit(20);
+      if (admins.length > 0) {
+        const adminNotifs = admins.map(a => ({
+          id: generateId(),
+          userId: a.id,
+          title: "⚠️ MPIN Reset Pending Review",
+          body: `User ${user.phone ?? userId} requested a wallet MPIN reset (no 2FA). It will activate in 24 hours unless cancelled.`,
+          type: "security",
+          icon: "shield-outline",
+        }));
+        db.insert(notificationsTable).values(adminNotifs).catch(e =>
+          logger.error("[wallet /pin/reset-confirm] admin notif insert failed:", e)
+        );
+      }
+      logger.warn(`[wallet /pin/reset-confirm] MPIN reset cooldown started for user ${userId} (phone: ${user.phone})`);
+
+      const activatesAt = new Date(pendingAt.getTime() + MPIN_RESET_COOLDOWN_MS);
+      sendSuccess(res, {
+        message: "MPIN reset initiated. Your new MPIN will activate in 24 hours as a security measure. You will be notified when it is ready.",
+        pinSetup: true,
+        cooldown: true,
+        activatesAt: activatesAt.toISOString(),
+      });
+    }
+  } catch (e: unknown) {
+    logger.error("[wallet /pin/reset-confirm] error:", e);
+    sendError(res, "Something went wrong, please try again.", 500);
+  }
+});
+
+/* ── POST /wallet/pin/reset-activate — Promote pending MPIN after cooldown ── */
+router.post("/pin/reset-activate", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+
+    if (!user.mpinResetPendingAt || !user.mpinResetNewHashPending) {
+      sendError(res, "No pending MPIN reset found. Please initiate a new reset.", 400);
+      return;
+    }
+
+    const cooldownEndsAt = new Date(user.mpinResetPendingAt.getTime() + MPIN_RESET_COOLDOWN_MS);
+    if (Date.now() < cooldownEndsAt.getTime()) {
+      const msLeft = cooldownEndsAt.getTime() - Date.now();
+      const hoursLeft = Math.ceil(msLeft / (60 * 60 * 1000));
+      sendError(res, `Your new MPIN will be ready in approximately ${hoursLeft} hour(s). Please try again after the cooldown period.`, 425);
+      return;
+    }
+
     await db.update(usersTable).set({
-      walletPinHash: hash,
+      walletPinHash: user.mpinResetNewHashPending,
       walletPinAttempts: 0,
       walletPinLockedUntil: null,
-      otpUsed: true,
+      mpinResetPendingAt: null,
+      mpinResetNewHashPending: null,
       updatedAt: new Date(),
     }).where(eq(usersTable.id, userId));
 
-    sendSuccess(res, { message: "MPIN reset successfully", pinSetup: true });
+    logger.info(`[wallet /pin/reset-activate] MPIN cooldown complete, activated for user ${userId}`);
+    sendSuccess(res, { message: "Your new MPIN is now active.", pinSetup: true });
   } catch (e: unknown) {
-    logger.error("[wallet /pin/reset-confirm] error:", e);
+    logger.error("[wallet /pin/reset-activate] error:", e);
     sendError(res, "Something went wrong, please try again.", 500);
   }
 });

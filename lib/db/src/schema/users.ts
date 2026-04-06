@@ -86,6 +86,12 @@ export const usersTable = pgTable("users", {
   walletPinAttempts:   integer("wallet_pin_attempts").notNull().default(0),
   walletPinLockedUntil: timestamp("wallet_pin_locked_until"),
   walletHidden:        boolean("wallet_hidden").notNull().default(false),
+  /* ── MPIN forgot-flow cooldown (SIM-swap protection) ──
+     When TOTP is not enabled, a reset request stores the new hashed MPIN here
+     and sets mpinResetPendingAt. The hash is only promoted to walletPinHash
+     after a 24-hour cooldown elapses. This prevents instant SIM-swap drain. */
+  mpinResetPendingAt:     timestamp("mpin_reset_pending_at"),
+  mpinResetNewHashPending: text("mpin_reset_new_hash_pending"),
   /* ── 2FA / TOTP fields ── */
   totpSecret:        text("totp_secret"),
   totpEnabled:       boolean("totp_enabled").notNull().default(false),

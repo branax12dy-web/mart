@@ -902,7 +902,13 @@ router.post("/", customerAuth, async (req, res) => {
 
     try {
       const order = await db.transaction(async (tx) => {
-        const [freshUser] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+        /* Serialize concurrent wallet-deduction requests at the DB level.
+           SELECT ... FOR UPDATE acquires a row-level lock so that only one
+           transaction at a time can read-then-deduct this user's balance.
+           All other concurrent requests queue behind this lock. */
+        await tx.execute(sql`SELECT id FROM users WHERE id = ${userId} LIMIT 1 FOR UPDATE`);
+
+        const [freshUser] = await tx.select({ walletBalance: usersTable.walletBalance }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
         if (!freshUser) throw new Error("User not found");
 
         const balance = parseFloat(freshUser.walletBalance ?? "0");

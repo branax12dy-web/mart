@@ -68,12 +68,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const pendingOrderDataRef = useRef<AckSuccessData | null>(null);
   const ackStuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ackFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* Generation counter — incremented on every local cart mutation so that a
+     stale cart-validation response arriving after the user modified the cart
+     is discarded rather than silently overwriting the user's changes. */
+  const cartGenRef = useRef(0);
 
   useEffect(() => {
     authTokenRef.current = token;
   }, [token]);
 
   const save = (updater: CartItem[] | ((prev: CartItem[]) => CartItem[])) => {
+    cartGenRef.current += 1;
     if (typeof updater === "function") {
       setItems(prev => {
         const newItems = updater(prev);
@@ -182,6 +187,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const validateCartItems = async (cartItems: CartItem[]): Promise<CartValidationResult> => {
     if (cartItems.length === 0) return { valid: true, cartChanged: false };
     setIsValidating(true);
+    /* Snapshot the generation counter before the async fetch so we can detect
+       if the user mutated the cart while validation was in-flight. */
+    const genAtStart = cartGenRef.current;
     try {
       let storedToken = authTokenRef.current;
       if (!storedToken) {
@@ -204,6 +212,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return { valid: false, cartChanged: false };
       }
       const data = unwrapApiResponse(await res.json());
+      /* Discard stale response — user modified the cart while this request was in-flight */
+      if (cartGenRef.current !== genAtStart) {
+        setIsValidating(false);
+        return { valid: false, cartChanged: false };
+      }
       if (!data.valid) {
         let cartChanged = false;
         if (Array.isArray(data.items)) {
@@ -389,8 +402,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       ackFallbackIvRef.current = setInterval(async () => {
         attempts++;
         const resolved = await tryHttpFallback();
-        if (resolved || attempts >= 6) {
+        if (resolved) {
           if (ackFallbackIvRef.current) { clearInterval(ackFallbackIvRef.current); ackFallbackIvRef.current = null; }
+        } else if (attempts >= 6) {
+          /* All retries exhausted — resolve with a "payment received" banner so
+             the user is never permanently stuck on the cart/pending screen.
+             The order was already placed (wallet deducted); clearing pending
+             state lets the user navigate away and check order history. */
+          if (ackFallbackIvRef.current) { clearInterval(ackFallbackIvRef.current); ackFallbackIvRef.current = null; }
+          const oid = pendingOrderIdRef.current;
+          if (oid && !ackResolvedRef.current) {
+            const data = pendingOrderDataRef.current;
+            resolveOrderAck(oid);
+            if (!data) {
+              setOrderSuccess({ id: oid, time: new Date().toISOString(), payMethod: undefined });
+            }
+          }
         }
       }, 5000);
       tryHttpFallback();
