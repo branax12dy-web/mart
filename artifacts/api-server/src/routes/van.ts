@@ -98,6 +98,7 @@ router.get("/schedules/:id/availability", async (req, res) => {
       returnTime: vanSchedulesTable.returnTime,
       isActive: vanSchedulesTable.isActive,
       totalSeats: vanVehiclesTable.totalSeats,
+      seatLayout: vanVehiclesTable.seatLayout,
       vehiclePlate: vanVehiclesTable.plateNumber,
       vehicleModel: vanVehiclesTable.model,
     })
@@ -112,8 +113,11 @@ router.get("/schedules/:id/availability", async (req, res) => {
     const reqDate = new Date(date + "T00:00:00");
     const dayOfWeek = reqDate.getDay() === 0 ? 7 : reqDate.getDay(); // 1=Mon…7=Sun
     const daysArr = Array.isArray(schedule.daysOfWeek) ? (schedule.daysOfWeek as number[]) : [];
+    const layout = schedule.seatLayout as { seatsPerRow?: number } | null;
+    const seatsPerRow = layout?.seatsPerRow ?? 4;
+
     if (!daysArr.includes(dayOfWeek)) {
-      sendSuccess(res, { scheduleId, date, available: false, reason: "not_running_this_day", bookedSeats: [], totalSeats: schedule.totalSeats ?? 12 });
+      sendSuccess(res, { scheduleId, date, available: false, reason: "not_running_this_day", bookedSeats: [], totalSeats: schedule.totalSeats ?? 12, seatsPerRow });
       return;
     }
 
@@ -122,7 +126,7 @@ router.get("/schedules/:id/availability", async (req, res) => {
     const availableSeats = totalSeats - bookedSeats.length;
     sendSuccess(res, {
       scheduleId, date, available: availableSeats > 0,
-      bookedSeats, availableSeats, totalSeats,
+      bookedSeats, availableSeats, totalSeats, seatsPerRow,
       departureTime: schedule.departureTime,
       returnTime: schedule.returnTime,
       vehiclePlate: schedule.vehiclePlate,
@@ -590,6 +594,7 @@ router.get("/admin/vehicles", adminAuth, async (_req, res) => {
       plateNumber: vanVehiclesTable.plateNumber,
       model: vanVehiclesTable.model,
       totalSeats: vanVehiclesTable.totalSeats,
+      seatLayout: vanVehiclesTable.seatLayout,
       isActive: vanVehiclesTable.isActive,
       driverId: vanVehiclesTable.driverId,
       driverName: usersTable.name,
@@ -607,6 +612,7 @@ const vehicleSchema = z.object({
   plateNumber: z.string().min(1).max(20),
   model:       z.string().max(50).optional(),
   totalSeats:  z.number().int().min(1).max(50).optional(),
+  seatLayout:  z.object({ seatsPerRow: z.number().int().min(2).max(5) }).optional().nullable(),
   driverId:    z.string().optional().nullable(),
   isActive:    z.boolean().optional(),
 });

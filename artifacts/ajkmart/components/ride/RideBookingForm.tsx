@@ -89,9 +89,10 @@ type ServiceType = {
 };
 
 const PARCEL_KEYS = ["parcel", "courier", "delivery", "cargo", "freight"];
-const isParcelService = (key: string, svc?: ServiceType) =>
-  (svc?.isParcel === true) ||
-  PARCEL_KEYS.some((k) => key.toLowerCase().includes(k));
+const isParcelService = (key: string | null | undefined, svc?: ServiceType) => {
+  if (!key) return false;
+  return (svc?.isParcel === true) || PARCEL_KEYS.some((k) => key.toLowerCase().includes(k));
+};
 
 type BookedRide = {
   id: string;
@@ -161,12 +162,6 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   const { requireCustomerRole, roleBlockProps } = useRoleGate();
   const rideCfg = config.rides;
 
-  const DEFAULT_SERVICES: ServiceType[] = [
-    { key: "bike", name: "Bike", icon: "🏍️", baseFare: 50, perKm: 15, minFare: 50, maxPassengers: 1, allowBargaining: true },
-    { key: "car", name: "Car", icon: "🚗", baseFare: 150, perKm: 25, minFare: 150, maxPassengers: 4, allowBargaining: true },
-    { key: "rickshaw", name: "Rickshaw", icon: "🛺", baseFare: 80, perKm: 18, minFare: 80, maxPassengers: 3, allowBargaining: true },
-  ];
-
   const [step, setStep] = useState<BookingStep>("location");
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const stepSlideAnim = useRef(new Animated.Value(0)).current;
@@ -190,11 +185,12 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     else     setDropLoc(prev => ({ text: prev.text, lat: null, lng: null, address: null }));
   }
 
-  const [rideType, setRideType] = useState("bike");
+  const [rideType, setRideType] = useState<string | null>(null);
   const [receiverName, setReceiverName] = useState("");
   const [receiverPhone, setReceiverPhone] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
-  const [services, setServices] = useState<ServiceType[]>(DEFAULT_SERVICES);
+  const [services, setServices] = useState<ServiceType[]>([]);
+  const [servicesError, setServicesError] = useState(false);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [payMethods, setPayMethods] = useState<{ id: string; label?: string; name?: string }[]>([
     { id: "cash", label: "Cash" },
@@ -398,19 +394,28 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       });
   }, []);
 
-  useEffect(() => {
+  const loadServices = useCallback(() => {
     setServicesLoading(true);
+    setServicesError(false);
     getRideServices()
       .then((data) => {
-        if (!data?.services?.length) return;
+        if (!data?.services?.length) {
+          setServicesError(true);
+          return;
+        }
         setServices(data.services);
+        setServicesError(false);
         setRideType((prev) => data.services.find((s: ServiceType) => s.key === prev) ? prev : data.services[0]!.key);
       })
       .catch(() => {
-        showToast("Could not load ride types.", "error");
+        setServicesError(true);
       })
       .finally(() => setServicesLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadServices();
+  }, [loadServices]);
 
   useEffect(() => {
     if (rideType !== "school_shift") return;
@@ -455,7 +460,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   };
 
   useEffect(() => {
-    if (!pickupObj || !dropObj) { setEstimate(null); return; }
+    if (!pickupObj || !dropObj || !rideType) { setEstimate(null); return; }
     let cancelled = false;
     const timer = setTimeout(() => {
       setEstimating(true);
@@ -561,6 +566,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
   };
 
   const handleBook = async () => {
+    if (!rideType) { showToast("Please wait — ride types are loading", "error"); return; }
     if (!pickup || !drop) { showToast("Please select pickup and drop locations", "error"); return; }
     if (!pickupObj) {
       setPickupError("Please select an exact pickup location from the suggestions");
@@ -956,6 +962,15 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
                   {[0, 1, 2].map((i) => <SkeletonBox key={i} w={130} h={140} radius={20} />)}
                 </ScrollView>
+              ) : servicesError ? (
+                <View style={{ backgroundColor: colorScheme === "dark" ? "#1E293B" : "#FEF2F2", borderRadius: 16, padding: 16, alignItems: "center", gap: 10, borderWidth: 1, borderColor: colorScheme === "dark" ? "#7F1D1D" : "#FECACA" }}>
+                  <Ionicons name="alert-circle-outline" size={28} color="#EF4444" />
+                  <Text style={{ fontFamily: Font.semiBold, fontSize: 14, color: colorScheme === "dark" ? "#FCA5A5" : "#DC2626", textAlign: "center" }}>Could not load ride types</Text>
+                  <Text style={{ fontFamily: Font.regular, fontSize: 12, color: colorScheme === "dark" ? "#94A3B8" : "#6B7280", textAlign: "center" }}>Please check your connection and try again.</Text>
+                  <TouchableOpacity activeOpacity={0.75} onPress={loadServices} style={{ backgroundColor: "#EF4444", borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8 }}>
+                    <Text style={{ fontFamily: Font.semiBold, fontSize: 13, color: "#fff" }}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
                   {services.map((svc, idx) => {
@@ -1091,8 +1106,12 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
               {/* CTA */}
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => animateToStep("confirm")}
-                style={{ marginTop: "auto", marginBottom: insets.bottom + 8, borderRadius: 18, overflow: "hidden" }}
+                onPress={() => {
+                  if (!rideType || servicesError) { showToast("Please wait for ride types to load, then select one.", "error"); return; }
+                  animateToStep("confirm");
+                }}
+                disabled={servicesLoading}
+                style={{ marginTop: "auto", marginBottom: insets.bottom + 8, borderRadius: 18, overflow: "hidden", opacity: (!rideType || servicesError) ? 0.5 : 1 }}
               >
                 <LinearGradient
                   colors={["#FCD34D", "#F59E0B"]}
@@ -1100,7 +1119,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                   style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16 }}
                 >
                   <Text style={{ fontFamily: Font.bold, fontSize: 15, color: "#0A0F1E" }}>Review & Confirm</Text>
-                  {estimate && <Text style={{ fontFamily: Font.bold, fontSize: 13, color: "rgba(10,15,30,0.6)" }}>Rs. {showBargain && offeredFare ? offeredFare : estimate.fare}</Text>}
+                  {estimate && rideType && <Text style={{ fontFamily: Font.bold, fontSize: 13, color: "rgba(10,15,30,0.6)" }}>Rs. {showBargain && offeredFare ? offeredFare : estimate.fare}</Text>}
                   <Ionicons name="arrow-forward" size={18} color="#0A0F1E" />
                 </LinearGradient>
               </TouchableOpacity>
@@ -1126,7 +1145,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
                     <Text style={{ fontSize: 24 }}>{selectedSvc?.icon ?? "🚗"}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: Font.bold, fontSize: 15, color: colorScheme === "dark" ? "#fff" : "#0F172A" }}>{selectedSvc?.name ?? rideType}</Text>
+                    <Text style={{ fontFamily: Font.bold, fontSize: 15, color: colorScheme === "dark" ? "#fff" : "#0F172A" }}>{selectedSvc?.name ?? rideType ?? "—"}</Text>
                     <Text style={{ fontFamily: Font.regular, fontSize: 12, color: colorScheme === "dark" ? "#64748B" : "#94A3B8" }}>
                       {estimate ? `${estimate.dist} km · ${estimate.dur}` : "Estimating..."}
                     </Text>

@@ -41,7 +41,7 @@ async function vanFetch(path: string, opts: RequestInit = {}) {
    TYPES
 ══════════════════════════════════════════════════════════ */
 interface VanRoute { id: string; name: string; nameUrdu?: string; fromAddress: string; toAddress: string; farePerSeat: string; distanceKm?: string; durationMin?: number; isActive: boolean; sortOrder: number; notes?: string; }
-interface VanVehicle { id: string; plateNumber: string; model: string; totalSeats: number; isActive: boolean; driverId?: string; driverName?: string; driverPhone?: string; }
+interface VanVehicle { id: string; plateNumber: string; model: string; totalSeats: number; seatLayout?: { seatsPerRow?: number } | null; isActive: boolean; driverId?: string; driverName?: string; driverPhone?: string; }
 interface VanSchedule { id: string; routeId: string; vehicleId?: string; driverId?: string; departureTime: string; returnTime?: string; daysOfWeek: number[]; isActive: boolean; routeName?: string; vehiclePlate?: string; driverName?: string; }
 interface VanBooking { id: string; userId: string; scheduleId: string; seatNumbers: number[]; travelDate: string; status: string; fare: string; paymentMethod: string; passengerName?: string; createdAt: string; routeName?: string; routeFrom?: string; routeTo?: string; departureTime?: string; userName?: string; userPhone?: string; }
 
@@ -168,7 +168,7 @@ function VehiclesTab() {
   const qc = useQueryClient();
   const [editVehicle, setEditVehicle] = useState<VanVehicle | null>(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [form, setForm] = useState({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", driverId: "" });
+  const [form, setForm] = useState({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", seatsPerRow: "4", driverId: "" });
 
   const { data: vehicles = [], isLoading } = useQuery<VanVehicle[]>({
     queryKey: ["van-admin-vehicles"],
@@ -178,7 +178,13 @@ function VehiclesTab() {
   const saveMut = useMutation({
     mutationFn: (data: typeof form & { id?: string }) => {
       const { id, ...body } = data;
-      const payload = { plateNumber: body.plateNumber, model: body.model, totalSeats: parseInt(body.totalSeats), driverId: body.driverId || null };
+      const payload = {
+        plateNumber: body.plateNumber,
+        model: body.model,
+        totalSeats: parseInt(body.totalSeats),
+        seatLayout: { seatsPerRow: parseInt(body.seatsPerRow) || 4 },
+        driverId: body.driverId || null,
+      };
       return id ? vanFetch(`/admin/vehicles/${id}`, { method: "PATCH", body: JSON.stringify(payload) })
         : vanFetch("/admin/vehicles", { method: "POST", body: JSON.stringify(payload) });
     },
@@ -186,8 +192,8 @@ function VehiclesTab() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  function openNew() { setForm({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", driverId: "" }); setNewOpen(true); }
-  function openEdit(v: VanVehicle) { setEditVehicle(v); setForm({ plateNumber: v.plateNumber, model: v.model, totalSeats: String(v.totalSeats), driverId: v.driverId || "" }); }
+  function openNew() { setForm({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", seatsPerRow: "4", driverId: "" }); setNewOpen(true); }
+  function openEdit(v: VanVehicle) { setEditVehicle(v); setForm({ plateNumber: v.plateNumber, model: v.model, totalSeats: String(v.totalSeats), seatsPerRow: String(v.seatLayout?.seatsPerRow ?? 4), driverId: v.driverId || "" }); }
 
   const VehicleFormDialog = ({ open, onClose, id }: { open: boolean; onClose: () => void; id?: string }) => (
     <Dialog open={open} onOpenChange={onClose}>
@@ -197,6 +203,18 @@ function VehiclesTab() {
           <Input placeholder="Plate number (e.g. LHR-1234)" value={form.plateNumber} onChange={e => setForm(f => ({ ...f, plateNumber: e.target.value }))} />
           <Input placeholder="Model (e.g. Suzuki Carry)" value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} />
           <Input placeholder="Total seats" type="number" value={form.totalSeats} onChange={e => setForm(f => ({ ...f, totalSeats: e.target.value }))} />
+          <div>
+            <label className="text-sm font-medium text-muted-foreground mb-1 block">Seats per row</label>
+            <Select value={form.seatsPerRow} onValueChange={v => setForm(f => ({ ...f, seatsPerRow: v }))}>
+              <SelectTrigger><SelectValue placeholder="Seats per row" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2">2 per row</SelectItem>
+                <SelectItem value="3">3 per row</SelectItem>
+                <SelectItem value="4">4 per row (default)</SelectItem>
+                <SelectItem value="5">5 per row</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Input placeholder="Driver user ID (optional)" value={form.driverId} onChange={e => setForm(f => ({ ...f, driverId: e.target.value }))} />
         </div>
         <DialogFooter>

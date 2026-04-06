@@ -73,8 +73,12 @@ router.post("/estimate", async (req, res) => {
   const { parcelType, weight } = req.body;
   const cappedWeight = typeof weight === "number" ? Math.min(Math.max(weight, 0), 500) : undefined;
   const s = await getPlatformSettings();
-  const baseFee  = parseFloat(s["delivery_fee_parcel"]    ?? "100");
-  const perKgRate = parseFloat(s["delivery_parcel_per_kg"] ?? "40");
+  if (!s["delivery_fee_parcel"] || !s["delivery_parcel_per_kg"]) {
+    sendError(res, "Parcel fare settings are not configured. Please contact support.", 503);
+    return;
+  }
+  const baseFee  = parseFloat(s["delivery_fee_parcel"]);
+  const perKgRate = parseFloat(s["delivery_parcel_per_kg"]);
   const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
   const fare = calcParcelFare(baseFee, perKgRate, cappedWeight);
   const estimatedTime = `${preptimeMin + 30}–${preptimeMin + 60} min`;

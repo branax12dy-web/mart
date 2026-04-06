@@ -45,13 +45,6 @@ interface ParcelType {
   baseFare: number;
 }
 
-const DEFAULT_PARCEL_FARES: Record<string, number> = {
-  document:    150,
-  clothes:     200,
-  electronics: 350,
-  food:        180,
-  other:       250,
-};
 
 const PARCEL_TYPE_DEFS: Omit<ParcelType, "baseFare">[] = [
   { id: "document",    label: "Document",    emoji: "📄", desc: "Papers, certificates, files" },
@@ -102,11 +95,7 @@ function ParcelScreenInner() {
   const inMaintenance = platformConfig.appStatus === "maintenance";
   const parcelEnabled = platformConfig.features.parcel;
 
-  const parcelFaresFromConfig: Record<string, number> = platformConfig.parcelFares ?? {};
-  const PARCEL_TYPES: ParcelType[] = PARCEL_TYPE_DEFS.map(pt => ({
-    ...pt,
-    baseFare: parcelFaresFromConfig[pt.id] ?? DEFAULT_PARCEL_FARES[pt.id] ?? platformConfig.deliveryFee.parcel,
-  }));
+  const PARCEL_TYPES: Omit<ParcelType, "baseFare">[] = PARCEL_TYPE_DEFS;
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -147,7 +136,8 @@ function ParcelScreenInner() {
     { id: "cash", label: "Cash on Pickup", logo: "💵", description: "" },
   ]);
 
-  const [estimatedFare, setEstimatedFare] = useState(0);
+  const [estimatedFare, setEstimatedFare] = useState<number | null>(null);
+  const [fareError, setFareError] = useState(false);
   const [permGuideType, setPermGuideType] = useState<"camera" | "gallery" | "location" | "notification" | "microphone">("location");
   const [permGuideVisible, setPermGuideVisible] = useState(false);
   const [fareLoading, setFareLoading] = useState(false);
@@ -260,12 +250,29 @@ function ParcelScreenInner() {
       .catch((err) => { if (__DEV__) console.warn("[Parcel] Payment methods fetch failed:", err instanceof Error ? err.message : String(err)); });
   }, []);
 
-  useEffect(() => {
-    if (!parcelType) { setEstimatedFare(0); return; }
+  const retryFareEstimate = () => {
+    if (!parcelType) return;
     setFareLoading(true);
+    setFareError(false);
     estimateParcel({ parcelType, weight: chargeableWeight > 0 ? chargeableWeight : undefined })
-      .then(data => { if (data.fare) setEstimatedFare(data.fare); })
-      .catch((err) => { if (__DEV__) console.warn("[Parcel] Fare estimate failed:", err instanceof Error ? err.message : String(err)); })
+      .then(data => {
+        if (data.fare != null) { setEstimatedFare(data.fare); setFareError(false); }
+        else { setFareError(true); setEstimatedFare(null); }
+      })
+      .catch(() => { setFareError(true); setEstimatedFare(null); })
+      .finally(() => setFareLoading(false));
+  };
+
+  useEffect(() => {
+    if (!parcelType) { setEstimatedFare(null); setFareError(false); return; }
+    setFareLoading(true);
+    setFareError(false);
+    estimateParcel({ parcelType, weight: chargeableWeight > 0 ? chargeableWeight : undefined })
+      .then(data => {
+        if (data.fare != null) { setEstimatedFare(data.fare); setFareError(false); }
+        else { setFareError(true); setEstimatedFare(null); }
+      })
+      .catch(() => { setFareError(true); setEstimatedFare(null); })
       .finally(() => setFareLoading(false));
   }, [parcelType, chargeableWeight]);
 
@@ -569,13 +576,29 @@ function ParcelScreenInner() {
               <Text style={ss.cardTitle}>📦 {T("parcelDetails")}</Text>
               <Text style={ss.label}>{T("parcelType")} *</Text>
               <View style={ss.typeGrid}>
-                {PARCEL_TYPES.map(pt => (
-                  <TouchableOpacity activeOpacity={0.7} key={pt.id} onPress={() => setParcelType(pt.id)} style={[ss.typeCard, parcelType === pt.id && ss.typeCardActive]}>
-                    <Text style={{ fontSize: 24 }}>{pt.emoji}</Text>
-                    <Text style={[ss.typeLabel, parcelType === pt.id && { color: C.amber }]}>{pt.label}</Text>
-                    <Text style={ss.typeDesc}>{pt.desc}</Text>
-                  </TouchableOpacity>
-                ))}
+                {PARCEL_TYPES.map(pt => {
+                  const isActive = parcelType === pt.id;
+                  return (
+                    <TouchableOpacity activeOpacity={0.7} key={pt.id} onPress={() => setParcelType(pt.id)} style={[ss.typeCard, isActive && ss.typeCardActive]}>
+                      <Text style={{ fontSize: 24 }}>{pt.emoji}</Text>
+                      <Text style={[ss.typeLabel, isActive && { color: C.amber }]}>{pt.label}</Text>
+                      <Text style={ss.typeDesc}>{pt.desc}</Text>
+                      {isActive && (
+                        fareLoading
+                          ? <ActivityIndicator color={C.amber} size="small" style={{ marginTop: 4 }} />
+                          : fareError
+                            ? (
+                              <TouchableOpacity activeOpacity={0.75} onPress={retryFareEstimate} hitSlop={8}>
+                                <Text style={{ fontSize: 10, color: C.danger, textAlign: "center", marginTop: 2 }}>Unavailable · Retry</Text>
+                              </TouchableOpacity>
+                            )
+                            : estimatedFare !== null
+                              ? <Text style={{ fontSize: 11, color: C.amber, fontFamily: Font.semiBold, textAlign: "center", marginTop: 2 }}>Rs. {estimatedFare}</Text>
+                              : <Text style={{ fontSize: 10, color: C.textMuted, textAlign: "center", marginTop: 2 }}>Calculating…</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
             <View style={ss.card}>
@@ -623,13 +646,22 @@ function ParcelScreenInner() {
             </View>
             {parcelType && (
               <View style={ss.fareCard}>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={ss.fareLbl2}>{T("estimatedFareLabel")}</Text>
                   <Text style={ss.fareNote}>{T("eta")}</Text>
                 </View>
                 {fareLoading
                   ? <ActivityIndicator color={C.amber} size="small" />
-                  : <Text style={ss.fareAmt}>Rs. {estimatedFare}</Text>
+                  : fareError
+                    ? (
+                      <TouchableOpacity activeOpacity={0.75} onPress={retryFareEstimate} style={{ alignItems: "flex-end" }}>
+                        <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.danger }}>Fare unavailable</Text>
+                        <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.amber }}>Tap to retry</Text>
+                      </TouchableOpacity>
+                    )
+                  : estimatedFare !== null
+                    ? <Text style={ss.fareAmt}>Rs. {estimatedFare}</Text>
+                    : <Text style={{ fontFamily: Font.regular, fontSize: 13, color: C.textMuted }}>Calculating...</Text>
                 }
               </View>
             )}
@@ -695,7 +727,7 @@ function ParcelScreenInner() {
                 <Text style={ss.summaryTxt}>{selectedType?.emoji} {selectedType?.label}{chargeableWeight > 0 ? ` • ${chargeableWeight.toFixed(2)} kg${volumetricWeight > actualWeight ? " (vol.)" : ""}` : weight ? ` • ${weight} kg` : ""}</Text>
               </View>
               <View style={[{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
-                {estimatedFare > 0 && confirmedFare > 0 && confirmedFare !== estimatedFare && (
+                {estimatedFare != null && estimatedFare > 0 && confirmedFare > 0 && confirmedFare !== estimatedFare && (
                   <View style={ss.summaryRow}>
                     <Text style={[ss.summaryTotal, { color: C.textMuted, fontSize: 12 }]}>{T("estimatedFareLabel")}</Text>
                     <Text style={[ss.summaryFare, { color: C.textMuted, fontSize: 12, textDecorationLine: "line-through" }]}>Rs. {estimatedFare.toLocaleString()}</Text>
@@ -703,7 +735,7 @@ function ParcelScreenInner() {
                 )}
                 <View style={ss.summaryRow}>
                   <Text style={ss.summaryTotal}>{confirmedFare > 0 ? T("confirmedFareLabel") : T("totalFare")}</Text>
-                  <Text style={ss.summaryFare}>Rs. {(confirmedFare || estimatedFare).toLocaleString()}</Text>
+                  <Text style={ss.summaryFare}>Rs. {(confirmedFare || estimatedFare || 0).toLocaleString()}</Text>
                 </View>
               </View>
             </View>
@@ -730,7 +762,7 @@ function ParcelScreenInner() {
           <TouchableOpacity activeOpacity={0.7} style={[ss.nextBtn, loading && { opacity: 0.7 }]} onPress={bookParcel} disabled={loading}>
             {loading ? <ActivityIndicator color={C.textInverse} /> : (
               <>
-                <Text style={ss.nextBtnTxt}>{T("parcel")} • Rs. {estimatedFare}</Text>
+                <Text style={ss.nextBtnTxt}>{T("parcel")}{estimatedFare != null ? ` • Rs. ${estimatedFare}` : ""}</Text>
                 <Ionicons name="checkmark-circle" size={18} color={C.textInverse} />
               </>
             )}

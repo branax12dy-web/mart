@@ -42,7 +42,7 @@ export default function VanServiceScreen() {
   const [selectedRoute, setSelectedRoute] = useState<RouteDetail | null>(null);
   const [selectedSchedule, setSelectedSchedule] = useState<VanSchedule | null>(null);
   const [travelDate, setTravelDate] = useState<string>(() => new Date().toISOString().split("T")[0]!);
-  const [availability, setAvailability] = useState<{ bookedSeats: number[]; totalSeats: number; available: boolean; reason?: string } | null>(null);
+  const [availability, setAvailability] = useState<{ bookedSeats: number[]; totalSeats: number; seatsPerRow: number; available: boolean; reason?: string } | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [passengerName, setPassengerName] = useState("");
@@ -267,7 +267,14 @@ export default function VanServiceScreen() {
   /* ═══ SEATS ═══ */
   if (step === "seats" && selectedSchedule && selectedRoute && availability) {
     const totalSeats = availability.totalSeats;
-    const rows = Math.ceil(totalSeats / 4);
+    const seatsPerRow = availability.seatsPerRow ?? 4;
+    const gap = seatsPerRow >= 5 ? 6 : 10;
+    const seatSize = seatsPerRow <= 3 ? 68 : seatsPerRow === 5 ? 48 : 56;
+    const rows: number[][] = [];
+    const allSeats = Array.from({ length: totalSeats }, (_, i) => i + 1);
+    for (let i = 0; i < allSeats.length; i += seatsPerRow) {
+      rows.push(allSeats.slice(i, i + seatsPerRow));
+    }
     return (
       <View style={ss.root}>
         {renderHeader("Select Seats")}
@@ -295,18 +302,22 @@ export default function VanServiceScreen() {
                 <View style={ss.driverSeat}><Ionicons name="person" size={16} color="#6366F1" /><Text style={ss.driverLabel}>Driver</Text></View>
               </View>
 
-              {/* Seat grid */}
-              <View style={ss.seatGrid}>
-                {Array.from({ length: totalSeats }, (_, i) => i + 1).map(num => {
-                  const booked = availability.bookedSeats.includes(num);
-                  const sel = selectedSeats.includes(num);
-                  return (
-                    <TouchableOpacity activeOpacity={0.7} key={num} style={[ss.seat, booked ? ss.seatBooked : sel ? ss.seatSelected : ss.seatAvailable]} onPress={() => toggleSeat(num)} disabled={booked}>
-                      <Ionicons name="person" size={14} color={booked ? "#EF4444" : sel ? "#16A34A" : "#6366F1"} />
-                      <Text style={[ss.seatNum, { color: booked ? "#EF4444" : sel ? "#16A34A" : "#4338CA" }]}>{num}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              {/* Seat grid — enforces exact seatsPerRow columns */}
+              <View style={{ gap }}>
+                {rows.map((row, rowIdx) => (
+                  <View key={rowIdx} style={{ flexDirection: "row", gap, justifyContent: "center" }}>
+                    {row.map(num => {
+                      const booked = availability.bookedSeats.includes(num);
+                      const sel = selectedSeats.includes(num);
+                      return (
+                        <TouchableOpacity activeOpacity={0.7} key={num} style={[ss.seat, { width: seatSize, height: seatSize }, booked ? ss.seatBooked : sel ? ss.seatSelected : ss.seatAvailable]} onPress={() => toggleSeat(num)} disabled={booked}>
+                          <Ionicons name="person" size={14} color={booked ? "#EF4444" : sel ? "#16A34A" : "#6366F1"} />
+                          <Text style={[ss.seatNum, { color: booked ? "#EF4444" : sel ? "#16A34A" : "#4338CA" }]}>{num}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
 
               {selectedSeats.length > 0 ? (

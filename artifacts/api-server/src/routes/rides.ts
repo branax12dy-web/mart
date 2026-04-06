@@ -427,9 +427,12 @@ async function calcFare(distance: number, type: string): Promise<{ baseFare: num
     if (!svc) {
       throw new RideApiError(`Unknown ride service type: '${type}'`, "UNKNOWN_SERVICE_TYPE", 422);
     }
-    baseRate = parseFloat(svc.baseFare  ?? "15");
-    perKm    = parseFloat(svc.perKm     ?? "8");
-    minFare  = parseFloat(svc.minFare   ?? "50");
+    if (svc.baseFare == null || svc.perKm == null || svc.minFare == null) {
+      throw new RideApiError(`Ride service '${type}' is missing fare configuration (baseFare, perKm, or minFare).`, "SERVICE_FARE_NOT_CONFIGURED", 500);
+    }
+    baseRate = parseFloat(svc.baseFare);
+    perKm    = parseFloat(svc.perKm);
+    minFare  = parseFloat(svc.minFare);
   }
 
   if (!isFinite(baseRate) || !isFinite(perKm) || !isFinite(minFare)) {
