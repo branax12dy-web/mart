@@ -122,6 +122,8 @@ function mapOrder(o: typeof ordersTable.$inferSelect, deliveryFee?: number, gstA
     riderPhone: o.riderPhone ?? null,
     vendorId: o.vendorId ?? null,
     estimatedTime: o.estimatedTime,
+    proofPhotoUrl: o.proofPhotoUrl ?? null,
+    txnRef: o.txnRef ?? null,
     customerLat: o.customerLat ? parseFloat(o.customerLat) : null,
     customerLng: o.customerLng ? parseFloat(o.customerLng) : null,
     gpsAccuracy: o.gpsAccuracy ?? null,
@@ -455,6 +457,18 @@ router.get("/:id/track", customerAuth, async (req, res) => {
 router.post("/", customerAuth, async (req, res) => {
   const userId = req.customerId!;
   const { type, items, paymentMethod, deliveryLat, deliveryLng, customerLat: rawCustLat, customerLng: rawCustLng, gpsAccuracy: rawGpsAcc } = req.body;
+  const proofPhotoUrlRaw = typeof req.body.proofPhotoUrl === "string" ? req.body.proofPhotoUrl.trim() : null;
+  const proofPhotoUrl = (() => {
+    if (!proofPhotoUrlRaw) return null;
+    if (/^\/api\/uploads\/[\w.\-]+$/.test(proofPhotoUrlRaw)) return proofPhotoUrlRaw;
+    if (/^\/uploads\/[\w.\-]+$/.test(proofPhotoUrlRaw)) return proofPhotoUrlRaw;
+    try {
+      const u = new URL(proofPhotoUrlRaw);
+      if ((u.protocol === "http:" || u.protocol === "https:") && (u.pathname.startsWith("/api/uploads/") || u.pathname.startsWith("/uploads/"))) return proofPhotoUrlRaw;
+    } catch { /* ignore */ }
+    return null;
+  })();
+  const txnRef = typeof req.body.txnRef === "string" ? req.body.txnRef.trim().slice(0, 100) : null;
   const deliveryAddress = typeof req.body.deliveryAddress === "string" ? stripHtml(req.body.deliveryAddress) : req.body.deliveryAddress;
   const ip = getClientIp(req);
 
@@ -875,6 +889,17 @@ router.post("/", customerAuth, async (req, res) => {
     }
   }
 
+  /* ── Manual payment proof validation ── */
+  const MANUAL_METHODS = ["jazzcash", "easypaisa"];
+  if (MANUAL_METHODS.includes(paymentMethod)) {
+    const jazzProofReq  = (s["jazzcash_proof_required"]   ?? "off") === "on";
+    const receiptProofReq = (s["payment_receipt_required"] ?? "off") === "on";
+    const proofRequired = jazzProofReq || receiptProofReq;
+    if (proofRequired && !proofPhotoUrl) {
+      sendValidationError(res, "Payment receipt/proof image is required for this payment method. Please upload a screenshot of your payment."); return;
+    }
+  }
+
   /* ── Online payment min/max limits (JazzCash, EasyPaisa, Bank Transfer) ── */
   const onlineMethods = ["jazzcash", "easypaisa", "bank"];
   if (onlineMethods.includes(paymentMethod)) {
@@ -932,6 +957,8 @@ router.post("/", customerAuth, async (req, res) => {
           status: "pending", total: total.toFixed(2),
           deliveryAddress, paymentMethod,
           estimatedTime,
+          ...(proofPhotoUrl ? { proofPhotoUrl } : {}),
+          ...(txnRef ? { txnRef } : {}),
           ...gpsInsert,
         }).returning();
         if (promoId) {
@@ -986,6 +1013,8 @@ router.post("/", customerAuth, async (req, res) => {
         status: "pending", total: total.toFixed(2),
         deliveryAddress, paymentMethod,
         estimatedTime,
+        ...(proofPhotoUrl ? { proofPhotoUrl } : {}),
+        ...(txnRef ? { txnRef } : {}),
         ...gpsInsert,
       }).returning();
       if (promoId) {

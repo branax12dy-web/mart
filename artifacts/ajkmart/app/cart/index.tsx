@@ -3,6 +3,8 @@ import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
 import * as Location from "expo-location";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import React, { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -455,6 +457,11 @@ function CartScreenInner() {
   const [autoApplyDismissed, setAutoApplyDismissed] = useState(false);
   const [autoApplyActive, setAutoApplyActive] = useState(false);
 
+  const [receiptImageUri, setReceiptImageUri] = useState<string | null>(null);
+  const [receiptUploading, setReceiptUploading] = useState(false);
+  const [receiptTxnRef, setReceiptTxnRef] = useState("");
+  const receiptMimeCache = useRef<Map<string, string>>(new Map());
+
   const [showGwModal, setShowGwModal] = useState(false);
   const [gwMobile, setGwMobile] = useState("");
   const [gwPaying, setGwPaying] = useState(false);
@@ -848,7 +855,7 @@ function CartScreenInner() {
     clearPromoState();
   };
 
-  const placeOrder = async (finalPayMethod: PayMethod) => {
+  const placeOrder = async (finalPayMethod: PayMethod, uploadedProofUrl?: string, uploadedTxnRef?: string) => {
     if (!user) {
       requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/cart" });
       return;
@@ -877,8 +884,10 @@ function CartScreenInner() {
           idempotencyKey: idemKey,
           ...(promoCode ? { promoCode } : {}),
           ...(autoApplyActive && autoApplyOffer && !promoCode ? { autoApplyOfferId: autoApplyOffer.offerId } : {}),
+          ...(uploadedProofUrl ? { proofPhotoUrl: uploadedProofUrl } : {}),
+          ...(uploadedTxnRef ? { txnRef: uploadedTxnRef } : {}),
           ...orderGpsPayload,
-        } as Parameters<typeof createOrder>[0] & { autoApplyOfferId?: string });
+        } as Parameters<typeof createOrder>[0] & { autoApplyOfferId?: string; proofPhotoUrl?: string; txnRef?: string });
         lastError = null;
         break;
       } catch (err: any) {
@@ -1086,6 +1095,43 @@ function CartScreenInner() {
     }
 
     if (effectivePayMethod === "jazzcash" || effectivePayMethod === "easypaisa") {
+      const jazzProofReq = platformConfig.payment?.jazzcashProofRequired ?? false;
+      const receiptProofReq = platformConfig.payment?.paymentReceiptRequired ?? false;
+      const proofRequired = jazzProofReq || receiptProofReq;
+      if (proofRequired) {
+        if (!receiptImageUri) {
+          showToast("Please upload a payment receipt screenshot before placing the order.", "error");
+          return;
+        }
+        setLoading(true);
+        setReceiptUploading(true);
+        try {
+          const uploadedUrl = await uploadReceiptImage(receiptImageUri);
+          setReceiptUploading(false);
+          await placeOrder(effectivePayMethod, uploadedUrl, receiptTxnRef.trim() || undefined);
+        } catch (e: any) {
+          setReceiptUploading(false);
+          const errText = e?.data?.error ?? e?.message ?? "Upload or order placement failed";
+          showToast(errText, "error");
+        }
+        setLoading(false);
+        return;
+      }
+      if (receiptImageUri) {
+        setLoading(true);
+        setReceiptUploading(true);
+        try {
+          const uploadedUrl = await uploadReceiptImage(receiptImageUri);
+          setReceiptUploading(false);
+          await placeOrder(effectivePayMethod, uploadedUrl, receiptTxnRef.trim() || undefined);
+        } catch (e: any) {
+          setReceiptUploading(false);
+          const errText = e?.data?.error ?? e?.message ?? "Upload or order placement failed";
+          showToast(errText, "error");
+        }
+        setLoading(false);
+        return;
+      }
       setGwStep("input");
       setGwMobile("");
       setShowGwModal(true);
@@ -1102,6 +1148,50 @@ function CartScreenInner() {
       showToast(errText, "error");
     }
     setLoading(false);
+  };
+
+  const pickReceiptImage = async (source: "camera" | "gallery") => {
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (source === "camera") {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) { showToast("Camera permission required", "error"); return; }
+        result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.7, base64: false });
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { showToast("Photo library permission required", "error"); return; }
+        result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.7, base64: false });
+      }
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      if (asset.mimeType) receiptMimeCache.current.set(asset.uri, asset.mimeType);
+      setReceiptImageUri(asset.uri);
+    } catch { showToast("Could not pick image", "error"); }
+  };
+
+  const uploadReceiptImage = async (uri: string): Promise<string> => {
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const cached = receiptMimeCache.current.get(uri);
+    let mime = cached || "image/jpeg";
+    if (!cached) {
+      const lower = uri.toLowerCase();
+      if (lower.endsWith(".png")) mime = "image/png";
+      else if (lower.endsWith(".webp")) mime = "image/webp";
+    }
+    const dataUrl = `data:${mime};base64,${base64}`;
+    const res = await fetch(`${API_BASE}/uploads`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ file: dataUrl, mimeType: mime }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Image upload failed");
+    const unwrapped = data?.data ?? data;
+    if (!unwrapped?.url) throw new Error("No URL returned from upload");
+    return unwrapped.url as string;
   };
 
   const buildGpsPayload = async (): Promise<Record<string, unknown>> => {
@@ -1690,7 +1780,7 @@ function CartScreenInner() {
             return (
               <TouchableOpacity activeOpacity={0.7}
                 key={method.id}
-                onPress={() => setPayMethod(method.id as PayMethod)}
+                onPress={() => { setPayMethod(method.id as PayMethod); if (method.id !== "jazzcash" && method.id !== "easypaisa") { setReceiptImageUri(null); setReceiptTxnRef(""); } }}
                 style={[styles.payOption, sel && { borderColor: clr.tint, backgroundColor: clr.bg + "33" }]}
               >
                 <View style={[styles.payIcon, { backgroundColor: sel ? clr.bg : C.surfaceSecondary }]}>
@@ -1712,11 +1802,14 @@ function CartScreenInner() {
                     <Text style={styles.paySub}>{method.description}</Text>
                   )}
                 </View>
-                {isGateway && sel && (
-                  <View style={{ backgroundColor: clr.tint, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
-                    <Text style={{ ...Typ.smallBold, color: C.textInverse }}>Enter No. →</Text>
-                  </View>
-                )}
+                {isGateway && sel && (() => {
+                  const proofReq = (platformConfig.payment?.jazzcashProofRequired ?? false) || (platformConfig.payment?.paymentReceiptRequired ?? false);
+                  return (
+                    <View style={{ backgroundColor: clr.tint, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
+                      <Text style={{ ...Typ.smallBold, color: C.textInverse }}>{proofReq ? "Upload Receipt ↓" : "Enter No. →"}</Text>
+                    </View>
+                  );
+                })()}
                 {!isGateway && (
                   <View style={[styles.radio, sel && { borderColor: clr.tint }]}>
                     {sel && <View style={[styles.radioDot, { backgroundColor: clr.tint }]} />}
@@ -1726,6 +1819,76 @@ function CartScreenInner() {
             );
           })}
         </View>
+
+        {(() => {
+          const jazzProofReq = platformConfig.payment?.jazzcashProofRequired ?? false;
+          const receiptProofReq = platformConfig.payment?.paymentReceiptRequired ?? false;
+          const proofRequired = jazzProofReq || receiptProofReq;
+          const isManualMethod = payMethod === "jazzcash" || payMethod === "easypaisa";
+          if (!isManualMethod) return null;
+          return (
+            <View style={[styles.section, { paddingTop: 0 }]}>
+              <View style={{ backgroundColor: proofRequired ? "#FFF3CD" : "#F0F9FF", borderRadius: 14, borderWidth: 1, borderColor: proofRequired ? "#FFC107" : "#BAE6FD", padding: 14 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="receipt-outline" size={18} color={proofRequired ? "#D97706" : "#0284C7"} />
+                  <Text style={{ ...Typ.captionMedium, color: proofRequired ? "#92400E" : "#0C4A6E", fontFamily: Font.semiBold }}>
+                    Payment Receipt Screenshot {proofRequired ? "(Required)" : "(Optional)"}
+                  </Text>
+                </View>
+                <Text style={{ ...Typ.caption, color: proofRequired ? "#78350F" : "#164E63", marginBottom: 10 }}>
+                  {proofRequired
+                    ? "Please send payment to the admin's number and upload a screenshot as proof."
+                    : "Optionally upload a payment screenshot for faster verification."}
+                </Text>
+                <TextInput
+                  value={receiptTxnRef}
+                  onChangeText={setReceiptTxnRef}
+                  placeholder={proofRequired ? "Transaction ID (recommended)" : "Transaction ID (optional)"}
+                  placeholderTextColor={proofRequired ? "#B45309" : "#94A3B8"}
+                  style={{ backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, borderColor: proofRequired ? "#FCD34D" : "#CBD5E1", paddingHorizontal: 12, paddingVertical: 9, ...Typ.caption, color: "#1E293B", marginBottom: 10 }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {receiptImageUri ? (
+                  <View>
+                    <Image source={{ uri: receiptImageUri }} style={{ width: "100%", height: 160, borderRadius: 12, marginBottom: 8 }} resizeMode="cover" />
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TouchableOpacity activeOpacity={0.7}
+                        onPress={() => pickReceiptImage("gallery")}
+                        style={{ flex: 1, paddingVertical: 9, borderRadius: 12, alignItems: "center", backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: "#CBD5E1" }}
+                      >
+                        <Text style={{ ...Typ.captionMedium, color: "#475569" }}>Change Photo</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity activeOpacity={0.7}
+                        onPress={() => setReceiptImageUri(null)}
+                        style={{ paddingHorizontal: 16, paddingVertical: 9, borderRadius: 12, alignItems: "center", backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#FCA5A5" }}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity activeOpacity={0.7}
+                      onPress={() => pickReceiptImage("camera")}
+                      style={{ flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6, backgroundColor: proofRequired ? "#FEF3C7" : "#F0F9FF", borderWidth: 1.5, borderColor: proofRequired ? "#FCD34D" : "#7DD3FC", borderStyle: "dashed" }}
+                    >
+                      <Ionicons name="camera-outline" size={18} color={proofRequired ? "#D97706" : "#0284C7"} />
+                      <Text style={{ ...Typ.captionMedium, color: proofRequired ? "#D97706" : "#0284C7" }}>Camera</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity activeOpacity={0.7}
+                      onPress={() => pickReceiptImage("gallery")}
+                      style={{ flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6, backgroundColor: proofRequired ? "#FEF3C7" : "#F0F9FF", borderWidth: 1.5, borderColor: proofRequired ? "#FCD34D" : "#7DD3FC", borderStyle: "dashed" }}
+                    >
+                      <Ionicons name="images-outline" size={18} color={proofRequired ? "#D97706" : "#0284C7"} />
+                      <Text style={{ ...Typ.captionMedium, color: proofRequired ? "#D97706" : "#0284C7" }}>Gallery</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          );
+        })()}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Promo Code</Text>

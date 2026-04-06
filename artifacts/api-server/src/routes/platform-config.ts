@@ -316,6 +316,8 @@ router.get("/", async (req, res) => {
       walletCashbackOrders: (s["wallet_cashback_on_orders"]    ?? "on")  === "on",
       walletCashbackRides:  (s["wallet_cashback_on_rides"]     ?? "off") === "on",
       walletCashbackPharm:  (s["wallet_cashback_on_pharmacy"]  ?? "off") === "on",
+      jazzcashProofRequired:   (s["jazzcash_proof_required"]   ?? "off") === "on",
+      paymentReceiptRequired:  (s["payment_receipt_required"]  ?? "off") === "on",
     },
   });
 });

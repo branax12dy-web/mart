@@ -128,6 +128,10 @@ export interface PlatformConfig {
     walletCashbackRides: boolean;
     walletCashbackPharm: boolean;
   };
+  payment: {
+    jazzcashProofRequired: boolean;
+    paymentReceiptRequired: boolean;
+  };
   integrations: {
     pushNotif: boolean;
     analytics: boolean;
@@ -243,6 +247,10 @@ const DEFAULT: PlatformConfig = {
     loyaltyEnabled: true, loyaltyPtsPerRs100: 5,
     maxOrdersDay: 10, signupBonus: 0, p2pEnabled: true, p2pFeePct: 0,
     walletCashbackPct: 0, walletCashbackOrders: true, walletCashbackRides: false, walletCashbackPharm: false,
+  },
+  payment: {
+    jazzcashProofRequired: false,
+    paymentReceiptRequired: false,
   },
   security: {
     orderGpsCaptureEnabled: false,
@@ -458,6 +466,10 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           walletCashbackOrders:     raw.customer?.walletCashbackOrders     ?? DEFAULT.customer.walletCashbackOrders,
           walletCashbackRides:      raw.customer?.walletCashbackRides      ?? DEFAULT.customer.walletCashbackRides,
           walletCashbackPharm:      raw.customer?.walletCashbackPharm      ?? DEFAULT.customer.walletCashbackPharm,
+        },
+        payment: {
+          jazzcashProofRequired:  raw.payment?.jazzcashProofRequired  ?? DEFAULT.payment.jazzcashProofRequired,
+          paymentReceiptRequired: raw.payment?.paymentReceiptRequired ?? DEFAULT.payment.paymentReceiptRequired,
         },
         security: {
           orderGpsCaptureEnabled: raw.security?.orderGpsCaptureEnabled ?? DEFAULT.security.orderGpsCaptureEnabled,

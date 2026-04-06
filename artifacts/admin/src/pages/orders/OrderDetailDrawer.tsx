@@ -1,4 +1,4 @@
-import { ShoppingBag, User, Package, Phone, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ShoppingBag, User, Package, Phone, CheckCircle2, AlertTriangle, Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MobileDrawer } from "@/components/MobileDrawer";
@@ -105,6 +105,34 @@ export function OrderDetailDrawer({
           {(selectedOrder.customerLat != null && selectedOrder.customerLng != null) && (
             <GpsStampCard order={selectedOrder} />
           )}
+
+          {selectedOrder.proofPhotoUrl && (() => {
+            const rawUrl: string = selectedOrder.proofPhotoUrl as string;
+            const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+            const resolvedUrl = /^\/api\/uploads\/[\w.\-]+$/.test(rawUrl) || /^\/uploads\/[\w.\-]+$/.test(rawUrl)
+              ? `${apiBase}${rawUrl}`
+              : (() => { try { const u = new URL(rawUrl); return (u.protocol === "https:" || u.protocol === "http:") && (u.pathname.startsWith("/api/uploads/") || u.pathname.startsWith("/uploads/")) ? rawUrl : null; } catch { return null; } })();
+            if (!resolvedUrl) return null;
+            return (
+              <section className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2" aria-label="Payment proof">
+                <h3 className="text-[10px] font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1">
+                  <Receipt className="w-3 h-3" aria-hidden="true" /> Payment Receipt
+                  {selectedOrder.txnRef && (
+                    <span className="ml-auto text-amber-600 normal-case text-[10px] font-normal">Txn: {selectedOrder.txnRef}</span>
+                  )}
+                </h3>
+                <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="block" aria-label="View full payment receipt image">
+                  <img
+                    src={resolvedUrl}
+                    alt="Payment receipt"
+                    className="w-full max-h-56 object-contain rounded-lg border border-amber-200 bg-white"
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  />
+                  <p className="text-[10px] text-amber-600 mt-1 text-center">Click to view full image</p>
+                </a>
+              </section>
+            );
+          })()}
 
           <section className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1" aria-label="Customer contact">
             <h3 className="text-[10px] font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1"><User className="w-3 h-3" aria-hidden="true" /> Customer</h3>
