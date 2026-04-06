@@ -52,6 +52,43 @@ import {
 
 const C = Colors.light;
 
+interface OrderItemShape {
+  productId?: string;
+  name: string;
+  quantity: number;
+  price: number;
+  image?: string;
+}
+
+interface OrderShape {
+  id: string;
+  type?: string;
+  status: string;
+  total?: number;
+  items?: OrderItemShape[];
+  paymentMethod?: string;
+  estimatedTime?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  refundStatus?: string;
+  _reviewed?: boolean;
+}
+
+interface RideShape {
+  id: string;
+  status: string;
+  type?: string;
+  fare?: number;
+  distance?: number;
+  pickupAddress?: string;
+  dropAddress?: string;
+  riderName?: string;
+  riderPhone?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  _reviewed?: boolean;
+}
+
 /* Single source of truth: all status maps imported from @/lib/orderUtils */
 const ORDER_STATUS = ORDER_STATUS_MAP;
 const RIDE_STATUS  = RIDE_STATUS_MAP;
@@ -69,16 +106,16 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, ratingWindowHours, serverNow, onRate, onCancel, onReorder, onCardPress }: {
-  order: any;
+  order: OrderShape;
   liveTracking: boolean;
   reviews: boolean;
   cancelWindowMin: number;
   refundDays: number;
   ratingWindowHours: number;
   serverNow?: number;
-  onRate: (o: any) => void;
-  onCancel: (o: any) => void;
-  onReorder?: (o: any) => void;
+  onRate: (o: OrderShape) => void;
+  onCancel: (o: OrderShape) => void;
+  onReorder?: (o: OrderShape) => void;
   onCardPress?: () => void;
 }) {
   const { language } = useLanguage();
@@ -138,7 +175,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       </View>
 
       <View style={styles.cardItems}>
-        {(order.items || []).slice(0, itemsExpanded ? undefined : 2).map((item: any, i: number) => (
+        {(order.items || []).slice(0, itemsExpanded ? undefined : 2).map((item: OrderItemShape, i: number) => (
           <View key={i} style={styles.itemRow}>
             <View style={styles.itemDot} />
             <Text style={styles.itemText} numberOfLines={1}>{item.quantity}× {item.name}</Text>
@@ -254,13 +291,13 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
 
 
 function RideCard({ ride, liveTracking, reviews, ratingWindowHours, serverNow, onRate, onCancel, onCardPress }: {
-  ride: any;
+  ride: RideShape;
   liveTracking: boolean;
   reviews: boolean;
   ratingWindowHours: number;
   serverNow?: number;
-  onRate: (o: any) => void;
-  onCancel: (o: any) => void;
+  onRate: (o: RideShape) => void;
+  onCancel: (o: RideShape) => void;
   onCardPress?: () => void;
 }) {
   const { language } = useLanguage();
@@ -487,12 +524,12 @@ function RideCard({ ride, liveTracking, reviews, ratingWindowHours, serverNow, o
 }
 
 function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCancel, onCardPress }: {
-  order: any;
+  order: OrderShape;
   reviews: boolean;
   cancelWindowMin: number;
   serverNow?: number;
-  onRate: (o: any) => void;
-  onCancel: (o: any) => void;
+  onRate: (o: OrderShape) => void;
+  onCancel: (o: OrderShape) => void;
   onCardPress?: () => void;
 }) {
   const { language } = useLanguage();
@@ -537,7 +574,7 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
       )}
 
       <View style={styles.cardItems}>
-        {(order.items || []).slice(0, itemsExpanded ? undefined : 2).map((item: any, i: number) => (
+        {(order.items || []).slice(0, itemsExpanded ? undefined : 2).map((item: OrderItemShape, i: number) => (
           <View key={i} style={styles.itemRow}>
             <View style={styles.itemDot} />
             <Text style={styles.itemText} numberOfLines={1}>{item.quantity}× {item.name}</Text>
@@ -593,7 +630,18 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
   );
 }
 
-function ParcelCard({ booking, onCardPress }: { booking: any; onCardPress?: () => void }) {
+interface ParcelShape {
+  id: string;
+  status: string;
+  parcelType?: string;
+  pickupAddress?: string;
+  dropAddress?: string;
+  fare?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+function ParcelCard({ booking, onCardPress }: { booking: ParcelShape; onCardPress?: () => void }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const [hovered, setHovered] = useState(false);
@@ -921,7 +969,7 @@ function EmptyDetailPanel() {
 
 function OrderDetailPanel({ id, type, orders, rides, pharmOrders, parcels, onClose }: {
   id: string; type: string;
-  orders: any[]; rides: any[]; pharmOrders: any[]; parcels: any[];
+  orders: OrderShape[]; rides: RideShape[]; pharmOrders: OrderShape[]; parcels: ParcelShape[];
   onClose: () => void;
 }) {
   const { language } = useLanguage();
@@ -940,7 +988,7 @@ function OrderDetailPanel({ id, type, orders, rides, pharmOrders, parcels, onClo
     return ORDER_STATUS[order?.status] || ORDER_STATUS["pending"]!;
   })();
 
-  const items: any[] = order?.items || [];
+  const items: OrderItemShape[] = order?.items || [];
   const total = order?.total ?? order?.fare ?? order?.estimatedFare ?? 0;
 
   if (!order) {
@@ -962,7 +1010,7 @@ function OrderDetailPanel({ id, type, orders, rides, pharmOrders, parcels, onClo
       </View>
 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: cfg.bg, borderRadius: 14, padding: 14, marginBottom: 20 }}>
-        <Ionicons name={cfg.icon as any} size={22} color={cfg.color} />
+        <Ionicons name={cfg.icon as keyof typeof Ionicons.glyphMap} size={22} color={cfg.color} />
         <View>
           <Text style={{ ...Typ.h3, color: cfg.color, fontSize: 16 }}>{T(cfg.labelKey)}</Text>
           {order.createdAt && (
@@ -1049,7 +1097,7 @@ function OrdersScreenInner() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [reviewTarget, setReviewTarget] = useState<any>(null);
+  const [reviewTarget, setReviewTarget] = useState<OrderShape | null>(null);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
   const [selectedOrder, setSelectedOrder] = useState<{ id: string; type: string } | null>(null);
@@ -1087,9 +1135,9 @@ function OrdersScreenInner() {
     }
   }, [martActive, foodActive, ridesActive, pharmActive, parcelActive]);
 
-  const handleReorder = useCallback(async (order: any) => {
+  const handleReorder = useCallback(async (order: OrderShape) => {
     if (!order.items || order.items.length === 0) return;
-    const validItems = order.items.filter((i: any) => i.productId && i.name && Number(i.price) > 0);
+    const validItems = order.items.filter((i: OrderItemShape) => i.name && Number(i.price) > 0);
     if (validItems.length === 0) {
       showToast("Items from this order are no longer available", "error");
       return;
@@ -1098,7 +1146,8 @@ function OrdersScreenInner() {
       const productsRes = await fetch(`${API_BASE}/products`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (productsRes.ok) {
         const productsData = unwrapApiResponse(await productsRes.json());
-        const productMap = new Map<string, any>((productsData.products || productsData || []).map((p: any) => [p.id, p]));
+        interface LiveProduct { id: string; price: number; stock?: number; }
+        const productMap = new Map<string, LiveProduct>((productsData.products || productsData || []).map((p: LiveProduct) => [p.id, p]));
         const priceChangedItems: string[] = [];
         let skippedCount = 0;
         let addedCount = 0;
@@ -1136,7 +1185,7 @@ function OrdersScreenInner() {
     router.push("/cart");
   }, [addItem, showToast, token]);
 
-  const handleRate = useCallback((order: any) => {
+  const handleRate = useCallback((order: OrderShape) => {
     if (!reviewedIds.has(order.id)) setReviewTarget(order);
   }, [reviewedIds]);
 
@@ -1145,13 +1194,19 @@ function OrdersScreenInner() {
     AsyncStorage.getItem("review_prompted_ids")
       .then(raw => {
         let ids: string[] = [];
-        try { ids = raw ? JSON.parse(raw) : []; } catch {}
+        try { ids = raw ? JSON.parse(raw) : []; } catch (parseErr) {
+          console.warn("[Orders] Failed to parse review_prompted_ids:", parseErr);
+        }
         if (!ids.includes(orderId)) {
           ids = [...ids, orderId];
-          AsyncStorage.setItem("review_prompted_ids", JSON.stringify(ids)).catch(() => {});
+          AsyncStorage.setItem("review_prompted_ids", JSON.stringify(ids)).catch((err) => {
+            console.warn("[Orders] Failed to save review prompted ids:", err);
+          });
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[Orders] Failed to read review prompted ids:", err);
+      });
   }, []);
 
   const autoPromptedIdsRef = React.useRef<Set<string>>(new Set());
@@ -1165,17 +1220,17 @@ function OrdersScreenInner() {
     { query: { enabled: !!user?.id && anyMartFood, refetchInterval: pollInterval } }
   );
 
-  const [ridesData, setRidesData] = useState<any>(null);
+  const [ridesData, setRidesData] = useState<{ rides?: RideShape[] } | null>(null);
   const [ridesLoading, setRidesLoading] = useState(false);
   const [ridesError, setRidesError] = useState(false);
   const isFetchingRidesRef = useRef(false);
 
-  const [pharmData, setPharmData] = useState<any>(null);
+  const [pharmData, setPharmData] = useState<{ orders?: OrderShape[] } | null>(null);
   const [pharmLoading, setPharmLoading] = useState(false);
   const [pharmError, setPharmError] = useState(false);
   const isFetchingPharmRef = useRef(false);
 
-  const [parcelData, setParcelData] = useState<any>(null);
+  const [parcelData, setParcelData] = useState<{ bookings?: ParcelShape[]; parcelBookings?: ParcelShape[] } | null>(null);
   const [parcelLoading, setParcelLoading] = useState(false);
   const [parcelError, setParcelError] = useState(false);
   const isFetchingParcelRef = useRef(false);
@@ -1204,45 +1259,46 @@ function OrdersScreenInner() {
       });
       listSocketRef.current = socket;
 
-      socket.on("order:update", (updated: { id: string; status?: string; [key: string]: any }) => {
+      type OrderUpdate = { id: string; status?: string; [key: string]: unknown };
+      socket.on("order:update", (updated: OrderUpdate) => {
         if (!updated?.id) return;
         /* Mart/food: patch React Query cache in-place to avoid full network round-trip */
         queryClient.setQueryData(
           getGetOrdersQueryKey({ userId: user?.id || "" }),
-          (old: any) => {
+          (old: { orders?: OrderShape[] } | undefined) => {
             if (!old?.orders) return old;
-            const idx = old.orders.findIndex((o: any) => o.id === updated.id);
+            const idx = old.orders.findIndex((o) => o.id === updated.id);
             if (idx === -1) return old;
             const next = [...old.orders];
-            next[idx] = { ...next[idx], ...updated };
+            next[idx] = { ...next[idx], ...updated } as OrderShape;
             return { ...old, orders: next };
           }
         );
         /* Rides: patch in-place */
-        setRidesData((prev: any) => {
+        setRidesData((prev: { rides?: RideShape[] } | null) => {
           if (!prev?.rides) return prev;
-          const idx = prev.rides.findIndex((r: any) => r.id === updated.id);
+          const idx = prev.rides.findIndex((r) => r.id === updated.id);
           if (idx === -1) return prev;
           const next = [...prev.rides];
-          next[idx] = { ...next[idx], ...updated };
+          next[idx] = { ...next[idx], ...updated } as RideShape;
           return { ...prev, rides: next };
         });
         /* Pharmacy: patch in-place */
-        setPharmData((prev: any) => {
+        setPharmData((prev: { orders?: OrderShape[] } | null) => {
           if (!prev?.orders) return prev;
-          const idx = prev.orders.findIndex((o: any) => o.id === updated.id);
+          const idx = prev.orders.findIndex((o) => o.id === updated.id);
           if (idx === -1) return prev;
           const next = [...prev.orders];
-          next[idx] = { ...next[idx], ...updated };
+          next[idx] = { ...next[idx], ...updated } as OrderShape;
           return { ...prev, orders: next };
         });
         /* Parcels: patch in-place */
-        setParcelData((prev: any) => {
+        setParcelData((prev: { bookings?: ParcelShape[] } | null) => {
           if (!prev?.bookings) return prev;
-          const idx = prev.bookings.findIndex((b: any) => b.id === updated.id);
+          const idx = prev.bookings.findIndex((b) => b.id === updated.id);
           if (idx === -1) return prev;
           const next = [...prev.bookings];
-          next[idx] = { ...next[idx], ...updated };
+          next[idx] = { ...next[idx], ...updated } as ParcelShape;
           return { ...prev, bookings: next };
         });
       });
@@ -1268,7 +1324,7 @@ function OrdersScreenInner() {
 
   const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-  const handleCancel = useCallback((order: any) => {
+  const handleCancel = useCallback((order: OrderShape) => {
     const nowMs = serverNow ?? Date.now();
     const minutesSincePlaced = order.createdAt
       ? (nowMs - new Date(order.createdAt).getTime()) / 60000
@@ -1284,7 +1340,7 @@ function OrdersScreenInner() {
     });
   }, [orderRules.cancelWindowMin, serverNow]);
 
-  const handleCancelPharmacy = useCallback((order: any) => {
+  const handleCancelPharmacy = useCallback((order: OrderShape) => {
     const nowMs = serverNow ?? Date.now();
     const minutesSincePlaced = order.createdAt
       ? (nowMs - new Date(order.createdAt).getTime()) / 60000
@@ -1360,7 +1416,7 @@ function OrdersScreenInner() {
     }
   }, [user?.id, token, parcelActive]);
 
-  const handleCancelRide = useCallback((ride: any) => {
+  const handleCancelRide = useCallback((ride: RideShape) => {
     const riderAssigned = ["accepted", "arrived", "in_transit", "ongoing"].includes(ride.status);
     setCancelTarget({
       id: ride.id,
@@ -1412,9 +1468,9 @@ function OrdersScreenInner() {
 
   const globalActiveCount =
     allOrders.filter(o => !["delivered", "cancelled"].includes(o.status)).length +
-    rides.filter((r: any) => !["completed", "cancelled"].includes(r.status)).length +
-    pharmOrders.filter((o: any) => !["delivered", "cancelled"].includes(o.status)).length +
-    parcels.filter((b: any) => !["completed", "cancelled"].includes(b.status)).length;
+    rides.filter((r) => !["completed", "cancelled"].includes(r.status)).length +
+    pharmOrders.filter((o) => !["delivered", "cancelled"].includes(o.status)).length +
+    parcels.filter((b) => !["completed", "cancelled"].includes(b.status)).length;
 
   React.useEffect(() => {
     setHasActiveItems(globalActiveCount > 0);
@@ -1432,7 +1488,9 @@ function OrdersScreenInner() {
     AsyncStorage.getItem("review_prompted_ids")
       .then(raw => {
         let persistedIds: string[] = [];
-        try { persistedIds = raw ? JSON.parse(raw) : []; } catch {}
+        try { persistedIds = raw ? JSON.parse(raw) : []; } catch (parseErr) {
+          console.warn("[Orders] Failed to parse review_prompted_ids for auto-prompt:", parseErr);
+        }
         const toPrompt = deliveredOrders.find(o =>
           !persistedIds.includes(o.id) &&
           !reviewedIds.has(o.id) &&
@@ -1441,11 +1499,15 @@ function OrdersScreenInner() {
         if (toPrompt) {
           autoPromptedIdsRef.current.add(toPrompt.id);
           const nextIds = [...persistedIds, toPrompt.id];
-          AsyncStorage.setItem("review_prompted_ids", JSON.stringify(nextIds)).catch(() => {});
+          AsyncStorage.setItem("review_prompted_ids", JSON.stringify(nextIds)).catch((err) => {
+            console.warn("[Orders] Failed to persist auto-prompted review ids:", err);
+          });
           setTimeout(() => { setReviewTarget(toPrompt); }, 800);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[Orders] Failed to read review prompted ids for auto-prompt:", err);
+      });
   }, [deliveredOrderIds, config.features.reviews]);
 
   const isLoading = ordersLoading || ridesLoading || pharmLoading || parcelLoading;
@@ -1508,7 +1570,7 @@ function OrdersScreenInner() {
                     accessibilityRole="button"
                   >
                     <View style={[styles.emptyServiceIconWrap, { backgroundColor: svc.color + "20" }]}>
-                      <Ionicons name={svc.icon as any} size={22} color={svc.color} />
+                      <Ionicons name={svc.icon as keyof typeof Ionicons.glyphMap} size={22} color={svc.color} />
                     </View>
                     <Text style={[styles.emptyServiceLabel, { color: svc.color }]}>{svc.label}</Text>
                     <Ionicons name="arrow-forward" size={12} color={svc.color + "99"} />
@@ -1521,12 +1583,12 @@ function OrdersScreenInner() {
       );
     }
 
-    let showOrders: any[] = [];
-    let showMart: any[] = [];
-    let showFood: any[] = [];
-    let showRides: any[] = rides;
-    let showPharm: any[] = pharmOrders;
-    let showParcel: any[] = parcels;
+    let showOrders: OrderShape[] = [];
+    let showMart: OrderShape[] = [];
+    let showFood: OrderShape[] = [];
+    let showRides: RideShape[] = rides;
+    let showPharm: OrderShape[] = pharmOrders;
+    let showParcel: ParcelShape[] = parcels;
 
     switch (activeTab) {
       case "all":
@@ -1587,7 +1649,7 @@ function OrdersScreenInner() {
       return (
         <View style={styles.emptyFilterWrap}>
           <View style={[styles.emptyFilterIconBox, { backgroundColor: meta.bg }]}>
-            <Ionicons name={meta.icon as any} size={38} color={meta.color} />
+            <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={38} color={meta.color} />
           </View>
           <Text style={styles.emptyFilterTitle}>{meta.label}</Text>
           <Text style={styles.emptyFilterSub}>{meta.msg}</Text>

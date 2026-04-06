@@ -92,59 +92,29 @@ function GpsSlotRow({ selected, onSelect, onClose }: {
   const [loading, setLoading] = useState(false);
   const [gpsAddr, setGpsAddr] = useState<SavedAddress | null>(null);
   const isSel = selected === "__gps__";
+  const fetchingRef = useRef(false);
+  const cancelRef = useRef({ cancelled: false });
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        if (perm.status !== "granted") return;
-        setLoading(true);
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        let cityName = "";
-        let streetAddr = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
-        try {
-          const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-          if (geo) {
-            cityName = geo.city || geo.subregion || geo.region || "";
-            const parts = [geo.street, geo.name, geo.district].filter(Boolean);
-            if (parts.length > 0) streetAddr = parts.join(", ");
-          }
-        } catch {}
-        if (!cancelled) {
-          setGpsAddr({
-            id: "__gps__",
-            label: "Current Location",
-            address: streetAddr,
-            city: cityName,
-            icon: "navigate-outline",
-            isDefault: false,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          });
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const handlePress = async () => {
-    if (gpsAddr) {
-      onSelect(gpsAddr);
-      onClose();
-      return;
-    }
+  const fetchGps = async (requestPermission: boolean) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      let status: string;
+      if (requestPermission) {
+        const result = await Location.requestForegroundPermissionsAsync();
+        status = result.status;
+      } else {
+        const result = await Location.getForegroundPermissionsAsync();
+        status = result.status;
+      }
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "Location permission is needed.");
+        if (requestPermission) Alert.alert("Permission Denied", "Location permission is needed.");
         return;
       }
+      if (cancelRef.current.cancelled) return;
       setLoading(true);
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (cancelRef.current.cancelled) return;
       let cityName = "";
       let streetAddr = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
       try {
@@ -154,7 +124,10 @@ function GpsSlotRow({ selected, onSelect, onClose }: {
           const parts = [geo.street, geo.name, geo.district].filter(Boolean);
           if (parts.length > 0) streetAddr = parts.join(", ");
         }
-      } catch {}
+      } catch (geoErr) {
+        if (__DEV__) console.warn("[GpsSlotRow] Reverse geocode failed:", geoErr instanceof Error ? geoErr.message : String(geoErr));
+      }
+      if (cancelRef.current.cancelled) return;
       const addr: SavedAddress = {
         id: "__gps__",
         label: "Current Location",
@@ -166,11 +139,34 @@ function GpsSlotRow({ selected, onSelect, onClose }: {
         longitude: pos.coords.longitude,
       };
       setGpsAddr(addr);
-      setLoading(false);
+      return addr;
+    } catch (err) {
+      if (__DEV__) console.warn("[GpsSlotRow] GPS fetch failed:", err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      if (!cancelRef.current.cancelled) setLoading(false);
+      fetchingRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    cancelRef.current = { cancelled: false };
+    fetchGps(false);
+    return () => { cancelRef.current.cancelled = true; };
+  }, []);
+
+  const handlePress = async () => {
+    if (gpsAddr) {
+      onSelect(gpsAddr);
+      onClose();
+      return;
+    }
+    const addr = await fetchGps(true);
+    if (cancelRef.current.cancelled) return;
+    if (addr) {
       onSelect(addr);
       onClose();
-    } catch {
-      setLoading(false);
+    } else {
       Alert.alert("GPS Error", "Could not get your current location.");
     }
   };

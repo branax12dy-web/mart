@@ -322,21 +322,45 @@ function ParcelScreenInner() {
       const GEOCODE_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
       /* Try to resolve coordinates — best-effort, NOT a hard block.
          Coordinates are optional on the backend (only used for geofencing). */
+      let pickupGeoFailed = false;
+      let dropGeoFailed = false;
       if (finalPickupLat === undefined || finalPickupLng === undefined) {
         try {
           const geoRes = await fetch(`${GEOCODE_BASE}/maps/geocode?address=${encodeURIComponent(pickupAddress)}`);
           const geo = await geoRes.json();
-          if (geo?.lat && geo?.lng) { finalPickupLat = geo.lat; finalPickupLng = geo.lng; setGeoError(null); }
-        } catch (err) { if (__DEV__) console.warn("[Parcel] Pickup geocode failed:", err instanceof Error ? err.message : String(err)); }
+          if (geo?.lat && geo?.lng) { finalPickupLat = geo.lat; finalPickupLng = geo.lng; }
+          else { pickupGeoFailed = true; if (__DEV__) console.warn("[Parcel] Pickup geocode returned no coords"); }
+        } catch (err) {
+          pickupGeoFailed = true;
+          if (__DEV__) console.warn("[Parcel] Pickup geocode failed:", err instanceof Error ? err.message : String(err));
+        }
       }
       if (finalDropLat === undefined || finalDropLng === undefined) {
         try {
           const geoRes = await fetch(`${GEOCODE_BASE}/maps/geocode?address=${encodeURIComponent(dropAddress)}`);
           const geo = await geoRes.json();
           if (geo?.lat && geo?.lng) { finalDropLat = geo.lat; finalDropLng = geo.lng; }
-        } catch (err) { if (__DEV__) console.warn("[Parcel] Drop geocode failed:", err instanceof Error ? err.message : String(err)); }
+          else { dropGeoFailed = true; if (__DEV__) console.warn("[Parcel] Drop geocode returned no coords"); }
+        } catch (err) {
+          dropGeoFailed = true;
+          if (__DEV__) console.warn("[Parcel] Drop geocode failed:", err instanceof Error ? err.message : String(err));
+        }
       }
-      /* Clear stale geo error now that we're proceeding */
+      /* If geocoding failed and we still have no coordinates, show a specific error
+         so the user knows the address could not be located — they should try selecting
+         from the map/autocomplete picker instead of typing manually. */
+      if (pickupGeoFailed && finalPickupLat === undefined) {
+        showToast("Could not locate your pickup address. Please select it from the map or use a more specific address.", "error");
+        setLoading(false);
+        parcelSubmittingRef.current = false;
+        return;
+      }
+      if (dropGeoFailed && finalDropLat === undefined) {
+        showToast("Could not locate the drop-off address. Please select it from the map or use a more specific address.", "error");
+        setLoading(false);
+        parcelSubmittingRef.current = false;
+        return;
+      }
       setGeoError(null);
 
       if (

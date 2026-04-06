@@ -43,12 +43,28 @@ const RECENTLY_VIEWED_KEY = "recently_viewed_products";
 
 interface RecentItem { id: string; name: string; image: string | null; price: number; }
 
+interface MartProduct {
+  id: string;
+  name: string;
+  price: number;
+  image?: string | null;
+  unit?: string;
+  originalPrice?: number | string;
+  discountPercent?: number;
+  dealStock?: number | null;
+  soldCount?: number;
+  vendorId?: string;
+  categoryId?: string;
+  inStock?: boolean;
+  description?: string;
+}
+
 function MartRecentlyViewed() {
   const [items, setItems] = React.useState<RecentItem[]>([]);
   React.useEffect(() => {
     AsyncStorage.getItem(RECENTLY_VIEWED_KEY)
-      .then(raw => { if (raw) { try { setItems(JSON.parse(raw)); } catch {} } })
-      .catch(() => {});
+      .then(raw => { if (raw) { try { setItems(JSON.parse(raw)); } catch (parseErr) { if (__DEV__) console.warn("[Mart] Failed to parse recently viewed:", parseErr instanceof Error ? parseErr.message : String(parseErr)); } } })
+      .catch((err) => { if (__DEV__) console.warn("[Mart] Failed to load recently viewed:", err instanceof Error ? err.message : String(err)); });
   }, []);
   if (items.length === 0) return null;
   return (
@@ -56,7 +72,7 @@ function MartRecentlyViewed() {
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, marginBottom: 10 }}>
         <Text style={{ flex: 1, fontFamily: Font.bold, fontSize: 14, color: C.text }}>Recently Viewed</Text>
         <TouchableOpacity activeOpacity={0.7}
-          onPress={() => { AsyncStorage.removeItem(RECENTLY_VIEWED_KEY).catch(() => {}); setItems([]); }}
+          onPress={() => { AsyncStorage.removeItem(RECENTLY_VIEWED_KEY).catch((err) => { console.warn("[Mart] Failed to clear recently viewed:", err); }); setItems([]); }}
           style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
         >
           <Ionicons name="close-circle-outline" size={13} color={C.textMuted} />
@@ -126,7 +142,7 @@ function AddToCartButton({ onPress, added, disabled }: { onPress: () => void; ad
   );
 }
 
-const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
+const FlashCard = React.memo(function FlashCard({ product }: { product: MartProduct }) {
   const { addItem, cartType, itemCount, clearCartAndAdd } = useCart();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -212,7 +228,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: any }) {
   );
 });
 
-const ProductCard = React.memo(function ProductCard({ product }: { product: any }) {
+const ProductCard = React.memo(function ProductCard({ product }: { product: MartProduct }) {
   const { addItem, cartType, itemCount, clearCartAndAdd, items, updateQuantity, removeItem } = useCart();
   const [added, setAdded] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

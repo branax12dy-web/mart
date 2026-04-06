@@ -68,6 +68,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const pendingOrderDataRef = useRef<AckSuccessData | null>(null);
   const ackStuckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ackFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ackFallbackIvRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ackResolvedRef = useRef(false);
   /* Generation counter — incremented on every local cart mutation so that a
      stale cart-validation response arriving after the user modified the cart
      is discarded rather than silently overwriting the user's changes. */
@@ -196,7 +198,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         try {
           const SS = await import("expo-secure-store");
           storedToken = await SS.getItemAsync("ajkmart_token");
-        } catch {}
+        } catch (ssErr) {
+          if (__DEV__) console.warn("[Cart] SecureStore token read failed:", ssErr instanceof Error ? ssErr.message : String(ssErr));
+        }
       }
       if (!storedToken) storedToken = await AsyncStorage.getItem("@ajkmart_token");
       const res = await fetch(`${API_BASE}/orders/validate-cart`, {
@@ -349,9 +353,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (id) ackResolvedRef.current = false;
   };
 
-  const ackFallbackIvRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const ackResolvedRef = useRef(false);
-
   const resolveOrderAck = (oid: string) => {
     if (ackResolvedRef.current) return;
     ackResolvedRef.current = true;
@@ -388,7 +389,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           return true;
         }
       }
-    } catch {}
+    } catch (fetchErr) {
+      if (__DEV__) console.warn("[Cart] HTTP fallback order fetch failed:", fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
+    }
     return false;
   };
 

@@ -115,7 +115,9 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
       const r = result[0];
       return [r.city || r.subregion, r.region].filter(Boolean).join(", ") || "Current Location";
     }
-  } catch {}
+  } catch (err) {
+    if (__DEV__) console.warn("[Weather] Reverse geocode failed:", err instanceof Error ? err.message : String(err));
+  }
   return "Current Location";
 }
 
@@ -172,7 +174,7 @@ export default function WeatherDetailScreen() {
             locName = await reverseGeocode(lat, lng);
             isGps = true;
           } catch {
-            const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch(() => null);
+            const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch((err) => { console.warn("[Weather] AsyncStorage read failed for saved city:", err); return null; });
             if (saved) {
               const parsed = JSON.parse(saved);
               lat = parsed.lat;
@@ -186,7 +188,7 @@ export default function WeatherDetailScreen() {
             }
           }
         } else {
-          const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch(() => null);
+          const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch((err) => { console.warn("[Weather] AsyncStorage read failed for saved city:", err); return null; });
           if (saved) {
             const parsed = JSON.parse(saved);
             lat = parsed.lat;
@@ -202,7 +204,7 @@ export default function WeatherDetailScreen() {
       }
 
       const cacheKey = `forecast_cache_${Math.round(lat * 10)}_${Math.round(lng * 10)}`;
-      const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+      const cached = await AsyncStorage.getItem(cacheKey).catch((err) => { console.warn("[Weather] AsyncStorage read failed for forecast cache:", err); return null; });
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
@@ -211,12 +213,16 @@ export default function WeatherDetailScreen() {
             setLoading(false);
             return;
           }
-        } catch {}
+        } catch (parseErr) {
+          if (__DEV__) console.warn("[Weather] Failed to parse forecast cache:", parseErr instanceof Error ? parseErr.message : String(parseErr));
+        }
       }
 
       const result = await fetchForecast(lat, lng);
       const fullData = { ...result, locationName: locName, isGps, _ts: Date.now() };
-      AsyncStorage.setItem(cacheKey, JSON.stringify(fullData)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(fullData)).catch((err) => {
+        console.warn("[Weather] Failed to cache forecast data:", err);
+      });
       setForecast(fullData);
     } catch (e) {
       setError("Failed to load weather data. Please try again.");
@@ -226,11 +232,13 @@ export default function WeatherDetailScreen() {
 
   useEffect(() => {
     (async () => {
-      const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch(() => null);
+      const saved = await AsyncStorage.getItem(SAVED_CITY_KEY).catch((err) => { console.warn("[Weather] AsyncStorage read failed for saved city:", err); return null; });
       if (saved) {
         try {
           setSavedCity(JSON.parse(saved));
-        } catch {}
+        } catch (parseErr) {
+          if (__DEV__) console.warn("[Weather] Failed to parse saved city:", parseErr instanceof Error ? parseErr.message : String(parseErr));
+        }
       }
       loadWeather();
     })();
@@ -259,7 +267,9 @@ export default function WeatherDetailScreen() {
   }, [cityQuery]);
 
   const handleSelectCity = useCallback(async (city: { lat: number; lng: number; name: string }) => {
-    await AsyncStorage.setItem(SAVED_CITY_KEY, JSON.stringify(city)).catch(() => {});
+    await AsyncStorage.setItem(SAVED_CITY_KEY, JSON.stringify(city)).catch((err) => {
+      console.warn("[Weather] Failed to save selected city:", err);
+    });
     setSavedCity(city);
     setShowCityInput(false);
     setCityQuery("");
@@ -274,7 +284,13 @@ export default function WeatherDetailScreen() {
     loadWeather();
   }, [loadWeather]);
 
-  const wmo = forecast ? (WMO_ICONS[forecast.current.code] ?? WMO_ICONS[0]) : WMO_ICONS[0];
+  const VALID_IONICON_WEATHER = new Set(["sunny", "partly-sunny", "cloudy", "cloud", "rainy", "snow", "thunderstorm"]);
+  const safeWmoIcon = (icon: string): keyof typeof Ionicons.glyphMap => {
+    if (VALID_IONICON_WEATHER.has(icon)) return icon as keyof typeof Ionicons.glyphMap;
+    if (__DEV__) console.warn("[Weather] Invalid WMO icon name:", icon);
+    return "cloud-outline";
+  };
+  const wmo = forecast ? (WMO_ICONS[forecast.current.code] ?? WMO_ICONS[0]!) : WMO_ICONS[0]!;
   const gradient = wmo.gradient;
 
   const formatTime = (iso: string) => {
@@ -386,7 +402,7 @@ export default function WeatherDetailScreen() {
               </View>
               <Text style={s.heroTemp}>{forecast.current.temp}°</Text>
               <View style={s.heroCondRow}>
-                <Ionicons name={wmo.icon as any} size={24} color="rgba(255,255,255,0.9)" />
+                <Ionicons name={safeWmoIcon(wmo.icon)} size={24} color="rgba(255,255,255,0.9)" />
                 <Text style={s.heroCondText}>{wmo.label}</Text>
               </View>
               <Text style={s.heroFeelsLike}>Feels like {forecast.current.feelsLike}°C</Text>
@@ -444,7 +460,7 @@ export default function WeatherDetailScreen() {
                   return (
                     <View key={i} style={[s.hourCard, isNow && s.hourCardNow]}>
                       <Text style={[s.hourTime, isNow && s.hourTimeNow]}>{isNow ? "Now" : formatTime(h.time)}</Text>
-                      <Ionicons name={hWmo.icon as any} size={22} color={isNow ? C.primary : C.textSecondary} />
+                      <Ionicons name={safeWmoIcon(hWmo.icon)} size={22} color={isNow ? C.primary : C.textSecondary} />
                       <Text style={[s.hourTemp, isNow && s.hourTempNow]}>{h.temp}°</Text>
                       <View style={s.hourPrecipRow}>
                         <Ionicons name="water" size={10} color="#60a5fa" />
@@ -470,7 +486,7 @@ export default function WeatherDetailScreen() {
                   return (
                     <View key={i} style={s.dayRow}>
                       <Text style={s.dayName}>{formatDay(d.date)}</Text>
-                      <Ionicons name={dWmo.icon as any} size={20} color={C.textSecondary} style={{ width: 28 }} />
+                      <Ionicons name={safeWmoIcon(dWmo.icon)} size={20} color={C.textSecondary} style={{ width: 28 }} />
                       <Text style={s.dayTempMin}>{d.tempMin}°</Text>
                       <View style={s.dayBarTrack}>
                         <LinearGradient

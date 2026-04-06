@@ -298,7 +298,7 @@ function RideScreenInner() {
         initialType={booked.type ?? "bike"}
         userId={user?.id ?? ""}
         token={token}
-        cancellationFee={rideCfg.cancellationFee ?? 30}
+        cancellationFee={rideCfg.cancellationFee !== undefined && rideCfg.cancellationFee !== null ? rideCfg.cancellationFee : 30}
         onReset={() => setBooked(null)}
       />
     );

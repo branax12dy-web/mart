@@ -44,6 +44,37 @@ const C = Colors.light;
 
 const LIVE_TRACKING_STATUSES = ["picked_up", "out_for_delivery", "in_transit", "accepted", "arrived"];
 
+interface OrderItem {
+  name: string;
+  quantity: number;
+  price: number;
+  image?: string;
+}
+
+interface OrderDetail {
+  id: string;
+  type?: string;
+  status: string;
+  total?: number;
+  items?: OrderItem[];
+  paymentMethod?: string;
+  estimatedTime?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  refundStatus?: string;
+  deliveryLat?: number | string;
+  deliveryLng?: number | string;
+  dropLat?: number | string;
+  dropLng?: number | string;
+  deliveryAddress?: string;
+  riderName?: string;
+  riderPhone?: string;
+  vendorName?: string;
+  vendorPhone?: string;
+  notes?: string;
+  cancellationReason?: string;
+}
+
 export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
@@ -76,7 +107,7 @@ export default function OrderDetailScreen() {
   const PARCEL_STEP_LABELS = [T("statusPlaced"), T("statusAccepted"), T("inTransit"), T("delivered")];
   const RIDE_STEP_LABELS = [T("searching"), T("statusAccepted"), T("arrived"), T("inTransit"), T("completed")];
 
-  const [order, setOrder] = useState<any>(null);
+  const [order, setOrder] = useState<OrderDetail | null>(null);
   const [serverNow, setServerNow] = useState<number>(Date.now());
   const [loading, setLoading] = useState(true);
   const [refreshingOrder, setRefreshingOrder] = useState(false);
@@ -87,6 +118,7 @@ export default function OrderDetailScreen() {
   const [riderLng, setRiderLng] = useState<number | null>(null);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [trackFailed, setTrackFailed] = useState(false);
+  const [socketDropped, setSocketDropped] = useState(false);
 
   const { goBack } = useSmartBack("/(tabs)/orders");
 
@@ -160,9 +192,17 @@ export default function OrderDetailScreen() {
             setEtaMinutes(d.etaMinutes ?? null);
             setTrackFailed(false);
           }
+        } else {
+          if (mountedRef.current) {
+            console.warn("[Orders] Tracking poll returned non-OK status:", res.status);
+            setTrackFailed(true);
+          }
         }
-      } catch {
-        if (mountedRef.current) setTrackFailed(true);
+      } catch (err) {
+        if (mountedRef.current) {
+          console.warn("[Orders] Tracking poll threw:", err instanceof Error ? err.message : String(err));
+          setTrackFailed(true);
+        }
       }
     };
 
@@ -207,6 +247,7 @@ export default function OrderDetailScreen() {
 
         socket.on("connect", () => {
           retryCount = 0;
+          if (mountedRef.current) setSocketDropped(false);
           socket?.emit("join", room);
         });
 
@@ -221,6 +262,14 @@ export default function OrderDetailScreen() {
                 connect();
               }
             }, delay);
+          } else {
+            if (mountedRef.current) setSocketDropped(true);
+          }
+        });
+
+        socket.on("disconnect", (reason: string) => {
+          if (!unmounted && mountedRef.current && reason !== "io client disconnect") {
+            setSocketDropped(true);
           }
         });
 
@@ -232,10 +281,10 @@ export default function OrderDetailScreen() {
           }
         });
 
-        socket.on("order:update", (updated: any) => {
+        socket.on("order:update", (updated: Partial<OrderDetail> & { id: string }) => {
           if (!updated || updated.id !== orderId) return;
           if (mountedRef.current) {
-            setOrder((prev: any) => prev ? { ...prev, ...updated } : updated);
+            setOrder((prev) => prev ? { ...prev, ...updated } : (updated as OrderDetail));
           }
         });
       });
@@ -312,7 +361,9 @@ export default function OrderDetailScreen() {
       const data = unwrapApiResponse(await res.json());
       const fetched = data.order || data.booking || data;
       if (mountedRef.current) setOrder(fetched);
-    } catch {}
+    } catch (err) {
+      if (__DEV__) console.warn("[OrderDetail] Refresh fetch failed:", err instanceof Error ? err.message : String(err));
+    }
     setRefreshingOrder(false);
   }, [orderId, isParcel, isRide, isPharmacyType, token]);
 
@@ -332,7 +383,9 @@ export default function OrderDetailScreen() {
             setPaymentStatus(d.status);
           }
         }
-      } catch {}
+      } catch (err) {
+        if (__DEV__) console.warn("[OrderDetail] Payment status fetch failed:", err instanceof Error ? err.message : String(err));
+      }
     })();
   }, [orderId, token, isParcel, isRide, isPharmacyType]);
 
@@ -351,7 +404,9 @@ export default function OrderDetailScreen() {
                 setPaymentStatus(d.status);
               }
             }
-          } catch {}
+          } catch (err) {
+            if (__DEV__) console.warn("[OrderDetail] AppState payment status fetch failed:", err instanceof Error ? err.message : String(err));
+          }
         })();
       }
     });
@@ -481,7 +536,7 @@ export default function OrderDetailScreen() {
         <View style={isWide ? { flex: 1 } : undefined}>
         <View style={[s.statusCard, { borderColor: cfg.bg }]}>
           <View style={[s.statusIcon, { backgroundColor: cfg.bg }]}>
-            <Ionicons name={cfg.icon as any} size={28} color={cfg.color} />
+            <Ionicons name={cfg.icon as keyof typeof Ionicons.glyphMap} size={28} color={cfg.color} />
           </View>
           <Text style={[s.statusLabel, { color: cfg.color }]}>{cfg.label}</Text>
           <Text style={s.orderId}>{orderShortId}</Text>
@@ -495,10 +550,16 @@ export default function OrderDetailScreen() {
 
         {isActive && LIVE_TRACKING_STATUSES.includes(order.status) && (
           <View style={[s.card, { backgroundColor: C.emeraldBg, borderColor: C.emeraldMid, padding: 0, overflow: "hidden" }]}>
-            {trackFailed && (
+            {(trackFailed || socketDropped) && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderBottomWidth: 1, borderBottomColor: C.amberBorder, paddingHorizontal: 14, paddingVertical: 10 }}>
                 <Ionicons name="warning-outline" size={15} color={C.amber} />
-                <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>{T("trackingUnavailableMsg" as TranslationKey)}</Text>
+                <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>
+                  {socketDropped && trackFailed
+                    ? "Live tracking is unavailable — both the real-time connection and location refresh have failed. Location data may be outdated."
+                    : socketDropped
+                    ? "Real-time connection lost. Location updates may be delayed."
+                    : T("trackingUnavailableMsg" as TranslationKey)}
+                </Text>
               </View>
             )}
             {mapUrl ? (
@@ -676,7 +737,7 @@ export default function OrderDetailScreen() {
             ) : null}
 
             <Text style={s.sectionTitle}>{T("items")}</Text>
-            {(order.items || []).map((item: any, i: number) => (
+            {(order.items || []).map((item: OrderItem, i: number) => (
               <View key={i} style={s.itemRow}>
                 <View style={s.itemQty}>
                   <Text style={s.itemQtyText}>{item.quantity}×</Text>
@@ -846,7 +907,7 @@ export default function OrderDetailScreen() {
           onClose={() => setCancelTarget(null)}
           onDone={(_result) => {
             showToast(T("orderCancelledSuccess"), "success");
-            setOrder((prev: any) => prev ? { ...prev, status: "cancelled" } : prev);
+            setOrder((prev) => prev ? { ...prev, status: "cancelled" } : prev);
           }}
         />
       )}

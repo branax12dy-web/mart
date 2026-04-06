@@ -40,10 +40,6 @@ import {
 
 const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
-if (typeof __DEV__ === "undefined") {
-  throw new Error("__DEV__ is not defined — Metro bundler misconfiguration");
-}
-
 type LoginMethod = "phone" | "email" | "username" | "magic" | "google" | "facebook";
 type Step = "continue" | "method" | "otp" | "totp" | "pending" | "complete-profile";
 
