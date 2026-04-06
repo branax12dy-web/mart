@@ -559,6 +559,9 @@ export async function ensureAuthMethodColumn() {
   try {
     await db.execute(sql`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS auth_method TEXT`);
   } catch { /* column likely already exists */ }
+  try {
+    await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS video_url TEXT`);
+  } catch { /* column likely already exists */ }
   _authMethodColumnMigrated = true;
 }
 

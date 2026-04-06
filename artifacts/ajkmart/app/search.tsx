@@ -51,6 +51,7 @@ interface SearchResult {
   category?: string;
   originalPrice?: number;
   rating?: number;
+  vendorId?: string;
   vendorName?: string;
 }
 
@@ -194,6 +195,7 @@ export default function UniversalSearchScreen() {
               category: p.category,
               originalPrice: p.originalPrice,
               rating: p.rating,
+              vendorId: p.vendorId,
               vendorName: p.vendorName,
               type: svc,
             } as SearchResult)),
@@ -588,9 +590,22 @@ export default function UniversalSearchScreen() {
                   <Text style={s.cardName} numberOfLines={2}>{item.name}</Text>
                   <ServiceBadge type={item.type} />
                 </View>
-                {item.vendorName && (
+                {item.vendorName && item.vendorId && item.type !== "pharmacy" ? (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={(e) => {
+                      e?.stopPropagation?.();
+                      const storePath = item.type === "food" ? "/food/store/[id]" : "/mart/store/[id]";
+                      router.push({ pathname: storePath, params: { id: item.vendorId! } });
+                    }}
+                    style={s.vendorLinkRow}
+                  >
+                    <Ionicons name="storefront-outline" size={10} color={C.primary} />
+                    <Text style={s.cardVendorLink} numberOfLines={1}>{item.vendorName}</Text>
+                  </TouchableOpacity>
+                ) : item.vendorName ? (
                   <Text style={s.cardVendor} numberOfLines={1}>{item.vendorName}</Text>
-                )}
+                ) : null}
                 <View style={s.cardBottom}>
                   {item.originalPrice && Number(item.originalPrice) > item.price ? (
                     <View style={s.priceRow}>
@@ -649,6 +664,8 @@ const s = StyleSheet.create({
   cardMeta:  { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 2, gap: 8 },
   cardName:  { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", color: C.text },
   cardVendor: { fontSize: 12, fontFamily: "Inter_400Regular", color: C.textMuted, marginBottom: 4 },
+  vendorLinkRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 },
+  cardVendorLink: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: C.primary },
   cardBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   priceRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
   cardPrice: { fontSize: 14, fontFamily: "Inter_700Bold", color: C.primary },

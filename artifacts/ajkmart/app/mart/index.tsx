@@ -297,6 +297,19 @@ const ProductCard = React.memo(function ProductCard({ product }: { product: Mart
       <View style={styles.productBody}>
         <Text style={styles.productName} numberOfLines={2}>{product?.name ?? "—"}</Text>
         {product?.unit && <Text style={styles.productUnit}>{product.unit}</Text>}
+        {product.vendorId && (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              router.push({ pathname: "/mart/store/[id]", params: { id: product.vendorId! } });
+            }}
+            style={styles.visitStoreLink}
+          >
+            <Ionicons name="storefront-outline" size={11} color={C.primary} />
+            <Text style={styles.visitStoreTxt}>Visit Store</Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.productFooter}>
           <View>
             <Text style={styles.productPrice}>Rs. {product?.price ?? 0}</Text>
@@ -634,7 +647,9 @@ const styles = StyleSheet.create({
   discountTxt: { ...Typ.tiny, color: C.textInverse },
   productBody: { padding: 12 },
   productName: { ...Typ.buttonSmall, color: C.text, marginBottom: 3, minHeight: 34 },
-  productUnit: { ...Typ.small, color: C.textMuted, marginBottom: 8 },
+  productUnit: { ...Typ.small, color: C.textMuted, marginBottom: 4 },
+  visitStoreLink: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 6 },
+  visitStoreTxt: { ...Typ.tiny, color: C.primary, fontFamily: Font.semiBold },
   productFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
   productPrice: { ...Typ.h3, fontSize: 16, color: C.text },
   productOrigPrice: { ...Typ.small, color: C.textMuted, textDecorationLine: "line-through" },

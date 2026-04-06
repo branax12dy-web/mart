@@ -10,7 +10,7 @@ import { PullToRefresh } from "../components/PullToRefresh";
 import { ImageUploader } from "../components/ImageUploader";
 import { fc, CARD, INPUT, SELECT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, LABEL, errMsg } from "../lib/ui";
 
-const EMPTY = { name:"", description:"", price:"", originalPrice:"", category:"", unit:"", stock:"", image:"", type:"mart" };
+const EMPTY = { name:"", description:"", price:"", originalPrice:"", category:"", unit:"", stock:"", image:"", type:"mart", videoUrl:"" };
 const EMPTY_ROW = { name:"", price:"", description:"", image:"", category:"", unit:"", stock:"", type:"mart" };
 const CATS  = ["food","grocery","bakery","pharmacy","electronics","clothing","mart","general"];
 const TYPES = ["mart","food","pharmacy","parcel"];
@@ -33,8 +33,42 @@ export default function Products() {
   const [form, setForm]           = useState({ ...EMPTY });
   const [bulkRows, setBulkRows]   = useState([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
   const [toast, setToast]         = useState("");
+  const [videoUploading, setVideoUploading] = useState(false);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
   const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleVideoUpload = async (file: File) => {
+    if (file.size > 50 * 1024 * 1024) { showToast("❌ Video must be under 50MB"); return; }
+    const allowed = ["video/mp4", "video/quicktime", "video/webm"];
+    if (!allowed.includes(file.type)) { showToast("❌ Only MP4, MOV, or WebM videos allowed"); return; }
+    try {
+      const duration = await getVideoDuration(file);
+      if (duration > 60) { showToast(`❌ Video must be 60 seconds or less (yours is ${Math.ceil(duration)}s)`); return; }
+    } catch {}
+    setVideoUploading(true);
+    try {
+      const result = await api.uploadVideo(file);
+      f("videoUrl", result.url);
+      showToast("✅ Video uploaded!");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Video upload failed";
+      showToast("❌ " + msg);
+    }
+    setVideoUploading(false);
+  };
+
+  function getVideoDuration(file: File): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(video.src);
+        resolve(video.duration);
+      };
+      video.onerror = () => reject(new Error("Cannot read video"));
+      video.src = URL.createObjectURL(file);
+    });
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["vendor-products", search, filterCat],
@@ -60,14 +94,14 @@ export default function Products() {
   const createMut = useMutation({
     mutationFn: () => {
       if (totalProductCount >= maxItems) throw new Error(`Product limit of ${maxItems} reached. Delete existing products to add new ones.`);
-      return api.createProduct({ ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined, stock: form.stock !== "" ? Number(form.stock) : undefined });
+      return api.createProduct({ ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined, stock: form.stock !== "" ? Number(form.stock) : undefined, videoUrl: form.videoUrl || undefined });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); qc.invalidateQueries({ queryKey: ["vendor-products-all"] }); setShowAdd(false); setForm({ ...EMPTY }); showToast("✅ Product added!"); },
     onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
   const updateMut = useMutation({
-    mutationFn: () => api.updateProduct(editProd.id, { ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : null, stock: form.stock !== "" ? Number(form.stock) : null }),
+    mutationFn: () => api.updateProduct(editProd.id, { ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : null, stock: form.stock !== "" ? Number(form.stock) : null, videoUrl: form.videoUrl || null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["vendor-products"] }); qc.invalidateQueries({ queryKey: ["vendor-products-all"] }); setEditProd(null); setShowAdd(false); showToast("✅ Updated!"); },
     onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
@@ -148,10 +182,10 @@ export default function Products() {
     onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
-  interface Product { id: string; name: string; description?: string | null; price: number; originalPrice?: number | null; category?: string | null; unit?: string | null; stock?: number | null; image?: string | null; type?: string | null; inStock?: boolean }
+  interface Product { id: string; name: string; description?: string | null; price: number; originalPrice?: number | null; category?: string | null; unit?: string | null; stock?: number | null; image?: string | null; videoUrl?: string | null; type?: string | null; inStock?: boolean }
   const openEdit = (p: Product) => {
     setEditProd(p);
-    setForm({ name: p.name, description: p.description||"", price: String(p.price), originalPrice: p.originalPrice ? String(p.originalPrice) : "", category: p.category||"", unit: p.unit||"", stock: p.stock != null ? String(p.stock) : "", image: p.image||"", type: p.type||"mart" });
+    setForm({ name: p.name, description: p.description||"", price: String(p.price), originalPrice: p.originalPrice ? String(p.originalPrice) : "", category: p.category||"", unit: p.unit||"", stock: p.stock != null ? String(p.stock) : "", image: p.image||"", type: p.type||"mart", videoUrl: p.videoUrl||"" });
     setShowAdd(true);
   };
   const closeForm = () => { setShowAdd(false); setEditProd(null); setForm({ ...EMPTY }); };
@@ -222,6 +256,61 @@ export default function Products() {
                 label={T("imageUrlLabel")}
                 placeholder="https://..."
               />
+            </div>
+            <div className={`${CARD} p-4 space-y-3`}>
+              <label className={LABEL}>Upload Video (optional, ≤60s)</label>
+              {form.videoUrl ? (
+                <div className="space-y-2">
+                  <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
+                    <video
+                      src={form.videoUrl}
+                      className="w-full h-full object-contain"
+                      controls
+                      muted
+                      playsInline
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <label className="flex-1 h-9 bg-orange-50 text-orange-600 font-bold rounded-xl text-sm flex items-center justify-center gap-1.5 cursor-pointer android-press">
+                      <span>🔄 Replace</span>
+                      <input
+                        type="file"
+                        accept="video/mp4,video/quicktime,video/webm"
+                        className="hidden"
+                        onChange={e => { const file = e.target.files?.[0]; if (file) handleVideoUpload(file); e.target.value = ""; }}
+                      />
+                    </label>
+                    <button
+                      onClick={() => f("videoUrl", "")}
+                      className="flex-1 h-9 bg-red-50 text-red-500 font-bold rounded-xl text-sm android-press"
+                    >
+                      🗑️ Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${videoUploading ? "border-orange-300 bg-orange-50" : "border-gray-200 hover:border-orange-300 hover:bg-orange-50/50"}`}>
+                  {videoUploading ? (
+                    <>
+                      <div className="w-8 h-8 border-3 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-sm font-semibold text-orange-600">Uploading video...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-2xl">🎬</span>
+                      <span className="text-sm font-semibold text-gray-600">Tap to upload a product video</span>
+                      <span className="text-xs text-gray-400">MP4, MOV, or WebM · Max 50MB</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="video/mp4,video/quicktime,video/webm"
+                    className="hidden"
+                    disabled={videoUploading}
+                    onChange={e => { const file = e.target.files?.[0]; if (file) handleVideoUpload(file); e.target.value = ""; }}
+                  />
+                </label>
+              )}
             </div>
             <div className="flex gap-3">
               <button onClick={closeForm} className={BTN_SECONDARY}>Cancel</button>

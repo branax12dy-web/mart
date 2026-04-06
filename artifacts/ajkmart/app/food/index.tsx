@@ -342,7 +342,7 @@ function FoodScreenInner() {
                 const isOpen = r.storeIsOpen !== false;
                 return (
                   <TouchableOpacity key={r.id} activeOpacity={0.75}
-                    onPress={() => router.push({ pathname: "/food/restaurant/[id]", params: { id: r.id } })}
+                    onPress={() => router.push({ pathname: "/food/store/[id]", params: { id: r.id } })}
                     style={{ width: 150, borderRadius: 14, backgroundColor: C.surface, overflow: "hidden", shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}
                     accessibilityRole="button" accessibilityLabel={name}
                   >

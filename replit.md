@@ -1,5 +1,22 @@
 # AJKMart Super App — Workspace
 
+### Vendor Store Pages & Product Videos
+
+#### Product Videos (TikTok Shop-style)
+- **Schema**: `videoUrl` nullable text column added to `productsTable` in `lib/db/src/schema/products.ts` (DB column: `video_url`)
+- **API**: `POST /uploads/video` multipart endpoint (50MB max, MP4/MOV/WebM) in `artifacts/api-server/src/routes/uploads.ts`; vendor product create/bulk-create/PATCH accept `videoUrl` in `artifacts/api-server/src/routes/vendor.ts`
+- **Vendor App**: Video upload UI with file picker, `<video>` preview, replace/remove in `artifacts/vendor-app/src/pages/Products.tsx`; `api.uploadVideo(file)` in `artifacts/vendor-app/src/lib/api.ts`
+- **Customer App**: Product detail carousel (`artifacts/ajkmart/app/product/[id].tsx`) shows video as first slide using `expo-av` `<Video>` component with play/pause + mute controls; mixed `mediaItems[]` array (video + images)
+
+#### Vendor Store Pages (Alibaba-style)
+- **Food**: `/food/store/[id]` (`artifacts/ajkmart/app/food/store/[id].tsx`) — Redirect to existing `/food/restaurant/[id]` (menu layout)
+- **Mart**: `/mart/store/[id]` (`artifacts/ajkmart/app/mart/store/[id].tsx`) — Dedicated branded page with hero banner, store info, open/closed badge, rating, delivery time, announcement, category chips, search, 2-column product grid with add-to-cart
+- **API**: Uses `GET /vendors/:id/store` from `artifacts/api-server/src/routes/public-vendors.ts`
+
+#### Store Navigation Entry Points
+- Mart product cards: "Visit Store" link navigates to `/mart/store/[vendorId]` (`artifacts/ajkmart/app/mart/index.tsx`)
+- Product detail: "Sold by" vendor section navigates to appropriate store page based on product type (`/food/store/[id]` or `/mart/store/[id]`)
+
 ### Collapsible Header System
 - **`artifacts/ajkmart/hooks/useCollapsibleHeader.ts`**: Reusable hook that tracks scroll position via `Animated.event` and provides interpolated values for header collapse animations (opacity, translateY, maxHeight for search bars, subtitles, and stats rows). Configurable expanded/collapsed heights and scroll thresholds.
 - Applied to: Home (search bar collapses), Food/Mart/Pharmacy (subtitle + search bar collapse), Orders (subtitle + stats row collapse). Wallet/Cart/ScreenHeader/Product detail received static spacing tightening.

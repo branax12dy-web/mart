@@ -42,9 +42,70 @@ import {
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { Video, ResizeMode, type AVPlaybackStatus } from "expo-av";
+
 const C = Colors.light;
 const { width: SCREEN_W } = Dimensions.get("window");
 const IMAGE_H = SCREEN_W * 0.85;
+
+function InlineVideoPlayer({ url, width, height, isActive }: { url: string; width: number; height: number; isActive: boolean }) {
+  const videoRef = useRef<Video>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+
+  useEffect(() => {
+    if (!isActive && videoRef.current) {
+      videoRef.current.pauseAsync().catch(() => {});
+      setIsPlaying(false);
+    }
+  }, [isActive]);
+
+  const togglePlay = useCallback(async () => {
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      await videoRef.current.pauseAsync();
+      setIsPlaying(false);
+    } else {
+      await videoRef.current.playAsync();
+      setIsPlaying(true);
+    }
+  }, [isPlaying]);
+
+  return (
+    <View style={{ width, height, backgroundColor: "#000" }}>
+      <Video
+        ref={videoRef}
+        source={{ uri: url }}
+        style={{ width, height }}
+        resizeMode={ResizeMode.CONTAIN}
+        shouldPlay={isActive}
+        isMuted={isMuted}
+        isLooping
+        onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
+          if (status.isLoaded) {
+            setIsPlaying(status.isPlaying);
+          }
+        }}
+      />
+      <View style={{ position: "absolute", bottom: 12, left: 12, right: 12, flexDirection: "row", justifyContent: "space-between" }}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={togglePlay}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center" }}
+        >
+          <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setIsMuted(!isMuted)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center" }}
+        >
+          <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
 function StarRating({ rating, size = 14 }: { rating: number; size?: number }) {
   const stars = [];
@@ -539,13 +600,21 @@ function ProductDetailScreenInner() {
     ? Math.round(((origPrice - price) / origPrice) * 100)
     : 0;
 
+  const videoUrl = product?.videoUrl || null;
+
   const images: string[] = [];
   if (product?.image) images.push(product.image);
-  if ((product as any)?.images && Array.isArray((product as any).images)) {
-    for (const img of (product as any).images) {
+  const productAny = product as (Product & { images?: string[] }) | undefined;
+  if (productAny?.images && Array.isArray(productAny.images)) {
+    for (const img of productAny.images) {
       if (img && !images.includes(img)) images.push(img);
     }
   }
+
+  type MediaItem = { type: "video"; url: string } | { type: "image"; url: string };
+  const mediaItems: MediaItem[] = [];
+  if (videoUrl) mediaItems.push({ type: "video", url: videoUrl });
+  for (const img of images) mediaItems.push({ type: "image", url: img });
 
   const doAdd = useCallback(() => {
     if (!product) return;
@@ -680,7 +749,7 @@ function ProductDetailScreenInner() {
       <FullScreenImageViewer
         visible={showFullScreen}
         images={images}
-        initialIndex={activeImageIndex}
+        initialIndex={Math.max(0, activeImageIndex - (videoUrl ? 1 : 0))}
         onClose={() => setShowFullScreen(false)}
       />
 
@@ -737,10 +806,10 @@ function ProductDetailScreenInner() {
         }
       >
         <View style={styles.imageContainer}>
-          {images.length > 0 ? (
+          {mediaItems.length > 0 ? (
             <FlatList
               ref={heroListRef}
-              data={images}
+              data={mediaItems}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
@@ -748,11 +817,24 @@ function ProductDetailScreenInner() {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / imgW);
                 setActiveImageIndex(idx);
               }}
-              renderItem={({ item, index }) => (
-                <TouchableOpacity activeOpacity={0.7} onPress={() => { setActiveImageIndex(index); setShowFullScreen(true); }}>
-                  <Image source={{ uri: item }} style={{ width: imgW, height: imgH }} resizeMode="cover" />
-                </TouchableOpacity>
-              )}
+              renderItem={({ item: media, index }) => {
+                if (media.type === "video") {
+                  return (
+                    <View style={{ width: imgW, height: imgH, backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}>
+                      <InlineVideoPlayer url={media.url} width={imgW} height={imgH} isActive={activeImageIndex === index} />
+                    </View>
+                  );
+                }
+                return (
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => {
+                    const imageIndex = index - (videoUrl ? 1 : 0);
+                    setActiveImageIndex(index);
+                    setShowFullScreen(true);
+                  }}>
+                    <Image source={{ uri: media.url }} style={{ width: imgW, height: imgH }} resizeMode="cover" />
+                  </TouchableOpacity>
+                );
+              }}
               keyExtractor={(_, i) => String(i)}
             />
           ) : (
@@ -768,10 +850,10 @@ function ProductDetailScreenInner() {
             </LinearGradient>
           )}
 
-          {images.length > 1 && (
+          {mediaItems.length > 1 && (
             <View style={styles.imgCounterBadge}>
-              <Ionicons name="images-outline" size={12} color="#fff" />
-              <Text style={styles.imgCounterTxt}>{activeImageIndex + 1}/{images.length}</Text>
+              <Ionicons name={mediaItems[activeImageIndex]?.type === "video" ? "videocam-outline" : "images-outline"} size={12} color="#fff" />
+              <Text style={styles.imgCounterTxt}>{activeImageIndex + 1}/{mediaItems.length}</Text>
             </View>
           )}
 
@@ -782,9 +864,9 @@ function ProductDetailScreenInner() {
           )}
         </View>
 
-        {images.length > 1 && (
+        {mediaItems.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbStrip}>
-            {images.map((img, i) => (
+            {mediaItems.map((media, i) => (
               <TouchableOpacity
                 key={i}
                 activeOpacity={0.7}
@@ -794,7 +876,13 @@ function ProductDetailScreenInner() {
                 }}
                 style={[styles.thumbWrap, i === activeImageIndex && styles.thumbActive]}
               >
-                <Image source={{ uri: img }} style={styles.thumbImg} resizeMode="cover" />
+                {media.type === "video" ? (
+                  <View style={[styles.thumbImg, { backgroundColor: "#000", alignItems: "center", justifyContent: "center" }]}>
+                    <Ionicons name="play-circle" size={20} color="#fff" />
+                  </View>
+                ) : (
+                  <Image source={{ uri: media.url }} style={styles.thumbImg} resizeMode="cover" />
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -874,7 +962,13 @@ function ProductDetailScreenInner() {
           {product.vendorName && (
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => product.vendorId ? router.push({ pathname: "/vendor/[id]", params: { id: product.vendorId } }) : undefined}
+              onPress={() => {
+                if (!product.vendorId) return;
+                const storePath = productType === "food"
+                  ? "/food/store/[id]"
+                  : "/mart/store/[id]";
+                router.push({ pathname: storePath as "/food/store/[id]" | "/mart/store/[id]", params: { id: product.vendorId } });
+              }}
               style={styles.vendorSection}
               accessibilityRole="button"
               accessibilityLabel={`View ${product.vendorName} store`}

@@ -322,7 +322,7 @@ router.post("/products", async (req, res) => {
     name: body.name, description: body.description || null,
     price: String(body.price), originalPrice: body.originalPrice ? String(body.originalPrice) : null,
     category: body.category || "general", type: body.type || "mart",
-    image: body.image || null, inStock: false,
+    image: body.image || null, videoUrl: body.videoUrl || null, inStock: false,
     stock: body.stock ? Number(body.stock) : null,
     unit: body.unit || null, deliveryTime: body.deliveryTime || null,
     approvalStatus: "pending",
@@ -353,7 +353,7 @@ router.post("/products/bulk", async (req, res) => {
       name: p.name, description: p.description || null,
       price: String(p.price), originalPrice: p.originalPrice ? String(p.originalPrice) : null,
       category: p.category || "general", type: p.type || "mart",
-      image: p.image || null, inStock: false,
+      image: p.image || null, videoUrl: p.videoUrl || null, inStock: false,
       stock: p.stock ? Number(p.stock) : null, unit: p.unit || null,
       approvalStatus: "pending",
     }))
@@ -378,6 +378,7 @@ router.patch("/products/:id", async (req, res) => {
   if (body.inStock     !== undefined) updates.inStock      = body.inStock;
   if (body.stock       !== undefined) updates.stock        = body.stock !== null ? Number(body.stock) : null;
   if (body.image       !== undefined) updates.image        = body.image;
+  if (body.videoUrl    !== undefined) updates.videoUrl     = body.videoUrl || null;
   const [product] = await db.update(productsTable).set(updates).where(and(eq(productsTable.id, req.params["id"]!), eq(productsTable.vendorId, vendorId))).returning();
   if (!product) { sendNotFound(res, "Product not found"); return; }
   sendSuccess(res, { ...product, price: safeNum(product.price) });

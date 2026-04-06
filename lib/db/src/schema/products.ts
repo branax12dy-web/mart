@@ -14,6 +14,7 @@ export const productsTable = pgTable("products", {
   type: text("type").notNull().default("mart"),
   image: text("image"),
   images: text("images").array(),
+  videoUrl: text("video_url"),
   vendorId: text("vendor_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   vendorName: text("vendor_name"),
   rating: decimal("rating", { precision: 3, scale: 1 }).default("4.0"),

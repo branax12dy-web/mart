@@ -1,16 +1,24 @@
 import { Router, type IRouter } from "express";
 import { randomUUID } from "crypto";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import path from "path";
+import os from "os";
 import multer from "multer";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../lib/response.js";
-import { customerAuth, riderAuth } from "../middleware/security.js";
+import { customerAuth, riderAuth, requireRole } from "../middleware/security.js";
+
+const execFileAsync = promisify(execFile);
+const MAX_VIDEO_DURATION_SECS = 60;
 
 const router: IRouter = Router();
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
 
 const prescriptionRefMap = new Map<string, string>();
 
@@ -31,9 +39,29 @@ const upload = multer({
   },
 });
 
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_VIDEO_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_VIDEO_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only MP4, MOV, and WebM videos are allowed"));
+    }
+  },
+});
+
 /* ── Helper: save a buffer and return the public URL ── */
 async function saveBuffer(buffer: Buffer, prefix: string, mimeType: string): Promise<string> {
   const ext = mimeType === "image/png" ? ".png" : mimeType === "image/webp" ? ".webp" : ".jpg";
+  const uniqueName = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
+  await ensureDir();
+  await writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
+  return `/api/uploads/${uniqueName}`;
+}
+
+async function saveVideoBuffer(buffer: Buffer, prefix: string, mimeType: string): Promise<string> {
+  const ext = mimeType === "video/quicktime" ? ".mov" : mimeType === "video/webm" ? ".webm" : ".mp4";
   const uniqueName = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
   await ensureDir();
   await writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
@@ -179,6 +207,80 @@ router.get("/prescription/resolve/:refId", (req, res) => {
     sendNotFound(res, "Reference not found or expired");
   }
 });
+
+/* ── POST /uploads/video — multipart video upload (vendors only) ── */
+router.post(
+  "/video",
+  requireRole("vendor", { vendorApprovalCheck: true }),
+  (req, res, next) => {
+    videoUpload.single("file")(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          sendValidationError(res, "Video too large. Maximum 50MB allowed");
+          return;
+        }
+        sendValidationError(res, err.message);
+        return;
+      }
+      if (err) {
+        sendValidationError(res, err instanceof Error ? err.message : "Upload failed");
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        sendValidationError(res, "No video file uploaded");
+        return;
+      }
+
+      const { mimetype, buffer, originalname } = req.file;
+
+      if (!ALLOWED_VIDEO_TYPES.includes(mimetype)) {
+        sendValidationError(res, "Only MP4, MOV, and WebM videos are allowed");
+        return;
+      }
+
+      const tmpPath = path.join(os.tmpdir(), `upload_${randomUUID()}.tmp`);
+      try {
+        await writeFile(tmpPath, buffer);
+        const { stdout } = await execFileAsync("ffprobe", [
+          "-v", "error",
+          "-show_entries", "format=duration",
+          "-of", "default=noprint_wrappers=1:nokey=1",
+          tmpPath,
+        ]);
+        const duration = parseFloat(stdout.trim());
+        if (isNaN(duration)) {
+          sendValidationError(res, "Could not determine video duration. Please upload a valid video file.");
+          return;
+        }
+        if (duration > MAX_VIDEO_DURATION_SECS) {
+          sendValidationError(res, `Video must be ${MAX_VIDEO_DURATION_SECS} seconds or less. Your video is ${Math.ceil(duration)}s.`);
+          return;
+        }
+      } catch {
+        sendValidationError(res, "Could not verify video duration. Please try a different file or format.");
+        return;
+      } finally {
+        unlink(tmpPath).catch(() => {});
+      }
+
+      const url = await saveVideoBuffer(buffer, "video", mimetype);
+
+      sendCreated(res, {
+        url,
+        filename: originalname || path.basename(url),
+        size: buffer.length,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Upload failed";
+      sendError(res, msg);
+    }
+  },
+);
 
 export { prescriptionRefMap };
 

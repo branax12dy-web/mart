@@ -268,6 +268,24 @@ export const api = {
     });
   },
 
+  uploadVideo: async (file: File): Promise<{ url: string }> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${BASE}/uploads/video`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Upload failed" }));
+      throw new Error(err.error || "Video upload failed");
+    }
+    const json = await res.json();
+    const data = json.data !== undefined ? json.data : json;
+    return { url: data.url };
+  },
+
   /* Delivery Access */
   getDeliveryAccessStatus: () => apiFetch("/vendor/delivery-access/status"),
   requestDeliveryAccess:   (data: { serviceType?: string; reason?: string }) => apiFetch("/vendor/delivery-access/request", { method: "POST", body: JSON.stringify(data) }),
