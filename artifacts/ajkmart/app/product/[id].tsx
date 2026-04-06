@@ -379,7 +379,10 @@ function ProductDetailScreenInner() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [showWriteReview, setShowWriteReview] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [descNeedsTruncation, setDescNeedsTruncation] = useState(false);
   const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heroListRef = useRef<FlatList>(null);
   const scale = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -388,6 +391,13 @@ function ProductDetailScreenInner() {
 
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+    setDescExpanded(false);
+    setDescNeedsTruncation(false);
+    setAdded(false);
+  }, [id]);
 
   useEffect(() => {
     if (isLoggedIn && id) {
@@ -675,6 +685,7 @@ function ProductDetailScreenInner() {
         <View style={styles.imageContainer}>
           {images.length > 0 ? (
             <FlatList
+              ref={heroListRef}
               data={images}
               horizontal
               pagingEnabled
@@ -704,21 +715,66 @@ function ProductDetailScreenInner() {
           )}
 
           {images.length > 1 && (
-            <View style={styles.dotRow}>
-              {images.map((_, i) => (
-                <View key={i} style={[styles.dot, i === activeImageIndex && styles.dotActive]} />
-              ))}
+            <View style={styles.imgCounterBadge}>
+              <Ionicons name="images-outline" size={12} color="#fff" />
+              <Text style={styles.imgCounterTxt}>{activeImageIndex + 1}/{images.length}</Text>
             </View>
           )}
 
           {discount > 0 && (
             <View style={styles.discountBadge}>
-              <Text style={styles.discountTxt}>{discount}% OFF</Text>
+              <Text style={styles.discountTxt}>-{discount}%</Text>
             </View>
           )}
         </View>
 
+        {images.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbStrip}>
+            {images.map((img, i) => (
+              <TouchableOpacity
+                key={i}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setActiveImageIndex(i);
+                  heroListRef.current?.scrollToIndex({ index: i, animated: true });
+                }}
+                style={[styles.thumbWrap, i === activeImageIndex && styles.thumbActive]}
+              >
+                <Image source={{ uri: img }} style={styles.thumbImg} resizeMode="cover" />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
         <View style={styles.contentContainer}>
+          <View style={styles.priceBlock}>
+            <View style={styles.priceMainRow}>
+              <Text style={styles.priceCurrency}>Rs.</Text>
+              <Text style={styles.priceAmount}>{price.toLocaleString()}</Text>
+              {origPrice > price && (
+                <Text style={styles.origPrice}>Rs. {origPrice.toLocaleString()}</Text>
+              )}
+              {discount > 0 && (
+                <View style={styles.saveBadge}>
+                  <Text style={styles.saveBadgeTxt}>Save Rs. {(origPrice - price).toLocaleString()}</Text>
+                </View>
+              )}
+            </View>
+            {(product.rating != null && product.rating > 0) ? (
+              <View style={styles.ratingSection}>
+                <StarRating rating={product.rating} />
+                <Text style={styles.ratingNum}>{product.rating.toFixed(1)}</Text>
+                {product.reviewCount != null && product.reviewCount > 0 && (
+                  <Text style={styles.reviewCount}>{product.reviewCount} reviews</Text>
+                )}
+                <View style={styles.ratingDot} />
+                <Text style={styles.soldCount}>{Math.max(product.reviewCount ?? 0, 10)}+ sold</Text>
+              </View>
+            ) : (
+              <Text style={[styles.reviewCount, { marginTop: 4 }]}>New arrival</Text>
+            )}
+          </View>
+
           <View style={styles.titleRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.productName}>{product.name}</Text>
@@ -735,25 +791,6 @@ function ProductDetailScreenInner() {
               </View>
             )}
           </View>
-
-          <View style={styles.priceRow}>
-            <Text style={styles.price}>Rs. {price.toLocaleString()}</Text>
-            {origPrice > price && (
-              <Text style={styles.origPrice}>Rs. {origPrice.toLocaleString()}</Text>
-            )}
-          </View>
-
-          {(product.rating != null && product.rating > 0) ? (
-            <View style={styles.ratingSection}>
-              <StarRating rating={product.rating} />
-              <Text style={styles.ratingNum}>{product.rating.toFixed(1)}</Text>
-              {product.reviewCount != null && product.reviewCount > 0 && (
-                <Text style={styles.reviewCount}>({product.reviewCount} reviews)</Text>
-              )}
-            </View>
-          ) : (
-            <Text style={[styles.reviewCount, { marginTop: 4 }]}>No ratings yet</Text>
-          )}
 
           {variants && variants.length > 0 && (
             <View style={variantStyles.section}>
@@ -802,8 +839,35 @@ function ProductDetailScreenInner() {
             <>
               <View style={styles.divider} />
               <View style={styles.descSection}>
-                <Text style={styles.sectionTitle}>Description</Text>
-                <Text style={styles.descText}>{product.description}</Text>
+                <View style={styles.descHeader}>
+                  <View style={styles.descIconWrap}>
+                    <Ionicons name="document-text-outline" size={16} color={C.primary} />
+                  </View>
+                  <Text style={styles.sectionTitle}>Product Description</Text>
+                </View>
+                <View style={styles.descBody}>
+                  <Text
+                    style={styles.descText}
+                    numberOfLines={descExpanded ? undefined : 4}
+                    onTextLayout={(e) => {
+                      if (!descExpanded && e.nativeEvent.lines.length > 4) {
+                        setDescNeedsTruncation(true);
+                      }
+                    }}
+                  >
+                    {product.description}
+                  </Text>
+                  {(descNeedsTruncation || (product.description && product.description.length > 200)) && (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => setDescExpanded(!descExpanded)}
+                      style={styles.readMoreBtn}
+                    >
+                      <Text style={styles.readMoreTxt}>{descExpanded ? "Show Less" : "Read More"}</Text>
+                      <Ionicons name={descExpanded ? "chevron-up" : "chevron-down"} size={14} color={C.primary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </>
           )}
@@ -811,7 +875,12 @@ function ProductDetailScreenInner() {
           <View style={styles.divider} />
 
           <View style={styles.specsSection}>
-            <Text style={styles.sectionTitle}>Product Details</Text>
+            <View style={styles.descHeader}>
+              <View style={[styles.descIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                <Ionicons name="list-outline" size={16} color={C.amber} />
+              </View>
+              <Text style={styles.sectionTitle}>Product Details</Text>
+            </View>
             <View style={styles.specGrid}>
               <View style={styles.specItem}>
                 <Ionicons name="pricetag-outline" size={16} color={C.primary} />
@@ -850,7 +919,12 @@ function ProductDetailScreenInner() {
 
           <View style={styles.reviewsSection}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <Text style={styles.sectionTitle}>Ratings & Reviews</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={[styles.descIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                  <Ionicons name="star-outline" size={16} color={C.amber} />
+                </View>
+                <Text style={styles.sectionTitle}>Ratings & Reviews</Text>
+              </View>
               {!isLoggedIn ? (
                 <TouchableOpacity activeOpacity={0.7}
                   onPress={() => router.push("/auth")}
@@ -933,7 +1007,12 @@ function ProductDetailScreenInner() {
             <>
               <View style={styles.divider} />
               <View style={styles.relatedSection}>
-                <Text style={styles.sectionTitle}>You May Also Like</Text>
+                <View style={styles.descHeader}>
+                  <View style={[styles.descIconWrap, { backgroundColor: C.successSoft }]}>
+                    <Ionicons name="sparkles-outline" size={16} color={C.emerald} />
+                  </View>
+                  <Text style={styles.sectionTitle}>You May Also Like</Text>
+                </View>
                 <View style={styles.relatedGrid}>
                   {relatedProducts.map(rp => {
                     const rpOrig = Number(rp.originalPrice) || 0;
@@ -1091,51 +1170,70 @@ const styles = StyleSheet.create({
   },
   cartBadgeTxt: { ...Typ.tiny, color: C.textInverse },
 
-  imageContainer: { position: "relative" },
+  imageContainer: { position: "relative", backgroundColor: C.surfaceSecondary },
   placeholderImage: { width: SCREEN_W, alignItems: "center", justifyContent: "center" },
   placeholderIconWrap: { width: 80, height: 80, borderRadius: 24, backgroundColor: "rgba(0,0,0,0.05)", alignItems: "center", justifyContent: "center", marginBottom: 8 },
   placeholderText: { fontFamily: Font.medium, fontSize: 13, color: C.textMuted },
-  dotRow: { position: "absolute", bottom: 16, alignSelf: "center", flexDirection: "row", gap: 6 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.overlayLight50 },
-  dotActive: { backgroundColor: C.surface, width: 20 },
-  discountBadge: {
-    position: "absolute", bottom: 24, left: 16, backgroundColor: C.danger,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12,
+  imgCounterBadge: {
+    position: "absolute", bottom: 16, right: 16,
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
   },
-  discountTxt: { ...Typ.buttonSmall, fontFamily: Font.bold, color: C.textInverse },
+  imgCounterTxt: { fontFamily: Font.semiBold, fontSize: 12, color: "#fff" },
+  discountBadge: {
+    position: "absolute", top: 16, left: 16, backgroundColor: C.danger,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+  },
+  discountTxt: { fontFamily: Font.bold, fontSize: 14, color: C.textInverse },
 
-  contentContainer: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -24, paddingTop: 24, paddingHorizontal: 16 },
+  thumbStrip: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.surface },
+  thumbWrap: { width: 56, height: 56, borderRadius: 10, overflow: "hidden", borderWidth: 2, borderColor: "transparent" },
+  thumbActive: { borderColor: C.primary },
+  thumbImg: { width: "100%", height: "100%" },
+
+  contentContainer: { backgroundColor: C.surface, paddingHorizontal: 16 },
+
+  priceBlock: { backgroundColor: C.primarySoft, marginHorizontal: -16, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14 },
+  priceMainRow: { flexDirection: "row", alignItems: "baseline", gap: 4, flexWrap: "wrap" },
+  priceCurrency: { fontFamily: Font.semiBold, fontSize: 16, color: C.primary },
+  priceAmount: { fontFamily: Font.bold, fontSize: 30, color: C.primary, letterSpacing: -0.5 },
+  origPrice: { fontFamily: Font.regular, fontSize: 15, color: C.textMuted, textDecorationLine: "line-through", marginLeft: 8 },
+  saveBadge: { backgroundColor: C.danger, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginLeft: 8 },
+  saveBadgeTxt: { fontFamily: Font.bold, fontSize: 11, color: C.textInverse },
+
+  ratingSection: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  ratingNum: { fontFamily: Font.bold, fontSize: 13, color: C.amberDark },
+  reviewCount: { fontFamily: Font.regular, fontSize: 13, color: C.textSecondary },
+  ratingDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: C.textMuted },
+  soldCount: { fontFamily: Font.regular, fontSize: 13, color: C.textSecondary },
 
   titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 8 },
-  productName: { ...Typ.h2, color: C.text, lineHeight: 28 },
-  unit: { ...Typ.body, fontSize: 13, color: C.textSecondary, marginTop: 4 },
+  productName: { ...Typ.h2, color: C.text, lineHeight: 28, fontSize: 18 },
+  unit: { fontFamily: Font.regular, fontSize: 13, color: C.textSecondary, marginTop: 4 },
   stockBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.successSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   stockDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.success },
   stockTxt: { ...Typ.smallMedium, fontFamily: Font.semiBold, color: C.emerald },
 
-  priceRow: { flexDirection: "row", alignItems: "baseline", gap: 10, marginBottom: 12 },
-  price: { ...Typ.h1, fontSize: 26, color: C.primary },
-  origPrice: { ...Typ.body, fontSize: 16, color: C.textMuted, textDecorationLine: "line-through" },
+  divider: { height: 8, backgroundColor: C.background, marginHorizontal: -16, marginVertical: 0 },
 
-  ratingSection: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  ratingNum: { ...Typ.body, fontFamily: Font.bold, color: C.amberDark },
-  reviewCount: { ...Typ.body, fontSize: 13, color: C.textMuted },
-
-  divider: { height: 1, backgroundColor: C.border, marginVertical: 16 },
-
-  vendorSection: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 4 },
-  vendorIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" },
+  vendorSection: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
+  vendorIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" },
   vendorLabel: { ...Typ.caption, color: C.textMuted },
   vendorName: { ...Typ.button, color: C.text, marginTop: 1 },
   deliveryBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.successSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   deliveryTime: { ...Typ.smallMedium, fontFamily: Font.semiBold, color: C.emerald },
 
-  descSection: {},
-  sectionTitle: { ...Typ.price, color: C.text, marginBottom: 12 },
-  descText: { ...Typ.body, color: C.textSecondary, lineHeight: 22 },
+  descSection: { paddingVertical: 14 },
+  descHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  descIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" },
+  sectionTitle: { fontFamily: Font.bold, fontSize: 15, color: C.text },
+  descBody: {},
+  descText: { fontFamily: Font.regular, fontSize: 14, color: C.textSecondary, lineHeight: 24 },
+  readMoreBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 10, marginTop: 4 },
+  readMoreTxt: { fontFamily: Font.semiBold, fontSize: 13, color: C.primary },
 
-  specsSection: {},
-  specGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  specsSection: { paddingVertical: 14 },
+  specGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   specItem: {
     flexDirection: "row", alignItems: "center", gap: 10,
     width: "47%", backgroundColor: C.surfaceSecondary, borderRadius: 12,
@@ -1144,7 +1242,7 @@ const styles = StyleSheet.create({
   specLabel: { ...Typ.small, color: C.textMuted },
   specValue: { ...Typ.buttonSmall, color: C.text, marginTop: 1 },
 
-  reviewsSection: {},
+  reviewsSection: { paddingVertical: 14 },
   ratingOverview: { flexDirection: "row", gap: 20, alignItems: "center" },
   ratingBig: { alignItems: "center", gap: 6 },
   ratingBigNum: { ...Typ.h1, fontSize: 40, color: C.text },
@@ -1155,7 +1253,7 @@ const styles = StyleSheet.create({
   ratingBarTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: C.surfaceSecondary },
   ratingBarFill: { height: 6, borderRadius: 3, backgroundColor: C.gold },
 
-  relatedSection: { marginBottom: 8 },
+  relatedSection: { paddingVertical: 14 },
   relatedGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   relatedCard: {
     width: (SCREEN_W - 32 - 10) / 2, backgroundColor: C.surface, borderRadius: 16,
