@@ -498,7 +498,7 @@ export default function Login() {
   };
 
   const resetForgotPassword = async () => {
-    if (!forgotOtp || forgotOtp.length < 4) { setError("Enter the OTP code"); return; }
+    if (!forgotOtp || forgotOtp.length < 6) { setError("Enter the 6-digit OTP code"); return; }
     if (!forgotNewPwd || forgotNewPwd.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (!/[A-Z]/.test(forgotNewPwd)) { setError("Password must contain an uppercase letter"); return; }
     if (!/[0-9]/.test(forgotNewPwd)) { setError("Password must contain a number"); return; }

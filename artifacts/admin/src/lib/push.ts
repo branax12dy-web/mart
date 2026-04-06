@@ -18,7 +18,7 @@ export async function registerPush(): Promise<void> {
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
 
-    const adminToken = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const adminToken = sessionStorage.getItem("ajkmart_admin_token") ?? "";
     await fetch(`${BASE}/api/push/subscribe`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },

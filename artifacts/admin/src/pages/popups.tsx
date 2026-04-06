@@ -192,7 +192,7 @@ function PopupPreview({ campaign }: { campaign: Partial<typeof EMPTY_FORM & { ti
 
 function getAdminRole(): string {
   try {
-    const token = localStorage.getItem("ajkmart_admin_token");
+    const token = sessionStorage.getItem("ajkmart_admin_token");
     if (!token) return "support";
     const payload = JSON.parse(atob(token.split(".")[1]!));
     return payload.role || "support";

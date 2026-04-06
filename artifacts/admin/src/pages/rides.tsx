@@ -712,7 +712,7 @@ function DispatchMonitor() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
@@ -1510,7 +1510,7 @@ export default function Rides() {
 
   /* ── Real-time ride list sync via Socket.io ── */
   useEffect(() => {
-    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },

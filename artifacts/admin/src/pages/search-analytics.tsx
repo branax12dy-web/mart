@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 function adminHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem("ajkmart_admin_token")}` };
+  return { Authorization: `Bearer ${sessionStorage.getItem("ajkmart_admin_token")}` };
 }
 
 async function apiFetch(path: string) {

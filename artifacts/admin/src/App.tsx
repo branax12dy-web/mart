@@ -68,8 +68,8 @@ queryClient.getQueryCache().subscribe(event => {
     const is401 =
       err?.message?.toLowerCase().includes("unauthorized") ||
       err?.status === 401;
-    if (is401 && localStorage.getItem("ajkmart_admin_token")) {
-      localStorage.removeItem("ajkmart_admin_token");
+    if (is401 && sessionStorage.getItem("ajkmart_admin_token")) {
+      sessionStorage.removeItem("ajkmart_admin_token");
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
       window.location.href = `${base}/login`;
     }
@@ -81,7 +81,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("ajkmart_admin_token");
+    const token = sessionStorage.getItem("ajkmart_admin_token");
     if (!token) {
       setLocation("/login");
     } else {
@@ -105,7 +105,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/">
         {() => {
-          const token = localStorage.getItem("ajkmart_admin_token");
+          const token = sessionStorage.getItem("ajkmart_admin_token");
           if (token) {
             window.location.replace((import.meta.env.BASE_URL?.replace(/\/$/, "") || "") + "/dashboard");
             return null;
@@ -185,7 +185,7 @@ function IntegrationsInit() {
       .catch(() => {});
 
     /* Register admin push when token present */
-    const token = localStorage.getItem("ajkmart_admin_token");
+    const token = sessionStorage.getItem("ajkmart_admin_token");
     if (token) {
       Notification.requestPermission()
         .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })

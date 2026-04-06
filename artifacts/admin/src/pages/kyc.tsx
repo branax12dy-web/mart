@@ -9,7 +9,7 @@ import {
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 function adminHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem("ajkmart_admin_token")}`, "Content-Type": "application/json" };
+  return { Authorization: `Bearer ${sessionStorage.getItem("ajkmart_admin_token")}`, "Content-Type": "application/json" };
 }
 
 const STATUS_CONFIG = {

@@ -85,7 +85,7 @@ export default function SecurityPage() {
   const [disableToken, setDisableToken] = useState("");
   const [mfaLoading,   setMfaLoading]  = useState(false);
 
-  const adminToken  = localStorage.getItem("ajkmart_admin_token") || "";
+  const adminToken  = sessionStorage.getItem("ajkmart_admin_token") || "";
   const apiHeaders  = { "Content-Type": "application/json", "x-admin-token": adminToken };
 
   /* ── Load platform settings ── */

@@ -61,7 +61,7 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
   const [disableToken, setDisableToken] = useState("");
   const [mfaLoading,   setMfaLoading]   = useState(false);
 
-  const adminSecret = localStorage.getItem("ajkmart_admin_token") || "";
+  const adminSecret = sessionStorage.getItem("ajkmart_admin_token") || "";
   const apiHeaders  = { "Content-Type": "application/json", "x-admin-token": adminSecret };
 
   const fetchLiveData = useCallback(async () => {

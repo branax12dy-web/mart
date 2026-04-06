@@ -1,6 +1,18 @@
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
+
+function decodeJwtExp(tok: string): number | null {
+  try {
+    const parts = tok.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = (parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64));
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface AuthUser {
   id: string; phone: string; name?: string; email?: string;
@@ -44,6 +56,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [twoFactorPending, setTwoFactorPending] = useState(false);
   const refreshFailCountRef = useRef(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshingRef = useRef(false);
+
+  const clearRefreshTimer = () => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  };
+
+  const scheduleProactiveRefresh = (tok: string) => {
+    clearRefreshTimer();
+    const exp = decodeJwtExp(tok);
+    if (!exp) return;
+    const refreshIn = Math.max((exp * 1000 - Date.now()) - 60_000, 10_000);
+    refreshTimerRef.current = setTimeout(async () => {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      try {
+        const result = await api.refreshToken();
+        if (result === "refreshed") {
+          const newToken = api.getToken();
+          if (newToken) {
+            setToken(newToken);
+            scheduleProactiveRefresh(newToken);
+          }
+        } else if (result === "auth_failed") {
+          api.clearTokens();
+          setToken(null);
+          setUser(null);
+        }
+      } catch {
+        const currentToken = api.getToken();
+        if (currentToken) scheduleProactiveRefresh(currentToken);
+      } finally {
+        refreshingRef.current = false;
+      }
+    }, refreshIn);
+  };
 
   useEffect((): (() => void) | void => {
     /* Try sessionStorage first (new approach), fall back to localStorage for existing sessions */
@@ -61,11 +112,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUser(u);
       refreshFailCountRef.current = 0;
+      scheduleProactiveRefresh(t);
     }).catch((err: unknown) => {
       if (err instanceof Error && err.name === "AbortError") return;
-      /* If riderAuth middleware returns a structured approval 403, surface the approval
-         state instead of logging the rider out — their token is still valid, they are
-         just awaiting approval or were rejected. */
       const errAny = err as Record<string, unknown>;
       if (errAny.code === "APPROVAL_PENDING") {
         setUser({ id: "", phone: "", isOnline: false, walletBalance: 0, approvalStatus: "pending", stats: { deliveriesToday: 0, earningsToday: 0, totalDeliveries: 0, totalEarnings: 0 } });
@@ -78,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       api.clearTokens();
       setToken(null);
     }).finally(() => setLoading(false));
-    return () => controller.abort();
+    return () => { controller.abort(); clearRefreshTimer(); };
   }, []);
 
   /* Register module-level logout callback so api.ts can trigger logout directly
@@ -103,13 +152,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if ((u.roles || u.role) && !roles.includes("rider")) {
       throw new Error("This app is for riders only");
     }
+    queryClient.clear();
     api.storeTokens(t, refreshToken);
     setToken(t);
     setUser(u);
     refreshFailCountRef.current = 0;
+    scheduleProactiveRefresh(t);
   };
 
   const logout = () => {
+    clearRefreshTimer();
     const refreshTok = api.getRefreshToken();
     if (refreshTok) {
       api.logout(refreshTok).catch((err: Error) => {

@@ -45,7 +45,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey, LANGUAGE_OPTIONS } from "@workspace/i18n";
 import { io, type Socket } from "socket.io-client";
-import { fetcher } from "@/lib/api";
+import { fetcher, isTokenExpired, clearToken, getToken } from "@/lib/api";
 
 type NavGroup = {
   labelKey: TranslationKey;
@@ -159,7 +159,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   });
 
   const [sosCount, setSosCount] = useState(0);
-  const [socketToken, setSocketToken] = useState(() => localStorage.getItem("ajkmart_admin_token") ?? "");
+  const [socketToken, setSocketToken] = useState(() => sessionStorage.getItem("ajkmart_admin_token") ?? "");
   const socketRef = useRef<Socket | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
@@ -183,11 +183,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "ajkmart_admin_token") setSocketToken(e.newValue ?? "");
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    if (isTokenExpired()) {
+      clearToken();
+      setLocation("/login");
+      return;
+    }
   }, []);
 
   useEffect(() => {
@@ -195,7 +195,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       .then((data: { activeCount?: number }) => { if (typeof data.activeCount === "number") setSosCount(data.activeCount); })
       .catch(() => {});
 
-    const getAdminToken = () => localStorage.getItem("ajkmart_admin_token") ?? "";
+    const getAdminToken = () => sessionStorage.getItem("ajkmart_admin_token") ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
@@ -252,7 +252,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   }, [isMobileMenuOpen]);
 
   const handleLogout = () => {
-    localStorage.removeItem("ajkmart_admin_token");
+    clearToken();
     setLocation("/login");
   };
 

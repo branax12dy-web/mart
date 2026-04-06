@@ -789,7 +789,7 @@ export default function LiveRidersMap() {
 
   /* ── Socket.io connection ── */
   useEffect(() => {
-    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
     const socketUrl = window.location.origin;
     const socket = io(socketUrl, {
       path: "/api/socket.io",

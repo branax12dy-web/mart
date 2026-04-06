@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 /* ── API helpers ── */
-const getToken = () => localStorage.getItem("ajkmart_admin_token");
+const getToken = () => sessionStorage.getItem("ajkmart_admin_token");
 const apiBase = () => `${window.location.origin}/api/van`;
 
 async function vanFetch(path: string, opts: RequestInit = {}) {

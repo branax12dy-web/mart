@@ -2,9 +2,40 @@ export const getApiBase = () => {
   return `${window.location.origin}/api/admin`;
 };
 
+const ADMIN_TOKEN_KEY = "ajkmart_admin_token";
+
 export const getToken = () => {
-  return localStorage.getItem("ajkmart_admin_token");
+  return sessionStorage.getItem(ADMIN_TOKEN_KEY);
 };
+
+export const setToken = (token: string) => {
+  sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+};
+
+export const clearToken = () => {
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+};
+
+function decodeJwtExp(tok: string): number | null {
+  try {
+    const parts = tok.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = (parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64));
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isTokenExpired(): boolean {
+  const token = getToken();
+  if (!token) return true;
+  const exp = decodeJwtExp(token);
+  if (!exp) return true;
+  return exp * 1000 < Date.now();
+}
 
 export const uploadAdminImage = async (file: File): Promise<string> => {
   const token = getToken();
@@ -50,13 +81,10 @@ export const fetcher = async (endpoint: string, options: RequestInit = {}) => {
 
   if (!res.ok) {
     if (res.status === 401 && token) {
-      // Only remove the token if this request was sent WITH a token.
-      // This prevents an in-flight pre-login request (sent without a token)
-      // from deleting a token that was stored after the request was sent —
-      // which was causing a race-condition logout right after login.
       const currentToken = getToken();
       if (currentToken === token) {
-        localStorage.removeItem("ajkmart_admin_token");
+        clearToken();
+        window.location.href = import.meta.env.BASE_URL + "login";
       }
     }
     throw new Error(json.error || "An error occurred");

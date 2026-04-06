@@ -22,7 +22,7 @@ type CustomFormType = "user" | "product" | "order" | "promo" | "banner" | null;
 
 export function SystemSection() {
   const { toast } = useToast();
-  const adminSecret = localStorage.getItem("ajkmart_admin_token") || "";
+  const adminSecret = sessionStorage.getItem("ajkmart_admin_token") || "";
 
   const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);

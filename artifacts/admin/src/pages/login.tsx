@@ -5,6 +5,7 @@ import { useAdminLogin } from "@/hooks/use-admin";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { setToken } from "@/lib/api";
 
 export default function Login() {
   const [secret, setSecret] = useState("");
@@ -19,7 +20,7 @@ export default function Login() {
     login.mutate(secret, {
       onSuccess: (data) => {
         if (data.success && data.token) {
-          localStorage.setItem("ajkmart_admin_token", data.token);
+          setToken(data.token);
           toast({ title: "Welcome back", description: "Successfully logged into admin panel." });
           setLocation("/dashboard");
         }

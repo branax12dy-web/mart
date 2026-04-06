@@ -51,7 +51,7 @@ function GatewayCard({
     setTesting(true); setTestResult(null);
     try {
       const r = await fetch(`/api/payments/test-connection/${prefix}`, {
-        headers: { "x-admin-token": localStorage.getItem("ajkmart_admin_token") || "" },
+        headers: { "x-admin-token": sessionStorage.getItem("ajkmart_admin_token") || "" },
       });
       const data = await r.json() as any;
       setTestResult({ ok: data.ok, message: data.message });

@@ -24,11 +24,15 @@ type AuthResponse = {
 };
 
 function getDeviceFingerprint(): string {
+  const stored = sessionStorage.getItem("_dfp");
+  if (stored) return stored;
   const nav = window.navigator;
   const raw = [nav.userAgent, nav.language, screen.width, screen.height, screen.colorDepth, new Date().getTimezoneOffset()].join("|");
   let hash = 0;
   for (let i = 0; i < raw.length; i++) { hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0; }
-  return Math.abs(hash).toString(36);
+  const id = "web_" + Math.abs(hash).toString(36);
+  sessionStorage.setItem("_dfp", id);
+  return id;
 }
 
 async function getCaptchaToken(enabled: boolean, siteKey: string | undefined, action: string): Promise<string | undefined> {

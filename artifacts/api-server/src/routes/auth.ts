@@ -1809,8 +1809,7 @@ router.post("/complete-profile", async (req, res) => {
   }
 
   if (password && password.length >= 8) {
-    const isNewRegistration = !user.name || user.name === "User" || user.name === "Pending";
-    if (user.passwordHash && !isNewRegistration) {
+    if (user.passwordHash) {
       if (!currentPassword) {
         res.status(400).json({ error: "Current password required to change password" }); return;
       }
@@ -2266,8 +2265,8 @@ router.post("/verify-reset-otp", verifyCaptcha, async (req, res) => {
   let { phone, email, otp } = req.body;
   const ip = getClientIp(req);
 
-  if (!otp || typeof otp !== "string") {
-    res.status(400).json({ error: "OTP is required" });
+  if (!otp || typeof otp !== "string" || !/^\d{6}$/.test(otp)) {
+    res.status(400).json({ error: "OTP must be exactly 6 digits" });
     return;
   }
   if (!phone && !email) {
@@ -2327,8 +2326,12 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
   const ip = getClientIp(req);
   const settings = await getCachedSettings();
 
-  if (!otp || !newPassword) {
-    res.status(400).json({ error: "OTP and new password are required" });
+  if (!otp || typeof otp !== "string" || !/^\d{6}$/.test(otp)) {
+    res.status(400).json({ error: "OTP must be exactly 6 digits" });
+    return;
+  }
+  if (!newPassword) {
+    res.status(400).json({ error: "New password is required" });
     return;
   }
 

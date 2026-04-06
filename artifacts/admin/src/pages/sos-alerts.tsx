@@ -319,7 +319,7 @@ export default function SosAlerts() {
 
   /* ── Socket.io real-time connection ── */
   useEffect(() => {
-    const token = localStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
