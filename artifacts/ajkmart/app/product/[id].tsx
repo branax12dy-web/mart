@@ -874,7 +874,7 @@ function ProductDetailScreenInner() {
           {product.vendorName && (
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => product.vendorId ? router.push({ pathname: "/vendor/[id]" as any, params: { id: product.vendorId } }) : undefined}
+              onPress={() => product.vendorId ? router.push({ pathname: "/vendor/[id]", params: { id: product.vendorId } }) : undefined}
               style={styles.vendorSection}
               accessibilityRole="button"
               accessibilityLabel={`View ${product.vendorName} store`}

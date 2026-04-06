@@ -1834,7 +1834,7 @@ function CartScreenInner() {
                   <Text style={{ ...Typ.caption, color: C.red, marginTop: 6, marginLeft: 2 }}>{promoError}</Text>
                 )}
                 <TouchableOpacity activeOpacity={0.7}
-                  onPress={() => router.push({ pathname: "/offers" as any, params: { fromCart: "1" } })}
+                  onPress={() => router.push({ pathname: "/offers", params: { fromCart: "1" } })}
                   style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 10, paddingVertical: 9, borderRadius: 12, borderWidth: 1.5, borderColor: C.primary + "50", backgroundColor: C.primaryLight ?? C.primarySoft }}
                   accessibilityRole="button" accessibilityLabel="Browse all offers and coupons"
                 >

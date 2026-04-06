@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, router, type Href } from "expo-router";
+import { Link, router, type RelativePathString } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -63,13 +63,14 @@ function safeNavigate(route: string) {
     "/mart", "/food", "/pharmacy", "/parcel",
     "/my-reviews",
     "/auth",
+    "/recently-viewed",
   ]);
   if (!route || (!knownRoutes.has(route) && !route.startsWith("/(tabs)") && !route.startsWith("/product/"))) {
     if (__DEV__) console.warn("[Home] safeNavigate: unknown route blocked:", route);
-    router.push("/(tabs)" as Href);
+    router.push("/(tabs)" as RelativePathString);
     return;
   }
-  router.push(route as Href);
+  router.push(route as RelativePathString);
 }
 
 type ViewMode = "grid" | "list";
@@ -87,7 +88,7 @@ function ServiceGridView({ services, isGuest }: { services: ServiceDefinition[];
     <View style={sg.grid}>
       {services.map((svc) => {
         const label = shortLabel[svc.key] ?? svc.label;
-        const href = String(svc.route) as Href;
+        const href = String(svc.route) as RelativePathString;
         return (
           <TouchableOpacity
             key={svc.key}
@@ -113,7 +114,7 @@ function ServiceListView({ services, isGuest }: { services: ServiceDefinition[];
     <View style={sl.list}>
       {services.map((svc) => {
         const label = shortLabel[svc.key] ?? svc.label;
-        const href = String(svc.route) as Href;
+        const href = String(svc.route) as RelativePathString;
         return (
           <TouchableOpacity
             key={svc.key}
@@ -226,7 +227,7 @@ function GuestSignInStrip() {
   const { language } = useLanguage();
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   return (
-    <Link href={"/auth" as Href} asChild>
+    <Link href="/auth" asChild>
       <TouchableOpacity activeOpacity={0.8} style={gi.wrap} accessibilityRole="button">
         <LinearGradient colors={["#0047B3", "#0066FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gi.card}>
           <View style={gi.iconWrap}>
@@ -394,7 +395,7 @@ function ActiveTrackerStrip({ userId, tabBarHeight = 0 }: { userId: string; tabB
   return (
     <View style={tr.wrap}>
       {items.map((item, i) => (
-        <TouchableOpacity activeOpacity={0.7} key={i} onPress={() => router.push(item.route as Href)} accessibilityRole="button" accessibilityLabel={`${item.label}. Tap to track`}>
+        <TouchableOpacity activeOpacity={0.7} key={i} onPress={() => router.push(item.route as RelativePathString)} accessibilityRole="button" accessibilityLabel={`${item.label}. Tap to track`}>
           <LinearGradient colors={[item.c1, item.c2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={tr.card}>
             <View style={tr.iconWrap}>
               <Ionicons name={item.icon} size={18} color="#fff" />
@@ -471,9 +472,9 @@ function DynamicBannerCarousel() {
     bannerThrottleRef.current = now;
 
     if (b.linkType === "product" && b.linkValue) {
-      router.push({ pathname: "/product/[id]", params: { id: b.linkValue } } as Href);
+      router.push({ pathname: "/product/[id]", params: { id: b.linkValue } });
     } else if (b.linkType === "category" && b.linkValue) {
-      router.push({ pathname: "/search", params: { category: b.linkValue } } as Href);
+      router.push({ pathname: "/search", params: { category: b.linkValue } });
     } else if (b.linkType === "service" && b.linkValue) {
       const svc = Object.values(SERVICE_REGISTRY).find((s) => s.key === b.linkValue);
       if (svc) safeNavigate(String(svc.route));
@@ -484,7 +485,7 @@ function DynamicBannerCarousel() {
       if (b.linkValue.startsWith("https://")) {
         Linking.openURL(b.linkValue);
       } else if (b.linkValue.startsWith("/") || b.linkValue.startsWith("/(")) {
-        router.push(b.linkValue as Href);
+        safeNavigate(b.linkValue);
       }
     }
   };
@@ -896,7 +897,7 @@ function TrendingSection() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity activeOpacity={0.7}
-            onPress={() => router.push(`/product/${item.id}` as Href)}
+            onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
             style={tr2.card}
           >
             <View style={{ position: "relative" }}>
@@ -1060,7 +1061,7 @@ function OffersStrip() {
     <View style={os.wrap}>
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => router.push("/offers" as Href)}
+        onPress={() => router.push("/offers")}
         style={os.header}
         accessibilityRole="button"
         accessibilityLabel="View all offers"
@@ -1084,7 +1085,7 @@ function OffersStrip() {
             <TouchableOpacity
               key={cfg.type}
               activeOpacity={0.8}
-              onPress={() => router.push("/offers" as Href)}
+              onPress={() => router.push("/offers")}
               accessibilityRole="button"
               accessibilityLabel={cfg.label}
             >
@@ -1251,7 +1252,7 @@ function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; user
 
   return (
     <TouchableOpacity
-      onPress={() => router.push("/weather" as Href)}
+      onPress={() => router.push("/weather")}
       activeOpacity={0.7}
       style={wS.wrap}
     >
@@ -1448,7 +1449,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <View style={{ flexDirection: "row", gap: 8 }}>
               <TouchableOpacity activeOpacity={0.7}
-                onPress={() => router.push("/cart" as Href)}
+                onPress={() => router.push("/cart")}
                 style={s.iconBtn}
                 accessibilityRole="button"
                 accessibilityLabel={`Cart${itemCount > 0 ? `, ${itemCount} items` : ""}`}
@@ -1467,7 +1468,7 @@ export default function HomeScreen() {
             <View style={s.searchBar}>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => router.push("/search" as Href)}
+                onPress={() => router.push("/search")}
                 style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}
                 accessibilityRole="search"
                 accessibilityLabel={T("search")}
@@ -1478,7 +1479,7 @@ export default function HomeScreen() {
               <View style={s.searchDivider} />
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => router.push("/scan" as Href)}
+                onPress={() => router.push("/scan")}
                 accessibilityRole="button"
                 accessibilityLabel="Scan barcode"
                 hitSlop={8}
@@ -1559,7 +1560,7 @@ export default function HomeScreen() {
 
       {!!user?.id && itemCount > 0 && (
         <TouchableOpacity activeOpacity={0.7}
-          onPress={() => router.push("/cart" as Href)}
+          onPress={() => router.push("/cart")}
           style={[s.cartFab, { bottom: TAB_H + insets.bottom + 16 }]}
           accessibilityRole="button"
           accessibilityLabel={`Cart — ${itemCount} item${itemCount > 1 ? "s" : ""}`}

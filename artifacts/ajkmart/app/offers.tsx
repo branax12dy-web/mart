@@ -284,10 +284,8 @@ export default function OffersScreen() {
   const handleUseNow = useCallback((offer: OfferType) => {
     setSelectedOffer(null);
     if (offer.code) {
-      // @ts-expect-error expo-router typed routes may not include dynamic params
       router.push({ pathname: "/cart", params: { promoCode: offer.code } });
     } else {
-      // @ts-expect-error expo-router typed routes
       router.push("/cart");
     }
   }, []);

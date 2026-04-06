@@ -457,7 +457,7 @@ function MartScreenInner() {
             </TouchableOpacity>
           ))}
           <TouchableOpacity activeOpacity={0.7}
-            onPress={() => router.push({ pathname: "/categories" as any, params: { type: "mart" } })}
+            onPress={() => router.push({ pathname: "/categories", params: { type: "mart" } })}
             style={[styles.catChip, { borderStyle: "dashed" as any }]}
           >
             <Ionicons name="apps-outline" size={14} color={C.primary} />

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
+import { router, type RelativePathString } from "expo-router";
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { Socket } from "socket.io-client";
 import {
@@ -1503,7 +1503,7 @@ function OrdersScreenInner() {
                 {quickServices.map(svc => (
                   <TouchableOpacity activeOpacity={0.7}
                     key={svc.route}
-                    onPress={() => router.push(svc.route as any)}
+                    onPress={() => router.push(svc.route as RelativePathString)}
                     style={[styles.emptyServiceCard, { backgroundColor: svc.bg, borderColor: svc.color + "30" }]}
                     accessibilityRole="button"
                   >
@@ -1593,7 +1593,7 @@ function OrdersScreenInner() {
           <Text style={styles.emptyFilterSub}>{meta.msg}</Text>
           {meta.route && (
             <TouchableOpacity activeOpacity={0.7}
-              onPress={() => router.push(meta.route as any)}
+              onPress={() => router.push(meta.route as RelativePathString)}
               style={[styles.emptyFilterBtn, { backgroundColor: meta.color }]}
               accessibilityRole="button"
             >

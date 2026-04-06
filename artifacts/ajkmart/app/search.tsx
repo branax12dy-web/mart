@@ -86,7 +86,8 @@ export default function UniversalSearchScreen() {
   const T = (key: TranslationKey) => tDual(key, language);
   const params = useLocalSearchParams<{ category?: string; q?: string }>();
 
-  const [query, setQuery] = useState(params.q ? params.q : params.category ? `category:${params.category}` : "");
+  const [query, setQuery] = useState(params.q ?? "");
+  const [activeCategory, setActiveCategory] = useState(params.category ?? "");
   const [sections, setSections] = useState<Array<{ title: string; data: SearchResult[]; type: ServiceKey }>>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
@@ -126,10 +127,14 @@ export default function UniversalSearchScreen() {
   }, []);
 
   useEffect(() => {
-    if (params.category) {
-      fetchResults(params.category, false, 1);
-    }
+    setActiveCategory(params.category ?? "");
   }, [params.category]);
+
+  useEffect(() => {
+    if (activeCategory && !params.q) {
+      fetchResults("", false, 1);
+    }
+  }, [activeCategory]);
 
   useEffect(() => {
     if (params.q) {
@@ -160,19 +165,20 @@ export default function UniversalSearchScreen() {
   ];
 
   const fetchResults = useCallback(async (q: string, fromExplicit = false, page = 1) => {
-    if (!q.trim()) { setSections([]); setTotalPages(0); setCurrentPage(1); return; }
+    const effectiveCategory = filterCategory || activeCategory;
+    if (!q.trim() && !effectiveCategory) { setSections([]); setTotalPages(0); setCurrentPage(1); return; }
     if (page === 1) setLoading(true);
     else setLoadingMore(true);
     setSearchError(false);
-    if (fromExplicit) saveToHistory(q);
+    if (fromExplicit && q.trim()) saveToHistory(q);
 
     try {
       const results = await Promise.allSettled(
         enabledServices.map((svc) =>
           searchProducts({
-            q: q.trim(),
+            q: q.trim() || undefined,
             type: svc,
-            category: filterCategory || params.category || undefined,
+            category: effectiveCategory || undefined,
             sort: sortBy !== "relevance" ? sortBy : undefined,
             minPrice: minPrice || undefined,
             maxPrice: maxPrice || undefined,
@@ -242,13 +248,13 @@ export default function UniversalSearchScreen() {
     }
     setLoading(false);
     setLoadingMore(false);
-  }, [enabledServices.join(","), saveToHistory, sortBy, minPrice, maxPrice, minRating, filterCategory, sections]);
+  }, [enabledServices.join(","), saveToHistory, sortBy, minPrice, maxPrice, minRating, filterCategory, activeCategory, sections]);
 
   const loadNextPage = useCallback(() => {
-    if (currentPage < totalPages && !loadingMore && query.trim()) {
+    if (currentPage < totalPages && !loadingMore && (query.trim() || activeCategory)) {
       fetchResults(query, false, currentPage + 1);
     }
-  }, [currentPage, totalPages, loadingMore, query, fetchResults]);
+  }, [currentPage, totalPages, loadingMore, query, activeCategory, fetchResults]);
 
   const onChangeText = (text: string) => {
     setQuery(text);
@@ -322,6 +328,22 @@ export default function UniversalSearchScreen() {
           )}
         </View>
       </View>
+
+      {activeCategory ? (
+        <View style={s.activeCategoryBar}>
+          <Ionicons name="pricetag-outline" size={14} color={C.primary} />
+          <Text style={s.activeCategoryLabel} numberOfLines={1}>
+            {allCategories.find(c => c.id === activeCategory)?.name ?? activeCategory}
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => { setActiveCategory(""); if (query.trim()) fetchResults(query); else setSections([]); }}
+            hitSlop={8}
+          >
+            <Ionicons name="close-circle" size={16} color={C.primary} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={s.filterBar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingHorizontal: 12 }}>
@@ -429,7 +451,7 @@ export default function UniversalSearchScreen() {
         </View>
       )}
 
-      {!loading && query.trim() && totalResults === 0 && searchError && (
+      {!loading && (query.trim() || activeCategory) && totalResults === 0 && searchError && (
         <View style={s.center}>
           <View style={s.errorIconWrap}>
             <Ionicons name="wifi-outline" size={40} color="#EF4444" />
@@ -443,7 +465,7 @@ export default function UniversalSearchScreen() {
         </View>
       )}
 
-      {!loading && query.trim() && totalResults === 0 && !searchError && (
+      {!loading && (query.trim() || activeCategory) && totalResults === 0 && !searchError && (
         <View style={s.center}>
           <View style={s.emptyIconWrap}>
             <Ionicons name="search-outline" size={40} color={C.textMuted} />
@@ -648,6 +670,9 @@ const s = StyleSheet.create({
   noResultsCtaRow: { flexDirection: "row", gap: 10, marginTop: 12, flexWrap: "wrap", justifyContent: "center" },
   ctaBtn:    { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },
   ctaBtnTxt: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+
+  activeCategoryBar: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: C.primarySoft, borderBottomWidth: 1, borderBottomColor: C.border },
+  activeCategoryLabel: { flex: 1, fontSize: 13, fontFamily: "Inter_600SemiBold", color: C.primary },
 
   historySection: { paddingHorizontal: 16, paddingTop: 16 },
   historyHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },

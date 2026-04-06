@@ -296,7 +296,7 @@ function FoodScreenInner() {
               <Text style={{ fontFamily: Font.bold, fontSize: 17, color: C.text }}>Restaurants</Text>
               <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.textMuted }}>Order from nearby restaurants</Text>
             </View>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/restaurants" as any)}
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/restaurants")}
               style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.amberSoft, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: C.amberBorder ?? C.border }}
               accessibilityRole="button" accessibilityLabel="See all restaurants"
             >
@@ -320,7 +320,7 @@ function FoodScreenInner() {
                 const isOpen = r.storeIsOpen !== false;
                 return (
                   <TouchableOpacity key={r.id} activeOpacity={0.75}
-                    onPress={() => router.push({ pathname: "/food/restaurant/[id]" as any, params: { id: r.id } })}
+                    onPress={() => router.push({ pathname: "/food/restaurant/[id]", params: { id: r.id } })}
                     style={{ width: 150, borderRadius: 14, backgroundColor: C.surface, overflow: "hidden", shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}
                     accessibilityRole="button" accessibilityLabel={name}
                   >
@@ -359,7 +359,7 @@ function FoodScreenInner() {
                 );
               })}
               <TouchableOpacity activeOpacity={0.75}
-                onPress={() => router.push("/restaurants" as any)}
+                onPress={() => router.push("/restaurants")}
                 style={{ width: 100, borderRadius: 14, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: C.amberBorder ?? C.border, borderStyle: "dashed" as any, gap: 6 }}
                 accessibilityRole="button" accessibilityLabel="See all restaurants"
               >
@@ -368,7 +368,7 @@ function FoodScreenInner() {
               </TouchableOpacity>
             </ScrollView>
           ) : (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/restaurants" as any)}
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/restaurants")}
               style={{ marginHorizontal: 16, flexDirection: "row", alignItems: "center", backgroundColor: C.amberSoft, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: C.amberBorder ?? C.border }}
               accessibilityRole="button" accessibilityLabel="Browse restaurants"
             >
@@ -399,7 +399,7 @@ function FoodScreenInner() {
             </TouchableOpacity>
           ))}
           <TouchableOpacity activeOpacity={0.7}
-            onPress={() => router.push({ pathname: "/categories" as any, params: { type: "food" } })}
+            onPress={() => router.push({ pathname: "/categories", params: { type: "food" } })}
             style={[styles.catChip, { borderStyle: "dashed" as any }]}
           >
             <Ionicons name="apps-outline" size={14} color={C.food} />

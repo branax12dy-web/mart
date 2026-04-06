@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, type Href } from "expo-router";
+import { router } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useCallback, useRef } from "react";
 import {
@@ -130,7 +130,7 @@ export default function WishlistScreen() {
           </View>
           <Text style={styles.emptyTitle}>{T("signInForWishlist")}</Text>
           <Text style={styles.emptySub}>{T("saveFavoritesLater")}</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth" as Href)} style={styles.signInBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth")} style={styles.signInBtn}>
             <Text style={styles.signInBtnTxt}>{T("signIn")}</Text>
           </TouchableOpacity>
         </View>
@@ -185,7 +185,7 @@ export default function WishlistScreen() {
             </View>
             <Text style={styles.emptyTitle}>{T("wishlistEmpty")}</Text>
             <Text style={styles.emptySub}>{T("tapHeartToSave")}</Text>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/(tabs)" as Href)} style={styles.browseBtn}>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/(tabs)")} style={styles.browseBtn}>
               <Ionicons name="basket-outline" size={16} color={C.textInverse} />
               <Text style={styles.browseBtnTxt}>{T("browseProducts")}</Text>
             </TouchableOpacity>

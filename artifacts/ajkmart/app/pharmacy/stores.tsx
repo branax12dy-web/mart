@@ -44,7 +44,7 @@ function StoreCard({ store }: { store: PharmacyStore }) {
   return (
     <TouchableOpacity
       activeOpacity={0.7}
-      onPress={() => router.push({ pathname: "/pharmacy/store/[id]" as any, params: { id: store.id } })}
+      onPress={() => router.push({ pathname: "/pharmacy/store/[id]", params: { id: store.id } })}
       style={styles.card}
       accessibilityRole="button"
       accessibilityLabel={`${name} pharmacy`}

@@ -220,7 +220,7 @@ export default function SupportChatScreen() {
           <Ionicons name="lock-closed-outline" size={48} color={C.textMuted} />
           <Text style={styles.emptyTitle}>Sign In Required</Text>
           <Text style={styles.emptySub}>Please sign in to chat with support.</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth" as any)} style={styles.signInBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth")} style={styles.signInBtn}>
             <Text style={styles.signInBtnTxt}>Sign In</Text>
           </TouchableOpacity>
         </View>

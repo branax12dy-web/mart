@@ -1,9 +1,4 @@
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
-import Colors from "@/constants/colors";
-
-const C = Colors.light;
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 /**
  * Redirect shim: `/order?orderId=X&type=Y` → `/orders/X?type=Y`
@@ -12,20 +7,12 @@ const C = Colors.light;
 export default function OrderRedirect() {
   const { orderId, type, action } = useLocalSearchParams<{ orderId?: string; type?: string; action?: string }>();
 
-  useEffect(() => {
-    if (orderId) {
-      const params: Record<string, string> = {};
-      if (type) params["type"] = type;
-      if (action) params["action"] = action;
-      router.replace({ pathname: "/orders/[id]", params: { id: orderId, ...params } });
-    } else {
-      router.replace("/(tabs)/orders");
-    }
-  }, [orderId, type, action]);
+  if (orderId) {
+    const params: Record<string, string> = { id: orderId };
+    if (type) params["type"] = type;
+    if (action) params["action"] = action;
+    return <Redirect href={{ pathname: "/orders/[id]", params }} />;
+  }
 
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: C.background }}>
-      <ActivityIndicator color={C.primary} size="large" />
-    </View>
-  );
+  return <Redirect href="/(tabs)/orders" />;
 }

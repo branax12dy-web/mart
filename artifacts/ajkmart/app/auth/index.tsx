@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, type Href } from "expo-router";
+import { router, type RelativePathString } from "expo-router";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   Animated,
@@ -183,14 +183,14 @@ export default function AuthScreen() {
 
   const navigateAfterLogin = async (role?: string) => {
     if (role && role !== "customer") {
-      router.replace("/auth/wrong-app" as Href);
+      router.replace("/auth/wrong-app");
       return;
     }
     try {
       const returnTo = await AsyncStorage.getItem("@ajkmart_auth_return_to");
       if (returnTo) {
         await AsyncStorage.removeItem("@ajkmart_auth_return_to");
-        router.replace(returnTo as Href);
+        router.replace(returnTo as RelativePathString);
         return;
       }
     } catch {}

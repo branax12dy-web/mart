@@ -884,7 +884,7 @@ function ProfileScreenInner() {
           <Row icon="cube-outline"     label={T("parcelBookings")}  sub={T("courierHistory")}             onPress={() => router.push("/parcel")}          iconColor={C.parcel}   iconBg={C.parcelLight} />
           <Row icon="heart-outline"    label="My Wishlist"          sub="Saved favorites"                 onPress={() => router.push("/wishlist")}         iconColor={C.danger}  iconBg={C.dangerSoft} />
           <Row icon="star-outline"     label={T("myReviews")}       sub={T("customerFeedback")}           onPress={() => router.push("/my-reviews")}      iconColor={C.gold}    iconBg={C.amberBg} />
-          <Row icon="time-outline"     label="Recently Viewed"      sub="Products you browsed"            onPress={() => router.push("/(tabs)" as any)}   iconColor={C.info}    iconBg={C.infoSoft} />
+          <Row icon="time-outline"     label="Recently Viewed"      sub="Products you browsed"            onPress={() => router.push("/recently-viewed")}   iconColor={C.info}    iconBg={C.infoSoft} />
           {platformCfg.profile?.showSavedAddresses !== false && (
             <Row icon="location-outline" label={T("savedAddresses")}  sub={T("savedAddressesSub")}    onPress={() => setShowAddrs(true)}              iconColor={C.mart}    iconBg={C.martLight} />
           )}
@@ -922,7 +922,7 @@ function ProfileScreenInner() {
               <Row icon="chatbubble-ellipses-outline"
                    label={T("liveChatLabel")}
                    sub={platformCfg.supportMsg}
-                   onPress={() => router.push("/chat/support" as any)}
+                   onPress={() => router.push("/chat/support")}
                    iconColor={C.primary} iconBg={C.primarySoft} />
             )}
             {(platformCfg.socialFacebook || platformCfg.socialInstagram) && (
@@ -956,7 +956,7 @@ function ProfileScreenInner() {
             <Row icon="help-circle-outline"
                  label={T("helpFaqsLabel")}
                  sub={T("faqSubLabel")}
-                 onPress={() => router.push("/help/faq" as any)}
+                 onPress={() => router.push("/help/faq")}
                  iconColor={C.info} iconBg={C.infoSoft} />
             <Row icon="star-outline"
                  label="Rate the App"
@@ -969,7 +969,7 @@ function ProfileScreenInner() {
                        return;
                      }
                    } catch {}
-                   router.push("/rate-app" as any);
+                   router.push("/rate-app");
                  }}
                  iconColor={C.gold} iconBg={C.amberBg} />
             {platformCfg.aboutUrl && (

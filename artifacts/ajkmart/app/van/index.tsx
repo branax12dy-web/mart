@@ -122,7 +122,7 @@ export default function VanServiceScreen() {
       const j = await res.json();
       if (!res.ok) { showToast(j.error || "Booking failed.", "error"); return; }
       showToast("Van seat(s) booked successfully!", "success");
-      router.replace("/van/bookings" as any);
+      router.replace("/van/bookings");
     } catch {
       showToast("Booking failed. Please try again.", "error");
     } finally {
@@ -151,7 +151,7 @@ export default function VanServiceScreen() {
             <Text style={ss.headerTitle}>{title}</Text>
             {sub ? <Text style={ss.headerSub}>{sub}</Text> : null}
           </View>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/van/bookings" as any)} hitSlop={12}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/van/bookings")} hitSlop={12}>
             <Ionicons name="calendar-outline" size={22} color="rgba(255,255,255,0.85)" />
           </TouchableOpacity>
         </View>
