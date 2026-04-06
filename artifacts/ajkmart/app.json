@@ -83,6 +83,12 @@
         "projectId": "beda998f-beae-4a9b-9e99-1ccc888fd543"
       }
     },
-    "owner": "topfx75"
+    "owner": "topfx75",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/beda998f-beae-4a9b-9e99-1ccc888fd543"
+    }
   }
 }
