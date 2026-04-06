@@ -123,6 +123,7 @@ function PharmacyScreenInner() {
   const [loadingMeds, setLoadingMeds] = useState(true);
   const [medsError, setMedsError] = useState(false);
   const [activeTab, setActiveTab] = useState(routeCategory || "All");
+  const [sortBy, setSortBy] = useState<string>("default");
   const [search, setSearch] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -250,11 +251,16 @@ function PharmacyScreenInner() {
 
   useEffect(() => { loadMeds(); }, [pharmacyEnabled]);
 
-  const filtered = useMemo(() => medicines.filter(m => {
-    const matchCat = activeTab === "All" || m.category === activeTab;
-    const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  }), [medicines, activeTab, search]);
+  const filtered = useMemo(() => {
+    const list = medicines.filter(m => {
+      const matchCat = activeTab === "All" || m.category === activeTab;
+      const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase());
+      return matchCat && matchSearch;
+    });
+    if (sortBy === "price_asc") list.sort((a, b) => a.price - b.price);
+    else if (sortBy === "price_desc") list.sort((a, b) => b.price - a.price);
+    return list;
+  }, [medicines, activeTab, search, sortBy]);
 
   const cartItems: CartItem[] = medicines
     .filter(m => pharmacyCartItems.some(ci => ci.productId === m.id))
@@ -535,6 +541,21 @@ function PharmacyScreenInner() {
         {categories.map(cat => (
           <TouchableOpacity activeOpacity={0.7} key={cat} onPress={() => setActiveTab(cat)} style={[s.tab, activeTab === cat && s.tabActive]}>
             <Text style={[s.tabTxt, activeTab === cat && s.tabTxtActive]}>{cat}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 8 }}>
+        {([
+          { key: "default", label: T("defaultLabel" as TranslationKey), icon: "swap-vertical-outline" as const },
+          { key: "price_asc", label: T("priceLowHigh" as TranslationKey), icon: "arrow-up-outline" as const },
+          { key: "price_desc", label: T("priceHighLow" as TranslationKey), icon: "arrow-down-outline" as const },
+        ] as const).map(opt => (
+          <TouchableOpacity activeOpacity={0.7} key={opt.key} onPress={() => setSortBy(opt.key)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: sortBy === opt.key ? C.purple : C.surface, borderWidth: 1, borderColor: sortBy === opt.key ? C.purple : C.border }}
+          >
+            <Ionicons name={opt.icon} size={13} color={sortBy === opt.key ? C.textInverse : C.textMuted} />
+            <Text style={{ fontFamily: Font.semiBold, fontSize: 11, color: sortBy === opt.key ? C.textInverse : C.textSecondary }}>{opt.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -838,7 +859,7 @@ const s = StyleSheet.create({
   searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
   searchInput: { flex: 1, ...Typ.body, fontSize: 13, color: C.text, padding: 0 },
 
-  tabsScroll: { backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border },
+  tabsScroll: { backgroundColor: C.surface },
   tabsRow: { paddingHorizontal: 12, gap: 8, alignItems: "center", paddingVertical: 10 },
   tab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 22, backgroundColor: C.purpleBg },
   tabActive: { backgroundColor: C.purple },

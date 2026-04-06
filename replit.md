@@ -276,6 +276,18 @@ The customer app's ride journey screens (RideBookingForm, NegotiationScreen, Rid
 #### B-07: BroadcastRide Skip Busy Riders
 - **`artifacts/api-server/src/routes/rides.ts`**: Added active-ride check in `broadcastRide()` to skip riders who already have an active ride (accepted/arrived/in_transit status).
 
+### Sort/Filter Bar — Completed Changes
+
+#### Mart & Food Screens (Server-Side Sort)
+- **`app/mart/index.tsx`**, **`app/food/index.tsx`**: Horizontal sort chip bar (Default, Price Low→High, Price High→Low, Popular, Top Rated, Newest) below category tabs. Sort passed as `sort` query param to `useGetProducts` for server-side ordering.
+- **API**: `GET /products` accepts `sort` param (`price_asc`, `price_desc`, `popular`, `rating`, `newest`) with `ORDER BY` in SQL query.
+
+#### Pharmacy Screen (Client-Side Sort)
+- **`app/pharmacy/index.tsx`**: Sort chip bar (Default, Price Low→High, Price High→Low) below category tabs, above Rx notice. Client-side sorting in `filtered` useMemo since pharmacy uses `loadMeds` fetch. Default order = newest (API returns by createdAt desc).
+
+#### i18n
+- Sort chip labels (`priceLowHigh`, `priceHighLow`, `popular`, `topRated`, `newest`, `defaultLabel`) added in English, Urdu, and Roman Urdu in `lib/i18n/src/index.ts`.
+
 ### Pull-to-Refresh & UI Polish — Completed Changes
 
 #### PullToRefresh Component (All 3 Web Apps)

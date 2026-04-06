@@ -145,6 +145,7 @@ function FoodScreenInner() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { category: routeCategory } = useLocalSearchParams<{ category?: string }>();
   const [selectedCat, setSelectedCat] = useState<string | undefined>(routeCategory || undefined);
+  const [sortBy, setSortBy] = useState<string>("default");
   const topPad = Math.max(insets.top, 12);
 
   useEffect(() => {
@@ -158,7 +159,7 @@ function FoodScreenInner() {
   }, [search]);
 
   const { data: catData } = useGetCategories({ type: "food" });
-  const { data, isLoading, isError, refetch, isRefetching } = useGetProducts({ type: "food", search: debouncedSearch || undefined, category: selectedCat });
+  const { data, isLoading, isError, refetch, isRefetching } = useGetProducts({ type: "food", search: debouncedSearch || undefined, category: selectedCat, ...(sortBy !== "default" ? { sort: sortBy } : {}) });
 
   const categories = useMemo(() => catData?.categories || [], [catData]);
   const items = useMemo(() => data?.products || [], [data]);
@@ -255,6 +256,24 @@ function FoodScreenInner() {
             <Ionicons name="apps-outline" size={14} color={C.food} />
             <Text style={styles.catChipText}>Browse All</Text>
           </TouchableOpacity>
+        </ScrollView>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 8 }}>
+          {([
+            { key: "default", label: T("defaultLabel" as TranslationKey), icon: "swap-vertical-outline" as const },
+            { key: "price_asc", label: T("priceLowHigh" as TranslationKey), icon: "arrow-up-outline" as const },
+            { key: "price_desc", label: T("priceHighLow" as TranslationKey), icon: "arrow-down-outline" as const },
+            { key: "popular", label: T("popular" as TranslationKey), icon: "flame-outline" as const },
+            { key: "rating", label: T("topRated" as TranslationKey), icon: "star-outline" as const },
+            { key: "newest", label: T("newest" as TranslationKey), icon: "time-outline" as const },
+          ] as const).map(opt => (
+            <TouchableOpacity activeOpacity={0.7} key={opt.key} onPress={() => setSortBy(opt.key)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: sortBy === opt.key ? C.food : C.surface, borderWidth: 1, borderColor: sortBy === opt.key ? C.food : C.border }}
+            >
+              <Ionicons name={opt.icon} size={13} color={sortBy === opt.key ? C.textInverse : C.textMuted} />
+              <Text style={{ fontFamily: Font.semiBold, fontSize: 11, color: sortBy === opt.key ? C.textInverse : C.textSecondary }}>{opt.label}</Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
 
         {isLoading ? (
