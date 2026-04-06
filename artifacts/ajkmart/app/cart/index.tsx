@@ -1830,6 +1830,16 @@ function CartScreenInner() {
                 {promoError && (
                   <Text style={{ ...Typ.caption, color: C.red, marginTop: 6, marginLeft: 2 }}>{promoError}</Text>
                 )}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  // @ts-expect-error expo-router typed routes may not include dynamic params
+                  onPress={() => router.push({ pathname: "/offers", params: { returnTo: "cart" } })}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5, borderColor: C.primary + "50", backgroundColor: C.primaryLight ?? "#EDE9FF" }}
+                >
+                  <Ionicons name="pricetag-outline" size={16} color={C.primary} />
+                  <Text style={{ flex: 1, ...Typ.buttonSmall, fontFamily: Font.semiBold, color: C.primary }}>View Offers & Browse Coupons</Text>
+                  <Ionicons name="chevron-forward" size={15} color={C.primary} />
+                </TouchableOpacity>
               </View>
             )}
           </View>

@@ -28,6 +28,7 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { withServiceGuard } from "@/components/ServiceGuard";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
+import type { Product } from "@workspace/api-client-react";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
@@ -133,6 +134,15 @@ const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
   );
 });
 
+interface RestaurantCard {
+  name: string;
+  category: string;
+  itemCount: number;
+  rating?: number;
+  deliveryTime?: string;
+  image?: string;
+}
+
 function FoodScreenInner() {
   const insets = useSafeAreaInsets();
   const { goBack } = useSmartBack();
@@ -161,10 +171,35 @@ function FoodScreenInner() {
   }, [search]);
 
   const { data: catData } = useGetCategories({ type: "food" });
+  const { data: allFoodData } = useGetProducts({ type: "food" });
   const { data, isLoading, isError, refetch, isRefetching } = useGetProducts({ type: "food", search: debouncedSearch || undefined, category: selectedCat, ...(sortBy !== "default" ? { sort: sortBy } : {}) });
 
   const categories = useMemo(() => catData?.categories || [], [catData]);
   const items = useMemo(() => data?.products || [], [data]);
+
+  const restaurants = useMemo<RestaurantCard[]>(() => {
+    const allProducts: Product[] = allFoodData?.products || [];
+    const map = new Map<string, RestaurantCard>();
+    for (const p of allProducts) {
+      const name = p.vendorName || "Restaurant";
+      if (!map.has(name)) {
+        map.set(name, {
+          name,
+          category: p.category || "food",
+          itemCount: 1,
+          rating: p.rating,
+          deliveryTime: p.deliveryTime,
+          image: p.image,
+        });
+      } else {
+        const entry = map.get(name)!;
+        entry.itemCount += 1;
+        if (!entry.image && p.image) entry.image = p.image;
+        if (!entry.deliveryTime && p.deliveryTime) entry.deliveryTime = p.deliveryTime;
+      }
+    }
+    return Array.from(map.values());
+  }, [allFoodData]);
 
   const handleSelectCat = useCallback((id: string) => {
     setSelectedCat(prev => prev === id ? undefined : id);
@@ -242,6 +277,52 @@ function FoodScreenInner() {
       />
 
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={C.food} />} onScroll={scrollHandler} scrollEventThrottle={scrollEventThrottle}>
+
+        {restaurants.length > 0 && (
+          <View>
+            <View style={styles.secRow}>
+              <Text style={styles.secTitle}>Restaurants</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeTxt}>{restaurants.length}</Text>
+              </View>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 8 }}>
+              {restaurants.map(r => (
+                <TouchableOpacity
+                  key={r.name}
+                  activeOpacity={0.8}
+                  // @ts-expect-error expo-router typed routes may not include dynamic params
+                  onPress={() => router.push({ pathname: "/food", params: { vendor: r.name } })}
+                  style={styles.restaurantCard}
+                >
+                  <View style={styles.restaurantImgBox}>
+                    {r.image
+                      ? <Image source={{ uri: r.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      : <Ionicons name="restaurant" size={28} color={C.amber} />}
+                    <View style={styles.restaurantOverlay} />
+                    {r.deliveryTime && (
+                      <View style={styles.timeBadge}>
+                        <Ionicons name="time-outline" size={10} color={C.textInverse} />
+                        <Text style={styles.timeText}>{r.deliveryTime}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.restaurantInfo}>
+                    <Text style={styles.restaurantName} numberOfLines={1}>{r.name}</Text>
+                    <Text style={styles.restaurantMeta} numberOfLines={1}>{r.itemCount} items</Text>
+                    {r.rating != null && (
+                      <View style={styles.ratingRow}>
+                        <Ionicons name="star" size={10} color={C.gold} />
+                        <Text style={styles.ratingText}>{r.rating}</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => setSelectedCat(undefined)} style={[styles.catChip, !selectedCat && styles.catChipActive]}>
             <Ionicons name="fast-food-outline" size={14} color={!selectedCat ? C.textInverse : C.food} />
@@ -356,7 +437,14 @@ const styles = StyleSheet.create({
   catChipText: { ...typography.buttonSmall, color: C.food },
   catChipTextActive: { color: C.textInverse },
 
-  secRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 18, marginBottom: 12 },
+  restaurantCard: { width: 140, backgroundColor: C.surface, borderRadius: 16, overflow: "hidden", shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3 },
+  restaurantImgBox: { width: 140, height: 90, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  restaurantOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.08)" },
+  restaurantInfo: { padding: 10 },
+  restaurantName: { ...typography.buttonSmall, fontFamily: Font.bold, color: C.text, marginBottom: 2 },
+  restaurantMeta: { ...typography.small, color: C.textMuted },
+
+  secRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 14, marginBottom: 10 },
   secTitle: { ...typography.h3, fontSize: 17, color: C.text },
   countBadge: { backgroundColor: C.food, borderRadius: 10, minWidth: 24, height: 24, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   countBadgeTxt: { ...typography.small, fontFamily: Font.bold, color: C.textInverse },

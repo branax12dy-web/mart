@@ -126,6 +126,7 @@ function PharmacyScreenInner() {
   const [loadingMeds, setLoadingMeds] = useState(true);
   const [medsError, setMedsError] = useState(false);
   const [activeTab, setActiveTab] = useState(routeCategory || "All");
+  const [selectedStore, setSelectedStore] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<string>("default");
   const [search, setSearch] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
@@ -254,16 +255,30 @@ function PharmacyScreenInner() {
 
   useEffect(() => { loadMeds(); }, [pharmacyEnabled]);
 
+  const pharmacyStores = useMemo(() => {
+    const map = new Map<string, { name: string; category: string; itemCount: number; emoji?: string }>();
+    for (const m of medicines) {
+      const name = m.brand || "Pharmacy";
+      if (!map.has(name)) {
+        map.set(name, { name, category: m.category, itemCount: 1, emoji: m.emoji });
+      } else {
+        map.get(name)!.itemCount += 1;
+      }
+    }
+    return Array.from(map.values());
+  }, [medicines]);
+
   const filtered = useMemo(() => {
     const list = medicines.filter(m => {
       const matchCat = activeTab === "All" || m.category === activeTab;
       const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase());
-      return matchCat && matchSearch;
+      const matchStore = !selectedStore || m.brand === selectedStore;
+      return matchCat && matchSearch && matchStore;
     });
     if (sortBy === "price_asc") list.sort((a, b) => a.price - b.price);
     else if (sortBy === "price_desc") list.sort((a, b) => b.price - a.price);
     return list;
-  }, [medicines, activeTab, search, sortBy]);
+  }, [medicines, activeTab, search, sortBy, selectedStore]);
 
   const cartItems: CartItem[] = medicines
     .filter(m => pharmacyCartItems.some(ci => ci.productId === m.id))
@@ -541,6 +556,43 @@ function PharmacyScreenInner() {
           </View>
         </Animated.View>
       </LinearGradient>
+
+      {pharmacyStores.length > 0 && (
+        <View>
+          <View style={[s.storeSecRow]}>
+            <Text style={s.storeSecTitle}>Pharmacy Stores</Text>
+            <View style={s.storeCountBadge}>
+              <Text style={s.storeCountTxt}>{pharmacyStores.length}</Text>
+            </View>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10, paddingBottom: 8 }}>
+            {pharmacyStores.map(store => (
+              <TouchableOpacity
+                key={store.name}
+                activeOpacity={0.8}
+                onPress={() => setSelectedStore(prev => prev === store.name ? null : store.name)}
+                style={[s.storeCard, selectedStore === store.name && s.storeCardActive]}
+              >
+                <View style={[s.storeEmoji, selectedStore === store.name && s.storeEmojiActive]}>
+                  <Text style={{ fontSize: 22 }}>{store.emoji ?? "💊"}</Text>
+                </View>
+                <Text style={[s.storeName, selectedStore === store.name && s.storeNameActive]} numberOfLines={2}>{store.name}</Text>
+                <Text style={s.storeItems}>{store.itemCount} items</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          {selectedStore && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setSelectedStore(null)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginBottom: 6, backgroundColor: C.purpleSoft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, alignSelf: "flex-start" }}
+            >
+              <Ionicons name="close-circle" size={14} color={C.purple} />
+              <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.purple }}>Showing: {selectedStore}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsScroll} contentContainerStyle={s.tabsRow}>
         {categories.map(cat => (
@@ -892,6 +944,18 @@ const s = StyleSheet.create({
   medPrice: { ...Typ.button, fontFamily: Font.bold, color: C.purple, marginTop: 4 },
   rxBadge: { backgroundColor: C.redSoft, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   rxTxt: { ...Typ.tiny, fontSize: 9, color: C.redBright },
+
+  storeSecRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  storeSecTitle: { ...Typ.h3, fontSize: 16, color: C.text, flex: 1 },
+  storeCountBadge: { backgroundColor: C.purple, borderRadius: 10, minWidth: 22, height: 22, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  storeCountTxt: { ...Typ.small, fontFamily: Font.bold, color: C.textInverse },
+  storeCard: { width: 100, alignItems: "center", backgroundColor: C.surface, borderRadius: 16, padding: 10, borderWidth: 1.5, borderColor: C.border, shadowColor: C.text, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  storeCardActive: { borderColor: C.purple, backgroundColor: C.purpleBg },
+  storeEmoji: { width: 48, height: 48, borderRadius: 14, backgroundColor: C.purpleBg, alignItems: "center", justifyContent: "center", marginBottom: 6 },
+  storeEmojiActive: { backgroundColor: C.purple },
+  storeName: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.text, textAlign: "center", marginBottom: 2 },
+  storeNameActive: { color: C.purple },
+  storeItems: { ...Typ.tiny, fontSize: 10, color: C.textMuted },
 
   qtyCtrl: { flexDirection: "row", alignItems: "center", gap: 8 },
   qtyBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: C.purple, alignItems: "center", justifyContent: "center" },
