@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ActivityIndicator,
@@ -133,6 +134,7 @@ const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
 
 function FoodScreenInner() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const { itemCount, cartType, clearCart } = useCart();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -176,7 +178,7 @@ function FoodScreenInner() {
         style={[styles.header, { paddingTop: topPad + 12 }]}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>

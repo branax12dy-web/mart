@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import { router } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import * as Location from "expo-location";
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -399,6 +400,7 @@ function AddressPickerModal({
 
 function CartScreenInner() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const { user, updateUser, token, socket } = useAuth();
   const {
     items, total, cartType, updateQuantity, clearCart, clearCartOnAck, restoreCart, addItem, validateCart, isValidating,
@@ -870,7 +872,8 @@ function CartScreenInner() {
     }
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (overridePayMethod?: PayMethod) => {
+    const effectivePayMethod = overridePayMethod ?? payMethod;
     if (loading || isValidating) return;
     if (!user) {
       requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/cart" });
@@ -890,7 +893,7 @@ function CartScreenInner() {
       });
       return;
     }
-    const isPickup = payMethod === "pickup";
+    const isPickup = effectivePayMethod === "pickup";
     if (!isPickup && !deliveryLine) {
       showToast(T("selectDeliveryAddress"), "error");
       setShowAddrPicker(true);
@@ -996,7 +999,7 @@ function CartScreenInner() {
       return;
     }
 
-    if (payMethod === "wallet") {
+    if (effectivePayMethod === "wallet") {
       if ((user?.walletBalance ?? 0) < grandTotal) {
         showToast(`Wallet has Rs. ${user?.walletBalance ?? 0} — Rs. ${grandTotal} required`, "error");
         return;
@@ -1014,7 +1017,7 @@ function CartScreenInner() {
       return;
     }
 
-    if (payMethod === "jazzcash" || payMethod === "easypaisa") {
+    if (effectivePayMethod === "jazzcash" || effectivePayMethod === "easypaisa") {
       setGwStep("input");
       setGwMobile("");
       setShowGwModal(true);
@@ -1419,7 +1422,7 @@ function CartScreenInner() {
       <View style={[styles.container, { backgroundColor: C.background }]}>
         <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border }]}>
           <View style={styles.headerRow}>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+            <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={22} color={C.text} />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: C.text }]}>{T("cart" as TranslationKey)}</Text>
@@ -1458,7 +1461,7 @@ function CartScreenInner() {
         style={[styles.header, { paddingTop: topPad + 8 }]}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -1791,7 +1794,7 @@ function CartScreenInner() {
               onPress={() => {
                 setPayMethod("pickup");
                 setDeliveryBlocked(null);
-                handleCheckout();
+                handleCheckout("pickup");
               }}
               disabled={loading || addrLoading}
             >
@@ -1800,7 +1803,7 @@ function CartScreenInner() {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity activeOpacity={0.7} style={[styles.checkoutBtn, (loading || addrLoading || promoLoading || deliveryBlocked) && { opacity: 0.5 }]} onPress={handleCheckout} disabled={!!(loading || addrLoading || promoLoading || deliveryBlocked)}>
+          <TouchableOpacity activeOpacity={0.7} style={[styles.checkoutBtn, (loading || addrLoading || promoLoading || deliveryBlocked) && { opacity: 0.5 }]} onPress={() => handleCheckout()} disabled={!!(loading || addrLoading || promoLoading || deliveryBlocked)}>
             {loading ? <ActivityIndicator color={C.textInverse} size="small" /> : promoLoading ? (
               <>
                 <ActivityIndicator color={C.textInverse} size="small" />

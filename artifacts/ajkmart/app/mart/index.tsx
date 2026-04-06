@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Animated,
@@ -251,6 +252,7 @@ const ProductCard = React.memo(function ProductCard({ product }: { product: any 
 
 function MartScreenInner() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const { itemCount, cartType, clearCart } = useCart();
   const showCartBanner = itemCount > 0 && cartType !== "mart" && cartType !== "none";
   const [clearBannerConfirm, setClearBannerConfirm] = useState(false);
@@ -318,7 +320,7 @@ function MartScreenInner() {
         style={[styles.header, { paddingTop: topPad + 12 }]}
       >
         <View style={styles.hdrRow}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>

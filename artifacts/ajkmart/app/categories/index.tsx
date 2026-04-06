@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Dimensions,
   Image,
   Platform,
+  RefreshControl,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -36,13 +38,14 @@ const SORT_OPTIONS: { key: SortKey; label: string; icon: keyof typeof Ionicons.g
 
 export default function CategoriesBrowseScreen() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
   const serviceType = initialType || "mart";
 
   const [sortBy, setSortBy] = useState<SortKey>("newest");
 
-  const { data: categories, isLoading } = useQuery({
+  const { data: categories, isLoading, refetch: refetchCats } = useQuery({
     queryKey: ["hierarchical-categories", serviceType],
     queryFn: () => getHierarchicalCategories({ type: serviceType }),
     staleTime: 5 * 60 * 1000,
@@ -69,7 +72,8 @@ export default function CategoriesBrowseScreen() {
     ? serviceType as "food" | "pharmacy" | "mart"
     : "mart";
 
-  const { data: productsData, isLoading: productsLoading } = useGetProducts({
+  const [catRefreshing, setCatRefreshing] = useState(false);
+  const { data: productsData, isLoading: productsLoading, refetch: refetchProducts } = useGetProducts({
     type: productType,
     category: subFilter ?? selectedId ?? undefined,
     sort: sortBy,
@@ -80,7 +84,7 @@ export default function CategoriesBrowseScreen() {
   return (
     <View style={[s.container, { paddingTop: topPad }]}>
       <View style={s.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.backBtn}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={s.backBtn}>
           <Ionicons name="arrow-back" size={20} color={C.text} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>
@@ -145,6 +149,7 @@ export default function CategoriesBrowseScreen() {
             style={s.rightPanel}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+            refreshControl={<RefreshControl refreshing={catRefreshing} onRefresh={async () => { setCatRefreshing(true); await Promise.all([refetchCats(), refetchProducts()]); setCatRefreshing(false); }} tintColor={C.primary} />}
           >
             {selectedCat && (
               <View style={s.catHeader}>

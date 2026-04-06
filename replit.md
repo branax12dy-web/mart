@@ -1082,3 +1082,16 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 
 #### DB Migration
 - **`lib/db/migrations/0022_orders_gps_fraud_stamp.sql`**: Adds `customer_lat`, `customer_lng`, `gps_accuracy` (REAL), `gps_mismatch` (BOOLEAN) to orders table.
+
+### Smart Back Navigation & Pull-to-Refresh — Completed
+
+#### Smart Back Navigation
+- **`artifacts/ajkmart/hooks/useSmartBack.ts`**: Custom hook using `navigation.canGoBack()` with fallback to Home (`/(tabs)`) when history stack is empty (e.g. deep links). Accepts optional fallback route. Applied to 15+ screens (mart, food, pharmacy, search, wishlist, categories, orders, cart, ride, parcel, van, weather, my-reviews, product detail).
+
+#### Pull-to-Refresh
+- Added `RefreshControl` to categories (refetches both categories + products), pharmacy (refetches medicines), order detail (re-fetches order from server), product detail (refetches product data). Home tab and others already had it via `SmartRefresh` component.
+
+### COD / Delivery Eligibility Bug — Resolved
+- `delivery_access_mode` platform setting defaults to `"all"` when absent from DB (no whitelist restrictions). Cart eligibility check + server-side order creation both honor this default.
+- Fixed stale-state bug in cart's "Self-Pickup Instead" CTA: `handleCheckout` now accepts optional `overridePayMethod` so pickup intent is applied immediately without relying on async state update.
+- Fixed pharmacy `loadMeds` to always update state (including empty arrays) so pull-to-refresh properly reflects backend changes.

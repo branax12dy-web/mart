@@ -4,6 +4,7 @@ import {
   Text, TextInput, View, Platform,
 } from "react-native";
 import { router } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +28,7 @@ type Step = "routes" | "schedules" | "date" | "seats" | "confirm";
 
 export default function VanServiceScreen() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
   const { user, token } = useAuth();
   const { showToast } = useToast();
@@ -134,7 +136,7 @@ export default function VanServiceScreen() {
     else if (step === "date") { setStep("schedules"); }
     else if (step === "seats") { setStep("date"); setAvailability(null); setSelectedSeats([]); }
     else if (step === "confirm") { setStep("seats"); }
-    else router.back();
+    else goBack();
   }
 
   /* ── Render helpers ── */

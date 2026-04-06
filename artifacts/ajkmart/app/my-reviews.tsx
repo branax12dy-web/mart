@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useCallback } from "react";
 import {
   ActivityIndicator,
@@ -72,6 +73,7 @@ function StarRow({ value }: { value: number }) {
 }
 
 export default function MyReviewsScreen() {
+  const { goBack } = useSmartBack();
   const { token } = useAuth();
   const { language } = useLanguage();
   const t = (k: TranslationKey) => T(k, language);
@@ -91,7 +93,7 @@ export default function MyReviewsScreen() {
   return (
     <ScreenContainer scroll={false} backgroundColor="#f9fafb">
       <View style={s.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={s.backBtn} hitSlop={10}>
           <Ionicons name="arrow-back" size={22} color="#111" />
         </TouchableOpacity>
         <Text style={s.headerTitle}>{t("myReviews")}</Text>

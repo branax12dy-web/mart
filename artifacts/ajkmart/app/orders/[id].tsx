@@ -1,13 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import Head from "expo-router/head";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSmartBack } from "@/hooks/useSmartBack";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
   Image,
   Linking,
   Platform,
+  RefreshControl,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -77,6 +79,7 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<any>(null);
   const [serverNow, setServerNow] = useState<number>(Date.now());
   const [loading, setLoading] = useState(true);
+  const [refreshingOrder, setRefreshingOrder] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
   const [refundRequesting, setRefundRequesting] = useState(false);
   const [refundRequested, setRefundRequested] = useState(false);
@@ -85,15 +88,7 @@ export default function OrderDetailScreen() {
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [trackFailed, setTrackFailed] = useState(false);
 
-  const navigation = useNavigation();
-
-  const goBack = () => {
-    if (navigation.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/(tabs)/orders");
-    }
-  };
+  const { goBack } = useSmartBack("/(tabs)/orders");
 
   const mountedRef = useRef(true);
   const socketRef = useRef<Socket | null>(null);
@@ -302,6 +297,25 @@ export default function OrderDetailScreen() {
     };
   }, [orderId, isParcel, isRide]);
 
+  const handleOrderRefresh = useCallback(async () => {
+    if (!orderId) return;
+    setRefreshingOrder(true);
+    const endpoint = isParcel
+      ? `${API_BASE}/parcel-bookings/${orderId}`
+      : isPharmacyType
+      ? `${API_BASE}/pharmacy-orders/${orderId}`
+      : isRide
+      ? `${API_BASE}/rides/${orderId}`
+      : `${API_BASE}/orders/${orderId}`;
+    try {
+      const res = await fetch(endpoint, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const data = unwrapApiResponse(await res.json());
+      const fetched = data.order || data.booking || data;
+      if (mountedRef.current) setOrder(fetched);
+    } catch {}
+    setRefreshingOrder(false);
+  }, [orderId, isParcel, isRide, isPharmacyType, token]);
+
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -458,7 +472,9 @@ export default function OrderDetailScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, isTablet && { alignSelf: "center", width: "100%", maxWidth: isWide ? 1100 : 800 }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, isTablet && { alignSelf: "center", width: "100%", maxWidth: isWide ? 1100 : 800 }]}
+        refreshControl={<RefreshControl refreshing={refreshingOrder} onRefresh={handleOrderRefresh} tintColor={C.primary} colors={[C.primary]} />}
+      >
         {/* Two-column layout on desktop: left=status+tracking, right=items+actions */}
         <View style={isWide ? { flexDirection: "row", alignItems: "flex-start", gap: 20 } : undefined}>
         {/* LEFT COLUMN (or full-width on mobile): status, stepper, tracking */}

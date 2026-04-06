@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import { PermissionGuide } from "@/components/PermissionGuide";
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import {
@@ -13,6 +14,7 @@ import {
   Image,
   Modal,
   Platform,
+  RefreshControl,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -103,6 +105,7 @@ const MedCard = React.memo(function MedCard({ med, qty, onAdd, onRemove }: {
 
 function PharmacyScreenInner() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
   const { category: routeCategory, cartItems: cartItemsParam } = useLocalSearchParams<{ category?: string; cartItems?: string }>();
   const { user, updateUser, token } = useAuth();
@@ -227,20 +230,19 @@ function PharmacyScreenInner() {
     setMedsError(false);
     getProducts({ type: "pharmacy" as GetProductsType })
       .then(data => {
-        if (data?.products?.length) {
-          const meds: Med[] = (data.products as unknown as PharmacyProduct[]).map(p => ({
-            id: p.id,
-            name: p.name,
-            brand: p.vendorName ?? "Various",
-            category: p.category,
-            price: p.price,
-            unit: p.unit ?? p.description ?? "1 unit",
-            emoji: "💊",
-            requires_prescription: !!p.requires_prescription,
-          }));
-          setMedicines(meds);
-          setCategories(["All", ...new Set(meds.map(m => m.category))]);
-        }
+        const products = data?.products ?? [];
+        const meds: Med[] = (products as unknown as PharmacyProduct[]).map(p => ({
+          id: p.id,
+          name: p.name,
+          brand: p.vendorName ?? "Various",
+          category: p.category,
+          price: p.price,
+          unit: p.unit ?? p.description ?? "1 unit",
+          emoji: "💊",
+          requires_prescription: !!p.requires_prescription,
+        }));
+        setMedicines(meds);
+        setCategories(meds.length ? ["All", ...new Set(meds.map(m => m.category))] : ["All"]);
       })
       .catch(() => setMedsError(true))
       .finally(() => setLoadingMeds(false));
@@ -426,14 +428,14 @@ function PharmacyScreenInner() {
   if (!pharmacyEnabled) {
     return (
       <View style={[s.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={{ position: "absolute", top: topPad + 12, left: 16 }}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={{ position: "absolute", top: topPad + 12, left: 16 }}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </TouchableOpacity>
         <View style={[s.successCard, { borderColor: C.redSoft }]}>
           <Text style={{ fontSize: 52, marginBottom: 12 }}>🚫</Text>
           <Text style={[s.successTitle, { color: C.redBright }]}>{T("serviceUnavailable")}</Text>
           <Text style={[s.successSub, { marginBottom: 20 }]}>{T("maintenanceApology")}</Text>
-          <TouchableOpacity activeOpacity={0.7} style={[s.successBtn, { backgroundColor: C.redBg }]} onPress={() => router.back()}>
+          <TouchableOpacity activeOpacity={0.7} style={[s.successBtn, { backgroundColor: C.redBg }]} onPress={goBack}>
             <Text style={[s.successBtnTxt, { color: C.redBright }]}>{T("backToHome")}</Text>
           </TouchableOpacity>
         </View>
@@ -497,7 +499,7 @@ function PharmacyScreenInner() {
       <RoleBlockSheet {...roleBlockProps} />
       <LinearGradient colors={[C.purpleVivid, C.purple, C.purpleMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, { paddingTop: topPad + 14 }]}>
         <View style={s.hdrRow}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={s.backBtn}>
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
@@ -542,7 +544,9 @@ function PharmacyScreenInner() {
         <Text style={s.rxNoticeTxt}><Text style={{ fontFamily: Font.semiBold }}>Rx</Text> {T("rxNotice")}</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}
+        refreshControl={<RefreshControl refreshing={loadingMeds} onRefresh={loadMeds} tintColor={C.purple} colors={[C.purple]} />}
+      >
         {loadingMeds ? (
           <>
             {[0,1,2,3,4,5,6].map(i => (

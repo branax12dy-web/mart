@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { useAuth } from "@/context/AuthContext";
@@ -14,6 +15,7 @@ import { RideTracker } from "@/components/ride/RideTracker";
 import { Ionicons } from "@expo/vector-icons";
 import { TouchableOpacity, Text, Platform } from "react-native";
 import { router } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
 
@@ -21,6 +23,7 @@ const C = Colors.light;
 
 function RideScreenInner() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
   const { user, token } = useAuth();
   const { config } = usePlatformConfig();
@@ -128,7 +131,7 @@ function RideScreenInner() {
         }}
       >
         <TouchableOpacity activeOpacity={0.7}
-          onPress={() => router.back()}
+          onPress={goBack}
           style={{ position: "absolute", top: topPad + 12, left: 16 }}
         >
           <Ionicons name="arrow-back" size={24} color={C.text} />
@@ -192,7 +195,7 @@ function RideScreenInner() {
               borderRadius: 14,
               paddingVertical: 14,
             }}
-            onPress={() => router.back()}
+            onPress={goBack}
           >
             <Text
               style={{
@@ -278,7 +281,7 @@ function RideScreenInner() {
               borderRadius: 14,
               paddingVertical: 14,
             }}
-            onPress={() => router.back()}
+            onPress={goBack}
           >
             <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.redBright }}>
               {T("backToHome")}

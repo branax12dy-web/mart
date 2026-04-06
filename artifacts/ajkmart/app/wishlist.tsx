@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useCallback, useRef } from "react";
 import {
   Animated,
@@ -92,6 +93,7 @@ function WishlistCard({ item, onRemove }: { item: WishlistItem; onRemove: (produ
 }
 
 export default function WishlistScreen() {
+  const { goBack } = useSmartBack();
   const { user, token } = useAuth();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -116,7 +118,7 @@ export default function WishlistScreen() {
     return (
       <ScreenContainer scroll={false}>
         <View style={styles.header}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color={C.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{T("myWishlist")}</Text>
@@ -139,7 +141,7 @@ export default function WishlistScreen() {
   return (
     <ScreenContainer scroll={false}>
       <View style={styles.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{T("myWishlist")}</Text>

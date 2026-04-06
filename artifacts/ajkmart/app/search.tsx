@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
@@ -77,6 +78,7 @@ function ServiceBadge({ type }: { type: ServiceKey }) {
 
 export default function UniversalSearchScreen() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { addItem, cartType, itemCount, clearCart } = useCart();
   const { config } = usePlatformConfig();
@@ -289,7 +291,7 @@ export default function UniversalSearchScreen() {
       <AuthGateSheet {...authSheetProps} />
       <RoleBlockSheet {...roleBlockProps} />
       <View style={s.header}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.backBtn}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={s.backBtn}>
           <Ionicons name="arrow-back" size={22} color={C.text} />
         </TouchableOpacity>
         <View style={s.inputWrap}>

@@ -4,6 +4,7 @@ import {
   ScrollView, StyleSheet, Text, View,
 } from "react-native";
 import { router } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -42,6 +43,7 @@ const STATUS_INFO: Record<string, { color: string; bg: string; icon: any; label:
 
 export default function VanBookingsScreen() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
   const { token, user } = useAuth();
   const { showToast } = useToast();
@@ -99,7 +101,7 @@ export default function VanBookingsScreen() {
       <LinearGradient colors={["#4338CA","#6366F1","#818CF8"]} start={{ x:0,y:0 }} end={{ x:1,y:1 }}
         style={[ss.header, { paddingTop: topPad + 14 }]}>
         <View style={ss.headerRow}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={ss.backBtn} hitSlop={12}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={ss.backBtn} hitSlop={12}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
           <Text style={ss.headerTitle}>My Van Bookings</Text>

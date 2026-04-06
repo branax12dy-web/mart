@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import { useMapsAutocomplete, resolveLocation } from "@/hooks/useMaps";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useRef, useState } from "react";
@@ -88,6 +89,7 @@ const PARCEL_DRAFT_KEY = "parcel_wizard_draft";
 
 function ParcelScreenInner() {
   const insets = useSafeAreaInsets();
+  const { goBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
   const { prefillPickup: pPickup, prefillDrop: pDrop, prefillType: pType } = useLocalSearchParams<{ prefillPickup?: string; prefillDrop?: string; prefillType?: string }>();
   const { user, updateUser, token } = useAuth();
@@ -383,14 +385,14 @@ function ParcelScreenInner() {
   if (!parcelEnabled) {
     return (
       <View style={[ss.root, { justifyContent: "center", alignItems: "center", padding: 32 }]}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={{ position: "absolute", top: topPad + 12, left: 16 }}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={{ position: "absolute", top: topPad + 12, left: 16 }}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </TouchableOpacity>
         <View style={[ss.confirmCard, { borderColor: C.redSoft }]}>
           <Text style={{ fontSize: 52 }}>🚫</Text>
           <Text style={[ss.confirmTitle, { color: C.redBright }]}>{T("serviceUnavailable")}</Text>
           <Text style={ss.confirmSub}>{T("maintenanceApology")}</Text>
-          <TouchableOpacity activeOpacity={0.7} style={[ss.doneBtn, { backgroundColor: C.redBg, width: "100%" }]} onPress={() => router.back()}>
+          <TouchableOpacity activeOpacity={0.7} style={[ss.doneBtn, { backgroundColor: C.redBg, width: "100%" }]} onPress={goBack}>
             <Text style={[ss.doneBtnTxt, { color: C.redBright }]}>{T("backToHome")}</Text>
           </TouchableOpacity>
         </View>
@@ -458,7 +460,7 @@ function ParcelScreenInner() {
     <View style={ss.root}>
       <LinearGradient colors={[C.amberDark, C.amberBrown, C.amber]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[ss.header, { paddingTop: topPad + 14 }]}>
         <View style={ss.hdrRow}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={ss.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={ss.backBtn}>
             <Ionicons name="arrow-back" size={20} color={C.textInverse} />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>

@@ -12,6 +12,7 @@ import {
   Image,
   Modal,
   Platform,
+  RefreshControl,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useSmartBack } from "@/hooks/useSmartBack";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -370,10 +372,12 @@ function ProductDetailScreenInner() {
   const topPad = Platform.OS === "web" ? 20 : insets.top;
   const bottomPad = Math.max(insets.bottom, Platform.OS === "web" ? 20 : 16);
 
+  const { goBack } = useSmartBack();
   const { user, token } = useAuth();
   const isLoggedIn = !!user && !!token;
   const queryClient = useQueryClient();
   const { addItem, cartType, itemCount, clearCart } = useCart();
+  const [refreshing, setRefreshing] = useState(false);
   const [added, setAdded] = useState(false);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -388,6 +392,16 @@ function ProductDetailScreenInner() {
   const scrollY = useRef(new Animated.Value(0)).current;
 
   const { data: product, isLoading, isError, refetch } = useGetProduct(id || "");
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ["reviews", id] });
+      queryClient.invalidateQueries({ queryKey: ["related-products", id] });
+    } catch {}
+    setRefreshing(false);
+  }, [refetch, id, queryClient]);
 
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
@@ -558,7 +572,7 @@ function ProductDetailScreenInner() {
     return (
       <View style={styles.container}>
         <View style={[styles.floatingHeader, { paddingTop: topPad + 8 }]}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.headerBtn}>
             <Ionicons name="arrow-back" size={22} color={C.text} />
           </TouchableOpacity>
         </View>
@@ -580,7 +594,7 @@ function ProductDetailScreenInner() {
     return (
       <View style={styles.container}>
         <View style={[styles.floatingHeader, { paddingTop: topPad + 8 }]}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.headerBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.headerBtn}>
             <Ionicons name="arrow-back" size={22} color={C.text} />
           </TouchableOpacity>
         </View>
@@ -638,7 +652,7 @@ function ProductDetailScreenInner() {
 
       <Animated.View style={[styles.stickyHeader, { paddingTop: topPad + 8, opacity: headerOpacity }]}>
         <View style={styles.stickyHeaderInner}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.headerBtnSolid}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.headerBtnSolid}>
             <Ionicons name="arrow-back" size={20} color={C.text} />
           </TouchableOpacity>
           <Text style={styles.stickyTitle} numberOfLines={1}>{product.name}</Text>
@@ -654,7 +668,7 @@ function ProductDetailScreenInner() {
       </Animated.View>
 
       <View style={[styles.floatingHeader, { paddingTop: topPad + 8 }]}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={styles.headerBtn}>
+        <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={22} color={C.textInverse} />
         </TouchableOpacity>
         <View style={{ flexDirection: "row", gap: 8 }}>
@@ -681,6 +695,9 @@ function ProductDetailScreenInner() {
           { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} colors={[C.primary]} />
+        }
       >
         <View style={styles.imageContainer}>
           {images.length > 0 ? (
