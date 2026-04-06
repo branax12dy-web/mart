@@ -19,7 +19,10 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "AJKMart needs your location to track deliveries in the background when you are online as a rider.",
         "NSLocationAlwaysUsageDescription": "AJKMart needs your location to track deliveries in the background when you are online as a rider.",
         "NSLocationWhenInUseUsageDescription": "AJKMart needs your location to show you on the map and connect you with customers.",
-        "UIBackgroundModes": ["location", "fetch"]
+        "UIBackgroundModes": [
+          "location",
+          "fetch"
+        ]
       }
     },
     "android": {
@@ -77,8 +80,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "93f3e0ff-7458-455d-aa62-13dab737510c"
+        "projectId": "beda998f-beae-4a9b-9e99-1ccc888fd543"
       }
-    }
+    },
+    "owner": "topfx75"
   }
 }
