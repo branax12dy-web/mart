@@ -199,7 +199,7 @@ const DEFAULT: PlatformConfig = {
     appName: "AJKMart",
     appTagline: "Your super app for everything",
     appVersion: "1.0.0",
-    supportPhone: "03001234567",
+    supportPhone: "03005000000",
     supportEmail: "",
     supportHours: "Mon–Sat, 8AM–10PM",
     businessAddress: "Muzaffarabad, AJK, Pakistan",
@@ -231,7 +231,7 @@ const DEFAULT: PlatformConfig = {
     riderEarningPct: 80,
   },
   finance: {
-    gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100,
+    gstEnabled: true, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100,
     invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80,
     minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100,
   },

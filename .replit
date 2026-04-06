@@ -36,3 +36,27 @@ ADMIN_JWT_SECRET = "QOHAcA0Y3m6yyQ1jW8FnQu995T5e8XupSnhKch6SF8RIKFn5KNZatDnFzqUD
 VAPID_PUBLIC_KEY = "BEmlZZIGCb7ZhembOoH02qzZlnhkFrYkib27NwFgtXBFDcvtHhhWC2hfZEHU4JpDbfHIRgbrCiM_f9gEEc_JHLg"
 VAPID_PRIVATE_KEY = "b3egnGyDJYSVsOB4z-PGhf5YbGeuVKcHtNpJPQ-r-eM"
 VAPID_CONTACT_EMAIL = "mailto:admin@ajkmart.app"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 20716
+externalPort = 3002
+
+[[ports]]
+localPort = 21463
+externalPort = 80
+
+[[ports]]
+localPort = 22969
+externalPort = 3001
+
+[[ports]]
+localPort = 23744
+externalPort = 3000

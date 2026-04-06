@@ -251,6 +251,88 @@ const gi = StyleSheet.create({
   sub: { fontFamily: Font.regular, fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 1 },
 });
 
+function ServiceStatsStrip({ rideCfg, features }: {
+  rideCfg: { bikeMinFare: number };
+  features: { mart: boolean; food: boolean; rides: boolean };
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["home-service-stats"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/stats/public`);
+      if (!r.ok) throw new Error("stats fetch failed");
+      return r.json().then((j: any) => j?.data ?? j);
+    },
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  const stats: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [];
+
+  if (features.mart) {
+    const productCount: number = data?.productCount ?? 0;
+    stats.push({
+      label: "Products",
+      value: isLoading ? "…" : productCount > 0 ? `${productCount.toLocaleString()}+` : "—",
+      icon: "cube-outline",
+      color: C.primary,
+    });
+  }
+
+  if (features.food) {
+    const restaurantCount: number = data?.restaurantCount ?? 0;
+    stats.push({
+      label: "Restaurants",
+      value: isLoading ? "…" : restaurantCount > 0 ? `${restaurantCount}+` : "—",
+      icon: "restaurant-outline",
+      color: C.food,
+    });
+  }
+
+  if (features.rides) {
+    stats.push({
+      label: "Min Ride",
+      value: `Rs.${rideCfg.bikeMinFare}`,
+      icon: "bicycle-outline",
+      color: C.ride,
+    });
+  }
+
+  if (stats.length === 0) return null;
+
+  return (
+    <View style={st.wrap}>
+      {stats.map((s, i) => (
+        <React.Fragment key={s.label}>
+          {i > 0 && <View style={st.divider} />}
+          <View style={st.item}>
+            <View style={[st.iconBox, { backgroundColor: `${s.color}18` }]}>
+              <Ionicons name={s.icon} size={16} color={s.color} />
+            </View>
+            <Text style={st.value}>{s.value}</Text>
+            <Text style={st.label}>{s.label}</Text>
+          </View>
+        </React.Fragment>
+      ))}
+    </View>
+  );
+}
+
+const st = StyleSheet.create({
+  wrap: {
+    flexDirection: "row", alignItems: "center",
+    marginHorizontal: H_PAD, marginTop: 8,
+    backgroundColor: C.surface, borderRadius: 14,
+    paddingVertical: 10,
+    borderWidth: 1, borderColor: C.borderLight,
+    ...shadows.sm,
+  },
+  item: { flex: 1, alignItems: "center", gap: 3 },
+  iconBox: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  value: { fontFamily: Font.bold, fontSize: 13, color: C.text },
+  label: { fontFamily: Font.regular, fontSize: 10, color: C.textMuted },
+  divider: { width: 1, height: 36, backgroundColor: C.borderLight },
+});
+
 function ActiveTrackerStrip({ userId, tabBarHeight = 0 }: { userId: string; tabBarHeight?: number }) {
   const { token } = useAuth();
   const { config: pCfg } = usePlatformConfig();
@@ -1310,14 +1392,14 @@ export default function HomeScreen() {
   const [locationInput, setLocationInput] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
 
-  const PRESET_AREAS = [
-    "Muzaffarabad", "Mirpur", "Rawalakot", "Bagh", "Plandri",
-    "Kotli", "Bhimber", "Pallandri", "Hattian Bala", "Haveli",
+  const cityList = platformConfig.cities.length > 0 ? platformConfig.cities : [
+    "Muzaffarabad", "Mirpur", "Rawalakot", "Bagh", "Kotli",
+    "Bhimber", "Poonch", "Neelum Valley", "Haveli", "Hattian Bala",
   ];
 
   const filteredAreas = locationInput.trim()
-    ? PRESET_AREAS.filter(a => a.toLowerCase().includes(locationInput.toLowerCase()))
-    : PRESET_AREAS;
+    ? cityList.filter(a => a.toLowerCase().includes(locationInput.toLowerCase()))
+    : cityList;
 
   const handleLocationPress = () => {
     setLocationPickerVisible(true);
@@ -1441,6 +1523,8 @@ export default function HomeScreen() {
               viewMode={viewMode}
               onToggle={handleToggleView}
             />
+
+            <ServiceStatsStrip rideCfg={platformConfig.rides} features={features} />
 
             {features.weather !== false && (
               <WeatherWidget

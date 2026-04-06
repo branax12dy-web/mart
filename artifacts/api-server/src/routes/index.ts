@@ -38,6 +38,7 @@ import popupsRouter from "./popups.js";
 import promotionsRouter from "./promotions.js";
 import supportChatRouter from "./support-chat.js";
 import publicVendorsRouter from "./public-vendors.js";
+import statsRouter from "./stats.js";
 
 const router: IRouter = Router();
 
@@ -85,5 +86,6 @@ router.use("/promotions", promotionsRouter);
 router.use("/admin/promotions", promotionsRouter);
 router.use("/support-chat", supportChatRouter);
 router.use("/vendors", publicVendorsRouter);
+router.use("/stats", statsRouter);
 
 export default router;

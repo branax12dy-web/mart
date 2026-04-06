@@ -929,22 +929,16 @@ function ProfileScreenInner() {
               <Row icon="share-social-outline"
                    label={T("followUsLabel")}
                    sub={[platformCfg.socialFacebook && "Facebook", platformCfg.socialInstagram && "Instagram"].filter(Boolean).join(" • ")}
-                   onPress={() => Linking.openURL(platformCfg.socialFacebook || platformCfg.socialInstagram).catch(() => {})}
+                   onPress={() => Linking.openURL(platformCfg.socialFacebook || platformCfg.socialInstagram).catch(() => showToast("Could not open link", "error"))}
                    iconColor={C.facebookBlue} iconBg={C.primarySoft} />
             )}
             {platformCfg.tncUrl ? (
               <Row icon="document-text-outline"
                    label={T("termsOfService")}
                    sub={T("termsSubLabel")}
-                   onPress={() => Linking.openURL(platformCfg.tncUrl).catch(() => {})}
+                   onPress={() => Linking.openURL(platformCfg.tncUrl).catch(() => showToast("Could not open link", "error"))}
                    iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
-            ) : (
-              <Row icon="document-text-outline"
-                   label={T("termsOfService")}
-                   sub={T("termsSubLabel")}
-                   onPress={() => showToast(`By using ${platformCfg.appName}, you agree to our terms.`, "info")}
-                   iconColor={C.textSecondary} iconBg={C.surfaceSecondary} />
-            )}
+            ) : null}
             {platformCfg.privacyUrl && (
               <Row icon="shield-checkmark-outline"
                    label={T("privacyPolicy")}

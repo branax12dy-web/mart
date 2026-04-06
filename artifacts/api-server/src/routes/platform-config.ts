@@ -105,7 +105,7 @@ router.get("/", async (req, res) => {
         const bypass = ((req.headers["x-maintenance-key"] as string) ?? "").trim();
         return (key && bypass === key) ? "active" : "maintenance";
       })(),
-      supportPhone:         s["support_phone"]      ?? "03001234567",
+      supportPhone:         s["support_phone"]      ?? "03005000000",
       supportEmail:         s["support_email"]      ?? "",
       supportHours:         s["support_hours"]      ?? "Mon–Sat, 8AM–10PM",
       businessAddress:      s["business_address"]   ?? "Muzaffarabad, AJK, Pakistan",
@@ -156,7 +156,7 @@ router.get("/", async (req, res) => {
       aboutUrl:         s["content_about_url"]           ?? "",
     },
     finance: {
-      gstEnabled:       (s["finance_gst_enabled"]      ?? "off") === "on",
+      gstEnabled:       (s["finance_gst_enabled"]      ?? "on") === "on",
       gstPct:           parseFloat(s["finance_gst_pct"]           ?? "17"),
       cashbackEnabled:  (s["finance_cashback_enabled"]  ?? "off") === "on",
       cashbackPct:      parseFloat(s["finance_cashback_pct"]       ?? "2"),
