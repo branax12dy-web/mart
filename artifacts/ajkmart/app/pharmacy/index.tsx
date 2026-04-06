@@ -838,14 +838,14 @@ const s = StyleSheet.create({
   searchBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
   searchInput: { flex: 1, ...Typ.body, fontSize: 13, color: C.text, padding: 0 },
 
-  tabsScroll: { maxHeight: 52, backgroundColor: C.surface },
-  tabsRow: { paddingHorizontal: 12, gap: 8, alignItems: "center", paddingVertical: 8 },
-  tab: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 22, backgroundColor: C.purpleBg },
+  tabsScroll: { backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border },
+  tabsRow: { paddingHorizontal: 12, gap: 8, alignItems: "center", paddingVertical: 10 },
+  tab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 22, backgroundColor: C.purpleBg },
   tabActive: { backgroundColor: C.purple },
   tabTxt: { ...Typ.captionMedium, fontFamily: Font.semiBold, color: C.purple },
   tabTxtActive: { color: C.textInverse },
 
-  rxNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.purpleBg, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.purpleSoft },
+  rxNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.purpleBg, paddingHorizontal: 16, paddingVertical: 10, marginTop: 0, borderBottomWidth: 1, borderBottomColor: C.purpleSoft },
   rxNoticeTxt: { ...Typ.small, color: C.purple, flex: 1 },
 
   grid: { paddingHorizontal: 12, paddingTop: 12, gap: 10 },

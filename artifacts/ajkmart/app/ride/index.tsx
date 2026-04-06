@@ -15,7 +15,6 @@ import { RideTracker } from "@/components/ride/RideTracker";
 import { Ionicons } from "@expo/vector-icons";
 import { TouchableOpacity, Text, Platform } from "react-native";
 import { router } from "expo-router";
-import { useSmartBack } from "@/hooks/useSmartBack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
 

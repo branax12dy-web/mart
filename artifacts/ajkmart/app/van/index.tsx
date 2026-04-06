@@ -28,7 +28,7 @@ type Step = "routes" | "schedules" | "date" | "seats" | "confirm";
 
 export default function VanServiceScreen() {
   const insets = useSafeAreaInsets();
-  const { goBack } = useSmartBack();
+  const { goBack: smartGoBack } = useSmartBack();
   const topPad = Math.max(insets.top, 12);
   const { user, token } = useAuth();
   const { showToast } = useToast();
@@ -130,13 +130,12 @@ export default function VanServiceScreen() {
     }
   }
 
-  /* ── Back navigation per step ── */
   function goBack() {
     if (step === "schedules") { setStep("routes"); setSelectedRoute(null); }
     else if (step === "date") { setStep("schedules"); }
     else if (step === "seats") { setStep("date"); setAvailability(null); setSelectedSeats([]); }
     else if (step === "confirm") { setStep("seats"); }
-    else goBack();
+    else smartGoBack();
   }
 
   /* ── Render helpers ── */
