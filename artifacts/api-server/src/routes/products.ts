@@ -260,6 +260,30 @@ router.get("/", async (req, res) => {
   });
 });
 
+/* ── GET /products/barcode/:code — resolve barcode/SKU to a product ─────── */
+router.get("/barcode/:code", async (req, res) => {
+  const code = req.params["code"]!.trim();
+  if (!code) { sendNotFound(res, "Code is required"); return; }
+
+  const variant = await db.select({ productId: productVariantsTable.productId })
+    .from(productVariantsTable)
+    .where(eq(productVariantsTable.sku, code))
+    .limit(1);
+
+  if (variant[0]?.productId) {
+    const [product] = await db.select({ id: productsTable.id, name: productsTable.name, type: productsTable.type })
+      .from(productsTable)
+      .where(and(eq(productsTable.id, variant[0].productId), eq(productsTable.approvalStatus, "approved")))
+      .limit(1);
+    if (product) {
+      sendSuccess(res, { found: true, productId: product.id, name: product.name, type: product.type });
+      return;
+    }
+  }
+
+  sendSuccess(res, { found: false, productId: null });
+});
+
 /* ── GET /products/:id — product detail with variants + reviews summary ── */
 router.get("/:id", async (req, res) => {
   const productId = req.params["id"]!;

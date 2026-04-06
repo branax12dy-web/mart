@@ -1081,6 +1081,36 @@ router.patch("/:id/cancel", customerAuth, cancelRideLimiter, requireRideState(["
   });
 });
 
+router.patch("/:id/bids/:bidId/reject", customerAuth, async (req, res) => {
+  const rideId = String(req.params["id"]);
+  const bidId  = String(req.params["bidId"]);
+  const userId = req.customerId!;
+
+  const [ride] = await db.select().from(ridesTable)
+    .where(and(eq(ridesTable.id, rideId), eq(ridesTable.userId, userId)))
+    .limit(1);
+
+  if (!ride) { sendError(res, "Ride not found", 404); return; }
+  if (ride.status !== "bargaining") { sendError(res, "Ride is not in bargaining state", 400); return; }
+
+  const [bid] = await db.select().from(rideBidsTable)
+    .where(and(
+      eq(rideBidsTable.id, bidId),
+      eq(rideBidsTable.rideId, rideId),
+      eq(rideBidsTable.status, "pending"),
+    ))
+    .limit(1);
+
+  if (!bid) { sendError(res, "Bid not found or already resolved", 404); return; }
+
+  await db.update(rideBidsTable)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(and(eq(rideBidsTable.id, bidId), eq(rideBidsTable.rideId, rideId)));
+
+  emitRideUpdate(rideId);
+  sendSuccess(res, { bidId, status: "rejected" });
+});
+
 router.patch("/:id/accept-bid", customerAuth, async (req, res) => {
   const parsed = acceptBidSchema.safeParse(req.body);
   if (!parsed.success) {

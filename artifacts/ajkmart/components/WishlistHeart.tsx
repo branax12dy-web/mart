@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, TouchableOpacity, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -10,6 +10,8 @@ import { addToWishlist, removeFromWishlist, getWishlist, type WishlistItem } fro
 import { AuthGateSheet, useAuthGate } from "@/components/AuthGateSheet";
 
 const C = Colors.light;
+
+const PENDING_KEY_PREFIX = "@ajkmart_pending_wishlist_";
 
 export function WishlistHeart({
   productId,
@@ -28,6 +30,7 @@ export function WishlistHeart({
   const [loading, setLoading] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const { requireAuth, sheetProps } = useAuthGate();
+  const pendingFiredRef = useRef(false);
 
   const { data: wishlistItems } = useQuery({
     queryKey: ["wishlist"],
@@ -44,8 +47,29 @@ export function WishlistHeart({
     setLocalOverride(null);
   }, [isInWishlistFromCache]);
 
+  useEffect(() => {
+    if (!isLoggedIn || pendingFiredRef.current) return;
+    const key = `${PENDING_KEY_PREFIX}${productId}`;
+    AsyncStorage.getItem(key).then(async (val) => {
+      if (val !== "1") return;
+      pendingFiredRef.current = true;
+      await AsyncStorage.removeItem(key).catch(() => {});
+      if (!isInWishlistFromCache) {
+        setLocalOverride(true);
+        try {
+          await addToWishlist(productId);
+          queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+        } catch {
+          setLocalOverride(null);
+        }
+      }
+    }).catch(() => {});
+  }, [isLoggedIn, productId]);
+
   const toggle = useCallback(async () => {
     if (!isLoggedIn) {
+      const key = `${PENDING_KEY_PREFIX}${productId}`;
+      await AsyncStorage.setItem(key, "1").catch(() => {});
       requireAuth(() => {}, { message: "Sign in to save items to your wishlist" });
       return;
     }

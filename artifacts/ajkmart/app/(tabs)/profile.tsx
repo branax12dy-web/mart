@@ -11,6 +11,7 @@ import {
   Linking,
   Modal,
   Platform,
+  Share,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -18,6 +19,7 @@ import {
   Text,
   View,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
@@ -356,6 +358,8 @@ function ProfileScreenInner() {
   const [showMpinChange,  setShowMpinChange]  = useState(false);
   const [showMpinForgot,  setShowMpinForgot]  = useState(false);
   const [pinSetup,        setPinSetup]        = useState(false);
+  const [redeemingLoyalty, setRedeemingLoyalty] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
 
   useEffect(() => {
     if (token) {
@@ -363,6 +367,19 @@ function ProfileScreenInner() {
         .then(r => r.json())
         .then(unwrapApiResponse)
         .then((d: { pinSetup?: boolean }) => { if (typeof d.pinSetup === "boolean") setPinSetup(d.pinSetup); })
+        .catch(() => {});
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (token) {
+      fetch(`${API}/users/loyalty/balance`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(unwrapApiResponse)
+        .then((d: { available?: number; totalEarned?: number }) => {
+          const pts = d.available ?? d.totalEarned;
+          if (typeof pts === "number") setLoyaltyPoints(pts);
+        })
         .catch(() => {});
     }
   }, [token]);
@@ -743,6 +760,42 @@ function ProfileScreenInner() {
                     <Text style={rc.code}>{user?.id?.slice(-8).toUpperCase() ?? "AJKXXXX"}</Text>
                   </View>
                 </View>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.primarySoft, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: C.primary + "44" }}
+                    onPress={async () => {
+                      const code = user?.id?.slice(-8).toUpperCase() ?? "AJKXXXX";
+                      await Clipboard.setStringAsync(code);
+                      showToast("Referral code copied!", "success");
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Copy referral code"
+                  >
+                    <Ionicons name="copy-outline" size={14} color={C.primary} />
+                    <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.primary }}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.infoSoft, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: C.info + "44" }}
+                    onPress={async () => {
+                      const code = user?.id?.slice(-8).toUpperCase() ?? "AJKXXXX";
+                      const appName = platformConfig.platform.appName || "AJKMart";
+                      const bonus = platformConfig.customer.referralBonus;
+                      try {
+                        await Share.share({
+                          message: `Join ${appName} using my referral code ${code} and we both get Rs. ${bonus} bonus! Download the app now.`,
+                          title: `Join ${appName}`,
+                        });
+                      } catch {}
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share referral code"
+                  >
+                    <Ionicons name="share-social-outline" size={14} color={C.info} />
+                    <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.info }}>Share</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
@@ -758,11 +811,46 @@ function ProfileScreenInner() {
                 <Text style={rc.title}>{T("loyaltyPointsLabel")}</Text>
                 <Text style={rc.sub}>Earn {platformConfig.customer.loyaltyPtsPerRs100} points for every Rs. 100 spent</Text>
                 <View style={rc.codeRow}>
-                  <Text style={rc.codeLabel}>You can earn:</Text>
+                  <Text style={rc.codeLabel}>Available:</Text>
                   <View style={[rc.codePill, { backgroundColor: C.amberBorder }]}>
-                    <Text style={[rc.code, { color: C.amberDark }]}>{platformConfig.customer.loyaltyPtsPerRs100} pts / Rs.100</Text>
+                    <Text style={[rc.code, { color: C.amberDark }]}>{loyaltyPoints ?? "—"} pts</Text>
                   </View>
                 </View>
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  disabled={redeemingLoyalty || (loyaltyPoints ?? 0) < 10}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", backgroundColor: (loyaltyPoints ?? 0) >= 10 ? C.amberBorder : C.surfaceSecondary, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 7, marginTop: 10, borderWidth: 1, borderColor: (loyaltyPoints ?? 0) >= 10 ? C.accent + "44" : C.border }}
+                  onPress={async () => {
+                    if (!token) { showToast("Please sign in to redeem points", "error"); return; }
+                    setRedeemingLoyalty(true);
+                    try {
+                      const res = await fetch(`${API}/users/loyalty/redeem`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                      });
+                      const data = await res.json();
+                      if (!res.ok) { showToast(data?.error || "Could not redeem points. Try again.", "error"); return; }
+                      const redeemed = data?.data?.redeemed ?? data?.redeemed ?? 0;
+                      showToast(`Rs. ${redeemed} added to your wallet from loyalty points!`, "success");
+                      if (updateUser && data?.data?.newBalance !== undefined) {
+                        updateUser({ walletBalance: data.data.newBalance });
+                      }
+                      setLoyaltyPoints(0);
+                    } catch { showToast("Network error. Please try again.", "error"); }
+                    finally { setRedeemingLoyalty(false); }
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Redeem loyalty points"
+                >
+                  {redeemingLoyalty ? (
+                    <ActivityIndicator size="small" color={C.amberDark} />
+                  ) : (
+                    <Ionicons name="gift-outline" size={14} color={(loyaltyPoints ?? 0) >= 10 ? C.amberDark : C.textMuted} />
+                  )}
+                  <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: (loyaltyPoints ?? 0) >= 10 ? C.amberDark : C.textMuted }}>
+                    {(loyaltyPoints ?? 0) >= 10 ? `Redeem ${loyaltyPoints} pts` : "Need 10+ pts to redeem"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -802,9 +890,9 @@ function ProfileScreenInner() {
 
         {user?.role === "vendor" && (
           <SectionCard title="VENDOR DASHBOARD">
-            <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)} iconColor={C.mart} iconBg={C.martLight} />
-            <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue & sales"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)}           iconColor={C.primary} iconBg={C.primarySoft} />
-            <Row icon="receipt-outline"    label="Incoming Orders" sub="View new orders"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/`)}    iconColor={C.accent} iconBg={C.accentSoft} />
+            <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/products`)} iconColor={C.mart} iconBg={C.martLight} />
+            <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue & sales"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/analytics`)}           iconColor={C.primary} iconBg={C.primarySoft} />
+            <Row icon="receipt-outline"    label="Incoming Orders" sub="View new orders"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/orders`)}    iconColor={C.accent} iconBg={C.accentSoft} />
           </SectionCard>
         )}
 

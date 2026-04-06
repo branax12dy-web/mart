@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMapsAutocomplete, resolveLocation, reverseGeocodeCoords, staticMapUrl } from "@/hooks/useMaps";
 import type { MapPrediction } from "@/hooks/useMaps";
 import { WebView } from "react-native-webview";
@@ -93,6 +94,8 @@ const isParcelService = (key: string | null | undefined, svc?: ServiceType) => {
   if (!key) return false;
   return (svc?.isParcel === true) || PARCEL_KEYS.some((k) => key.toLowerCase().includes(k));
 };
+
+const PENDING_RIDE_KEY = "@ajkmart_pending_ride_booking";
 
 type BookedRide = {
   id: string;
@@ -428,6 +431,40 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       });
   }, [rideType]);
 
+  const pendingRestoreRef = useRef(false);
+  const pendingAutoBookRef = useRef(false);
+  const handleBookRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!user?.id || pendingRestoreRef.current) return;
+    pendingRestoreRef.current = true;
+    AsyncStorage.getItem(PENDING_RIDE_KEY).then(async (raw) => {
+      if (!raw) return;
+      try {
+        await AsyncStorage.removeItem(PENDING_RIDE_KEY);
+        const saved = JSON.parse(raw);
+        if (saved.pickupObj) setPickupObj(saved.pickupObj);
+        else if (saved.pickup) setPickup(saved.pickup);
+        if (saved.dropObj) setDropObj(saved.dropObj);
+        else if (saved.drop) setDrop(saved.drop);
+        if (saved.rideType) setRideType(saved.rideType);
+        if (saved.pickupObj && saved.dropObj) {
+          pendingAutoBookRef.current = true;
+          setTimeout(() => {
+            animateToStep("vehicle");
+          }, 600);
+        }
+      } catch {}
+    }).catch(() => {});
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!pendingAutoBookRef.current || !pickupObj || !dropObj || !rideType) return;
+    if (!estimate || estimateForType !== rideType) return;
+    pendingAutoBookRef.current = false;
+    handleBookRef.current?.();
+  }, [pickupObj, dropObj, rideType, estimate, estimateForType]);
+
   useEffect(() => {
     if (!user?.id) return;
     fetch(`${API_BASE}/users/${user.id}/debt`, {
@@ -575,7 +612,19 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
     }
     setPickupError("");
     if (!dropObj) { showToast("Please select drop location from the list (exact location required)", "error"); return; }
-    if (!user) { requireAuth(() => {}, { message: "Sign in to book a ride", returnTo: "/ride" }); return; }
+    if (!user) {
+      try {
+        await AsyncStorage.setItem(PENDING_RIDE_KEY, JSON.stringify({
+          pickup: pickupObj ? pickupObj.address : pickup,
+          drop: dropObj ? dropObj.address : drop,
+          pickupObj: pickupObj ?? null,
+          dropObj: dropObj ?? null,
+          rideType,
+        }));
+      } catch {}
+      requireAuth(() => {}, { message: "Sign in to book a ride", returnTo: "/ride" });
+      return;
+    }
     if (user?.role !== "customer") { requireCustomerRole(() => {}); return; }
     const selectedSvc = services.find((s) => s.key === rideType);
     if (isParcelService(rideType, selectedSvc)) {
@@ -655,6 +704,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       setBooking(false);
     }
   };
+  handleBookRef.current = handleBook;
 
   const fetchHistory = async () => {
     if (!user) return;

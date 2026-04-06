@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { usersTable, ordersTable, walletTransactionsTable, ridesTable, savedAddressesTable, userSessionsTable, loginHistoryTable, refreshTokensTable, pharmacyOrdersTable, parcelBookingsTable } from "@workspace/db/schema";
-import { eq, desc, and, count, sql, isNull, ne } from "drizzle-orm";
+import { eq, desc, and, count, sql, isNull, ne, gte } from "drizzle-orm";
+import { getPlatformSettings } from "./admin-shared.js";
 import { customerAuth, getClientIp, writeAuthAuditLog, checkLockout, recordFailedAttempt, resetAttempts } from "../middleware/security.js";
 import { randomUUID, createHash } from "crypto";
 import { writeFile, mkdir } from "fs/promises";
@@ -563,6 +564,101 @@ router.get("/login-history", async (req, res) => {
       createdAt: h.createdAt.toISOString(),
     })),
   });
+});
+
+async function computeLoyaltyPoints(tx: typeof db, userId: string): Promise<{ totalEarned: number; totalRedeemed: number; available: number }> {
+  const rows = await tx.select({ amount: walletTransactionsTable.amount, type: walletTransactionsTable.type, reference: walletTransactionsTable.reference })
+    .from(walletTransactionsTable)
+    .where(eq(walletTransactionsTable.userId, userId));
+
+  let totalEarned = 0;
+  let totalRedeemed = 0;
+  for (const r of rows) {
+    const amt = parseFloat(r.amount ?? "0");
+    if (r.type === "loyalty") totalEarned += amt;
+    if (r.type === "credit" && typeof r.reference === "string" && r.reference.startsWith("loyalty_redeem_")) totalRedeemed += amt;
+  }
+  const available = Math.max(0, Math.floor(totalEarned) - Math.floor(totalRedeemed));
+  return { totalEarned: Math.floor(totalEarned), totalRedeemed: Math.floor(totalRedeemed), available };
+}
+
+router.get("/loyalty/balance", async (req, res) => {
+  const userId = req.customerId!;
+
+  const s = await getPlatformSettings();
+  const loyaltyEnabled = (s["customer_loyalty_enabled"] ?? "on") === "on";
+
+  const { totalEarned, totalRedeemed, available } = await computeLoyaltyPoints(db, userId);
+
+  const [user] = await db.select({ walletBalance: usersTable.walletBalance })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+
+  sendSuccess(res, {
+    loyaltyEnabled,
+    totalEarned,
+    totalRedeemed,
+    available,
+    walletBalance: parseFloat(user?.walletBalance ?? "0"),
+  });
+});
+
+router.post("/loyalty/redeem", async (req, res) => {
+  const userId = req.customerId!;
+
+  const s = await getPlatformSettings();
+  const loyaltyEnabled = (s["customer_loyalty_enabled"] ?? "on") === "on";
+  if (!loyaltyEnabled) {
+    sendError(res, "Loyalty program is not currently active", 403);
+    return;
+  }
+
+  const MIN_REDEEM = 10;
+
+  let newBalance: number;
+  let redeemAmount: number;
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`);
+
+      const { available } = await computeLoyaltyPoints(tx, userId);
+
+      if (available < MIN_REDEEM) {
+        throw Object.assign(new Error("insufficient"), { code: "INSUFFICIENT", available });
+      }
+
+      redeemAmount = available;
+
+      const [upd] = await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance + ${redeemAmount}`, updatedAt: new Date() })
+        .where(eq(usersTable.id, userId))
+        .returning({ walletBalance: usersTable.walletBalance });
+
+      if (!upd) throw new Error("User not found");
+
+      await tx.insert(walletTransactionsTable).values({
+        id: randomUUID(),
+        userId,
+        type: "credit",
+        amount: redeemAmount.toFixed(2),
+        description: `Loyalty points redeemed — ${redeemAmount} pts converted to wallet credit`,
+        reference: `loyalty_redeem_${Date.now()}`,
+      });
+
+      newBalance = parseFloat(upd.walletBalance ?? "0");
+    });
+  } catch (err: any) {
+    if (err?.code === "INSUFFICIENT") {
+      sendError(res, `You need at least ${MIN_REDEEM} loyalty points to redeem. You have ${err.available} available.`, 400);
+      return;
+    }
+    throw err;
+  }
+
+  sendSuccess(res, {
+    redeemed: redeemAmount!,
+    newBalance: newBalance!,
+  }, `${redeemAmount!} loyalty points redeemed — Rs. ${redeemAmount!} added to your wallet!`);
 });
 
 export default router;

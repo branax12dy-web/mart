@@ -309,6 +309,25 @@ export function NegotiationScreen({
     setAcceptBidId(null);
   };
 
+  const rejectBid = async (bidId: string) => {
+    setRide((prev) => {
+      if (!prev) return prev;
+      return { ...prev, bids: (prev.bids ?? []).filter((b) => b.id !== bidId) };
+    });
+    try {
+      const res = await fetch(`${API_BASE}/rides/${rideId}/bids/${bidId}/reject`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data?.error || "Could not reject bid. It will expire automatically.", "info");
+      }
+    } catch {
+      showToast("Could not reject bid. It will expire automatically.", "info");
+    }
+  };
+
   const sendCounterOffer = async () => {
     const err = validateOffer(counterInput);
     if (err) { setOfferError(err); showToast(err, "error"); return; }
@@ -477,7 +496,7 @@ export function NegotiationScreen({
                   >
                   <SwipeBidCard
                     onSwipeRight={() => { if (acceptBidId === null) acceptBid(bid.id); }}
-                    onSwipeLeft={() => {}}
+                    onSwipeLeft={() => { if (acceptBidId === null) rejectBid(bid.id); }}
                   >
                   <View
                     style={{

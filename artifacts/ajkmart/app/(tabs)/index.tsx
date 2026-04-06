@@ -1292,17 +1292,28 @@ export default function HomeScreen() {
           </View>
 
           <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
-            <TouchableOpacity activeOpacity={0.7}
-              onPress={() => router.push("/search")}
-              style={s.searchBar}
-              accessibilityRole="search"
-              accessibilityLabel={T("search")}
-            >
-              <Ionicons name="search" size={16} color={C.textMuted} />
-              <Text style={s.searchText}>{T("search")}</Text>
+            <View style={s.searchBar}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push("/search" as Href)}
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}
+                accessibilityRole="search"
+                accessibilityLabel={T("search")}
+              >
+                <Ionicons name="search" size={16} color={C.textMuted} />
+                <Text style={s.searchText}>{T("search")}</Text>
+              </TouchableOpacity>
               <View style={s.searchDivider} />
-              <Ionicons name="camera-outline" size={16} color={C.textMuted} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push("/scan" as Href)}
+                accessibilityRole="button"
+                accessibilityLabel="Scan barcode"
+                hitSlop={8}
+              >
+                <Ionicons name="camera-outline" size={16} color={C.textMuted} />
+              </TouchableOpacity>
+            </View>
           </Animated.View>
         </LinearGradient>
       </Animated.View>

@@ -84,9 +84,9 @@ export default function UniversalSearchScreen() {
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
-  const params = useLocalSearchParams<{ category?: string }>();
+  const params = useLocalSearchParams<{ category?: string; q?: string }>();
 
-  const [query, setQuery] = useState(params.category ? `category:${params.category}` : "");
+  const [query, setQuery] = useState(params.q ? params.q : params.category ? `category:${params.category}` : "");
   const [sections, setSections] = useState<Array<{ title: string; data: SearchResult[]; type: ServiceKey }>>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
@@ -130,6 +130,12 @@ export default function UniversalSearchScreen() {
       fetchResults(params.category, false, 1);
     }
   }, [params.category]);
+
+  useEffect(() => {
+    if (params.q) {
+      fetchResults(params.q, true, 1);
+    }
+  }, [params.q]);
 
   const saveToHistory = useCallback((term: string) => {
     const trimmed = term.trim();
