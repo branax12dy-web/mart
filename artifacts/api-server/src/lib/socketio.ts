@@ -238,7 +238,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
             } else {
               logger.debug({ socketId: socket.id, room }, "Socket denied ride room (not a participant)");
             }
-          }).catch(() => { _pendingRideJoins.delete(key); });
+          }).catch((e: Error) => { _pendingRideJoins.delete(key); logger.warn({ socketId: socket.id, room, err: e.message }, "[socketio] handshake ride room auth check failed"); });
         } else if (room.startsWith("order:")) {
           const orderId = room.slice("order:".length);
           isAuthorizedForOrderRoom(orderId, headers, auth).then(ok => {
@@ -247,7 +247,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
             } else {
               logger.debug({ socketId: socket.id, room }, "Socket denied order room (not a participant)");
             }
-          }).catch(() => {});
+          }).catch((e: Error) => logger.warn({ socketId: socket.id, room, err: e.message }, "[socketio] order room auth check failed"));
         }
       }
     }
@@ -275,14 +275,14 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
       db.update(liveLocationsTable)
         .set({ batteryLevel: batteryLevel ?? undefined, lastSeen: now, updatedAt: now })
         .where(eq(liveLocationsTable.userId, riderPay.userId))
-        .catch(() => {});
+        .catch((e: Error) => logger.warn({ riderId: riderPay.userId, err: e.message }, "[socketio/heartbeat] live_locations update failed"));
 
       /* 2. Update users: isOnline flag + lastActive timestamp so the ghost-rider
             cleanup timer correctly uses lastActive as the freshness signal. */
       db.update(usersTable)
         .set({ isOnline, lastActive: now, updatedAt: now })
         .where(eq(usersTable.id, riderPay.userId))
-        .catch(() => {});
+        .catch((e: Error) => logger.warn({ riderId: riderPay.userId, err: e.message }, "[socketio/heartbeat] users isOnline update failed"));
 
       _io!.to("admin-fleet").emit("rider:heartbeat", {
         userId: riderPay.userId,
@@ -371,7 +371,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
           } else {
             logger.debug({ socketId: socket.id, room }, "Socket join denied ride room (not a participant)");
           }
-        }).catch(() => { _pendingRideJoins.delete(key); });
+        }).catch((e: Error) => { _pendingRideJoins.delete(key); logger.warn({ socketId: socket.id, room, err: e.message }, "[socketio] ride room auth check failed"); });
       } else if (room.startsWith("order:")) {
         const orderId = room.slice("order:".length);
         isAuthorizedForOrderRoom(orderId, headers, auth).then(ok => {
@@ -381,7 +381,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
           } else {
             logger.debug({ socketId: socket.id, room }, "Socket join denied order room (not a participant)");
           }
-        }).catch(() => {});
+        }).catch((e: Error) => logger.warn({ socketId: socket.id, room, err: e.message }, "[socketio] order room join auth check failed"));
       }
     });
 

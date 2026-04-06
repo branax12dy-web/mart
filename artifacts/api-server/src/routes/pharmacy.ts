@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { notificationsTable, pharmacyOrdersTable, productsTable, usersTable, walletTransactionsTable, liveLocationsTable } from "@workspace/db/schema";
 import { eq, sql, and, gte, count, inArray } from "drizzle-orm";
@@ -388,7 +389,7 @@ router.post("/", customerAuth, async (req, res) => {
         title: t("notifPharmacyOrderPlaced" as TranslationKey, phLang1),
         body: t("notifPharmacyOrderPlacedBody" as TranslationKey, phLang1).replace("{amount}", `${total.toFixed(0)} (items + Rs. ${deliveryFee} delivery)`).replace("{eta}", estimatedTime),
         type: "pharmacy", icon: "medical-outline", link: `/(tabs)/orders`,
-      }).catch(() => {});
+      }).catch((e: Error) => logger.warn({ userId, err: e.message }, "[pharmacy/order] wallet-order notification insert failed"));
 
       sendCreated(res, { ...mapOrder(order), deliveryFee, gstAmount });
     } catch (e: unknown) {
@@ -411,7 +412,7 @@ router.post("/", customerAuth, async (req, res) => {
     title: t("notifPharmacyOrderPlaced" as TranslationKey, phLang2),
     body: t("notifPharmacyOrderPlacedBody" as TranslationKey, phLang2).replace("{amount}", `${total.toFixed(0)} (items + Rs. ${deliveryFee} delivery)`).replace("{eta}", estimatedTime),
     type: "pharmacy", icon: "medical-outline", link: `/(tabs)/orders`,
-  }).catch(() => {});
+  }).catch((e: Error) => logger.warn({ userId, err: e.message }, "[pharmacy/order] cash-order notification insert failed"));
 
   sendCreated(res, { ...mapOrder(order!), deliveryFee, gstAmount });
 });
@@ -482,7 +483,7 @@ router.patch("/:id/cancel", customerAuth, async (req, res) => {
       title: t("notifPharmacyRefund" as TranslationKey, phRefLang),
       body: t("notifPharmacyRefundBody" as TranslationKey, phRefLang).replace("{amount}", refund.toFixed(0)),
       type: "pharmacy", icon: "wallet-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => logger.warn({ userId, orderId, err: e.message }, "[pharmacy/cancel] refund notification insert failed"));
     refundAmount = refund;
     sendSuccess(res, { ...mapOrder(cancelledOrder), refundAmount });
     return;

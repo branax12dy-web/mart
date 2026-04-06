@@ -635,17 +635,17 @@ router.post("/condition-rules/evaluate/:userId", async (req, res) => {
 
       let metricValue: number | null = null;
       if (rule.metric === "cancellation_rate") {
-        metricValue = parseFloat(String((user as any).cancellationRate || 0));
+        metricValue = parseFloat(String(user.cancellationRate || 0));
       } else if (rule.metric === "fraud_incidents") {
-        metricValue = parseInt(String((user as any).fraudIncidents || 0), 10);
+        metricValue = parseInt(String(user.fraudIncidents || 0), 10);
       } else if (rule.metric === "abuse_reports") {
-        metricValue = parseInt(String((user as any).abuseReports || 0), 10);
+        metricValue = parseInt(String(user.abuseReports || 0), 10);
       } else if (rule.metric === "avg_rating_30d") {
-        metricValue = parseFloat(String((user as any).avgRating || 5));
+        metricValue = parseFloat(String(user.avgRating || 5));
       } else if (rule.metric === "miss_ignore_rate") {
-        metricValue = parseFloat(String((user as any).missIgnoreRate || 0));
+        metricValue = parseFloat(String(user.missIgnoreRate || 0));
       } else if (rule.metric === "order_completion_rate") {
-        metricValue = parseFloat(String((user as any).orderCompletionRate || 100));
+        metricValue = parseFloat(String(user.orderCompletionRate || 100));
       }
 
       if (metricValue === null) continue;

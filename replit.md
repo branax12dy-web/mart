@@ -1186,3 +1186,26 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 - `delivery_access_mode` platform setting defaults to `"all"` when absent from DB (no whitelist restrictions). Cart eligibility check + server-side order creation both honor this default.
 - Fixed stale-state bug in cart's "Self-Pickup Instead" CTA: `handleCheckout` now accepts optional `overridePayMethod` so pickup intent is applied immediately without relying on async state update.
 - Fixed pharmacy `loadMeds` to always update state (including empty arrays) so pull-to-refresh properly reflects backend changes.
+
+### Task #13: Backend Robustness — Empty Catches, DB/Type Sync & Bundle Size
+
+#### Empty Catch Blocks Fixed
+All 30+ empty `.catch(() => {})` blocks in the API server now log meaningful messages using pino's structured logging:
+- **`rides.ts`**: Broadcast notification failures (`warn`), rideNotifiedRiders insert (`warn`), push notification failures (`warn`), tripOtp DB update (`error`), cancel notifications (`warn`), dispatch-engine notification failures (`warn`), SSE pushUpdate (`warn`), orphan cleanup (`warn`)
+- **`vendor.ts`**: Order status notifications (`warn`), refund notifications (`warn`), withdrawal notifications (`warn`), assign-rider/auto-assign delivery notifications (`warn`). Logger import added.
+- **`pharmacy.ts`**: Order placement notifications (`warn`), refund notification (`warn`). Logger import added.
+- **`orders.ts`**: `notifyOnlineRidersOfOrder` failures (`warn`). Logger import added.
+- **`rider.ts`**: Auto-offline DB update (`error`), wallet-empty push notification (`warn`).
+- **`middleware/security.ts`**: `loadBlockedIPs` DB query failure (`warn`), `blockIP` DB insert (`error`), `cleanupExpiredRateLimits` DB delete (`warn`).
+- **`lib/socketio.ts`**: Heartbeat `live_locations`/`users` DB updates (`warn`), ride/order room auth check failures (`warn`).
+- Pattern: `logger.warn` for non-critical notification failures; `logger.error` for DB operation failures. Structured objects `{ contextId, err: e.message }` passed as first arg.
+
+#### DB/Type Sync Gaps Fixed
+- **`lib/db/src/schema/users.ts`**: Added 6 user-metrics columns: `cancellationRate`, `fraudIncidents`, `abuseReports`, `missIgnoreRate`, `orderCompletionRate`, `avgRating` — used by the admin conditions engine.
+- **`lib/db/migrations/0026_user_metrics_columns.sql`**: Migration to add columns with defaults (rate=0, incidents/reports=0, completion=100).
+- **`artifacts/api-server/src/routes/admin/conditions.ts`**: Replaced all `(user as any).field` casts with direct typed property access now that the fields exist in the schema.
+- **`lib/api-zod/src/generated/types/ride.ts`**: Added `tripOtp?: string | null` and `otpVerified?: boolean` to the Ride interface.
+- **`lib/api-client-react/src/generated/api.schemas.ts`**: Same `tripOtp` and `otpVerified` additions so frontend code (e.g. `useRideStatus.ts`) no longer needs `(ride as any).tripOtp`.
+
+#### Bundle Size Reduction
+- **`artifacts/api-server/src/routes/reviews.ts`**: OpenAI SDK import changed from static top-level `import OpenAI from "openai"` to lazy dynamic `import("openai")` — the `getAIClient()` function is now async and only loads the OpenAI module on the first moderation request. This removes the OpenAI SDK from the startup critical path.

@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
+import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable, riderProfilesTable, vendorProfilesTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull, avg } from "drizzle-orm";
@@ -244,7 +245,7 @@ router.patch("/orders/:id/status", async (req, res) => {
     });
     if (!txResult) { sendError(res, "Order has already been refunded", 409); return; }
     updated = txResult;
-    await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title: t("notifRefundProcessed", custLang) + " 💰", body: t("notifRefundProcessedBody", custLang).replace("{amount}", refundAmt.toFixed(0)), type: "wallet", icon: "wallet-outline" }).catch(() => {});
+    await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title: t("notifRefundProcessed", custLang) + " 💰", body: t("notifRefundProcessedBody", custLang).replace("{amount}", refundAmt.toFixed(0)), type: "wallet", icon: "wallet-outline" }).catch((e: Error) => logger.warn({ orderId, userId: order.userId, err: e.message }, "[vendor/order-status] refund notification insert failed"));
   } else {
     /* Non-wallet or non-cancel: plain status update — vendorId in WHERE closes TOCTOU window */
     const [result] = await db.update(ordersTable)
@@ -256,7 +257,7 @@ router.patch("/orders/:id/status", async (req, res) => {
   }
 
   if (msgs[status]) {
-    await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title: msgs[status]!.title, body: msgs[status]!.body, type: "order", icon: "bag-outline" }).catch(()=>{});
+    await db.insert(notificationsTable).values({ id: generateId(), userId: order.userId, title: msgs[status]!.title, body: msgs[status]!.body, type: "order", icon: "bag-outline" }).catch((e: Error) => logger.warn({ orderId, userId: order.userId, status, err: e.message }, "[vendor/order-status] status notification insert failed"));
   }
 
   const io = getIO();
@@ -510,7 +511,7 @@ router.post("/wallet/withdraw", async (req, res) => {
       title: t("notifVendorWithdrawal", wdLang),
       body: t("notifVendorWithdrawalBody", wdLang).replace("{amount}", String(amt)),
       type: "wallet", icon: "cash-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => logger.warn({ vendorId, err: e.message }, "[vendor/withdraw] withdrawal notification insert failed"));
 
     sendSuccess(res, { newBalance: parseFloat(result.toFixed(2)), amount: amt });
   } catch (e: unknown) {
@@ -739,7 +740,7 @@ router.post("/orders/:id/assign-rider", requireRole("vendor"), async (req, res) 
     title: "📦 New Delivery Assigned",
     body: `You have been assigned a delivery order #${String(orderId).slice(-6).toUpperCase()}. Head to the vendor.`,
     type: "order", icon: "bicycle-outline",
-  }).catch(() => {});
+  }).catch((e: Error) => logger.warn({ orderId, riderId: rider.id, err: e.message }, "[vendor/assign-rider] notification insert failed"));
 
   const io = getIO();
   if (io) io.to(`user:${rider.id}`).emit("order:assigned", { orderId });
@@ -799,7 +800,7 @@ router.post("/orders/:id/auto-assign", requireRole("vendor"), async (req, res) =
     title: "📦 New Delivery Assigned (Auto)",
     body: `Order #${String(orderId).slice(-6).toUpperCase()} has been auto-assigned to you. Head to the vendor!`,
     type: "order", icon: "bicycle-outline",
-  }).catch(() => {});
+  }).catch((e: Error) => logger.warn({ orderId, riderId: nearest.id, err: e.message }, "[vendor/auto-assign] notification insert failed"));
 
   const io = getIO();
   if (io) io.to(`user:${nearest.id}`).emit("order:assigned", { orderId });

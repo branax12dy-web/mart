@@ -125,9 +125,11 @@ async function loadBlockedIPs() {
       .from(rateLimitsTable)
       .where(like(rateLimitsTable.key, "blocked_ip:%"));
     for (const row of rows) blockedIPsCache.add(row.key.replace("blocked_ip:", ""));
-  } catch {}
+  } catch (e) {
+    logger.warn({ err: (e as Error).message }, "[security] loadBlockedIPs DB query failed");
+  }
 }
-loadBlockedIPs().catch(() => {});
+loadBlockedIPs().catch((e: Error) => logger.warn({ err: e.message }, "[security] loadBlockedIPs failed"));
 
 export async function blockIP(ip: string) {
   blockedIPsCache.add(ip);
@@ -138,7 +140,9 @@ export async function blockIP(ip: string) {
       windowStart: new Date(),
       updatedAt: new Date(),
     }).onConflictDoNothing();
-  } catch {}
+  } catch (e) {
+    logger.error({ ip, err: (e as Error).message }, "[security] blockIP DB insert failed");
+  }
 }
 
 export async function unblockIP(ip: string) {
@@ -516,9 +520,11 @@ export async function cleanupExpiredRateLimits() {
         sql`${rateLimitsTable.key} NOT LIKE 'blocked_ip:%'`
       )
     );
-  } catch {}
+  } catch (e) {
+    logger.warn({ err: (e as Error).message }, "[security] cleanupExpiredRateLimits DB delete failed");
+  }
 }
-setInterval(() => { cleanupExpiredRateLimits().catch(() => {}); }, 15 * 60 * 1000);
+setInterval(() => { cleanupExpiredRateLimits().catch((e: Error) => logger.warn({ err: e.message }, "[security] cleanupExpiredRateLimits failed")); }, 15 * 60 * 1000);
 
 /* ══════════════════════════════════════════════════════════════
    CHECK-AVAILABLE RATE LIMITER  (DB-authoritative)

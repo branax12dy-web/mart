@@ -513,7 +513,7 @@ router.patch("/profile", async (req, res) => {
       title: t("approvalPending", reVerifyLang),
       body: t("approvalMsg", reVerifyLang),
       type: "system", icon: "shield-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ riderId, err: e.message }, "[rider] approval-pending notification insert failed"); });
   }
 
   sendSuccess(res, {
@@ -805,7 +805,7 @@ router.post("/orders/:id/reject", async (req, res) => {
     title: "Order skipped",
     body: `You skipped order ${orderId.slice(-6).toUpperCase()} — ${reason}`,
     type: "system", icon: "close-circle-outline",
-  }).catch(() => {});
+  }).catch((e: Error) => { logger.warn({ riderId, orderId, err: e.message }, "[rider] skip-order notification insert failed"); });
 
   sendSuccess(res, { orderId, reason });
 });
@@ -887,7 +887,7 @@ async function handleCancelPenalty(riderId: string): Promise<{ dailyCancels: num
         ? t("notifCancelRestrictedBody", penaltyLang).replace("{count}", String(dailyCancels)).replace("{limit}", String(limit)).replace("{amount}", String(penaltyAmt))
         : t("notifCancelPenaltyBody", penaltyLang).replace("{count}", String(dailyCancels)).replace("{limit}", String(limit)).replace("{amount}", String(penaltyAmt)),
       type: "system", icon: "alert-circle-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ riderId, err: e.message }, "[rider] cancel-penalty notification insert failed"); });
   } else if (dailyCancels === limit) {
     const warnLang = await getUserLanguage(riderId);
     await db.insert(notificationsTable).values({
@@ -895,7 +895,7 @@ async function handleCancelPenalty(riderId: string): Promise<{ dailyCancels: num
       title: t("notifCancelWarning", warnLang) + " ⚠️",
       body: t("notifCancelWarningBody", warnLang).replace("{count}", String(dailyCancels)).replace("{limit}", String(limit)).replace("{amount}", String(penaltyAmt)),
       type: "system", icon: "alert-circle-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ riderId, err: e.message }, "[rider] cancel-warning notification insert failed"); });
   }
 
   return { dailyCancels, penaltyApplied, restricted };
@@ -1308,7 +1308,7 @@ router.post("/rides/:id/accept", rideAcceptLimiter, async (req, res) => {
 
   /* Generate trip OTP and emit to customer */
   const tripOtp = String(Math.floor(1000 + Math.random() * 9000));
-  await db.update(ridesTable).set({ tripOtp, updatedAt: new Date() }).where(eq(ridesTable.id, updated.id)).catch(() => {});
+  await db.update(ridesTable).set({ tripOtp, updatedAt: new Date() }).where(eq(ridesTable.id, updated.id)).catch((e: Error) => { logger.error({ rideId: updated.id, err: e.message }, "[rider] tripOtp DB update failed"); });
   emitRideOtp(updated.userId, updated.id, tripOtp);
 
   emitRideDispatchUpdate({ rideId: updated.id, action: "accepted", status: "accepted" });
@@ -1351,7 +1351,7 @@ router.post("/rides/:id/verify-otp", otpLimiter, async (req, res) => {
 
     if (entry.count >= MAX_OTP_ATTEMPTS) {
       /* Invalidate the current OTP so the customer must request a fresh one */
-      await db.update(ridesTable).set({ tripOtp: null, updatedAt: new Date() }).where(eq(ridesTable.id, rideId)).catch(() => {});
+      await db.update(ridesTable).set({ tripOtp: null, updatedAt: new Date() }).where(eq(ridesTable.id, rideId)).catch((e: Error) => { logger.error({ rideId, err: e.message }, "[rider] tripOtp invalidation DB update failed"); });
       rideOtpAttempts.delete(rideId);
       sendErrorWithData(res, "Too many incorrect OTP attempts. The current OTP has been invalidated. Please ask the customer to refresh their app to receive a new OTP.", { code: "OTP_INVALIDATED" }, 400);
       return;
@@ -1472,8 +1472,8 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
       }).catch((e: Error) => logger.error("[rider] notif insert failed:", e.message));
       /* Auto-offline if balance hits zero */
       if (newRiderBalance <= 0) {
-        await db.update(usersTable).set({ isOnline: false, updatedAt: new Date() }).where(eq(usersTable.id, riderId)).catch(() => {});
-        sendPushToUser(riderId, { title: "Wallet Empty — You are now Offline", body: "Your wallet balance is 0. Top up to go online and accept rides.", tag: "wallet-empty" }).catch(() => {});
+        await db.update(usersTable).set({ isOnline: false, updatedAt: new Date() }).where(eq(usersTable.id, riderId)).catch((e: Error) => logger.error({ riderId, err: e.message }, "[rider/complete] auto-offline DB update failed"));
+        sendPushToUser(riderId, { title: "Wallet Empty — You are now Offline", body: "Your wallet balance is 0. Top up to go online and accept rides.", tag: "wallet-empty" }).catch((e: Error) => logger.warn({ riderId, err: e.message }, "[rider/complete] wallet-empty push notification failed"));
       }
     } else {
       const earnings = parseFloat((fareAmt * riderKeepPct).toFixed(2));
@@ -1516,13 +1516,13 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
       body: `Your ride has been completed. Fare: Rs. ${safeNum(ride.fare).toFixed(0)}`,
       tag: "ride-completed",
       data: { rideId: ride.id },
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ rideId: ride.id, userId: ride.userId, err: e.message }, "[rider] trip-completed push to customer failed"); });
     sendPushToUser(riderId, {
       title: "Trip Completed 🎉",
       body: `You've completed a trip. Check your wallet for earnings.`,
       tag: "ride-completed-rider",
       data: { rideId: ride.id },
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ rideId: ride.id, riderId, err: e.message }, "[rider] trip-completed push to rider failed"); });
   } else {
     const now = new Date();
     const timestampFields =
@@ -1542,7 +1542,7 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
         body: "Your rider is at the pickup location. Share your OTP to start the trip.",
         tag: "rider-arrived",
         data: { rideId: ride.id },
-      }).catch(() => {});
+      }).catch((e: Error) => { logger.warn({ rideId: ride.id, userId: ride.userId, err: e.message }, "[rider] rider-arrived push to customer failed"); });
       /* Re-emit the OTP on arrived so that any customer who missed the
          original socket event (e.g. brief disconnect) gets the OTP now. */
       if (ride.tripOtp) {
@@ -2766,7 +2766,7 @@ async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: num
         ? t("notifIgnoreRestrictedBody", ignorePenaltyLang).replace("{count}", String(dailyIgnores)).replace("{limit}", String(limit)).replace("{amount}", String(penaltyAmt))
         : t("notifIgnorePenaltyBody", ignorePenaltyLang).replace("{count}", String(dailyIgnores)).replace("{limit}", String(limit)).replace("{amount}", String(penaltyAmt)),
       type: "system", icon: "alert-circle-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ riderId, err: e.message }, "[rider] ignore-penalty notification insert failed"); });
   } else if (dailyIgnores === limit) {
     const ignoreWarnLang = await getUserLanguage(riderId);
     await db.insert(notificationsTable).values({
@@ -2774,7 +2774,7 @@ async function handleIgnorePenalty(riderId: string): Promise<{ dailyIgnores: num
       title: t("notifCancelWarning", ignoreWarnLang) + " ⚠️",
       body: t("notifIgnoreWarningBody", ignoreWarnLang).replace("{count}", String(dailyIgnores)).replace("{limit}", String(limit)).replace("{amount}", String(penaltyAmt)),
       type: "system", icon: "alert-circle-outline",
-    }).catch(() => {});
+    }).catch((e: Error) => { logger.warn({ riderId, err: e.message }, "[rider] ignore-warning notification insert failed"); });
   }
 
   return { dailyIgnores, penaltyApplied, restricted };

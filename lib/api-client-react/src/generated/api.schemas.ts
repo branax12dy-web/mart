@@ -392,6 +392,8 @@ export interface Ride {
   riderName?: string;
   riderPhone?: string;
   paymentMethod: RidePaymentMethod;
+  tripOtp?: string | null;
+  otpVerified?: boolean;
   createdAt: string;
 }
 

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable } from "@workspace/db/schema";
 import { eq, and, gte, count, sum, desc, SQL, sql, inArray, ilike } from "drizzle-orm";
@@ -998,7 +999,7 @@ router.post("/", customerAuth, async (req, res) => {
       }
 
       sendCreated(res, mapped);
-      notifyOnlineRidersOfOrder(order.id, type || "mart").catch(() => {});
+      notifyOnlineRidersOfOrder(order.id, type || "mart").catch((e: Error) => logger.warn({ orderId: order.id, err: e.message }, "[orders/create] wallet notifyOnlineRiders failed"));
     } catch (e: unknown) {
       sendValidationError(res, (e as Error).message);
     }
@@ -1049,7 +1050,7 @@ router.post("/", customerAuth, async (req, res) => {
       idempotencyCache.set(`${userId}:${idempotencyKey}`, { ...mapped, _ts: Date.now() });
     }
     sendCreated(res, mapped);
-    notifyOnlineRidersOfOrder(order!.id, type || "mart").catch(() => {});
+    notifyOnlineRidersOfOrder(order!.id, type || "mart").catch((e: Error) => logger.warn({ orderId: order!.id, err: e.message }, "[orders/create] cash notifyOnlineRiders failed"));
   } catch (e: unknown) {
     sendError(res, "Order could not be created. Please try again.", 500);
   }

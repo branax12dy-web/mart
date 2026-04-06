@@ -7,7 +7,6 @@ import { generateId } from "../lib/id.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError, sendUnauthorized } from "../lib/response.js";
 import { getPlatformSettings } from "./admin.js";
 import { customerAuth, verifyUserJwt, writeAuthAuditLog, getClientIp } from "../middleware/security.js";
-import OpenAI from "openai";
 
 const router: IRouter = Router();
 
@@ -34,27 +33,30 @@ async function vendorAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-/* ── AI Moderation Client ──────────────────────────────────────────────── */
-let aiClient: OpenAI | null = null;
-function getAIClient(): OpenAI | null {
+/* ── AI Moderation Client — lazily loaded to keep startup bundle lean ──── */
+let _aiClientPromise: Promise<unknown> | null = null;
+async function getAIClient(): Promise<unknown | null> {
   if (!process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] || !process.env["AI_INTEGRATIONS_OPENAI_API_KEY"]) {
     return null;
   }
-  if (!aiClient) {
-    aiClient = new OpenAI({
+  if (!_aiClientPromise) {
+    _aiClientPromise = import("openai").then(({ default: OpenAI }) => new OpenAI({
       baseURL: process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"],
       apiKey: process.env["AI_INTEGRATIONS_OPENAI_API_KEY"],
-    });
+    }));
   }
-  return aiClient;
+  return _aiClientPromise;
 }
 
 async function moderateComment(comment: string): Promise<{ flagged: boolean; reason: string | null }> {
-  const client = getAIClient();
-  if (!client || !comment || comment.trim().length < 5) {
+  if (!comment || comment.trim().length < 5) {
     return { flagged: false, reason: null };
   }
   try {
+    const client = await getAIClient() as { chat: { completions: { create: (opts: unknown) => Promise<{ choices: Array<{ message?: { content?: string } }> }> } } } | null;
+    if (!client) {
+      return { flagged: false, reason: null };
+    }
     const response = await client.chat.completions.create({
       model: "gpt-5-mini",
       max_completion_tokens: 100,

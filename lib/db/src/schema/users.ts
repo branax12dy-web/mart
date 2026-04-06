@@ -84,6 +84,13 @@ export const usersTable = pgTable("users", {
   tokenVersion:    integer("token_version").notNull().default(0),
   /* ── Dev OTP mode — admin-controlled per-user OTP display in response ── */
   devOtpEnabled:   boolean("dev_otp_enabled").notNull().default(false),
+  /* ── User metrics — aggregated for admin condition engine ── */
+  cancellationRate:    decimal("cancellation_rate", { precision: 5, scale: 2 }).notNull().default("0"),
+  fraudIncidents:      integer("fraud_incidents").notNull().default(0),
+  abuseReports:        integer("abuse_reports").notNull().default(0),
+  missIgnoreRate:      decimal("miss_ignore_rate", { precision: 5, scale: 2 }).notNull().default("0"),
+  orderCompletionRate: decimal("order_completion_rate", { precision: 5, scale: 2 }).notNull().default("100"),
+  avgRating:           decimal("avg_rating", { precision: 3, scale: 2 }),
   /* ── Auto-suspension tracking ── */
   autoSuspendedAt: timestamp("auto_suspended_at"),
   autoSuspendReason: text("auto_suspend_reason"),
