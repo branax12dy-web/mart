@@ -185,11 +185,6 @@ function FoodScreenInner() {
     },
     staleTime: 5 * 60 * 1000,
   });
-  const restaurants = useMemo(() => {
-    const raw = (vendorData as any)?.vendors || (vendorData as any)?.users || [];
-    return Array.isArray(raw) ? raw.slice(0, 8) : [];
-  }, [vendorData]);
-
   const categories = useMemo(() => catData?.categories || [], [catData]);
   const items = useMemo(() => data?.products || [], [data]);
 

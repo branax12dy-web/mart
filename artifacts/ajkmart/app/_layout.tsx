@@ -218,6 +218,7 @@ function RootLayoutNav() {
   const { isSuspended, user, token } = useAuth();
   const { config } = usePlatformConfig();
   const qc = useQueryClient();
+  const segments = useSegments();
   const prevUserRef = useRef<string | null>(null);
 
   useEffect(() => {
