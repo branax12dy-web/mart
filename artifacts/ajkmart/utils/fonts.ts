@@ -1,16 +1,4 @@
-/**
- * Centralized font manager for AJKMart.
- *
- * Strategy:
- *   • Core Inter fonts are always loaded at startup — they are small (~300 KB
- *     total) and required for every screen in the app.
- *   • Noto Nastaliq Urdu fonts (~2.7 MB) are loaded ONLY when the active
- *     language is "ur" or "en_ur".  This prevents the FontFaceObserver
- *     timeout error that appeared on every cold start for English users.
- *
- * Usage:
- *   import { loadCoreFonts, loadUrduFonts, urduFontsReady } from "@/utils/fonts";
- */
+import { Platform } from "react-native";
 import * as Font from "expo-font";
 import {
   Inter_400Regular,
@@ -24,6 +12,15 @@ import {
   NotoNastaliqUrdu_600SemiBold,
   NotoNastaliqUrdu_700Bold,
 } from "@expo-google-fonts/noto-nastaliq-urdu";
+
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (e) => {
+    const msg = String(e?.reason?.message ?? e?.reason ?? "");
+    if (msg.includes("fontfaceobserver") || msg.includes("Font") || msg === "") {
+      e.preventDefault();
+    }
+  });
+}
 
 const CORE_FONTS = {
   Inter_400Regular,
@@ -47,12 +44,12 @@ export function urduFontsReady(): boolean {
   return _urduLoaded;
 }
 
-/**
- * Load the four Inter weights that the app uses everywhere.
- * Throws if loading fails — caller should handle / ignore.
- */
 export async function loadCoreFonts(): Promise<void> {
-  await Font.loadAsync(CORE_FONTS);
+  try {
+    await Font.loadAsync(CORE_FONTS);
+  } catch {
+    if (__DEV__) console.warn("[fonts] Core font load failed — using system fallback");
+  }
 }
 
 /**
