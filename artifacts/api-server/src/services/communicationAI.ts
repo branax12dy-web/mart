@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import { aiModerationLogsTable } from "@workspace/db/schema";
 import { generateId } from "../lib/id.js";
 import { logger } from "../lib/logger.js";
+import { getIO } from "../lib/socketio.js";
+import { count, gte } from "drizzle-orm";
 
 const openai = new OpenAI({
   baseURL: process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"],
@@ -43,8 +45,22 @@ async function logAiUsage(userId: string, actionType: string, inputText: string 
       outputText: outputText?.slice(0, 500) ?? null,
       tokensUsed,
     });
+    emitDashboardUpdateAfterAiLog().catch(() => {});
   } catch (e) {
     logger.warn({ err: e }, "[commAI] Failed to log AI usage");
+  }
+}
+
+async function emitDashboardUpdateAfterAiLog() {
+  try {
+    const io = getIO();
+    if (!io) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [aiUsageResult] = await db.select({ count: count() }).from(aiModerationLogsTable).where(gte(aiModerationLogsTable.createdAt, today));
+    io.to("admin-fleet").emit("comm:dashboard:update", { aiUsageToday: aiUsageResult?.count ?? 0 });
+  } catch (e) {
+    logger.warn({ err: e }, "[commAI] Failed to emit dashboard update after AI log");
   }
 }
 

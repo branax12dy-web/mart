@@ -96,3 +96,31 @@ export const fetcher = async (endpoint: string, options: RequestInit = {}) => {
 
   return json.data !== undefined ? json.data : json;
 };
+
+export const fetcherWithMeta = async (endpoint: string, options: RequestInit = {}): Promise<{ data: unknown; total?: number; [key: string]: unknown }> => {
+  const token = getToken();
+
+  const res = await fetch(`${getApiBase()}${endpoint}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "x-admin-token": token } : {}),
+      ...options.headers,
+    },
+  });
+
+  const json = await res.json();
+
+  if (!res.ok) {
+    if (res.status === 401 && token) {
+      const currentToken = getToken();
+      if (currentToken === token) {
+        clearToken();
+        window.location.href = import.meta.env.BASE_URL + "login";
+      }
+    }
+    throw new Error(json.error || "An error occurred");
+  }
+
+  return json;
+};

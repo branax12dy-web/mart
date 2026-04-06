@@ -10,12 +10,38 @@ import {
   aiModerationLogsTable,
   platformSettingsTable,
 } from "@workspace/db/schema";
-import { eq, desc, sql, and, count, gte, like, or } from "drizzle-orm";
+import { eq, desc, sql, and, count, gte, or } from "drizzle-orm";
 import { generateId } from "../../lib/id.js";
 import { generateRoleTemplate } from "../../services/communicationAI.js";
 import { logger } from "../../lib/logger.js";
+import { getIO } from "../../lib/socketio.js";
 
 const router = Router();
+
+async function emitDashboardUpdate() {
+  const io = getIO();
+  if (!io) return;
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [convCount] = await db.select({ count: count() }).from(conversationsTable).where(eq(conversationsTable.status, "active"));
+    const [msgCount] = await db.select({ count: count() }).from(chatMessagesTable).where(gte(chatMessagesTable.createdAt, today));
+    const [callCount] = await db.select({ count: count() }).from(callLogsTable).where(gte(callLogsTable.startedAt, today));
+    const [flagCount] = await db.select({ count: count() }).from(communicationFlagsTable).where(sql`${communicationFlagsTable.resolvedAt} IS NULL`);
+    const [aiCount] = await db.select({ count: count() }).from(aiModerationLogsTable).where(gte(aiModerationLogsTable.createdAt, today));
+    const [voiceNoteCount] = await db.select({ count: count() }).from(chatMessagesTable).where(and(gte(chatMessagesTable.createdAt, today), eq(chatMessagesTable.messageType, "voice_note")));
+    io.to("admin-fleet").emit("comm:dashboard:update", {
+      activeConversations: Number(convCount?.count ?? 0),
+      messagesToday: Number(msgCount?.count ?? 0),
+      callsToday: Number(callCount?.count ?? 0),
+      voiceNotesToday: Number(voiceNoteCount?.count ?? 0),
+      flaggedMessages: Number(flagCount?.count ?? 0),
+      aiUsageToday: Number(aiCount?.count ?? 0),
+    });
+  } catch (e) {
+    logger.warn({ err: e }, "[admin/comm] Failed to emit dashboard update");
+  }
+}
 
 router.get("/communication/dashboard", async (_req, res) => {
   try {
@@ -53,11 +79,12 @@ router.get("/communication/conversations", async (req, res) => {
     const search = req.query.search as string || "";
 
     let conversations;
+    let totalCount;
     if (search) {
       const searchUsers = await db
         .select({ id: usersTable.id })
         .from(usersTable)
-        .where(or(like(usersTable.ajkId, `%${search}%`), like(usersTable.name, `%${search}%`)))
+        .where(or(sql`${usersTable.ajkId} ILIKE ${"%" + search + "%"}`, sql`${usersTable.name} ILIKE ${"%" + search + "%"}`))
         .limit(20);
       const userIds = searchUsers.map(u => u.id);
 
@@ -75,6 +102,12 @@ router.get("/communication/conversations", async (req, res) => {
         .orderBy(desc(conversationsTable.lastMessageAt))
         .limit(limit)
         .offset(offset);
+
+      const [tc] = await db.select({ count: count() }).from(conversationsTable).where(or(
+        sql`${conversationsTable.participant1Id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::text[])`,
+        sql`${conversationsTable.participant2Id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::text[])`,
+      ));
+      totalCount = tc;
     } else {
       conversations = await db
         .select()
@@ -82,6 +115,9 @@ router.get("/communication/conversations", async (req, res) => {
         .orderBy(desc(conversationsTable.lastMessageAt))
         .limit(limit)
         .offset(offset);
+
+      const [tc] = await db.select({ count: count() }).from(conversationsTable);
+      totalCount = tc;
     }
 
     const allUserIds = [...new Set(conversations.flatMap(c => [c.participant1Id, c.participant2Id]))];
@@ -92,8 +128,6 @@ router.get("/communication/conversations", async (req, res) => {
           .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}]::text[])`)
       : [];
     const userMap = Object.fromEntries(users.map(u => [u.id, u]));
-
-    const [totalCount] = await db.select({ count: count() }).from(conversationsTable);
 
     res.json({
       data: conversations.map(c => ({
@@ -135,8 +169,8 @@ router.get("/communication/conversations/:id/messages", async (req, res) => {
     res.json({
       data: messages.reverse().map(m => ({
         ...m,
-        content: m.originalContent || m.content,
-        maskedContent: m.content,
+        content: m.content,
+        originalContent: m.originalContent || null,
         sender: userMap[m.senderId] || null,
       })),
     });
@@ -261,10 +295,12 @@ router.get("/communication/flags", async (req, res) => {
 router.patch("/communication/flags/:id/resolve", async (req: any, res) => {
   try {
     const { id } = req.params;
+    const adminId = req.adminPayload?.adminId || null;
     await db.update(communicationFlagsTable).set({
       resolvedAt: new Date(),
-      reviewedByAdminId: req.adminPayload?.adminId || "admin",
+      reviewedByAdminId: adminId,
     }).where(eq(communicationFlagsTable.id, id));
+    emitDashboardUpdate().catch(() => {});
     res.json({ data: { status: "resolved" } });
   } catch (e) {
     res.status(500).json({ error: "Failed to resolve flag" });
@@ -374,7 +410,7 @@ router.get("/communication/settings", async (_req, res) => {
     const rows = await db
       .select()
       .from(platformSettingsTable)
-      .where(like(platformSettingsTable.category, "communication"));
+      .where(eq(platformSettingsTable.category, "communication"));
     res.json({ data: Object.fromEntries(rows.map(r => [r.key, r.value])) });
   } catch (e) {
     res.status(500).json({ error: "Failed to get settings" });
@@ -414,14 +450,13 @@ router.get("/communication/ajk-ids", async (req, res) => {
       condition = sql`(${usersTable.ajkId} ILIKE ${"%" + search + "%"} OR ${usersTable.name} ILIKE ${"%" + search + "%"} OR ${usersTable.phone} ILIKE ${"%" + search + "%"})`;
     }
 
-    let users;
-    if (role) {
-      users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, ajkId: usersTable.ajkId, commBlocked: usersTable.commBlocked }).from(usersTable).where(and(condition, sql`${usersTable.roles}::text ILIKE ${"%" + role + "%"}`)).orderBy(desc(usersTable.createdAt)).limit(limit).offset(offset);
-    } else {
-      users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, ajkId: usersTable.ajkId, commBlocked: usersTable.commBlocked }).from(usersTable).where(condition).orderBy(desc(usersTable.createdAt)).limit(limit).offset(offset);
-    }
+    const filterCondition = role
+      ? and(condition, sql`${usersTable.roles}::text ILIKE ${"%" + role + "%"}`)
+      : condition;
 
-    const [total] = await db.select({ count: count() }).from(usersTable).where(sql`${usersTable.ajkId} IS NOT NULL`);
+    const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, ajkId: usersTable.ajkId, commBlocked: usersTable.commBlocked }).from(usersTable).where(filterCondition).orderBy(desc(usersTable.createdAt)).limit(limit).offset(offset);
+
+    const [total] = await db.select({ count: count() }).from(usersTable).where(filterCondition);
 
     res.json({ data: users, total: Number(total?.count ?? 0) });
   } catch (e) {
@@ -479,18 +514,22 @@ router.get("/communication/export/:type", async (req, res) => {
   try {
     const { type } = req.params;
     let rows: any[] = [];
+    let defaultHeaders: string[] = [];
 
     if (type === "messages") {
       rows = await db.select().from(chatMessagesTable).orderBy(desc(chatMessagesTable.createdAt)).limit(1000);
+      defaultHeaders = ["id", "conversationId", "senderId", "content", "messageType", "deliveryStatus", "isFlagged", "createdAt"];
     } else if (type === "calls") {
       rows = await db.select().from(callLogsTable).orderBy(desc(callLogsTable.startedAt)).limit(1000);
+      defaultHeaders = ["id", "callerId", "calleeId", "status", "duration", "startedAt", "endedAt"];
     } else if (type === "ai-logs") {
       rows = await db.select().from(aiModerationLogsTable).orderBy(desc(aiModerationLogsTable.createdAt)).limit(1000);
+      defaultHeaders = ["id", "userId", "actionType", "inputText", "outputText", "tokensUsed", "createdAt"];
+    } else {
+      return res.status(400).json({ error: "Invalid export type" });
     }
 
-    if (rows.length === 0) return res.json({ data: [] });
-
-    const headers = Object.keys(rows[0]);
+    const headers = rows.length > 0 ? Object.keys(rows[0]) : defaultHeaders;
     const csv = [
       headers.join(","),
       ...rows.map(r => headers.map(h => {
@@ -509,4 +548,5 @@ router.get("/communication/export/:type", async (req, res) => {
   }
 });
 
+export { emitDashboardUpdate };
 export default router;

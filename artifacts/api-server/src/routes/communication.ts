@@ -27,6 +27,31 @@ const router = Router();
 
 const VOICE_NOTES_DIR = path.resolve(process.cwd(), "uploads", "voice-notes");
 
+async function emitDashboardUpdate() {
+  const io = getIO();
+  if (!io) return;
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [convCount] = await db.select({ count: count() }).from(conversationsTable).where(eq(conversationsTable.status, "active"));
+    const [msgCount] = await db.select({ count: count() }).from(chatMessagesTable).where(gte(chatMessagesTable.createdAt, today));
+    const [callCount] = await db.select({ count: count() }).from(callLogsTable).where(gte(callLogsTable.startedAt, today));
+    const [flagCount] = await db.select({ count: count() }).from(communicationFlagsTable).where(sql`${communicationFlagsTable.resolvedAt} IS NULL`);
+    const [aiCount] = await db.select({ count: count() }).from(aiModerationLogsTable).where(gte(aiModerationLogsTable.createdAt, today));
+    const [voiceNoteCount] = await db.select({ count: count() }).from(chatMessagesTable).where(and(gte(chatMessagesTable.createdAt, today), eq(chatMessagesTable.messageType, "voice_note")));
+    io.to("admin-fleet").emit("comm:dashboard:update", {
+      activeConversations: Number(convCount?.count ?? 0),
+      messagesToday: Number(msgCount?.count ?? 0),
+      callsToday: Number(callCount?.count ?? 0),
+      voiceNotesToday: Number(voiceNoteCount?.count ?? 0),
+      flaggedMessages: Number(flagCount?.count ?? 0),
+      aiUsageToday: Number(aiCount?.count ?? 0),
+    });
+  } catch (e) {
+    logger.warn({ err: e }, "[comm] Failed to emit dashboard update");
+  }
+}
+
 function authMiddleware(req: any, res: any, next: any) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) {
@@ -634,6 +659,7 @@ router.post("/conversations/:id/messages", async (req: any, res) => {
       io.to(`user:${req.user.userId}`).emit("comm:message:sent", { id: msgId, conversationId: id });
     }
 
+    emitDashboardUpdate().catch(() => {});
     res.status(201).json({ data: message });
   } catch (e) {
     logger.error({ err: e }, "[comm] Failed to send message");
@@ -807,12 +833,27 @@ router.post("/voice-notes/upload", voiceUpload.single("audio"), async (req: any,
 interface IceServer { urls: string; username?: string; credential?: string; }
 
 function getIceServersFromSettings(settings: Record<string, string>): IceServer[] {
-  const stunServers = settings["comm_stun_servers"] || "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302";
+  const stunRaw = settings["comm_stun_servers"] || "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302";
   const turnServer = settings["comm_turn_server"] || "";
   const turnUser = settings["comm_turn_user"] || "";
   const turnPass = settings["comm_turn_pass"] || "";
 
-  const iceServers: IceServer[] = stunServers.split(",").map((s: string) => ({ urls: s.trim() }));
+  let stunList: string[] = [];
+  try {
+    const parsed = JSON.parse(stunRaw);
+    if (Array.isArray(parsed)) {
+      stunList = parsed.filter((s: unknown) => typeof s === "string" && s.trim());
+    } else {
+      stunList = stunRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
+    }
+  } catch {
+    stunList = stunRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
+  }
+
+  if (stunList.length === 0) {
+    stunList = ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"];
+  }
+  const iceServers: IceServer[] = stunList.map((s: string) => ({ urls: s }));
   if (turnServer) {
     iceServers.push({ urls: turnServer, username: turnUser, credential: turnPass });
   }
@@ -854,7 +895,8 @@ router.post("/calls/initiate", async (req: any, res) => {
       });
     }
 
-    res.json({ data: { callId, iceServers: getIceServersFromSettings(settings) } });
+    emitDashboardUpdate().catch(() => {});
+    res.json({ data: { callId, iceServers: getIceServersFromSettings(settings), trickleIce: settings["comm_trickle_ice_enabled"] !== "off" } });
   } catch (e) {
     logger.error({ err: e }, "[comm] Failed to initiate call");
     res.status(500).json({ error: "Failed to initiate call" });
@@ -870,7 +912,7 @@ router.get("/calls/:id/ice-config", async (req: any, res) => {
     if (call.calleeId !== userId && call.callerId !== userId) return res.status(403).json({ error: "Not a participant of this call" });
 
     const settings = await getPlatformSettings();
-    res.json({ data: { iceServers: getIceServersFromSettings(settings) } });
+    res.json({ data: { iceServers: getIceServersFromSettings(settings), trickleIce: settings["comm_trickle_ice_enabled"] !== "off" } });
   } catch (e) {
     res.status(500).json({ error: "Failed to get ICE config" });
   }
@@ -892,7 +934,7 @@ router.post("/calls/:id/answer", async (req: any, res) => {
     }
 
     const settings = await getPlatformSettings();
-    res.json({ data: { status: "answered", iceServers: getIceServersFromSettings(settings) } });
+    res.json({ data: { status: "answered", iceServers: getIceServersFromSettings(settings), trickleIce: settings["comm_trickle_ice_enabled"] !== "off" } });
   } catch (e) {
     res.status(500).json({ error: "Failed to answer call" });
   }

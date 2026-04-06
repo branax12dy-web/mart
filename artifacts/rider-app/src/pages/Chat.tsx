@@ -48,6 +48,7 @@ export default function Chat() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const trickleIceRef = useRef<boolean>(true);
 
   useEffect(() => {
     apiFetch("/communication/me/ajk-id").then(d => setAjkId(d.ajkId)).catch(() => {});
@@ -71,7 +72,14 @@ export default function Chat() {
       await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
       const answer = await pcRef.current.createAnswer();
       await pcRef.current.setLocalDescription(answer);
-      socket.emit("comm:call:answer", { callId: data.callId, targetUserId: data.callerId, sdp: answer });
+      if (!trickleIceRef.current) {
+        await new Promise<void>(resolve => {
+          if (!pcRef.current) { resolve(); return; }
+          pcRef.current.onicegatheringstatechange = () => { if (pcRef.current?.iceGatheringState === "complete") resolve(); };
+          setTimeout(resolve, 5000);
+        });
+      }
+      socket.emit("comm:call:answer", { callId: data.callId, targetUserId: data.callerId, sdp: pcRef.current?.localDescription });
     });
     socket.on("comm:call:answer", async (data: CallSignal) => {
       if (!pcRef.current || !data.sdp) return;
@@ -131,14 +139,25 @@ export default function Chat() {
       timerRef.current = setInterval(() => setCallTimer(t => t + 1), 1000);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       localStreamRef.current = stream;
-      const pc = new RTCPeerConnection({ iceServers: data.iceServers });
+      const trickleIce = data.trickleIce !== false;
+      const pc = new RTCPeerConnection({ iceServers: data.iceServers, iceCandidatePoolSize: 10 });
       pcRef.current = pc;
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
-      pc.onicecandidate = (e) => { if (e.candidate) socketRef.current?.emit("comm:call:ice-candidate", { callId: data.callId, targetUserId: calleeId, candidate: e.candidate }); };
+      pc.onicecandidate = (e) => {
+        if (e.candidate && trickleIce) {
+          socketRef.current?.emit("comm:call:ice-candidate", { callId: data.callId, targetUserId: calleeId, candidate: e.candidate });
+        }
+      };
       pc.ontrack = (e) => { const audio = new Audio(); audio.srcObject = e.streams[0]; audio.play(); };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socketRef.current?.emit("comm:call:offer", { callId: data.callId, targetUserId: calleeId, sdp: offer });
+      if (!trickleIce) {
+        await new Promise<void>(resolve => {
+          pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") resolve(); };
+          setTimeout(resolve, 5000);
+        });
+      }
+      socketRef.current?.emit("comm:call:offer", { callId: data.callId, targetUserId: calleeId, sdp: pc.localDescription });
     } catch {}
   };
 
@@ -173,7 +192,7 @@ export default function Chat() {
             <p className="text-gray-500 mb-6">{incomingCall.callerName} ({incomingCall.callerAjkId})</p>
             <div className="flex gap-4 justify-center">
               <button onClick={() => { setIncomingCall(null); apiFetch(`/communication/calls/${incomingCall.callId}/reject`, { method: "POST" }); }} className="w-16 h-16 rounded-full bg-red-500 text-white text-2xl flex items-center justify-center">✕</button>
-              <button onClick={async () => { const ad = await apiFetch(`/communication/calls/${incomingCall.callId}/answer`, { method: "POST" }); setCallActive(true); setCallId(incomingCall.callId); timerRef.current = setInterval(() => setCallTimer(t => t + 1), 1000); const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); localStreamRef.current = stream; const pc = new RTCPeerConnection({ iceServers: ad.iceServers || [{ urls: "stun:stun.l.google.com:19302" }] }); pcRef.current = pc; stream.getTracks().forEach(t => pc.addTrack(t, stream)); pc.onicecandidate = (e) => { if (e.candidate) socketRef.current?.emit("comm:call:ice-candidate", { callId: incomingCall.callId, targetUserId: incomingCall.callerId, candidate: e.candidate }); }; pc.ontrack = (e) => { const audio = new Audio(); audio.srcObject = e.streams[0]; audio.play(); }; setIncomingCall(null); }} className="w-16 h-16 rounded-full bg-green-500 text-white text-2xl flex items-center justify-center">📞</button>
+              <button onClick={async () => { const ad = await apiFetch(`/communication/calls/${incomingCall.callId}/answer`, { method: "POST" }); setCallActive(true); setCallId(incomingCall.callId); timerRef.current = setInterval(() => setCallTimer(t => t + 1), 1000); const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); localStreamRef.current = stream; const trickleIce = ad.trickleIce !== false; trickleIceRef.current = trickleIce; const pc = new RTCPeerConnection({ iceServers: ad.iceServers || [{ urls: "stun:stun.l.google.com:19302" }], iceCandidatePoolSize: 10 }); pcRef.current = pc; stream.getTracks().forEach(t => pc.addTrack(t, stream)); pc.onicecandidate = (e) => { if (e.candidate && trickleIce) socketRef.current?.emit("comm:call:ice-candidate", { callId: incomingCall.callId, targetUserId: incomingCall.callerId, candidate: e.candidate }); }; pc.ontrack = (e) => { const audio = new Audio(); audio.srcObject = e.streams[0]; audio.play(); }; setIncomingCall(null); }} className="w-16 h-16 rounded-full bg-green-500 text-white text-2xl flex items-center justify-center">📞</button>
             </div>
           </div>
         </div>

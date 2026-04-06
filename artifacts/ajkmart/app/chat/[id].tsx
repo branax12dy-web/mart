@@ -69,6 +69,7 @@ export default function ChatDetailScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const trickleIceRef = useRef<boolean>(true);
 
   const apiFetch = useCallback(async (path: string, opts: RequestInit = {}) => {
     const res = await fetch(`${API_BASE}/communication${path}`, {
@@ -104,12 +105,12 @@ export default function ChatDetailScreen() {
     setMuted(false);
   }, [callId, callTimer, otherId, apiFetch, cleanupPeerConnection]);
 
-  const createPeerConnection = useCallback((iceServers: IceServer[], targetUserId: string, activeCallId: string) => {
-    const pc = new RTCPeerConnection({ iceServers });
+  const createPeerConnection = useCallback((iceServers: IceServer[], targetUserId: string, activeCallId: string, trickleIce: boolean = true) => {
+    const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 10 });
     pcRef.current = pc;
 
     pc.onicecandidate = (e) => {
-      if (e.candidate) {
+      if (e.candidate && trickleIce) {
         socketRef.current?.emit("comm:call:ice-candidate", { callId: activeCallId, targetUserId, candidate: e.candidate });
       }
     };
@@ -179,7 +180,15 @@ export default function ChatDetailScreen() {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
         const answer = await pcRef.current.createAnswer();
         await pcRef.current.setLocalDescription(answer);
-        socket.emit("comm:call:answer", { callId: data.callId, targetUserId: data.callerId, sdp: answer });
+        if (!trickleIceRef.current) {
+          await new Promise<void>(resolve => {
+            const pc = pcRef.current;
+            if (!pc) { resolve(); return; }
+            pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") resolve(); };
+            setTimeout(resolve, 5000);
+          });
+        }
+        socket.emit("comm:call:answer", { callId: data.callId, targetUserId: data.callerId, sdp: pcRef.current?.localDescription });
       } catch {}
     });
 
@@ -209,14 +218,16 @@ export default function ChatDetailScreen() {
       timerRef.current = setInterval(() => setCallTimer(t => t + 1), 1000);
 
       const iceServers: IceServer[] = answerData.iceServers || [{ urls: "stun:stun.l.google.com:19302" }];
+      const trickleIce: boolean = answerData.trickleIce !== false;
+      trickleIceRef.current = trickleIce;
 
       if (Platform.OS === "web") {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
         localStreamRef.current = stream;
-        const pc = createPeerConnection(iceServers, callerId, inCallId);
+        const pc = createPeerConnection(iceServers, callerId, inCallId, trickleIce);
         stream.getTracks().forEach(t => pc.addTrack(t, stream));
       } else {
-        createPeerConnection(iceServers, callerId, inCallId);
+        createPeerConnection(iceServers, callerId, inCallId, trickleIce);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Answer failed";
@@ -254,18 +265,25 @@ export default function ChatDetailScreen() {
       timerRef.current = setInterval(() => setCallTimer(t => t + 1), 1000);
 
       const iceServers: IceServer[] = data.iceServers || [{ urls: "stun:stun.l.google.com:19302" }];
+      const trickleIce: boolean = data.trickleIce !== false;
 
       if (Platform.OS === "web") {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
         localStreamRef.current = stream;
-        const pc = createPeerConnection(iceServers, otherId || "", data.callId);
+        const pc = createPeerConnection(iceServers, otherId || "", data.callId, trickleIce);
         stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socketRef.current?.emit("comm:call:offer", { callId: data.callId, targetUserId: otherId, sdp: offer });
+        if (!trickleIce) {
+          await new Promise<void>(resolve => {
+            pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") resolve(); };
+            setTimeout(resolve, 5000);
+          });
+        }
+        socketRef.current?.emit("comm:call:offer", { callId: data.callId, targetUserId: otherId, sdp: pc.localDescription });
       } else {
-        createPeerConnection(iceServers, otherId || "", data.callId);
+        createPeerConnection(iceServers, otherId || "", data.callId, trickleIce);
       }
 
       showToast("Call started", "success");

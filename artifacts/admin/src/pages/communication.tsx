@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { fetcher } from "@/lib/api";
+import { useState, useEffect, useRef } from "react";
+import { fetcher, fetcherWithMeta } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { io } from "socket.io-client";
+import { getToken } from "@/lib/api";
 import {
   MessageCircle, Phone, Mic, Settings2, Shield, Bot, Flag, Download,
   Users, BarChart2, Eye, CheckCircle, Sparkles, Search,
-  Crown, Pencil,
+  Crown, Pencil, Plus, Trash2, AlertTriangle,
 } from "lucide-react";
 
 interface DashboardStats {
@@ -142,8 +144,23 @@ function StatCard({ title, value, icon: Icon, color }: { title: string; value: n
 
 function DashboardTab() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+
   useEffect(() => {
     fetcher("/communication/dashboard").then(setStats).catch(() => {});
+
+    const token = getToken();
+    const socket = io(window.location.origin, {
+      path: "/api/socket.io",
+      auth: { adminToken: token },
+      query: { adminToken: token ?? undefined, rooms: "admin-fleet" },
+      transports: ["polling", "websocket"],
+    });
+
+    socket.on("comm:dashboard:update", (data: Partial<DashboardStats>) => {
+      setStats(prev => prev ? { ...prev, ...data } : prev);
+    });
+
+    return () => { socket.disconnect(); };
   }, []);
 
   if (!stats) return <div className="flex items-center justify-center p-8"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
@@ -162,22 +179,56 @@ function DashboardTab() {
 
 function SettingsTab() {
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
+  const [stunServers, setStunServers] = useState<string[]>(["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]);
 
   useEffect(() => {
-    fetcher("/communication/settings").then(setSettings).catch(() => {});
+    fetcher("/communication/settings").then((d: Record<string, string>) => {
+      setSettings(d);
+      const stunRaw = d["comm_stun_servers"] || "";
+      try {
+        const parsed = JSON.parse(stunRaw);
+        if (Array.isArray(parsed)) {
+          setStunServers(parsed.filter(Boolean));
+        } else if (stunRaw) {
+          setStunServers(stunRaw.split(",").map((s: string) => s.trim()).filter(Boolean));
+        }
+      } catch {
+        if (stunRaw) {
+          setStunServers(stunRaw.split(",").map((s: string) => s.trim()).filter(Boolean));
+        }
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
   }, []);
 
   const save = async () => {
     setSaving(true);
+    setSaveStatus("idle");
     try {
-      await fetcher("/communication/settings", { method: "PUT", body: JSON.stringify(settings) });
-    } catch {}
+      const nonEmptyStun = stunServers.filter(s => s.trim());
+      const finalStun = nonEmptyStun.length > 0 ? nonEmptyStun : ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"];
+      const merged = { ...settings, comm_stun_servers: JSON.stringify(finalStun) };
+      await fetcher("/communication/settings", { method: "PUT", body: JSON.stringify(merged) });
+      if (nonEmptyStun.length === 0) setStunServers(finalStun);
+      setSaveStatus("success");
+    } catch {
+      setSaveStatus("error");
+    }
     setSaving(false);
+    setTimeout(() => setSaveStatus("idle"), 3000);
   };
 
   const toggle = (key: string) => setSettings(s => ({ ...s, [key]: s[key] === "on" ? "off" : "on" }));
   const set = (key: string, value: string) => setSettings(s => ({ ...s, [key]: value }));
+
+  const addStun = () => setStunServers(s => [...s, ""]);
+  const removeStun = (i: number) => setStunServers(s => s.filter((_, idx) => idx !== i));
+  const updateStun = (i: number, val: string) => setStunServers(s => s.map((v, idx) => idx === i ? val : v));
+
+  if (!loaded) return <div className="flex items-center justify-center p-8"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
     <div className="space-y-6">
@@ -214,7 +265,7 @@ function SettingsTab() {
           ].map(({ key, label }) => (
             <div key={key} className="flex items-center justify-between">
               <Label>{label}</Label>
-              <Switch checked={settings[key] !== "off"} onCheckedChange={() => toggle(key)} />
+              <Switch checked={settings[key] === "on"} onCheckedChange={() => toggle(key)} />
             </div>
           ))}
           <div>
@@ -235,7 +286,7 @@ function SettingsTab() {
           ].map(({ key, label }) => (
             <div key={key} className="flex items-center justify-between">
               <Label>{label}</Label>
-              <Switch checked={settings[key] !== "off"} onCheckedChange={() => toggle(key)} />
+              <Switch checked={settings[key] === "on"} onCheckedChange={() => toggle(key)} />
             </div>
           ))}
           <div>
@@ -299,9 +350,36 @@ function SettingsTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label>STUN Servers</Label>
-            <Input value={settings.comm_stun_servers || ""} onChange={e => set("comm_stun_servers", e.target.value)} />
+            <div className="flex items-center justify-between mb-2">
+              <Label>STUN Servers</Label>
+              <Button variant="outline" size="sm" onClick={addStun}><Plus className="h-3 w-3 mr-1" />Add</Button>
+            </div>
+            <div className="space-y-2">
+              {stunServers.map((s, i) => (
+                <div key={i} className="flex gap-2">
+                  <Input value={s} onChange={e => updateStun(i, e.target.value)} placeholder="stun:stun.example.com:3478" />
+                  <Button variant="ghost" size="sm" onClick={() => removeStun(i)} disabled={stunServers.length <= 1}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Multiple STUN servers provide redundancy and improve connection success rates.</p>
           </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Trickle ICE</Label>
+              <p className="text-xs text-muted-foreground">Sends ICE candidates incrementally, reducing call setup time significantly.</p>
+            </div>
+            <Switch checked={settings["comm_trickle_ice_enabled"] !== "off"} onCheckedChange={() => toggle("comm_trickle_ice_enabled")} />
+          </div>
+
+          <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 flex gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-800">
+              <strong>TURN server required for users behind strict firewalls.</strong> Users on symmetric NAT (common in corporate networks) cannot connect using STUN alone. Without a TURN server, calls will fail for those users.
+            </div>
+          </div>
+
           <div>
             <Label>TURN Server</Label>
             <Input value={settings.comm_turn_server || ""} onChange={e => set("comm_turn_server", e.target.value)} placeholder="turn:server:3478" />
@@ -319,25 +397,64 @@ function SettingsTab() {
         </CardContent>
       </Card>
 
-      <Button onClick={save} disabled={saving} className="w-full">{saving ? "Saving..." : "Save Settings"}</Button>
+      <div className="space-y-2">
+        <Button onClick={save} disabled={saving} className="w-full">{saving ? "Saving..." : "Save Settings"}</Button>
+        {saveStatus === "success" && <p className="text-sm text-green-600 text-center">Settings saved successfully.</p>}
+        {saveStatus === "error" && <p className="text-sm text-destructive text-center">Failed to save settings. Please try again.</p>}
+      </div>
+    </div>
+  );
+}
+
+function Pagination({ page, total, limit, onPage }: { page: number; total: number; limit: number; onPage: (p: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  return (
+    <div className="flex items-center justify-between pt-2">
+      <p className="text-sm text-muted-foreground">Page {page} of {totalPages} ({total} total)</p>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => onPage(page - 1)} disabled={page <= 1}>Previous</Button>
+        <Button variant="outline" size="sm" onClick={() => onPage(page + 1)} disabled={page >= totalPages}>Next</Button>
+      </div>
     </div>
   );
 }
 
 function ConversationsTab() {
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedConv, setSelectedConv] = useState<ConversationItem | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [viewError, setViewError] = useState("");
+  const LIMIT = 20;
 
   useEffect(() => {
-    fetcher(`/communication/conversations?search=${encodeURIComponent(search)}`).then((d: ConversationItem[] | { data: ConversationItem[] }) => setConversations(Array.isArray(d) ? d : d.data)).catch(() => {});
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    fetcherWithMeta(`/communication/conversations?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${LIMIT}`)
+      .then((d) => { setConversations((d.data as ConversationItem[]) || []); setTotal((d.total as number) || 0); })
+      .catch(() => {});
+  }, [debouncedSearch, page]);
 
   const viewMessages = async (conv: ConversationItem) => {
     setSelectedConv(conv);
-    const data: MessageItem[] | { data: MessageItem[] } = await fetcher(`/communication/conversations/${conv.id}/messages`);
-    setMessages(Array.isArray(data) ? data : data.data);
+    setViewError("");
+    try {
+      const resp = await fetcherWithMeta(`/communication/conversations/${conv.id}/messages`);
+      setMessages((resp.data as MessageItem[]) || (Array.isArray(resp) ? resp as MessageItem[] : []));
+    } catch (e: unknown) {
+      setViewError(e instanceof Error ? e.message : "Failed to load messages");
+      setMessages([]);
+    }
   };
 
   return (
@@ -354,13 +471,14 @@ function ConversationsTab() {
               <CardTitle>
                 {selectedConv.participant1?.name || "User"} ↔ {selectedConv.participant2?.name || "User"}
               </CardTitle>
-              <Button variant="ghost" onClick={() => setSelectedConv(null)}>Back</Button>
+              <Button variant="ghost" onClick={() => { setSelectedConv(null); setMessages([]); }}>Back</Button>
             </div>
             <CardDescription>
               {selectedConv.participant1?.ajkId} ↔ {selectedConv.participant2?.ajkId}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {viewError && <p className="text-sm text-destructive mb-2">{viewError}</p>}
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {messages.map((msg) => (
                 <div key={msg.id} className={`p-3 rounded-lg ${msg.sender?.ajkId === selectedConv.participant1?.ajkId ? "bg-blue-50 ml-0 mr-12" : "bg-gray-50 ml-12 mr-0"}`}>
@@ -370,50 +488,53 @@ function ConversationsTab() {
                   </div>
                   <p className="text-sm">{msg.content}</p>
                   {msg.originalContent && msg.originalContent !== msg.content && (
-                    <p className="text-xs text-muted-foreground mt-1">Original (admin only): {msg.originalContent}</p>
+                    <p className="text-xs text-muted-foreground mt-1 italic">Original (admin only): {msg.originalContent}</p>
                   )}
                   {msg.messageType !== "text" && <Badge variant="secondary" className="mt-1">{msg.messageType}</Badge>}
                   {msg.isFlagged && <Badge variant="destructive" className="mt-1 ml-1">Flagged</Badge>}
                 </div>
               ))}
-              {messages.length === 0 && <p className="text-center text-muted-foreground py-4">No messages</p>}
+              {messages.length === 0 && !viewError && <p className="text-center text-muted-foreground py-4">No messages</p>}
             </div>
           </CardContent>
         </Card>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Participants</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Last Message</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {conversations.map((conv) => (
-              <TableRow key={conv.id}>
-                <TableCell>
-                  <div>
-                    <span className="font-medium">{conv.participant1?.name || "Unknown"}</span>
-                    <span className="text-muted-foreground"> ({conv.participant1?.ajkId})</span>
-                    <span className="mx-2">↔</span>
-                    <span className="font-medium">{conv.participant2?.name || "Unknown"}</span>
-                    <span className="text-muted-foreground"> ({conv.participant2?.ajkId})</span>
-                  </div>
-                </TableCell>
-                <TableCell><Badge variant={conv.status === "active" ? "default" : "secondary"}>{conv.status}</Badge></TableCell>
-                <TableCell className="text-sm text-muted-foreground">{conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleString() : "—"}</TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="sm" onClick={() => viewMessages(conv)}><Eye className="h-4 w-4" /></Button>
-                </TableCell>
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Participants</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last Message</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-            {conversations.length === 0 && (
-              <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No conversations found</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {conversations.map((conv) => (
+                <TableRow key={conv.id}>
+                  <TableCell>
+                    <div>
+                      <span className="font-medium">{conv.participant1?.name || "Unknown"}</span>
+                      <span className="text-muted-foreground"> ({conv.participant1?.ajkId})</span>
+                      <span className="mx-2">↔</span>
+                      <span className="font-medium">{conv.participant2?.name || "Unknown"}</span>
+                      <span className="text-muted-foreground"> ({conv.participant2?.ajkId})</span>
+                    </div>
+                  </TableCell>
+                  <TableCell><Badge variant={conv.status === "active" ? "default" : "secondary"}>{conv.status}</Badge></TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleString() : "—"}</TableCell>
+                  <TableCell>
+                    <Button variant="ghost" size="sm" onClick={() => viewMessages(conv)}><Eye className="h-4 w-4" /></Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {conversations.length === 0 && (
+                <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No conversations found</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+          <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
+        </>
       )}
     </div>
   );
@@ -421,9 +542,15 @@ function ConversationsTab() {
 
 function CallHistoryTab() {
   const [calls, setCalls] = useState<CallItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
+
   useEffect(() => {
-    fetcher("/communication/calls").then((d: CallItem[] | { data: CallItem[] }) => setCalls(Array.isArray(d) ? d : d.data)).catch(() => {});
-  }, []);
+    fetcherWithMeta(`/communication/calls?page=${page}&limit=${LIMIT}`)
+      .then((d) => { setCalls((d.data as CallItem[]) || []); setTotal((d.total as number) || 0); })
+      .catch(() => {});
+  }, [page]);
 
   const statusColor: Record<string, string> = { completed: "default", missed: "destructive", rejected: "secondary", answered: "default", initiated: "outline" };
 
@@ -455,15 +582,22 @@ function CallHistoryTab() {
           {calls.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No call history</TableCell></TableRow>}
         </TableBody>
       </Table>
+      <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
     </div>
   );
 }
 
 function AILogsTab() {
   const [logs, setLogs] = useState<AILogItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
+
   useEffect(() => {
-    fetcher("/communication/ai-logs").then((d: AILogItem[] | { data: AILogItem[] }) => setLogs(Array.isArray(d) ? d : d.data)).catch(() => {});
-  }, []);
+    fetcherWithMeta(`/communication/ai-logs?page=${page}&limit=${LIMIT}`)
+      .then((d) => { setLogs((d.data as AILogItem[]) || []); setTotal((d.total as number) || 0); })
+      .catch(() => {});
+  }, [page]);
 
   return (
     <div className="space-y-4">
@@ -495,6 +629,7 @@ function AILogsTab() {
           {logs.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No AI logs</TableCell></TableRow>}
         </TableBody>
       </Table>
+      <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
     </div>
   );
 }
@@ -502,14 +637,24 @@ function AILogsTab() {
 function FlaggedTab() {
   const [flags, setFlags] = useState<FlagItem[]>([]);
   const [status, setStatus] = useState("pending");
+  const [resolveErrors, setResolveErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetcher(`/communication/flags?status=${status}`).then((d: FlagItem[] | { data: FlagItem[] }) => setFlags(Array.isArray(d) ? d : d.data)).catch(() => {});
-  }, [status]);
+  const load = () => {
+    fetcher(`/communication/flags?status=${status}`)
+      .then((d: FlagItem[] | { data: FlagItem[] }) => setFlags(Array.isArray(d) ? d : d.data))
+      .catch(() => {});
+  };
+
+  useEffect(() => { load(); }, [status]);
 
   const resolve = async (id: string) => {
-    await fetcher(`/communication/flags/${id}/resolve`, { method: "PATCH" });
-    setFlags(f => f.filter(fl => fl.id !== id));
+    setResolveErrors(e => ({ ...e, [id]: "" }));
+    try {
+      await fetcher(`/communication/flags/${id}/resolve`, { method: "PATCH" });
+      setFlags(f => f.filter(fl => fl.id !== id));
+    } catch (e: unknown) {
+      setResolveErrors(prev => ({ ...prev, [id]: e instanceof Error ? e.message : "Failed to resolve" }));
+    }
   };
 
   return (
@@ -537,7 +682,10 @@ function FlaggedTab() {
               <TableCell className="text-sm">{new Date(flag.createdAt || flag.created_at || "").toLocaleString()}</TableCell>
               <TableCell>
                 {!flag.resolvedAt && !flag.resolved_at && (
-                  <Button variant="ghost" size="sm" onClick={() => resolve(flag.id)}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                  <div className="space-y-1">
+                    <Button variant="ghost" size="sm" onClick={() => resolve(flag.id)}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                    {resolveErrors[flag.id] && <p className="text-xs text-destructive">{resolveErrors[flag.id]}</p>}
+                  </div>
                 )}
               </TableCell>
             </TableRow>
@@ -581,179 +729,256 @@ const DEFAULT_CATEGORY_RULES: Record<string, boolean> = {
   parcel: true,
 };
 
-function RoleTemplatesTab() {
-  const [roles, setRoles] = useState<RoleItem[]>([]);
-  const [creating, setCreating] = useState(false);
+type RoleFormState = {
+  name: string;
+  description: string;
+  permissions: RolePermissions;
+  rolePairRules: RolePairRules;
+  categoryRules: Record<string, boolean>;
+  timeWindows: { start: string; end: string };
+  messageLimits: { maxTextLength: number; maxVoiceDuration: number; dailyLimit: number };
+};
+
+const DEFAULT_FORM: RoleFormState = {
+  name: "",
+  description: "",
+  permissions: { chat: true, voiceCall: false, voiceNote: false, fileSharing: false },
+  rolePairRules: { ...DEFAULT_ROLE_PAIR_RULES },
+  categoryRules: { ...DEFAULT_CATEGORY_RULES },
+  timeWindows: { start: "08:00", end: "22:00" },
+  messageLimits: { maxTextLength: 2000, maxVoiceDuration: 60, dailyLimit: 500 },
+};
+
+function RoleFormDialog({
+  open,
+  onOpenChange,
+  initialData,
+  editId,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  initialData?: Partial<RoleFormState>;
+  editId?: string | null;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<RoleFormState>(DEFAULT_FORM);
   const [aiDescription, setAiDescription] = useState("");
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [newRole, setNewRole] = useState({
-    name: "",
-    description: "",
-    permissions: { chat: true, voiceCall: false, voiceNote: false, fileSharing: false } as RolePermissions,
-    rolePairRules: { ...DEFAULT_ROLE_PAIR_RULES } as RolePairRules,
-    categoryRules: { ...DEFAULT_CATEGORY_RULES } as Record<string, boolean>,
-    timeWindows: { start: "08:00", end: "22:00" },
-    messageLimits: { maxTextLength: 2000, maxVoiceDuration: 60, dailyLimit: 500 },
-  });
+  const [aiError, setAiError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
-    fetcher("/communication/roles").then((d: RoleItem[] | { data: RoleItem[] }) => setRoles(Array.isArray(d) ? d : d.data)).catch(() => {});
-  }, []);
-
-  const resetForm = () => {
-    setNewRole({
-      name: "",
-      description: "",
-      permissions: { chat: true, voiceCall: false, voiceNote: false, fileSharing: false },
-      rolePairRules: { ...DEFAULT_ROLE_PAIR_RULES },
-      categoryRules: { ...DEFAULT_CATEGORY_RULES },
-      timeWindows: { start: "08:00", end: "22:00" },
-      messageLimits: { maxTextLength: 2000, maxVoiceDuration: 60, dailyLimit: 500 },
-    });
-    setAiDescription("");
-  };
-
-  const createRole = async () => {
-    await fetcher("/communication/roles", { method: "POST", body: JSON.stringify(newRole) });
-    setCreating(false);
-    resetForm();
-    const data: RoleItem[] | { data: RoleItem[] } = await fetcher("/communication/roles");
-    setRoles(Array.isArray(data) ? data : data.data);
-  };
-
-  const deleteRole = async (id: string) => {
-    await fetcher(`/communication/roles/${id}`, { method: "DELETE" });
-    setRoles(r => r.filter(rl => rl.id !== id));
-  };
+    if (open) {
+      setForm(initialData ? { ...DEFAULT_FORM, ...initialData } : { ...DEFAULT_FORM });
+      setAiDescription("");
+      setAiError("");
+      setSaveError("");
+    }
+  }, [open, initialData]);
 
   const generateWithAI = async () => {
     if (!aiDescription) return;
     setAiGenerating(true);
+    setAiError("");
     try {
       const result = await fetcher("/communication/roles/ai-generate", { method: "POST", body: JSON.stringify({ description: aiDescription }) });
       const data = (result as { data?: Partial<RoleItem> }).data || result;
-      setNewRole(prev => ({
+      setForm(prev => ({
         ...prev,
-        name: data.name || prev.name,
+        name: (data as Partial<RoleFormState>).name || prev.name,
         description: aiDescription,
-        permissions: data.permissions || prev.permissions,
-        rolePairRules: data.rolePairRules || prev.rolePairRules,
-        categoryRules: data.categoryRules || prev.categoryRules,
-        timeWindows: data.timeWindows || prev.timeWindows,
-        messageLimits: data.messageLimits || prev.messageLimits,
+        permissions: (data as Partial<RoleFormState>).permissions || prev.permissions,
+        rolePairRules: (data as Partial<RoleFormState>).rolePairRules || prev.rolePairRules,
+        categoryRules: (data as Partial<RoleFormState>).categoryRules || prev.categoryRules,
+        timeWindows: (data as Partial<RoleFormState>).timeWindows || prev.timeWindows,
+        messageLimits: (data as Partial<RoleFormState>).messageLimits || prev.messageLimits,
       }));
-    } catch {}
+    } catch (e: unknown) {
+      setAiError(e instanceof Error ? e.message : "AI generation failed");
+    }
     setAiGenerating(false);
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (editId) {
+        await fetcher(`/communication/roles/${editId}`, { method: "PUT", body: JSON.stringify(form) });
+      } else {
+        await fetcher("/communication/roles", { method: "POST", body: JSON.stringify(form) });
+      }
+      onOpenChange(false);
+      onSaved();
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save role");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{editId ? "Edit Communication Role" : "Create Communication Role"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-5">
+          {!editId && (
+            <div className="p-4 rounded-lg border bg-muted/50">
+              <Label className="flex items-center gap-2 mb-2"><Sparkles className="h-4 w-4" /> AI-Assisted Creation</Label>
+              <Textarea placeholder="Describe the role in plain language, e.g., 'Customer can only chat with vendor during active order, no calls allowed'" value={aiDescription} onChange={e => setAiDescription(e.target.value)} />
+              <Button variant="outline" size="sm" className="mt-2" onClick={generateWithAI} disabled={aiGenerating}>{aiGenerating ? "Generating..." : "Generate with AI"}</Button>
+              {aiError && <p className="text-sm text-destructive mt-1">{aiError}</p>}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Name</Label>
+              <Input value={form.name} onChange={e => setForm(r => ({ ...r, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input value={form.description} onChange={e => setForm(r => ({ ...r, description: e.target.value }))} />
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Feature Permissions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(Object.entries(form.permissions) as [keyof RolePermissions, boolean][]).map(([key, val]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-sm capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
+                  <Switch checked={val} onCheckedChange={v => setForm(r => ({ ...r, permissions: { ...r.permissions, [key]: v } }))} />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Role-Pair Communication Rules</CardTitle>
+              <CardDescription>Which user types can communicate with each other</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(Object.entries(form.rolePairRules) as [keyof RolePairRules, boolean][]).map(([key, val]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-sm">{ROLE_PAIR_LABELS[key] || key}</span>
+                  <Switch checked={val} onCheckedChange={v => setForm(r => ({ ...r, rolePairRules: { ...r.rolePairRules, [key]: v } }))} />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Category Rules</CardTitle>
+              <CardDescription>Which order categories this role applies to</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {Object.entries(form.categoryRules).map(([key, val]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-sm">{CATEGORY_LABELS[key] || key}</span>
+                  <Switch checked={val} onCheckedChange={v => setForm(r => ({ ...r, categoryRules: { ...r.categoryRules, [key]: v } }))} />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Time Window & Limits</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Start Time</Label>
+                <Input type="time" value={form.timeWindows.start} onChange={e => setForm(r => ({ ...r, timeWindows: { ...r.timeWindows, start: e.target.value } }))} />
+              </div>
+              <div>
+                <Label className="text-xs">End Time</Label>
+                <Input type="time" value={form.timeWindows.end} onChange={e => setForm(r => ({ ...r, timeWindows: { ...r.timeWindows, end: e.target.value } }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Max Text Length</Label>
+                <Input type="number" value={form.messageLimits.maxTextLength} onChange={e => setForm(r => ({ ...r, messageLimits: { ...r.messageLimits, maxTextLength: parseInt(e.target.value) || 0 } }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Max Voice Duration (s)</Label>
+                <Input type="number" value={form.messageLimits.maxVoiceDuration} onChange={e => setForm(r => ({ ...r, messageLimits: { ...r.messageLimits, maxVoiceDuration: parseInt(e.target.value) || 0 } }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Daily Message Limit</Label>
+                <Input type="number" value={form.messageLimits.dailyLimit} onChange={e => setForm(r => ({ ...r, messageLimits: { ...r.messageLimits, dailyLimit: parseInt(e.target.value) || 0 } }))} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Saving..." : (editId ? "Save Changes" : "Create")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RoleTemplatesTab() {
+  const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleItem | null>(null);
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
+
+  const loadRoles = () => {
+    fetcher("/communication/roles")
+      .then((d: RoleItem[] | { data: RoleItem[] }) => setRoles(Array.isArray(d) ? d : d.data))
+      .catch(() => {});
+  };
+
+  useEffect(() => { loadRoles(); }, []);
+
+  const deleteRole = async (id: string) => {
+    setDeleteErrors(e => ({ ...e, [id]: "" }));
+    try {
+      await fetcher(`/communication/roles/${id}`, { method: "DELETE" });
+      setRoles(r => r.filter(rl => rl.id !== id));
+    } catch (e: unknown) {
+      setDeleteErrors(prev => ({ ...prev, [id]: e instanceof Error ? e.message : "Failed to delete" }));
+    }
   };
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">Communication Role Templates</h3>
-        <Dialog open={creating} onOpenChange={(open) => { setCreating(open); if (!open) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button>Create Role</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create Communication Role</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-5">
-              <div className="p-4 rounded-lg border bg-muted/50">
-                <Label className="flex items-center gap-2 mb-2"><Sparkles className="h-4 w-4" /> AI-Assisted Creation</Label>
-                <Textarea placeholder="Describe the role in plain language, e.g., 'Customer can only chat with vendor during active order, no calls allowed'" value={aiDescription} onChange={e => setAiDescription(e.target.value)} />
-                <Button variant="outline" size="sm" className="mt-2" onClick={generateWithAI} disabled={aiGenerating}>{aiGenerating ? "Generating..." : "Generate with AI"}</Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Name</Label>
-                  <Input value={newRole.name} onChange={e => setNewRole(r => ({ ...r, name: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Input value={newRole.description} onChange={e => setNewRole(r => ({ ...r, description: e.target.value }))} />
-                </div>
-              </div>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Feature Permissions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {(Object.entries(newRole.permissions) as [keyof RolePermissions, boolean][]).map(([key, val]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <span className="text-sm capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
-                      <Switch checked={val} onCheckedChange={v => setNewRole(r => ({ ...r, permissions: { ...r.permissions, [key]: v } }))} />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Role-Pair Communication Rules</CardTitle>
-                  <CardDescription>Which user types can communicate with each other</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {(Object.entries(newRole.rolePairRules) as [keyof RolePairRules, boolean][]).map(([key, val]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <span className="text-sm">{ROLE_PAIR_LABELS[key] || key}</span>
-                      <Switch checked={val} onCheckedChange={v => setNewRole(r => ({ ...r, rolePairRules: { ...r.rolePairRules, [key]: v } }))} />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Category Rules</CardTitle>
-                  <CardDescription>Which order categories this role applies to</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {Object.entries(newRole.categoryRules).map(([key, val]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <span className="text-sm">{CATEGORY_LABELS[key] || key}</span>
-                      <Switch checked={val} onCheckedChange={v => setNewRole(r => ({ ...r, categoryRules: { ...r.categoryRules, [key]: v } }))} />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Time Window & Limits</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">Start Time</Label>
-                    <Input type="time" value={newRole.timeWindows.start} onChange={e => setNewRole(r => ({ ...r, timeWindows: { ...r.timeWindows, start: e.target.value } }))} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">End Time</Label>
-                    <Input type="time" value={newRole.timeWindows.end} onChange={e => setNewRole(r => ({ ...r, timeWindows: { ...r.timeWindows, end: e.target.value } }))} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Max Text Length</Label>
-                    <Input type="number" value={newRole.messageLimits.maxTextLength} onChange={e => setNewRole(r => ({ ...r, messageLimits: { ...r.messageLimits, maxTextLength: parseInt(e.target.value) || 0 } }))} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Max Voice Duration (s)</Label>
-                    <Input type="number" value={newRole.messageLimits.maxVoiceDuration} onChange={e => setNewRole(r => ({ ...r, messageLimits: { ...r.messageLimits, maxVoiceDuration: parseInt(e.target.value) || 0 } }))} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Daily Message Limit</Label>
-                    <Input type="number" value={newRole.messageLimits.dailyLimit} onChange={e => setNewRole(r => ({ ...r, messageLimits: { ...r.messageLimits, dailyLimit: parseInt(e.target.value) || 0 } }))} />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            <DialogFooter>
-              <Button onClick={createRole}>Create</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setCreating(true)}>Create Role</Button>
       </div>
+
+      <RoleFormDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onSaved={loadRoles}
+      />
+
+      <RoleFormDialog
+        open={!!editingRole}
+        onOpenChange={open => { if (!open) setEditingRole(null); }}
+        initialData={editingRole ? {
+          name: editingRole.name,
+          description: editingRole.description,
+          permissions: editingRole.permissions,
+          rolePairRules: editingRole.rolePairRules,
+          categoryRules: editingRole.categoryRules,
+          timeWindows: editingRole.timeWindows,
+          messageLimits: editingRole.messageLimits,
+        } : undefined}
+        editId={editingRole?.id}
+        onSaved={loadRoles}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {roles.map((role) => (
@@ -802,9 +1027,15 @@ function RoleTemplatesTab() {
               {role.timeWindows && (
                 <p className="text-xs text-muted-foreground">Time: {role.timeWindows.start} – {role.timeWindows.end}</p>
               )}
-              {!role.isPreset && (
-                <Button variant="destructive" size="sm" onClick={() => deleteRole(role.id)}>Delete</Button>
-              )}
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="outline" size="sm" onClick={() => setEditingRole(role)}>
+                  <Pencil className="h-3 w-3 mr-1" />Edit
+                </Button>
+                {!role.isPreset && (
+                  <Button variant="destructive" size="sm" onClick={() => deleteRole(role.id)}>Delete</Button>
+                )}
+              </div>
+              {deleteErrors[role.id] && <p className="text-xs text-destructive">{deleteErrors[role.id]}</p>}
             </CardContent>
           </Card>
         ))}
@@ -816,7 +1047,10 @@ function RoleTemplatesTab() {
 
 function AjkIdsTab() {
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [editUser, setEditUser] = useState<UserItem | null>(null);
   const [editId, setEditId] = useState("");
@@ -824,15 +1058,31 @@ function AjkIdsTab() {
   const [error, setError] = useState("");
   const [searchResults, setSearchResults] = useState<UserItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [blockingId, setBlockingId] = useState<string | null>(null);
+  const [blockErrors, setBlockErrors] = useState<Record<string, string>>({});
+  const LIMIT = 20;
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, roleFilter]);
 
   const loadUsers = () => {
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (roleFilter) params.set("role", roleFilter);
-    fetcher(`/communication/ajk-ids?${params.toString()}`).then(setUsers).catch(() => {});
+    params.set("page", String(page));
+    params.set("limit", String(LIMIT));
+    fetcherWithMeta(`/communication/ajk-ids?${params.toString()}`)
+      .then((d) => { setUsers((d.data as UserItem[]) || []); setTotal((d.total as number) || 0); })
+      .catch(() => {});
   };
 
-  useEffect(() => { loadUsers(); }, [search, roleFilter]);
+  useEffect(() => { loadUsers(); }, [debouncedSearch, roleFilter, page]);
 
   const searchUsers = async (q: string) => {
     setSearchQuery(q);
@@ -859,6 +1109,19 @@ function AjkIdsTab() {
       setError(e instanceof Error ? e.message : "Failed to update");
     }
     setSaving(false);
+  };
+
+  const toggleBlock = async (user: UserItem) => {
+    setBlockingId(user.id);
+    setBlockErrors(e => ({ ...e, [user.id]: "" }));
+    try {
+      const action = user.commBlocked ? "unblock" : "block";
+      await fetcher(`/communication/users/${user.id}/${action}`, { method: "POST" });
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, commBlocked: !u.commBlocked } : u));
+    } catch (e: unknown) {
+      setBlockErrors(prev => ({ ...prev, [user.id]: e instanceof Error ? e.message : "Action failed" }));
+    }
+    setBlockingId(null);
   };
 
   return (
@@ -921,9 +1184,20 @@ function AjkIdsTab() {
                     {u.commBlocked ? <Badge variant="destructive">Blocked</Badge> : <Badge className="bg-green-100 text-green-700">Active</Badge>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditId(u.ajkId || ""); setError(""); }}>
-                      <Pencil className="h-3 w-3 mr-1" />Edit ID
-                    </Button>
+                    <div className="flex gap-1 justify-end flex-wrap">
+                      <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditId(u.ajkId || ""); setError(""); }}>
+                        <Pencil className="h-3 w-3 mr-1" />Edit ID
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={u.commBlocked ? "outline" : "destructive"}
+                        onClick={() => toggleBlock(u)}
+                        disabled={blockingId === u.id}
+                      >
+                        {blockingId === u.id ? "..." : (u.commBlocked ? "Unblock" : "Block")}
+                      </Button>
+                    </div>
+                    {blockErrors[u.id] && <p className="text-xs text-destructive mt-1">{blockErrors[u.id]}</p>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -932,6 +1206,7 @@ function AjkIdsTab() {
               )}
             </TableBody>
           </Table>
+          <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
         </CardContent>
       </Card>
 
@@ -1019,22 +1294,21 @@ export default function Communication() {
         <TabsList className="grid grid-cols-4 md:grid-cols-8 w-full">
           <TabsTrigger value="dashboard"><BarChart2 className="h-4 w-4 mr-1 hidden sm:block" />Dashboard</TabsTrigger>
           <TabsTrigger value="settings"><Settings2 className="h-4 w-4 mr-1 hidden sm:block" />Settings</TabsTrigger>
-          <TabsTrigger value="ajk-ids"><Crown className="h-4 w-4 mr-1 hidden sm:block" />AJK IDs</TabsTrigger>
-          <TabsTrigger value="conversations"><MessageCircle className="h-4 w-4 mr-1 hidden sm:block" />Conversations</TabsTrigger>
+          <TabsTrigger value="conversations"><MessageCircle className="h-4 w-4 mr-1 hidden sm:block" />Chats</TabsTrigger>
           <TabsTrigger value="calls"><Phone className="h-4 w-4 mr-1 hidden sm:block" />Calls</TabsTrigger>
           <TabsTrigger value="ai-logs"><Bot className="h-4 w-4 mr-1 hidden sm:block" />AI Logs</TabsTrigger>
           <TabsTrigger value="flagged"><Flag className="h-4 w-4 mr-1 hidden sm:block" />Flagged</TabsTrigger>
           <TabsTrigger value="roles"><Users className="h-4 w-4 mr-1 hidden sm:block" />Roles</TabsTrigger>
+          <TabsTrigger value="ajk-ids"><Crown className="h-4 w-4 mr-1 hidden sm:block" />AJK IDs</TabsTrigger>
         </TabsList>
-
         <TabsContent value="dashboard"><DashboardTab /></TabsContent>
         <TabsContent value="settings"><SettingsTab /></TabsContent>
-        <TabsContent value="ajk-ids"><AjkIdsTab /></TabsContent>
         <TabsContent value="conversations"><ConversationsTab /></TabsContent>
         <TabsContent value="calls"><CallHistoryTab /></TabsContent>
         <TabsContent value="ai-logs"><AILogsTab /></TabsContent>
         <TabsContent value="flagged"><FlaggedTab /></TabsContent>
         <TabsContent value="roles"><RoleTemplatesTab /></TabsContent>
+        <TabsContent value="ajk-ids"><AjkIdsTab /></TabsContent>
       </Tabs>
     </div>
   );
