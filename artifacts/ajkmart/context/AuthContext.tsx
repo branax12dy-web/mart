@@ -476,7 +476,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* FIX 7: Only permanently disable biometric on actual hardware/lockout failures.
            User cancel or fallback should NOT disable it. */
         const nonFatalErrors = ["user_cancel", "system_cancel", "user_fallback", "app_cancel"];
-        const isFatal = !result.error || !nonFatalErrors.includes(result.error as string);
+        const isFatal = !!result.error && !nonFatalErrors.includes(result.error as string);
         if (isFatal) {
           await setBiometricEnabled(false);
         }

@@ -137,6 +137,7 @@ const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
 });
 
 interface RestaurantCard {
+  id: string;
   name: string;
   category: string;
   itemCount: number;
@@ -189,12 +190,32 @@ function FoodScreenInner() {
   const items = useMemo(() => data?.products || [], [data]);
 
   const restaurants = useMemo<RestaurantCard[]>(() => {
+    const vendors: any[] = vendorData?.vendors || vendorData?.users || [];
+    if (vendors.length > 0) {
+      return vendors
+        .map(v => {
+          const id: string = v._id || v.id || String(v.vendorId || "");
+          return {
+            ...v,
+            id,
+            name: v.storeName || v.name || "Restaurant",
+            category: v.storeCategory || v.category || "food",
+            itemCount: v.productCount ?? 0,
+            rating: v.avgRating ?? v.rating,
+            deliveryTime: v.storeDeliveryTime || v.deliveryTime,
+            image: v.storeBanner || v.avatar || v.image,
+          };
+        })
+        .filter(r => !!r.id) as RestaurantCard[];
+    }
     const allProducts: Product[] = allFoodData?.products || [];
     const map = new Map<string, RestaurantCard>();
     for (const p of allProducts) {
       const name = p.vendorName || "Restaurant";
+      const vendorId: string = p.vendorId || "";
       if (!map.has(name)) {
         map.set(name, {
+          id: vendorId,
           name,
           category: p.category || "food",
           itemCount: 1,
@@ -205,12 +226,13 @@ function FoodScreenInner() {
       } else {
         const entry = map.get(name)!;
         entry.itemCount += 1;
+        if (!entry.id && vendorId) entry.id = vendorId;
         if (!entry.image && p.image) entry.image = p.image;
         if (!entry.deliveryTime && p.deliveryTime) entry.deliveryTime = p.deliveryTime;
       }
     }
-    return Array.from(map.values());
-  }, [allFoodData]);
+    return Array.from(map.values()).filter(r => r.id);
+  }, [allFoodData, vendorData]);
 
   const handleSelectCat = useCallback((id: string) => {
     setSelectedCat(prev => prev === id ? undefined : id);

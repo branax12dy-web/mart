@@ -281,8 +281,7 @@ export default function AuthScreen() {
         return;
       }
       if (res.action === "send_phone_otp") {
-        const digits = id.replace(/\D/g, "");
-        const normalized = digits.replace(/^92/, "").replace(/^0/, "");
+        const normalized = normalizePhone(id);
         if (!isValidPakistaniPhone(normalized)) {
           setMethod("phone");
           setLoading(false);
@@ -292,7 +291,7 @@ export default function AuthScreen() {
         setPhone(normalized);
         setMethod("phone");
         setLoading(false);
-        const r = await authPost("/auth/send-otp", { phone: `0${normalized}` }).catch((e: any) => {
+        const r = await authPost("/auth/send-otp", { phone: normalizePhone(normalized) }).catch((e: any) => {
           setError(e.message || "Failed to send OTP");
           return null;
         });

@@ -31,6 +31,7 @@ export function EditProfileModal({ visible, onClose }: { visible: boolean; onClo
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [pendingAsset, setPendingAsset] = useState<{ base64: string; mimeType: string; uri: string } | null>(null);
+  const [failedAvatarAsset, setFailedAvatarAsset] = useState<{ base64: string; mimeType: string; uri: string } | null>(null);
   const [cnicError, setCnicError] = useState("");
 
   const cityList: string[] = React.useMemo(() => {
@@ -84,10 +85,12 @@ export function EditProfileModal({ visible, onClose }: { visible: boolean; onClo
       updateUser({ avatar: avatarUrl });
       setAvatarUri(asset.uri);
       setPendingAsset(null);
+      setFailedAvatarAsset(null);
       setAvatarError(false);
       showToast("Avatar updated!", "success");
     } catch (e: unknown) {
       setAvatarError(true);
+      setFailedAvatarAsset(asset);
       showToast(getErrorMessage(e, "Avatar upload failed — tap Retry"), "error");
     } finally {
       setAvatarUploading(false);
@@ -115,7 +118,7 @@ export function EditProfileModal({ visible, onClose }: { visible: boolean; onClo
   };
 
   const save = async () => {
-    if (!name.trim()) { setError("Name is required"); return; }
+    if (name.trim().length < 2) { setError("Name must be at least 2 characters"); return; }
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Please enter a valid email address"); return;
     }
@@ -182,8 +185,8 @@ export function EditProfileModal({ visible, onClose }: { visible: boolean; onClo
                 <Ionicons name="pencil" size={11} color={C.textInverse} />
               </View>
             </TouchableOpacity>
-            {avatarError && pendingAsset && (
-              <TouchableOpacity activeOpacity={0.7} onPress={() => uploadAvatar(pendingAsset)} disabled={avatarUploading} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.redSoft, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="Retry avatar upload">
+            {failedAvatarAsset && (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => uploadAvatar(failedAvatarAsset)} disabled={avatarUploading} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.redSoft, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: C.redMist }} accessibilityRole="button" accessibilityLabel="Retry avatar upload">
                 <Ionicons name="refresh-outline" size={13} color={C.danger} />
                 <Text style={{ ...Typ.smallMedium, fontFamily: Font.semiBold, color: C.danger }}>Retry Upload</Text>
               </TouchableOpacity>

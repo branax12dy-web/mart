@@ -77,16 +77,34 @@ export function KycModal({ visible, onClose }: { visible: boolean; onClose: () =
     } catch { showToast(`Could not pick ${label}`, "error"); }
   };
 
+  const detectMimeFromBase64 = (b64: string): string | null => {
+    try {
+      const prefix = b64.slice(0, 8);
+      const chars = atob(prefix);
+      const b = (i: number) => chars.charCodeAt(i);
+      if (b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4e && b(3) === 0x47) return "image/png";
+      if (b(0) === 0xff && b(1) === 0xd8) return "image/jpeg";
+      if (b(0) === 0x47 && b(1) === 0x49 && b(2) === 0x46) return "image/gif";
+      if (b(0) === 0x52 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x46) return "image/webp";
+    } catch {}
+    return null;
+  };
+
   const uriToBase64DataUrl = async (uri: string): Promise<string> => {
     const base64 = await LegacyFileSystem.readAsStringAsync(uri, { encoding: "base64" as const });
     const cached = pickerMimeCache.current.get(uri);
-    let mime = cached || "image/jpeg";
-    if (!cached) {
-      const lower = uri.toLowerCase();
+    let mime: string | null = cached ?? null;
+    if (!mime) {
+      const lower = (uri.toLowerCase().split("?")[0] ?? "").split("#")[0] ?? "";
       if (lower.endsWith(".png")) mime = "image/png";
       else if (lower.endsWith(".webp")) mime = "image/webp";
+      else if (lower.endsWith(".gif")) mime = "image/gif";
+      else if (lower.endsWith(".heic") || lower.endsWith(".heif")) mime = "image/heic";
     }
-    return `data:${mime};base64,${base64}`;
+    if (!mime) {
+      mime = detectMimeFromBase64(base64);
+    }
+    return `data:${mime ?? "image/jpeg"};base64,${base64}`;
   };
 
   const submit = async () => {
@@ -96,6 +114,17 @@ export function KycModal({ visible, onClose }: { visible: boolean; onClose: () =
     if (digits.length !== 13) { setError("CNIC must be 13 digits"); return; }
     if (!dob.trim()) { setError("Date of birth is required"); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dob.trim())) { setError("Date of birth must be YYYY-MM-DD"); return; }
+    const [dobYear, dobMonth, dobDay] = dob.trim().split("-").map(Number) as [number, number, number];
+    if (dobMonth < 1 || dobMonth > 12) { setError("Please enter a valid date of birth"); return; }
+    if (dobDay < 1 || dobDay > 31) { setError("Please enter a valid date of birth"); return; }
+    const dobDate = new Date(dobYear, dobMonth - 1, dobDay);
+    if (dobDate.getFullYear() !== dobYear || dobDate.getMonth() !== dobMonth - 1 || dobDate.getDate() !== dobDay) {
+      setError("Please enter a valid date of birth"); return;
+    }
+    const now = new Date();
+    if (dobDate >= now) { setError("Date of birth cannot be in the future"); return; }
+    const ageYears = (now.getFullYear() - dobYear) - (now.getMonth() < dobMonth - 1 || (now.getMonth() === dobMonth - 1 && now.getDate() < dobDay) ? 1 : 0);
+    if (ageYears < 18) { setError("You must be at least 18 years old"); return; }
     if (!gender) { setError("Please select your gender"); return; }
     if (!frontUri) { setError("Front side of CNIC is required"); return; }
     if (!backUri) { setError("Back side of CNIC is required"); return; }
@@ -103,11 +132,9 @@ export function KycModal({ visible, onClose }: { visible: boolean; onClose: () =
 
     setSubmitting(true);
     try {
-      const [frontB64, backB64, selfieB64] = await Promise.all([
-        uriToBase64DataUrl(frontUri),
-        uriToBase64DataUrl(backUri),
-        uriToBase64DataUrl(selfieUri),
-      ]);
+      const frontB64 = await uriToBase64DataUrl(frontUri);
+      const backB64 = await uriToBase64DataUrl(backUri);
+      const selfieB64 = await uriToBase64DataUrl(selfieUri);
       const res = await fetch(`${API}/kyc/submit-base64`, {
         method: "POST",
         headers: {

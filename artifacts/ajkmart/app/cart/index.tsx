@@ -263,7 +263,7 @@ function AddressPickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { if (!saving) { resetForm(); onClose(); } }}>
       <TouchableOpacity activeOpacity={0.7} style={styles.overlay} onPress={() => { if (!saving) { resetForm(); onClose(); } }}>
-        <TouchableOpacity activeOpacity={0.7} style={styles.sheet} onPress={() => {}}>
+        <TouchableOpacity activeOpacity={0.7} style={styles.sheet} onPress={e => e.stopPropagation()}>
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>{showForm ? T("addNewAddress" as TranslationKey) : T("chooseDeliveryAddress" as TranslationKey)}</Text>
 
@@ -1264,7 +1264,7 @@ function CartScreenInner() {
   const GatewayModal = () => (
     <Modal visible={showGwModal} transparent animationType="slide" onRequestClose={() => { if (!gwPaying) setShowGwModal(false); }}>
       <TouchableOpacity activeOpacity={0.7} style={styles.overlay} onPress={() => { if (!gwPaying) setShowGwModal(false); }}>
-        <TouchableOpacity activeOpacity={0.7} style={[styles.sheet, { paddingBottom: 32 }]} onPress={() => {}}>
+        <TouchableOpacity activeOpacity={0.7} style={[styles.sheet, { paddingBottom: 32 }]} onPress={e => e.stopPropagation()}>
           <View style={styles.handle} />
           <View style={{ alignItems: "center", marginBottom: 20 }}>
             <Text style={{ fontSize: 36, marginBottom: 8 }}>{gwLogo}</Text>

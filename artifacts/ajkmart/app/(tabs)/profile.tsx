@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  InteractionManager,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -41,11 +42,29 @@ import {
 } from "@/components/profile";
 import { C, stripPkCode, btnStyles } from "@/components/profile/shared";
 
+function validateMpin(pin: string): string | null {
+  if (pin.length !== 4) return "Enter a 4-digit MPIN";
+  if (/^(.)\1{3}$/.test(pin)) return "Choose a stronger PIN — avoid sequences and repeated digits.";
+  const d = pin.split("").map(Number);
+  const isAscending = d[0] + 1 === d[1] && d[1] + 1 === d[2] && d[2] + 1 === d[3];
+  const isDescending = d[0] - 1 === d[1] && d[1] - 1 === d[2] && d[2] - 1 === d[3];
+  if (isAscending || isDescending) return "Choose a stronger PIN — avoid sequences and repeated digits.";
+  const common = ["1234", "0000", "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999", "1212", "0123", "9876", "4321"];
+  if (common.includes(pin)) return "Choose a stronger PIN — avoid sequences and repeated digits.";
+  return null;
+}
+
 function ProfileMpinInput({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
   const inputRef = useRef<TextInput>(null);
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
-  useEffect(() => { if (autoFocus) setTimeout(() => inputRef.current?.focus(), 300); }, []);
+  useEffect(() => {
+    if (!autoFocus) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => { inputRef.current?.focus(); });
+    });
+    return () => task.cancel();
+  }, []);
   return (
     <View style={{ alignItems: "center", gap: 16 }}>
       <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
@@ -192,7 +211,7 @@ function ProfileMpinChangeModal({ token, onClose, onSuccess }: { token: string |
                   <>
                     <ProfileMpinInput value={newPin} onChange={setNewPin} autoFocus />
                     {!!error && <Text style={{ ...Typ.caption, color: C.danger, textAlign: "center", marginTop: 8 }}>{error}</Text>}
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => { if (newPin.length === 4) { setError(""); setStep("confirm"); } }} disabled={newPin.length !== 4} style={[mpinStyles.actionBtn, { opacity: newPin.length !== 4 ? 0.5 : 1, marginTop: 20 }]}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => { if (newPin.length === 4) { const e = validateMpin(newPin); if (e) { setError(e); return; } setError(""); setStep("confirm"); } }} disabled={newPin.length !== 4} style={[mpinStyles.actionBtn, { opacity: newPin.length !== 4 ? 0.5 : 1, marginTop: 20 }]}>
                       <Text style={mpinStyles.actionBtnTxt}>Continue</Text>
                     </TouchableOpacity>
                     <TouchableOpacity activeOpacity={0.7} onPress={() => { setStep("old"); setNewPin(""); setError(""); }} style={{ alignItems: "center", marginTop: 12 }}>
@@ -258,6 +277,8 @@ function ProfileMpinForgotModal({ token, onClose, onReset }: { token: string | n
   const resetPin = async () => {
     if (otp.length < 4) { setError("Enter the OTP sent to your phone"); return; }
     if (newPin.length !== 4) { setError("Enter a 4-digit new MPIN"); return; }
+    const pinErr = validateMpin(newPin);
+    if (pinErr) { setError(pinErr); return; }
     setLoading(true);
     setError("");
     try {

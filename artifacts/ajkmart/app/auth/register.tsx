@@ -108,6 +108,12 @@ export default function RegisterScreen() {
   }, [resendCooldown]);
 
   useEffect(() => {
+    import("expo-secure-store").then(async SS => {
+      try {
+        const stored = await SS.getItemAsync("ajkmart_reg_token");
+        if (stored) setAuthToken(stored);
+      } catch {}
+    }).catch(() => {});
     return () => {
       import("expo-secure-store").then(SS => SS.deleteItemAsync("ajkmart_reg_token")).catch(() => {});
     };
@@ -371,7 +377,13 @@ export default function RegisterScreen() {
         return;
       }
 
-      if (profileData.token) setAuthToken(profileData.token);
+      if (profileData.token) {
+        setAuthToken(profileData.token);
+        try {
+          const SecureStore = await import("expo-secure-store");
+          await SecureStore.setItemAsync("ajkmart_reg_token", profileData.token);
+        } catch {}
+      }
       if (profileData.refreshToken) setAuthRefreshToken(profileData.refreshToken);
       if (profileData.user) setAuthUser(profileData.user);
 
