@@ -16,7 +16,8 @@ const router: IRouter = Router();
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
 const idempotencyCache = new Map<string, any>();
-const IDEMPOTENCY_TTL_MS = 5 * 60_000;
+const IDEMPOTENCY_TTL_MS = 30 * 60_000;
+const MAX_ITEM_QUANTITY = 99;
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of idempotencyCache) {
@@ -496,6 +497,7 @@ router.post("/", customerAuth, async (req, res) => {
       price: productsTable.price,
       inStock: productsTable.inStock,
       name: productsTable.name,
+      type: productsTable.type,
     }).from(productsTable).where(inArray(productsTable.id, productIds));
 
     const productMap = new Map(dbProducts.map(p => [p.id, p]));
@@ -529,6 +531,16 @@ router.post("/", customerAuth, async (req, res) => {
       sendErrorWithData(res, `Prices have changed for some items: ${priceChanges.join("; ")}. Please review your cart.`, { priceChanges }, 409);
       return;
     }
+
+    /* Mixed-cart enforcement (#22) — validate against DB product types, not client-provided data */
+    const resolvedProductTypes = new Set(
+      (items as Array<Record<string, unknown>>)
+        .map((it) => productMap.get(it.productId as string)?.type)
+        .filter(Boolean)
+    );
+    if (resolvedProductTypes.size > 1) {
+      sendValidationError(res, `Cart cannot mix item types: found ${[...resolvedProductTypes].join(", ")}. All items must be from the same category (mart, food, or pharmacy).`); return;
+    }
   }  /* end price verification block */
 
   const itemsTotal = items.reduce(
@@ -542,6 +554,15 @@ router.post("/", customerAuth, async (req, res) => {
 
   /* ── Load platform settings once ── */
   const s = await getCachedSettings();
+
+  /* Max quantity enforcement (#23) — configurable via platform settings, default 99 */
+  const maxItemQty = parseInt(String(s["order_max_item_quantity"] ?? MAX_ITEM_QUANTITY)) || MAX_ITEM_QUANTITY;
+  const overQuantityItem = (items as Array<Record<string, unknown>>).find(
+    (it) => Number(it.quantity) > maxItemQty,
+  );
+  if (overQuantityItem) {
+    sendValidationError(res, `Item quantity cannot exceed ${maxItemQty} per item (item: ${overQuantityItem.name ?? overQuantityItem.productId ?? "unknown"})`); return;
+  }
 
   /* ── Geofence: check delivery coordinates if provided ── */
   if ((s["security_geo_fence"] ?? "off") === "on" && deliveryLat != null && deliveryLng != null) {

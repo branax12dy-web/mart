@@ -1105,6 +1105,7 @@ router.post("/reviews/import", async (req, res) => {
   };
 
   let imported = 0, skipped = 0, errored = 0;
+  const errors: Array<{ row: number; reason: string }> = [];
 
   for (let i = 1; i < lines.length; i++) {
     const cells = (lines[i] || "").match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g) || lines[i]!.split(",");
@@ -1117,6 +1118,11 @@ router.post("/reviews/import", async (req, res) => {
 
       if (!orderId || !orderType || isNaN(rating) || rating < 1 || rating > 5) {
         errored++;
+        const missing: string[] = [];
+        if (!orderId) missing.push("orderid");
+        if (!orderType) missing.push("ordertype");
+        if (isNaN(rating) || rating < 1 || rating > 5) missing.push("stars (must be 1-5)");
+        errors.push({ row: i, reason: `Validation failed: ${missing.join(", ")}` });
         continue;
       }
 
@@ -1143,12 +1149,13 @@ router.post("/reviews/import", async (req, res) => {
         status: col(cells, "status") || "visible",
       });
       imported++;
-    } catch {
+    } catch (err: unknown) {
       errored++;
+      errors.push({ row: i, reason: err instanceof Error ? err.message : "Unknown error" });
     }
   }
 
-  sendSuccess(res, { imported, skipped, errored, total: lines.length - 1 });
+  sendSuccess(res, { imported, skipped, errored, total: lines.length - 1, errors });
 });
 
 /* ── GET /admin/reviews/moderation-queue — pending moderation ─────────── */

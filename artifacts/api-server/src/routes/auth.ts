@@ -3104,7 +3104,7 @@ router.post("/2fa/recovery", async (req, res) => {
   if (!user.totpEnabled || !user.backupCodes) { res.status(400).json({ error: "2FA is not enabled or no backup codes available" }); return; }
 
   let storedCodes: string[];
-  try { storedCodes = JSON.parse(user.backupCodes); } catch { res.status(500).json({ error: "Internal error" }); return; }
+  try { storedCodes = JSON.parse(user.backupCodes); if (!Array.isArray(storedCodes)) storedCodes = []; } catch { storedCodes = []; }
 
   let matchIdx = -1;
   for (let i = 0; i < storedCodes.length; i++) {

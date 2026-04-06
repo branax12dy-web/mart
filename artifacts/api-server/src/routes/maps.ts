@@ -185,7 +185,7 @@ router.get("/autocomplete", async (req, res) => {
 
   if (!useLocationIQ && !useGoogle) {
     const filtered = await getFallbackPredictions(input);
-    res.json({ predictions: filtered, source: "fallback" });
+    res.status(503).json({ predictions: filtered, source: "fallback", approximate: true, warning: "Maps service is not configured. Results are limited to pre-defined AJK locations." });
     return;
   }
 
@@ -198,7 +198,7 @@ router.get("/autocomplete", async (req, res) => {
       const liqRaw = await fetch(liqUrl, { signal: AbortSignal.timeout(8000) });
       if (!liqRaw.ok) {
         const filtered = await getFallbackPredictions(input);
-        res.json({ predictions: filtered, source: "fallback" });
+        res.status(503).json({ predictions: filtered, source: "fallback", approximate: true, warning: "Maps service temporarily unavailable. Results are limited to pre-defined AJK locations." });
         return;
       }
       const results = await liqRaw.json() as any[];
@@ -212,7 +212,7 @@ router.get("/autocomplete", async (req, res) => {
       res.json({ predictions, source: "locationiq" });
     } catch {
       const filtered = await getFallbackPredictions(input);
-      res.json({ predictions: filtered, source: "fallback" });
+      res.status(503).json({ predictions: filtered, source: "fallback", approximate: true, warning: "Maps service temporarily unavailable. Results are limited to pre-defined AJK locations." });
     }
     return;
   }
@@ -225,7 +225,7 @@ router.get("/autocomplete", async (req, res) => {
 
     if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
       const filtered = AJK_FALLBACK.filter(l => l.description.toLowerCase().includes(input.toLowerCase()));
-      res.json({ predictions: filtered, source: "fallback", googleStatus: data.status });
+      res.status(503).json({ predictions: filtered, source: "fallback", approximate: true, warning: "Maps service temporarily unavailable. Results are limited to pre-defined AJK locations.", googleStatus: data.status });
       return;
     }
 
@@ -243,7 +243,7 @@ router.get("/autocomplete", async (req, res) => {
     res.json({ predictions, source: "google" });
   } catch (err) {
     const filtered = AJK_FALLBACK.filter(l => l.description.toLowerCase().includes(input.toLowerCase()));
-    res.json({ predictions: filtered, source: "fallback" });
+    res.status(503).json({ predictions: filtered, source: "fallback", approximate: true, warning: "Maps service temporarily unavailable. Results are limited to pre-defined AJK locations." });
   }
 });
 
@@ -259,7 +259,7 @@ router.get("/geocode", async (req, res) => {
   /* Resolve from hardcoded fallback list by placeId */
   if (placeId.startsWith("ajk_")) {
     const loc = AJK_FALLBACK.find(l => l.placeId === placeId);
-    if (loc) { res.json({ lat: loc.lat, lng: loc.lng, formattedAddress: loc.description, source: "fallback" }); return; }
+    if (loc) { res.json({ lat: loc.lat, lng: loc.lng, formattedAddress: loc.description, source: "fallback", approximate: true }); return; }
   }
 
   /* Resolve admin-managed popular location by placeId (pop_{id}) */
@@ -271,7 +271,7 @@ router.get("/geocode", async (req, res) => {
       if (row) {
         res.json({
           lat: parseFloat(String(row.lat)), lng: parseFloat(String(row.lng)),
-          formattedAddress: row.name, source: "fallback",
+          formattedAddress: row.name, source: "fallback", approximate: true,
         });
         return;
       }
@@ -310,7 +310,7 @@ router.get("/geocode", async (req, res) => {
     const loc = AJK_FALLBACK.find(l =>
       l.placeId === query || l.description.toLowerCase().includes(query) || l.mainText.toLowerCase().includes(query)
     );
-    if (loc) { res.json({ lat: loc.lat, lng: loc.lng, formattedAddress: loc.description, source: "fallback" }); return; }
+    if (loc) { res.json({ lat: loc.lat, lng: loc.lng, formattedAddress: loc.description, source: "fallback", approximate: true }); return; }
 
     if (address) {
       try {
