@@ -31,8 +31,8 @@ initSocketIO(httpServer);
 initVapid();
 
 /* ── Cron: dispatch scheduled rides every minute ── */
-cron.schedule("* * * * *", async () => {
-  await dispatchScheduledRides();
+cron.schedule("* * * * *", () => {
+  dispatchScheduledRides().catch(e => logger.error({ err: e }, "[cron] dispatchScheduledRides failed"));
 }, { timezone: "Asia/Karachi" });
 
 /* ── Cron: cleanup jobs (runs at midnight) ── */
