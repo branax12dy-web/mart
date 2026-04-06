@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type ToastType = "success" | "error" | "info" | "warning";
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 interface ToastItem {
   id: number;
@@ -17,7 +18,7 @@ interface ToastCtx {
 
 const ToastContext = createContext<ToastCtx>({ showToast: () => {} });
 
-const COLORS: Record<ToastType, { bg: string; icon: string; text: string }> = {
+const COLORS: Record<ToastType, { bg: string; icon: IoniconName; text: string }> = {
   success: { bg: "#065F46", icon: "checkmark-circle",     text: "#ffffff" },
   error:   { bg: "#991B1B", icon: "alert-circle",         text: "#ffffff" },
   info:    { bg: "#1E40AF", icon: "information-circle",   text: "#ffffff" },
@@ -42,7 +43,7 @@ function ToastBanner({ item, onDone }: { item: ToastItem; onDone: () => void }) 
 
   return (
     <Animated.View style={[ts.banner, { backgroundColor: c.bg, opacity, transform: [{ translateY }], top: Platform.OS === "web" ? 72 : insets.top + 10 }]}>
-      <Ionicons name={c.icon as any} size={20} color={c.text} />
+      <Ionicons name={c.icon} size={20} color={c.text} />
       <Text style={[ts.bannerTxt, { color: c.text }]} numberOfLines={3}>{item.message}</Text>
       <TouchableOpacity activeOpacity={0.7} onPress={onDone} style={ts.closeBtn}>
         <Ionicons name="close" size={16} color={c.text} />

@@ -38,11 +38,11 @@ export interface AdminRequest extends Request {
   adminIp?: string;
 }
 
-export function stripUser(u: Record<string, unknown>) {
+export function stripUser<T extends Record<string, unknown>>(u: T): Omit<T, "passwordHash" | "otpCode" | "otpExpiry" | "emailOtpCode" | "emailOtpExpiry" | "totpSecret" | "backupCodes" | "trustedDevices"> {
   const { passwordHash: _ph, otpCode: _otp, otpExpiry: _exp,
           emailOtpCode: _eotp, emailOtpExpiry: _eexp,
           totpSecret: _ts, backupCodes: _bc, trustedDevices: _td, ...safe } = u;
-  return safe;
+  return safe as Omit<T, "passwordHash" | "otpCode" | "otpExpiry" | "emailOtpCode" | "emailOtpExpiry" | "totpSecret" | "backupCodes" | "trustedDevices">;
 }
 
 export { generateId, getUserLanguage, t, type TranslationKey };

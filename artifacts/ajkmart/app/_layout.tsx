@@ -49,7 +49,7 @@ const webStyles = Platform.OS === "web" ? StyleSheet.create({
     justifyContent: "center" as const,
   },
   phone: {
-    width: "100%" as any,
+    width: "100%",
     maxWidth: 430,
     flex: 1,
     overflow: "hidden" as const,
@@ -179,8 +179,9 @@ function MagicLinkHandler() {
           return;
         }
         if (data.token && data.user) {
-          await login(data.user as any, data.token, data.refreshToken);
-          const role: string = (data.user as any)?.role ?? "customer";
+          const userData = data.user as import("@/context/AuthContext").AppUser;
+          await login(userData, data.token, data.refreshToken);
+          const role: string = userData?.role ?? "customer";
           if (role !== "customer") {
             router.replace("/auth/wrong-app");
           } else {

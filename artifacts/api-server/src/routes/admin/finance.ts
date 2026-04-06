@@ -224,7 +224,7 @@ router.get("/riders", async (_req, res) => {
       avgRating: ratingMap.get(r.id)?.avg ?? 0,
       ratingCount: ratingMap.get(r.id)?.count ?? 0,
       roles: r.roles,
-      isOnline: (r as any).isOnline ?? false,
+      isOnline: r.isOnline ?? false,
       createdAt: r.createdAt.toISOString(),
       lastLoginAt: r.lastLoginAt ? r.lastLoginAt.toISOString() : null,
     })),
@@ -764,7 +764,7 @@ router.patch("/vendors/:id/commission", async (req, res) => {
     sendValidationError(res, "commissionPct required"); return;
   }
   const [vendor] = await db.update(usersTable)
-    .set({ commissionOverride: String(commissionPct), updatedAt: new Date() } as any)
+    .set({ commissionOverride: String(commissionPct), updatedAt: new Date() })
     .where(eq(usersTable.id, req.params["id"]!))
     .returning();
   if (!vendor) { sendNotFound(res, "Vendor not found"); return; }
@@ -795,7 +795,7 @@ router.post("/riders/:id/override-suspension", async (req, res) => {
     icon: "shield-checkmark-outline",
   }).catch(() => {});
 
-  sendSuccess(res, { user: stripUser(updated as any) });
+  sendSuccess(res, { user: stripUser(updated!) });
 });
 
 /* ── POST /admin/vendors/:id/override-suspension — override auto-suspension ─ */
@@ -821,7 +821,7 @@ router.post("/vendors/:id/override-suspension", async (req, res) => {
     icon: "shield-checkmark-outline",
   }).catch(() => {});
 
-  sendSuccess(res, { user: stripUser(updated as any) });
+  sendSuccess(res, { user: stripUser(updated!) });
 });
 
 export default router;

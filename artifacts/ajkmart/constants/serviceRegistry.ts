@@ -8,6 +8,16 @@ const C = Colors.light;
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
+export const APP_ROUTES = {
+  mart:     "/mart",
+  food:     "/food",
+  rides:    "/ride",
+  pharmacy: "/pharmacy",
+  parcel:   "/parcel",
+  orders:   "/(tabs)/orders",
+  van:      "/van",
+} as const satisfies Record<string, Href>;
+
 export interface ServiceDefinition {
   key: ServiceKey;
   featureFlag: string;
@@ -64,7 +74,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
     description: "Fresh groceries & essentials delivered to your door",
     icon: "storefront-outline",
     iconFocused: "storefront",
-    route: "/mart" as Href,
+    route: APP_ROUTES.mart,
     color: C.mart,
     colorLight: C.martLight,
     gradient: ["#0052CC", "#3385FF"],
@@ -108,8 +118,8 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
       },
     ],
     quickActions: [
-      { icon: "leaf-outline", label: "Fruits", color: C.mart, bg: C.martLight, route: "/mart" as Href },
-      { icon: "flash-outline", label: "Deals", color: C.danger, bg: C.dangerSoft, route: "/mart" as Href },
+      { icon: "leaf-outline", label: "Fruits", color: C.mart, bg: C.martLight, route: APP_ROUTES.mart },
+      { icon: "flash-outline", label: "Deals", color: C.danger, bg: C.dangerSoft, route: APP_ROUTES.mart },
     ],
     tabLabel: "Mart",
     adminDescription: "Grocery & essentials marketplace with 500+ products",
@@ -123,7 +133,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
     description: "Restaurants near you, delivered fast",
     icon: "restaurant-outline",
     iconFocused: "restaurant",
-    route: "/food" as Href,
+    route: APP_ROUTES.food,
     color: C.food,
     colorLight: C.foodLight,
     gradient: [C.foodLight, "#FEE8CC"],
@@ -158,7 +168,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
       },
     ],
     quickActions: [
-      { icon: "pizza-outline", label: "Pizza", color: C.food, bg: C.foodLight, route: "/food" as Href },
+      { icon: "pizza-outline", label: "Pizza", color: C.food, bg: C.foodLight, route: APP_ROUTES.food },
     ],
     tabLabel: "Food",
     adminDescription: "Restaurant food ordering & delivery service",
@@ -172,7 +182,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
     description: "Safe & affordable bike and car rides",
     icon: "car-outline",
     iconFocused: "car",
-    route: "/ride" as Href,
+    route: APP_ROUTES.rides,
     color: C.success,
     colorLight: C.successSoft,
     gradient: [C.successSoft, "#CCF5E7"],
@@ -207,8 +217,8 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
       },
     ],
     quickActions: [
-      { icon: "bicycle-outline", label: "Bike", color: C.info, bg: C.infoSoft, route: "/ride" as Href },
-      { icon: "car-outline", label: "Car", color: C.success, bg: C.successSoft, route: "/ride" as Href },
+      { icon: "bicycle-outline", label: "Bike", color: C.info, bg: C.infoSoft, route: APP_ROUTES.rides },
+      { icon: "car-outline", label: "Car", color: C.success, bg: C.successSoft, route: APP_ROUTES.rides },
     ],
     tabLabel: "Rides",
     adminDescription: "Bike & car ride booking with live tracking",
@@ -222,7 +232,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
     description: "Medicines delivered from home in 25-40 min",
     icon: "medkit-outline",
     iconFocused: "medkit",
-    route: "/pharmacy" as Href,
+    route: APP_ROUTES.pharmacy,
     color: C.pharmacy,
     colorLight: C.pharmacyLight,
     gradient: [C.pharmacyLight, "#EDD6FF"],
@@ -257,7 +267,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
       },
     ],
     quickActions: [
-      { icon: "medkit-outline", label: "Pharmacy", color: C.pharmacy, bg: C.pharmacyLight, route: "/pharmacy" as Href },
+      { icon: "medkit-outline", label: "Pharmacy", color: C.pharmacy, bg: C.pharmacyLight, route: APP_ROUTES.pharmacy },
     ],
     tabLabel: "Pharmacy",
     adminDescription: "On-demand medicine delivery with prescriptions",
@@ -271,7 +281,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
     description: "Send parcels anywhere in AJK",
     icon: "cube-outline",
     iconFocused: "cube",
-    route: "/parcel" as Href,
+    route: APP_ROUTES.parcel,
     color: C.parcel,
     colorLight: C.parcelLight,
     gradient: [C.parcelLight, "#FFD9CC"],
@@ -306,7 +316,7 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
       },
     ],
     quickActions: [
-      { icon: "cube-outline", label: "Parcel", color: C.parcel, bg: C.parcelLight, route: "/parcel" as Href },
+      { icon: "cube-outline", label: "Parcel", color: C.parcel, bg: C.parcelLight, route: APP_ROUTES.parcel },
     ],
     tabLabel: "Parcel",
     adminDescription: "Same-day parcel & package delivery across AJK",
@@ -323,8 +333,8 @@ export const GLOBAL_QUICK_ACTIONS: Array<{
   route: Href;
   service: ServiceKey | null;
 }> = [
-  { icon: "time-outline", label: "Track", color: C.primary, bg: C.primarySoft, route: "/(tabs)/orders" as Href, service: null },
-  { icon: "bus-outline", label: "Van Service", color: "#6366F1", bg: "#EEF2FF", route: "/van" as Href, service: null },
+  { icon: "time-outline", label: "Track", color: C.primary, bg: C.primarySoft, route: APP_ROUTES.orders, service: null },
+  { icon: "bus-outline", label: "Van Service", color: "#6366F1", bg: "#EEF2FF", route: APP_ROUTES.van, service: null },
 ];
 
 export function getActiveServices(

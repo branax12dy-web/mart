@@ -35,10 +35,22 @@ import {
   getDispatchStatus,
   retryRideDispatch,
   rateRide,
+  type Ride,
 } from "@workspace/api-client-react";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+
+type LiveRide = Ride & {
+  tripOtp?: string;
+  otpVerified?: boolean;
+  updatedAt?: string;
+  estimatedFare?: number;
+  minOffer?: number;
+  estimatedTime?: string;
+  broadcastTimeoutSec?: number;
+  fareBreakdown?: { baseFare?: number; gstAmount?: number };
+};
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -87,7 +99,9 @@ export function RideTracker({
   const stepProgress = useRef(new Animated.Value(1)).current;
   const cardSlide = useRef(new Animated.Value(120)).current;
 
-  const { ride, setRide, connectionType, reconnect } = useRideStatus(rideId);
+  const { ride: _ride, setRide: _setRide, connectionType, reconnect } = useRideStatus(rideId);
+  const ride = _ride as LiveRide | null;
+  const setRide = _setRide as React.Dispatch<React.SetStateAction<LiveRide | null>>;
   const RIDE_STEPS = ["searching", "accepted", "arrived", "in_transit", "completed"];
   const { config } = usePlatformConfig();
   const sosEnabled = config.features?.sos !== false;
@@ -182,9 +196,9 @@ export function RideTracker({
   }, [ride?.status, acceptedAt]);
 
   useEffect(() => {
-    if (ride?.status === "arrived" && (ride as any)?.tripOtp && !tripOtp) setTripOtp((ride as any).tripOtp);
-    if (ride?.status === "in_transit" && (ride as any)?.otpVerified) setTripOtp(null);
-  }, [ride?.status, (ride as any)?.tripOtp, (ride as any)?.otpVerified]);
+    if (ride?.status === "arrived" && ride?.tripOtp && !tripOtp) setTripOtp(ride.tripOtp);
+    if (ride?.status === "in_transit" && ride?.otpVerified) setTripOtp(null);
+  }, [ride?.status, ride?.tripOtp, ride?.otpVerified]);
 
   useEffect(() => {
     const st = ride?.status;
@@ -284,7 +298,7 @@ export function RideTracker({
     setRetrying(true);
     try {
       await retryRideDispatch(rideId);
-      setRide((r: any) => (r ? { ...r, status: "searching" } : r));
+      setRide((r) => (r ? { ...r, status: "searching" } : r));
       setDispatchInfo(null);
     } catch { showToast(tl("couldNotRetry"), "error"); }
     setRetrying(false);
@@ -343,8 +357,8 @@ export function RideTracker({
     return (
       <NegotiationScreen
         rideId={rideId}
-        ride={ride as any}
-        setRide={(updater) => setRide((prev) => updater(prev as any) as any)}
+        ride={ride as Parameters<typeof NegotiationScreen>[0]["ride"]}
+        setRide={(updater) => setRide((prev) => updater(prev as Parameters<typeof NegotiationScreen>[0]["ride"]) as LiveRide | null)}
         elapsed={elapsed}
         cancellationFee={effectiveCancellationFee}
         token={token}
@@ -386,7 +400,7 @@ export function RideTracker({
           </TouchableOpacity>
         </View>
         {cancelModalTarget && (
-          <CancelModal target={cancelModalTarget} cancellationFee={effectiveCancellationFee} apiBase={rideApiBase} token={token} onClose={() => setCancelModalTarget(null)} onDone={(result) => { setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason }); setRide((r: any) => r ? { ...r, status: "cancelled" } : r); }} />
+          <CancelModal target={cancelModalTarget} cancellationFee={effectiveCancellationFee} apiBase={rideApiBase} token={token} onClose={() => setCancelModalTarget(null)} onDone={(result) => { setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason }); setRide((r) => r ? { ...r, status: "cancelled" } : r); }} />
         )}
       </View>
     );
@@ -427,7 +441,7 @@ export function RideTracker({
           </TouchableOpacity>
         </View>
         {cancelModalTarget && (
-          <CancelModal target={cancelModalTarget} cancellationFee={effectiveCancellationFee} apiBase={rideApiBase} token={token} onClose={() => setCancelModalTarget(null)} onDone={(result) => { setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason }); setRide((r: any) => r ? { ...r, status: "cancelled" } : r); }} />
+          <CancelModal target={cancelModalTarget} cancellationFee={effectiveCancellationFee} apiBase={rideApiBase} token={token} onClose={() => setCancelModalTarget(null)} onDone={(result) => { setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason }); setRide((r) => r ? { ...r, status: "cancelled" } : r); }} />
         )}
       </View>
     );
@@ -894,7 +908,7 @@ export function RideTracker({
           onClose={() => setCancelModalTarget(null)}
           onDone={(result) => {
             setCancelResult({ cancellationFee: result?.cancellationFee, cancelReason: result?.cancelReason });
-            setRide((r: any) => r ? { ...r, status: "cancelled" } : r);
+            setRide((r) => r ? { ...r, status: "cancelled" } : r);
           }}
         />
       )}

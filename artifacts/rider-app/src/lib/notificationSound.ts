@@ -17,10 +17,17 @@ export function setSilenceMode(enabled: boolean) {
   localStorage.setItem(SILENCE_KEY, enabled ? "on" : "off");
 }
 
+interface WindowWithWebkit extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
 function getCtx(): AudioContext | null {
   if (!audioCtx) {
     try {
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const win = window as WindowWithWebkit;
+      const AudioCtx = win.AudioContext || win.webkitAudioContext;
+      if (!AudioCtx) return null;
+      audioCtx = new AudioCtx();
     } catch {
       return null;
     }

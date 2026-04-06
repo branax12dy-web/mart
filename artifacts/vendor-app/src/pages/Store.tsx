@@ -14,14 +14,10 @@ import {
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { patchLeafletDefaultIcon } from "../lib/leafletIconFix";
 
 /* Fix Leaflet icons in Vite */
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+patchLeafletDefaultIcon();
 
 /* ── Vendor tile config ── */
 function useVendorTileConfig() {
@@ -217,7 +213,8 @@ export default function Store() {
     onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
-  const TABS = [
+  type TabKey = "info" | "hours" | "promos" | "location";
+  const TABS: { key: TabKey; label: string; icon: string }[] = [
     { key:"info",     label: T("storeInfo"),   icon:"🏪" },
     { key:"hours",    label: T("hoursLabel"),  icon:"🕐" },
     { key:"promos",   label: T("promosLabel"), icon:"🎟️" },
@@ -239,7 +236,7 @@ export default function Store() {
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 flex sticky top-0 z-10">
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key as any)}
+          <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 flex flex-col md:flex-row items-center md:justify-center md:gap-2 py-3 text-[11px] md:text-sm font-bold border-b-2 transition-colors android-press min-h-0
               ${tab === t.key ? "border-orange-500 text-orange-600" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
             <span className="text-lg md:text-base mb-0.5 md:mb-0">{t.icon}</span>
@@ -266,7 +263,7 @@ export default function Store() {
                 ].map(({ label, key, placeholder, type }) => (
                   <div key={key}>
                     <label className={LABEL}>{label}</label>
-                    <input type={type} value={(sf as any)[key]} onChange={e => s(key, e.target.value)} placeholder={placeholder} className={INPUT}/>
+                    <input type={type} value={(sf as Record<string, string>)[key]} onChange={e => s(key, e.target.value)} placeholder={placeholder} className={INPUT}/>
                   </div>
                 ))}
               </div>

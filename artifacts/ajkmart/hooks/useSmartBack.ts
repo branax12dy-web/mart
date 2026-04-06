@@ -1,20 +1,22 @@
 import { useCallback } from "react";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 
-export function useSmartBack(fallback: string = "/(tabs)") {
+const HOME_ROUTE = "/(tabs)" satisfies Href;
+
+export function useSmartBack(fallback: Href = HOME_ROUTE) {
   const navigation = useNavigation();
 
   const goBack = useCallback(() => {
     if (navigation.canGoBack()) {
       router.back();
     } else {
-      router.replace(fallback as any);
+      router.replace(fallback);
     }
   }, [navigation, fallback]);
 
   const goHome = useCallback(() => {
-    router.replace("/(tabs)" as any);
+    router.replace(HOME_ROUTE);
   }, []);
 
   return { goBack, goHome, canGoBack: navigation.canGoBack() };

@@ -170,7 +170,7 @@ router.patch("/orders/:id/status", async (req, res) => {
     }
     addAuditEntry({
       action: "order_status_cancelled_refunded",
-      adminId: (req as any).admin?.id,
+      adminId: (req as AdminRequest).adminId,
       ip: getClientIp(req),
       details: `Order #${orderId.slice(-6).toUpperCase()} cancelled + wallet refund Rs.${parseFloat(String(preOrder.total)).toFixed(0)} issued`,
       result: "success",
@@ -224,7 +224,7 @@ router.patch("/orders/:id/status", async (req, res) => {
   if (["delivered", "cancelled"].includes(status)) {
     addAuditEntry({
       action: `order_status_${status}`,
-      adminId: (req as any).admin?.id,
+      adminId: (req as AdminRequest).adminId,
       ip: getClientIp(req),
       details: `Order #${orderId.slice(-6).toUpperCase()} marked ${status}`,
       result: "success",
@@ -316,7 +316,7 @@ router.post("/orders/:id/refund", async (req, res) => {
 
   addAuditEntry({
     action: "order_refunded",
-    adminId: (req as any).admin?.id,
+    adminId: (req as AdminRequest).adminId,
     ip: getClientIp(req),
     details: `Order #${order.id.slice(-6).toUpperCase()} admin refund Rs.${refundAmt.toFixed(0)}${reason ? ` — ${reason}` : ""}`,
     result: "success",
@@ -381,7 +381,7 @@ router.patch("/pharmacy-orders/:id/status", async (req, res) => {
   if (["delivered", "cancelled"].includes(status)) {
     addAuditEntry({
       action: `pharmacy_order_${status}`,
-      adminId: (req as any).admin?.id,
+      adminId: (req as AdminRequest).adminId,
       ip: getClientIp(req),
       details: `Pharmacy Order #${order.id.slice(-6).toUpperCase()} marked ${status}`,
       result: "success",
@@ -449,7 +449,7 @@ router.patch("/parcel-bookings/:id/status", async (req, res) => {
   if (["completed", "cancelled"].includes(status)) {
     addAuditEntry({
       action: `parcel_booking_${status}`,
-      adminId: (req as any).admin?.id,
+      adminId: (req as AdminRequest).adminId,
       ip: getClientIp(req),
       details: `Parcel Booking #${booking.id.slice(-6).toUpperCase()} marked ${status}`,
       result: "success",

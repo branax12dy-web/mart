@@ -102,7 +102,8 @@ async function isVpnOrProxy(ip: string): Promise<boolean> {
       addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check HTTP error ${resp.status}`, severity: "low" });
       return false;
     }
-    const data = await resp.json() as any;
+    interface IpApiResponse { status?: string; proxy?: boolean; hosting?: boolean; }
+    const data = await resp.json() as IpApiResponse;
     const isVpn = data.status === "success" && (data.proxy === true || data.hosting === true);
     vpnCache.set(ip, { isVpn, cachedAt: Date.now() });
     return isVpn;
@@ -421,7 +422,7 @@ export function signAdminJwt(adminId: string | null, role: string, name: string,
 export function verifyAdminJwt(token: string): AdminJwtPayload | null {
   try {
     const payload = jwt.verify(token, ADMIN_JWT_SECRET, { algorithms: ["HS256"] }) as jwt.JwtPayload;
-    if ((payload as any).type !== "admin") return null;
+    if ((payload as Record<string, unknown>)["type"] !== "admin") return null;
     const nowSec = Math.floor(Date.now() / 1000);
     if (typeof payload.iat === "number" && payload.iat > nowSec + 60) return null;
     return {

@@ -102,11 +102,11 @@ router.get("/users/search-riders", async (req, res) => {
 router.get("/users", async (req, res) => {
   const filter = (req.query?.filter as string) ?? "";
   const conditionTier = (req.query?.conditionTier as string) ?? "";
-  let query = db.select().from(usersTable);
-  if (filter === "2fa_enabled") {
-    query = query.where(eq(usersTable.totpEnabled, true)) as any;
-  }
-  const users = await query.orderBy(desc(usersTable.createdAt));
+  const users = await (
+    filter === "2fa_enabled"
+      ? db.select().from(usersTable).where(eq(usersTable.totpEnabled, true))
+      : db.select().from(usersTable)
+  ).orderBy(desc(usersTable.createdAt));
 
   const condCounts = await db.select({
     userId: accountConditionsTable.userId,
@@ -369,9 +369,9 @@ router.patch("/users/:id/security", async (req, res) => {
   }
 
   if (willBeBanned !== alreadyBanned) {
-    delete updates.isBanned;
-    delete (updates as any).isActive;
-    delete (updates as any).banReason;
+    delete updates["isBanned"];
+    delete updates["isActive"];
+    delete updates["banReason"];
   }
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id!)).returning();
   if (!user) { sendNotFound(res, "User not found"); return; }

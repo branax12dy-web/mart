@@ -140,18 +140,20 @@ export default function Profile() {
           <div className="space-y-4">
             {/* Mobile Quick Links */}
             <div className="md:hidden grid grid-cols-3 gap-3">
-              {[
-                { href: "/store",         icon: "🏪", label: "My Store"      },
-                { href: "/analytics",     icon: "📈", label: "Analytics"     },
-                { href: "/notifications", icon: "🔔", label: "Notifications", badge: unread },
-              ].map(item => (
+              {(
+                [
+                  { href: "/store",         icon: "🏪", label: "My Store"      },
+                  { href: "/analytics",     icon: "📈", label: "Analytics"     },
+                  { href: "/notifications", icon: "🔔", label: "Notifications", badge: unread },
+                ] as { href: string; icon: string; label: string; badge?: number }[]
+              ).map(item => (
                 <Link key={item.href} href={item.href}
                   className="bg-white rounded-2xl shadow-sm p-3 flex flex-col items-center gap-1.5 android-press relative">
                   <span className="text-2xl">{item.icon}</span>
                   <span className="text-[10px] font-bold text-gray-600">{item.label}</span>
-                  {(item as any).badge > 0 && (
+                  {(item.badge ?? 0) > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full w-5 h-5 flex items-center justify-center">
-                      {(item as any).badge > 9 ? "9+" : (item as any).badge}
+                      {(item.badge ?? 0) > 9 ? "9+" : item.badge}
                     </span>
                   )}
                 </Link>
@@ -369,21 +371,23 @@ export default function Profile() {
                 <p className="font-bold text-gray-800 text-sm">⚡ Quick Links</p>
               </div>
               <div className="p-4 space-y-2">
-                {[
-                  { href: "/store",         icon: "🏪", label: "Manage Store Settings" },
-                  { href: "/analytics",     icon: "📈", label: "Business Analytics"    },
-                  { href: "/orders",        icon: "📦", label: "Orders"                },
-                  { href: "/wallet",        icon: "💰", label: "Wallet & Withdrawals"  },
-                  { href: "/notifications", icon: "🔔", label: "Notifications", badge: unread },
-                ].map(item => (
+                {(
+                  [
+                    { href: "/store",         icon: "🏪", label: "Manage Store Settings" },
+                    { href: "/analytics",     icon: "📈", label: "Business Analytics"    },
+                    { href: "/orders",        icon: "📦", label: "Orders"                },
+                    { href: "/wallet",        icon: "💰", label: "Wallet & Withdrawals"  },
+                    { href: "/notifications", icon: "🔔", label: "Notifications", badge: unread },
+                  ] as { href: string; icon: string; label: string; badge?: number }[]
+                ).map(item => (
                   <Link key={item.href} href={item.href}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-orange-50 transition-colors relative">
                     <span className="text-lg">{item.icon}</span>
                     <span className="text-sm font-semibold text-gray-700">{item.label}</span>
                     <span className="flex-1"/>
-                    {(item as any).badge > 0 && (
+                    {(item.badge ?? 0) > 0 && (
                       <span className="bg-red-500 text-white text-[10px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                        {(item as any).badge}
+                        {item.badge}
                       </span>
                     )}
                     <span className="text-gray-300 text-sm">→</span>
