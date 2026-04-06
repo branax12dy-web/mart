@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLiveRiders, usePlatformSettings, useRiderRoute, useCustomerLocations, useRiderTrailsBatch } from "@/hooks/use-admin";
-import { MapPin, RefreshCw, Users, Navigation, Route, Clock, Eye, EyeOff, AlertTriangle, MessageSquare, BarChart2, Activity, TrendingUp, X, History } from "lucide-react";
+import { MapPin, RefreshCw, Users, Navigation, Route, Clock, Eye, EyeOff, AlertTriangle, MessageSquare, BarChart2, Activity, TrendingUp, X, History, Minimize2, Maximize2, Layers, ChevronDown, GripHorizontal } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -751,6 +751,35 @@ export default function LiveRidersMap() {
   const [vehicleTypeOverrides, setVehicleTypeOverrides] = useState<Record<string, string | null>>({});
   const [currentTripIdOverrides, setCurrentTripIdOverrides] = useState<Record<string, string | null>>({});
 
+  /* ── Floating map panel ── */
+  const [mapPanelMode, setMapPanelMode] = useState<"minimized" | "normal" | "maximized">("normal");
+  const [panelPos, setPanelPos] = useState<{ x: number; y: number } | null>(null);
+  const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const [quickProvider, setQuickProvider] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isDraggingPanel = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const startPanelDrag = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (mapPanelMode === "maximized") return;
+    e.preventDefault();
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    dragOffsetRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    isDraggingPanel.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!isDraggingPanel.current) return;
+      setPanelPos({ x: ev.clientX - dragOffsetRef.current.x, y: ev.clientY - dragOffsetRef.current.y });
+    };
+    const onUp = () => {
+      isDraggingPanel.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [mapPanelMode]);
+
   /* ── Map provider config — fetched from the PUBLIC /api/maps/config endpoint.
      Must NOT use the admin fetcher (which prepends /api/admin/) because this
      endpoint lives at /api/maps/config, not /api/admin/maps/config. ── */
@@ -775,11 +804,14 @@ export default function LiveRidersMap() {
 
   /* Resolved admin-specific provider — used by LiveMapRenderer to pick the right engine */
   const adminMapProv = useMemo(() => resolveAdminProvider(mapConfigData), [mapConfigData]);
+  /* Quick-switch provider: null = use admin setting */
+  const effectiveProvider = quickProvider ?? adminMapProv.provider;
+  const effectiveToken = quickProvider === "osm" ? "" : adminMapProv.token;
 
   /* Batch trail fetching for Mapbox/Google native paths — mirrors RiderTrailOverlay behavior */
   const trailRiderIds = useMemo(() => Array.from(trailSet), [trailSet]);
   const riderTrails = useRiderTrailsBatch(
-    adminMapProv.provider === "mapbox" || adminMapProv.provider === "google" ? trailRiderIds : []
+    effectiveProvider === "mapbox" || effectiveProvider === "google" ? trailRiderIds : []
   );
 
   const routePoints: RoutePoint[] = routeData?.route ?? [];
@@ -1129,7 +1161,7 @@ export default function LiveRidersMap() {
   /* nativeMarkers / nativePolylines — normalized overlay data for Mapbox GL JS / Google Maps JS paths.
      Only computed when adminProvider requires it; OSM path uses Leaflet children directly. */
   const nativeMarkers = useMemo<MapMarkerData[]>(() => {
-    if (adminMapProv.provider !== "mapbox" && adminMapProv.provider !== "google") return [];
+    if (effectiveProvider !== "mapbox" && effectiveProvider !== "google") return [];
     const ms: MapMarkerData[] = [];
 
     for (const rider of filteredRiders) {
@@ -1181,10 +1213,10 @@ export default function LiveRidersMap() {
 
     return ms;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminMapProv.provider, filteredRiders, customers, showCustomers, sosAlerts, selectedId, loginPoint, replayPoint, sliderVal]);
+  }, [effectiveProvider, filteredRiders, customers, showCustomers, sosAlerts, selectedId, loginPoint, replayPoint, sliderVal]);
 
   const nativePolylines = useMemo<MapPolylineData[]>(() => {
-    if (adminMapProv.provider !== "mapbox" && adminMapProv.provider !== "google") return [];
+    if (effectiveProvider !== "mapbox" && effectiveProvider !== "google") return [];
     const pls: MapPolylineData[] = [];
     if (selectedId && polylinePositions.length > 1) {
       pls.push({ id: "route", positions: polylinePositions, color: "#6366f1", weight: 3, opacity: 0.75 });
@@ -1193,7 +1225,7 @@ export default function LiveRidersMap() {
       pls.push({ id: `trail-${trail.riderId}`, positions: trail.points, color: "#6366f1", weight: 2.5, opacity: 0.7, dashArray: "6,4" });
     }
     return pls;
-  }, [adminMapProv.provider, selectedId, polylinePositions, riderTrails]);
+  }, [effectiveProvider, selectedId, polylinePositions, riderTrails]);
 
   /* Send admin chat message */
   const sendChatMessage = (riderId: string) => {
@@ -1397,23 +1429,137 @@ export default function LiveRidersMap() {
             </Card>
           </div>
 
-          {/* Map + sidebar */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Map */}
-            <div className="lg:col-span-2">
-              <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden" style={{ height: 520, position: "relative" }}>
+          {/* ── Floating Map Panel (popup, draggable, minimizable) ── */}
+          <div
+            ref={panelRef}
+            style={{
+              position: "fixed",
+              zIndex: 300,
+              ...(mapPanelMode === "maximized"
+                ? { left: 16, top: 16, right: 16, bottom: 16, width: "auto", height: "auto" }
+                : panelPos
+                ? { left: panelPos.x, top: panelPos.y, width: mapPanelMode === "minimized" ? 260 : 440, height: mapPanelMode === "minimized" ? "auto" : 360 }
+                : { bottom: 24, right: 24, width: mapPanelMode === "minimized" ? 260 : 440, height: mapPanelMode === "minimized" ? "auto" : 360 }),
+              background: "white",
+              borderRadius: 16,
+              boxShadow: "0 8px 40px rgba(0,0,0,0.22)",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              border: "1px solid rgba(0,0,0,0.09)",
+              transition: "width 0.2s ease, height 0.2s ease",
+            }}
+          >
+            {/* Panel title bar — drag handle */}
+            <div
+              onMouseDown={startPanelDrag}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "8px 10px",
+                background: "#16a34a",
+                color: "white",
+                cursor: mapPanelMode === "maximized" ? "default" : "grab",
+                userSelect: "none",
+                flexShrink: 0,
+                minHeight: 40,
+              }}
+            >
+              <GripHorizontal style={{ width: 13, height: 13, opacity: 0.6, flexShrink: 0 }} />
+              <Navigation style={{ width: 12, height: 12, flexShrink: 0 }} />
+              <span style={{ fontSize: 12, fontWeight: 700, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Live Riders Map</span>
+              {/* Live indicator */}
+              <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, flexShrink: 0 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: wsConnected ? "#4ade80" : "#fbbf24", display: "inline-block" }} />
+                {wsConnected ? "Live" : `${secAgo}s`}
+              </div>
+              {/* Map provider quick-switch */}
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <button
+                  onClick={e => { e.stopPropagation(); setShowProviderPicker(v => !v); }}
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{ background: "rgba(255,255,255,0.22)", border: "none", borderRadius: 6, padding: "2px 7px", color: "white", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
+                  title="Change map provider"
+                >
+                  <Layers style={{ width: 10, height: 10 }} />
+                  {effectiveProvider.toUpperCase()}
+                  <ChevronDown style={{ width: 9, height: 9 }} />
+                </button>
+                {showProviderPicker && (
+                  <div
+                    onMouseDown={e => e.stopPropagation()}
+                    style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "white", border: "1px solid #e5e7eb", borderRadius: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.14)", zIndex: 999, minWidth: 175, overflow: "hidden" }}
+                  >
+                    {[
+                      { value: "osm", label: "🗺 OpenStreetMap" },
+                      ...(mapConfigData?.token || (mapConfigData as any)?.appOverrides?.admin?.token ? [{ value: "mapbox", label: "📦 Mapbox GL" }] : []),
+                      ...((mapConfigData as any)?.appOverrides?.admin?.provider === "google" || mapConfigData?.provider === "google" ? [{ value: "google", label: "🌐 Google Maps" }] : []),
+                    ].map(p => (
+                      <button
+                        key={p.value}
+                        onClick={() => { setQuickProvider(p.value === adminMapProv.provider ? null : p.value); setShowProviderPicker(false); }}
+                        style={{
+                          display: "block", width: "100%", padding: "8px 12px", textAlign: "left", fontSize: 12,
+                          background: effectiveProvider === p.value ? "#f0fdf4" : "transparent",
+                          color: effectiveProvider === p.value ? "#15803d" : "#374151",
+                          fontWeight: effectiveProvider === p.value ? 700 : 400,
+                          border: "none", cursor: "pointer",
+                        }}
+                      >
+                        {p.label}{effectiveProvider === p.value ? " ✓" : ""}
+                      </button>
+                    ))}
+                    <div style={{ borderTop: "1px solid #f3f4f6", padding: "6px 12px" }}>
+                      <a href="/admin/settings" style={{ fontSize: 10, color: "#9ca3af", textDecoration: "none" }}>⚙ Map settings in Admin</a>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {/* Toggle customers */}
+              {mapPanelMode !== "minimized" && (
+                <button
+                  onClick={e => { e.stopPropagation(); setShowCustomers(v => !v); }}
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{ background: showCustomers ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.12)", border: "none", borderRadius: 6, padding: "2px 6px", color: "white", fontSize: 10, cursor: "pointer", flexShrink: 0 }}
+                  title={showCustomers ? "Hide customers" : "Show customers"}
+                >👤</button>
+              )}
+              {/* Minimize / Restore */}
+              <button
+                onClick={e => { e.stopPropagation(); setMapPanelMode(m => m === "minimized" ? "normal" : "minimized"); }}
+                onMouseDown={e => e.stopPropagation()}
+                style={{ background: "none", border: "none", color: "white", cursor: "pointer", padding: 2, flexShrink: 0 }}
+                title={mapPanelMode === "minimized" ? "Restore map" : "Minimize"}
+              >
+                <Minimize2 style={{ width: 13, height: 13 }} />
+              </button>
+              {/* Maximize / Restore */}
+              <button
+                onClick={e => { e.stopPropagation(); setMapPanelMode(m => { if (m === "maximized") { setPanelPos(null); return "normal"; } return "maximized"; }); }}
+                onMouseDown={e => e.stopPropagation()}
+                style={{ background: "none", border: "none", color: "white", cursor: "pointer", padding: 2, flexShrink: 0 }}
+                title={mapPanelMode === "maximized" ? "Restore map" : "Maximize"}
+              >
+                <Maximize2 style={{ width: 13, height: 13 }} />
+              </button>
+            </div>
+
+            {/* Map body — hidden when minimized */}
+            {mapPanelMode !== "minimized" && (
+              <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
                 {isLoading && riders.length === 0 ? (
-                  <div className="w-full h-full flex items-center justify-center bg-gray-50">
-                    <div className="text-center">
-                      <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground">Loading map...</p>
+                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb" }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ width: 28, height: 28, border: "3px solid #22c55e", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 8px" }} />
+                      <p style={{ fontSize: 12, color: "#9ca3af" }}>Loading map...</p>
                     </div>
                   </div>
                 ) : (
                   <LiveMapRenderer
                     mapConfig={mapConfigData}
-                    adminProvider={adminMapProv.provider}
-                    adminToken={adminMapProv.token}
+                    adminProvider={effectiveProvider}
+                    adminToken={effectiveToken}
                     defaultLat={defaultLat}
                     defaultLng={defaultLng}
                     nativeMarkers={nativeMarkers}
@@ -1629,11 +1775,12 @@ export default function LiveRidersMap() {
                     )}
                   </div>
                 )}
-              </Card>
-            </div>
+              </div>
+            )}
+          </div>
 
-            {/* Riders list sidebar */}
-            <div className="space-y-2">
+          {/* Riders list — full width */}
+          <div className="space-y-2">
               {/* Search + Filter Controls */}
               <div className="space-y-2">
                 <input
@@ -1811,7 +1958,6 @@ export default function LiveRidersMap() {
                     </div>
                   )}
               </Card>
-            </div>
           </div>
 
           {/* Selected rider detail + route playback */}
