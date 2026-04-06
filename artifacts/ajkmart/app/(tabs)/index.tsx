@@ -860,6 +860,96 @@ const tr2 = StyleSheet.create({
 });
 
 /* ────────────────────────────────────
+   Recently Viewed Products
+──────────────────────────────────── */
+const RECENTLY_VIEWED_KEY = "recently_viewed_products";
+
+interface RecentItem {
+  id: string;
+  name: string;
+  image: string | null;
+  price: number;
+}
+
+function RecentlyViewedSection() {
+  const [items, setItems] = React.useState<RecentItem[]>([]);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem(RECENTLY_VIEWED_KEY)
+      .then(raw => {
+        if (raw) {
+          try { setItems(JSON.parse(raw)); } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  if (items.length === 0) return null;
+
+  return (
+    <View style={{ marginTop: 16 }}>
+      <View style={rv.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={rv.title}>Recently Viewed</Text>
+        </View>
+        <TouchableOpacity activeOpacity={0.7}
+          onPress={() => {
+            AsyncStorage.removeItem(RECENTLY_VIEWED_KEY).catch(() => {});
+            setItems([]);
+          }}
+          style={rv.clearBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Clear recently viewed"
+        >
+          <Ionicons name="close-circle-outline" size={14} color={C.textMuted} />
+          <Text style={rv.clearTxt}>Clear</Text>
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        horizontal
+        data={items}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: H_PAD, gap: 10 }}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
+            style={rv.card}
+            accessibilityRole="button"
+            accessibilityLabel={item.name}
+          >
+            {item.image ? (
+              <Image source={{ uri: item.image }} style={rv.img} resizeMode="cover" />
+            ) : (
+              <View style={[rv.img, { backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }]}>
+                <Ionicons name="cube-outline" size={22} color={C.textMuted} />
+              </View>
+            )}
+            <View style={rv.info}>
+              <Text style={rv.name} numberOfLines={2}>{item.name}</Text>
+              <Text style={rv.price}>Rs. {Number(item.price).toLocaleString()}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+    </View>
+  );
+}
+
+const rv = StyleSheet.create({
+  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: H_PAD, marginBottom: 10 },
+  title: { fontFamily: Font.bold, fontSize: 16, color: C.text },
+  clearBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  clearTxt: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
+  card: { width: 110, backgroundColor: C.surface, borderRadius: 12, overflow: "hidden", ...shadows.sm },
+  img: { width: 110, height: 90 },
+  info: { padding: 8, gap: 3 },
+  name: { fontFamily: Font.medium, fontSize: 11, color: C.text, lineHeight: 15 },
+  price: { fontFamily: Font.bold, fontSize: 12, color: C.primary },
+});
+
+/* ────────────────────────────────────
    Offers Strip
 ──────────────────────────────────── */
 const OFFER_STRIP_CONFIGS = [
@@ -1371,6 +1461,8 @@ export default function HomeScreen() {
             <FlashDealsSection T={T} />
 
             <OffersStrip />
+
+            <RecentlyViewedSection />
 
             <TrendingSection />
 

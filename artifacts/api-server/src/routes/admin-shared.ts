@@ -1154,3 +1154,22 @@ export function serializeSosAlert(a: Record<string, unknown>) {
     createdAt:          ts(a.createdAt) ?? "",
   };
 }
+
+let _supportMessagesMigrated = false;
+export async function ensureSupportMessagesTable() {
+  if (_supportMessagesMigrated) return;
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS support_messages (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        is_from_support BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS support_messages_user_id_idx ON support_messages (user_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS support_messages_created_at_idx ON support_messages (created_at)`);
+  } catch { /* table likely already exists */ }
+  _supportMessagesMigrated = true;
+}

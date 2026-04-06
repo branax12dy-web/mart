@@ -1142,7 +1142,19 @@ function OrdersScreenInner() {
 
   const handleReviewDone = useCallback((orderId: string) => {
     setReviewedIds(prev => new Set([...prev, orderId]));
+    AsyncStorage.getItem("review_prompted_ids")
+      .then(raw => {
+        let ids: string[] = [];
+        try { ids = raw ? JSON.parse(raw) : []; } catch {}
+        if (!ids.includes(orderId)) {
+          ids = [...ids, orderId];
+          AsyncStorage.setItem("review_prompted_ids", JSON.stringify(ids)).catch(() => {});
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const autoPromptedIdsRef = React.useRef<Set<string>>(new Set());
 
   const [hasActiveItems, setHasActiveItems] = useState(false);
   const pollInterval = hasActiveItems ? 10000 : 30000;
@@ -1407,6 +1419,34 @@ function OrdersScreenInner() {
   React.useEffect(() => {
     setHasActiveItems(globalActiveCount > 0);
   }, [globalActiveCount]);
+
+  const deliveredOrderIds = React.useMemo(
+    () => allOrders.filter(o => o.status === "delivered").map(o => o.id).join(","),
+    [allOrders]
+  );
+
+  React.useEffect(() => {
+    if (!config.features.reviews) return;
+    const deliveredOrders = allOrders.filter(o => o.status === "delivered");
+    if (deliveredOrders.length === 0) return;
+    AsyncStorage.getItem("review_prompted_ids")
+      .then(raw => {
+        let persistedIds: string[] = [];
+        try { persistedIds = raw ? JSON.parse(raw) : []; } catch {}
+        const toPrompt = deliveredOrders.find(o =>
+          !persistedIds.includes(o.id) &&
+          !reviewedIds.has(o.id) &&
+          !autoPromptedIdsRef.current.has(o.id)
+        );
+        if (toPrompt) {
+          autoPromptedIdsRef.current.add(toPrompt.id);
+          const nextIds = [...persistedIds, toPrompt.id];
+          AsyncStorage.setItem("review_prompted_ids", JSON.stringify(nextIds)).catch(() => {});
+          setTimeout(() => { setReviewTarget(toPrompt); }, 800);
+        }
+      })
+      .catch(() => {});
+  }, [deliveredOrderIds, config.features.reviews]);
 
   const isLoading = ordersLoading || ridesLoading || pharmLoading || parcelLoading;
 

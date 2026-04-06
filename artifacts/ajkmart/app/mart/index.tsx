@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Animated,
   Dimensions,
+  FlatList,
   Image,
   Platform,
   TouchableOpacity,
@@ -37,6 +39,56 @@ const C = Colors.light;
 const { width } = Dimensions.get("window");
 const FLASH_CARD_W = (width - 16 * 2 - 12) / 2;
 const PRODUCT_CARD_W = (width - 16 * 2 - 12) / 2;
+const RECENTLY_VIEWED_KEY = "recently_viewed_products";
+
+interface RecentItem { id: string; name: string; image: string | null; price: number; }
+
+function MartRecentlyViewed() {
+  const [items, setItems] = React.useState<RecentItem[]>([]);
+  React.useEffect(() => {
+    AsyncStorage.getItem(RECENTLY_VIEWED_KEY)
+      .then(raw => { if (raw) { try { setItems(JSON.parse(raw)); } catch {} } })
+      .catch(() => {});
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <View style={{ marginTop: 16 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, marginBottom: 10 }}>
+        <Text style={{ flex: 1, fontFamily: Font.bold, fontSize: 14, color: C.text }}>Recently Viewed</Text>
+        <TouchableOpacity activeOpacity={0.7}
+          onPress={() => { AsyncStorage.removeItem(RECENTLY_VIEWED_KEY).catch(() => {}); setItems([]); }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+        >
+          <Ionicons name="close-circle-outline" size={13} color={C.textMuted} />
+          <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.textMuted }}>Clear</Text>
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        horizontal
+        data={items}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
+            style={{ width: 100, backgroundColor: C.surface, borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: C.border }}
+          >
+            {item.image
+              ? <Image source={{ uri: item.image }} style={{ width: 100, height: 80 }} resizeMode="cover" />
+              : <View style={{ width: 100, height: 80, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }}><Ionicons name="cube-outline" size={20} color={C.textMuted} /></View>
+            }
+            <View style={{ padding: 6, gap: 2 }}>
+              <Text style={{ fontFamily: Font.medium, fontSize: 10, color: C.text, lineHeight: 14 }} numberOfLines={2}>{item.name}</Text>
+              <Text style={{ fontFamily: Font.bold, fontSize: 11, color: C.primary }}>Rs. {Number(item.price).toLocaleString()}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+    </View>
+  );
+}
 
 function QuantityStepper({ quantity, onIncrement, onDecrement }: { quantity: number; onIncrement: () => void; onDecrement: () => void }) {
   return (
@@ -480,6 +532,8 @@ function MartScreenInner() {
                 </View>
               </>
             )}
+
+            {!search && !selectedCat && <MartRecentlyViewed />}
 
             <View style={styles.secRow}>
               <Text style={styles.secTitle}>

@@ -29,6 +29,8 @@ import { withServiceGuard } from "@/components/ServiceGuard";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import { useGetProducts, useGetCategories } from "@workspace/api-client-react";
 import type { Product } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { API_BASE, unwrapApiResponse } from "@/utils/api";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
@@ -174,6 +176,20 @@ function FoodScreenInner() {
   const { data: allFoodData } = useGetProducts({ type: "food" });
   const { data, isLoading, isError, refetch, isRefetching } = useGetProducts({ type: "food", search: debouncedSearch || undefined, category: selectedCat, ...(sortBy !== "default" ? { sort: sortBy } : {}) });
 
+  const { data: vendorData, isLoading: vendorsLoading } = useQuery({
+    queryKey: ["food-vendors-preview"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/vendors?category=food`);
+      const json = await r.json();
+      return unwrapApiResponse<{ vendors?: any[]; users?: any[] }>(json);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const restaurants = useMemo(() => {
+    const raw = (vendorData as any)?.vendors || (vendorData as any)?.users || [];
+    return Array.isArray(raw) ? raw.slice(0, 8) : [];
+  }, [vendorData]);
+
   const categories = useMemo(() => catData?.categories || [], [catData]);
   const items = useMemo(() => data?.products || [], [data]);
 
@@ -278,50 +294,103 @@ function FoodScreenInner() {
 
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={C.food} />} onScroll={scrollHandler} scrollEventThrottle={scrollEventThrottle}>
 
-        {restaurants.length > 0 && (
-          <View>
-            <View style={styles.secRow}>
-              <Text style={styles.secTitle}>Restaurants</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeTxt}>{restaurants.length}</Text>
-              </View>
+        {/* ── Restaurants section (primary entry point) ── */}
+        <View style={{ marginTop: 14, marginBottom: 4 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginBottom: 10 }}>
+            <View>
+              <Text style={{ fontFamily: Font.bold, fontSize: 17, color: C.text }}>Restaurants</Text>
+              <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.textMuted }}>Order from nearby restaurants</Text>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 8 }}>
-              {restaurants.map(r => (
-                <TouchableOpacity
-                  key={r.name}
-                  activeOpacity={0.8}
-                  // @ts-expect-error expo-router typed routes may not include dynamic params
-                  onPress={() => router.push({ pathname: "/food", params: { vendor: r.name } })}
-                  style={styles.restaurantCard}
-                >
-                  <View style={styles.restaurantImgBox}>
-                    {r.image
-                      ? <Image source={{ uri: r.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                      : <Ionicons name="restaurant" size={28} color={C.amber} />}
-                    <View style={styles.restaurantOverlay} />
-                    {r.deliveryTime && (
-                      <View style={styles.timeBadge}>
-                        <Ionicons name="time-outline" size={10} color={C.textInverse} />
-                        <Text style={styles.timeText}>{r.deliveryTime}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.restaurantInfo}>
-                    <Text style={styles.restaurantName} numberOfLines={1}>{r.name}</Text>
-                    <Text style={styles.restaurantMeta} numberOfLines={1}>{r.itemCount} items</Text>
-                    {r.rating != null && (
-                      <View style={styles.ratingRow}>
-                        <Ionicons name="star" size={10} color={C.gold} />
-                        <Text style={styles.ratingText}>{r.rating}</Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/restaurants" as any)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.amberSoft, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: C.amberBorder ?? C.border }}
+              accessibilityRole="button" accessibilityLabel="See all restaurants"
+            >
+              <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.food }}>See All</Text>
+              <Ionicons name="chevron-forward" size={13} color={C.food} />
+            </TouchableOpacity>
+          </View>
+
+          {vendorsLoading ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
+              {[0,1,2].map(i => (
+                <View key={i} style={{ width: 150, height: 130, borderRadius: 14, backgroundColor: C.surfaceSecondary, overflow: "hidden" }}>
+                  <SkeletonBlock w="100%" h={130} r={14} />
+                </View>
               ))}
             </ScrollView>
-          </View>
-        )}
+          ) : restaurants.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
+              {restaurants.map((r: any) => {
+                const name = r.storeName || r.name || "Restaurant";
+                const isOpen = r.storeIsOpen !== false;
+                return (
+                  <TouchableOpacity key={r.id} activeOpacity={0.75}
+                    onPress={() => router.push({ pathname: "/food/restaurant/[id]" as any, params: { id: r.id } })}
+                    style={{ width: 150, borderRadius: 14, backgroundColor: C.surface, overflow: "hidden", shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}
+                    accessibilityRole="button" accessibilityLabel={name}
+                  >
+                    <View style={{ height: 80, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center" }}>
+                      {r.storeBanner
+                        ? <Image source={{ uri: r.storeBanner }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        : <Ionicons name="restaurant-outline" size={32} color={C.food} />
+                      }
+                      {!isOpen && (
+                        <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" }}>
+                          <Text style={{ fontFamily: Font.bold, fontSize: 11, color: "#fff" }}>Closed</Text>
+                        </View>
+                      )}
+                      <View style={{ position: "absolute", bottom: 6, right: 6, backgroundColor: isOpen ? C.emerald : C.danger, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontFamily: Font.bold, fontSize: 9, color: "#fff" }}>{isOpen ? "Open" : "Closed"}</Text>
+                      </View>
+                    </View>
+                    <View style={{ padding: 9 }}>
+                      <Text style={{ fontFamily: Font.bold, fontSize: 12, color: C.text }} numberOfLines={1}>{name}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+                        {r.avgRating != null && r.avgRating > 0 && (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: "#FFF7ED", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Ionicons name="star" size={9} color={C.amberDark ?? "#D97706"} />
+                            <Text style={{ fontFamily: Font.bold, fontSize: 10, color: C.amberDark ?? "#D97706" }}>{r.avgRating.toFixed(1)}</Text>
+                          </View>
+                        )}
+                        {r.storeDeliveryTime && (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                            <Ionicons name="time-outline" size={9} color={C.textMuted} />
+                            <Text style={{ fontFamily: Font.regular, fontSize: 10, color: C.textMuted }}>{r.storeDeliveryTime}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity activeOpacity={0.75}
+                onPress={() => router.push("/restaurants" as any)}
+                style={{ width: 100, borderRadius: 14, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: C.amberBorder ?? C.border, borderStyle: "dashed" as any, gap: 6 }}
+                accessibilityRole="button" accessibilityLabel="See all restaurants"
+              >
+                <Ionicons name="storefront-outline" size={22} color={C.food} />
+                <Text style={{ fontFamily: Font.semiBold, fontSize: 11, color: C.food, textAlign: "center" }}>See All{"\n"}Restaurants</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          ) : (
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/restaurants" as any)}
+              style={{ marginHorizontal: 16, flexDirection: "row", alignItems: "center", backgroundColor: C.amberSoft, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: C.amberBorder ?? C.border }}
+              accessibilityRole="button" accessibilityLabel="Browse restaurants"
+            >
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.food, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="storefront-outline" size={18} color={C.textInverse} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: Font.bold, fontSize: 14, color: C.text }}>Browse Restaurants</Text>
+                <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.textMuted }}>Explore nearby restaurants and their full menus</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={{ height: 1, backgroundColor: C.borderLight, marginHorizontal: 16, marginTop: 16, marginBottom: 4 }} />
+        <Text style={{ fontFamily: Font.bold, fontSize: 17, color: C.text, paddingHorizontal: 16, marginTop: 12, marginBottom: 4 }}>Menu Items</Text>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => setSelectedCat(undefined)} style={[styles.catChip, !selectedCat && styles.catChipActive]}>

@@ -489,8 +489,11 @@ function CartScreenInner() {
   // Auto-apply promo code passed from offers screen (via route params)
   useEffect(() => {
     if (incomingPromoCode && !promoApplied) {
-      setPromoInput(incomingPromoCode.toUpperCase());
+      const code = incomingPromoCode.toUpperCase();
+      setPromoInput(code);
+      applyPromo(code);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incomingPromoCode]);
 
   // Fetch available offers to show best-offer suggestions in the promo section
@@ -783,8 +786,8 @@ function CartScreenInner() {
     }
   };
 
-  const applyPromo = async () => {
-    const code = promoInput.trim().toUpperCase();
+  const applyPromo = async (overrideCode?: string) => {
+    const code = (overrideCode ?? promoInput).trim().toUpperCase();
     if (!code) return;
     setPromoLoading(true);
     setPromoError(null);
@@ -1830,15 +1833,14 @@ function CartScreenInner() {
                 {promoError && (
                   <Text style={{ ...Typ.caption, color: C.red, marginTop: 6, marginLeft: 2 }}>{promoError}</Text>
                 )}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  // @ts-expect-error expo-router typed routes may not include dynamic params
-                  onPress={() => router.push({ pathname: "/offers", params: { returnTo: "cart" } })}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5, borderColor: C.primary + "50", backgroundColor: C.primaryLight ?? "#EDE9FF" }}
+                <TouchableOpacity activeOpacity={0.7}
+                  onPress={() => router.push({ pathname: "/offers" as any, params: { fromCart: "1" } })}
+                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 10, paddingVertical: 9, borderRadius: 12, borderWidth: 1.5, borderColor: C.primary + "50", backgroundColor: C.primaryLight ?? C.primarySoft }}
+                  accessibilityRole="button" accessibilityLabel="Browse all offers and coupons"
                 >
-                  <Ionicons name="pricetag-outline" size={16} color={C.primary} />
-                  <Text style={{ flex: 1, ...Typ.buttonSmall, fontFamily: Font.semiBold, color: C.primary }}>View Offers & Browse Coupons</Text>
-                  <Ionicons name="chevron-forward" size={15} color={C.primary} />
+                  <Ionicons name="pricetag-outline" size={15} color={C.primary} />
+                  <Text style={{ fontFamily: Font.semiBold, fontSize: 13, color: C.primary }}>Browse All Offers & Coupons</Text>
+                  <Ionicons name="chevron-forward" size={14} color={C.primary} />
                 </TouchableOpacity>
               </View>
             )}

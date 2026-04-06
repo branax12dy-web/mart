@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
+import * as StoreReview from "expo-store-review";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -883,6 +884,7 @@ function ProfileScreenInner() {
           <Row icon="cube-outline"     label={T("parcelBookings")}  sub={T("courierHistory")}             onPress={() => router.push("/parcel")}          iconColor={C.parcel}   iconBg={C.parcelLight} />
           <Row icon="heart-outline"    label="My Wishlist"          sub="Saved favorites"                 onPress={() => router.push("/wishlist")}         iconColor={C.danger}  iconBg={C.dangerSoft} />
           <Row icon="star-outline"     label={T("myReviews")}       sub={T("customerFeedback")}           onPress={() => router.push("/my-reviews")}      iconColor={C.gold}    iconBg={C.amberBg} />
+          <Row icon="time-outline"     label="Recently Viewed"      sub="Products you browsed"            onPress={() => router.push("/(tabs)" as any)}   iconColor={C.info}    iconBg={C.infoSoft} />
           {platformCfg.profile?.showSavedAddresses !== false && (
             <Row icon="location-outline" label={T("savedAddresses")}  sub={T("savedAddressesSub")}    onPress={() => setShowAddrs(true)}              iconColor={C.mart}    iconBg={C.martLight} />
           )}
@@ -917,11 +919,11 @@ function ProfileScreenInner() {
                    iconColor={C.info} iconBg={C.infoSoft} />
             ) : null}
             {platformCfg.chat && (
-              <Row icon="logo-whatsapp"
+              <Row icon="chatbubble-ellipses-outline"
                    label={T("liveChatLabel")}
                    sub={platformCfg.supportMsg}
-                   onPress={() => Linking.openURL(`https://wa.me/${platformCfg.supportPhone.replace(/^0/, "92")}`).catch(() => showToast(`📞 ${platformCfg.supportPhone}`, "info"))}
-                   iconColor={C.whatsappGreen} iconBg={C.greenLightBg} />
+                   onPress={() => router.push("/chat/support" as any)}
+                   iconColor={C.primary} iconBg={C.primarySoft} />
             )}
             {(platformCfg.socialFacebook || platformCfg.socialInstagram) && (
               <Row icon="share-social-outline"
@@ -957,13 +959,25 @@ function ProfileScreenInner() {
                    onPress={() => Linking.openURL(platformCfg.refundPolicyUrl).catch(() => {})}
                    iconColor={C.success} iconBg={C.successSoft} />
             )}
-            {platformCfg.faqUrl && (
-              <Row icon="help-circle-outline"
-                   label={T("helpFaqsLabel")}
-                   sub={T("faqSubLabel")}
-                   onPress={() => Linking.openURL(platformCfg.faqUrl).catch(() => {})}
-                   iconColor={C.info} iconBg={C.infoSoft} />
-            )}
+            <Row icon="help-circle-outline"
+                 label={T("helpFaqsLabel")}
+                 sub={T("faqSubLabel")}
+                 onPress={() => router.push("/help/faq" as any)}
+                 iconColor={C.info} iconBg={C.infoSoft} />
+            <Row icon="star-outline"
+                 label="Rate the App"
+                 sub="Love us? Share your feedback!"
+                 onPress={async () => {
+                   try {
+                     const available = await StoreReview.isAvailableAsync();
+                     if (available && Platform.OS !== "web") {
+                       await StoreReview.requestReview();
+                       return;
+                     }
+                   } catch {}
+                   router.push("/rate-app" as any);
+                 }}
+                 iconColor={C.gold} iconBg={C.amberBg} />
             {platformCfg.aboutUrl && (
               <Row icon="information-circle-outline"
                    label={T("aboutUsLabel")}

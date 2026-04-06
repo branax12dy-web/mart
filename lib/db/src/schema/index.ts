@@ -52,3 +52,4 @@ export * from "./popup_templates";
 export * from "./campaigns";
 export * from "./offers";
 export * from "./offer_templates";
+export * from "./support_messages";

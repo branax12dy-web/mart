@@ -18,6 +18,7 @@ export {
   ensureRideBidsMigration,
   ensureOrdersGpsColumns,
   ensurePromotionsTables,
+  ensureSupportMessagesTable,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,

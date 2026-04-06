@@ -34,6 +34,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { getProducts, createPharmacyOrder } from "@workspace/api-client-react";
 import type { GetProductsType } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
 import { isValidPakistaniPhone } from "@/utils/phone";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
@@ -255,18 +257,19 @@ function PharmacyScreenInner() {
 
   useEffect(() => { loadMeds(); }, [pharmacyEnabled]);
 
+  const { data: pharmacyVendorData, isLoading: vendorsLoading } = useQuery({
+    queryKey: ["pharmacy-stores-preview"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/vendors?category=pharmacy`);
+      const json = await r.json();
+      return unwrapApiResponse<{ vendors?: any[]; users?: any[] }>(json);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
   const pharmacyStores = useMemo(() => {
-    const map = new Map<string, { name: string; category: string; itemCount: number; emoji?: string }>();
-    for (const m of medicines) {
-      const name = m.brand || "Pharmacy";
-      if (!map.has(name)) {
-        map.set(name, { name, category: m.category, itemCount: 1, emoji: m.emoji });
-      } else {
-        map.get(name)!.itemCount += 1;
-      }
-    }
-    return Array.from(map.values());
-  }, [medicines]);
+    const raw = (pharmacyVendorData as any)?.vendors || (pharmacyVendorData as any)?.users || [];
+    return Array.isArray(raw) ? raw.slice(0, 8) : [];
+  }, [pharmacyVendorData]);
 
   const filtered = useMemo(() => {
     const list = medicines.filter(m => {
@@ -557,42 +560,95 @@ function PharmacyScreenInner() {
         </Animated.View>
       </LinearGradient>
 
-      {pharmacyStores.length > 0 && (
-        <View>
-          <View style={[s.storeSecRow]}>
-            <Text style={s.storeSecTitle}>Pharmacy Stores</Text>
-            <View style={s.storeCountBadge}>
-              <Text style={s.storeCountTxt}>{pharmacyStores.length}</Text>
-            </View>
+      {/* ── Pharmacy Stores section (primary entry point) ── */}
+      <View style={{ marginTop: 14, marginBottom: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginBottom: 10 }}>
+          <View>
+            <Text style={{ fontFamily: Font.bold, fontSize: 17, color: C.text }}>Pharmacy Stores</Text>
+            <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.textMuted }}>Order from registered pharmacies</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10, paddingBottom: 8 }}>
-            {pharmacyStores.map(store => (
-              <TouchableOpacity
-                key={store.name}
-                activeOpacity={0.8}
-                onPress={() => setSelectedStore(prev => prev === store.name ? null : store.name)}
-                style={[s.storeCard, selectedStore === store.name && s.storeCardActive]}
-              >
-                <View style={[s.storeEmoji, selectedStore === store.name && s.storeEmojiActive]}>
-                  <Text style={{ fontSize: 22 }}>{store.emoji ?? "💊"}</Text>
-                </View>
-                <Text style={[s.storeName, selectedStore === store.name && s.storeNameActive]} numberOfLines={2}>{store.name}</Text>
-                <Text style={s.storeItems}>{store.itemCount} items</Text>
-              </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/pharmacy/stores" as any)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.purpleBg, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: C.purpleBorder }}
+            accessibilityRole="button" accessibilityLabel="See all pharmacy stores"
+          >
+            <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.purple }}>See All</Text>
+            <Ionicons name="chevron-forward" size={13} color={C.purple} />
+          </TouchableOpacity>
+        </View>
+
+        {vendorsLoading ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
+            {[0,1,2].map(i => (
+              <View key={i} style={{ width: 150, height: 130, borderRadius: 14, backgroundColor: C.surfaceSecondary, overflow: "hidden" }}>
+                <SkeletonBlock w="100%" h={130} r={14} />
+              </View>
             ))}
           </ScrollView>
-          {selectedStore && (
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setSelectedStore(null)}
-              style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginBottom: 6, backgroundColor: C.purpleSoft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, alignSelf: "flex-start" }}
+        ) : pharmacyStores.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
+            {pharmacyStores.map((store: any) => {
+              const name = store.storeName || store.name || "Pharmacy";
+              const isOpen = store.storeIsOpen !== false;
+              return (
+                <TouchableOpacity key={store.id} activeOpacity={0.75}
+                  onPress={() => router.push({ pathname: "/pharmacy/store/[id]" as any, params: { id: store.id } })}
+                  style={{ width: 150, borderRadius: 14, backgroundColor: C.surface, overflow: "hidden", shadowColor: C.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}
+                  accessibilityRole="button" accessibilityLabel={name}
+                >
+                  <View style={{ height: 80, backgroundColor: C.purpleBg, alignItems: "center", justifyContent: "center" }}>
+                    {store.storeBanner
+                      ? <Image source={{ uri: store.storeBanner }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      : <Ionicons name="medical-outline" size={32} color={C.purple} />
+                    }
+                    {!isOpen && (
+                      <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ fontFamily: Font.bold, fontSize: 11, color: "#fff" }}>Closed</Text>
+                      </View>
+                    )}
+                    <View style={{ position: "absolute", bottom: 6, right: 6, backgroundColor: isOpen ? C.emerald : C.danger, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ fontFamily: Font.bold, fontSize: 9, color: "#fff" }}>{isOpen ? "Open" : "Closed"}</Text>
+                    </View>
+                  </View>
+                  <View style={{ padding: 9 }}>
+                    <Text style={{ fontFamily: Font.bold, fontSize: 12, color: C.text }} numberOfLines={1}>{name}</Text>
+                    {store.storeDeliveryTime && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 3 }}>
+                        <Ionicons name="time-outline" size={10} color={C.textMuted} />
+                        <Text style={{ fontFamily: Font.regular, fontSize: 10, color: C.textMuted }}>{store.storeDeliveryTime}</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity activeOpacity={0.75}
+              onPress={() => router.push("/pharmacy/stores" as any)}
+              style={{ width: 100, borderRadius: 14, backgroundColor: C.purpleBg, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: C.purpleBorder, borderStyle: "dashed" as any, gap: 6 }}
+              accessibilityRole="button" accessibilityLabel="See all pharmacy stores"
             >
-              <Ionicons name="close-circle" size={14} color={C.purple} />
-              <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: C.purple }}>Showing: {selectedStore}</Text>
+              <Ionicons name="medical-outline" size={22} color={C.purple} />
+              <Text style={{ fontFamily: Font.semiBold, fontSize: 11, color: C.purple, textAlign: "center" }}>See All{"\n"}Pharmacies</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      )}
+          </ScrollView>
+        ) : (
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/pharmacy/stores" as any)}
+            style={{ marginHorizontal: 16, flexDirection: "row", alignItems: "center", backgroundColor: C.purpleBg, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: C.purpleBorder }}
+            accessibilityRole="button" accessibilityLabel="Browse pharmacy stores"
+          >
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.purple, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="storefront-outline" size={18} color={C.textInverse} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: Font.bold, fontSize: 14, color: C.text }}>Browse Pharmacy Stores</Text>
+              <Text style={{ fontFamily: Font.regular, fontSize: 11, color: C.textMuted }}>Explore registered pharmacies and their products</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={{ height: 1, backgroundColor: C.borderLight, marginHorizontal: 16, marginTop: 14, marginBottom: 4 }} />
+      <Text style={{ fontFamily: Font.bold, fontSize: 17, color: C.text, paddingHorizontal: 16, marginTop: 12, marginBottom: 4 }}>Medicines</Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsScroll} contentContainerStyle={s.tabsRow}>
         {categories.map(cat => (

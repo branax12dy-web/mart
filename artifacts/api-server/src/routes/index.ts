@@ -36,6 +36,8 @@ import webhooksRouter from "./webhooks.js";
 import deliveryEligibilityRouter from "./delivery-eligibility.js";
 import popupsRouter from "./popups.js";
 import promotionsRouter from "./promotions.js";
+import supportChatRouter from "./support-chat.js";
+import publicVendorsRouter from "./public-vendors.js";
 
 const router: IRouter = Router();
 
@@ -81,5 +83,7 @@ router.use("/delivery/eligibility", deliveryEligibilityRouter);
 router.use("/popups", popupsRouter);
 router.use("/promotions", promotionsRouter);
 router.use("/admin/promotions", promotionsRouter);
+router.use("/support-chat", supportChatRouter);
+router.use("/vendors", publicVendorsRouter);
 
 export default router;

@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { withErrorBoundary } from "@/utils/withErrorBoundary";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -13,6 +14,7 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  Share,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -446,6 +448,38 @@ function ProductDetailScreenInner() {
     setWishlistLoading(false);
   }, [isLoggedIn, id, isInWishlist, wishlistLoading, queryClient]);
 
+  const RECENTLY_VIEWED_KEY = "recently_viewed_products";
+
+  useEffect(() => {
+    if (!product) return;
+    const entry = {
+      id: product.id,
+      name: product.name,
+      image: product.image || null,
+      price: product.price,
+    };
+    AsyncStorage.getItem(RECENTLY_VIEWED_KEY)
+      .then(raw => {
+        let items: typeof entry[] = [];
+        try { items = raw ? JSON.parse(raw) : []; } catch {}
+        items = [entry, ...items.filter(i => i.id !== entry.id)].slice(0, 20);
+        return AsyncStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(items));
+      })
+      .catch(() => {});
+  }, [product?.id]);
+
+  const handleShare = useCallback(async () => {
+    if (!product) return;
+    const domain = process.env.EXPO_PUBLIC_DOMAIN || "";
+    const deepLink = domain
+      ? `https://${domain}/ajkmart/product/${product.id}`
+      : `ajkmart://product/${product.id}`;
+    const message = `Check out ${product.name} for Rs. ${product.price} on ${product.vendorName ? product.vendorName + " via " : ""}AJKMart!\n\n${deepLink}`;
+    try {
+      await Share.share({ title: product.name, message, url: deepLink });
+    } catch {}
+  }, [product]);
+
   const productType = product?.type || "mart";
   const { data: relatedData } = useGetProducts(
     { type: productType, category: product?.category },
@@ -672,6 +706,9 @@ function ProductDetailScreenInner() {
           <Ionicons name="arrow-back" size={22} color={C.textInverse} />
         </TouchableOpacity>
         <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity activeOpacity={0.7} onPress={handleShare} style={styles.headerBtn}>
+            <Ionicons name="share-outline" size={22} color={C.textInverse} />
+          </TouchableOpacity>
           <Animated.View style={{ transform: [{ scale: heartScale }] }}>
             <TouchableOpacity activeOpacity={0.7} onPress={toggleWishlist} style={styles.headerBtn}>
               <Ionicons name={isInWishlist ? "heart" : "heart-outline"} size={22} color={isInWishlist ? C.danger : C.textInverse} />
@@ -835,7 +872,13 @@ function ProductDetailScreenInner() {
           <View style={styles.divider} />
 
           {product.vendorName && (
-            <View style={styles.vendorSection}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => product.vendorId ? router.push({ pathname: "/vendor/[id]" as any, params: { id: product.vendorId } }) : undefined}
+              style={styles.vendorSection}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${product.vendorName} store`}
+            >
               <View style={styles.vendorIcon}>
                 <Ionicons name="storefront-outline" size={18} color={C.primary} />
               </View>
@@ -849,7 +892,8 @@ function ProductDetailScreenInner() {
                   <Text style={styles.deliveryTime}>{product.deliveryTime}</Text>
                 </View>
               )}
-            </View>
+              <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
+            </TouchableOpacity>
           )}
 
           {product.description && (

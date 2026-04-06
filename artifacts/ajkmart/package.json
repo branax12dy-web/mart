@@ -72,6 +72,7 @@
     "expo-local-authentication": "~17.0.8",
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "^14.0.8",
+    "expo-store-review": "^55.0.11",
     "expo-task-manager": "~14.0.9",
     "expo-updates": "~29.0.16",
     "react-native-qrcode-svg": "^6.3.21",
