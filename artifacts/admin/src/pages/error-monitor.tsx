@@ -1,13 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertTriangle, Bug, Server, Monitor, Code, Zap,
   ChevronDown, ChevronRight, RefreshCw, Filter, X, CheckCircle2,
-  Flame, ShieldAlert, Inbox, CheckCheck,
+  Flame, ShieldAlert, Inbox, CheckCheck, Layers,
 } from "lucide-react";
 
 type ErrorReport = {
@@ -76,8 +75,24 @@ const TAB_STATUS_FILTERS: Record<Tab, string[]> = {
   completed:  ["resolved"],
 };
 
+const STATUS_NEXT: Record<string, { status: string; label: string; btnClass: string } | null> = {
+  new:          { status: "acknowledged", label: "Acknowledge",       btnClass: "bg-amber-500 hover:bg-amber-600 text-white" },
+  acknowledged: { status: "in_progress",  label: "Mark In Progress",  btnClass: "bg-blue-500 hover:bg-blue-600 text-white" },
+  in_progress:  { status: "resolved",     label: "Resolve",           btnClass: "bg-green-600 hover:bg-green-700 text-white" },
+  resolved:     null,
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  frontend_crash:      "Frontend Crash",
+  api_error:           "API Error",
+  db_error:            "DB Error",
+  route_error:         "Route Error",
+  ui_error:            "UI Error",
+  unhandled_exception: "Unhandled Exception",
+};
+
 const TABS: { id: Tab; label: string; icon: typeof Flame; activeClass: string; badgeClass: string }[] = [
-  { id: "new",        label: "New",        icon: Flame,        activeClass: "border-red-500 text-red-600 bg-red-50",    badgeClass: "bg-red-100 text-red-700" },
+  { id: "new",        label: "New",        icon: Flame,        activeClass: "border-red-500 text-red-600 bg-red-50",       badgeClass: "bg-red-100 text-red-700" },
   { id: "unresolved", label: "Unresolved", icon: ShieldAlert,  activeClass: "border-amber-500 text-amber-600 bg-amber-50", badgeClass: "bg-amber-100 text-amber-700" },
   { id: "completed",  label: "Completed",  icon: CheckCircle2, activeClass: "border-green-500 text-green-600 bg-green-50",  badgeClass: "bg-green-100 text-green-700" },
 ];
@@ -118,6 +133,7 @@ export default function ErrorMonitor() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [fixingAll, setFixingAll] = useState(false);
+  const [groupByCategory, setGroupByCategory] = useState(false);
 
   const tabStatuses = TAB_STATUS_FILTERS[activeTab];
   const params = new URLSearchParams({ page: String(page), limit: "30" });
@@ -180,6 +196,158 @@ export default function ErrorMonitor() {
   const clearFilters = () => { setSourceApp(""); setSeverity(""); setErrorType(""); setDateFrom(""); setDateTo(""); setPage(1); };
   const canFixAll = activeTab !== "completed" && pagination.total > 0;
 
+  const groupedReports = useMemo(() => {
+    if (!groupByCategory) return null;
+    const groups: Record<string, ErrorReport[]> = {};
+    for (const r of reports) {
+      if (!groups[r.errorType]) groups[r.errorType] = [];
+      groups[r.errorType]!.push(r);
+    }
+    return groups;
+  }, [reports, groupByCategory]);
+
+  const renderReportRow = (report: ErrorReport) => {
+    const isExpanded = expandedId === report.id;
+    const Icon = SOURCE_ICONS[report.sourceApp] || Server;
+    const sevStyle = SEVERITY_STYLE[report.severity] || SEVERITY_STYLE.medium;
+    const statusStyle = STATUS_STYLE[report.status] || STATUS_STYLE.new;
+    const leftAccent = report.severity === "critical"
+      ? "border-l-4 border-l-red-400"
+      : report.severity === "medium"
+      ? "border-l-4 border-l-amber-400"
+      : "border-l-4 border-l-blue-400";
+    const nextStep = STATUS_NEXT[report.status];
+
+    return (
+      <div key={report.id} className={`bg-white ${leftAccent} hover:bg-gray-50 transition-colors`}>
+        <div
+          className="flex items-start gap-3 px-4 py-3.5 cursor-pointer"
+          onClick={() => setExpandedId(isExpanded ? null : report.id)}
+        >
+          <div className="mt-1 shrink-0 text-gray-400">
+            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </div>
+
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${sevStyle}`}>
+                {report.severity}
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600 border border-gray-200 capitalize">
+                <Icon className="w-3 h-3" />
+                {report.sourceApp === "api" ? "API Server" : report.sourceApp}
+              </span>
+              <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+                {report.errorType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+              </span>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${statusStyle}`}>
+                {report.status.replace(/_/g, " ")}
+              </span>
+            </div>
+
+            <p className="text-sm text-gray-800 font-medium leading-snug line-clamp-2">
+              {report.errorMessage}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
+              <span>{formatTimestamp(report.timestamp)}</span>
+              {report.functionName && (
+                <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.functionName}</span>
+              )}
+              {report.componentName && (
+                <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.componentName}</span>
+              )}
+              {report.shortImpact && (
+                <span className="text-gray-400 italic">{report.shortImpact}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="shrink-0 flex flex-col items-end gap-1" onClick={e => e.stopPropagation()}>
+            {nextStep ? (
+              <button
+                onClick={() => updateMutation.mutate({ id: report.id, newStatus: nextStep.status })}
+                disabled={updateMutation.isPending}
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg shadow-sm transition-all disabled:opacity-60 ${nextStep.btnClass}`}
+              >
+                {nextStep.label}
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-semibold px-2 py-1 bg-green-50 rounded-lg border border-green-200">
+                <CheckCircle2 className="w-3 h-3" /> Resolved
+              </span>
+            )}
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="px-4 pb-5 pl-11 space-y-4 bg-gray-50 border-t border-gray-100">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
+              {[
+                { label: "Timestamp",  value: new Date(report.timestamp).toLocaleString() },
+                { label: "Module",     value: report.moduleName    || "—", mono: true },
+                { label: "Function",   value: report.functionName  || "—", mono: true },
+                { label: "Component",  value: report.componentName || "—", mono: true },
+              ].map(f => (
+                <div key={f.label}>
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">{f.label}</p>
+                  <p className={`text-xs text-gray-700 ${f.mono ? "font-mono" : ""}`}>{f.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Error Message</p>
+              <p className="text-xs text-gray-700 whitespace-pre-wrap break-all bg-white border border-gray-200 rounded-lg p-3">{report.errorMessage}</p>
+            </div>
+
+            {report.shortImpact && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Impact</p>
+                <p className="text-xs text-gray-700">{report.shortImpact}</p>
+              </div>
+            )}
+
+            {report.stackTrace && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Stack Trace</p>
+                <pre className="text-[11px] bg-gray-900 text-green-300 border border-gray-300 rounded-lg p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-all font-mono">
+                  {report.stackTrace}
+                </pre>
+              </div>
+            )}
+
+            {report.metadata && Object.keys(report.metadata).length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Metadata</p>
+                <pre className="text-[11px] text-gray-600 bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
+                  {JSON.stringify(report.metadata, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {(report.acknowledgedAt || report.resolvedAt) && (
+              <div className="flex gap-6">
+                {report.acknowledgedAt && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Acknowledged At</p>
+                    <p className="text-xs text-gray-700">{new Date(report.acknowledgedAt).toLocaleString()}</p>
+                  </div>
+                )}
+                {report.resolvedAt && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Resolved At</p>
+                    <p className="text-xs text-green-700 font-semibold">{new Date(report.resolvedAt).toLocaleString()}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-6 space-y-5">
 
@@ -204,6 +372,16 @@ export default function ErrorMonitor() {
               {fixingAll ? "Fixing…" : `Fix All (${pagination.total})`}
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setGroupByCategory(g => !g)}
+            className={groupByCategory ? "border-purple-400 text-purple-600 bg-purple-50" : ""}
+          >
+            <Layers className="w-4 h-4 mr-1.5" />
+            Group by Type
+            {groupByCategory && <span className="ml-1.5 w-2 h-2 rounded-full bg-purple-500 inline-block" />}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -297,151 +475,36 @@ export default function ErrorMonitor() {
               <><Inbox className="w-12 h-12 mb-3 text-green-400" /><p className="text-lg font-semibold text-gray-600">No new errors</p><p className="text-sm mt-1">All systems are running smoothly</p></>
             )}
           </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {reports.map(report => {
-              const isExpanded = expandedId === report.id;
-              const Icon = SOURCE_ICONS[report.sourceApp] || Server;
-              const sevStyle = SEVERITY_STYLE[report.severity] || SEVERITY_STYLE.medium;
-              const statusStyle = STATUS_STYLE[report.status] || STATUS_STYLE.new;
-              const leftAccent = report.severity === "critical"
-                ? "border-l-4 border-l-red-400"
-                : report.severity === "medium"
-                ? "border-l-4 border-l-amber-400"
-                : "border-l-4 border-l-blue-400";
-
+        ) : groupedReports ? (
+          <div>
+            {Object.entries(groupedReports).map(([cat, catReports]) => {
+              const resolvedCount = catReports.filter(r => r.status === "resolved").length;
               return (
-                <div key={report.id} className={`bg-white ${leftAccent} hover:bg-gray-50 transition-colors`}>
-                  {/* Row */}
-                  <div
-                    className="flex items-start gap-3 px-4 py-3.5 cursor-pointer"
-                    onClick={() => setExpandedId(isExpanded ? null : report.id)}
-                  >
-                    <div className="mt-1 shrink-0 text-gray-400">
-                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    </div>
-
-                    <div className="flex-1 min-w-0 space-y-1.5">
-                      {/* Badges row */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${sevStyle}`}>
-                          {report.severity}
-                        </span>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600 border border-gray-200 capitalize">
-                          <Icon className="w-3 h-3" />
-                          {report.sourceApp === "api" ? "API Server" : report.sourceApp}
-                        </span>
-                        <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
-                          {report.errorType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
-                        </span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${statusStyle}`}>
-                          {report.status.replace(/_/g, " ")}
-                        </span>
-                      </div>
-
-                      {/* Message */}
-                      <p className="text-sm text-gray-800 font-medium leading-snug line-clamp-2">
-                        {report.errorMessage}
-                      </p>
-
-                      {/* Meta row */}
-                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
-                        <span>{formatTimestamp(report.timestamp)}</span>
-                        {report.functionName && (
-                          <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.functionName}</span>
-                        )}
-                        {report.componentName && (
-                          <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.componentName}</span>
-                        )}
-                        {report.shortImpact && (
-                          <span className="text-gray-400 italic">{report.shortImpact}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Status changer */}
-                    <div className="shrink-0" onClick={e => e.stopPropagation()}>
-                      <select
-                        value={report.status}
-                        onChange={e => updateMutation.mutate({ id: report.id, newStatus: e.target.value })}
-                        className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-indigo-400 shadow-sm"
-                      >
-                        <option value="new">New</option>
-                        <option value="acknowledged">Acknowledged</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                      </select>
-                    </div>
+                <div key={cat}>
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                    <AlertTriangle className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                      {CATEGORY_LABELS[cat] || cat}
+                    </span>
+                    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 min-w-[20px] text-center">
+                      {catReports.length}
+                    </span>
+                    {resolvedCount > 0 && (
+                      <span className="text-[11px] text-green-600 font-semibold">
+                        · {resolvedCount} resolved
+                      </span>
+                    )}
                   </div>
-
-                  {/* Expanded detail */}
-                  {isExpanded && (
-                    <div className="px-4 pb-5 pl-11 space-y-4 bg-gray-50 border-t border-gray-100">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
-                        {[
-                          { label: "Timestamp",  value: new Date(report.timestamp).toLocaleString() },
-                          { label: "Module",     value: report.moduleName    || "—", mono: true },
-                          { label: "Function",   value: report.functionName  || "—", mono: true },
-                          { label: "Component",  value: report.componentName || "—", mono: true },
-                        ].map(f => (
-                          <div key={f.label}>
-                            <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">{f.label}</p>
-                            <p className={`text-xs text-gray-700 ${f.mono ? "font-mono" : ""}`}>{f.value}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div>
-                        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Error Message</p>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap break-all bg-white border border-gray-200 rounded-lg p-3">{report.errorMessage}</p>
-                      </div>
-
-                      {report.shortImpact && (
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Impact</p>
-                          <p className="text-xs text-gray-700">{report.shortImpact}</p>
-                        </div>
-                      )}
-
-                      {report.stackTrace && (
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Stack Trace</p>
-                          <pre className="text-[11px] text-gray-600 bg-gray-900 text-green-300 border border-gray-300 rounded-lg p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-all font-mono">
-                            {report.stackTrace}
-                          </pre>
-                        </div>
-                      )}
-
-                      {report.metadata && Object.keys(report.metadata).length > 0 && (
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Metadata</p>
-                          <pre className="text-[11px] text-gray-600 bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
-                            {JSON.stringify(report.metadata, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-
-                      {(report.acknowledgedAt || report.resolvedAt) && (
-                        <div className="flex gap-6">
-                          {report.acknowledgedAt && (
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Acknowledged At</p>
-                              <p className="text-xs text-gray-700">{new Date(report.acknowledgedAt).toLocaleString()}</p>
-                            </div>
-                          )}
-                          {report.resolvedAt && (
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Resolved At</p>
-                              <p className="text-xs text-green-700 font-semibold">{new Date(report.resolvedAt).toLocaleString()}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="divide-y divide-gray-100">
+                    {catReports.map(r => renderReportRow(r))}
+                  </div>
                 </div>
               );
             })}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {reports.map(r => renderReportRow(r))}
           </div>
         )}
 

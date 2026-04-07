@@ -218,6 +218,12 @@ router.post("/bulk-resolve", adminAuth, async (req, res) => {
   }
 });
 
+const STATUS_TRANSITIONS: Record<string, string> = {
+  new: "acknowledged",
+  acknowledged: "in_progress",
+  in_progress: "resolved",
+};
+
 const updateStatusSchema = z.object({
   status: z.enum(VALID_STATUSES),
 });
@@ -225,19 +231,33 @@ const updateStatusSchema = z.object({
 router.patch("/:id", adminAuth, validateBody(updateStatusSchema), async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status: newStatus } = req.body;
 
-    const updates: Record<string, unknown> = { status };
-    if (status === "acknowledged") {
+    const [existing] = await db.select({ status: errorReportsTable.status })
+      .from(errorReportsTable)
+      .where(eq(errorReportsTable.id, id!))
+      .limit(1);
+
+    if (!existing) {
+      sendNotFound(res, "Error report not found");
+      return;
+    }
+
+    const allowedNext = STATUS_TRANSITIONS[existing.status];
+    if (newStatus !== allowedNext) {
+      sendError(
+        res,
+        `Invalid transition: cannot move from '${existing.status}' to '${newStatus}'. Expected next step: '${allowedNext ?? "none (already resolved)"}'.`,
+        400,
+      );
+      return;
+    }
+
+    const updates: Record<string, unknown> = { status: newStatus };
+    if (newStatus === "acknowledged") {
       updates.acknowledgedAt = new Date();
-      updates.resolvedAt = null;
-    } else if (status === "in_progress") {
-      updates.resolvedAt = null;
-    } else if (status === "resolved") {
+    } else if (newStatus === "resolved") {
       updates.resolvedAt = new Date();
-    } else if (status === "new") {
-      updates.acknowledgedAt = null;
-      updates.resolvedAt = null;
     }
 
     const [updated] = await db.update(errorReportsTable)
