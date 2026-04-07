@@ -351,11 +351,11 @@ function AddressPickerModal({
                   </View>
                 ) : (
                   <>
-                  {addresses.filter(a => a.id !== "__gps__").map(addr => {
+                  {addresses.filter(a => a.id !== "__gps__").map((addr, index) => {
                     const isSel = selected === addr.id;
                     return (
                       <TouchableOpacity activeOpacity={0.7}
-                        key={addr.id}
+                        key={`addr-${addr.id ?? "na"}-${index}`}
                         onPress={() => { onSelect(addr); onClose(); }}
                         style={[styles.addrOpt, isSel && styles.addrOptSel]}
                       >
