@@ -498,6 +498,9 @@ export const useUpdatePlatformSettings = () => {
 export const useVendors = () =>
   useQuery({ queryKey: ["admin-vendors"], queryFn: () => fetcher("/vendors"), refetchInterval: REFETCH_INTERVAL });
 
+export const useFleetVendors = () =>
+  useQuery({ queryKey: ["admin-fleet-vendors"], queryFn: () => fetcher("/fleet/vendors"), refetchInterval: 60_000 });
+
 export const useUpdateVendorStatus = () => {
   const qc = useQueryClient();
   return useMutation({

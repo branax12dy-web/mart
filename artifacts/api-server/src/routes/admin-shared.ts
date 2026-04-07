@@ -1418,3 +1418,17 @@ export async function ensureCommunicationTables() {
   }
   _commMigrated = true;
 }
+
+let _vendorLocMigrated = false;
+export async function ensureVendorLocationColumns() {
+  if (_vendorLocMigrated) return;
+  try {
+    await db.execute(sql`ALTER TABLE vendor_profiles ADD COLUMN IF NOT EXISTS store_lat DECIMAL(10,7)`);
+    await db.execute(sql`ALTER TABLE vendor_profiles ADD COLUMN IF NOT EXISTS store_lng DECIMAL(10,7)`);
+    logger.info("[migration] vendor_profiles store_lat/store_lng columns ensured");
+  } catch (e) {
+    logger.error({ err: e }, "[migration] vendor location columns migration failed");
+    return;
+  }
+  _vendorLocMigrated = true;
+}

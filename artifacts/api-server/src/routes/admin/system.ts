@@ -1411,4 +1411,87 @@ router.patch("/sos/alerts/:id/resolve", async (req, res) => {
   sendSuccess(res, { ok: true, alert: fullResPayload });
 });
 
+/* ── GET /admin/fleet/vendors — active vendor store pins for the fleet map ─────
+   Returns all active/approved vendors that have storeLat + storeLng set.
+   Used by the Live Fleet Map to render static vendor store-location markers. */
+router.get("/fleet/vendors", async (_req, res) => {
+  try {
+    const vendors = await db
+      .select({
+        id:            usersTable.id,
+        name:          usersTable.name,
+        storeName:     vendorProfilesTable.storeName,
+        storeAddress:  vendorProfilesTable.storeAddress,
+        city:          usersTable.city,
+        storeLat:      vendorProfilesTable.storeLat,
+        storeLng:      vendorProfilesTable.storeLng,
+        storeIsOpen:   vendorProfilesTable.storeIsOpen,
+        storeCategory: vendorProfilesTable.storeCategory,
+      })
+      .from(usersTable)
+      .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
+      .where(
+        and(
+          ilike(usersTable.roles, "%vendor%"),
+          eq(usersTable.isActive, true),
+          eq(usersTable.approvalStatus, "approved"),
+          isNotNull(vendorProfilesTable.storeLat),
+          isNotNull(vendorProfilesTable.storeLng),
+        )
+      )
+      .orderBy(asc(usersTable.name));
+
+    const vendorIds = vendors.map(v => v.id);
+    const activeOrderCounts: Record<string, number> = {};
+
+    if (vendorIds.length > 0) {
+      const counts = await db
+        .select({ vendorId: ordersTable.vendorId, c: count() })
+        .from(ordersTable)
+        .where(
+          and(
+            or(
+              eq(ordersTable.status, "pending"),
+              eq(ordersTable.status, "confirmed"),
+              eq(ordersTable.status, "preparing"),
+              eq(ordersTable.status, "ready"),
+              eq(ordersTable.status, "out_for_delivery"),
+            ),
+          )
+        )
+        .groupBy(ordersTable.vendorId);
+
+      for (const row of counts) {
+        if (row.vendorId && vendorIds.includes(row.vendorId)) {
+          activeOrderCounts[row.vendorId] = Number(row.c);
+        }
+      }
+    }
+
+    const result = vendors
+      .filter(v => v.storeLat != null && v.storeLng != null)
+      .map(v => {
+        const lat = parseFloat(String(v.storeLat));
+        const lng = parseFloat(String(v.storeLng));
+        if (isNaN(lat) || isNaN(lng)) return null;
+        return {
+          id:            v.id,
+          name:          v.storeName ?? v.name ?? "Vendor",
+          storeAddress:  v.storeAddress ?? null,
+          city:          v.city ?? null,
+          storeCategory: v.storeCategory ?? null,
+          storeIsOpen:   v.storeIsOpen ?? false,
+          lat,
+          lng,
+          activeOrders:  activeOrderCounts[v.id] ?? 0,
+        };
+      })
+      .filter(Boolean);
+
+    sendSuccess(res, { vendors: result });
+  } catch (err) {
+    sendError(res, "Failed to fetch vendor fleet locations", 500);
+  }
+});
+
 export default router;

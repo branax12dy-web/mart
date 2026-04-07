@@ -24,6 +24,7 @@ export {
   ensureSupportMessagesTable,
   ensureFaqsTable,
   ensureCommunicationTables,
+  ensureVendorLocationColumns,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,
