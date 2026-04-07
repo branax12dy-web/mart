@@ -42,6 +42,9 @@ import {
   Bug,
   Radio,
   Star,
+  Heart,
+  QrCode,
+  CloudSun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -88,7 +91,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navDepositRequests", href: "/deposit-requests", icon: CreditCard },
       { nameKey: "navLoyaltyPoints" as TranslationKey, href: "/loyalty", icon: Star },
       { nameKey: "navKyc",             href: "/kyc",              icon: BadgeCheck },
-      { nameKey: "navWalletTransfers",  href: "/wallet-transfers", icon: Wallet },
+      { nameKey: "navWalletTransfers" as TranslationKey, href: "/wallet-transfers", icon: Wallet },
     ],
   },
   {
@@ -125,6 +128,15 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navFaqMgmt",         href: "/faq-management",    icon: HelpCircle },
       { nameKey: "navSearchAnalytics", href: "/search-analytics",  icon: BarChart2 },
       { nameKey: "navCommunication" as TranslationKey, href: "/communication", icon: Radio },
+      { nameKey: "navChatMonitor" as TranslationKey,   href: "/chat-monitor",  icon: MessageCircle },
+    ],
+  },
+  {
+    labelKey: "navAnalytics" as TranslationKey,
+    color: "#F472B6",
+    items: [
+      { nameKey: "navWishlistInsights" as TranslationKey, href: "/wishlist-insights", icon: Heart },
+      { nameKey: "navQrCodes" as TranslationKey,          href: "/qr-codes",          icon: QrCode },
     ],
   },
   {

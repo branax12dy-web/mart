@@ -52,6 +52,9 @@ import ErrorMonitor from "@/pages/error-monitor";
 import Communication from "@/pages/communication";
 import Loyalty from "@/pages/loyalty";
 import WalletTransfers from "@/pages/wallet-transfers";
+import ChatMonitor from "@/pages/chat-monitor";
+import WishlistInsights from "@/pages/wishlist-insights";
+import QrCodes from "@/pages/qr-codes";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -158,6 +161,9 @@ function Router() {
       <Route path="/communication"><ProtectedRoute component={Communication} /></Route>
       <Route path="/loyalty"><ProtectedRoute component={Loyalty} /></Route>
       <Route path="/wallet-transfers"><ProtectedRoute component={WalletTransfers} /></Route>
+      <Route path="/chat-monitor"><ProtectedRoute component={ChatMonitor} /></Route>
+      <Route path="/wishlist-insights"><ProtectedRoute component={WishlistInsights} /></Route>
+      <Route path="/qr-codes"><ProtectedRoute component={QrCodes} /></Route>
 
       <Route component={NotFound} />
     </Switch>

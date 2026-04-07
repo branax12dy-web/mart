@@ -97,6 +97,7 @@ export const usersTable = pgTable("users", {
   adminOverrideSuspension: boolean("admin_override_suspension").notNull().default(false),
   commissionOverride: text("commission_override"),
   ajkId:             text("ajk_id").unique(),
+  chatMuted:         boolean("chat_muted").notNull().default(false),
   commBlocked:       boolean("comm_blocked").notNull().default(false),
   lastLoginAt:       timestamp("last_login_at"),
   lastActive:        timestamp("last_active"),

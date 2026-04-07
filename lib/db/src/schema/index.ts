@@ -60,3 +60,6 @@ export * from "./error_resolution_backups";
 export * from "./auto_resolve_log";
 export * from "./communication";
 export * from "./idempotency_keys";
+export * from "./qr_codes";
+export * from "./chat_reports";
+export * from "./weather_config";

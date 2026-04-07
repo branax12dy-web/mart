@@ -15,6 +15,11 @@ import supportChatAdminRoutes from "./admin/support-chat.js";
 import faqAdminRoutes from "./admin/faq.js";
 import communicationAdminRoutes from "./admin/communication.js";
 import loyaltyAdminRoutes from "./admin/loyalty.js";
+import chatMonitorRoutes from "./admin/chat-monitor.js";
+import wishlistAnalyticsRoutes from "./admin/wishlist-analytics.js";
+import qrCodesRoutes from "./admin/qr-codes.js";
+import weatherConfigRoutes from "./admin/weather-config.js";
+import userAddressesRoutes from "./admin/user-addresses.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -57,5 +62,10 @@ router.use("/support-chat", supportChatAdminRoutes);
 router.use("/faqs", faqAdminRoutes);
 router.use(communicationAdminRoutes);
 router.use(loyaltyAdminRoutes);
+router.use("/chat-monitor", chatMonitorRoutes);
+router.use(wishlistAnalyticsRoutes);
+router.use("/qr-codes", qrCodesRoutes);
+router.use("/weather-config", weatherConfigRoutes);
+router.use(userAddressesRoutes);
 
 export default router;

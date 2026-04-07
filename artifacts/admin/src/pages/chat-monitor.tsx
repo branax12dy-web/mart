@@ -1,0 +1,284 @@
+import { useState, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetcher } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MobileDrawer } from "@/components/MobileDrawer";
+import { PullToRefresh } from "@/components/PullToRefresh";
+import {
+  MessageCircle, Search, VolumeX, Volume2, Eye, AlertTriangle,
+  CheckCircle2, Clock, Loader2, Users, Flag, Shield,
+} from "lucide-react";
+
+type Participant = { id: string; name: string | null; phone: string | null; ajkId: string | null; chatMuted?: boolean };
+type Conversation = {
+  id: string; participant1Id: string; participant2Id: string;
+  participant1: Participant | null; participant2: Participant | null;
+  messageCount: number; lastMessageAt: string | null; status: string;
+};
+type ChatMessage = {
+  id: string; content: string | null; senderId: string; messageType: string;
+  createdAt: string; deliveryStatus: string; isFlagged: boolean; flagReason: string | null;
+  sender: { id: string; name: string | null; phone: string | null; ajkId: string | null } | null;
+};
+type ChatReport = {
+  id: string; reason: string; status: string; createdAt: string;
+  reporter: { id: string; name: string | null; phone: string | null } | null;
+  reportedUser: { id: string; name: string | null; phone: string | null } | null;
+  messageId: string | null;
+};
+
+function useConversations() {
+  return useQuery({
+    queryKey: ["admin-chat-conversations"],
+    queryFn: () => fetcher("/chat-monitor/conversations?limit=200"),
+    refetchInterval: 30_000,
+  });
+}
+function useConversationMessages(id: string | null) {
+  return useQuery({
+    queryKey: ["admin-chat-messages", id],
+    queryFn: () => fetcher(`/chat-monitor/conversations/${id}/messages?limit=200`),
+    enabled: !!id,
+  });
+}
+function useChatReports(status?: string) {
+  const params = status ? `?status=${status}` : "";
+  return useQuery({
+    queryKey: ["admin-chat-reports", status || "all"],
+    queryFn: () => fetcher(`/chat-monitor/reports${params}`),
+    refetchInterval: 30_000,
+  });
+}
+
+export default function ChatMonitor() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<"conversations" | "reports">("conversations");
+  const [search, setSearch] = useState("");
+  const [selectedConv, setSelectedConv] = useState<string | null>(null);
+  const [reportFilter, setReportFilter] = useState<string>("");
+
+  const { data: convData, isLoading: convLoading } = useConversations();
+  const { data: msgData, isLoading: msgLoading } = useConversationMessages(selectedConv);
+  const { data: reportData, isLoading: reportLoading } = useChatReports(reportFilter || undefined);
+
+  const conversations: Conversation[] = convData?.conversations || [];
+  const messages: ChatMessage[] = msgData?.messages || [];
+  const reports: ChatReport[] = reportData?.reports || [];
+
+  const filtered = conversations.filter(c => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      c.participant1?.name?.toLowerCase().includes(s) ||
+      c.participant2?.name?.toLowerCase().includes(s) ||
+      c.participant1?.phone?.includes(s) ||
+      c.participant2?.phone?.includes(s) ||
+      c.participant1?.ajkId?.toLowerCase().includes(s) ||
+      c.participant2?.ajkId?.toLowerCase().includes(s)
+    );
+  });
+
+  const muteMutation = useMutation({
+    mutationFn: (userId: string) => fetcher(`/chat-monitor/users/${userId}/chat-mute`, { method: "POST", body: "{}" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-chat-conversations"] }); toast({ title: "User muted from chat" }); },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+  const unmuteMutation = useMutation({
+    mutationFn: (userId: string) => fetcher(`/chat-monitor/users/${userId}/chat-unmute`, { method: "POST", body: "{}" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-chat-conversations"] }); toast({ title: "User unmuted" }); },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+  const resolveMutation = useMutation({
+    mutationFn: (id: string) => fetcher(`/chat-monitor/reports/${id}/resolve`, { method: "PATCH", body: "{}" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-chat-reports"] }); toast({ title: "Report resolved" }); },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const pName = (p: Participant | null) => p?.name || p?.phone || "Unknown";
+
+  return (
+    <PullToRefresh onRefresh={() => qc.invalidateQueries({ queryKey: tab === "conversations" ? ["admin-chat-conversations"] : ["admin-chat-reports"] })}>
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><MessageCircle className="w-6 h-6 text-cyan-600" /> P2P Chat Monitor</h1>
+            <p className="text-sm text-muted-foreground mt-1">Monitor user-to-user conversations and abuse reports</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant={tab === "conversations" ? "default" : "outline"} size="sm" className="rounded-lg" onClick={() => setTab("conversations")}>
+              <Users className="w-4 h-4 mr-1" /> Conversations
+            </Button>
+            <Button variant={tab === "reports" ? "default" : "outline"} size="sm" className="rounded-lg" onClick={() => setTab("reports")}>
+              <Flag className="w-4 h-4 mr-1" /> Reports
+              {reports.filter(r => r.status === "pending").length > 0 && (
+                <Badge className="ml-1 bg-red-500 text-white text-[10px] px-1.5">{reports.filter(r => r.status === "pending").length}</Badge>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {tab === "conversations" && (
+          <>
+            <div className="relative max-w-sm">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search by name, phone, or AJK ID..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 rounded-xl" />
+            </div>
+
+            <Card className="overflow-hidden rounded-2xl">
+              {convLoading ? (
+                <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+              ) : filtered.length === 0 ? (
+                <div className="text-center py-20 text-muted-foreground"><MessageCircle className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>No conversations found</p></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Participant 1</TableHead>
+                        <TableHead>Participant 2</TableHead>
+                        <TableHead className="text-center">Messages</TableHead>
+                        <TableHead>Last Active</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filtered.map(c => (
+                        <TableRow key={c.id} className="hover:bg-muted/30">
+                          <TableCell>
+                            <div>
+                              <p className="text-sm font-semibold">{pName(c.participant1)}</p>
+                              <p className="text-xs text-muted-foreground">{c.participant1?.ajkId}</p>
+                              {c.participant1?.chatMuted && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 mt-0.5">MUTED</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="text-sm font-semibold">{pName(c.participant2)}</p>
+                              <p className="text-xs text-muted-foreground">{c.participant2?.ajkId}</p>
+                              {c.participant2?.chatMuted && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 mt-0.5">MUTED</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center"><Badge variant="secondary" className="text-xs">{c.messageCount}</Badge></TableCell>
+                          <TableCell><span className="text-xs text-muted-foreground">{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString() : "—"}</span></TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center gap-1 justify-end">
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setSelectedConv(c.id)} title="View messages">
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              {c.participant1 && (
+                                c.participant1.chatMuted
+                                  ? <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-green-600" onClick={() => unmuteMutation.mutate(c.participant1!.id)} title="Unmute P1"><Volume2 className="w-4 h-4" /></Button>
+                                  : <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-600" onClick={() => muteMutation.mutate(c.participant1!.id)} title="Mute P1"><VolumeX className="w-4 h-4" /></Button>
+                              )}
+                              {c.participant2 && (
+                                c.participant2.chatMuted
+                                  ? <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-green-600" onClick={() => unmuteMutation.mutate(c.participant2!.id)} title="Unmute P2"><Volume2 className="w-4 h-4" /></Button>
+                                  : <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-600" onClick={() => muteMutation.mutate(c.participant2!.id)} title="Mute P2"><VolumeX className="w-4 h-4" /></Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {tab === "reports" && (
+          <>
+            <div className="flex gap-2">
+              {["", "pending", "resolved"].map(s => (
+                <Button key={s} size="sm" variant={reportFilter === s ? "default" : "outline"} className="rounded-lg text-xs" onClick={() => setReportFilter(s)}>
+                  {s === "" ? "All" : s === "pending" ? "Pending" : "Resolved"}
+                </Button>
+              ))}
+            </div>
+            <Card className="overflow-hidden rounded-2xl">
+              {reportLoading ? (
+                <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+              ) : reports.length === 0 ? (
+                <div className="text-center py-20 text-muted-foreground"><Shield className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>No reports found</p></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Reporter</TableHead>
+                        <TableHead>Reported User</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reports.map(r => (
+                        <TableRow key={r.id}>
+                          <TableCell><span className="text-sm font-medium">{r.reporter?.name || r.reporter?.phone || "—"}</span></TableCell>
+                          <TableCell><span className="text-sm font-medium">{r.reportedUser?.name || r.reportedUser?.phone || "—"}</span></TableCell>
+                          <TableCell><span className="text-sm">{r.reason}</span></TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={r.status === "pending" ? "text-amber-600 border-amber-200 bg-amber-50" : "text-green-600 border-green-200 bg-green-50"}>
+                              {r.status === "pending" ? <Clock className="w-3 h-3 mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+                              {r.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell><span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</span></TableCell>
+                          <TableCell className="text-right">
+                            {r.status === "pending" && (
+                              <Button size="sm" variant="outline" className="rounded-lg text-xs" onClick={() => resolveMutation.mutate(r.id)} disabled={resolveMutation.isPending}>
+                                Resolve
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {selectedConv && (
+          <MobileDrawer open onClose={() => setSelectedConv(null)} title={<><Eye className="w-5 h-5 text-cyan-600" /> Message Thread</>} dialogClassName="w-[95vw] max-w-2xl max-h-[85dvh] overflow-y-auto rounded-2xl">
+            {msgLoading ? (
+              <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" /></div>
+            ) : messages.length === 0 ? (
+              <p className="text-center text-muted-foreground py-10">No messages</p>
+            ) : (
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto p-1">
+                {messages.map(m => (
+                  <div key={m.id} className={`rounded-xl p-3 border ${m.isFlagged ? "border-red-300 bg-red-50" : "border-border bg-muted/20"}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-foreground">{m.sender?.name || m.sender?.phone || "Unknown"}</span>
+                      <span className="text-[10px] text-muted-foreground">{new Date(m.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="text-sm text-foreground">{m.content || `[${m.messageType}]`}</p>
+                    {m.isFlagged && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <AlertTriangle className="w-3 h-3 text-red-500" />
+                        <span className="text-[10px] text-red-600">{m.flagReason || "Flagged"}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </MobileDrawer>
+        )}
+      </div>
+    </PullToRefresh>
+  );
+}

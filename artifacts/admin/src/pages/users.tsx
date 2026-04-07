@@ -882,6 +882,47 @@ function KycDocModal({ user, onClose }: { user: any; onClose: () => void }) {
   );
 }
 
+function AddressBookModal({ user, onClose }: { user: any; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-user-addresses", user.id],
+    queryFn: () => fetcher(`/users/${user.id}/addresses`),
+  });
+  const addresses = data?.addresses || [];
+
+  return (
+    <MobileDrawer
+      open
+      onClose={onClose}
+      title={<><MapPin className="w-5 h-5 text-teal-600" /> Addresses — {user.name || user.phone}</>}
+      dialogClassName="w-[95vw] max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl"
+    >
+      {isLoading ? (
+        <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" /></div>
+      ) : addresses.length === 0 ? (
+        <div className="text-center py-10 text-muted-foreground">
+          <MapPin className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No saved addresses</p>
+        </div>
+      ) : (
+        <div className="space-y-3 mt-2">
+          {addresses.map((addr: any) => (
+            <div key={addr.id} className={`rounded-xl border p-3 ${addr.isDefault ? "border-teal-300 bg-teal-50" : "border-border bg-muted/20"}`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-bold text-foreground">{addr.label}</span>
+                {addr.isDefault && (
+                  <Badge variant="outline" className="text-[10px] text-teal-600 border-teal-200 bg-teal-50">DEFAULT</Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">{addr.address}</p>
+              <p className="text-xs text-muted-foreground mt-1">{addr.city}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </MobileDrawer>
+  );
+}
+
 /* ══════════ Main Users Page ══════════ */
 
 export default function Users() {
@@ -922,6 +963,7 @@ export default function Users() {
   const [rejectUser, setRejectUser]     = useState<any>(null);
   const [rejectNote, setRejectNote]     = useState("");
   const [kycUser, setKycUser]           = useState<any>(null);
+  const [addressUser, setAddressUser]   = useState<any>(null);
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
 
   const pendingUsers = pendingData?.users || [];
@@ -1441,6 +1483,9 @@ export default function Users() {
                               <Gavel className="w-3.5 h-3.5"/>
                               {user.conditionCount > 0 && <span className="text-[10px] font-bold bg-violet-100 text-violet-700 rounded-full px-1.5 min-w-[18px] text-center">{user.conditionCount}</span>}
                             </Button>
+                            <Button variant="outline" size="sm" onClick={() => setAddressUser(user)} className="h-8 w-8 rounded-lg border-teal-200 text-teal-600 hover:bg-teal-50 hover:border-teal-300 p-0 flex items-center justify-center transition-colors" title="Addresses">
+                              <MapPin className="w-3.5 h-3.5"/>
+                            </Button>
                             <Button variant="outline" size="sm" onClick={() => setActivityUser(user)} className="h-8 w-8 rounded-lg border-[#1A56DB]/20 text-[#1A56DB] hover:bg-[#1A56DB]/5 hover:border-[#1A56DB]/30 p-0 flex items-center justify-center transition-colors" title="Activity">
                               <Activity className="w-3.5 h-3.5" />
                             </Button>
@@ -1545,6 +1590,8 @@ export default function Users() {
 
       {/* KYC Document Modal */}
       {kycUser && <KycDocModal user={kycUser} onClose={() => setKycUser(null)} />}
+
+      {addressUser && <AddressBookModal user={addressUser} onClose={() => setAddressUser(null)} />}
     </PullToRefresh>
   );
 }

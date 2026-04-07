@@ -23,6 +23,7 @@ import { PaymentSection } from "./settings-payment";
 import { IntegrationsSection } from "./settings-integrations";
 import { SecuritySection } from "./settings-security";
 import { SystemSection } from "./settings-system";
+import { WeatherSection } from "./settings-weather";
 import { renderSection, Setting, CatKey, TEXT_KEYS } from "./settings-render";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -33,7 +34,7 @@ const CAT_ORDER = [
   "customer","rider","vendor",
   "finance","payment",
   "content","integrations",
-  "security","system",
+  "security","system","weather",
 ] as const;
 
 const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
@@ -44,6 +45,7 @@ const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
   { label: "Communication",   emoji: "📢", items: ["content", "integrations"] },
   { label: "Security",        emoji: "🔒", items: ["security"] },
   { label: "System",          emoji: "🔧", items: ["system"] },
+  { label: "Widgets",         emoji: "🌤️", items: ["weather"] },
 ];
 
 const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string; bg: string; activeBg: string; description: string }> = {
@@ -61,6 +63,7 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
   integrations: { label: "Integrations",         icon: Puzzle,       color: "text-indigo-600",  bg: "bg-indigo-50",  activeBg: "bg-indigo-600",  description: "Push notifications, SMS, WhatsApp, analytics, maps and monitoring" },
   security:     { label: "Security",             icon: Shield,       color: "text-red-600",     bg: "bg-red-50",     activeBg: "bg-red-600",     description: "OTP modes, GPS tracking, rate limits, sessions and API credentials" },
   system:       { label: "System & Data",        icon: Database,     color: "text-rose-600",    bg: "bg-rose-50",    activeBg: "bg-rose-600",    description: "Database stats, backup, restore and data management tools" },
+  weather:      { label: "Weather Widget",      icon: Globe,        color: "text-sky-600",     bg: "bg-sky-50",     activeBg: "bg-sky-600",     description: "Toggle weather widget and manage displayed cities" },
 };
 
 export default function SettingsPage() {
@@ -240,7 +243,7 @@ export default function SettingsPage() {
 
   /* helper: is a category visible */
   const isCatVisible = (cat: CatKey) =>
-    (grouped[cat]?.length ?? 0) > 0 || cat === "payment" || cat === "system" || cat === "security";
+    (grouped[cat]?.length ?? 0) > 0 || cat === "payment" || cat === "system" || cat === "security" || cat === "weather";
 
   return (
     <div className="space-y-4 max-w-5xl">
@@ -539,6 +542,8 @@ export default function SettingsPage() {
                 />
               ) : activeTab === "system" ? (
                 <SystemSection />
+              ) : activeTab === "weather" ? (
+                <WeatherSection />
               ) : activeSettings.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <Settings2 className="w-10 h-10 mx-auto mb-3 opacity-30" />

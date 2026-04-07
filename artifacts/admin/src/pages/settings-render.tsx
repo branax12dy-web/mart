@@ -14,7 +14,7 @@ export interface Setting { key: string; value: string; label: string; category: 
 export type CatKey = 
   "general" | "features" | "rides" | "orders" | "delivery" |
   "customer" | "rider" | "vendor" | "finance" | "payment" |
-  "content" | "integrations" | "security" | "system";
+  "content" | "integrations" | "security" | "system" | "weather";
 
 export const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
