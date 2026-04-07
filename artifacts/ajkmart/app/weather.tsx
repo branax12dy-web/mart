@@ -302,7 +302,9 @@ export default function WeatherDetailScreen() {
   };
 
   const formatDay = (dateStr: string) => {
+    if (!dateStr) return "";
     const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return dateStr;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);

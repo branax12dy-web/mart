@@ -20,6 +20,7 @@ function FlashCountdownTimer({ targetTime }: { targetTime: Date }) {
   const [timeLeft, setTimeLeft] = React.useState({ d: 0, h: 0, m: 0, s: 0 });
 
   React.useEffect(() => {
+    if (!targetTime || !(targetTime instanceof Date) || isNaN(targetTime.getTime())) return;
     const update = () => {
       const diff = Math.max(0, targetTime.getTime() - Date.now());
       const d = Math.floor(diff / 86400000);

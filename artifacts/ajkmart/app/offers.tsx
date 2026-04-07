@@ -67,7 +67,7 @@ function OfferCard({ offer, onPress, bookmarked, onBookmark }: {
   offer: OfferType; onPress: () => void; bookmarked?: boolean; onBookmark?: () => void;
 }) {
   const conf = TYPE_CONFIG[offer.type] ?? TYPE_CONFIG["percentage"]!;
-  const endTime = new Date(offer.endDate).getTime();
+  const endTime = new Date(offer.endDate);
   const isFlash = offer.type === "percentage" || offer.type === "flat_discount";
   const claimedPct = offer.usageLimit ? Math.min(100, Math.round((offer.usedCount / offer.usageLimit) * 100)) : null;
 
@@ -118,7 +118,7 @@ function OfferCard({ offer, onPress, bookmarked, onBookmark }: {
               <Text style={s.endsIn}>
                 {isFlash ? "⚡ Ends in: " : "⏰ Valid till: "}
               </Text>
-              <CountdownTimer endTime={endTime} textStyle={s.timerTxt} />
+              <CountdownTimer targetTime={endTime} />
             </View>
           </View>
         </View>

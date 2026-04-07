@@ -44,7 +44,10 @@ export interface Address {
 }
 
 export function relativeTime(iso: string) {
-  const d = Date.now() - new Date(iso).getTime();
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (isNaN(parsed.getTime())) return "";
+  const d = Date.now() - parsed.getTime();
   const m = Math.floor(d / 60000);
   if (m < 1) return "Just now";
   if (m < 60) return `${m}m ago`;
