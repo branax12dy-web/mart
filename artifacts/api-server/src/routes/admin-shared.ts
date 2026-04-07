@@ -552,6 +552,28 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "map_last_tested_locationiq",      value: "",         label: "LocationIQ Last Test Timestamp",                     category: "map" },
   /* Search & geocoding provider (key used by frontend MapsMgmtSection) */
   { key: "map_search_provider",             value: "locationiq", label: "Search & Geocoding Provider (locationiq|google|osm)", category: "map" },
+  /* ═══════════════════  Van Service Rules  ═══════════════════ */
+  /* Booking Rules */
+  { key: "van_min_advance_hours",         value: "2",      label: "Min Advance Booking Hours",                    category: "van" },
+  { key: "van_max_seats_per_booking",     value: "4",      label: "Max Seats Per Customer Per Trip",              category: "van" },
+  { key: "van_cancellation_window_hours", value: "1",      label: "Cancellation Allowed Up To X Hours Before",    category: "van" },
+  { key: "van_refund_type",              value: "full",    label: "Refund Policy (full/partial/none)",             category: "van" },
+  { key: "van_refund_partial_pct",       value: "50",      label: "Partial Refund Percentage",                    category: "van" },
+  { key: "van_seat_hold_minutes",        value: "10",      label: "Seat Hold Duration During Checkout (min)",     category: "van" },
+  /* Operational Rules */
+  { key: "van_min_passengers",           value: "3",       label: "Min Confirmed Passengers to Run Trip",         category: "van" },
+  { key: "van_min_check_hours_before",   value: "4",       label: "Hours Before Departure to Check Min Threshold",category: "van" },
+  { key: "van_auto_notify_cancel",       value: "on",      label: "Auto-Notify Passengers if Trip Cancelled",     category: "van" },
+  /* Driver Rules */
+  { key: "van_max_driver_trips_day",     value: "5",       label: "Max Trips Per Driver Per Day",                 category: "van" },
+  { key: "van_driver_rest_hours",        value: "2",       label: "Min Rest Hours Between Consecutive Trips",     category: "van" },
+  { key: "van_require_start_trip",       value: "off",     label: "Require Driver Start Trip Before GPS Tracking", category: "van" },
+  /* Pricing Rules */
+  { key: "van_peak_surcharge_pct",       value: "0",       label: "Peak Hour Surcharge %",                        category: "van" },
+  { key: "van_peak_hours",              value: "07:00-09:00,17:00-19:00", label: "Peak Hours (comma-separated ranges)", category: "van" },
+  { key: "van_weekend_surcharge_pct",    value: "0",       label: "Weekend Surcharge % (Sat/Sun)",                category: "van" },
+  { key: "van_holiday_surcharge_pct",    value: "0",       label: "Holiday Surcharge %",                          category: "van" },
+  { key: "van_holiday_dates",           value: "[]",       label: "Holiday Dates (JSON array of YYYY-MM-DD)",     category: "van" },
 ];
 
 let _authMethodColumnMigrated = false;

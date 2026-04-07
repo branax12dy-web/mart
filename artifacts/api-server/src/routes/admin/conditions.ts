@@ -5,6 +5,7 @@ import {
   conditionRulesTable,
   conditionSettingsTable,
   usersTable,
+  vanBookingsTable,
 } from "@workspace/db/schema";
 import { eq, desc, and, gte, lte, ilike, or, sql, count, inArray } from "drizzle-orm";
 import {
@@ -27,6 +28,7 @@ export async function reconcileUserFlags(userId: string, excludeConditionId?: st
     severity: accountConditionsTable.severity,
     conditionType: accountConditionsTable.conditionType,
     reason: accountConditionsTable.reason,
+    metadata: accountConditionsTable.metadata,
   }).from(accountConditionsTable).where(and(...filters));
 
   const hasBan = activeConditions.some(c => c.severity === "ban");
@@ -36,7 +38,14 @@ export async function reconcileUserFlags(userId: string, excludeConditionId?: st
   const blockedServices: string[] = [];
   for (const c of activeConditions) {
     if (c.conditionType === "restriction_wallet_freeze") blockedServices.push("wallet");
-    if (c.conditionType === "restriction_service_block") blockedServices.push("orders", "rides");
+    if (c.conditionType === "restriction_service_block") {
+      const meta = c.metadata as Record<string, any> | null;
+      if (meta && meta.blockedService === "van") {
+        blockedServices.push("van");
+      } else {
+        blockedServices.push("orders", "rides", "van");
+      }
+    }
     if (c.conditionType === "restriction_new_order_block") blockedServices.push("new_orders");
   }
   const uniqueBlocked = [...new Set(blockedServices)];
@@ -80,6 +89,12 @@ const DEFAULT_RULES = [
   { name: "Vendor order completion < 70%", targetRole: "vendor", metric: "order_completion_rate", operator: "<", threshold: "70", conditionType: "restriction_service_block" as const, severity: "restriction_normal" as const },
   { name: "Vendor fraud/fake orders", targetRole: "vendor", metric: "fraud_incidents", operator: ">=", threshold: "1", conditionType: "warning_l1" as const, severity: "warning" as const },
   { name: "Vendor fraud 3+ incidents", targetRole: "vendor", metric: "fraud_incidents", operator: ">=", threshold: "3", conditionType: "ban_fraud" as const, severity: "ban" as const },
+  /* Van-specific condition templates */
+  { name: "Customer van cancellations > 3 in 30 days", targetRole: "customer", metric: "van_cancellation_count_30d", operator: ">", threshold: "3", conditionType: "restriction_service_block" as const, severity: "restriction_normal" as const },
+  { name: "Customer van no-shows > 2", targetRole: "customer", metric: "van_noshow_count", operator: ">", threshold: "2", conditionType: "warning_l1" as const, severity: "warning" as const },
+  { name: "Customer van no-shows > 4", targetRole: "customer", metric: "van_noshow_count", operator: ">", threshold: "4", conditionType: "restriction_service_block" as const, severity: "restriction_normal" as const },
+  { name: "Van driver missed Start Trip > 3 times", targetRole: "rider", metric: "van_driver_missed_start", operator: ">", threshold: "3", conditionType: "warning_l1" as const, severity: "warning" as const },
+  { name: "Van driver missed Start Trip > 5 times", targetRole: "rider", metric: "van_driver_missed_start", operator: ">", threshold: "5", conditionType: "suspension_temporary" as const, severity: "suspension" as const },
 ];
 
 router.get("/conditions", async (req, res) => {
@@ -646,6 +661,28 @@ router.post("/condition-rules/evaluate/:userId", async (req, res) => {
         metricValue = parseFloat(String(user.missIgnoreRate || 0));
       } else if (rule.metric === "order_completion_rate") {
         metricValue = parseFloat(String(user.orderCompletionRate || 100));
+      } else if (rule.metric === "van_cancellation_count_30d") {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const [vanCancelCount] = await db.select({ count: count() })
+          .from(vanBookingsTable)
+          .where(and(
+            eq(vanBookingsTable.userId, userId!),
+            eq(vanBookingsTable.status, "cancelled"),
+            sql`${vanBookingsTable.cancelledAt} >= ${thirtyDaysAgo}`,
+          ));
+        metricValue = vanCancelCount?.count ?? 0;
+      } else if (rule.metric === "van_noshow_count") {
+        const [vanNoshowCount] = await db.select({ count: count() })
+          .from(vanBookingsTable)
+          .where(and(
+            eq(vanBookingsTable.userId, userId!),
+            eq(vanBookingsTable.status, "completed"),
+            sql`${vanBookingsTable.boardedAt} IS NULL`,
+          ));
+        metricValue = vanNoshowCount?.count ?? 0;
+      } else if (rule.metric === "van_driver_missed_start") {
+        metricValue = 0;
       }
 
       if (metricValue === null) continue;
@@ -664,6 +701,10 @@ router.post("/condition-rules/evaluate/:userId", async (req, res) => {
       if (matches) {
         const condId = generateId();
         const category = rule.severity === "ban" ? "ban" : rule.severity === "suspension" ? "suspension" : rule.severity.startsWith("restriction") ? "restriction" : "warning";
+        const condMeta: Record<string, any> = { ruleId: rule.id, metricValue };
+        if (rule.metric.startsWith("van_") && rule.conditionType === "restriction_service_block") {
+          condMeta.blockedService = "van";
+        }
         await db.insert(accountConditionsTable).values({
           id: condId,
           userId: userId!,
@@ -673,7 +714,7 @@ router.post("/condition-rules/evaluate/:userId", async (req, res) => {
           category,
           reason: `Auto-triggered: ${rule.name} (${rule.metric} ${rule.operator} ${rule.threshold})`,
           appliedBy: "rule_engine",
-          metadata: { ruleId: rule.id, metricValue },
+          metadata: condMeta,
         });
 
         triggered.push({ rule: rule.name, conditionType: rule.conditionType, severity: rule.severity, applied: true, reason: `Metric ${rule.metric}=${metricValue} ${rule.operator} ${rule.threshold}` });

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import {
   Bus, Plus, Pencil, Trash2, RefreshCw, Users, Route, Clock, Calendar, UserCheck, Navigation,
+  Settings, ChevronDown, ChevronRight, Save, Loader2, AlertTriangle,
 } from "lucide-react";
 
 const getToken = () => sessionStorage.getItem("ajkmart_admin_token");
@@ -793,6 +794,234 @@ function BookingsTab() {
 }
 
 /* ══════════════════════════════════════════════════════════
+   RULES TAB
+══════════════════════════════════════════════════════════ */
+
+const KNOWN_VAN_KEYS = new Set([
+  "van_min_advance_hours","van_max_seats_per_booking","van_cancellation_window_hours",
+  "van_refund_type","van_refund_partial_pct","van_seat_hold_minutes",
+  "van_min_passengers","van_min_check_hours_before","van_auto_notify_cancel",
+  "van_max_driver_trips_day","van_driver_rest_hours","van_require_start_trip",
+  "van_peak_surcharge_pct","van_peak_hours","van_weekend_surcharge_pct",
+  "van_holiday_surcharge_pct","van_holiday_dates",
+]);
+
+interface PlatformSetting {
+  key: string;
+  value: string;
+  label: string;
+  category: string;
+  updatedAt: string;
+}
+
+const RULE_SECTIONS = [
+  {
+    title: "Booking Rules",
+    keys: ["van_min_advance_hours","van_max_seats_per_booking","van_cancellation_window_hours","van_refund_type","van_refund_partial_pct","van_seat_hold_minutes"],
+  },
+  {
+    title: "Operational Rules",
+    keys: ["van_min_passengers","van_min_check_hours_before","van_auto_notify_cancel"],
+  },
+  {
+    title: "Driver Rules",
+    keys: ["van_max_driver_trips_day","van_driver_rest_hours","van_require_start_trip"],
+  },
+  {
+    title: "Pricing Rules",
+    keys: ["van_peak_surcharge_pct","van_peak_hours","van_weekend_surcharge_pct","van_holiday_surcharge_pct","van_holiday_dates"],
+  },
+];
+
+const adminApiBase = () => `${window.location.origin}/api/admin/system`;
+
+async function adminFetch(path: string, opts: RequestInit = {}) {
+  const token = getToken();
+  const res = await fetch(`${adminApiBase()}${path}`, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "x-admin-token": token } : {}),
+      ...opts.headers,
+    },
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Request failed");
+  return json.data !== undefined ? json.data : json;
+}
+
+function RuleRow({ setting, onSave, saving }: { setting: PlatformSetting; onSave: (key: string, value: string) => void; saving: string | null }) {
+  const [editing, setEditing] = useState(false);
+  const [localValue, setLocalValue] = useState(setting.value);
+  const isKnown = KNOWN_VAN_KEYS.has(setting.key);
+
+  const handleSave = () => {
+    onSave(setting.key, localValue);
+    setEditing(false);
+  };
+
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{setting.label}</span>
+          {!isKnown && <Badge variant="outline" className="text-[10px] bg-yellow-50 text-yellow-700 border-yellow-200"><AlertTriangle className="w-3 h-3 mr-0.5" />Pending implementation</Badge>}
+        </div>
+        <span className="text-xs text-muted-foreground font-mono">{setting.key}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {editing ? (
+          <>
+            <Input className="w-40 h-8 text-sm" value={localValue} onChange={e => setLocalValue(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") { setLocalValue(setting.value); setEditing(false); } }} autoFocus />
+            <Button size="sm" variant="default" className="h-8 px-3" onClick={handleSave} disabled={saving === setting.key}>
+              {saving === setting.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8" onClick={() => { setLocalValue(setting.value); setEditing(false); }}>Cancel</Button>
+          </>
+        ) : (
+          <>
+            <span className="text-sm font-mono bg-gray-100 px-2 py-0.5 rounded">{setting.value}</span>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(true)}><Pencil className="w-3 h-3" /></Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollapsibleSection({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border rounded-lg mb-3 overflow-hidden">
+      <button className="w-full flex items-center gap-2 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left" onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+        <span className="font-semibold text-sm">{title}</span>
+      </button>
+      {open && <div className="px-1">{children}</div>}
+    </div>
+  );
+}
+
+function RulesTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState<string | null>(null);
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [customForm, setCustomForm] = useState({ key: "", label: "", type: "number" as string, value: "", description: "" });
+
+  const { data: settingsData, isLoading, refetch } = useQuery<{ settings: PlatformSetting[] }>({
+    queryKey: ["van-admin-rules"],
+    queryFn: () => adminFetch("/platform-settings"),
+  });
+
+  const allSettings = settingsData?.settings ?? [];
+  const vanSettings = allSettings.filter(s => s.key.startsWith("van_"));
+
+  const handleSave = async (key: string, value: string) => {
+    setSaving(key);
+    try {
+      await adminFetch(`/platform-settings/${key}`, { method: "PATCH", body: JSON.stringify({ value }) });
+      toast({ title: "Setting saved" });
+      qc.invalidateQueries({ queryKey: ["van-admin-rules"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+    setSaving(null);
+  };
+
+  const handleAddCustomRule = async () => {
+    const key = customForm.key.startsWith("van_") ? customForm.key : `van_${customForm.key}`;
+    if (!key || !customForm.label) {
+      toast({ title: "Key and label are required", variant: "destructive" }); return;
+    }
+    try {
+      await adminFetch("/platform-settings", {
+        method: "PUT",
+        body: JSON.stringify({ settings: [{ key, value: customForm.value || (customForm.type === "boolean" ? "off" : "0") }] }),
+      });
+      toast({ title: "Custom rule added" });
+      setCustomDialogOpen(false);
+      setCustomForm({ key: "", label: "", type: "number", value: "", description: "" });
+      qc.invalidateQueries({ queryKey: ["van-admin-rules"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  if (isLoading) return <div className="text-center py-8 text-muted-foreground">Loading rules…</div>;
+
+  const customRules = vanSettings.filter(s => !KNOWN_VAN_KEYS.has(s.key));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-muted-foreground">{vanSettings.length} van rule{vanSettings.length !== 1 ? "s" : ""}</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="w-4 h-4 mr-1" />Refresh</Button>
+          <Button size="sm" onClick={() => setCustomDialogOpen(true)}><Plus className="w-4 h-4 mr-1" />Add Custom Rule</Button>
+        </div>
+      </div>
+
+      {RULE_SECTIONS.map(section => {
+        const sectionSettings = section.keys.map(k => vanSettings.find(s => s.key === k)).filter(Boolean) as PlatformSetting[];
+        if (sectionSettings.length === 0) return null;
+        return (
+          <CollapsibleSection key={section.title} title={section.title}>
+            {sectionSettings.map(s => <RuleRow key={s.key} setting={s} onSave={handleSave} saving={saving} />)}
+          </CollapsibleSection>
+        );
+      })}
+
+      {customRules.length > 0 && (
+        <CollapsibleSection title="Custom Rules" defaultOpen={true}>
+          {customRules.map(s => <RuleRow key={s.key} setting={s} onSave={handleSave} saving={saving} />)}
+        </CollapsibleSection>
+      )}
+
+      <Dialog open={customDialogOpen} onOpenChange={setCustomDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Add Custom Van Rule</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Key (auto-prefixed with van_)</label>
+              <Input placeholder="e.g. require_passport_upload" value={customForm.key} onChange={e => setCustomForm(f => ({ ...f, key: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Label</label>
+              <Input placeholder="e.g. Require Passport Upload" value={customForm.label} onChange={e => setCustomForm(f => ({ ...f, label: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+              <Select value={customForm.type} onValueChange={v => setCustomForm(f => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="number">Number</SelectItem>
+                  <SelectItem value="boolean">Boolean (on/off)</SelectItem>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                  <SelectItem value="text">Text</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Default Value</label>
+              <Input placeholder={customForm.type === "boolean" ? "on or off" : "e.g. 10"} value={customForm.value} onChange={e => setCustomForm(f => ({ ...f, value: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Description (optional)</label>
+              <Input placeholder="What this rule does" value={customForm.description} onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCustomDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddCustomRule}>Add Rule</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
    MAIN PAGE
 ══════════════════════════════════════════════════════════ */
 export default function VanServicePage() {
@@ -815,12 +1044,14 @@ export default function VanServicePage() {
           <TabsTrigger value="vehicles"><Bus className="w-4 h-4 mr-1.5" />Vehicles</TabsTrigger>
           <TabsTrigger value="drivers"><UserCheck className="w-4 h-4 mr-1.5" />Drivers</TabsTrigger>
           <TabsTrigger value="bookings"><Calendar className="w-4 h-4 mr-1.5" />Bookings</TabsTrigger>
+          <TabsTrigger value="rules"><Settings className="w-4 h-4 mr-1.5" />Rules</TabsTrigger>
         </TabsList>
         <TabsContent value="routes"><RoutesTab /></TabsContent>
         <TabsContent value="schedules"><SchedulesTab /></TabsContent>
         <TabsContent value="vehicles"><VehiclesTab /></TabsContent>
         <TabsContent value="drivers"><DriversTab /></TabsContent>
         <TabsContent value="bookings"><BookingsTab /></TabsContent>
+        <TabsContent value="rules"><RulesTab /></TabsContent>
       </Tabs>
     </div>
   );

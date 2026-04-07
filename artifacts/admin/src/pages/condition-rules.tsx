@@ -61,6 +61,9 @@ const METRICS = [
   { value: "fake_item_complaints", label: "Fake/Wrong Item Complaints" },
   { value: "hygiene_complaints", label: "Hygiene/Quality Complaints" },
   { value: "late_pattern_violations", label: "Late Open/Close Violations" },
+  { value: "van_cancellation_count_30d", label: "Van Cancellations (30 days)" },
+  { value: "van_noshow_count", label: "Van No-Shows (boarded=false)" },
+  { value: "van_driver_missed_start", label: "Van Driver Missed Start Trip" },
 ];
 
 const SEVERITY_COLORS: Record<string, string> = {

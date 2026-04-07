@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, asc, desc, eq, sql, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, sql, inArray, count } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   vanRoutesTable, vanVehiclesTable, vanSchedulesTable, vanBookingsTable,
@@ -10,12 +10,69 @@ import { generateId } from "../lib/id.js";
 import type { Request, Response, NextFunction } from "express";
 import { customerAuth, riderAuth } from "../middleware/security.js";
 import { adminAuth } from "./admin.js";
+import { getPlatformSettings } from "./admin-shared.js";
 import {
   sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden,
 } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
 import { sendPushToUser } from "../lib/webpush.js";
 import { emitVanLocation, emitVanTripUpdate } from "../lib/socketio.js";
+
+/* ═══════════════════════════════════════════════════════════════
+   Helper: get van settings from platform_settings
+═══════════════════════════════════════════════════════════════ */
+async function getVanSettings() {
+  const s = await getPlatformSettings();
+  return {
+    minAdvanceHours:       parseInt(s["van_min_advance_hours"]         ?? "2"),
+    maxSeatsPerBooking:    parseInt(s["van_max_seats_per_booking"]     ?? "4"),
+    cancellationWindowH:   parseInt(s["van_cancellation_window_hours"] ?? "1"),
+    refundType:            s["van_refund_type"]                        ?? "full",
+    refundPartialPct:      parseInt(s["van_refund_partial_pct"]        ?? "50"),
+    seatHoldMinutes:       parseInt(s["van_seat_hold_minutes"]         ?? "10"),
+    minPassengers:         parseInt(s["van_min_passengers"]            ?? "3"),
+    minCheckHoursBefore:   parseInt(s["van_min_check_hours_before"]    ?? "4"),
+    maxDriverTripsDay:     parseInt(s["van_max_driver_trips_day"]      ?? "5"),
+    driverRestHours:       parseInt(s["van_driver_rest_hours"]         ?? "2"),
+    peakSurchargePct:      parseFloat(s["van_peak_surcharge_pct"]      ?? "0"),
+    peakHours:             s["van_peak_hours"]                         ?? "07:00-09:00,17:00-19:00",
+    weekendSurchargePct:   parseFloat(s["van_weekend_surcharge_pct"]   ?? "0"),
+    holidaySurchargePct:   parseFloat(s["van_holiday_surcharge_pct"]   ?? "0"),
+    holidayDates:          (() => { try { return JSON.parse(s["van_holiday_dates"] ?? "[]") as string[]; } catch { return [] as string[]; } })(),
+  };
+}
+
+function isInPeakHours(timeStr: string, peakHoursSpec: string): boolean {
+  if (!peakHoursSpec) return false;
+  const [hh, mm] = timeStr.split(":").map(Number);
+  const mins = (hh ?? 0) * 60 + (mm ?? 0);
+  const ranges = peakHoursSpec.split(",").map(r => r.trim());
+  for (const range of ranges) {
+    const [start, end] = range.split("-");
+    if (!start || !end) continue;
+    const [sh, sm] = start.split(":").map(Number);
+    const [eh, em] = end.split(":").map(Number);
+    const startMins = (sh ?? 0) * 60 + (sm ?? 0);
+    const endMins = (eh ?? 0) * 60 + (em ?? 0);
+    if (mins >= startMins && mins < endMins) return true;
+  }
+  return false;
+}
+
+function calculateSurcharge(farePerSeat: number, seatCount: number, departureTime: string, travelDate: string, vs: Awaited<ReturnType<typeof getVanSettings>>): number {
+  let surchargeMultiplier = 1;
+  if (vs.peakSurchargePct > 0 && isInPeakHours(departureTime, vs.peakHours)) {
+    surchargeMultiplier += vs.peakSurchargePct / 100;
+  }
+  const dayOfWeek = new Date(travelDate + "T00:00:00").getDay();
+  if (vs.weekendSurchargePct > 0 && (dayOfWeek === 0 || dayOfWeek === 6)) {
+    surchargeMultiplier += vs.weekendSurchargePct / 100;
+  }
+  if (vs.holidaySurchargePct > 0 && vs.holidayDates.includes(travelDate)) {
+    surchargeMultiplier += vs.holidaySurchargePct / 100;
+  }
+  return farePerSeat * seatCount * surchargeMultiplier;
+}
 
 const router = Router();
 
@@ -231,7 +288,7 @@ router.get("/schedules/:id/availability", async (req, res) => {
 const bookVanSchema = z.object({
   scheduleId:     z.string().min(1),
   travelDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "travelDate must be YYYY-MM-DD"),
-  seatNumbers:    z.array(z.number().int().min(1)).min(1).max(6),
+  seatNumbers:    z.array(z.number().int().min(1)).min(1).max(10),
   paymentMethod:  z.enum(["cash", "wallet"]).default("cash"),
   passengerName:  z.string().max(80).optional(),
   passengerPhone: z.string().max(20).optional(),
@@ -247,6 +304,14 @@ router.post("/bookings", customerAuth, async (req, res) => {
   const { scheduleId, travelDate, seatNumbers, paymentMethod, passengerName, passengerPhone } = parsed.data;
 
   try {
+    const vs = await getVanSettings();
+
+    /* Enforce max seats per booking */
+    if (seatNumbers.length > vs.maxSeatsPerBooking) {
+      sendError(res, `Maximum ${vs.maxSeatsPerBooking} seats per booking allowed.`, 400); return;
+    }
+
+    /* Validate travel date is today or future */
     const todayStr = new Date().toISOString().split("T")[0]!;
     if (travelDate < todayStr) {
       sendError(res, "Travel date cannot be in the past.", 400); return;
@@ -259,6 +324,7 @@ router.post("/bookings", customerAuth, async (req, res) => {
       daysOfWeek: vanSchedulesTable.daysOfWeek,
       isActive: vanSchedulesTable.isActive,
       vehicleId: vanSchedulesTable.vehicleId,
+      departureTime: vanSchedulesTable.departureTime,
       totalSeats: vanVehiclesTable.totalSeats,
       seatLayout: vanVehiclesTable.seatLayout,
     })
@@ -271,6 +337,14 @@ router.post("/bookings", customerAuth, async (req, res) => {
       sendError(res, "Schedule not found or inactive.", 404); return;
     }
 
+    /* Enforce advance booking window */
+    const departureDateTime = new Date(`${travelDate}T${schedule.departureTime ?? "00:00"}:00`);
+    const hoursUntilDeparture = (departureDateTime.getTime() - Date.now()) / 3_600_000;
+    if (vs.minAdvanceHours > 0 && hoursUntilDeparture < vs.minAdvanceHours) {
+      sendError(res, `Booking must be made at least ${vs.minAdvanceHours} hour(s) before departure.`, 400); return;
+    }
+
+    /* Validate day of week */
     const reqDate = new Date(travelDate + "T00:00:00");
     const dayOfWeek = reqDate.getDay() === 0 ? 7 : reqDate.getDay();
     const daysArr = Array.isArray(schedule.daysOfWeek) ? (schedule.daysOfWeek as number[]) : [];
@@ -286,15 +360,16 @@ router.post("/bookings", customerAuth, async (req, res) => {
 
     const seatTiers: Record<string, SeatTier> = {};
     const tierBreakdown: Record<string, { count: number; fare: number }> = {};
-    let totalFare = 0;
+    let baseFare = 0;
     for (const seatNum of seatNumbers) {
       const tier = layoutInfo.seats[String(seatNum)] || "aisle";
       seatTiers[String(seatNum)] = tier;
       const fare = getSeatFare(tier, route);
-      totalFare += fare;
+      baseFare += fare;
       if (!tierBreakdown[tier]) tierBreakdown[tier] = { count: 0, fare };
       tierBreakdown[tier]!.count++;
     }
+    const totalFare = calculateSurcharge(baseFare / seatNumbers.length, seatNumbers.length, schedule.departureTime, travelDate, vs);
 
     const booking = await db.transaction(async (tx) => {
       const bookedSeats = await getBookedSeats(scheduleId, travelDate);
@@ -450,11 +525,24 @@ router.patch("/bookings/:id/cancel", customerAuth, async (req, res) => {
     if (booking.status === "cancelled") { sendError(res, "Booking already cancelled.", 400); return; }
     if (booking.status === "completed") { sendError(res, "Cannot cancel a completed booking.", 400); return; }
 
+    const vs = await getVanSettings();
+
+    /* Check cancellation window from settings */
     const [schedule] = await db.select({ departureTime: vanSchedulesTable.departureTime })
       .from(vanSchedulesTable).where(eq(vanSchedulesTable.id, booking.scheduleId)).limit(1);
     const departureDateTime = new Date(`${booking.travelDate}T${schedule?.departureTime ?? "00:00"}:00`);
-    if (departureDateTime.getTime() - Date.now() < 60 * 60_000) {
-      sendError(res, "Cannot cancel less than 1 hour before departure.", 400); return;
+    const hoursBeforeDeparture = (departureDateTime.getTime() - Date.now()) / 3_600_000;
+    if (hoursBeforeDeparture < vs.cancellationWindowH) {
+      sendError(res, `Cannot cancel less than ${vs.cancellationWindowH} hour(s) before departure.`, 400); return;
+    }
+
+    /* Calculate refund based on settings */
+    const originalFare = parseFloat(String(booking.fare));
+    let refundAmount = 0;
+    if (vs.refundType === "full") {
+      refundAmount = originalFare;
+    } else if (vs.refundType === "partial") {
+      refundAmount = originalFare * (vs.refundPartialPct / 100);
     }
 
     await db.transaction(async (tx) => {
@@ -462,18 +550,18 @@ router.patch("/bookings/:id/cancel", customerAuth, async (req, res) => {
         .set({ status: "cancelled", cancelledAt: new Date(), cancellationReason: reason, updatedAt: new Date() })
         .where(eq(vanBookingsTable.id, bookingId));
 
-      if (booking.paymentMethod === "wallet") {
+      /* Refund wallet payment based on refund policy */
+      if (booking.paymentMethod === "wallet" && refundAmount > 0) {
         const [userRow] = await tx.select({ walletBalance: usersTable.walletBalance })
           .from(usersTable).where(eq(usersTable.id, userId)).for("update").limit(1);
         const bal = parseFloat(String(userRow?.walletBalance ?? "0"));
-        const refund = parseFloat(String(booking.fare));
         await tx.update(usersTable)
-          .set({ walletBalance: String(bal + refund), updatedAt: new Date() })
+          .set({ walletBalance: String(bal + refundAmount), updatedAt: new Date() })
           .where(eq(usersTable.id, userId));
         await tx.insert(walletTransactionsTable).values({
           id: generateId(), userId, type: "credit",
-          amount: refund.toFixed(2),
-          description: `Van booking refund – cancelled`,
+          amount: refundAmount.toFixed(2),
+          description: `Van booking refund (${vs.refundType === "full" ? "full" : vs.refundPartialPct + "%"}) – cancelled`,
           reference: `van_refund:${bookingId}`,
           createdAt: new Date(),
         });
@@ -482,11 +570,11 @@ router.patch("/bookings/:id/cancel", customerAuth, async (req, res) => {
 
     sendPushToUser(userId, {
       title: "Van Booking Cancelled",
-      body: `Your van booking has been cancelled.${booking.paymentMethod === "wallet" ? " Refund has been processed." : ""}`,
+      body: `Your van booking has been cancelled.${refundAmount > 0 ? ` Refund of Rs ${refundAmount.toFixed(0)} (${vs.refundType}) has been processed.` : ""}`,
       data: { type: "van_refund" },
     }).catch(() => {});
 
-    sendSuccess(res, { message: "Booking cancelled successfully." });
+    sendSuccess(res, { message: "Booking cancelled successfully.", refundAmount, refundType: vs.refundType });
   } catch (e) {
     logger.error({ err: e }, "[van] cancel booking error");
     sendError(res, (e as Error).message || "Cancellation failed.", 400);
@@ -919,6 +1007,37 @@ router.post("/admin/schedules", adminAuth, async (req, res) => {
   const p = scheduleSchema.safeParse(req.body ?? {});
   if (!p.success) { sendError(res, p.error.issues.map(i => i.message).join("; "), 422); return; }
   try {
+    /* Enforce driver rules if driverId provided */
+    if (p.data.driverId) {
+      const vs = await getVanSettings();
+      const driverId = p.data.driverId;
+
+      /* Check max trips per day — count active schedules for this driver */
+      const [tripCount] = await db.select({ count: count() })
+        .from(vanSchedulesTable)
+        .where(and(eq(vanSchedulesTable.driverId, driverId), eq(vanSchedulesTable.isActive, true)));
+      if ((tripCount?.count ?? 0) >= vs.maxDriverTripsDay) {
+        sendError(res, `Driver already has ${vs.maxDriverTripsDay} active schedules (max per day).`, 400); return;
+      }
+
+      /* Check rest hours between trips */
+      if (vs.driverRestHours > 0 && p.data.departureTime) {
+        const existingSchedules = await db.select({ departureTime: vanSchedulesTable.departureTime, returnTime: vanSchedulesTable.returnTime })
+          .from(vanSchedulesTable)
+          .where(and(eq(vanSchedulesTable.driverId, driverId), eq(vanSchedulesTable.isActive, true)));
+        const newDeptMins = (() => { const [h, m] = p.data.departureTime.split(":").map(Number); return (h ?? 0) * 60 + (m ?? 0); })();
+        const restMins = vs.driverRestHours * 60;
+        for (const es of existingSchedules) {
+          const retTime = es.returnTime || es.departureTime;
+          const [rh, rm] = retTime.split(":").map(Number);
+          const retMins = (rh ?? 0) * 60 + (rm ?? 0);
+          if (Math.abs(newDeptMins - retMins) < restMins) {
+            sendError(res, `Driver needs at least ${vs.driverRestHours} hour(s) rest between trips. Conflicts with existing schedule.`, 400); return;
+          }
+        }
+      }
+    }
+
     const [schedule] = await db.insert(vanSchedulesTable).values({ id: generateId(), ...p.data }).returning();
     sendCreated(res, schedule);
   } catch (e) { sendError(res, "Failed to create schedule.", 500); }

@@ -308,6 +308,25 @@ router.get("/", async (req, res) => {
       }
       return ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Poonch","Neelum Valley","Rawalpindi","Islamabad","Other"];
     })(),
+    van: {
+      minAdvanceHours:       parseInt(s["van_min_advance_hours"]         ?? "2"),
+      maxSeatsPerBooking:    parseInt(s["van_max_seats_per_booking"]     ?? "4"),
+      cancellationWindowH:   parseInt(s["van_cancellation_window_hours"] ?? "1"),
+      refundType:            s["van_refund_type"]                        ?? "full",
+      refundPartialPct:      parseInt(s["van_refund_partial_pct"]        ?? "50"),
+      seatHoldMinutes:       parseInt(s["van_seat_hold_minutes"]         ?? "10"),
+      minPassengers:         parseInt(s["van_min_passengers"]            ?? "3"),
+      minCheckHoursBefore:   parseInt(s["van_min_check_hours_before"]    ?? "4"),
+      autoNotifyCancel:      (s["van_auto_notify_cancel"]                ?? "on") === "on",
+      maxDriverTripsDay:     parseInt(s["van_max_driver_trips_day"]      ?? "5"),
+      driverRestHours:       parseInt(s["van_driver_rest_hours"]         ?? "2"),
+      requireStartTrip:      (s["van_require_start_trip"]                ?? "off") === "on",
+      peakSurchargePct:      parseFloat(s["van_peak_surcharge_pct"]      ?? "0"),
+      peakHours:             s["van_peak_hours"]                         ?? "07:00-09:00,17:00-19:00",
+      weekendSurchargePct:   parseFloat(s["van_weekend_surcharge_pct"]   ?? "0"),
+      holidaySurchargePct:   parseFloat(s["van_holiday_surcharge_pct"]   ?? "0"),
+      holidayDates:          (() => { try { return JSON.parse(s["van_holiday_dates"] ?? "[]"); } catch { return []; } })(),
+    },
     payment: {
       methods:              paymentMethods,
       currency:             "PKR",
