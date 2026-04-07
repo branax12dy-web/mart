@@ -210,7 +210,14 @@ export default function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <WouterRouter base={(() => {
+              const raw = import.meta.env.BASE_URL;
+              /* Normalize: must be a non-empty string that starts with "/" and is not just "/" */
+              if (typeof raw === "string" && /^\/\S/.test(raw)) {
+                return raw.replace(/\/$/, "");
+              }
+              return "/vendor";
+            })()}>
             <AppRoutes />
           </WouterRouter>
           <PwaInstallBanner />

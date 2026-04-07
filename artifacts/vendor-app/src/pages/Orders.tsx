@@ -197,7 +197,7 @@ export default function Orders() {
   /* Socket.io: subscribe to vendor:{userId} room for rider tracking */
   useEffect(() => {
     if (!user?.id) return;
-    const token = localStorage.getItem("ajkmart_vendor_token") ?? "";
+    const token = api.getToken();
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: `vendor:${user.id}` },

@@ -72,7 +72,7 @@ async function _doRefresh(): Promise<RefreshResult> {
   }
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudget = 2): Promise<any> {
+export async function apiFetch(path: string, opts: RequestInit & { _timeoutMs?: number } = {}, _retryBudget = 2): Promise<any> {
   const token = getToken();
   const isFormData = opts.body instanceof FormData;
   const headers: Record<string, string> = {
@@ -81,9 +81,11 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
     ...(opts.headers as Record<string, string> || {}),
   };
 
-  /* Build a combined signal: always include a 30s timeout, plus any caller-provided signal */
+  /* Build a combined signal: include a timeout (default 30s, overridable via _timeoutMs),
+     plus any caller-provided signal. Pass _timeoutMs: 0 to disable the timeout entirely. */
+  const timeoutMs = opts._timeoutMs !== undefined ? opts._timeoutMs : 30000;
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
+  const timeoutId = timeoutMs > 0 ? setTimeout(() => timeoutController.abort(), timeoutMs) : null;
   const externalSignal = opts.signal as AbortSignal | undefined;
   const signal: AbortSignal = externalSignal
     ? (typeof AbortSignal.any === "function"
@@ -95,13 +97,13 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
   try {
     res = await fetch(`${BASE}${path}`, { ...opts, headers, signal });
   } catch (networkErr: unknown) {
-    clearTimeout(timeoutId);
+    if (timeoutId !== null) clearTimeout(timeoutId);
     /* Rethrow AbortError unchanged so callers can detect request cancellation */
     if (networkErr instanceof Error && networkErr.name === "AbortError") throw networkErr;
     /* Network-level failure (offline, timeout) — never log out for this */
     throw Object.assign(new Error("Network error. Please check your connection and try again."), { status: 0, transient: true });
   } finally {
-    clearTimeout(timeoutId);
+    if (timeoutId !== null) clearTimeout(timeoutId);
   }
 
   if (res.status === 401 && _retryBudget > 0) {
@@ -273,21 +275,16 @@ export const api = {
   },
 
   uploadVideo: async (file: File): Promise<{ url: string }> => {
-    const token = getToken();
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`${BASE}/uploads/video`, {
+    /* Disable the default 30s timeout for large video uploads; apiFetch still
+       handles token refresh and retry automatically. */
+    const result = await apiFetch("/uploads/video", {
       method: "POST",
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: formData,
+      _timeoutMs: 0,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Upload failed" }));
-      throw new Error(err.error || "Video upload failed");
-    }
-    const json = await res.json();
-    const data = json.data !== undefined ? json.data : json;
-    return { url: data.url };
+    return { url: result.url };
   },
 
   /* Location */
