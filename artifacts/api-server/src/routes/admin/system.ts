@@ -952,14 +952,14 @@ router.get("/reviews", adminAuth, async (req, res) => {
         hidden: rideRatingsTable.hidden,
         deletedAt: rideRatingsTable.deletedAt,
         createdAt: rideRatingsTable.createdAt,
-        reviewerId: rideRatingsTable.userId,
+        reviewerId: rideRatingsTable.customerId,
         subjectId: rideRatingsTable.riderId,
         subjectRiderId: rideRatingsTable.riderId,
         reviewerName: usersTable.name,
         reviewerPhone: usersTable.phone,
       })
       .from(rideRatingsTable)
-      .leftJoin(usersTable, eq(rideRatingsTable.userId, usersTable.id))
+      .leftJoin(usersTable, eq(rideRatingsTable.customerId, usersTable.id))
       .where(rideConditions.length > 0 ? and(...rideConditions) : undefined)
       .orderBy(desc(rideRatingsTable.createdAt)),
   ]);
