@@ -75,7 +75,7 @@ export default function Products() {
     queryFn: () => api.getProducts(search || undefined, filterCat !== "all" ? filterCat : undefined),
     refetchInterval: 60000,
   });
-  const products: any[] = data?.products || [];
+  const products: any[] = Array.isArray(data?.products) ? data.products : [];
 
   const { data: allData } = useQuery({
     queryKey: ["vendor-products-all"],

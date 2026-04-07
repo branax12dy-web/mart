@@ -141,7 +141,7 @@ export default function Store() {
   });
 
   const { data: promoData, isLoading: promoLoad } = useQuery({ queryKey: ["vendor-promos"], queryFn: () => api.getPromos(), enabled: tab === "promos" });
-  const promos = promoData?.promos || [];
+  const promos: any[] = Array.isArray(promoData?.promos) ? promoData.promos : [];
 
   const [pf, setPf] = useState({ code:"", description:"", discountPct:"", discountFlat:"", minOrderAmount:"", usageLimit:"", expiresAt:"", type:"pct" as "pct"|"flat" });
   const p = (k: string, v: string) => setPf(x => ({ ...x, [k]: v }));

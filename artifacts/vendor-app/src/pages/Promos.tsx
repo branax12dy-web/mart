@@ -29,7 +29,8 @@ export default function Promos() {
     retry: 2,
   });
 
-  const promos: any[] = data?.promos ?? data ?? [];
+  const _promosRaw = data?.promos ?? data;
+  const promos: any[] = Array.isArray(_promosRaw) ? _promosRaw : [];
 
   const createMut = useMutation({
     mutationFn: () => apiFetch("/vendor/promos", {
