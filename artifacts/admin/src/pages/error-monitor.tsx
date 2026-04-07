@@ -7,7 +7,8 @@ import {
   Flame, ShieldAlert, Inbox, CheckCheck, Layers, ScanLine,
   Clock, Calendar, RotateCcw, Play, Pause, Users, MessageSquare,
   Lightbulb, AlertCircle, Wrench, Phone, Mail, Smartphone, Globe,
-  CheckSquare, XCircle, Eye, StickyNote,
+  CheckSquare, XCircle, Eye, StickyNote, Undo2, FileText, Settings,
+  Clipboard, Power, Activity, Bot, Copy,
 } from "lucide-react";
 
 type ErrorReport = {
@@ -26,6 +27,28 @@ type ErrorReport = {
   metadata: Record<string, unknown> | null;
   resolvedAt: string | null;
   acknowledgedAt: string | null;
+  resolutionMethod: string | null;
+  resolutionNotes: string | null;
+  rootCause: string | null;
+  updatedAt: string | null;
+  hasBackup: boolean;
+};
+
+type AutoResolveSettings = {
+  enabled: boolean;
+  severities: string[];
+  errorTypes: string[];
+  duplicateDetection: boolean;
+  ageThresholdMinutes: number;
+  intervalMs: number;
+};
+
+type AutoResolveLogEntry = {
+  id: string;
+  errorReportId: string;
+  reason: string;
+  ruleMatched: string;
+  createdAt: string;
 };
 
 type CustomerReport = {
@@ -81,6 +104,12 @@ const SEVERITIES = [
   { value: "critical", label: "Critical" },
   { value: "medium", label: "Medium" },
   { value: "minor", label: "Minor" },
+];
+const RESOLUTION_METHODS = [
+  { value: "", label: "All Methods" },
+  { value: "manual", label: "Manually Resolved" },
+  { value: "auto_resolved", label: "Auto-Resolved" },
+  { value: "task_created", label: "Task Created" },
 ];
 const ERROR_TYPES = [
   { value: "", label: "All Types" },
@@ -365,6 +394,21 @@ export default function ErrorMonitor() {
   const autoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const specificTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [resolutionMethod, setResolutionMethod] = useState("");
+  const [showManualResolveDialog, setShowManualResolveDialog] = useState<string | null>(null);
+  const [manualNotes, setManualNotes] = useState("");
+  const [manualRootCause, setManualRootCause] = useState("");
+  const [showTaskPlanDialog, setShowTaskPlanDialog] = useState<string | null>(null);
+  const [taskPlanContent, setTaskPlanContent] = useState("");
+  const [taskPlanLoading, setTaskPlanLoading] = useState(false);
+  const [showAutoResolvePanel, setShowAutoResolvePanel] = useState(false);
+  const [viewedErrorTimestamps, setViewedErrorTimestamps] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem("ajkmart_viewed_errors_ts");
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
+
   const [customerPage, setCustomerPage] = useState(1);
   const [customerStatusFilter, setCustomerStatusFilter] = useState("");
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
@@ -378,11 +422,12 @@ export default function ErrorMonitor() {
   if (sourceApp) params.set("sourceApp", sourceApp);
   if (severity) params.set("severity", severity);
   if (errorType) params.set("errorType", errorType);
+  if (resolutionMethod) params.set("resolutionMethod", resolutionMethod);
   if (dateFrom) params.set("dateFrom", new Date(dateFrom).toISOString());
   if (dateTo) params.set("dateTo", new Date(dateTo + "T23:59:59").toISOString());
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["error-reports", activeTab, page, sourceApp, severity, errorType, dateFrom, dateTo],
+    queryKey: ["error-reports", activeTab, page, sourceApp, severity, errorType, resolutionMethod, dateFrom, dateTo],
     queryFn: () => activeTab === "customers" ? Promise.resolve(null) : fetcher(`/error-reports?${params}`),
     refetchInterval: 30000,
     enabled: activeTab !== "customers",
@@ -441,6 +486,96 @@ export default function ErrorMonitor() {
       queryClient.invalidateQueries({ queryKey: ["customer-reports-count"] });
     },
   });
+
+  const resolveMutation = useMutation({
+    mutationFn: ({ id, method, resolutionNotes, rootCause }: { id: string; method: string; resolutionNotes?: string; rootCause?: string }) =>
+      fetcher(`/error-reports/${id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ method, resolutionNotes, rootCause }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["error-count"] });
+    },
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (id: string) =>
+      fetcher(`/error-reports/${id}/undo`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["error-count"] });
+    },
+  });
+
+  const { data: autoResolveSettings, refetch: refetchAutoSettings } = useQuery<AutoResolveSettings>({
+    queryKey: ["auto-resolve-settings"],
+    queryFn: () => fetcher("/error-reports/auto-resolve-settings"),
+    refetchInterval: 60000,
+  });
+
+  const updateAutoSettingsMutation = useMutation({
+    mutationFn: (settings: Partial<AutoResolveSettings>) =>
+      fetcher("/error-reports/auto-resolve-settings", {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      }),
+    onSuccess: () => {
+      refetchAutoSettings();
+    },
+  });
+
+  const { data: autoResolveLog, refetch: refetchAutoLog } = useQuery<AutoResolveLogEntry[]>({
+    queryKey: ["auto-resolve-log"],
+    queryFn: () => fetcher("/error-reports/auto-resolve-log?limit=50"),
+    refetchInterval: 30000,
+    enabled: showAutoResolvePanel,
+  });
+
+  const runAutoResolveMutation = useMutation({
+    mutationFn: () => fetcher("/error-reports/auto-resolve-run", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["error-count"] });
+      refetchAutoLog();
+    },
+  });
+
+  const handleGenerateTask = async (id: string) => {
+    setTaskPlanLoading(true);
+    setShowTaskPlanDialog(id);
+    try {
+      const result = await fetcher(`/error-reports/${id}/generate-task`, { method: "POST" });
+      setTaskPlanContent(result.taskPlan);
+      queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+    } catch {
+      setTaskPlanContent("Failed to generate task plan.");
+    } finally {
+      setTaskPlanLoading(false);
+    }
+  };
+
+  const handleManualResolve = () => {
+    if (!showManualResolveDialog) return;
+    resolveMutation.mutate({
+      id: showManualResolveDialog,
+      method: "manual",
+      resolutionNotes: manualNotes,
+      rootCause: manualRootCause,
+    });
+    setShowManualResolveDialog(null);
+    setManualNotes("");
+    setManualRootCause("");
+  };
+
+  const markErrorViewed = useCallback((id: string) => {
+    const now = new Date().toISOString();
+    setViewedErrorTimestamps(prev => {
+      const next = { ...prev, [id]: now };
+      try { localStorage.setItem("ajkmart_viewed_errors_ts", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   const runScan = useCallback(async () => {
     if (isScanning) return;
@@ -528,8 +663,8 @@ export default function ErrorMonitor() {
   };
 
   const switchTab = (tab: Tab) => { setActiveTab(tab); setPage(1); setExpandedId(null); };
-  const hasFilters = !!(sourceApp || severity || errorType || dateFrom || dateTo);
-  const clearFilters = () => { setSourceApp(""); setSeverity(""); setErrorType(""); setDateFrom(""); setDateTo(""); setPage(1); };
+  const hasFilters = !!(sourceApp || severity || errorType || resolutionMethod || dateFrom || dateTo);
+  const clearFilters = () => { setSourceApp(""); setSeverity(""); setErrorType(""); setResolutionMethod(""); setDateFrom(""); setDateTo(""); setPage(1); };
   const canFixAll = activeTab !== "completed" && activeTab !== "customers" && pagination.total > 0;
 
   const groupedReports = useMemo(() => {
@@ -605,7 +740,7 @@ export default function ErrorMonitor() {
       >
         <div
           style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", cursor: "pointer" }}
-          onClick={() => setExpandedId(isExpanded ? null : report.id)}
+          onClick={() => { setExpandedId(isExpanded ? null : report.id); if (!isExpanded) markErrorViewed(report.id); }}
           onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "#F8FAFC"}
           onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"}
         >
@@ -636,7 +771,36 @@ export default function ErrorMonitor() {
               {report.shortImpact && <span style={{ fontStyle: "italic", color: "#9CA3AF" }}>{report.shortImpact}</span>}
             </div>
           </div>
-          <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          <div style={{ flexShrink: 0, display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+            {report.updatedAt && (!viewedErrorTimestamps[report.id] || report.updatedAt > viewedErrorTimestamps[report.id]) && (
+              <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#3B82F6", flexShrink: 0 }} title="Updated" />
+            )}
+            {report.status !== "resolved" && (
+              <>
+                <button
+                  onClick={() => resolveMutation.mutate({ id: report.id, method: "auto_resolved" })}
+                  disabled={resolveMutation.isPending}
+                  title="Auto Resolve"
+                  style={{ fontSize: 10, fontWeight: 600, padding: "4px 8px", borderRadius: 6, backgroundColor: "#DCFCE7", color: "#15803D", border: "1px solid #BBF7D0", cursor: "pointer" }}
+                >
+                  <Bot style={{ width: 11, height: 11, display: "inline", marginRight: 2 }} />AR
+                </button>
+                <button
+                  onClick={() => handleGenerateTask(report.id)}
+                  title="Create Task Plan"
+                  style={{ fontSize: 10, fontWeight: 600, padding: "4px 8px", borderRadius: 6, backgroundColor: "#EEF2FF", color: "#4F46E5", border: "1px solid #C7D2FE", cursor: "pointer" }}
+                >
+                  <FileText style={{ width: 11, height: 11, display: "inline", marginRight: 2 }} />Task
+                </button>
+                <button
+                  onClick={() => { setShowManualResolveDialog(report.id); setManualNotes(""); setManualRootCause(""); }}
+                  title="Manual Resolve"
+                  style={{ fontSize: 10, fontWeight: 600, padding: "4px 8px", borderRadius: 6, backgroundColor: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", cursor: "pointer" }}
+                >
+                  <Wrench style={{ width: 11, height: 11, display: "inline", marginRight: 2 }} />Manual
+                </button>
+              </>
+            )}
             {nextStep && nextBtnStyle ? (
               <button
                 onClick={() => updateMutation.mutate({ id: report.id, newStatus: nextStep.status })}
@@ -646,9 +810,21 @@ export default function ErrorMonitor() {
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle!.bg; }}
               >{nextStep.label}</button>
             ) : (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#16A34A", padding: "5px 10px", backgroundColor: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
-                <CheckCircle2 style={{ width: 12, height: 12 }} /> Resolved
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#16A34A", padding: "5px 10px", backgroundColor: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
+                  <CheckCircle2 style={{ width: 12, height: 12 }} /> Resolved
+                </span>
+                {report.hasBackup && (
+                  <button
+                    onClick={() => undoMutation.mutate(report.id)}
+                    disabled={undoMutation.isPending}
+                    title="Undo Resolution"
+                    style={{ fontSize: 10, fontWeight: 600, padding: "4px 8px", borderRadius: 6, backgroundColor: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}
+                  >
+                    <Undo2 style={{ width: 11, height: 11, display: "inline", marginRight: 2 }} />Undo
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -695,8 +871,8 @@ export default function ErrorMonitor() {
               </div>
             )}
 
-            {(report.acknowledgedAt || report.resolvedAt) && (
-              <div style={{ display: "flex", gap: 24, marginBottom: 12 }}>
+            {(report.acknowledgedAt || report.resolvedAt || report.resolutionMethod) && (
+              <div style={{ display: "flex", gap: 24, marginBottom: 12, flexWrap: "wrap" }}>
                 {report.acknowledgedAt && (
                   <div>
                     <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Acknowledged At</p>
@@ -709,6 +885,26 @@ export default function ErrorMonitor() {
                     <p style={{ fontSize: 12, color: "#16A34A", fontWeight: 600 }}>{new Date(report.resolvedAt).toLocaleString()}</p>
                   </div>
                 )}
+                {report.resolutionMethod && (
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Resolution Method</p>
+                    <p style={{ fontSize: 12, color: "#4F46E5", fontWeight: 600 }}>{report.resolutionMethod.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {report.rootCause && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Root Cause</p>
+                <p style={{ fontSize: 12, color: "#374151", backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: 12, whiteSpace: "pre-wrap" }}>{report.rootCause}</p>
+              </div>
+            )}
+
+            {report.resolutionNotes && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Resolution Notes</p>
+                <p style={{ fontSize: 12, color: "#374151", backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, whiteSpace: "pre-wrap" }}>{report.resolutionNotes}</p>
               </div>
             )}
 
@@ -886,6 +1082,13 @@ export default function ErrorMonitor() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowAutoResolvePanel(!showAutoResolvePanel)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${autoResolveSettings?.enabled ? "#22C55E" : "#D1D5DB"}`, backgroundColor: autoResolveSettings?.enabled ? "#F0FDF4" : "#ffffff", color: autoResolveSettings?.enabled ? "#16A34A" : "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            <Bot style={{ width: 15, height: 15 }} />
+            AI Auto-Resolve {autoResolveSettings?.enabled ? "ON" : "OFF"}
+          </button>
           {canFixAll && (
             <button
               onClick={handleFixAll}
@@ -1112,6 +1315,141 @@ export default function ErrorMonitor() {
         </div>
       )}
 
+      {/* ── Auto-Resolve Settings Panel ── */}
+      {showAutoResolvePanel && (
+        <div style={{ backgroundColor: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: 20, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Bot style={{ width: 18, height: 18, color: "#16A34A" }} />
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: "#111827", margin: 0 }}>AI Auto-Resolve Settings</h3>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => runAutoResolveMutation.mutate()}
+                disabled={runAutoResolveMutation.isPending}
+                style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, backgroundColor: "#4F46E5", color: "#fff", border: "none", cursor: "pointer", opacity: runAutoResolveMutation.isPending ? 0.6 : 1 }}
+              >
+                <Play style={{ width: 12, height: 12 }} /> {runAutoResolveMutation.isPending ? "Running…" : "Run Now"}
+              </button>
+              <button
+                onClick={() => setShowAutoResolvePanel(false)}
+                style={{ padding: "4px", borderRadius: 6, border: "none", backgroundColor: "transparent", cursor: "pointer", color: "#9CA3AF" }}
+              >
+                <X style={{ width: 16, height: 16 }} />
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16, marginBottom: 16 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Master Toggle</span>
+                <button
+                  onClick={() => updateAutoSettingsMutation.mutate({ enabled: !autoResolveSettings?.enabled })}
+                  style={{ padding: "4px 12px", borderRadius: 9999, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", backgroundColor: autoResolveSettings?.enabled ? "#16A34A" : "#D1D5DB", color: "#fff" }}
+                >
+                  {autoResolveSettings?.enabled ? "ON" : "OFF"}
+                </button>
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Severities to Auto-Resolve</span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["minor", "medium", "critical"].map(s => (
+                  <label key={s} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#374151", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={autoResolveSettings?.severities?.includes(s) || false}
+                      onChange={e => {
+                        const curr = autoResolveSettings?.severities || [];
+                        const next = e.target.checked ? [...curr, s] : curr.filter((v: string) => v !== s);
+                        updateAutoSettingsMutation.mutate({ severities: next });
+                      }}
+                    />
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Error Types to Auto-Resolve</span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["ui_error", "api_error", "frontend_crash", "db_error", "route_error", "unhandled_exception"].map(t => (
+                  <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#374151", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={autoResolveSettings?.errorTypes?.includes(t) || false}
+                      onChange={e => {
+                        const curr = autoResolveSettings?.errorTypes || [];
+                        const next = e.target.checked ? [...curr, t] : curr.filter((v: string) => v !== t);
+                        updateAutoSettingsMutation.mutate({ errorTypes: next });
+                      }}
+                    />
+                    {t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Duplicate Detection</span>
+                <button
+                  onClick={() => updateAutoSettingsMutation.mutate({ duplicateDetection: !autoResolveSettings?.duplicateDetection })}
+                  style={{ padding: "4px 12px", borderRadius: 9999, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", backgroundColor: autoResolveSettings?.duplicateDetection ? "#16A34A" : "#D1D5DB", color: "#fff" }}
+                >
+                  {autoResolveSettings?.duplicateDetection ? "ON" : "OFF"}
+                </button>
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Age Threshold (minutes)</span>
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={autoResolveSettings?.ageThresholdMinutes || 30}
+                onChange={e => updateAutoSettingsMutation.mutate({ ageThresholdMinutes: parseInt(e.target.value) || 30 })}
+                style={{ width: 80, padding: "6px 10px", borderRadius: 8, border: "1px solid #D1D5DB", fontSize: 13, color: "#374151" }}
+              />
+            </div>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Run Interval</span>
+              <select
+                value={autoResolveSettings?.intervalMs || 300000}
+                onChange={e => updateAutoSettingsMutation.mutate({ intervalMs: parseInt(e.target.value) })}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #D1D5DB", fontSize: 13, color: "#374151", backgroundColor: "#fff" }}
+              >
+                <option value={30000}>30 seconds</option>
+                <option value={60000}>1 minute</option>
+                <option value={300000}>5 minutes</option>
+                <option value={600000}>10 minutes</option>
+                <option value={900000}>15 minutes</option>
+                <option value={1800000}>30 minutes</option>
+                <option value={3600000}>1 hour</option>
+              </select>
+            </div>
+          </div>
+
+          {autoResolveLog && autoResolveLog.length > 0 && (
+            <div style={{ borderTop: "1px solid #BBF7D0", paddingTop: 12 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+                <Activity style={{ width: 13, height: 13 }} /> Activity Log
+              </p>
+              <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                {autoResolveLog.map(log => (
+                  <div key={log.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#374151", backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 6, padding: "6px 10px" }}>
+                    <span style={{ color: "#9CA3AF", flexShrink: 0 }}>{formatTimestamp(log.createdAt)}</span>
+                    <span style={{ fontFamily: "monospace", color: "#6B7280", fontSize: 10, backgroundColor: "#F3F4F6", padding: "1px 4px", borderRadius: 4 }}>{log.errorReportId.slice(0, 8)}</span>
+                    <span style={{ flex: 1 }}>{log.reason}</span>
+                    <span style={{ color: "#4F46E5", fontSize: 10, backgroundColor: "#EEF2FF", padding: "1px 6px", borderRadius: 4 }}>{log.ruleMatched.replace(/_/g, " ")}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Filter Bar ── */}
       {showFilters && activeTab !== "customers" && (
         <div style={{ backgroundColor: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -1128,6 +1466,7 @@ export default function ErrorMonitor() {
               { value: sourceApp, onChange: (v: string) => { setSourceApp(v); setPage(1); }, options: SOURCE_APPS },
               { value: severity,  onChange: (v: string) => { setSeverity(v);  setPage(1); }, options: SEVERITIES },
               { value: errorType, onChange: (v: string) => { setErrorType(v); setPage(1); }, options: ERROR_TYPES },
+              { value: resolutionMethod, onChange: (v: string) => { setResolutionMethod(v); setPage(1); }, options: RESOLUTION_METHODS },
             ].map((sel, i) => (
               <select key={i} value={sel.value} onChange={e => sel.onChange(e.target.value)}
                 style={{ backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none", cursor: "pointer" }}>
@@ -1267,6 +1606,72 @@ export default function ErrorMonitor() {
           </>
         )}
       </div>
+
+      {/* ── Manual Resolve Dialog ── */}
+      {showManualResolveDialog && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setShowManualResolveDialog(null)}>
+          <div style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 24, maxWidth: 520, width: "100%", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111827", marginBottom: 16, display: "flex", alignItems: "center", gap: 8, margin: "0 0 16px 0" }}>
+              <Wrench style={{ width: 18, height: 18, color: "#F59E0B" }} /> Manual Resolution
+            </h3>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Root Cause</label>
+              <textarea
+                value={manualRootCause}
+                onChange={e => setManualRootCause(e.target.value)}
+                placeholder="Describe the root cause of this error..."
+                rows={3}
+                style={{ width: "100%", fontSize: 13, color: "#374151", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Resolution Notes</label>
+              <textarea
+                value={manualNotes}
+                onChange={e => setManualNotes(e.target.value)}
+                placeholder="How was this resolved? What was done to fix it?"
+                rows={4}
+                style={{ width: "100%", fontSize: 13, color: "#374151", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setShowManualResolveDialog(null)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Cancel</button>
+              <button onClick={handleManualResolve} style={{ padding: "8px 16px", borderRadius: 8, border: "none", backgroundColor: "#16A34A", color: "#ffffff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Resolve</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Task Plan Dialog ── */}
+      {showTaskPlanDialog && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setShowTaskPlanDialog(null)}>
+          <div style={{ backgroundColor: "#ffffff", borderRadius: 16, padding: 24, maxWidth: 640, width: "100%", maxHeight: "80vh", overflow: "auto", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111827", display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+                <FileText style={{ width: 18, height: 18, color: "#4F46E5" }} /> Generated Task Plan
+              </h3>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(taskPlanContent).catch(() => {});
+                }}
+                style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, backgroundColor: "#EEF2FF", color: "#4F46E5", border: "1px solid #C7D2FE", cursor: "pointer" }}
+              >
+                <Copy style={{ width: 12, height: 12 }} /> Copy
+              </button>
+            </div>
+            {taskPlanLoading ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", border: "4px solid #4F46E5", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
+              </div>
+            ) : (
+              <pre style={{ fontSize: 12, fontFamily: "monospace", color: "#374151", backgroundColor: "#F8FAFC", border: "1px solid #E5E7EB", borderRadius: 8, padding: 16, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 500, overflow: "auto" }}>{taskPlanContent}</pre>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setShowTaskPlanDialog(null)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

@@ -16,22 +16,30 @@ export const errorStatusEnum = pgEnum("error_status", [
   "new", "acknowledged", "in_progress", "resolved",
 ]);
 
+export const resolutionMethodEnum = pgEnum("resolution_method", [
+  "manual", "auto_resolved", "task_created",
+]);
+
 export const errorReportsTable = pgTable("error_reports", {
-  id:             text("id").primaryKey(),
-  timestamp:      timestamp("timestamp").defaultNow().notNull(),
-  sourceApp:      sourceAppEnum("source_app").notNull(),
-  errorType:      errorTypeEnum("error_type").notNull(),
-  severity:       errorSeverityEnum("severity").notNull(),
-  status:         errorStatusEnum("status").default("new").notNull(),
-  functionName:   text("function_name"),
-  moduleName:     text("module_name"),
-  componentName:  text("component_name"),
-  errorMessage:   text("error_message").notNull(),
-  shortImpact:    text("short_impact"),
-  stackTrace:     text("stack_trace"),
-  metadata:       jsonb("metadata"),
-  resolvedAt:     timestamp("resolved_at"),
-  acknowledgedAt: timestamp("acknowledged_at"),
+  id:               text("id").primaryKey(),
+  timestamp:        timestamp("timestamp").defaultNow().notNull(),
+  sourceApp:        sourceAppEnum("source_app").notNull(),
+  errorType:        errorTypeEnum("error_type").notNull(),
+  severity:         errorSeverityEnum("severity").notNull(),
+  status:           errorStatusEnum("status").default("new").notNull(),
+  functionName:     text("function_name"),
+  moduleName:       text("module_name"),
+  componentName:    text("component_name"),
+  errorMessage:     text("error_message").notNull(),
+  shortImpact:      text("short_impact"),
+  stackTrace:       text("stack_trace"),
+  metadata:         jsonb("metadata"),
+  resolvedAt:       timestamp("resolved_at"),
+  acknowledgedAt:   timestamp("acknowledged_at"),
+  resolutionMethod: resolutionMethodEnum("resolution_method"),
+  resolutionNotes:  text("resolution_notes"),
+  rootCause:        text("root_cause"),
+  updatedAt:        timestamp("updated_at"),
 });
 
 export type ErrorReport = typeof errorReportsTable.$inferSelect;

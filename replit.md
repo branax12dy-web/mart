@@ -2,6 +2,31 @@
 
 ### Error Monitor — Enhanced (Admin Panel)
 
+#### Smart Resolution System
+- **Resolution Actions**: Each error row has 3 resolution strategies: Auto Resolve (quick resolve), Create Task Plan (generates markdown task doc), Manual Resolve (opens dialog with root cause + notes fields)
+- **Backup/Undo System**: Before any resolution, a snapshot is saved to `error_resolution_backups` table. Resolved errors with a backup show an "Undo" button to restore pre-resolution state. Backups have 72-hour TTL with nightly cron cleanup.
+- **Resolution Method Filter**: New filter in the filter bar: "Resolution Method" (All, Manually Resolved, Auto-Resolved, Task Created)
+- **Updated Badge**: Blue dot indicator on errors that were modified since last viewed
+
+#### AI Auto-Resolve Engine
+- **Settings Panel**: Collapsible "AI Auto-Resolve" panel in the header with master toggle, severity/error type filter checkboxes, duplicate detection toggle, age threshold input
+- **Backend**: `GET/PUT /api/error-reports/auto-resolve-settings` for config; `POST /api/error-reports/auto-resolve-run` for manual trigger; `GET /api/error-reports/auto-resolve-log` for activity log
+- **Cron Job**: Auto-resolve runs every 5 minutes via `node-cron`; checks errors against configured rules (severity filter, error type filter, duplicate detection, age threshold)
+- **Activity Log**: Scrollable log in settings panel showing what the auto-resolver did (timestamp, error ID, reason, rule matched)
+
+#### Resolution Database Schema
+- **`error_resolution_backups`** table: `id`, `error_report_id`, `previous_status`, `previous_data` (JSONB), `resolution_method`, `created_at`, `expires_at`
+- **`auto_resolve_log`** table: `id`, `error_report_id`, `reason`, `rule_matched`, `created_at`
+- **`error_reports`** new columns: `resolution_method` (enum: manual/auto_resolved/task_created), `resolution_notes`, `root_cause`, `updated_at`
+- Settings stored in `platform_settings` table under key `auto_resolve_settings`
+
+#### Resolution API Endpoints
+- `POST /api/error-reports/:id/resolve` — Resolve with method, notes, root cause (creates backup)
+- `POST /api/error-reports/:id/undo` — Restore from backup
+- `GET /api/error-reports/:id/backup` — Check if undo is available
+- `DELETE /api/error-reports/backups/cleanup` — TTL-based backup cleanup
+- `POST /api/error-reports/:id/generate-task` — Generate structured task plan markdown
+
 #### Scan System
 - **Scan Panel** (`/admin/error-monitor`): Collapsible panel with 4 scan modes: On Demand, Auto Refresh (interval: 30s/1m/5m/15m), Daily (time picker with repeat scheduling), Specific Time (one-time scheduled scan)
 - **Scan API** (`POST /api/error-reports/scan`): Admin-only. Checks DB health, critical errors in last hour, unresolved critical count, error type frequency spikes, pending customer reports. Returns structured findings with severity and recommended actions.

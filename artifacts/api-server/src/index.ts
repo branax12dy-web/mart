@@ -12,6 +12,7 @@ import { db } from "@workspace/db";
 import { getPlatformSettings } from "./routes/admin.js";
 import { locationLogsTable, pendingOtpsTable } from "@workspace/db/schema";
 import { lt } from "drizzle-orm";
+import { cleanupExpiredBackups, runAutoResolve, ensureErrorResolutionTables, getAutoResolveSettings, setOnAutoResolveSettingsChanged } from "./routes/error-reports.js";
 
 const rawPort = process.env["PORT"];
 
@@ -58,7 +59,49 @@ cron.schedule("0 0 * * *", async () => {
   } catch (e) {
     logger.error({ err: e }, "[cron] pending_otps cleanup failed");
   }
+  /* error resolution backups TTL cleanup */
+  try {
+    await cleanupExpiredBackups();
+  } catch (e) {
+    logger.error({ err: e }, "[cron] backup cleanup failed");
+  }
 }, { timezone: "Asia/Karachi" });
+
+let autoResolveTimer: ReturnType<typeof setInterval> | null = null;
+
+export async function scheduleAutoResolve() {
+  if (autoResolveTimer) {
+    clearInterval(autoResolveTimer);
+    autoResolveTimer = null;
+  }
+  try {
+    const settings = await getAutoResolveSettings();
+    if (!settings.enabled) {
+      logger.info("[auto-resolve] disabled, scheduler stopped");
+      return;
+    }
+    const intervalMs = Math.max(30000, settings.intervalMs || 300000);
+    autoResolveTimer = setInterval(async () => {
+      try {
+        const current = await getAutoResolveSettings();
+        if (!current.enabled) {
+          if (autoResolveTimer) { clearInterval(autoResolveTimer); autoResolveTimer = null; }
+          return;
+        }
+        await runAutoResolve();
+      } catch (e) {
+        logger.error({ err: e }, "[auto-resolve] run failed");
+      }
+    }, intervalMs);
+    logger.info({ intervalMs }, "[auto-resolve] scheduler started");
+  } catch (e) {
+    logger.error({ err: e }, "[auto-resolve] scheduler init failed");
+  }
+}
+
+setOnAutoResolveSettingsChanged(() => {
+  scheduleAutoResolve().catch(e => logger.error({ err: e }, "[auto-resolve] reschedule failed"));
+});
 
 async function assertSecureSettings() {
   const settings = await getPlatformSettings();
@@ -102,6 +145,8 @@ ensureAuthMethodColumn()
   .then(() => ensureCommunicationTables())
   .then(() => ensureVendorLocationColumns())
   .then(() => ensureVanServiceUpgrade())
+  .then(() => ensureErrorResolutionTables())
+  .then(() => scheduleAutoResolve())
   .then(() => assertSecureSettings())
   .then(() => startListening())
   .catch(e => {

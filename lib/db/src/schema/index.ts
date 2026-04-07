@@ -56,4 +56,6 @@ export * from "./support_messages";
 export * from "./faqs";
 export * from "./error_reports";
 export * from "./customer_error_reports";
+export * from "./error_resolution_backups";
+export * from "./auto_resolve_log";
 export * from "./communication";

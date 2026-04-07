@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { errorReportsTable, customerErrorReportsTable } from "@workspace/db/schema";
-import { eq, desc, and, gte, lte, count, inArray, ne, sql, type SQL } from "drizzle-orm";
+import { errorReportsTable, customerErrorReportsTable, errorResolutionBackupsTable, autoResolveLogTable, platformSettingsTable } from "@workspace/db/schema";
+import { eq, desc, and, gte, lte, count, inArray, ne, sql, lt, type SQL } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendError, sendNotFound, sendValidationError } from "../lib/response.js";
 import { adminAuth, type AdminRequest } from "./admin-shared.js";
@@ -134,6 +134,11 @@ router.get("/", adminAuth, async (req, res) => {
       if (!isNaN(d.getTime())) conditions.push(lte(errorReportsTable.timestamp, d));
     }
 
+    const resolutionMethod = req.query["resolutionMethod"] as string | undefined;
+    if (resolutionMethod && ["manual", "auto_resolved", "task_created"].includes(resolutionMethod)) {
+      conditions.push(eq(errorReportsTable.resolutionMethod, resolutionMethod as "manual" | "auto_resolved" | "task_created"));
+    }
+
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [reports, [totalRow]] = await Promise.all([
@@ -147,12 +152,26 @@ router.get("/", adminAuth, async (req, res) => {
 
     const total = totalRow?.count ?? 0;
 
+    const reportIds = reports.map(r => r.id);
+    let backupSet = new Set<string>();
+    if (reportIds.length > 0) {
+      const backups = await db.select({ errorReportId: errorResolutionBackupsTable.errorReportId })
+        .from(errorResolutionBackupsTable)
+        .where(and(
+          inArray(errorResolutionBackupsTable.errorReportId, reportIds),
+          gte(errorResolutionBackupsTable.expiresAt, new Date()),
+        ));
+      backupSet = new Set(backups.map(b => b.errorReportId));
+    }
+
     sendSuccess(res, {
       reports: reports.map(r => ({
         ...r,
         timestamp: r.timestamp.toISOString(),
         resolvedAt: r.resolvedAt?.toISOString() || null,
         acknowledgedAt: r.acknowledgedAt?.toISOString() || null,
+        updatedAt: r.updatedAt?.toISOString() || null,
+        hasBackup: backupSet.has(r.id),
       })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
@@ -206,12 +225,38 @@ router.post("/bulk-resolve", adminAuth, async (req, res) => {
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const updated = await db.update(errorReportsTable)
-      .set({ status: "resolved", resolvedAt: new Date() })
+    const toResolve = await db.select().from(errorReportsTable)
       .where(where)
-      .returning({ id: errorReportsTable.id });
+      .limit(200);
 
-    sendSuccess(res, { resolvedCount: updated.length });
+    const now = new Date();
+    for (const report of toResolve) {
+      const backupId = generateId();
+      await db.insert(errorResolutionBackupsTable).values({
+        id: backupId,
+        errorReportId: report.id,
+        previousStatus: report.status,
+        previousData: {
+          status: report.status,
+          resolvedAt: report.resolvedAt?.toISOString() || null,
+          acknowledgedAt: report.acknowledgedAt?.toISOString() || null,
+          resolutionMethod: report.resolutionMethod || null,
+          resolutionNotes: report.resolutionNotes || null,
+          rootCause: report.rootCause || null,
+        },
+        resolutionMethod: "manual",
+        expiresAt: new Date(Date.now() + BACKUP_TTL_MS),
+      });
+    }
+
+    const resolveIds = toResolve.map(r => r.id);
+    if (resolveIds.length > 0) {
+      await db.update(errorReportsTable)
+        .set({ status: "resolved", resolvedAt: now, resolutionMethod: "manual", updatedAt: now })
+        .where(inArray(errorReportsTable.id, resolveIds));
+    }
+
+    sendSuccess(res, { resolvedCount: resolveIds.length });
   } catch (err) {
     logger.error({ err }, "Failed to bulk resolve error reports");
     sendError(res, "Failed to bulk resolve error reports", 500);
@@ -368,7 +413,7 @@ router.patch("/:id", adminAuth, validateBody(updateStatusSchema), async (req, re
     const { id } = req.params;
     const { status: newStatus } = req.body;
 
-    const [existing] = await db.select({ status: errorReportsTable.status })
+    const [existing] = await db.select()
       .from(errorReportsTable)
       .where(eq(errorReportsTable.id, id!))
       .limit(1);
@@ -388,11 +433,30 @@ router.patch("/:id", adminAuth, validateBody(updateStatusSchema), async (req, re
       return;
     }
 
-    const updates: Record<string, unknown> = { status: newStatus };
+    const now = new Date();
+    const updates: Record<string, unknown> = { status: newStatus, updatedAt: now };
     if (newStatus === "acknowledged") {
-      updates.acknowledgedAt = new Date();
+      updates.acknowledgedAt = now;
     } else if (newStatus === "resolved") {
-      updates.resolvedAt = new Date();
+      updates.resolvedAt = now;
+      updates.resolutionMethod = "manual";
+
+      const backupId = generateId();
+      await db.insert(errorResolutionBackupsTable).values({
+        id: backupId,
+        errorReportId: id!,
+        previousStatus: existing.status,
+        previousData: {
+          status: existing.status,
+          resolvedAt: existing.resolvedAt?.toISOString() || null,
+          acknowledgedAt: existing.acknowledgedAt?.toISOString() || null,
+          resolutionMethod: existing.resolutionMethod || null,
+          resolutionNotes: existing.resolutionNotes || null,
+          rootCause: existing.rootCause || null,
+        },
+        resolutionMethod: "manual",
+        expiresAt: new Date(Date.now() + BACKUP_TTL_MS),
+      });
     }
 
     const [updated] = await db.update(errorReportsTable)
@@ -410,6 +474,7 @@ router.patch("/:id", adminAuth, validateBody(updateStatusSchema), async (req, re
       timestamp: updated.timestamp.toISOString(),
       resolvedAt: updated.resolvedAt?.toISOString() || null,
       acknowledgedAt: updated.acknowledgedAt?.toISOString() || null,
+      updatedAt: updated.updatedAt?.toISOString() || null,
     });
   } catch (err) {
     logger.error({ err }, "Failed to update error report");
@@ -537,6 +602,635 @@ router.patch("/customer-reports/:id", adminAuth, validateBody(updateCustomerRepo
     sendError(res, "Failed to update customer report", 500);
   }
 });
+
+const BACKUP_TTL_MS = 72 * 60 * 60 * 1000;
+
+let _onSettingsChanged: (() => void) | null = null;
+export function setOnAutoResolveSettingsChanged(cb: () => void) {
+  _onSettingsChanged = cb;
+}
+
+const resolveSchema = z.object({
+  method: z.enum(["manual", "auto_resolved", "task_created"]),
+  resolutionNotes: z.string().max(5000).optional(),
+  rootCause: z.string().max(2000).optional(),
+});
+
+router.post("/:id/resolve", adminAuth, validateBody(resolveSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { method, resolutionNotes, rootCause } = req.body;
+
+    const [existing] = await db.select().from(errorReportsTable)
+      .where(eq(errorReportsTable.id, id!))
+      .limit(1);
+
+    if (!existing) {
+      sendNotFound(res, "Error report not found");
+      return;
+    }
+
+    if (existing.status === "resolved") {
+      sendError(res, "Error is already resolved", 400);
+      return;
+    }
+
+    const backupId = generateId();
+    await db.insert(errorResolutionBackupsTable).values({
+      id: backupId,
+      errorReportId: id!,
+      previousStatus: existing.status,
+      previousData: {
+        status: existing.status,
+        resolvedAt: existing.resolvedAt?.toISOString() || null,
+        acknowledgedAt: existing.acknowledgedAt?.toISOString() || null,
+        resolutionMethod: existing.resolutionMethod || null,
+        resolutionNotes: existing.resolutionNotes || null,
+        rootCause: existing.rootCause || null,
+      },
+      resolutionMethod: method,
+      expiresAt: new Date(Date.now() + BACKUP_TTL_MS),
+    });
+
+    const now = new Date();
+    const [updated] = await db.update(errorReportsTable)
+      .set({
+        status: "resolved",
+        resolvedAt: now,
+        resolutionMethod: method,
+        resolutionNotes: resolutionNotes || null,
+        rootCause: rootCause || null,
+        updatedAt: now,
+      })
+      .where(eq(errorReportsTable.id, id!))
+      .returning();
+
+    if (!updated) {
+      sendNotFound(res, "Error report not found");
+      return;
+    }
+
+    sendSuccess(res, {
+      ...updated,
+      timestamp: updated.timestamp.toISOString(),
+      resolvedAt: updated.resolvedAt?.toISOString() || null,
+      acknowledgedAt: updated.acknowledgedAt?.toISOString() || null,
+      updatedAt: updated.updatedAt?.toISOString() || null,
+      backupId,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to resolve error report");
+    sendError(res, "Failed to resolve error report", 500);
+  }
+});
+
+router.post("/:id/undo", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [backup] = await db.select().from(errorResolutionBackupsTable)
+      .where(and(
+        eq(errorResolutionBackupsTable.errorReportId, id!),
+        gte(errorResolutionBackupsTable.expiresAt, new Date()),
+      ))
+      .orderBy(desc(errorResolutionBackupsTable.createdAt))
+      .limit(1);
+
+    if (!backup) {
+      sendNotFound(res, "No backup found or backup has expired for this error report");
+      return;
+    }
+
+    const prevData = backup.previousData as Record<string, unknown>;
+    const now = new Date();
+
+    const [updated] = await db.update(errorReportsTable)
+      .set({
+        status: (prevData.status as string) as "new" | "acknowledged" | "in_progress" | "resolved",
+        resolvedAt: prevData.resolvedAt ? new Date(prevData.resolvedAt as string) : null,
+        acknowledgedAt: prevData.acknowledgedAt ? new Date(prevData.acknowledgedAt as string) : null,
+        resolutionMethod: (prevData.resolutionMethod as string | null) as "manual" | "auto_resolved" | "task_created" | null,
+        resolutionNotes: (prevData.resolutionNotes as string | null) || null,
+        rootCause: (prevData.rootCause as string | null) || null,
+        updatedAt: now,
+      })
+      .where(eq(errorReportsTable.id, id!))
+      .returning();
+
+    await db.delete(errorResolutionBackupsTable)
+      .where(eq(errorResolutionBackupsTable.id, backup.id));
+
+    if (!updated) {
+      sendNotFound(res, "Error report not found");
+      return;
+    }
+
+    sendSuccess(res, {
+      ...updated,
+      timestamp: updated.timestamp.toISOString(),
+      resolvedAt: updated.resolvedAt?.toISOString() || null,
+      acknowledgedAt: updated.acknowledgedAt?.toISOString() || null,
+      updatedAt: updated.updatedAt?.toISOString() || null,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to undo error resolution");
+    sendError(res, "Failed to undo error resolution", 500);
+  }
+});
+
+router.get("/:id/backup", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [backup] = await db.select().from(errorResolutionBackupsTable)
+      .where(and(
+        eq(errorResolutionBackupsTable.errorReportId, id!),
+        gte(errorResolutionBackupsTable.expiresAt, new Date()),
+      ))
+      .orderBy(desc(errorResolutionBackupsTable.createdAt))
+      .limit(1);
+
+    sendSuccess(res, {
+      hasBackup: !!backup,
+      backup: backup ? {
+        id: backup.id,
+        previousStatus: backup.previousStatus,
+        resolutionMethod: backup.resolutionMethod,
+        createdAt: backup.createdAt.toISOString(),
+        expiresAt: backup.expiresAt.toISOString(),
+      } : null,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to check backup");
+    sendError(res, "Failed to check backup", 500);
+  }
+});
+
+router.delete("/backups/cleanup", adminAuth, async (_req, res) => {
+  try {
+    const now = new Date();
+    const expired = await db.select({ id: errorResolutionBackupsTable.id, errorReportId: errorResolutionBackupsTable.errorReportId })
+      .from(errorResolutionBackupsTable)
+      .where(lt(errorResolutionBackupsTable.expiresAt, now));
+
+    let deletedCount = 0;
+    if (expired.length > 0) {
+      const reportIds = [...new Set(expired.map(b => b.errorReportId))];
+      const resolvedReports = await db.select({ id: errorReportsTable.id })
+        .from(errorReportsTable)
+        .where(and(
+          inArray(errorReportsTable.id, reportIds),
+          eq(errorReportsTable.status, "resolved"),
+        ));
+      const resolvedSet = new Set(resolvedReports.map(r => r.id));
+      const toDelete = expired.filter(b => resolvedSet.has(b.errorReportId)).map(b => b.id);
+      if (toDelete.length > 0) {
+        await db.delete(errorResolutionBackupsTable)
+          .where(inArray(errorResolutionBackupsTable.id, toDelete));
+        deletedCount = toDelete.length;
+      }
+    }
+
+    sendSuccess(res, { deletedCount });
+  } catch (err) {
+    logger.error({ err }, "Failed to cleanup backups");
+    sendError(res, "Failed to cleanup backups", 500);
+  }
+});
+
+export async function cleanupExpiredBackups() {
+  try {
+    const now = new Date();
+    const expired = await db.select({ id: errorResolutionBackupsTable.id, errorReportId: errorResolutionBackupsTable.errorReportId })
+      .from(errorResolutionBackupsTable)
+      .where(lt(errorResolutionBackupsTable.expiresAt, now));
+
+    if (expired.length === 0) return;
+
+    const reportIds = [...new Set(expired.map(b => b.errorReportId))];
+    const resolvedReports = await db.select({ id: errorReportsTable.id })
+      .from(errorReportsTable)
+      .where(and(
+        inArray(errorReportsTable.id, reportIds),
+        eq(errorReportsTable.status, "resolved"),
+      ));
+    const resolvedSet = new Set(resolvedReports.map(r => r.id));
+
+    const toDelete = expired.filter(b => resolvedSet.has(b.errorReportId)).map(b => b.id);
+    if (toDelete.length > 0) {
+      await db.delete(errorResolutionBackupsTable)
+        .where(inArray(errorResolutionBackupsTable.id, toDelete));
+      logger.info({ count: toDelete.length }, "Cleaned up expired resolution backups for resolved errors");
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to cleanup expired backups");
+  }
+}
+
+const DEFAULT_AUTO_RESOLVE_SETTINGS = {
+  enabled: false,
+  severities: ["minor"],
+  errorTypes: [] as string[],
+  duplicateDetection: true,
+  ageThresholdMinutes: 30,
+  intervalMs: 300000,
+};
+
+export async function getAutoResolveSettings() {
+  try {
+    const [row] = await db.select().from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "auto_resolve_settings"));
+    if (row) {
+      return { ...DEFAULT_AUTO_RESOLVE_SETTINGS, ...JSON.parse(row.value) };
+    }
+  } catch {}
+  return { ...DEFAULT_AUTO_RESOLVE_SETTINGS };
+}
+
+router.get("/auto-resolve-settings", adminAuth, async (_req, res) => {
+  try {
+    const settings = await getAutoResolveSettings();
+    sendSuccess(res, settings);
+  } catch (err) {
+    logger.error({ err }, "Failed to get auto-resolve settings");
+    sendError(res, "Failed to get auto-resolve settings", 500);
+  }
+});
+
+const autoResolveSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  severities: z.array(z.string()).optional(),
+  errorTypes: z.array(z.string()).optional(),
+  duplicateDetection: z.boolean().optional(),
+  ageThresholdMinutes: z.number().min(1).max(1440).optional(),
+  intervalMs: z.number().min(30000).max(3600000).optional(),
+});
+
+router.put("/auto-resolve-settings", adminAuth, validateBody(autoResolveSettingsSchema), async (req, res) => {
+  try {
+    const current = await getAutoResolveSettings();
+    const updated = { ...current, ...req.body };
+
+    await db.insert(platformSettingsTable).values({
+      key: "auto_resolve_settings",
+      value: JSON.stringify(updated),
+      label: "Auto-Resolve Engine Settings",
+      category: "error_monitor",
+    }).onConflictDoUpdate({
+      target: platformSettingsTable.key,
+      set: { value: JSON.stringify(updated), updatedAt: new Date() },
+    });
+
+    if (_onSettingsChanged) _onSettingsChanged();
+    sendSuccess(res, updated);
+  } catch (err) {
+    logger.error({ err }, "Failed to update auto-resolve settings");
+    sendError(res, "Failed to update auto-resolve settings", 500);
+  }
+});
+
+export async function runAutoResolve() {
+  try {
+    const settings = await getAutoResolveSettings();
+    if (!settings.enabled) return { resolved: 0, logs: [] };
+
+    const conditions: SQL[] = [ne(errorReportsTable.status, "resolved")];
+
+    if (settings.severities.length > 0) {
+      conditions.push(inArray(errorReportsTable.severity, settings.severities));
+    }
+    if (settings.errorTypes.length > 0) {
+      conditions.push(inArray(errorReportsTable.errorType, settings.errorTypes));
+    }
+    if (settings.ageThresholdMinutes > 0) {
+      const cutoff = new Date(Date.now() - settings.ageThresholdMinutes * 60 * 1000);
+      conditions.push(lte(errorReportsTable.timestamp, cutoff));
+    }
+
+    const candidates = await db.select().from(errorReportsTable)
+      .where(and(...conditions))
+      .orderBy(desc(errorReportsTable.timestamp))
+      .limit(50);
+
+    let resolvedAlready: Set<string> = new Set();
+    if (settings.duplicateDetection && candidates.length > 0) {
+      const resolvedErrors = await db.select({
+        errorMessage: errorReportsTable.errorMessage,
+      }).from(errorReportsTable)
+        .where(eq(errorReportsTable.status, "resolved"))
+        .limit(500);
+      resolvedAlready = new Set(resolvedErrors.map(r => r.errorMessage.toLowerCase().trim()));
+    }
+
+    const logs: Array<{ errorReportId: string; reason: string; ruleMatched: string }> = [];
+    const now = new Date();
+
+    for (const candidate of candidates) {
+      let reason = "";
+      let ruleMatched = "";
+
+      if (settings.duplicateDetection && resolvedAlready.has(candidate.errorMessage.toLowerCase().trim())) {
+        reason = `Duplicate of previously resolved error`;
+        ruleMatched = "duplicate_detection";
+      } else if (settings.severities.includes(candidate.severity)) {
+        reason = `Severity "${candidate.severity}" matches auto-resolve filter`;
+        ruleMatched = "severity_filter";
+      } else if (settings.errorTypes.length > 0 && settings.errorTypes.includes(candidate.errorType)) {
+        reason = `Error type "${candidate.errorType}" matches auto-resolve filter`;
+        ruleMatched = "error_type_filter";
+      } else {
+        continue;
+      }
+
+      const backupId = generateId();
+      await db.insert(errorResolutionBackupsTable).values({
+        id: backupId,
+        errorReportId: candidate.id,
+        previousStatus: candidate.status,
+        previousData: {
+          status: candidate.status,
+          resolvedAt: candidate.resolvedAt?.toISOString() || null,
+          acknowledgedAt: candidate.acknowledgedAt?.toISOString() || null,
+          resolutionMethod: candidate.resolutionMethod || null,
+          resolutionNotes: candidate.resolutionNotes || null,
+          rootCause: candidate.rootCause || null,
+        },
+        resolutionMethod: "auto_resolved",
+        expiresAt: new Date(Date.now() + BACKUP_TTL_MS),
+      });
+
+      await db.update(errorReportsTable)
+        .set({
+          status: "resolved",
+          resolvedAt: now,
+          resolutionMethod: "auto_resolved",
+          resolutionNotes: reason,
+          updatedAt: now,
+        })
+        .where(eq(errorReportsTable.id, candidate.id));
+
+      const logId = generateId();
+      await db.insert(autoResolveLogTable).values({
+        id: logId,
+        errorReportId: candidate.id,
+        reason,
+        ruleMatched,
+      });
+
+      logs.push({ errorReportId: candidate.id, reason, ruleMatched });
+    }
+
+    if (logs.length > 0) {
+      logger.info({ count: logs.length }, "Auto-resolve pass completed");
+    }
+
+    return { resolved: logs.length, logs };
+  } catch (err) {
+    logger.error({ err }, "Auto-resolve run failed");
+    return { resolved: 0, logs: [], error: "Auto-resolve run failed" };
+  }
+}
+
+router.post("/auto-resolve-run", adminAuth, async (_req, res) => {
+  try {
+    const result = await runAutoResolve();
+    sendSuccess(res, result);
+  } catch (err) {
+    logger.error({ err }, "Failed to run auto-resolve");
+    sendError(res, "Failed to run auto-resolve", 500);
+  }
+});
+
+router.get("/auto-resolve-log", adminAuth, async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query["limit"] || "50"))));
+    const logs = await db.select().from(autoResolveLogTable)
+      .orderBy(desc(autoResolveLogTable.createdAt))
+      .limit(limit);
+
+    sendSuccess(res, logs.map(l => ({
+      ...l,
+      createdAt: l.createdAt.toISOString(),
+    })));
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch auto-resolve log");
+    sendError(res, "Failed to fetch auto-resolve log", 500);
+  }
+});
+
+function analyzeErrorCauseServer(errorType: string, errorMessage: string): { causes: string[]; consequences: string[]; fixes: string[] } {
+  const msg = (errorMessage || "").toLowerCase();
+  const causes: string[] = [];
+  const consequences: string[] = [];
+  const fixes: string[] = [];
+
+  switch (errorType) {
+    case "db_error":
+      causes.push("Database connection pool exhausted or timed out");
+      causes.push("Invalid SQL query or schema mismatch after migration");
+      consequences.push("Users cannot place orders, make payments, or read data");
+      consequences.push("Background jobs that write to DB will fail silently");
+      fixes.push("Check database server health and connection pool settings");
+      fixes.push("Review recent schema migrations for conflicts");
+      break;
+    case "frontend_crash":
+      causes.push("Unhandled null/undefined reference inside a React component");
+      causes.push("Incompatible or unexpected shape of API response data");
+      consequences.push("User sees a blank white screen and cannot continue");
+      consequences.push("Potential loss of unsaved user input or cart items");
+      fixes.push("Wrap risky components in React Error Boundaries");
+      fixes.push("Add optional chaining and null checks before rendering");
+      break;
+    case "api_error":
+      causes.push("Third-party service or microservice is unavailable");
+      causes.push("Unhandled exception in server-side route handler");
+      consequences.push("Feature or page the user was using becomes unavailable");
+      consequences.push("Failed API calls may leave the UI in a broken loading state");
+      fixes.push("Add proper try/catch in all route handlers");
+      fixes.push("Implement retry logic with exponential backoff on the client");
+      break;
+    case "route_error":
+      causes.push("Route handler threw an unhandled exception");
+      causes.push("Middleware blocking request before it reaches handler");
+      consequences.push("Endpoint is completely down for all users");
+      fixes.push("Check the route registration and middleware order");
+      fixes.push("Add global error handler middleware");
+      break;
+    case "ui_error":
+      causes.push("CSS/style conflict causing layout to break");
+      causes.push("Component receiving wrong prop types");
+      consequences.push("UI elements overlap, disappear, or display incorrectly");
+      fixes.push("Inspect component props and validate at runtime");
+      fixes.push("Use browser DevTools to identify style conflicts");
+      break;
+    case "unhandled_exception":
+      causes.push("Code path missing error handling");
+      causes.push("Async operation without proper catch/rejection handler");
+      consequences.push("App may crash or behave unpredictably");
+      fixes.push("Add global unhandled rejection and uncaught exception handlers");
+      fixes.push("Review async code paths for missing try/catch blocks");
+      break;
+  }
+
+  if (msg.includes("auth") || msg.includes("token") || msg.includes("session")) {
+    causes.push("Authentication token expired or invalid");
+    fixes.push("Check token refresh logic and session management");
+  }
+  if (msg.includes("payment") || msg.includes("stripe") || msg.includes("transaction")) {
+    causes.push("Payment gateway connectivity or configuration issue");
+    fixes.push("Verify payment gateway credentials and webhook configuration");
+  }
+  if (msg.includes("timeout") || msg.includes("timed out")) {
+    causes.push("Network timeout or slow external dependency");
+    fixes.push("Increase timeout thresholds or add circuit breaker pattern");
+  }
+
+  return { causes, consequences, fixes };
+}
+
+router.post("/:id/generate-task", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [report] = await db.select().from(errorReportsTable)
+      .where(eq(errorReportsTable.id, id!))
+      .limit(1);
+
+    if (!report) {
+      sendNotFound(res, "Error report not found");
+      return;
+    }
+
+    const severityLabel = report.severity.toUpperCase();
+    const typeLabel = report.errorType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const sourceLabel = report.sourceApp === "api" ? "API Server" : report.sourceApp.charAt(0).toUpperCase() + report.sourceApp.slice(1);
+
+    const taskPlan = [
+      `# Bug Fix Task: ${typeLabel}`,
+      ``,
+      `## Summary`,
+      `- **Severity**: ${severityLabel}`,
+      `- **Source**: ${sourceLabel}`,
+      `- **Type**: ${typeLabel}`,
+      `- **Error ID**: ${report.id}`,
+      `- **Reported**: ${report.timestamp.toISOString()}`,
+      ``,
+      `## Error Message`,
+      `\`\`\``,
+      report.errorMessage,
+      `\`\`\``,
+      ``,
+    ];
+
+    if (report.functionName || report.moduleName || report.componentName) {
+      taskPlan.push(`## Location`);
+      if (report.moduleName) taskPlan.push(`- **Module**: \`${report.moduleName}\``);
+      if (report.functionName) taskPlan.push(`- **Function**: \`${report.functionName}\``);
+      if (report.componentName) taskPlan.push(`- **Component**: \`${report.componentName}\``);
+      taskPlan.push(``);
+    }
+
+    if (report.stackTrace) {
+      taskPlan.push(`## Stack Trace`);
+      taskPlan.push(`\`\`\``);
+      taskPlan.push(report.stackTrace.slice(0, 3000));
+      taskPlan.push(`\`\`\``);
+      taskPlan.push(``);
+    }
+
+    if (report.shortImpact) {
+      taskPlan.push(`## Impact`);
+      taskPlan.push(report.shortImpact);
+      taskPlan.push(``);
+    }
+
+    const rca = analyzeErrorCauseServer(report.errorType, report.errorMessage);
+    if (rca.causes.length > 0) {
+      taskPlan.push(`## Likely Root Causes`);
+      rca.causes.forEach(c => taskPlan.push(`- ${c}`));
+      taskPlan.push(``);
+    }
+    if (rca.fixes.length > 0) {
+      taskPlan.push(`## Recommended Fixes`);
+      rca.fixes.forEach(f => taskPlan.push(`- ${f}`));
+      taskPlan.push(``);
+    }
+    if (rca.consequences.length > 0) {
+      taskPlan.push(`## Potential Consequences If Unresolved`);
+      rca.consequences.forEach(c => taskPlan.push(`- ${c}`));
+      taskPlan.push(``);
+    }
+
+    taskPlan.push(`## Suggested Investigation Steps`);
+    taskPlan.push(`1. Review the error message and stack trace above`);
+    taskPlan.push(`2. Identify the root cause in the ${sourceLabel} codebase`);
+    taskPlan.push(`3. Write a fix and add appropriate error handling`);
+    taskPlan.push(`4. Add tests to prevent regression`);
+    taskPlan.push(`5. Deploy and verify the fix in staging`);
+    taskPlan.push(``);
+    taskPlan.push(`## Priority`);
+    taskPlan.push(report.severity === "critical" ? `HIGH — This is a critical error affecting users. Fix ASAP.` :
+      report.severity === "medium" ? `MEDIUM — This error impacts functionality. Schedule for next sprint.` :
+      `LOW — Minor issue. Can be addressed when convenient.`);
+
+    const markdown = taskPlan.join("\n");
+
+    const now = new Date();
+    await db.update(errorReportsTable)
+      .set({
+        resolutionMethod: "task_created",
+        updatedAt: now,
+      })
+      .where(eq(errorReportsTable.id, id!));
+
+    sendSuccess(res, { taskPlan: markdown, errorId: id });
+  } catch (err) {
+    logger.error({ err }, "Failed to generate task plan");
+    sendError(res, "Failed to generate task plan", 500);
+  }
+});
+
+let _resolutionMigrated = false;
+export async function ensureErrorResolutionTables() {
+  if (_resolutionMigrated) return;
+  try {
+    await db.execute(sql`
+      DO $$ BEGIN
+        CREATE TYPE resolution_method AS ENUM ('manual', 'auto_resolved', 'task_created');
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+  } catch {}
+  try {
+    await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS resolution_method resolution_method`);
+    await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`);
+    await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS root_cause TEXT`);
+    await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
+  } catch {}
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS error_resolution_backups (
+        id TEXT PRIMARY KEY,
+        error_report_id TEXT NOT NULL,
+        previous_status TEXT NOT NULL,
+        previous_data JSONB NOT NULL,
+        resolution_method TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        expires_at TIMESTAMP NOT NULL
+      )
+    `);
+  } catch {}
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS auto_resolve_log (
+        id TEXT PRIMARY KEY,
+        error_report_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        rule_matched TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+  } catch {}
+  _resolutionMigrated = true;
+}
 
 export default router;
 
