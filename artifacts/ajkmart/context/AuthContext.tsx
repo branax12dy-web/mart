@@ -57,6 +57,7 @@ interface AuthContextType {
   suspendedMessage: string;
   biometricEnabled: boolean;
   twoFactorPending: TwoFactorPending | null;
+  isCustomer: boolean;
   login: (user: AppUser, token: string, refreshToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<AppUser>) => void;
@@ -299,6 +300,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* wallet_frozen is a wallet-specific restriction — NOT account suspension.
            Let the wallet screen handle it locally; do not show the suspension screen. */
         if (errorMsg === "wallet_frozen") return;
+        /* ROLE_DENIED means the user lacks a role for this feature (e.g. customer).
+           Let the individual screen handle it; do not show the suspension screen. */
+        if (errorMsg === "Access denied. Customer account required.") return;
         setIsSuspended(true);
         setSuspendedMessage(errorMsg || "Your account has been suspended. Contact support.");
         return;
@@ -594,10 +598,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [token, user?.id]);
 
+  const isCustomer = hasRole(user, "customer");
+
   return (
     <AuthContext.Provider value={{
       user, token, isLoading, isSuspended, suspendedMessage,
       biometricEnabled, twoFactorPending,
+      isCustomer,
       login, logout, updateUser, clearSuspended,
       setBiometricEnabled, setTwoFactorPending,
       completeTwoFactorLogin, attemptBiometricLogin,

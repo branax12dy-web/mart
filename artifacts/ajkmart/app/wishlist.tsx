@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   Image,
@@ -27,6 +29,7 @@ import { getWishlist, removeFromWishlist, type WishlistItem } from "@workspace/a
 const C = Colors.light;
 const { width } = Dimensions.get("window");
 const CARD_W = (width - 16 * 2 - 12) / 2;
+const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
 function WishlistCard({ item, onRemove }: { item: WishlistItem; onRemove: (productId: string) => void }) {
   const p = item.product;
@@ -94,24 +97,72 @@ function WishlistCard({ item, onRemove }: { item: WishlistItem; onRemove: (produ
 
 export default function WishlistScreen() {
   const { goBack } = useSmartBack();
-  const { user, token } = useAuth();
+  const { user, token, isCustomer, updateUser, isLoading: authLoading } = useAuth();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const isLoggedIn = !!user && !!token;
   const queryClient = useQueryClient();
 
-  const { data: items, isLoading, isError, refetch, isRefetching } = useQuery({
+  const [addingRole, setAddingRole] = useState(false);
+  const [addRoleError, setAddRoleError] = useState<string | null>(null);
+
+  const { data: items, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ["wishlist"],
     queryFn: () => getWishlist(),
-    enabled: isLoggedIn,
+    enabled: isLoggedIn && isCustomer,
     staleTime: 60 * 1000,
+    retry: (failureCount, err: unknown) => {
+      const code = (err as any)?.code ?? (err as any)?.data?.code;
+      if (code === "ROLE_DENIED") return false;
+      return failureCount < 2;
+    },
   });
+
+  const isRoleDenied = (() => {
+    if (!error) return false;
+    const code = (error as any)?.code ?? (error as any)?.data?.code;
+    return code === "ROLE_DENIED";
+  })();
+
+  const isError = !!error && !isRoleDenied;
+
+  const handleAddCustomerRole = async () => {
+    if (!token) return;
+    setAddingRole(true);
+    setAddRoleError(null);
+    try {
+      const res = await fetch(`${API_BASE}/users/add-role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role: "customer" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddRoleError(data.error || "Failed to add customer access. Please try again.");
+        return;
+      }
+      updateUser({ roles: data.data?.roles ?? data.roles ?? undefined });
+      queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+    } catch {
+      setAddRoleError("Network error. Please check your connection and try again.");
+    } finally {
+      setAddingRole(false);
+    }
+  };
 
   const handleRemove = useCallback(async (productId: string) => {
     try {
       await removeFromWishlist(productId);
       queryClient.invalidateQueries({ queryKey: ["wishlist"] });
-    } catch {}
+    } catch (err: unknown) {
+      const code = (err as any)?.code ?? (err as any)?.data?.code;
+      if (code !== "ROLE_DENIED") {
+        Alert.alert("Wishlist Error", "Could not remove item from wishlist. Please try again.");
+      }
+    }
   }, [queryClient]);
 
   if (!isLoggedIn) {
@@ -133,6 +184,50 @@ export default function WishlistScreen() {
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/auth")} style={styles.signInBtn}>
             <Text style={styles.signInBtnTxt}>{T("signIn")}</Text>
           </TouchableOpacity>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  if (!authLoading && !isCustomer) {
+    return (
+      <ScreenContainer scroll={false}>
+        <View style={styles.header}>
+          <TouchableOpacity activeOpacity={0.7} onPress={goBack} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color={C.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{T("myWishlist")}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.emptyCenter}>
+          <View style={styles.emptyIcon}>
+            <Ionicons name="lock-closed-outline" size={48} color={C.textMuted} />
+          </View>
+          <Text style={styles.emptyTitle}>Customer Account Required</Text>
+          <Text style={styles.emptySub}>
+            This feature requires a customer account. Add customer access to your existing account to use the wishlist.
+          </Text>
+          {addRoleError ? (
+            <Text style={styles.roleErrorTxt}>{addRoleError}</Text>
+          ) : null}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleAddCustomerRole}
+            style={styles.addRoleBtn}
+            disabled={addingRole}
+          >
+            {addingRole ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="person-add-outline" size={16} color="#fff" />
+                <Text style={styles.addRoleBtnTxt}>Add Customer Access</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.addRoleHint}>
+            This will add customer access to your existing account — you can still use the Rider/Vendor app.
+          </Text>
         </View>
       </ScreenContainer>
     );
@@ -166,6 +261,37 @@ export default function WishlistScreen() {
                 </View>
               </View>
             ))}
+          </View>
+        ) : isRoleDenied ? (
+          <View style={styles.emptyCenter}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="lock-closed-outline" size={48} color={C.textMuted} />
+            </View>
+            <Text style={styles.emptyTitle}>Customer Account Required</Text>
+            <Text style={styles.emptySub}>
+              This feature requires a customer account. Add customer access to your existing account to use the wishlist.
+            </Text>
+            {addRoleError ? (
+              <Text style={styles.roleErrorTxt}>{addRoleError}</Text>
+            ) : null}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handleAddCustomerRole}
+              style={styles.addRoleBtn}
+              disabled={addingRole}
+            >
+              {addingRole ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="person-add-outline" size={16} color="#fff" />
+                  <Text style={styles.addRoleBtnTxt}>Add Customer Access</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.addRoleHint}>
+              This will add customer access to your existing account — you can still use the Rider/Vendor app.
+            </Text>
           </View>
         ) : isError ? (
           <View style={styles.emptyCenter}>
@@ -236,4 +362,9 @@ const styles = StyleSheet.create({
   browseBtnTxt: { fontFamily: Font.bold, fontSize: 14, color: C.textInverse },
   retryBtn: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
   retryBtnTxt: { fontFamily: Font.bold, fontSize: 14, color: C.textInverse },
+
+  addRoleBtn: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#16A34A", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, minWidth: 200, justifyContent: "center" },
+  addRoleBtnTxt: { fontFamily: Font.bold, fontSize: 14, color: "#fff" },
+  addRoleHint: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted, textAlign: "center", paddingHorizontal: 40, lineHeight: 18 },
+  roleErrorTxt: { fontFamily: Font.regular, fontSize: 13, color: "#DC2626", textAlign: "center" },
 });

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, TouchableOpacity, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { Animated, TouchableOpacity, StyleSheet, Alert, type StyleProp, type ViewStyle } from "react-native";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 
 import Colors from "@/constants/colors";
@@ -24,7 +24,7 @@ export function WishlistHeart({
   style?: StyleProp<ViewStyle>;
   initialState?: boolean;
 }) {
-  const { user, token } = useAuth();
+  const { user, token, isCustomer } = useAuth();
   const isLoggedIn = !!user && !!token;
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
@@ -35,7 +35,7 @@ export function WishlistHeart({
   const { data: wishlistItems } = useQuery({
     queryKey: ["wishlist"],
     queryFn: () => getWishlist(),
-    enabled: isLoggedIn,
+    enabled: isLoggedIn && isCustomer,
     staleTime: 60 * 1000,
   });
 
@@ -48,7 +48,7 @@ export function WishlistHeart({
   }, [isInWishlistFromCache]);
 
   useEffect(() => {
-    if (!isLoggedIn || pendingFiredRef.current) return;
+    if (!isLoggedIn || !isCustomer || pendingFiredRef.current) return;
     const key = `${PENDING_KEY_PREFIX}${productId}`;
     AsyncStorage.getItem(key).then(async (val) => {
       if (val !== "1") return;
@@ -64,13 +64,16 @@ export function WishlistHeart({
         }
       }
     }).catch(() => {});
-  }, [isLoggedIn, productId]);
+  }, [isLoggedIn, isCustomer, productId]);
 
   const toggle = useCallback(async () => {
     if (!isLoggedIn) {
       const key = `${PENDING_KEY_PREFIX}${productId}`;
       await AsyncStorage.setItem(key, "1").catch(() => {});
       requireAuth(() => {}, { message: "Sign in to save items to your wishlist" });
+      return;
+    }
+    if (!isCustomer) {
       return;
     }
     if (loading) return;
@@ -88,11 +91,19 @@ export function WishlistHeart({
         await addToWishlist(productId);
       }
       queryClient.invalidateQueries({ queryKey: ["wishlist"] });
-    } catch {
+    } catch (err: unknown) {
       setLocalOverride(was);
+      const code = (err as any)?.code ?? (err as any)?.data?.code;
+      if (code !== "ROLE_DENIED") {
+        Alert.alert("Wishlist Error", "Could not update wishlist. Please try again.");
+      }
     }
     setLoading(false);
-  }, [isLoggedIn, productId, isInWishlist, loading, queryClient]);
+  }, [isLoggedIn, isCustomer, productId, isInWishlist, loading, queryClient]);
+
+  if (isLoggedIn && !isCustomer) {
+    return null;
+  }
 
   return (
     <>
