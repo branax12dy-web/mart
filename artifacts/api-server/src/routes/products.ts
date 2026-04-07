@@ -19,6 +19,21 @@ function mapProduct(p: typeof productsTable.$inferSelect) {
   };
 }
 
+function mapSlimProduct(p: typeof productsTable.$inferSelect) {
+  return {
+    id: p.id,
+    name: p.name,
+    price: parseFloat(p.price),
+    originalPrice: p.originalPrice ? parseFloat(p.originalPrice) : undefined,
+    image: p.image,
+    category: p.category,
+    type: p.type,
+    rating: p.rating ? parseFloat(p.rating) : null,
+    inStock: p.inStock,
+    vendorId: p.vendorId,
+  };
+}
+
 /* ── GET /products/flash-deals ──────────────────────────────────────────── */
 router.get("/flash-deals", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
@@ -194,8 +209,10 @@ router.get("/search", async (req, res) => {
 
   const total = countResult[0]?.total ?? 0;
 
+  const slimSearch = req.query.slim === "true";
+
   sendSuccess(res, {
-    products: allProducts.map(mapProduct),
+    products: allProducts.map(slimSearch ? mapSlimProduct : mapProduct),
     total,
     page,
     perPage,
@@ -251,8 +268,10 @@ router.get("/", async (req, res) => {
 
   const total = countResult[0]?.total ?? 0;
 
+  const slim = req.query.slim === "true";
+
   sendSuccess(res, {
-    products: products.map(mapProduct),
+    products: products.map(slim ? mapSlimProduct : mapProduct),
     total,
     page,
     perPage,

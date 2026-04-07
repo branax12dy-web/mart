@@ -1,5 +1,43 @@
 # AJKMart Super App — Workspace
 
+### Smart Loading & Performance System (Customer App)
+
+#### Network Quality Detection (`hooks/useNetworkQuality.ts`)
+- Detects 2G/3G/4G/WiFi and offline state; classifies into `slow`/`moderate`/`fast` tiers
+- Uses `@react-native-community/netinfo` on native, browser `navigator.connection` API on web
+- Exports `getPollingIntervalForTier(tier, baseMs)` for adaptive polling intervals
+
+#### Device Tier Detection (`context/PerformanceContext.tsx`)
+- Classifies devices as `low`/`mid`/`high` using heuristic scoring: Android API version, pixel density, JS startup time
+- Web: uses `navigator.deviceMemory` and `hardwareConcurrency`
+- Provides unified `PerformanceConfig`: `useGradients`, `maxConcurrentImages`, `enableAnimations`, `enableParallax`, `imageQuality`, `imageMaxWidth`
+- Low-tier: disables gradients (flat colors), limits concurrent images to 2, disables animations
+
+#### Home Screen Section Components (`components/home/`)
+- Refactored from monolithic `index.tsx` into: `ServiceGrid`, `BannerCarousel`, `ActiveTracker`, `FlashDeals`, `TrendingSection`, `StatsBar`, `QuickActions`
+- Each section is independently importable; barrel `index.ts` exports all
+- `ActiveTracker` polling adapts to network tier (30s base → 60s on slow networks)
+- `ServiceGrid`/`QuickActions` skip `LinearGradient` on low-end devices
+
+#### AdaptiveImage Component (`components/AdaptiveImage.tsx`)
+- Appends `w` and `q` query params to image URIs based on device/network tier
+- Shows placeholder during load, error fallback on failure, uses cache-first strategy
+
+#### Slim API Payloads (`?slim=true`)
+- Added to: `GET /products`, `GET /products/search`, `GET /orders`, `GET /vendors`
+- Returns only card-view fields (50–70% smaller payloads)
+- NOT applied to detail screens
+
+#### Offline/Slow Connection Indicators (`components/OfflineBar.tsx`)
+- `OfflineBar`: red banner when device is offline
+- `SlowConnectionBar`: yellow banner on 2G/3G connections
+- Both rendered in `_layout.tsx` under `PerformanceProvider`
+
+#### Deferred Provider Initialization (`app/_layout.tsx`)
+- Sentry/analytics init deferred by 1500ms after first render
+- Push registration deferred by 2000ms post-login
+- Fire-and-forget pattern with cleanup on unmount
+
 ### Error Monitor — Enhanced (Admin Panel)
 
 #### Smart Resolution System

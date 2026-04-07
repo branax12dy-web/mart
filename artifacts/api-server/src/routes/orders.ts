@@ -398,8 +398,24 @@ router.get("/", customerAuth, async (req, res) => {
     .limit(limit)
     .offset(offset);
 
+  const slim = req.query["slim"] === "true";
+
   sendSuccess(res, {
-    orders: orders.map(o => mapOrder(o)),
+    orders: orders.map(o => {
+      if (slim) {
+        return {
+          id: o.id,
+          type: o.type,
+          status: o.status,
+          total: parseFloat(o.total),
+          paymentMethod: o.paymentMethod,
+          paymentStatus: o.paymentStatus ?? "pending",
+          createdAt: o.createdAt.toISOString(),
+          itemCount: Array.isArray(o.items) ? (o.items as unknown[]).length : 0,
+        };
+      }
+      return mapOrder(o);
+    }),
     total,
     page,
     limit,
@@ -582,7 +598,7 @@ router.post("/", customerAuth, async (req, res) => {
     const unavailable: string[] = [];
     const priceChanges: string[] = [];
 
-    for (const item of items as any[]) {
+    for (const item of items as Array<{ productId: string; name?: string; quantity: number; price?: number }>) {
       const dbProduct = productMap.get(item.productId);
       if (!dbProduct) {
         unavailable.push(item.name || item.productId);

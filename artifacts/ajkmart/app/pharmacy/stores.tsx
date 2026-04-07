@@ -108,7 +108,7 @@ export default function PharmacyStoresScreen() {
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["pharmacy-stores"],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/vendors?category=pharmacy`);
+      const r = await fetch(`${API_BASE}/vendors?category=pharmacy&slim=true`);
       if (!r.ok) throw new Error("Failed to load pharmacies");
       const json = await r.json();
       return unwrapApiResponse(json);

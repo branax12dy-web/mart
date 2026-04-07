@@ -322,6 +322,55 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceDefinition> = {
     adminDescription: "Same-day parcel & package delivery across AJK",
     adminIcon: "📦",
   },
+
+  van: {
+    key: "van",
+    featureFlag: "feature_van",
+    label: "Van Service",
+    description: "Intercity shared van booking across AJK",
+    icon: "bus-outline",
+    iconFocused: "bus",
+    route: APP_ROUTES.van,
+    color: "#6366F1",
+    colorLight: "#EEF2FF",
+    gradient: ["#EEF2FF", "#E0E7FF"],
+    cardGradient: ["#EEF2FF", "#E0E7FF"],
+    iconGradient: ["#6366F1", "#818CF8"],
+    textColor: "#3730A3",
+    tagColor: "#3730A3",
+    tagBg: "#C7D2FE",
+    tag: "Shared",
+    tagIcon: "bus-outline",
+    heroConfig: {
+      badgeIcon: "bus",
+      badgeLabel: "Van Service",
+      title: "Van",
+      subtitle: "Intercity shared vans\nacross AJK region",
+      stats: [
+        { icon: "bus-outline", label: "Shared vans" },
+        { icon: "time-outline", label: "Scheduled trips" },
+      ],
+      cta: "Book a Seat",
+      gradient: ["#4F46E5", "#6366F1", "#818CF8"],
+    },
+    banners: [
+      {
+        title: "Van Service",
+        desc: "Book a seat on shared vans across AJK — safe & affordable!",
+        tag: "Intercity",
+        c1: "#4F46E5",
+        c2: "#6366F1",
+        icon: "bus-outline",
+        cta: "Book Now",
+      },
+    ],
+    quickActions: [
+      { icon: "bus-outline", label: "Van", color: "#6366F1", bg: "#EEF2FF", route: APP_ROUTES.van },
+    ],
+    tabLabel: "Van",
+    adminDescription: "Intercity shared van booking across AJK",
+    adminIcon: "🚐",
+  },
 };
 
 

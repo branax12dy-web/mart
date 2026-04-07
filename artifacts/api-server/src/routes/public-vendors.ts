@@ -7,7 +7,7 @@ import { sendSuccess, sendNotFound } from "../lib/response.js";
 const router: IRouter = Router();
 
 router.get("/", async (req, res) => {
-  const { category } = req.query as Record<string, string | undefined>;
+  const { category, slim } = req.query as Record<string, string | undefined>;
 
   const conditions: ReturnType<typeof eq>[] = [ilike(usersTable.roles, "%vendor%") as ReturnType<typeof eq>];
   if (category) {
@@ -58,20 +58,32 @@ router.get("/", async (req, res) => {
   }
 
   sendSuccess(res, {
-    vendors: vendors.map(v => ({
-      id: v.id,
-      name: v.storeName || v.name,
-      storeName: v.storeName,
-      storeCategory: v.storeCategory,
-      storeBanner: v.storeBanner,
-      storeDeliveryTime: v.storeDeliveryTime,
-      storeIsOpen: v.storeIsOpen ?? true,
-      storeMinOrder: v.storeMinOrder ? parseFloat(String(v.storeMinOrder)) : 0,
-      avatar: v.avatar,
-      city: v.city,
-      productCount: productCounts[v.id] ?? 0,
-      avgRating: avgRatings[v.id] ?? null,
-    })),
+    vendors: vendors.map(v => {
+      if (slim === "true") {
+        return {
+          id: v.id,
+          name: v.storeName || v.name,
+          storeCategory: v.storeCategory,
+          storeIsOpen: v.storeIsOpen ?? true,
+          avatar: v.avatar,
+          avgRating: avgRatings[v.id] ?? null,
+        };
+      }
+      return {
+        id: v.id,
+        name: v.storeName || v.name,
+        storeName: v.storeName,
+        storeCategory: v.storeCategory,
+        storeBanner: v.storeBanner,
+        storeDeliveryTime: v.storeDeliveryTime,
+        storeIsOpen: v.storeIsOpen ?? true,
+        storeMinOrder: v.storeMinOrder ? parseFloat(String(v.storeMinOrder)) : 0,
+        avatar: v.avatar,
+        city: v.city,
+        productCount: productCounts[v.id] ?? 0,
+        avgRating: avgRatings[v.id] ?? null,
+      };
+    }),
   });
 });
 

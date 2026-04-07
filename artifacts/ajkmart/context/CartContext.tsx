@@ -157,17 +157,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [socket]);
 
   useEffect(() => {
-    AsyncStorage.getItem("@ajkmart_cart").then(stored => {
-      if (!stored) { setHasLoaded(true); return; }
-      try {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) setItems(parsed);
-      } catch (parseErr) {
-        if (__DEV__) console.warn("[Cart] Failed to parse stored cart — clearing:", parseErr instanceof Error ? parseErr.message : String(parseErr));
-        AsyncStorage.removeItem("@ajkmart_cart");
-      }
-      setHasLoaded(true);
-    });
+    const timer = setTimeout(() => {
+      AsyncStorage.getItem("@ajkmart_cart").then(stored => {
+        if (!stored) { setHasLoaded(true); return; }
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) setItems(parsed);
+        } catch (parseErr) {
+          if (__DEV__) console.warn("[Cart] Failed to parse stored cart — clearing:", parseErr instanceof Error ? parseErr.message : String(parseErr));
+          AsyncStorage.removeItem("@ajkmart_cart");
+        }
+        setHasLoaded(true);
+      });
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   const prevTokenRef = useRef<string | null | undefined>(token);
@@ -458,8 +461,33 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+const EMPTY_CART: CartContextType = {
+  items: [],
+  itemCount: 0,
+  total: 0,
+  cartType: "none",
+  addItem: () => {},
+  removeItem: () => {},
+  updateQuantity: () => {},
+  clearCart: () => {},
+  clearCartAndAdd: () => {},
+  clearCartOnAck: () => {},
+  restoreCart: () => {},
+  validateCart: () => Promise.resolve({ valid: true, cartChanged: false }),
+  isValidating: false,
+  pendingAck: false,
+  setPendingAck: () => {},
+  ackStuck: false,
+  orderSuccess: null,
+  clearOrderSuccess: () => {},
+  setPendingOrderId: () => {},
+  startAckStuckTimer: () => {},
+  cancelAckStuckTimer: () => {},
+  dismissAck: () => {},
+  setPharmacyPendingOrderId: () => {},
+};
+
 export function useCart() {
   const ctx = useContext(CartContext);
-  if (!ctx) throw new Error("useCart must be used within CartProvider");
-  return ctx;
+  return ctx ?? EMPTY_CART;
 }

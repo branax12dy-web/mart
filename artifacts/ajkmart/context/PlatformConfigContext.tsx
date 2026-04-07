@@ -13,6 +13,7 @@ export interface PlatformConfig {
     rides: boolean;
     pharmacy: boolean;
     parcel: boolean;
+    van: boolean;
     wallet: boolean;
     referral: boolean;
     newUsers: boolean;
@@ -182,7 +183,7 @@ export interface PlatformConfig {
 
 const DEFAULT: PlatformConfig = {
   appStatus: "active",
-  features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true, sos: true, weather: true },
+  features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, van: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true, sos: true, weather: true },
   content: {
     trackerBannerEnabled: true,
     trackerBannerPosition: "top" as const,
@@ -350,6 +351,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           rides:        raw.features?.rides        ?? true,
           pharmacy:     raw.features?.pharmacy     ?? true,
           parcel:       raw.features?.parcel       ?? true,
+          van:          raw.features?.van          ?? true,
           wallet:       raw.features?.wallet       ?? true,
           referral:     raw.features?.referral     ?? true,
           newUsers:     raw.features?.newUsers     ?? true,

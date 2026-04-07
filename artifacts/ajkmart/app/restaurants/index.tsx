@@ -105,7 +105,7 @@ export default function RestaurantsScreen() {
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ["food-vendors"],
     queryFn: async () => {
-      const resp = await fetch(`${API_BASE}/vendors?category=food`);
+      const resp = await fetch(`${API_BASE}/vendors?category=food&slim=true`);
       const json = await resp.json();
       return unwrapApiResponse<{ vendors?: Restaurant[]; users?: Restaurant[] }>(json);
     },

@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { setBaseUrl, setOnApiError } from "@workspace/api-client-react";
 import * as Linking from "expo-linking";
 import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
@@ -24,7 +26,24 @@ import { AuthProvider, useAuth, hasRole } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { LanguageProvider, useLanguage } from "@/context/LanguageContext";
 import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformConfigContext";
+import { PerformanceProvider } from "@/context/PerformanceContext";
 import { ToastProvider } from "@/context/ToastContext";
+
+function DeferredProviders({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  if (!ready) return <>{children}</>;
+  return (
+    <CartProvider>
+      <ToastProvider>{children}</ToastProvider>
+    </CartProvider>
+  );
+}
+
+import { OfflineBar, SlowConnectionBar } from "@/components/OfflineBar";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
 const _domain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
@@ -64,8 +83,15 @@ const queryClient = new QueryClient({
     queries: {
       retry: 2,
       retryDelay: (attempt) => Math.floor(1500 * Math.pow(1.5, attempt - 1)),
+      gcTime: 1000 * 60 * 60 * 24,
     },
   },
+});
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "ajkmart-query-cache",
+  throttleTime: 2000,
 });
 
 const GUEST_BROWSABLE = new Set([
@@ -245,25 +271,35 @@ function RootLayoutNav() {
     });
   }, []);
 
-  /* ── Init Sentry + Analytics from platform-config (web only) ── */
+  /* ── Defer non-critical init (Sentry, analytics) until after first render ── */
+  const deferredInitDone = useRef(false);
   useEffect(() => {
+    if (deferredInitDone.current) return;
     const integ = config?.integrations;
     if (!integ) return;
-    if (integ.sentry && integ.sentryDsn) {
-      initSentry(integ.sentryDsn, integ.sentryEnvironment, integ.sentrySampleRate).catch(() => {});
-    }
-    if (integ.analytics && integ.analyticsTrackingId) {
-      initAnalytics(integ.analyticsPlatform, integ.analyticsTrackingId, integ.analyticsDebug ?? false);
-      trackScreen("app_start");
-    }
+    const doInit = () => {
+      deferredInitDone.current = true;
+      if (integ.sentry && integ.sentryDsn) {
+        initSentry(integ.sentryDsn, integ.sentryEnvironment, integ.sentrySampleRate).catch(() => {});
+      }
+      if (integ.analytics && integ.analyticsTrackingId) {
+        initAnalytics(integ.analyticsPlatform, integ.analyticsTrackingId, integ.analyticsDebug ?? false);
+        trackScreen("app_start");
+      }
+    };
+    const timer = setTimeout(doInit, 1500);
+    return () => clearTimeout(timer);
   }, [config?.integrations?.sentryDsn, config?.integrations?.analyticsTrackingId]);
 
-  /* ── Register push + identify user after login ── */
+  /* ── Defer push + identify until after initial home screen render ── */
   useEffect(() => {
     if (!user?.id || !token) return;
-    setSentryUser(String(user.id));
-    identifyUser(String(user.id));
-    registerPush(token).catch(() => {});
+    const timer = setTimeout(() => {
+      setSentryUser(String(user.id));
+      identifyUser(String(user.id));
+      registerPush(token).catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
   }, [user?.id, token]);
 
   if (isSuspended) return <SuspendedScreen />;
@@ -377,24 +413,26 @@ export default function RootLayout() {
               componentName: "ErrorBoundary",
             });
           }}>
-          <QueryClientProvider client={queryClient}>
+          <PersistQueryClientProvider client={queryClient} persistOptions={{ persister: asyncStoragePersister, maxAge: 1000 * 60 * 60 * 24 }}>
             <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>
                 <PlatformConfigProvider>
-                  <LanguageProvider>
-                    <AuthProvider>
-                      <CartProvider>
-                        <ToastProvider>
+                  <PerformanceProvider>
+                    <LanguageProvider>
+                      <AuthProvider>
+                        <DeferredProviders>
+                          <OfflineBar />
+                          <SlowConnectionBar />
                           <RootLayoutNav />
                           <PwaInstallBanner />
-                        </ToastProvider>
-                      </CartProvider>
-                    </AuthProvider>
-                  </LanguageProvider>
+                        </DeferredProviders>
+                      </AuthProvider>
+                    </LanguageProvider>
+                  </PerformanceProvider>
                 </PlatformConfigProvider>
               </KeyboardProvider>
             </GestureHandlerRootView>
-          </QueryClientProvider>
+          </PersistQueryClientProvider>
         </ErrorBoundary>
       </SafeAreaProvider>
     </WebShell>

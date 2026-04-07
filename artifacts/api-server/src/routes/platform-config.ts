@@ -133,6 +133,7 @@ router.get("/", async (req, res) => {
       rides:        (s["feature_rides"]         ?? "on")  === "on",
       pharmacy:     (s["feature_pharmacy"]      ?? "on")  === "on",
       parcel:       (s["feature_parcel"]        ?? "on")  === "on",
+      van:          (s["feature_van"]           ?? "on")  === "on",
       wallet:       walletEnabled,
       referral:     (s["feature_referral"]      ?? "on")  === "on",
       newUsers:     (s["feature_new_users"]     ?? "on")  === "on",

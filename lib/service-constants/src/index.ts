@@ -1,6 +1,6 @@
-export type ServiceKey = "mart" | "food" | "rides" | "pharmacy" | "parcel";
+export type ServiceKey = "mart" | "food" | "rides" | "pharmacy" | "parcel" | "van";
 
-export const SERVICE_KEYS: ServiceKey[] = ["mart", "food", "rides", "pharmacy", "parcel"];
+export const SERVICE_KEYS: ServiceKey[] = ["mart", "food", "rides", "pharmacy", "parcel", "van"];
 
 export interface ServiceMetadata {
   key: ServiceKey;
@@ -57,6 +57,15 @@ export const SERVICE_METADATA: Record<ServiceKey, ServiceMetadata> = {
     adminIcon: "📦",
     color: "#FF6B35",
     colorLight: "#FFF0EB",
+  },
+  van: {
+    key: "van",
+    featureFlag: "feature_van",
+    label: "Van Service",
+    description: "Intercity shared van booking across AJK",
+    adminIcon: "🚐",
+    color: "#6366F1",
+    colorLight: "#EEF2FF",
   },
 };
 

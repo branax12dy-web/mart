@@ -157,6 +157,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "feature_rides",          value: "on",    label: "Taxi & Bike Booking",           category: "features" },
   { key: "feature_pharmacy",       value: "on",    label: "Pharmacy Service",              category: "features" },
   { key: "feature_parcel",         value: "on",    label: "Parcel Delivery Service",       category: "features" },
+  { key: "feature_van",            value: "on",    label: "Van (Intercity) Service",       category: "features" },
   { key: "feature_wallet",         value: "on",    label: "Digital Wallet",                category: "features" },
   { key: "feature_referral",       value: "on",    label: "Referral Program",              category: "features" },
   { key: "feature_new_users",      value: "on",    label: "New User Registration",         category: "features" },

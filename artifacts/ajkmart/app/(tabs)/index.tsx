@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, router, type RelativePathString } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { router, type RelativePathString } from "expo-router";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -16,7 +16,6 @@ import {
   View,
   Image,
   FlatList,
-  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -30,921 +29,29 @@ import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { usePerformance } from "@/context/PerformanceContext";
 import { tDual } from "@workspace/i18n";
+import { getActiveServices } from "@/constants/serviceRegistry";
 import {
-  SERVICE_REGISTRY,
-  getActiveServices,
-  type ServiceDefinition,
-} from "@/constants/serviceRegistry";
-import {
-  AnimatedPressable,
-  SectionHeader,
   SkeletonBlock,
   EmptyState,
-  CountdownTimer,
 } from "@/components/user-shared";
 import { WishlistHeart } from "@/components/WishlistHeart";
-import { getBanners, getTrending, getFlashDeals, type Banner } from "@workspace/api-client-react";
 
-import { unwrapApiResponse } from "@/utils/api";
+const LazyServiceSection = React.lazy(() => import("@/components/home/ServiceGrid").then(m => ({ default: m.ServiceSection })));
+const LazyServiceStatsStrip = React.lazy(() => import("@/components/home/StatsBar").then(m => ({ default: m.ServiceStatsStrip })));
+const LazyGuestSignInStrip = React.lazy(() => import("@/components/home/QuickActions").then(m => ({ default: m.GuestSignInStrip })));
+const LazyBannerCarousel = React.lazy(() => import("@/components/home/BannerCarousel").then(m => ({ default: m.DynamicBannerCarousel })));
+const LazyActiveTracker = React.lazy(() => import("@/components/home/ActiveTracker").then(m => ({ default: m.ActiveTrackerStrip })));
+const LazyFlashDeals = React.lazy(() => import("@/components/home/FlashDeals").then(m => ({ default: m.FlashDealsSection })));
+const LazyTrending = React.lazy(() => import("@/components/home/TrendingSection").then(m => ({ default: m.TrendingSection })));
+
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 const C = Colors.light;
 const W = Dimensions.get("window").width;
 const H_PAD = spacing.lg;
 
-function safeNavigate(route: string) {
-  const knownRoutes = new Set<string>([
-    ...Object.values(SERVICE_REGISTRY).map(s => String(s.route)),
-    "/(tabs)", "/(tabs)/orders", "/(tabs)/wallet", "/(tabs)/profile",
-    "/cart", "/search", "/categories", "/wishlist",
-    "/order", "/ride",
-    "/van", "/van/bookings",
-    "/mart", "/food", "/pharmacy", "/parcel",
-    "/my-reviews",
-    "/auth",
-    "/recently-viewed",
-  ]);
-  if (!route || (!knownRoutes.has(route) && !route.startsWith("/(tabs)") && !route.startsWith("/product/"))) {
-    if (__DEV__) console.warn("[Home] safeNavigate: unknown route blocked:", route);
-    router.push("/(tabs)" as RelativePathString);
-    return;
-  }
-  router.push(route as RelativePathString);
-}
-
-type ViewMode = "grid" | "list";
-const SVC_VIEW_KEY = "svc_view_mode";
-
-const shortLabel: Record<string, string> = {
-  mart: "Mart", food: "Food", rides: "Ride", pharmacy: "Pharma", parcel: "Parcel",
-};
-
-function ServiceGridView({ services, isGuest }: { services: ServiceDefinition[]; isGuest: boolean }) {
-  const { width: winW } = useWindowDimensions();
-  const effectiveW = Math.min(winW, Platform.OS === "web" ? 430 : winW);
-  const itemW = (effectiveW - H_PAD * 2) / 5;
-  return (
-    <View style={sg.grid}>
-      {services.map((svc) => {
-        const label = shortLabel[svc.key] ?? svc.label;
-        const href = String(svc.route) as RelativePathString;
-        return (
-          <TouchableOpacity
-            key={svc.key}
-            activeOpacity={0.7}
-            onPress={() => router.push(href)}
-            style={[sg.item, { width: itemW }]}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-          >
-            <LinearGradient colors={svc.iconGradient} style={sg.circle}>
-              <Ionicons name={svc.iconFocused} size={22} color="#fff" />
-            </LinearGradient>
-            <Text style={sg.label} numberOfLines={1}>{label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-function ServiceListView({ services, isGuest }: { services: ServiceDefinition[]; isGuest: boolean }) {
-  return (
-    <View style={sl.list}>
-      {services.map((svc) => {
-        const label = shortLabel[svc.key] ?? svc.label;
-        const href = String(svc.route) as RelativePathString;
-        return (
-          <TouchableOpacity
-            key={svc.key}
-            activeOpacity={0.7}
-            onPress={() => router.push(href)}
-            style={sl.row}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-          >
-            <LinearGradient colors={svc.iconGradient} style={sl.circle}>
-              <Ionicons name={svc.iconFocused} size={20} color="#fff" />
-            </LinearGradient>
-            <View style={sl.textWrap}>
-              <Text style={sl.name}>{label}</Text>
-              <Text style={sl.desc} numberOfLines={1}>{svc.description}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-function ServiceSection({ services, isGuest, viewMode, onToggle }: {
-  services: ServiceDefinition[];
-  isGuest: boolean;
-  viewMode: ViewMode;
-  onToggle: (m: ViewMode) => void;
-}) {
-  return (
-    <View style={sg.wrap}>
-      <View style={sg.header}>
-        <Text style={sg.headerTitle}>Services</Text>
-        <View style={sg.toggleRow}>
-          <TouchableOpacity activeOpacity={0.7}
-            onPress={() => onToggle("grid")}
-            style={[sg.toggleBtn, viewMode === "grid" && sg.toggleBtnActive]}
-            accessibilityRole="button"
-            accessibilityLabel="Grid view"
-          >
-            <Ionicons name="grid" size={14} color={viewMode === "grid" ? "#fff" : C.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.7}
-            onPress={() => onToggle("list")}
-            style={[sg.toggleBtn, viewMode === "list" && sg.toggleBtnActive]}
-            accessibilityRole="button"
-            accessibilityLabel="List view"
-          >
-            <Ionicons name="list" size={16} color={viewMode === "list" ? "#fff" : C.textMuted} />
-          </TouchableOpacity>
-        </View>
-      </View>
-      {viewMode === "grid"
-        ? <ServiceGridView services={services} isGuest={isGuest} />
-        : <ServiceListView services={services} isGuest={isGuest} />
-      }
-    </View>
-  );
-}
-
-const sg = StyleSheet.create({
-  wrap: { paddingHorizontal: H_PAD, paddingTop: 12, paddingBottom: 4 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-  headerTitle: { fontFamily: Font.semiBold, fontSize: 13, color: C.textSecondary },
-  toggleRow: { flexDirection: "row", gap: 4, backgroundColor: C.surfaceSecondary, borderRadius: 8, padding: 2 },
-  toggleBtn: { width: 28, height: 28, borderRadius: 6, alignItems: "center", justifyContent: "center" },
-  toggleBtnActive: { backgroundColor: C.primary },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start", gap: 0 },
-  item: {
-    alignItems: "center", gap: 6,
-    width: (W - H_PAD * 2) / 5,
-    paddingVertical: 8,
-  },
-  circle: {
-    width: 48, height: 48, borderRadius: 16,
-    alignItems: "center", justifyContent: "center",
-    ...shadows.sm,
-  },
-  lockBadge: {
-    position: "absolute", bottom: -2, right: -2,
-    width: 16, height: 16, borderRadius: 8,
-    backgroundColor: C.textMuted,
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: C.surface,
-  },
-  label: { fontFamily: Font.semiBold, color: C.text, fontSize: 11, textAlign: "center" },
-});
-
-const sl = StyleSheet.create({
-  list: { gap: 6 },
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: C.surface, borderRadius: 14,
-    paddingHorizontal: 14, paddingVertical: 12,
-    borderWidth: 1, borderColor: C.borderLight,
-    ...shadows.sm,
-  },
-  circle: {
-    width: 44, height: 44, borderRadius: 14,
-    alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
-  },
-  textWrap: { flex: 1 },
-  name: { fontFamily: Font.semiBold, fontSize: 14, color: C.text, marginBottom: 2 },
-  desc: { fontFamily: Font.regular, fontSize: 11, color: C.textMuted },
-});
-
-function GuestSignInStrip() {
-  const { language } = useLanguage();
-  const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
-  return (
-    <Link href="/auth" asChild>
-      <TouchableOpacity activeOpacity={0.8} style={gi.wrap} accessibilityRole="button">
-        <LinearGradient colors={["#0047B3", "#0066FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gi.card}>
-          <View style={gi.iconWrap}>
-            <Ionicons name="person-circle-outline" size={20} color="#fff" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={gi.title}>{T("signInRegister")}</Text>
-            <Text style={gi.sub}>{T("signInPlaceOrders")}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
-        </LinearGradient>
-      </TouchableOpacity>
-    </Link>
-  );
-}
-
-const gi = StyleSheet.create({
-  wrap: { marginHorizontal: H_PAD, marginTop: 6, borderRadius: 14, overflow: "hidden" },
-  card: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14 },
-  iconWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: Font.bold, fontSize: 14, color: "#fff" },
-  sub: { fontFamily: Font.regular, fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 1 },
-});
-
-function ServiceStatsStrip({ rideCfg, features }: {
-  rideCfg: { bikeMinFare: number };
-  features: { mart: boolean; food: boolean; rides: boolean };
-}) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["home-service-stats"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/stats/public`);
-      if (!r.ok) throw new Error("stats fetch failed");
-      return r.json().then((j: any) => j?.data ?? j);
-    },
-    staleTime: 5 * 60_000,
-    retry: 1,
-  });
-
-  const stats: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [];
-
-  if (features.mart) {
-    const productCount: number = data?.productCount ?? 0;
-    stats.push({
-      label: "Products",
-      value: isLoading ? "…" : productCount > 0 ? `${productCount.toLocaleString()}+` : "—",
-      icon: "cube-outline",
-      color: C.primary,
-    });
-  }
-
-  if (features.food) {
-    const restaurantCount: number = data?.restaurantCount ?? 0;
-    stats.push({
-      label: "Restaurants",
-      value: isLoading ? "…" : restaurantCount > 0 ? `${restaurantCount}+` : "—",
-      icon: "restaurant-outline",
-      color: C.food,
-    });
-  }
-
-  if (features.rides) {
-    stats.push({
-      label: "Min Ride",
-      value: `Rs.${rideCfg.bikeMinFare}`,
-      icon: "bicycle-outline",
-      color: C.ride,
-    });
-  }
-
-  if (stats.length === 0) return null;
-
-  return (
-    <View style={st.wrap}>
-      {stats.map((s, i) => (
-        <React.Fragment key={s.label}>
-          {i > 0 && <View style={st.divider} />}
-          <View style={st.item}>
-            <View style={[st.iconBox, { backgroundColor: `${s.color}18` }]}>
-              <Ionicons name={s.icon} size={16} color={s.color} />
-            </View>
-            <Text style={st.value}>{s.value}</Text>
-            <Text style={st.label}>{s.label}</Text>
-          </View>
-        </React.Fragment>
-      ))}
-    </View>
-  );
-}
-
-const st = StyleSheet.create({
-  wrap: {
-    flexDirection: "row", alignItems: "center",
-    marginHorizontal: H_PAD, marginTop: 8,
-    backgroundColor: C.surface, borderRadius: 14,
-    paddingVertical: 10,
-    borderWidth: 1, borderColor: C.borderLight,
-    ...shadows.sm,
-  },
-  item: { flex: 1, alignItems: "center", gap: 3 },
-  iconBox: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  value: { fontFamily: Font.bold, fontSize: 13, color: C.text },
-  label: { fontFamily: Font.regular, fontSize: 10, color: C.textMuted },
-  divider: { width: 1, height: 36, backgroundColor: C.borderLight },
-});
-
-function ActiveTrackerStrip({ userId, tabBarHeight = 0 }: { userId: string; tabBarHeight?: number }) {
-  const { token } = useAuth();
-  const { config: pCfg } = usePlatformConfig();
-  const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-  const { data: ordersData, isLoading: ordersLoading, isError: ordersError } = useQuery({
-    queryKey: ["home-active-orders", userId],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/orders?status=active`, { headers: authHdrs });
-      if (!r.ok) throw new Error("orders fetch failed");
-      return r.json().then(unwrapApiResponse);
-    },
-    enabled: !!userId && !!token,
-    refetchInterval: 30000,
-    staleTime: 25000,
-  });
-
-  const { data: ridesData, isLoading: ridesLoading, isError: ridesError } = useQuery({
-    queryKey: ["home-active-rides", userId],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/rides?status=active`, { headers: authHdrs });
-      if (!r.ok) throw new Error("rides fetch failed");
-      return r.json().then(unwrapApiResponse);
-    },
-    enabled: !!userId && !!token,
-    refetchInterval: 30000,
-    staleTime: 25000,
-  });
-
-  if (!pCfg.content.trackerBannerEnabled) return null;
-  if (ordersLoading || ridesLoading) return null;
-  if (ordersError || ridesError) return null;
-
-  const activeOrders = (Array.isArray(ordersData) ? ordersData : (ordersData?.orders ?? [])).filter((o: any) => !["delivered", "cancelled"].includes(o.status));
-  const activeRides = (Array.isArray(ridesData) ? ridesData : (ridesData?.rides ?? [])).filter((r: any) => !["completed", "cancelled"].includes(r.status));
-  const total = activeOrders.length + activeRides.length;
-  if (total === 0) return null;
-
-  const items: { label: string; sublabel: string; route: string; c1: string; c2: string; icon: keyof typeof Ionicons.glyphMap }[] = [];
-  if (activeOrders.length > 0) {
-    items.push({
-      label: `${activeOrders.length} Active Order${activeOrders.length > 1 ? "s" : ""}`,
-      sublabel: "Tap to track",
-      route: activeOrders[0]?.id ? `/orders/${activeOrders[0].id}` : "/(tabs)/orders",
-      c1: "#F59E0B", c2: "#D97706",
-      icon: "bag-outline",
-    });
-  }
-  if (activeRides.length > 0) {
-    items.push({
-      label: `${activeRides.length} Active Ride${activeRides.length > 1 ? "s" : ""}`,
-      sublabel: "Tap to track",
-      route: activeRides[0]?.id ? `/ride?rideId=${activeRides[0].id}` : "/(tabs)/orders",
-      c1: "#10B981", c2: "#059669",
-      icon: "car-outline",
-    });
-  }
-
-  return (
-    <View style={tr.wrap}>
-      {items.map((item, i) => (
-        <TouchableOpacity activeOpacity={0.7} key={i} onPress={() => router.push(item.route as RelativePathString)} accessibilityRole="button" accessibilityLabel={`${item.label}. Tap to track`}>
-          <LinearGradient colors={[item.c1, item.c2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={tr.card}>
-            <View style={tr.iconWrap}>
-              <Ionicons name={item.icon} size={18} color="#fff" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={tr.label}>{item.label}</Text>
-              <Text style={tr.sub}>{item.sublabel}</Text>
-            </View>
-            <View style={tr.ctaWrap}>
-              <Text style={tr.ctaTxt}>Track</Text>
-              <Ionicons name="arrow-forward" size={12} color={item.c1} />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-const tr = StyleSheet.create({
-  wrap: { marginHorizontal: H_PAD, marginTop: 10, gap: 8 },
-  card: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14 },
-  iconWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  label: { fontFamily: Font.bold, fontSize: 14, color: "#fff" },
-  sub: { fontFamily: Font.regular, fontSize: 11, color: "rgba(255,255,255,0.8)", marginTop: 1 },
-  ctaWrap: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  ctaTxt: { fontFamily: Font.semiBold, fontSize: 12, color: "#000" },
-});
-
-
-function DynamicBannerCarousel() {
-  const { data: banners, isLoading: bannersLoading, isError: bannersError, refetch: refetchBanners } = useQuery({
-    queryKey: ["dynamic-banners", "home"],
-    queryFn: () => getBanners({ placement: "home" }),
-    staleTime: 5 * 60 * 1000,
-  });
-  const scrollRef = useRef<ScrollView>(null);
-  const [active, setActive] = useState(0);
-  const { width: windowWidth } = useWindowDimensions();
-  const BANNER_W = windowWidth - H_PAD * 2;
-  const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const items = banners ?? [];
-
-  useEffect(() => {
-    if (items.length <= 1) return;
-    autoScrollTimer.current = setInterval(() => {
-      setActive(prev => {
-        const next = (prev + 1) % items.length;
-        scrollRef.current?.scrollTo({ x: next * BANNER_W, animated: true });
-        return next;
-      });
-    }, 4000);
-    return () => { if (autoScrollTimer.current) clearInterval(autoScrollTimer.current); };
-  }, [items.length, BANNER_W]);
-
-  const bannerThrottleRef = useRef<number | null>(null);
-
-  const getBannerCtaText = (b: Banner): string => {
-    if (b.linkType === "service" && b.linkValue) {
-      const svc = SERVICE_REGISTRY[b.linkValue as keyof typeof SERVICE_REGISTRY];
-      return svc?.heroConfig?.cta ?? "Book Now";
-    }
-    if (b.linkType === "url") return "Learn More";
-    if (b.linkType === "route") return "View Details";
-    return "Shop Now";
-  };
-
-  const handleBannerPress = (b: Banner) => {
-    const now = Date.now();
-    if (bannerThrottleRef.current !== null && now - bannerThrottleRef.current < 300) {
-      return;
-    }
-    bannerThrottleRef.current = now;
-
-    if (b.linkType === "product" && b.linkValue) {
-      router.push({ pathname: "/product/[id]", params: { id: b.linkValue } });
-    } else if (b.linkType === "category" && b.linkValue) {
-      router.push({ pathname: "/search", params: { category: b.linkValue } });
-    } else if (b.linkType === "service" && b.linkValue) {
-      const svc = Object.values(SERVICE_REGISTRY).find((s) => s.key === b.linkValue);
-      if (svc) safeNavigate(String(svc.route));
-    } else if (b.linkType === "route" && b.linkValue) {
-      safeNavigate(b.linkValue);
-    } else if (b.linkType === "url" && b.linkValue) {
-      /* Only https:// URLs are opened externally. All other schemes are discarded. */
-      if (b.linkValue.startsWith("https://")) {
-        Linking.openURL(b.linkValue);
-      } else if (b.linkValue.startsWith("/") || b.linkValue.startsWith("/(")) {
-        safeNavigate(b.linkValue);
-      }
-    }
-  };
-
-  if (bannersLoading) {
-    return (
-      <View style={{ marginTop: 16 }}>
-        <View style={ban.headerRow}>
-          <Text style={ban.headerTitle}>Featured</Text>
-          <Text style={ban.headerSub}>Promotions & offers</Text>
-        </View>
-        <View style={{ paddingHorizontal: H_PAD }}>
-          <SkeletonBlock w="100%" h={140} r={16} />
-        </View>
-      </View>
-    );
-  }
-
-  if (bannersError) {
-    return (
-      <View style={{ marginTop: 16 }}>
-        <View style={ban.headerRow}>
-          <Text style={ban.headerTitle}>Featured</Text>
-          <Text style={ban.headerSub}>Promotions & offers</Text>
-        </View>
-        <View style={{ paddingHorizontal: H_PAD }}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => refetchBanners()} style={ban.errorCard}>
-            <Ionicons name="refresh-outline" size={18} color={C.textMuted} />
-            <Text style={ban.errorTxt}>Couldn't load banners. Tap to retry.</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  if (items.length === 0) return null;
-
-  return (
-    <View style={{ marginTop: 16 }}>
-      <View style={ban.headerRow}>
-        <Text style={ban.headerTitle}>Featured</Text>
-        <Text style={ban.headerSub}>Promotions & offers</Text>
-      </View>
-      <View style={{ paddingHorizontal: H_PAD }}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled={false}
-          showsHorizontalScrollIndicator={false}
-          decelerationRate="fast"
-          snapToInterval={BANNER_W}
-          snapToAlignment="start"
-          style={{ width: BANNER_W }}
-          onScrollBeginDrag={() => {
-            if (autoScrollTimer.current) clearInterval(autoScrollTimer.current);
-          }}
-          onScrollEndDrag={() => {
-            if (items.length <= 1) return;
-            autoScrollTimer.current = setInterval(() => {
-              setActive(prev => {
-                const next = (prev + 1) % items.length;
-                scrollRef.current?.scrollTo({ x: next * BANNER_W, animated: true });
-                return next;
-              });
-            }, 4000);
-          }}
-          onScroll={(e) => setActive(Math.round(e.nativeEvent.contentOffset.x / BANNER_W))}
-          scrollEventThrottle={16}
-        >
-          {items.map((b) => (
-            <TouchableOpacity activeOpacity={0.7}
-              key={b.id}
-              onPress={() => handleBannerPress(b)}
-              style={{ width: BANNER_W }}
-            >
-              {b.imageUrl ? (
-                <View style={ban.card}>
-                  <Image source={{ uri: b.imageUrl }} style={ban.bgImage} />
-                  <LinearGradient
-                    colors={[`${b.gradient1 || C.primary}cc`, `${b.gradient2 || C.primaryDark}bb`]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={ban.overlay}
-                  />
-                  <View style={ban.contentWrap}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={ban.title}>{b.title}</Text>
-                      {b.subtitle ? <Text style={ban.desc}>{b.subtitle}</Text> : null}
-                      <View style={ban.cta}>
-                        <Text style={ban.ctaTxt}>{getBannerCtaText(b)}</Text>
-                        <Ionicons name="arrow-forward" size={13} color="#fff" />
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              ) : (
-                <LinearGradient
-                  colors={[b.gradient1 || C.primary, b.gradient2 || C.primaryDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={ban.card}
-                >
-                  <View style={[ban.blob, { width: 130, height: 130, top: -30, right: 60 }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={ban.title}>{b.title}</Text>
-                    {b.subtitle ? <Text style={ban.desc}>{b.subtitle}</Text> : null}
-                    <View style={ban.cta}>
-                      <Text style={ban.ctaTxt}>{getBannerCtaText(b)}</Text>
-                      <Ionicons name="arrow-forward" size={13} color="#fff" />
-                    </View>
-                  </View>
-                  <View style={ban.iconWrap}>
-                    <Ionicons name={(b.icon as any) || "pricetag"} size={48} color="rgba(255,255,255,0.15)" />
-                  </View>
-                </LinearGradient>
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        {items.length > 1 && (
-          <View style={ban.dotsRow}>
-            {items.map((_, i) => (
-              <View key={i} style={[ban.dot, { width: active === i ? 24 : 6, backgroundColor: active === i ? C.primary : C.border }]} />
-            ))}
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
-
-const ban = StyleSheet.create({
-  headerRow: { flexDirection: "row", alignItems: "baseline", gap: 8, paddingHorizontal: H_PAD, marginBottom: 10 },
-  headerTitle: { fontFamily: Font.bold, fontSize: 16, color: C.text },
-  headerSub: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
-  card: { borderRadius: 16, minHeight: 140, overflow: "hidden", position: "relative" as const },
-  bgImage: { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%", borderRadius: 16 },
-  overlay: { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16 },
-  contentWrap: { flexDirection: "row" as const, alignItems: "center" as const, padding: 18, zIndex: 2 },
-  blob: { position: "absolute" as const, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.1)" },
-  title: { fontFamily: Font.bold, fontSize: 17, color: "#fff", marginBottom: 4, ...Platform.select({ native: { textShadowColor: "rgba(0,0,0,0.3)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }, web: { textShadow: "0px 1px 3px rgba(0,0,0,0.3)" } as any }) },
-  desc: { fontFamily: Font.regular, fontSize: 12, color: "rgba(255,255,255,0.9)", lineHeight: 17, marginBottom: 10, ...Platform.select({ native: { textShadowColor: "rgba(0,0,0,0.2)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }, web: { textShadow: "0px 1px 2px rgba(0,0,0,0.2)" } as any }) },
-  cta: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6, backgroundColor: "rgba(255,255,255,0.25)", alignSelf: "flex-start" as const, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
-  ctaTxt: { fontFamily: Font.semiBold, fontSize: 12, color: "#fff" },
-  iconWrap: { marginLeft: 10 },
-  dotsRow: { flexDirection: "row" as const, justifyContent: "center" as const, gap: 6, marginTop: 10 },
-  dot: { height: 5, borderRadius: 3 },
-  errorCard: { height: 80, borderRadius: 16, backgroundColor: C.surfaceSecondary, borderWidth: 1, borderColor: C.borderLight, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  errorTxt: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
-});
-
-function FlashCountdownTimer({ targetTime }: { targetTime: Date }) {
-  const [timeLeft, setTimeLeft] = React.useState({ d: 0, h: 0, m: 0, s: 0 });
-
-  React.useEffect(() => {
-    const update = () => {
-      const diff = Math.max(0, targetTime.getTime() - Date.now());
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      setTimeLeft({ d, h, m, s });
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [targetTime]);
-
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const totalHours = timeLeft.d * 24 + timeLeft.h;
-  const isUrgent = totalHours < 2;
-
-  const boxBg = isUrgent ? "#DC2626" : "#1F2937";
-
-  return (
-    <View style={fct.wrap}>
-      {timeLeft.d > 0 && (
-        <>
-          <View style={[fct.box, { backgroundColor: boxBg }]}>
-            <Text style={fct.digit}>{pad(timeLeft.d)}</Text>
-            <Text style={fct.unit}>DAY</Text>
-          </View>
-          <Text style={[fct.sep, isUrgent && { color: "#DC2626" }]}>:</Text>
-        </>
-      )}
-      <View style={[fct.box, { backgroundColor: boxBg }]}>
-        <Text style={fct.digit}>{pad(timeLeft.h)}</Text>
-        <Text style={fct.unit}>HR</Text>
-      </View>
-      <Text style={[fct.sep, isUrgent && { color: "#DC2626" }]}>:</Text>
-      <View style={[fct.box, { backgroundColor: boxBg }]}>
-        <Text style={fct.digit}>{pad(timeLeft.m)}</Text>
-        <Text style={fct.unit}>MIN</Text>
-      </View>
-      <Text style={[fct.sep, isUrgent && { color: "#DC2626" }]}>:</Text>
-      <View style={[fct.box, { backgroundColor: boxBg }]}>
-        <Text style={fct.digit}>{pad(timeLeft.s)}</Text>
-        <Text style={fct.unit}>SEC</Text>
-      </View>
-    </View>
-  );
-}
-
-const fct = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: 3 },
-  box: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, alignItems: "center", minWidth: 28 },
-  digit: { fontFamily: Font.bold, fontSize: 12, color: "#fff", lineHeight: 16 },
-  unit: { fontFamily: Font.bold, fontSize: 6, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 },
-  sep: { fontFamily: Font.bold, fontSize: 12, color: "#1F2937", marginTop: -4 },
-});
-
-function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => string }) {
-  const { data: deals, isLoading, isError, refetch } = useQuery({
-    queryKey: ["flash-deals"],
-    queryFn: () => getFlashDeals({ limit: 10 }),
-    staleTime: 3 * 60 * 1000,
-  });
-
-  const items = deals ?? [];
-  const earliestExpiry = useMemo(() => {
-    if (items.length === 0) return null;
-    const times = items.map(d => new Date(d.dealExpiresAt).getTime()).filter(t => !isNaN(t));
-    if (times.length === 0) return null;
-    return new Date(Math.min(...times));
-  }, [items]);
-
-  if (isLoading) {
-    return (
-      <View style={fd.section}>
-        <LinearGradient colors={["#FF4444", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={fd.headerGrad}>
-          <View style={fd.headerInner}>
-            <Ionicons name="flash" size={16} color="#FFD700" />
-            <Text style={fd.headerTitle}>{T("todaysDeals")}</Text>
-          </View>
-        </LinearGradient>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={fd.row}>
-          {[0,1,2,3].map(i => (
-            <View key={i} style={fd.card}>
-              <SkeletonBlock w={100} h={100} r={8} />
-              <SkeletonBlock w={80} h={12} r={4} />
-              <SkeletonBlock w={60} h={14} r={4} />
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-    );
-  }
-
-  if (isError) {
-    return (
-      <View style={fd.section}>
-        <LinearGradient colors={["#FF4444", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={fd.headerGrad}>
-          <View style={fd.headerInner}>
-            <Ionicons name="flash" size={16} color="#FFD700" />
-            <Text style={fd.headerTitle}>{T("todaysDeals")}</Text>
-          </View>
-        </LinearGradient>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => refetch()} style={fd.errorRow} accessibilityRole="button" accessibilityLabel="Retry flash deals">
-          <Ionicons name="refresh-outline" size={16} color={C.textMuted} />
-          <Text style={fd.errorTxt}>Couldn't load deals. Tap to retry.</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (items.length === 0) return null;
-
-  return (
-    <View style={fd.section}>
-      <LinearGradient colors={["#FF4444", "#FF6B35"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={fd.headerGrad}>
-        <View style={fd.headerInner}>
-          <Ionicons name="flash" size={16} color="#FFD700" />
-          <Text style={fd.headerTitle}>{T("todaysDeals")}</Text>
-          <Ionicons name="flash" size={12} color="#FFD700" style={{ opacity: 0.6 }} />
-        </View>
-        {earliestExpiry !== null && (
-          <View style={fd.timerWrap}>
-            <Text style={fd.endsLabel}>Ends in</Text>
-            <FlashCountdownTimer targetTime={earliestExpiry} />
-          </View>
-        )}
-      </LinearGradient>
-      <FlatList
-        horizontal
-        data={items}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={fd.row}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const soldPct = item.dealStock && item.dealStock > 0
-            ? Math.min(Math.round((item.soldCount / item.dealStock) * 100), 99)
-            : 0;
-          return (
-            <TouchableOpacity activeOpacity={0.7}
-              onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
-              style={fd.card}
-              accessibilityLabel={`${item.name} ${item.discountPercent}% OFF`}
-            >
-              <View style={fd.discBadgeCorner}>
-                <Text style={fd.discBadgeText}>{item.discountPercent}%</Text>
-                <Text style={fd.discBadgeOff}>OFF</Text>
-              </View>
-              <View style={fd.imgWrap}>
-                {item.image ? (
-                  <Image source={{ uri: item.image }} style={fd.productImg} resizeMode="cover" />
-                ) : (
-                  <View style={[fd.productImg, { backgroundColor: "#FFF5F5", alignItems: "center", justifyContent: "center" }]}>
-                    <Ionicons name="flash" size={28} color="#FF4444" />
-                  </View>
-                )}
-              </View>
-              <View style={fd.cardInfo}>
-                <Text style={fd.name} numberOfLines={2}>{item.name}</Text>
-                <View style={fd.priceRow}>
-                  <Text style={fd.dealPrice}>Rs.{Math.round(item.price).toLocaleString()}</Text>
-                  {item.originalPrice > item.price && (
-                    <Text style={fd.origPrice}>Rs.{Math.round(item.originalPrice).toLocaleString()}</Text>
-                  )}
-                </View>
-                {soldPct > 0 && (
-                <View style={fd.progressWrap}>
-                  <View style={fd.progressBg}>
-                    <LinearGradient
-                      colors={soldPct >= 70 ? ["#FF4444", "#FF6B35"] : ["#FF8C00", "#FFB347"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[fd.progressFill, { width: `${soldPct}%` }]}
-                    />
-                    <Text style={fd.progressText}>
-                      {soldPct >= 70 ? "Almost Gone!" : `${soldPct}% claimed`}
-                    </Text>
-                  </View>
-                </View>
-                )}
-                <WishlistHeart productId={item.id} size={14} style={{ position: "absolute", top: 4, right: 4, zIndex: 10 }} />
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-      />
-    </View>
-  );
-}
-
-const fd = StyleSheet.create({
-  section: { marginHorizontal: H_PAD, marginTop: 16, backgroundColor: C.surface, borderRadius: 16, overflow: "hidden", ...shadows.sm },
-  headerGrad: { paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerInner: { flexDirection: "row", alignItems: "center", gap: 6 },
-  headerTitle: { fontFamily: Font.bold, fontSize: 15, color: "#fff" },
-  timerWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  endsLabel: { fontFamily: Font.medium, fontSize: 10, color: "rgba(255,255,255,0.8)" },
-  row: { gap: 8, paddingHorizontal: 10, paddingVertical: 12 },
-  card: { width: 120, backgroundColor: C.background, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: C.borderLight, position: "relative" as const },
-  discBadgeCorner: { position: "absolute" as const, top: 4, left: 4, zIndex: 5, backgroundColor: "#FF4444", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, alignItems: "center" },
-  discBadgeText: { fontFamily: Font.bold, fontSize: 11, color: "#fff", lineHeight: 14 },
-  discBadgeOff: { fontFamily: Font.bold, fontSize: 7, color: "rgba(255,255,255,0.85)", letterSpacing: 0.5 },
-  imgWrap: { width: 120, height: 100, backgroundColor: "#FAFAFA" },
-  productImg: { width: 120, height: 100 },
-  cardInfo: { padding: 8, gap: 4 },
-  name: { fontFamily: Font.medium, fontSize: 11, color: C.text, lineHeight: 15 },
-  priceRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  dealPrice: { fontFamily: Font.bold, fontSize: 13, color: "#FF4444" },
-  origPrice: { fontFamily: Font.regular, fontSize: 10, color: C.textMuted, textDecorationLine: "line-through" },
-  progressWrap: { marginTop: 2 },
-  progressBg: { height: 14, backgroundColor: "#FFE4E1", borderRadius: 7, overflow: "hidden", position: "relative" as const, justifyContent: "center" },
-  progressFill: { position: "absolute" as const, left: 0, top: 0, bottom: 0, borderRadius: 7 },
-  progressText: { fontFamily: Font.bold, fontSize: 8, color: "#fff", textAlign: "center", zIndex: 1 },
-  errorRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 20 },
-  errorTxt: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
-});
-
-function TrendingSection() {
-  const { data: trending, isError, refetch } = useQuery({
-    queryKey: ["trending-products"],
-    queryFn: () => getTrending({ limit: 8 }),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const items = trending ?? [];
-
-  if (isError) {
-    return (
-      <View style={{ marginTop: 16 }}>
-        <View style={tr2.headerRow}>
-          <Text style={tr2.title}>Trending Now</Text>
-          <Text style={tr2.sub}>Popular products</Text>
-        </View>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => refetch()} style={tr2.errorRow} accessibilityRole="button" accessibilityLabel="Retry trending">
-          <Ionicons name="refresh-outline" size={16} color={C.textMuted} />
-          <Text style={tr2.errorTxt}>Couldn't load trending. Tap to retry.</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (items.length === 0) return null;
-
-  return (
-    <View style={{ marginTop: 16 }}>
-      <View style={tr2.headerRow}>
-        <Text style={tr2.title}>Trending Now</Text>
-        <Text style={tr2.sub}>Popular products</Text>
-      </View>
-      <FlatList
-        horizontal
-        data={items}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: H_PAD, gap: 10 }}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity activeOpacity={0.7}
-            onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
-            style={tr2.card}
-          >
-            <View style={{ position: "relative" }}>
-              {item.image ? (
-                <Image source={{ uri: item.image }} style={tr2.img} />
-              ) : (
-                <View style={[tr2.img, { backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center" }]}>
-                  <Ionicons name="cube-outline" size={24} color={C.textMuted} />
-                </View>
-              )}
-              <WishlistHeart productId={item.id} size={14} style={{ position: "absolute", top: 6, right: 6 }} />
-            </View>
-            <View style={tr2.info}>
-              <Text style={tr2.name} numberOfLines={2}>{item.name}</Text>
-              <Text style={tr2.price}>Rs. {Number(item.price).toLocaleString()}</Text>
-              {item.rating ? (
-                <View style={tr2.ratingRow}>
-                  <Ionicons name="star" size={10} color={C.gold} />
-                  <Text style={tr2.ratingTxt}>{Number(item.rating).toFixed(1)}</Text>
-                </View>
-              ) : null}
-            </View>
-          </TouchableOpacity>
-        )}
-      />
-    </View>
-  );
-}
-
-const tr2 = StyleSheet.create({
-  headerRow: { flexDirection: "row", alignItems: "baseline", gap: 8, paddingHorizontal: H_PAD, marginBottom: 10 },
-  title: { fontFamily: Font.bold, fontSize: 16, color: C.text },
-  sub: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
-  card: { width: 130, backgroundColor: C.surface, borderRadius: 14, overflow: "hidden", ...shadows.sm },
-  img: { width: 130, height: 100 },
-  info: { padding: 8, gap: 3 },
-  name: { fontFamily: Font.medium, fontSize: 11, color: C.text, lineHeight: 15 },
-  price: { fontFamily: Font.bold, fontSize: 12, color: C.primary },
-  ratingRow: { flexDirection: "row", alignItems: "center", gap: 3 },
-  ratingTxt: { fontFamily: Font.regular, fontSize: 10, color: C.textSecondary },
-  errorRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: H_PAD, paddingVertical: 12 },
-  errorTxt: { fontFamily: Font.regular, fontSize: 12, color: C.textMuted },
-});
-
-/* ────────────────────────────────────
-   Recently Viewed Products
-──────────────────────────────────── */
 const RECENTLY_VIEWED_KEY = "recently_viewed_products";
 
 interface RecentItem {
@@ -1032,15 +139,12 @@ const rv = StyleSheet.create({
   price: { fontFamily: Font.bold, fontSize: 12, color: C.primary },
 });
 
-/* ────────────────────────────────────
-   Offers Strip
-──────────────────────────────────── */
 const OFFER_STRIP_CONFIGS = [
-  { type: "all",         label: "All Offers",    emoji: "🏷️", colors: ["#7C3AED","#4F46E5"] as [string,string] },
-  { type: "flashDeals",  label: "Flash Deals",   emoji: "⚡", colors: ["#DC2626","#B91C1C"] as [string,string] },
-  { type: "freeDelivery",label: "Free Delivery", emoji: "🚚", colors: ["#0891B2","#0E7490"] as [string,string] },
-  { type: "cashback",    label: "Cashback",      emoji: "💰", colors: ["#D97706","#B45309"] as [string,string] },
-  { type: "newUserSpecials", label: "New User",  emoji: "⭐", colors: ["#DB2777","#BE185D"] as [string,string] },
+  { type: "all",         label: "All Offers",    emoji: "\uD83C\uDFF7\uFE0F", colors: ["#7C3AED","#4F46E5"] as [string,string] },
+  { type: "flashDeals",  label: "Flash Deals",   emoji: "\u26A1", colors: ["#DC2626","#B91C1C"] as [string,string] },
+  { type: "freeDelivery",label: "Free Delivery", emoji: "\uD83D\uDE9A", colors: ["#0891B2","#0E7490"] as [string,string] },
+  { type: "cashback",    label: "Cashback",      emoji: "\uD83D\uDCB0", colors: ["#D97706","#B45309"] as [string,string] },
+  { type: "newUserSpecials", label: "New User",  emoji: "\u2B50", colors: ["#DB2777","#BE185D"] as [string,string] },
 ];
 
 function OffersStrip() {
@@ -1049,7 +153,7 @@ function OffersStrip() {
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/promotions/public`);
       if (!r.ok) return null;
-      return r.json().then((j: any) => j?.data ?? j);
+      return r.json().then((j: { data?: unknown }) => j?.data ?? j);
     },
     staleTime: 120000,
   });
@@ -1067,7 +171,7 @@ function OffersStrip() {
         accessibilityLabel="View all offers"
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={os.title}>🎯 Offers & Deals</Text>
+          <Text style={os.title}>{"\uD83C\uDFAF"} Offers & Deals</Text>
           {count > 0 && <View style={os.countBubble}><Text style={os.countTxt}>{count}</Text></View>}
         </View>
         <View style={os.viewAllBtn}>
@@ -1263,9 +367,9 @@ function WeatherWidget({ userLat, userLng, cityLabel }: { userLat?: number; user
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={wS.label}>{wmo.label}{locationLabel ? ` · ${locationLabel}` : ""}</Text>
           <View style={wS.detailRow}>
-            <Text style={wS.detail}>💧 {weather!.humidity}%</Text>
-            <Text style={wS.detail}>💨 {weather!.windSpeed} km/h</Text>
-            {weather!.feelsLike != null && <Text style={wS.detail}>🌡 Feels {weather!.feelsLike}°</Text>}
+            <Text style={wS.detail}>{"\uD83D\uDCA7"} {weather!.humidity}%</Text>
+            <Text style={wS.detail}>{"\uD83D\uDCA8"} {weather!.windSpeed} km/h</Text>
+            {weather!.feelsLike != null && <Text style={wS.detail}>{"\uD83C\uDF21"} Feels {weather!.feelsLike}°</Text>}
           </View>
         </View>
         <View style={{ alignItems: "flex-end", gap: 2 }}>
@@ -1325,12 +429,12 @@ export default function HomeScreen() {
   const topPad = Math.max(insets.top, 12);
   const TAB_H = Platform.OS === "web" ? 72 : 49;
   const hdOp = useRef(new Animated.Value(0)).current;
+  const perf = usePerformance();
   const { searchOpacity, searchTranslateY, searchMaxHeight, scrollHandler, scrollEventThrottle } = useCollapsibleHeader({ expandedHeight: 120, collapsedHeight: 56, scrollThreshold: 80, searchBarHeight: 44 });
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const { config: platformConfig, loading: configLoading, refresh: refreshConfig } = usePlatformConfig();
 
-  const authHdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const isGuest = !user?.id;
 
   const handleHomeRefresh = useCallback(async () => {
@@ -1346,7 +450,6 @@ export default function HomeScreen() {
   }, [refreshConfig, queryClient, isGuest]);
 
   const features = platformConfig.features;
-  const appName = platformConfig.platform.appName;
   const contentBanner = platformConfig.content.banner;
   const announcement = platformConfig.content.announcement;
   const [announceDismissed, setAnnounceDismissed] = useState(false);
@@ -1366,25 +469,12 @@ export default function HomeScreen() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
 
   useEffect(() => {
-    Animated.timing(hdOp, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== "web" }).start();
-  }, []);
-
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-
-  useEffect(() => {
-    AsyncStorage.getItem(SVC_VIEW_KEY).then((v) => {
-      if (v === "list" || v === "grid") setViewMode(v);
-    }).catch(() => {});
-  }, []);
-
-  const handleToggleView = async (mode: ViewMode) => {
-    setViewMode(mode);
-    try {
-      await AsyncStorage.setItem(SVC_VIEW_KEY, mode);
-    } catch (err) {
-      if (__DEV__) console.warn("[HomeScreen] Failed to persist view mode:", err);
+    if (perf.enableAnimations) {
+      Animated.timing(hdOp, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== "web" }).start();
+    } else {
+      hdOp.setValue(1);
     }
-  };
+  }, []);
 
   const activeServices = getActiveServices(features);
   const noServicesActive = activeServices.length === 0;
@@ -1435,60 +525,46 @@ export default function HomeScreen() {
       )}
 
       <Animated.View style={{ opacity: hdOp }}>
-        <LinearGradient
-          colors={["#0047B3", "#0066FF", "#2E80FF"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[s.header, { paddingTop: (announcement && !announceDismissed) ? 8 : topPad + 8 }]}
-        >
-          <View style={s.hdrRow}>
-            <TouchableOpacity activeOpacity={0.7} style={s.locBtn} onPress={handleLocationPress} accessibilityRole="button" accessibilityLabel="Location selector">
-              <Ionicons name="location" size={14} color="#fff" />
-              <Text style={s.locTxt} numberOfLines={1}>{selectedLocation || platformConfig.platform.businessAddress || "AJK, Pakistan"}</Text>
-              <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.6)" />
-            </TouchableOpacity>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <TouchableOpacity activeOpacity={0.7}
-                onPress={() => router.push("/cart")}
-                style={s.iconBtn}
-                accessibilityRole="button"
-                accessibilityLabel={`Cart${itemCount > 0 ? `, ${itemCount} items` : ""}`}
-              >
-                <Ionicons name="cart-outline" size={20} color="#fff" />
-                {itemCount > 0 && (
-                  <View style={s.cartBadge}>
-                    <Text style={s.cartBadgeTxt}>{itemCount > 99 ? "99+" : itemCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
+        {perf.useGradients ? (
+          <LinearGradient
+            colors={["#0047B3", "#0066FF", "#2E80FF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[s.header, { paddingTop: (announcement && !announceDismissed) ? 8 : topPad + 8 }]}
+          >
+            <HeaderContent
+              topPad={topPad}
+              announcement={announcement}
+              announceDismissed={announceDismissed}
+              selectedLocation={selectedLocation}
+              platformConfig={platformConfig}
+              itemCount={itemCount}
+              handleLocationPress={handleLocationPress}
+              searchOpacity={searchOpacity}
+              searchTranslateY={searchTranslateY}
+              searchMaxHeight={searchMaxHeight}
+              T={T}
+            />
+          </LinearGradient>
+        ) : (
+          <View
+            style={[s.header, { paddingTop: (announcement && !announceDismissed) ? 8 : topPad + 8, backgroundColor: "#0047B3" }]}
+          >
+            <HeaderContent
+              topPad={topPad}
+              announcement={announcement}
+              announceDismissed={announceDismissed}
+              selectedLocation={selectedLocation}
+              platformConfig={platformConfig}
+              itemCount={itemCount}
+              handleLocationPress={handleLocationPress}
+              searchOpacity={searchOpacity}
+              searchTranslateY={searchTranslateY}
+              searchMaxHeight={searchMaxHeight}
+              T={T}
+            />
           </View>
-
-          <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
-            <View style={s.searchBar}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => router.push("/search")}
-                style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}
-                accessibilityRole="search"
-                accessibilityLabel={T("search")}
-              >
-                <Ionicons name="search" size={16} color={C.textMuted} />
-                <Text style={s.searchText}>{T("search")}</Text>
-              </TouchableOpacity>
-              <View style={s.searchDivider} />
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => router.push("/scan")}
-                accessibilityRole="button"
-                accessibilityLabel="Scan barcode"
-                hitSlop={8}
-              >
-                <Ionicons name="camera-outline" size={16} color={C.textMuted} />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </LinearGradient>
+        )}
       </Animated.View>
 
       <SmartRefresh
@@ -1518,14 +594,16 @@ export default function HomeScreen() {
           />
         ) : (
           <>
-            <ServiceSection
-              services={activeServices}
-              isGuest={isGuest}
-              viewMode={viewMode}
-              onToggle={handleToggleView}
-            />
+            <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 16 }} />}>
+              <LazyServiceSection
+                services={activeServices}
+                isGuest={isGuest}
+              />
+            </Suspense>
 
-            <ServiceStatsStrip rideCfg={platformConfig.rides} features={features} />
+            <Suspense fallback={<SkeletonBlock style={{ height: 56, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
+              <LazyServiceStatsStrip rideCfg={platformConfig.rides} features={features} />
+            </Suspense>
 
             {features.weather !== false && (
               <WeatherWidget
@@ -1535,21 +613,35 @@ export default function HomeScreen() {
               />
             )}
 
-            {isGuest && <GuestSignInStrip />}
-
-            {!isGuest && !!user?.id && (
-              <ActiveTrackerStrip userId={user.id} />
+            {isGuest && (
+              <Suspense fallback={null}>
+                <LazyGuestSignInStrip />
+              </Suspense>
             )}
 
-            {platformConfig.content.showBanner && <DynamicBannerCarousel />}
+            {!isGuest && !!user?.id && (
+              <Suspense fallback={null}>
+                <LazyActiveTracker userId={user.id} />
+              </Suspense>
+            )}
 
-            <FlashDealsSection T={T} />
+            {platformConfig.content.showBanner && (
+              <Suspense fallback={<SkeletonBlock style={{ height: 140, marginHorizontal: H_PAD, borderRadius: 16 }} />}>
+                <LazyBannerCarousel />
+              </Suspense>
+            )}
+
+            <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
+              <LazyFlashDeals T={T} />
+            </Suspense>
 
             <OffersStrip />
 
             <RecentlyViewedSection />
 
-            <TrendingSection />
+            <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
+              <LazyTrending />
+            </Suspense>
 
             <View style={{ height: 12 }} />
           </>
@@ -1644,6 +736,74 @@ export default function HomeScreen() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+interface HeaderContentProps {
+  selectedLocation: string | null;
+  platformConfig: { platform: { businessAddress?: string } };
+  itemCount: number;
+  handleLocationPress: () => void;
+  searchOpacity: Animated.Value;
+  searchTranslateY: Animated.Value;
+  searchMaxHeight: Animated.Value;
+  T: (key: string) => string;
+  topPad?: number;
+  announcement?: string;
+  announceDismissed?: boolean;
+}
+
+function HeaderContent({ selectedLocation, platformConfig, itemCount, handleLocationPress, searchOpacity, searchTranslateY, searchMaxHeight, T }: HeaderContentProps) {
+  return (
+    <>
+      <View style={s.hdrRow}>
+        <TouchableOpacity activeOpacity={0.7} style={s.locBtn} onPress={handleLocationPress} accessibilityRole="button" accessibilityLabel="Location selector">
+          <Ionicons name="location" size={14} color="#fff" />
+          <Text style={s.locTxt} numberOfLines={1}>{selectedLocation || platformConfig.platform.businessAddress || "AJK, Pakistan"}</Text>
+          <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.6)" />
+        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity activeOpacity={0.7}
+            onPress={() => router.push("/cart")}
+            style={s.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Cart${itemCount > 0 ? `, ${itemCount} items` : ""}`}
+          >
+            <Ionicons name="cart-outline" size={20} color="#fff" />
+            {itemCount > 0 && (
+              <View style={s.cartBadge}>
+                <Text style={s.cartBadgeTxt}>{itemCount > 99 ? "99+" : itemCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Animated.View style={{ opacity: searchOpacity, maxHeight: searchMaxHeight, transform: [{ translateY: searchTranslateY }], overflow: "hidden" }}>
+        <View style={s.searchBar}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push("/search")}
+            style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}
+            accessibilityRole="search"
+            accessibilityLabel={T("search")}
+          >
+            <Ionicons name="search" size={16} color={C.textMuted} />
+            <Text style={s.searchText}>{T("search")}</Text>
+          </TouchableOpacity>
+          <View style={s.searchDivider} />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push("/scan")}
+            accessibilityRole="button"
+            accessibilityLabel="Scan barcode"
+            hitSlop={8}
+          >
+            <Ionicons name="camera-outline" size={16} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </>
   );
 }
 

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
-import { Platform, TouchableOpacity, StyleSheet, Text, View } from "react-native";
+import React, { Suspense } from "react";
+import { ActivityIndicator, Platform, TouchableOpacity, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { SERVICE_REGISTRY, type ServiceKey } from "@/constants/serviceRegistry";
@@ -9,8 +9,17 @@ import { SERVICE_REGISTRY, type ServiceKey } from "@/constants/serviceRegistry";
 export type { ServiceKey };
 
 export function useServiceEnabled(serviceKey: ServiceKey): boolean {
-  const { config } = usePlatformConfig();
+  const { config, loading } = usePlatformConfig();
+  if (loading) return false;
   return config.features[serviceKey];
+}
+
+function ServiceLoadingFallback() {
+  return (
+    <View style={s.loadingRoot}>
+      <ActivityIndicator size="large" color="#1A56DB" />
+    </View>
+  );
 }
 
 function ServiceUnavailableScreen({ serviceKey }: { serviceKey: ServiceKey }) {
@@ -42,18 +51,27 @@ function ServiceUnavailableScreen({ serviceKey }: { serviceKey: ServiceKey }) {
 
 export function withServiceGuard<P extends object>(
   serviceKey: ServiceKey,
-  WrappedComponent: React.ComponentType<P>,
+  importFactory: () => Promise<{ default: React.ComponentType<P> }>,
 ) {
+  let LazyComponent: React.LazyExoticComponent<React.ComponentType<P>> | null = null;
   return function GuardedScreen(props: P) {
-    const enabled = useServiceEnabled(serviceKey);
+    const { config, loading } = usePlatformConfig();
+    if (loading) return <ServiceLoadingFallback />;
+    const enabled = config.features[serviceKey];
     if (!enabled) return <ServiceUnavailableScreen serviceKey={serviceKey} />;
-    return <WrappedComponent {...props} />;
+    if (!LazyComponent) LazyComponent = React.lazy(importFactory);
+    return (
+      <Suspense fallback={<ServiceLoadingFallback />}>
+        <LazyComponent {...props} />
+      </Suspense>
+    );
   };
 }
 
 export { ServiceUnavailableScreen };
 
 const s = StyleSheet.create({
+  loadingRoot: { flex: 1, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
   root: { flex: 1, backgroundColor: "#fff" },
   backBtn: { marginLeft: 16, width: 40, height: 40, borderRadius: 12, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center" },
   content: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, marginTop: -40 },
