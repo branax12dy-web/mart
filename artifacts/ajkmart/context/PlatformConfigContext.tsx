@@ -306,12 +306,14 @@ export { isMethodEnabled };
 interface Ctx {
   config: PlatformConfig;
   loading: boolean;
+  fetching: boolean;
   refresh: () => void;
 }
 
 const PlatformConfigContext = createContext<Ctx>({
   config: DEFAULT,
   loading: false,
+  fetching: false,
   refresh: () => {},
 });
 
@@ -320,7 +322,7 @@ let _cachedAt = 0;
 
 export function PlatformConfigProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<PlatformConfig>(_cached ?? DEFAULT);
-  const [loading, setLoading] = useState(!_cached);
+  const [fetching, setFetching] = useState(false);
   const fetchingRef = useRef(false);
 
   const fetchConfig = useCallback(async (force = false) => {
@@ -328,10 +330,10 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
     const now = Date.now();
     if (!force && _cached && now - _cachedAt < CACHE_MS) {
       setConfig(_cached);
-      setLoading(false);
       return;
     }
     fetchingRef.current = true;
+    setFetching(true);
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10_000);
@@ -530,7 +532,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
     } catch {
       if (_cached) setConfig(_cached);
     } finally {
-      setLoading(false);
+      setFetching(false);
       fetchingRef.current = false;
     }
   }, []);
@@ -547,7 +549,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
   const refresh = useCallback(() => fetchConfig(true), [fetchConfig]);
 
   return (
-    <PlatformConfigContext.Provider value={{ config, loading, refresh }}>
+    <PlatformConfigContext.Provider value={{ config, loading: false, fetching, refresh }}>
       {children}
     </PlatformConfigContext.Provider>
   );

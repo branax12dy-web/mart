@@ -51,6 +51,20 @@ if (_domain) setBaseUrl(`https://${_domain}/api`);
 
 SplashScreen.preventAutoHideAsync();
 
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
+    const msg: string = event?.reason?.message ?? String(event?.reason ?? "");
+    const isRouterTimeout =
+      /\b6000ms\b/.test(msg) ||
+      /\b\d+ms timeout exceeded\b/.test(msg) ||
+      (msg.includes("timeout") && msg.toLowerCase().includes("route"));
+    if (isRouterTimeout) {
+      event.preventDefault();
+      if (__DEV__) console.warn("[AJKMart] Suppressed Expo Router startup timeout:", msg);
+    }
+  });
+}
+
 function WebShell({ children }: { children: React.ReactNode }) {
   if (Platform.OS !== "web") return <>{children}</>;
   return (
@@ -338,6 +352,18 @@ export default function RootLayout() {
 
   useEffect(() => {
     let cancelled = false;
+    const SPLASH_DEADLINE_MS = Platform.OS === "web" ? 3000 : 8000;
+
+    const hideSplash = () => {
+      if (!cancelled) {
+        cancelled = true;
+        setReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      }
+    };
+
+    const deadlineTimer = setTimeout(hideSplash, SPLASH_DEADLINE_MS);
+
     const loadAllFonts = async () => {
       try {
         const timeout = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -345,7 +371,7 @@ export default function RootLayout() {
         // Step 1: Load core Inter fonts — always required, fast (~300 KB).
         await Promise.race([
           loadCoreFonts(),
-          timeout(Platform.OS === "web" ? 3000 : 8000),
+          timeout(Platform.OS === "web" ? 2000 : 6000),
         ]).catch(() => {});
 
         // Step 2: Pre-load Noto Nastaliq Urdu ONLY if the saved language
@@ -361,16 +387,15 @@ export default function RootLayout() {
         // Silently continue — the app renders with system fonts as fallback.
       }
 
-      if (!cancelled) {
-        setReady(true);
-        SplashScreen.hideAsync().catch(() => {});
-      }
+      clearTimeout(deadlineTimer);
+      hideSplash();
     };
 
     loadAllFonts();
 
     return () => {
       cancelled = true;
+      clearTimeout(deadlineTimer);
     };
   }, []);
 
