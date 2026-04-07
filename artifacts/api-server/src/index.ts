@@ -5,7 +5,7 @@ import { logger } from "./lib/logger";
 import { startDispatchEngine, dispatchScheduledRides } from "./routes/rides.js";
 import { migrateAdminSecrets } from "./services/adminSecretMigration.js";
 import { initSocketIO } from "./lib/socketio.js";
-import { ensureAuthMethodColumn, ensureRideBidsMigration, ensureOrdersGpsColumns, ensurePromotionsTables, ensureSupportMessagesTable, ensureFaqsTable, ensureCommunicationTables, ensureVendorLocationColumns, ensureVanServiceUpgrade } from "./routes/admin.js";
+import { ensureAuthMethodColumn, ensureRideBidsMigration, ensureOrdersGpsColumns, ensurePromotionsTables, ensureSupportMessagesTable, ensureFaqsTable, ensureCommunicationTables, ensureVendorLocationColumns, ensureVanServiceUpgrade, ensureWalletP2PColumns } from "./routes/admin.js";
 import { sendVanDepartureReminders } from "./routes/van.js";
 import { initVapid } from "./lib/webpush.js";
 import { db } from "@workspace/db";
@@ -146,6 +146,7 @@ ensureAuthMethodColumn()
   .then(() => ensureCommunicationTables())
   .then(() => ensureVendorLocationColumns())
   .then(() => ensureVanServiceUpgrade())
+  .then(() => ensureWalletP2PColumns())
   .then(() => ensureErrorResolutionTables())
   .then(() => scheduleAutoResolve())
   .then(() => assertSecureSettings())

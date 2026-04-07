@@ -1457,6 +1457,7 @@ export async function ensureVendorLocationColumns() {
 }
 
 let _vanUpgradeMigrated = false;
+let _walletP2PMigrated = false;
 export async function ensureVanServiceUpgrade() {
   if (_vanUpgradeMigrated) return;
   try {
@@ -1495,4 +1496,25 @@ export async function ensureVanServiceUpgrade() {
     return;
   }
   _vanUpgradeMigrated = true;
+}
+
+export async function ensureWalletP2PColumns() {
+  if (_walletP2PMigrated) return;
+  try {
+    await db.execute(sql`
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS peer_id TEXT;
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS peer_phone TEXT;
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS flag_reason TEXT;
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS flagged_by TEXT;
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS wallet_txn_peer_id_idx ON wallet_transactions(peer_id);
+      CREATE INDEX IF NOT EXISTS wallet_txn_flagged_idx ON wallet_transactions(flagged);
+    `);
+    logger.info("[migration] Wallet P2P columns ensured");
+  } catch (e) {
+    logger.error({ err: e }, "[migration] Wallet P2P columns migration failed — will retry next startup");
+    return;
+  }
+  _walletP2PMigrated = true;
 }

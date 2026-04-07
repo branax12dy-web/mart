@@ -1572,4 +1572,164 @@ router.get("/fleet/vendors", async (_req, res) => {
   }
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   WALLET P2P MANAGEMENT
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── GET /admin/wallet/stats ─────────────────────────────────────────────── */
+router.get("/wallet/stats", adminAuth, async (req, res) => {
+  try {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+
+    const [todayStats] = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit') as today_transfers,
+        COALESCE(SUM(amount) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit'), 0) as today_volume,
+        COUNT(*) FILTER (WHERE flagged = true AND peer_id IS NOT NULL) as today_flagged
+      FROM wallet_transactions
+      WHERE created_at >= ${todayStart}
+    `);
+    const [monthStats] = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit') as month_transfers,
+        COALESCE(SUM(amount) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit'), 0) as month_volume
+      FROM wallet_transactions
+      WHERE created_at >= ${monthStart}
+    `);
+    const [totalFlagged] = await db.execute(sql`
+      SELECT COUNT(*) as total_flagged FROM wallet_transactions WHERE flagged = true AND peer_id IS NOT NULL
+    `);
+
+    const r = todayStats as any;
+    const m = monthStats as any;
+    const f = totalFlagged as any;
+
+    sendSuccess(res, {
+      today: {
+        transfers: Number(r.today_transfers ?? 0),
+        volume: parseFloat(String(r.today_volume ?? "0")),
+        flagged: Number(r.today_flagged ?? 0),
+      },
+      month: {
+        transfers: Number(m.month_transfers ?? 0),
+        volume: parseFloat(String(m.month_volume ?? "0")),
+      },
+      totalFlagged: Number(f.total_flagged ?? 0),
+    });
+  } catch (e) {
+    logger.error({ err: e }, "[admin] wallet/stats error");
+    sendError(res, "Failed to load wallet stats", 500);
+  }
+});
+
+/* ── GET /admin/wallet/p2p-transactions ────────────────────────────────── */
+router.get("/wallet/p2p-transactions", adminAuth, async (req, res) => {
+  try {
+    const page     = Math.max(1, parseInt(String(req.query["page"]  || "1")));
+    const limit    = Math.min(parseInt(String(req.query["limit"] || "50")), 200);
+    const offset   = (page - 1) * limit;
+    const userId   = req.query["userId"]   as string | undefined;
+    const dateFrom = req.query["dateFrom"] as string | undefined;
+    const dateTo   = req.query["dateTo"]   as string | undefined;
+    const minAmt   = req.query["minAmt"]   as string | undefined;
+    const maxAmt   = req.query["maxAmt"]   as string | undefined;
+    const flaggedQ = req.query["flagged"]  as string | undefined;
+
+    let whereClause = sql`peer_id IS NOT NULL AND type = 'debit'`;
+    if (userId)   whereClause = sql`${whereClause} AND (wt.user_id = ${userId} OR wt.peer_id = ${userId})`;
+    if (dateFrom) whereClause = sql`${whereClause} AND wt.created_at >= ${new Date(dateFrom)}`;
+    if (dateTo)   whereClause = sql`${whereClause} AND wt.created_at <= ${new Date(dateTo)}`;
+    if (minAmt)   whereClause = sql`${whereClause} AND CAST(wt.amount AS NUMERIC) >= ${parseFloat(minAmt)}`;
+    if (maxAmt)   whereClause = sql`${whereClause} AND CAST(wt.amount AS NUMERIC) <= ${parseFloat(maxAmt)}`;
+    if (flaggedQ === "true")  whereClause = sql`${whereClause} AND wt.flagged = true`;
+    if (flaggedQ === "false") whereClause = sql`${whereClause} AND wt.flagged = false`;
+
+    const rows = await db.execute(sql`
+      SELECT
+        wt.id, wt.user_id as sender_id, wt.peer_id as receiver_id,
+        wt.amount, wt.description, wt.peer_phone as receiver_phone,
+        wt.flagged, wt.flag_reason, wt.flagged_by, wt.flagged_at,
+        wt.created_at,
+        su.name as sender_name, su.phone as sender_phone,
+        ru.name as receiver_name
+      FROM wallet_transactions wt
+      LEFT JOIN users su ON su.id = wt.user_id
+      LEFT JOIN users ru ON ru.id = wt.peer_id
+      WHERE ${whereClause}
+      ORDER BY wt.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `);
+
+    const [countRow] = await db.execute(sql`
+      SELECT COUNT(*) as total
+      FROM wallet_transactions wt
+      WHERE ${whereClause}
+    `);
+
+    const total = Number((countRow as any)?.total ?? 0);
+    sendSuccess(res, {
+      transactions: rows,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (e) {
+    logger.error({ err: e }, "[admin] wallet/p2p-transactions error");
+    sendError(res, "Failed to load P2P transactions", 500);
+  }
+});
+
+/* ── PATCH /admin/wallet/transactions/:id/flag — flag/unflag ────────────── */
+router.patch("/wallet/transactions/:id/flag", adminAuth, async (req, res) => {
+  try {
+    const adminId = (req as AdminRequest).adminId ?? "admin";
+    const { flag, reason } = req.body as { flag?: boolean; reason?: string };
+    const txId = req.params["id"]!;
+
+    const shouldFlag = flag !== false;
+    await db.execute(sql`
+      UPDATE wallet_transactions
+      SET
+        flagged = ${shouldFlag},
+        flag_reason = ${shouldFlag ? (reason ?? null) : null},
+        flagged_by = ${shouldFlag ? adminId : null},
+        flagged_at = ${shouldFlag ? new Date() : null}
+      WHERE id = ${txId}
+    `);
+    sendSuccess(res, { flagged: shouldFlag });
+  } catch (e) {
+    logger.error({ err: e }, "[admin] wallet/flag error");
+    sendError(res, "Failed to update flag", 500);
+  }
+});
+
+/* ── PATCH /admin/wallet/freeze-p2p/:userId — toggle P2P freeze ─────────── */
+router.patch("/wallet/freeze-p2p/:userId", adminAuth, async (req, res) => {
+  try {
+    const targetId = req.params["userId"]!;
+    const [user] = await db.select({ id: usersTable.id, blockedServices: usersTable.blockedServices })
+      .from(usersTable).where(eq(usersTable.id, targetId)).limit(1);
+    if (!user) { sendNotFound(res, "User not found"); return; }
+
+    const services = user.blockedServices.split(",").map(s => s.trim()).filter(Boolean);
+    const alreadyFrozen = services.includes("wallet_p2p");
+    let newServices: string[];
+    if (alreadyFrozen) {
+      newServices = services.filter(s => s !== "wallet_p2p");
+    } else {
+      newServices = [...services, "wallet_p2p"];
+    }
+    await db.update(usersTable)
+      .set({ blockedServices: newServices.join(",") })
+      .where(eq(usersTable.id, targetId));
+
+    sendSuccess(res, { p2pFrozen: !alreadyFrozen });
+  } catch (e) {
+    logger.error({ err: e }, "[admin] wallet/freeze-p2p error");
+    sendError(res, "Failed to toggle P2P freeze", 500);
+  }
+});
+
 export default router;

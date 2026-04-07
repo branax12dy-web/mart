@@ -27,6 +27,7 @@ export {
   ensureCommunicationTables,
   ensureVendorLocationColumns,
   ensureVanServiceUpgrade,
+  ensureWalletP2PColumns,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,

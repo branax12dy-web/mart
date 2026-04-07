@@ -69,9 +69,12 @@ const depositSchema = z.object({
 });
 
 const sendSchema = z.object({
-  receiverPhone: z.string().min(1, "receiverPhone is required"),
+  receiverPhone: z.string().optional(),
+  ajkId: z.string().optional(),
   amount: amountField,
   note: z.string().max(200).optional(),
+}).refine(d => d.receiverPhone || d.ajkId, {
+  message: "receiverPhone or ajkId is required",
 });
 
 const withdrawSchema = z.object({
@@ -430,17 +433,16 @@ router.get("/deposits", customerAuth, async (req, res) => {
   }
 });
 
-/* ── POST /wallet/resolve-phone ─────────────────────────────────────────── */
+/* ── POST /wallet/resolve-phone — resolve by phone OR AJK ID ────────────── */
 const resolvePhoneSchema = z.object({
-  phone: z.string()
-    .min(1, "phone is required")
-    .transform(v => {
-      const trimmed = v.trim();
-      if (/^03\d{9}$/.test(trimmed)) return trimmed.slice(1);
-      return trimmed;
-    })
-    .pipe(z.string().regex(/^3\d{9}$/, "Invalid Pakistani phone number (must be 10 digits starting with 3, or 11 digits starting with 03)")),
-});
+  phone: z.string().optional().transform(v => {
+    if (!v) return undefined;
+    const trimmed = v.trim();
+    if (/^03\d{9}$/.test(trimmed)) return trimmed.slice(1);
+    return trimmed;
+  }),
+  ajkId: z.string().optional(),
+}).refine(d => d.phone || d.ajkId, { message: "phone or ajkId is required" });
 
 router.post("/resolve-phone", customerAuth, async (req, res) => {
   const parsed = resolvePhoneSchema.safeParse(req.body);
@@ -455,12 +457,21 @@ router.post("/resolve-phone", customerAuth, async (req, res) => {
     sendError(res, `Too many lookup requests. Try again in ${resolveLimit.minutesLeft} minute(s).`, 429); return;
   }
 
-  const phone = parsed.data.phone;
   try {
-    const [user] = await db.select({ name: usersTable.name, phone: usersTable.phone })
-      .from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
+    const { phone, ajkId } = parsed.data;
+    let user: { name: string | null; phone: string; ajkId: string | null } | undefined;
+    if (ajkId) {
+      const [found] = await db.select({ name: usersTable.name, phone: usersTable.phone, ajkId: usersTable.ajkId })
+        .from(usersTable).where(eq(usersTable.ajkId, ajkId.trim().toUpperCase())).limit(1);
+      user = found;
+    } else if (phone) {
+      const normalized = phone.startsWith("0") ? phone.slice(1) : phone;
+      const [found] = await db.select({ name: usersTable.name, phone: usersTable.phone, ajkId: usersTable.ajkId })
+        .from(usersTable).where(eq(usersTable.phone, normalized)).limit(1);
+      user = found;
+    }
     if (!user) { sendSuccess(res, { found: false, name: null }); return; }
-    sendSuccess(res, { found: true, name: user.name || null });
+    sendSuccess(res, { found: true, name: user.name || null, phone: user.phone, ajkId: user.ajkId });
   } catch (e: unknown) {
     logger.error("[wallet /resolve-phone] DB error:", e);
     sendError(res, "Something went wrong, please try again.", 500);
@@ -482,7 +493,7 @@ router.post("/send", customerAuth, requireWalletPin, async (req, res) => {
     sendValidationError(res, firstError); return;
   }
 
-  const { receiverPhone, amount: sendAmt, note } = parsed.data;
+  const { receiverPhone: rawPhone, ajkId: rawAjkId, amount: sendAmt, note } = parsed.data;
 
   /* Idempotency for /send — accept key from Idempotency-Key header (preferred) or body field */
   const idempotencyKey =
@@ -536,18 +547,35 @@ router.post("/send", customerAuth, requireWalletPin, async (req, res) => {
 
   const maxBalance = parseFloat(s["wallet_max_balance"] ?? "50000");
 
+  const autoFlagThreshold = parseFloat(s["wallet_p2p_auto_flag_amount"] ?? "5000");
+
   try {
-    const [receiverPre] = await db.select({ id: usersTable.id, name: usersTable.name, blockedServices: usersTable.blockedServices })
-      .from(usersTable).where(eq(usersTable.phone, receiverPhone.trim())).limit(1);
-    if (!receiverPre) { clearKey(); sendNotFound(res, "Receiver not found. Phone number check karein."); return; }
+    /* Resolve receiver by AJK ID or phone */
+    let receiverPre: { id: string; name: string | null; phone: string; ajkId: string | null; blockedServices: string } | undefined;
+    if (rawAjkId) {
+      const [found] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, ajkId: usersTable.ajkId, blockedServices: usersTable.blockedServices })
+        .from(usersTable).where(eq(usersTable.ajkId, rawAjkId.trim().toUpperCase())).limit(1);
+      receiverPre = found;
+    } else {
+      const normalizedPhone = rawPhone!.trim().startsWith("0") ? rawPhone!.trim().slice(1) : rawPhone!.trim();
+      const [found] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, ajkId: usersTable.ajkId, blockedServices: usersTable.blockedServices })
+        .from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
+      receiverPre = found;
+    }
+    const receiverPhone = receiverPre?.phone ?? rawPhone ?? "";
+    if (!receiverPre) { clearKey(); sendNotFound(res, rawAjkId ? `No account found with AJK ID ${rawAjkId}` : "Receiver not found. Phone number check karein."); return; }
     if (receiverPre.id === senderUserId) { clearKey(); sendValidationError(res, "Apne aap ko transfer nahi kar sakte"); return; }
     if (isWalletFrozen(receiverPre)) { clearKey(); sendErrorWithData(res, "Receiver's wallet is currently frozen. Transfer cannot be completed.", { walletFrozen: true }, 403); return; }
+    /* P2P-specific freeze: check blockedServices for "wallet_p2p" */
+    if (receiverPre.blockedServices?.split(",").map(s => s.trim()).includes("wallet_p2p")) { clearKey(); sendErrorWithData(res, "Receiver's P2P transfers are restricted.", { walletFrozen: true }, 403); return; }
 
     const result = await db.transaction(async (tx) => {
       /* Lock sender row first */
       const [sender] = await tx.select().from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1).for("update");
       if (!sender) throw new Error("Sender not found");
       if (isWalletFrozen(sender)) throw Object.assign(new Error("Your wallet has been temporarily frozen. Contact support."), { walletFrozen: true });
+      /* P2P-specific freeze for sender */
+      if (sender.blockedServices?.split(",").map((x: string) => x.trim()).includes("wallet_p2p")) throw Object.assign(new Error("Your P2P transfers have been restricted. Please contact support."), { walletFrozen: true });
 
       /* Re-validate frozen check inside transaction so mid-flight admin freeze is caught */
       if (isWalletFrozen(sender)) {
@@ -596,17 +624,23 @@ router.post("/send", customerAuth, requireWalletPin, async (req, res) => {
         throw new Error(`Receiver wallet limit (Rs. ${maxBalance}) exceed ho jayega. Transfer nahi ho sakta.`);
       }
 
-      const desc    = note ? `Transfer to ${receiverPhone} — ${note}` : `Transfer to ${receiverPhone}`;
-      const recvDesc = note ? `Received from ${sender.phone} — ${note}` : `Received from ${sender.phone}`;
+      const displayReceiver = rawAjkId ? `${rawAjkId} (${receiverPhone})` : receiverPhone;
+      const displaySender   = rawAjkId ? sender.phone : sender.phone;
+      const desc    = note ? `Transfer to ${displayReceiver} — ${note}` : `Transfer to ${displayReceiver}`;
+      const recvDesc = note ? `Received from ${displaySender} — ${note}` : `Received from ${displaySender}`;
 
-      await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId: senderUserId, type: "debit",
-        amount: sendAmt.toFixed(2), description: desc,
-      });
-      await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId: receiver.id, type: "credit",
-        amount: sendAmt.toFixed(2), description: recvDesc,
-      });
+      const shouldFlag = sendAmt >= autoFlagThreshold;
+      const debitId  = generateId();
+      const creditId = generateId();
+
+      await tx.execute(sql`
+        INSERT INTO wallet_transactions (id, user_id, type, amount, description, peer_id, peer_phone, flagged)
+        VALUES (${debitId}, ${senderUserId}, 'debit', ${sendAmt.toFixed(2)}, ${desc}, ${receiver.id}, ${receiverPhone}, ${shouldFlag})
+      `);
+      await tx.execute(sql`
+        INSERT INTO wallet_transactions (id, user_id, type, amount, description, peer_id, peer_phone, flagged)
+        VALUES (${creditId}, ${receiver.id}, 'credit', ${sendAmt.toFixed(2)}, ${recvDesc}, ${senderUserId}, ${sender.phone}, ${shouldFlag})
+      `);
 
       if (feeAmt > 0) {
         await tx.insert(walletTransactionsTable).values({
