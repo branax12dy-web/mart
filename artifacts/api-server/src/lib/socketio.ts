@@ -325,19 +325,31 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
       socket.join(`user:${cachedSession.userId}`);
     }
 
-    /* Heartbeat: rider sends rider:heartbeat with batteryLevel, isOnline status is kept alive.
+    /* Heartbeat: rider sends rider:heartbeat with batteryLevel, coordinates, isOnline status.
        Server relays the heartbeat to admin-fleet AND persists batteryLevel, lastSeen, lastActive,
-       and isOnline to DB — all fire-and-forget so the socket never blocks. */
-    socket.on("rider:heartbeat", (payload: { batteryLevel?: number; isOnline?: boolean }) => {
+       coordinates, and isOnline to DB — all fire-and-forget so the socket never blocks. */
+    socket.on("rider:heartbeat", (payload: { batteryLevel?: number; isOnline?: boolean; latitude?: number; longitude?: number }) => {
       const riderPay = cachedSession;
       if (!riderPay?.userId || riderPay.role !== "rider") return;
       const batteryLevel = typeof payload?.batteryLevel === "number" ? payload.batteryLevel : null;
       const isOnline = payload?.isOnline !== false;
       const now = new Date();
 
-      /* 1. Update live_locations: battery level + lastSeen timestamp */
+      const hasCoords = typeof payload?.latitude === "number" && typeof payload?.longitude === "number"
+        && isFinite(payload.latitude) && isFinite(payload.longitude);
+
+      /* 1. Update live_locations: battery level + lastSeen timestamp + coordinates when available */
+      const liveLocationUpdate: Record<string, unknown> = {
+        batteryLevel: batteryLevel ?? undefined,
+        lastSeen: now,
+        updatedAt: now,
+      };
+      if (hasCoords) {
+        liveLocationUpdate.latitude = String(payload!.latitude);
+        liveLocationUpdate.longitude = String(payload!.longitude);
+      }
       db.update(liveLocationsTable)
-        .set({ batteryLevel: batteryLevel ?? undefined, lastSeen: now, updatedAt: now })
+        .set(liveLocationUpdate)
         .where(eq(liveLocationsTable.userId, riderPay.userId))
         .catch((e: Error) => logger.warn({ riderId: riderPay.userId, err: e.message }, "[socketio/heartbeat] live_locations update failed"));
 
@@ -353,6 +365,7 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
         batteryLevel,
         isOnline,
         sentAt: now.toISOString(),
+        ...(hasCoords ? { latitude: payload!.latitude, longitude: payload!.longitude } : {}),
       });
     });
 

@@ -72,10 +72,43 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         batt.addEventListener("levelchange", () => { batteryLevel = batt.level; });
       }).catch(() => {});
 
+    let lastLat: number | undefined;
+    let lastLng: number | undefined;
+
+    const updateCachedPosition = () => {
+      navigator?.geolocation?.getCurrentPosition(
+        (pos) => {
+          lastLat = pos.coords.latitude;
+          lastLng = pos.coords.longitude;
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 30_000, timeout: 10_000 },
+      );
+    };
+    updateCachedPosition();
+
+    const emitHeartbeat = () => {
+      s.emit("rider:heartbeat", {
+        batteryLevel,
+        isOnline: true,
+        timestamp: new Date().toISOString(),
+        ...(lastLat !== undefined && lastLng !== undefined
+          ? { latitude: lastLat, longitude: lastLng }
+          : {}),
+      });
+    };
+
     const sendHeartbeat = () => {
-      if (s.connected) {
-        s.emit("rider:heartbeat", { batteryLevel, isOnline: true, timestamp: new Date().toISOString() });
-      }
+      if (!s.connected) return;
+      navigator?.geolocation?.getCurrentPosition(
+        (pos) => {
+          lastLat = pos.coords.latitude;
+          lastLng = pos.coords.longitude;
+          emitHeartbeat();
+        },
+        () => { emitHeartbeat(); },
+        { enableHighAccuracy: true, maximumAge: 30_000, timeout: 5_000 },
+      );
     };
     s.on("connect", sendHeartbeat);
     sendHeartbeat();

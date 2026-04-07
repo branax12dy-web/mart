@@ -158,6 +158,57 @@ router.post(
   },
 );
 
+/* ── POST /uploads/register — multipart/form-data upload for registration documents (unauthenticated) ──
+   Used during rider/vendor registration before the user has a JWT.
+   Same 5MB / allowed-type limits as other upload routes.
+*/
+router.post(
+  "/register",
+  (req, res, next) => {
+    upload.single("file")(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          sendValidationError(res, "File too large. Maximum 5MB allowed");
+          return;
+        }
+        sendValidationError(res, err.message);
+        return;
+      }
+      if (err) {
+        sendValidationError(res, err instanceof Error ? err.message : "Upload failed");
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        sendValidationError(res, "No file uploaded");
+        return;
+      }
+
+      const { mimetype, buffer, originalname } = req.file;
+
+      if (!ALLOWED_TYPES.includes(mimetype)) {
+        sendValidationError(res, "Only JPEG, PNG, and WebP images are allowed");
+        return;
+      }
+
+      const url = await saveBuffer(buffer, "reg", mimetype);
+
+      sendCreated(res, {
+        url,
+        filename: originalname || path.basename(url),
+        size: buffer.length,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Upload failed";
+      sendError(res, msg);
+    }
+  },
+);
+
 /* ── POST /uploads/prescription — base64 prescription upload (customers) ── */
 router.post("/prescription", customerAuth, async (req, res) => {
   try {

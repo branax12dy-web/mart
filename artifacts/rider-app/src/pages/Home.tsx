@@ -544,13 +544,17 @@ export default function Home() {
       showToast("Order accepted! Check Active tab.", "success");
     },
     onError: (e: any, id) => {
-      qc.invalidateQueries({ queryKey: ["rider-requests"] });
       if (e?.status === 409 || /already taken|already accepted/i.test(e?.message || "")) {
         dismiss(id);
+        qc.setQueryData(["rider-requests"], (old: any) => {
+          if (!old) return old;
+          return { ...old, orders: (old.orders || []).filter((o: any) => o.id !== id) };
+        });
         showToast("This order was already accepted by another rider.", "error");
       } else {
         showToast(e.message || "Could not accept order. Please try again.", "error");
       }
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
     },
   });
 
@@ -579,13 +583,17 @@ export default function Home() {
       showToast("Ride accepted! Check Active tab.", "success");
     },
     onError: (e: any, id) => {
-      qc.invalidateQueries({ queryKey: ["rider-requests"] });
       if (e?.status === 409 || /already taken|already accepted/i.test(e?.message || "")) {
         dismiss(id);
+        qc.setQueryData(["rider-requests"], (old: any) => {
+          if (!old) return old;
+          return { ...old, rides: (old.rides || []).filter((r: any) => r.id !== id) };
+        });
         showToast("This ride was already accepted by another rider.", "error");
       } else {
         showToast(e.message || "Could not accept ride. Please try again.", "error");
       }
+      qc.invalidateQueries({ queryKey: ["rider-requests"] });
     },
   });
 

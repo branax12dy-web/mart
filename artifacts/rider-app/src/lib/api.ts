@@ -282,6 +282,11 @@ export const api = {
     form.append("purpose", "delivery_proof");
     return apiFetch("/uploads/proof", { method: "POST", body: form });
   },
+  uploadRegistrationDoc: (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name || "document.jpg");
+    return apiFetch("/uploads/register", { method: "POST", body: form });
+  },
   forgotPassword: (data: { method: "phone" | "email"; phone?: string; email?: string; captchaToken?: string }) =>
     apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify(data) }),
   resetPassword: (data: { phone?: string; email?: string; otp: string; newPassword: string; totpCode?: string; captchaToken?: string }) =>

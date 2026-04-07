@@ -159,14 +159,8 @@ export default function Register() {
     setUploadingField(field);
     setUploadErrors(prev => { const next = { ...prev }; delete next[field]; return next; });
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const preview = base64;
-      const res = await api.uploadFile({ file: base64, filename: file.name, mimeType: file.type });
+      const preview = URL.createObjectURL(file);
+      const res = await api.uploadRegistrationDoc(file);
       setter({ label: file.name, url: res.url, preview });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : T("uploadFailed");
