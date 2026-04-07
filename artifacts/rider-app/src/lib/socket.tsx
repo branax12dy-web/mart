@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 import { api } from "./api";
 import { useAuth } from "./auth";
@@ -6,9 +6,14 @@ import { useAuth } from "./auth";
 type SocketContextType = {
   socket: Socket | null;
   connected: boolean;
+  setRiderPosition: (lat: number, lng: number) => void;
 };
 
-const SocketContext = createContext<SocketContextType>({ socket: null, connected: false });
+const SocketContext = createContext<SocketContextType>({
+  socket: null,
+  connected: false,
+  setRiderPosition: () => {},
+});
 
 export function useSocket() {
   return useContext(SocketContext);
@@ -19,6 +24,15 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  /* Cached position fed by Home.tsx / Active.tsx watchPosition — no separate GPS listener here */
+  const lastLatRef = useRef<number | undefined>(undefined);
+  const lastLngRef = useRef<number | undefined>(undefined);
+
+  /* Called from watchPosition callbacks in Home.tsx and Active.tsx */
+  const setRiderPosition = useCallback((lat: number, lng: number) => {
+    lastLatRef.current = lat;
+    lastLngRef.current = lng;
+  }, []);
 
   useEffect(() => {
     const token = api.getToken();
@@ -72,56 +86,31 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         batt.addEventListener("levelchange", () => { batteryLevel = batt.level; });
       }).catch(() => {});
 
-    let lastLat: number | undefined;
-    let lastLng: number | undefined;
-
-    const updateCachedPosition = () => {
-      navigator?.geolocation?.getCurrentPosition(
-        (pos) => {
-          lastLat = pos.coords.latitude;
-          lastLng = pos.coords.longitude;
-        },
-        () => {},
-        { enableHighAccuracy: true, maximumAge: 30_000, timeout: 10_000 },
-      );
-    };
-    updateCachedPosition();
-
     const emitHeartbeat = () => {
+      if (!s.connected) return;
       s.emit("rider:heartbeat", {
         batteryLevel,
         isOnline: true,
         timestamp: new Date().toISOString(),
-        ...(lastLat !== undefined && lastLng !== undefined
-          ? { latitude: lastLat, longitude: lastLng }
+        /* Use position cached from the page-level watchPosition — no duplicate GPS listener */
+        ...(lastLatRef.current !== undefined && lastLngRef.current !== undefined
+          ? { latitude: lastLatRef.current, longitude: lastLngRef.current }
           : {}),
       });
     };
 
-    const sendHeartbeat = () => {
-      if (!s.connected) return;
-      navigator?.geolocation?.getCurrentPosition(
-        (pos) => {
-          lastLat = pos.coords.latitude;
-          lastLng = pos.coords.longitude;
-          emitHeartbeat();
-        },
-        () => { emitHeartbeat(); },
-        { enableHighAccuracy: true, maximumAge: 30_000, timeout: 5_000 },
-      );
-    };
-    s.on("connect", sendHeartbeat);
-    sendHeartbeat();
-    const heartbeatInterval = setInterval(sendHeartbeat, 30_000);
+    s.on("connect", emitHeartbeat);
+    emitHeartbeat();
+    const heartbeatInterval = setInterval(emitHeartbeat, 30_000);
 
     return () => {
       clearInterval(heartbeatInterval);
-      s.off("connect", sendHeartbeat);
+      s.off("connect", emitHeartbeat);
     };
   }, [user?.isOnline, socket]);
 
   return (
-    <SocketContext.Provider value={{ socket, connected }}>
+    <SocketContext.Provider value={{ socket, connected, setRiderPosition }}>
       {children}
     </SocketContext.Provider>
   );

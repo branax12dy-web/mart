@@ -102,7 +102,7 @@ export default function Home() {
     };
   }, []);
 
-  const { socket: sharedSocket, connected: socketConnected } = useSocket();
+  const { socket: sharedSocket, connected: socketConnected, setRiderPosition } = useSocket();
 
   useEffect(() => {
     if (!silenced) return;
@@ -432,7 +432,11 @@ export default function Home() {
 
         if (now - lastSentTime < DEBOUNCE_MS) return;
 
-        /* memoized haversine — skip if position hasn't changed meaningfully */
+        /* Always update the shared socket position cache so the heartbeat
+           has a fresh position without running its own GPS listener */
+        setRiderPosition(latitude, longitude);
+
+        /* memoized haversine — skip REST ping if position hasn't changed meaningfully */
         if (lastLat !== null && lastLng !== null) {
           const dist = haversineMeters(lastLat, lastLng, latitude, longitude);
           if (dist < MIN_DISTANCE_METERS) return;

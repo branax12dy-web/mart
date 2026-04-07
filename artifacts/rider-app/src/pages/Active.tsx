@@ -44,8 +44,7 @@ patchLeafletDefaultIcon();
 function useRiderTileConfig() {
   const [tile, setTile] = useState({ url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', provider: "osm" });
   useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}api/maps/config?app=rider`)
-      .then(r => r.json())
+    apiFetch(`/maps/config?app=rider`)
       .then((d: any) => {
         const cfg = d?.data ?? d;
         const prov = cfg?.provider ?? "osm";
@@ -290,7 +289,7 @@ function NavButton({ label, lat, lng, address, color = "blue" }: {
 
 const SOS_RESET_MS = 5 * 60 * 1000; /* 5 minutes — allow rider to re-send if still in danger */
 
-function SosButton({ rideId, riderPos, T }: { rideId?: string | null; riderPos?: { lat: number; lng: number } | null; T: (key: TranslationKey) => string }) {
+function SosButton({ rideId, riderPos, T, showToast }: { rideId?: string | null; riderPos?: { lat: number; lng: number } | null; T: (key: TranslationKey) => string; showToast: (msg: string, isError?: boolean) => void }) {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [noLocWarning, setNoLocWarning] = useState(false);
@@ -327,7 +326,7 @@ function SosButton({ rideId, riderPos, T }: { rideId?: string | null; riderPos?:
         <p className="font-bold mb-1">Location unavailable</p>
         <p>Your GPS position could not be determined. SOS will be sent without location — admin will contact you by phone.</p>
         <div className="flex gap-2 mt-2">
-          <button onClick={async () => { setLoading(true); try { await fireSos(); } catch { alert("SOS failed — call emergency contacts directly"); } setLoading(false); }}
+          <button onClick={async () => { setLoading(true); try { await fireSos(); } catch { showToast("SOS failed — call emergency contacts directly", true); } setLoading(false); }}
             disabled={loading} className="bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60">
             Send SOS anyway
           </button>
@@ -362,7 +361,7 @@ function SosButton({ rideId, riderPos, T }: { rideId?: string | null; riderPos?:
           }
           await fireSos(lat!, lng!);
         } catch {
-          alert("SOS request failed — please call emergency contacts directly");
+          showToast("SOS request failed — please call emergency contacts directly", true);
         }
         setLoading(false);
       }}
@@ -404,7 +403,10 @@ function TurnByTurnPanel({ fromLat, fromLng, toLat, toLng, label, riderLat, ride
   const [currentStep, setCurrentStep] = useState(0);
   const stepListRef = useRef<HTMLDivElement | null>(null);
   const rerouteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRerouteTimeRef = useRef<number>(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
+  /* Minimum interval between reroute API calls (30 seconds) */
+  const REROUTE_COOLDOWN_MS = 30_000;
 
   const fetchRoute = async (lat?: number, lng?: number) => {
     /* Cancel any in-flight OSRM request before starting a new one */
@@ -466,11 +468,16 @@ function TurnByTurnPanel({ fromLat, fromLng, toLat, toLng, label, riderLat, ride
         if (d < minDistM) minDistM = d;
       }
       if (minDistM > REROUTE_THRESHOLD_M) {
-        /* Debounce: only reroute if off-route for 5+ seconds continuously */
+        /* Debounce: only reroute if off-route for 5+ seconds continuously,
+           and only if the cooldown since the last reroute has elapsed. */
         if (!rerouteTimerRef.current) {
           rerouteTimerRef.current = setTimeout(() => {
             rerouteTimerRef.current = null;
-            fetchRoute(riderLat, riderLng);
+            const now = Date.now();
+            if (now - lastRerouteTimeRef.current >= REROUTE_COOLDOWN_MS) {
+              lastRerouteTimeRef.current = now;
+              fetchRoute(riderLat, riderLng);
+            }
           }, 5000);
         }
       } else {
@@ -661,7 +668,7 @@ export default function Active() {
   const [adminMessages, setAdminMessages]          = useState<Array<{ text: string; ts: string; from: "admin" | "rider" }>>([]);
   const [showAdminChat, setShowAdminChat]          = useState(false);
   const [chatReply, setChatReply]                  = useState("");
-  const { socket: sharedSocket } = useSocket();
+  const { socket: sharedSocket, setRiderPosition } = useSocket();
   const socketRef = useRef(sharedSocket);
   socketRef.current = sharedSocket;
 
@@ -817,6 +824,8 @@ export default function Active() {
         /* Guard: stop all state updates if the component has already unmounted */
         if (!isMountedRef.current) return;
         setRiderPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        /* Feed the shared socket position cache — heartbeat uses this instead of its own GPS call */
+        setRiderPosition(pos.coords.latitude, pos.coords.longitude);
         const now = Date.now();
         if (now - lastSentTime < MIN_INTERVAL_MS) return;
         lastSentTime = now;
@@ -1668,7 +1677,7 @@ export default function Active() {
               )}
 
               {config.features?.sos !== false && (
-                <SosButton rideId={ride.id} riderPos={riderPos} T={T} />
+                <SosButton rideId={ride.id} riderPos={riderPos} T={T} showToast={showToast} />
               )}
 
               <div className="flex gap-2 pt-1">
