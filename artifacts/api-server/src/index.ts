@@ -5,7 +5,8 @@ import { logger } from "./lib/logger";
 import { startDispatchEngine, dispatchScheduledRides } from "./routes/rides.js";
 import { migrateAdminSecrets } from "./services/adminSecretMigration.js";
 import { initSocketIO } from "./lib/socketio.js";
-import { ensureAuthMethodColumn, ensureRideBidsMigration, ensureOrdersGpsColumns, ensurePromotionsTables, ensureSupportMessagesTable, ensureFaqsTable, ensureCommunicationTables, ensureVendorLocationColumns } from "./routes/admin.js";
+import { ensureAuthMethodColumn, ensureRideBidsMigration, ensureOrdersGpsColumns, ensurePromotionsTables, ensureSupportMessagesTable, ensureFaqsTable, ensureCommunicationTables, ensureVendorLocationColumns, ensureVanServiceUpgrade } from "./routes/admin.js";
+import { sendVanDepartureReminders } from "./routes/van.js";
 import { initVapid } from "./lib/webpush.js";
 import { db } from "@workspace/db";
 import { getPlatformSettings } from "./routes/admin.js";
@@ -33,6 +34,11 @@ initVapid();
 /* ── Cron: dispatch scheduled rides every minute ── */
 cron.schedule("* * * * *", () => {
   dispatchScheduledRides().catch(e => logger.error({ err: e }, "[cron] dispatchScheduledRides failed"));
+}, { timezone: "Asia/Karachi" });
+
+/* ── Cron: van departure reminders (every minute) ── */
+cron.schedule("* * * * *", () => {
+  sendVanDepartureReminders().catch(e => logger.error({ err: e }, "[cron] vanDepartureReminders failed"));
 }, { timezone: "Asia/Karachi" });
 
 /* ── Cron: cleanup jobs (runs at midnight) ── */
@@ -95,6 +101,7 @@ ensureAuthMethodColumn()
   .then(() => ensureFaqsTable())
   .then(() => ensureCommunicationTables())
   .then(() => ensureVendorLocationColumns())
+  .then(() => ensureVanServiceUpgrade())
   .then(() => assertSecureSettings())
   .then(() => startListening())
   .catch(e => {

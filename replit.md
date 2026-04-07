@@ -1111,15 +1111,14 @@ Auth (OTP send/verify) → Profile (GET/PUT) → Products/Categories/Flash deals
 - **`artifacts/api-server/src/routes/rides.ts`**: Both wallet and cash ride INSERT calls persist `isScheduled`, `scheduledAt`, `stops`, `isPoolRide`; scheduled rides get status `"scheduled"`; broadcast skipped at booking.
 - **`dispatchScheduledRides()`**: Exported function activates scheduled rides within 15-minute window; cron in `index.ts` runs every minute.
 
-#### T003: Commercial Van Service (Full Stack)
-- **`artifacts/api-server/src/routes/van.ts`**: Complete van API — customer booking (`GET /routes`, `GET /routes/:id`, `GET /schedules/:id/availability`, `POST /bookings`, `GET /bookings`, `PATCH /bookings/:id/cancel`), rider driver endpoints (`GET /driver/today`, passenger manifest, board/complete), admin CRUD (routes/vehicles/schedules/bookings).
-- **`lib/db/src/schema/van_service.ts`**: Four tables: `vanRoutesTable`, `vanVehiclesTable`, `vanSchedulesTable`, `vanBookingsTable`.
-- **`artifacts/ajkmart/app/van/index.tsx`**: 5-step multi-step customer booking screen (routes → schedules → date → seats → confirm).
-- **`artifacts/ajkmart/app/van/bookings.tsx`**: My Van Bookings history screen with cancel support.
-- **`artifacts/ajkmart/app/van/_layout.tsx`**: Stack navigator for van screens.
-- **`artifacts/admin/src/pages/van.tsx`**: Admin van management page with 4 tabs (Routes/Schedules/Vehicles/Bookings).
-- **`artifacts/rider-app/src/pages/VanDriver.tsx`**: Rider van driver screen — today's schedules, passenger manifest, board/complete actions.
-- Van added to admin sidebar and customer home screen Quick Actions.
+#### T003: Commercial Van Service (Full Stack + Professional Upgrade)
+- **Schema (`lib/db/src/schema/van_service.ts`)**: Five tables: `vanRoutesTable` (with `fareWindow/fareAisle/fareEconomy` tiered pricing), `vanVehiclesTable`, `vanDriversTable` (unique `vanCode`, `approvalStatus`), `vanSchedulesTable` (with `tripStatus`, `driverId`), `vanBookingsTable` (with `seatTiers`, `tierBreakdown` JSONB).
+- **Migration**: `ensureVanServiceUpgrade()` in `admin-shared.ts` — idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for tiered pricing columns, seat tiers, tier breakdown, trip status, and `CREATE TABLE IF NOT EXISTS van_drivers`.
+- **Backend (`artifacts/api-server/src/routes/van.ts`)**: Full van API with tiered fare calculation, van driver CRUD (`/api/van/admin/drivers` with auto-generated `VAN-XXX` codes), start-trip/end-trip with socket.io broadcasting, GPS location endpoint with schedule ownership + trip-status authorization, 6 push notification events (booking confirmed, booking cancelled/refund, passenger boarded, trip started, trip completed, new passenger notification to driver).
+- **Socket.io**: `emitVanLocation()` and `emitVanTripUpdate()` functions in `socketio.ts`; van room pattern `van:{scheduleId}:{date}` auto-joined on connection.
+- **Customer App (`artifacts/ajkmart/app/van/`)**: Redesigned seat map with tier color-coding (gold=Window, blue=Aisle, green=Economy), tier legend with per-tier fares, running total by tier, ticket-style booking confirmation with Van Code. `bookings.tsx` shows tier badges per seat. `tracking.tsx` provides live GPS tracking via Socket.io.
+- **Rider App (`artifacts/rider-app/src/pages/VanDriver.tsx`)**: Start Trip / End Trip buttons with browser GPS broadcasting every 5s, tier badges on passenger seats, Van Code in header. `App.tsx` restricts `van_driver` role users to VanDriver-only view.
+- **Admin Panel (`artifacts/admin/src/pages/van.tsx`)**: 5-tab management (Routes with 3 fare fields, Vehicles with interactive seat-tier editor, Schedules with Van Code display, Drivers tab with create/approve/suspend, Bookings with tier column and revenue totals).
 
 #### T004: Ride Sharing / Pool Rides
 - **Pool matching logic** in `rides.ts`: On `isPoolRide=true` booking, searches within 500m radius and 20-min window for same-direction, same-type pool rides with under 3 passengers; groups them under shared `poolGroupId` or creates new group.

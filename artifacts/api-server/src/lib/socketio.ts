@@ -3,7 +3,7 @@ import type { Server as HttpServer } from "http";
 import { logger } from "./logger.js";
 import { verifyUserJwt, verifyAdminJwt } from "../middleware/security.js";
 import { db } from "@workspace/db";
-import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable, usersTable, locationHistoryTable, callLogsTable, conversationsTable, chatMessagesTable } from "@workspace/db/schema";
+import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable, usersTable, locationHistoryTable, callLogsTable, conversationsTable, chatMessagesTable, vanBookingsTable, vanSchedulesTable } from "@workspace/db/schema";
 import { eq, or, and, sql, lt, lte } from "drizzle-orm";
 
 /* ── Server-side GPS broadcast throttle: max 1 emit per rider per 1500ms ── */
@@ -187,6 +187,36 @@ async function isAuthorizedForRideRoom(
   return false;
 }
 
+async function isAuthorizedForVanRoom(room: string, userId: string): Promise<boolean> {
+  try {
+    const parts = room.split(":");
+    if (parts.length < 3) return false;
+    const scheduleId = parts[1]!;
+    const date = parts[2]!;
+
+    const [driverMatch] = await db
+      .select({ id: vanSchedulesTable.id })
+      .from(vanSchedulesTable)
+      .where(and(eq(vanSchedulesTable.id, scheduleId), eq(vanSchedulesTable.driverId, userId)))
+      .limit(1);
+    if (driverMatch) return true;
+
+    const [bookingMatch] = await db
+      .select({ id: vanBookingsTable.id })
+      .from(vanBookingsTable)
+      .where(and(
+        eq(vanBookingsTable.scheduleId, scheduleId),
+        eq(vanBookingsTable.travelDate, date),
+        eq(vanBookingsTable.userId, userId),
+        sql`${vanBookingsTable.status} NOT IN ('cancelled')`,
+      ))
+      .limit(1);
+    return !!bookingMatch;
+  } catch {
+    return false;
+  }
+}
+
 async function isAuthorizedForConversationRoom(convId: string, userId: string): Promise<boolean> {
   try {
     const [conv] = await db
@@ -269,6 +299,17 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
           if (sess2?.userId) {
             isAuthorizedForConversationRoom(convId, sess2.userId).then(ok => {
               if (ok) socket.join(room);
+            }).catch(() => {});
+          }
+        } else if (room.startsWith("van:")) {
+          const vanBearer = getTokenFromHandshake(headers, auth);
+          const vanSess = getCachedSession(socket.id, vanBearer);
+          if (vanSess?.userId) {
+            isAuthorizedForVanRoom(room, vanSess.userId).then(ok => {
+              if (ok) {
+                socket.join(room);
+                logger.debug({ socketId: socket.id, room }, "Socket joined van room");
+              }
             }).catch(() => {});
           }
         }
@@ -769,7 +810,27 @@ export function emitRideDispatchUpdate(payload: {
 
 export function emitRideOtp(customerId: string, rideId: string, otp: string) {
   if (!_io) return;
-  /* Emit to both user room and ride room so customer web + mobile can receive it */
   _io.to(`user:${customerId}`).to(`ride:${rideId}`).emit("ride:otp", { rideId, otp });
+}
+
+export function emitVanLocation(scheduleId: string, date: string, payload: {
+  latitude: number;
+  longitude: number;
+  speed?: number;
+  heading?: number;
+  updatedAt: string;
+}) {
+  if (!_io) return;
+  const room = `van:${scheduleId}:${date}`;
+  _io.to(room).emit("van:location", payload);
+}
+
+export function emitVanTripUpdate(scheduleId: string, date: string, payload: {
+  event: string;
+  data?: unknown;
+}) {
+  if (!_io) return;
+  const room = `van:${scheduleId}:${date}`;
+  _io.to(room).emit("van:trip-update", payload);
 }
 

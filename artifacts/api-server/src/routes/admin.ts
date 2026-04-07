@@ -25,6 +25,7 @@ export {
   ensureFaqsTable,
   ensureCommunicationTables,
   ensureVendorLocationColumns,
+  ensureVanServiceUpgrade,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,

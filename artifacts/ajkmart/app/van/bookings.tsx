@@ -16,10 +16,20 @@ import { useToast } from "@/context/ToastContext";
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 const C = Colors.light;
 
+type SeatTier = "window" | "aisle" | "economy";
+
+const TIER_COLORS: Record<SeatTier, { bg: string; border: string; label: string }> = {
+  window:  { bg: "#FFFBEB", border: "#F59E0B", label: "Window" },
+  aisle:   { bg: "#EFF6FF", border: "#3B82F6", label: "Aisle" },
+  economy: { bg: "#F0FDF4", border: "#22C55E", label: "Economy" },
+};
+
 interface VanBooking {
   id: string;
   scheduleId: string;
   seatNumbers: number[];
+  seatTiers?: Record<string, SeatTier> | null;
+  tierBreakdown?: Record<string, { count: number; fare: number }> | null;
   travelDate: string;
   status: string;
   fare: string;
@@ -28,6 +38,8 @@ interface VanBooking {
   routeFrom?: string;
   routeTo?: string;
   departureTime?: string;
+  tripStatus?: string;
+  vanCode?: string | null;
   cancelledAt?: string;
   boardedAt?: string;
   completedAt?: string;
@@ -137,33 +149,83 @@ export default function VanBookingsScreen() {
             bookings.map(b => {
               const statusInfo = STATUS_INFO[b.status] ?? STATUS_INFO["confirmed"]!;
               const canCancel = b.status === "confirmed";
+              const isActive = b.status === "confirmed" || b.status === "boarded";
+              const isInProgress = b.tripStatus === "in_progress";
               return (
                 <View key={b.id} style={ss.card}>
-                  <View style={ss.cardHeader}>
-                    <View style={[ss.statusBadge, { backgroundColor: statusInfo.bg }]}>
-                      <Ionicons name={statusInfo.icon} size={14} color={statusInfo.color} />
-                      <Text style={[ss.statusText, { color: statusInfo.color }]}>{statusInfo.label}</Text>
+                  {/* Ticket-style header */}
+                  <LinearGradient colors={["#4338CA","#6366F1"]} start={{x:0,y:0}} end={{x:1,y:1}} style={ss.cardTicketHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={ss.cardRouteName}>{b.routeName ?? "—"}</Text>
+                      <Text style={ss.cardRouteFromTo}>{b.routeFrom} → {b.routeTo}</Text>
                     </View>
-                    <Text style={ss.cardDate}>{b.travelDate}</Text>
+                    {b.vanCode ? (
+                      <View style={ss.vanCodeBadge}>
+                        <Text style={ss.vanCodeText}>{b.vanCode}</Text>
+                      </View>
+                    ) : null}
+                  </LinearGradient>
+
+                  <View style={ss.cardBody}>
+                    <View style={ss.cardMeta}>
+                      <View style={[ss.statusBadge, { backgroundColor: statusInfo.bg }]}>
+                        <Ionicons name={statusInfo.icon} size={14} color={statusInfo.color} />
+                        <Text style={[ss.statusText, { color: statusInfo.color }]}>{statusInfo.label}</Text>
+                      </View>
+                      <Text style={ss.cardDate}>{b.travelDate}</Text>
+                    </View>
+
+                    <View style={ss.detailRow}>
+                      <View style={ss.detailItem}><Ionicons name="time-outline" size={14} color={C.textMuted} /><Text style={ss.detailText}>{b.departureTime ?? "—"}</Text></View>
+                      <View style={ss.detailItem}><Ionicons name={b.paymentMethod === "wallet" ? "wallet-outline" : "cash-outline"} size={14} color={C.textMuted} /><Text style={ss.detailText}>Rs {parseFloat(b.fare).toFixed(0)}</Text></View>
+                    </View>
+
+                    {/* Seat tier badges */}
+                    <View style={ss.seatBadgesRow}>
+                      {(Array.isArray(b.seatNumbers) ? b.seatNumbers as number[] : []).map(s => {
+                        const tier = (b.seatTiers?.[String(s)] || "aisle") as SeatTier;
+                        const tc = TIER_COLORS[tier];
+                        return (
+                          <View key={s} style={[ss.seatBadge, { backgroundColor: tc.bg, borderColor: tc.border }]}>
+                            <Text style={[ss.seatBadgeText, { color: tc.border }]}>Seat {s}</Text>
+                            <Text style={[ss.seatTierLabel, { color: tc.border }]}>{tc.label}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* Tier breakdown */}
+                    {b.tierBreakdown && Object.keys(b.tierBreakdown).length > 0 && (
+                      <View style={ss.tierBreakdownWrap}>
+                        {Object.entries(b.tierBreakdown).map(([tier, info]) => (
+                          <Text key={tier} style={ss.tierBreakdownSmall}>
+                            {TIER_COLORS[tier as SeatTier]?.label ?? tier} × {(info as {count: number; fare: number}).count} = Rs {((info as {count: number; fare: number}).count * (info as {count: number; fare: number}).fare).toFixed(0)}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Live tracking button */}
+                    {isActive && isInProgress && (
+                      <TouchableOpacity activeOpacity={0.7} style={ss.trackBtn}
+                        onPress={() => router.push({ pathname: "/van/tracking", params: { scheduleId: b.scheduleId, date: b.travelDate } })}>
+                        <Ionicons name="navigate-outline" size={16} color="#6366F1" />
+                        <Text style={ss.trackBtnText}>Track Van Live</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {canCancel && (
+                      <TouchableOpacity activeOpacity={0.7}
+                        style={[ss.cancelBtn, cancelling === b.id && ss.cancelBtnDisabled]}
+                        onPress={() => cancelBooking(b.id)}
+                        disabled={cancelling === b.id}
+                      >
+                        {cancelling === b.id ? <ActivityIndicator color="#DC2626" size="small" /> : (
+                          <><Ionicons name="close-circle-outline" size={16} color="#DC2626" /><Text style={ss.cancelBtnText}>Cancel Booking</Text></>
+                        )}
+                      </TouchableOpacity>
+                    )}
                   </View>
-                  <Text style={ss.routeName}>{b.routeName ?? "—"}</Text>
-                  <Text style={ss.routeFromTo}>{b.routeFrom} → {b.routeTo}</Text>
-                  <View style={ss.detailRow}>
-                    <View style={ss.detailItem}><Ionicons name="time-outline" size={14} color={C.textMuted} /><Text style={ss.detailText}>{b.departureTime ?? "—"}</Text></View>
-                    <View style={ss.detailItem}><Ionicons name="person-outline" size={14} color={C.textMuted} /><Text style={ss.detailText}>Seat{(Array.isArray(b.seatNumbers) ? b.seatNumbers as number[] : []).length > 1 ? "s" : ""} {(Array.isArray(b.seatNumbers) ? b.seatNumbers as number[] : []).join(", ")}</Text></View>
-                    <View style={ss.detailItem}><Ionicons name={b.paymentMethod === "wallet" ? "wallet-outline" : "cash-outline"} size={14} color={C.textMuted} /><Text style={ss.detailText}>Rs {parseFloat(b.fare).toFixed(0)}</Text></View>
-                  </View>
-                  {canCancel && (
-                    <TouchableOpacity activeOpacity={0.7}
-                      style={[ss.cancelBtn, cancelling === b.id && ss.cancelBtnDisabled]}
-                      onPress={() => cancelBooking(b.id)}
-                      disabled={cancelling === b.id}
-                    >
-                      {cancelling === b.id ? <ActivityIndicator color="#DC2626" size="small" /> : (
-                        <><Ionicons name="close-circle-outline" size={16} color="#DC2626" /><Text style={ss.cancelBtnText}>Cancel Booking</Text></>
-                      )}
-                    </TouchableOpacity>
-                  )}
                 </View>
               );
             })
@@ -186,17 +248,29 @@ const ss = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyTitle: { fontFamily: Font.semiBold, fontSize: 17, color: "#374151", marginTop: 12 },
   emptyDesc: { fontFamily: Font.regular, fontSize: 14, color: "#6B7280", textAlign: "center", marginTop: 6 },
-  card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  card: { borderRadius: 16, overflow: "hidden", marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
+  cardTicketHeader: { padding: 14, paddingBottom: 12, flexDirection: "row", alignItems: "center" },
+  cardRouteName: { fontFamily: Font.bold, fontSize: 16, color: "#fff" },
+  cardRouteFromTo: { fontFamily: Font.regular, fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+  vanCodeBadge: { backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  vanCodeText: { fontFamily: Font.bold, fontSize: 13, color: "#E0E7FF" },
+  cardBody: { backgroundColor: "#fff", padding: 14 },
+  cardMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusText: { fontFamily: Font.semiBold, fontSize: 12 },
   cardDate: { fontFamily: Font.semiBold, fontSize: 13, color: "#6B7280" },
-  routeName: { fontFamily: Font.bold, fontSize: 16, color: "#111827", marginBottom: 2 },
-  routeFromTo: { fontFamily: Font.regular, fontSize: 13, color: "#6B7280", marginBottom: 12 },
-  detailRow: { flexDirection: "row", gap: 16, flexWrap: "wrap" },
+  detailRow: { flexDirection: "row", gap: 16, flexWrap: "wrap", marginBottom: 10 },
   detailItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   detailText: { fontFamily: Font.regular, fontSize: 13, color: "#374151" },
-  cancelBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: "#FCA5A5", backgroundColor: "#FFF1F1" },
+  seatBadgesRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
+  seatBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  seatBadgeText: { fontFamily: Font.bold, fontSize: 12 },
+  seatTierLabel: { fontFamily: Font.regular, fontSize: 10 },
+  tierBreakdownWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  tierBreakdownSmall: { fontFamily: Font.regular, fontSize: 11, color: "#6B7280" },
+  trackBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: "#A5B4FC", backgroundColor: "#EEF2FF" },
+  trackBtnText: { fontFamily: Font.semiBold, fontSize: 14, color: "#6366F1" },
+  cancelBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: "#FCA5A5", backgroundColor: "#FFF1F1" },
   cancelBtnDisabled: { opacity: 0.6 },
   cancelBtnText: { fontFamily: Font.semiBold, fontSize: 14, color: "#DC2626" },
   btnPrimary: { backgroundColor: "#6366F1", borderRadius: 14, paddingHorizontal: 24, paddingVertical: 14, alignItems: "center" },

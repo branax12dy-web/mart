@@ -15,10 +15,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Bus, Plus, Pencil, Trash2, RefreshCw, Users, Route, Clock, Calendar,
+  Bus, Plus, Pencil, Trash2, RefreshCw, Users, Route, Clock, Calendar, UserCheck, Navigation,
 } from "lucide-react";
 
-/* ── API helpers ── */
 const getToken = () => sessionStorage.getItem("ajkmart_admin_token");
 const apiBase = () => `${window.location.origin}/api/van`;
 
@@ -37,13 +36,41 @@ async function vanFetch(path: string, opts: RequestInit = {}) {
   return json.data !== undefined ? json.data : json;
 }
 
-/* ══════════════════════════════════════════════════════════
-   TYPES
-══════════════════════════════════════════════════════════ */
-interface VanRoute { id: string; name: string; nameUrdu?: string; fromAddress: string; toAddress: string; farePerSeat: string; distanceKm?: string; durationMin?: number; isActive: boolean; sortOrder: number; notes?: string; }
-interface VanVehicle { id: string; plateNumber: string; model: string; totalSeats: number; seatLayout?: { seatsPerRow?: number } | null; isActive: boolean; driverId?: string; driverName?: string; driverPhone?: string; }
-interface VanSchedule { id: string; routeId: string; vehicleId?: string; driverId?: string; departureTime: string; returnTime?: string; daysOfWeek: number[]; isActive: boolean; routeName?: string; vehiclePlate?: string; driverName?: string; }
-interface VanBooking { id: string; userId: string; scheduleId: string; seatNumbers: number[]; travelDate: string; status: string; fare: string; paymentMethod: string; passengerName?: string; createdAt: string; routeName?: string; routeFrom?: string; routeTo?: string; departureTime?: string; userName?: string; userPhone?: string; }
+type SeatTier = "window" | "aisle" | "economy";
+
+const TIER_COLORS: Record<SeatTier, string> = {
+  window: "bg-amber-100 text-amber-800 border-amber-300",
+  aisle: "bg-blue-100 text-blue-800 border-blue-300",
+  economy: "bg-green-100 text-green-800 border-green-300",
+};
+
+interface VanRoute {
+  id: string; name: string; nameUrdu?: string; fromAddress: string; toAddress: string;
+  farePerSeat: string; fareWindow?: string | null; fareAisle?: string | null; fareEconomy?: string | null;
+  distanceKm?: string; durationMin?: number; isActive: boolean; sortOrder: number; notes?: string;
+}
+interface VanVehicle {
+  id: string; plateNumber: string; model: string; totalSeats: number;
+  seatLayout?: { seatsPerRow?: number; seats?: Record<string, SeatTier> } | null;
+  isActive: boolean; driverId?: string; driverName?: string; driverPhone?: string;
+}
+interface VanSchedule {
+  id: string; routeId: string; vehicleId?: string; driverId?: string; departureTime: string;
+  returnTime?: string; daysOfWeek: number[]; tripStatus?: string; isActive: boolean;
+  routeName?: string; vehiclePlate?: string; driverName?: string; vanCode?: string | null;
+}
+interface VanBooking {
+  id: string; userId: string; scheduleId: string; seatNumbers: number[];
+  seatTiers?: Record<string, SeatTier> | null; tierBreakdown?: Record<string, { count: number; fare: number }> | null;
+  travelDate: string; status: string; fare: string; paymentMethod: string;
+  passengerName?: string; tripStatus?: string; createdAt: string; routeName?: string;
+  routeFrom?: string; routeTo?: string; departureTime?: string; userName?: string; userPhone?: string;
+}
+interface VanDriver {
+  id: string; userId: string; vanCode: string; approvalStatus: string;
+  isActive: boolean; notes?: string; createdAt: string;
+  userName?: string; userPhone?: string; userEmail?: string;
+}
 
 const DAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STATUS_COLORS: Record<string, string> = {
@@ -61,7 +88,11 @@ function RoutesTab() {
   const qc = useQueryClient();
   const [editRoute, setEditRoute] = useState<VanRoute | null>(null);
   const [newRouteOpen, setNewRouteOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", fromAddress: "", toAddress: "", farePerSeat: "", distanceKm: "", durationMin: "", notes: "" });
+  const [form, setForm] = useState({
+    name: "", fromAddress: "", toAddress: "", farePerSeat: "",
+    fareWindow: "", fareAisle: "", fareEconomy: "",
+    distanceKm: "", durationMin: "", notes: "",
+  });
 
   const { data: routes = [], isLoading } = useQuery<VanRoute[]>({
     queryKey: ["van-admin-routes"],
@@ -71,13 +102,16 @@ function RoutesTab() {
   const saveMut = useMutation({
     mutationFn: (data: Partial<typeof form> & { id?: string }) => {
       const { id, ...body } = data;
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: body.name, fromAddress: body.fromAddress, toAddress: body.toAddress,
         farePerSeat: parseFloat(body.farePerSeat || "0"),
-        ...(body.distanceKm ? { distanceKm: parseFloat(body.distanceKm) } : {}),
-        ...(body.durationMin ? { durationMin: parseInt(body.durationMin) } : {}),
-        ...(body.notes ? { notes: body.notes } : {}),
       };
+      if (body.fareWindow) payload.fareWindow = parseFloat(body.fareWindow);
+      if (body.fareAisle) payload.fareAisle = parseFloat(body.fareAisle);
+      if (body.fareEconomy) payload.fareEconomy = parseFloat(body.fareEconomy);
+      if (body.distanceKm) payload.distanceKm = parseFloat(body.distanceKm);
+      if (body.durationMin) payload.durationMin = parseInt(body.durationMin);
+      if (body.notes) payload.notes = body.notes;
       return id ? vanFetch(`/admin/routes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })
         : vanFetch("/admin/routes", { method: "POST", body: JSON.stringify(payload) });
     },
@@ -91,8 +125,21 @@ function RoutesTab() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  function openNew() { setForm({ name: "", fromAddress: "", toAddress: "", farePerSeat: "", distanceKm: "", durationMin: "", notes: "" }); setNewRouteOpen(true); }
-  function openEdit(r: VanRoute) { setEditRoute(r); setForm({ name: r.name, fromAddress: r.fromAddress, toAddress: r.toAddress, farePerSeat: String(r.farePerSeat), distanceKm: r.distanceKm || "", durationMin: r.durationMin ? String(r.durationMin) : "", notes: r.notes || "" }); }
+  function openNew() {
+    setForm({ name: "", fromAddress: "", toAddress: "", farePerSeat: "", fareWindow: "", fareAisle: "", fareEconomy: "", distanceKm: "", durationMin: "", notes: "" });
+    setNewRouteOpen(true);
+  }
+  function openEdit(r: VanRoute) {
+    setEditRoute(r);
+    setForm({
+      name: r.name, fromAddress: r.fromAddress, toAddress: r.toAddress,
+      farePerSeat: String(r.farePerSeat),
+      fareWindow: r.fareWindow ? String(r.fareWindow) : "",
+      fareAisle: r.fareAisle ? String(r.fareAisle) : "",
+      fareEconomy: r.fareEconomy ? String(r.fareEconomy) : "",
+      distanceKm: r.distanceKm || "", durationMin: r.durationMin ? String(r.durationMin) : "", notes: r.notes || "",
+    });
+  }
 
   const RouteFormDialog = ({ open, onClose, id }: { open: boolean; onClose: () => void; id?: string }) => (
     <Dialog open={open} onOpenChange={onClose}>
@@ -102,8 +149,25 @@ function RoutesTab() {
           <Input placeholder="Route name (e.g. Rawalpindi → Islamabad)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <Input placeholder="From address" value={form.fromAddress} onChange={e => setForm(f => ({ ...f, fromAddress: e.target.value }))} />
           <Input placeholder="To address" value={form.toAddress} onChange={e => setForm(f => ({ ...f, toAddress: e.target.value }))} />
-          <div className="grid grid-cols-3 gap-2">
-            <Input placeholder="Fare/seat (Rs)" type="number" value={form.farePerSeat} onChange={e => setForm(f => ({ ...f, farePerSeat: e.target.value }))} />
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Tiered Pricing (per seat)</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs text-amber-700 font-medium mb-1 block">🪟 Window</label>
+                <Input placeholder="Rs" type="number" value={form.fareWindow} onChange={e => setForm(f => ({ ...f, fareWindow: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-blue-700 font-medium mb-1 block">💺 Aisle</label>
+                <Input placeholder="Rs" type="number" value={form.fareAisle} onChange={e => setForm(f => ({ ...f, fareAisle: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-green-700 font-medium mb-1 block">🎒 Economy</label>
+                <Input placeholder="Rs" type="number" value={form.fareEconomy} onChange={e => setForm(f => ({ ...f, fareEconomy: e.target.value }))} />
+              </div>
+            </div>
+            <Input placeholder="Default fare/seat (fallback)" type="number" value={form.farePerSeat} onChange={e => setForm(f => ({ ...f, farePerSeat: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <Input placeholder="Distance km" type="number" value={form.distanceKm} onChange={e => setForm(f => ({ ...f, distanceKm: e.target.value }))} />
             <Input placeholder="Duration min" type="number" value={form.durationMin} onChange={e => setForm(f => ({ ...f, durationMin: e.target.value }))} />
           </div>
@@ -131,8 +195,10 @@ function RoutesTab() {
             <TableRow>
               <TableHead>Route</TableHead>
               <TableHead>From → To</TableHead>
-              <TableHead>Fare/Seat</TableHead>
-              <TableHead>Distance</TableHead>
+              <TableHead>Window</TableHead>
+              <TableHead>Aisle</TableHead>
+              <TableHead>Economy</TableHead>
+              <TableHead>Default</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -142,8 +208,10 @@ function RoutesTab() {
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.name}</TableCell>
                 <TableCell className="text-sm">{r.fromAddress} → {r.toAddress}</TableCell>
-                <TableCell className="font-semibold text-green-700">Rs {parseFloat(r.farePerSeat).toFixed(0)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.distanceKm ? `${r.distanceKm} km` : "—"}</TableCell>
+                <TableCell className="font-semibold text-amber-700">{r.fareWindow ? `Rs ${parseFloat(r.fareWindow).toFixed(0)}` : "—"}</TableCell>
+                <TableCell className="font-semibold text-blue-700">{r.fareAisle ? `Rs ${parseFloat(r.fareAisle).toFixed(0)}` : "—"}</TableCell>
+                <TableCell className="font-semibold text-green-700">{r.fareEconomy ? `Rs ${parseFloat(r.fareEconomy).toFixed(0)}` : "—"}</TableCell>
+                <TableCell className="font-semibold text-gray-600">Rs {parseFloat(r.farePerSeat).toFixed(0)}</TableCell>
                 <TableCell><Badge variant={r.isActive ? "default" : "secondary"}>{r.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                 <TableCell className="text-right space-x-1">
                   <Button size="icon" variant="ghost" onClick={() => openEdit(r)}><Pencil className="w-4 h-4" /></Button>
@@ -161,7 +229,7 @@ function RoutesTab() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   VEHICLES TAB
+   VEHICLES TAB (with seat layout tier editor)
 ══════════════════════════════════════════════════════════ */
 function VehiclesTab() {
   const { toast } = useToast();
@@ -169,11 +237,28 @@ function VehiclesTab() {
   const [editVehicle, setEditVehicle] = useState<VanVehicle | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [form, setForm] = useState({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", seatsPerRow: "4", driverId: "" });
+  const [seatTiers, setSeatTiers] = useState<Record<string, SeatTier>>({});
 
   const { data: vehicles = [], isLoading } = useQuery<VanVehicle[]>({
     queryKey: ["van-admin-vehicles"],
     queryFn: () => vanFetch("/admin/vehicles"),
   });
+
+  function initSeatTiers(totalSeats: number, seatsPerRow: number, existing?: Record<string, SeatTier>) {
+    const tiers: Record<string, SeatTier> = {};
+    for (let i = 1; i <= totalSeats; i++) {
+      if (existing && existing[String(i)]) {
+        tiers[String(i)] = existing[String(i)];
+      } else {
+        const posInRow = (i - 1) % seatsPerRow;
+        const isLastRow = i > totalSeats - seatsPerRow;
+        if (isLastRow) tiers[String(i)] = "economy";
+        else if (posInRow === 0 || posInRow === seatsPerRow - 1) tiers[String(i)] = "window";
+        else tiers[String(i)] = "aisle";
+      }
+    }
+    setSeatTiers(tiers);
+  }
 
   const saveMut = useMutation({
     mutationFn: (data: typeof form & { id?: string }) => {
@@ -182,7 +267,7 @@ function VehiclesTab() {
         plateNumber: body.plateNumber,
         model: body.model,
         totalSeats: parseInt(body.totalSeats),
-        seatLayout: { seatsPerRow: parseInt(body.seatsPerRow) || 4 },
+        seatLayout: { seatsPerRow: parseInt(body.seatsPerRow) || 4, seats: seatTiers },
         driverId: body.driverId || null,
       };
       return id ? vanFetch(`/admin/vehicles/${id}`, { method: "PATCH", body: JSON.stringify(payload) })
@@ -192,40 +277,106 @@ function VehiclesTab() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  function openNew() { setForm({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", seatsPerRow: "4", driverId: "" }); setNewOpen(true); }
-  function openEdit(v: VanVehicle) { setEditVehicle(v); setForm({ plateNumber: v.plateNumber, model: v.model, totalSeats: String(v.totalSeats), seatsPerRow: String(v.seatLayout?.seatsPerRow ?? 4), driverId: v.driverId || "" }); }
+  function openNew() {
+    setForm({ plateNumber: "", model: "Suzuki Carry", totalSeats: "12", seatsPerRow: "4", driverId: "" });
+    initSeatTiers(12, 4);
+    setNewOpen(true);
+  }
+  function openEdit(v: VanVehicle) {
+    setEditVehicle(v);
+    const spr = v.seatLayout?.seatsPerRow ?? 4;
+    setForm({ plateNumber: v.plateNumber, model: v.model, totalSeats: String(v.totalSeats), seatsPerRow: String(spr), driverId: v.driverId || "" });
+    initSeatTiers(v.totalSeats, spr, v.seatLayout?.seats);
+  }
 
-  const VehicleFormDialog = ({ open, onClose, id }: { open: boolean; onClose: () => void; id?: string }) => (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>{id ? "Edit Vehicle" : "New Vehicle"}</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <Input placeholder="Plate number (e.g. LHR-1234)" value={form.plateNumber} onChange={e => setForm(f => ({ ...f, plateNumber: e.target.value }))} />
-          <Input placeholder="Model (e.g. Suzuki Carry)" value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} />
-          <Input placeholder="Total seats" type="number" value={form.totalSeats} onChange={e => setForm(f => ({ ...f, totalSeats: e.target.value }))} />
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-1 block">Seats per row</label>
-            <Select value={form.seatsPerRow} onValueChange={v => setForm(f => ({ ...f, seatsPerRow: v }))}>
-              <SelectTrigger><SelectValue placeholder="Seats per row" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="2">2 per row</SelectItem>
-                <SelectItem value="3">3 per row</SelectItem>
-                <SelectItem value="4">4 per row (default)</SelectItem>
-                <SelectItem value="5">5 per row</SelectItem>
-              </SelectContent>
-            </Select>
+  function cycleTier(seatNum: string) {
+    setSeatTiers(prev => {
+      const current = prev[seatNum] || "aisle";
+      const next: SeatTier = current === "window" ? "aisle" : current === "aisle" ? "economy" : "window";
+      return { ...prev, [seatNum]: next };
+    });
+  }
+
+  const VehicleFormDialog = ({ open, onClose, id }: { open: boolean; onClose: () => void; id?: string }) => {
+    const ts = parseInt(form.totalSeats) || 12;
+    const spr = parseInt(form.seatsPerRow) || 4;
+    const rows: number[][] = [];
+    for (let i = 1; i <= ts; i += spr) {
+      rows.push(Array.from({ length: Math.min(spr, ts - i + 1) }, (_, j) => i + j));
+    }
+
+    return (
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{id ? "Edit Vehicle" : "New Vehicle"}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Plate number (e.g. LHR-1234)" value={form.plateNumber} onChange={e => setForm(f => ({ ...f, plateNumber: e.target.value }))} />
+            <Input placeholder="Model (e.g. Suzuki Carry)" value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Total seats</label>
+                <Input type="number" value={form.totalSeats} onChange={e => {
+                  setForm(f => ({ ...f, totalSeats: e.target.value }));
+                  initSeatTiers(parseInt(e.target.value) || 12, parseInt(form.seatsPerRow) || 4, seatTiers);
+                }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Seats per row</label>
+                <Select value={form.seatsPerRow} onValueChange={v => {
+                  setForm(f => ({ ...f, seatsPerRow: v }));
+                  initSeatTiers(parseInt(form.totalSeats) || 12, parseInt(v) || 4, seatTiers);
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[2,3,4,5].map(n => <SelectItem key={n} value={String(n)}>{n} per row</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <Input placeholder="Driver user ID (optional)" value={form.driverId} onChange={e => setForm(f => ({ ...f, driverId: e.target.value }))} />
+
+            {/* Seat layout tier editor */}
+            <div className="border rounded-xl p-4 bg-gray-50">
+              <p className="text-xs font-semibold text-muted-foreground uppercase mb-3">Seat Layout — Click to change tier</p>
+              <div className="flex gap-3 mb-3 justify-center">
+                {(["window","aisle","economy"] as SeatTier[]).map(t => (
+                  <span key={t} className={`text-xs font-bold px-2 py-1 rounded border ${TIER_COLORS[t]}`}>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
+                ))}
+              </div>
+              <div className="flex justify-center mb-2">
+                <div className="bg-gray-200 rounded-lg px-3 py-1 text-xs font-medium text-gray-500">🚐 Driver</div>
+              </div>
+              <div className="space-y-1.5">
+                {rows.map((row, ri) => (
+                  <div key={ri} className="flex justify-center gap-1.5">
+                    {row.map(num => {
+                      const tier = seatTiers[String(num)] || "aisle";
+                      return (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => cycleTier(String(num))}
+                          className={`w-10 h-10 rounded-lg border-2 text-xs font-bold flex items-center justify-center transition-colors cursor-pointer ${TIER_COLORS[tier]}`}
+                        >
+                          {num}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <Input placeholder="Driver user ID (optional)" value={form.driverId} onChange={e => setForm(f => ({ ...f, driverId: e.target.value }))} />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => saveMut.mutate({ ...form, ...(id ? { id } : {}) })} disabled={saveMut.isPending}>
-            {saveMut.isPending ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => saveMut.mutate({ ...form, ...(id ? { id } : {}) })} disabled={saveMut.isPending}>
+              {saveMut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  };
 
   return (
     <div>
@@ -324,6 +475,7 @@ function SchedulesTab() {
               <TableHead>Days</TableHead>
               <TableHead>Vehicle</TableHead>
               <TableHead>Driver</TableHead>
+              <TableHead>Van Code</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -343,6 +495,9 @@ function SchedulesTab() {
                 </TableCell>
                 <TableCell className="text-sm">{s.vehiclePlate || "—"}</TableCell>
                 <TableCell className="text-sm">{s.driverName || "—"}</TableCell>
+                <TableCell>
+                  {s.vanCode ? <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded">{s.vanCode}</span> : "—"}
+                </TableCell>
                 <TableCell><Badge variant={s.isActive ? "default" : "secondary"}>{s.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                 <TableCell className="text-right">
                   <Button size="icon" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => { if (confirm("Deactivate this schedule?")) deleteMut.mutate(s.id); }}><Trash2 className="w-4 h-4" /></Button>
@@ -395,6 +550,117 @@ function SchedulesTab() {
             <Button variant="outline" onClick={() => setNewOpen(false)}>Cancel</Button>
             <Button onClick={() => saveMut.mutate()} disabled={!form.routeId || saveMut.isPending}>
               {saveMut.isPending ? "Saving…" : "Create Schedule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   DRIVERS TAB
+══════════════════════════════════════════════════════════ */
+function DriversTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [newOpen, setNewOpen] = useState(false);
+  const [form, setForm] = useState({ userId: "", notes: "" });
+
+  const { data: drivers = [], isLoading } = useQuery<VanDriver[]>({
+    queryKey: ["van-admin-drivers"],
+    queryFn: () => vanFetch("/admin/drivers"),
+  });
+
+  const createMut = useMutation({
+    mutationFn: () => vanFetch("/admin/drivers", {
+      method: "POST",
+      body: JSON.stringify({ userId: form.userId, approvalStatus: "approved", notes: form.notes || undefined }),
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["van-admin-drivers"] }); setNewOpen(false); toast({ title: "Van driver created" }); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const statusMut = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      vanFetch(`/admin/drivers/${id}`, { method: "PATCH", body: JSON.stringify({ approvalStatus: status }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["van-admin-drivers"] }); toast({ title: "Status updated" }); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deactivateMut = useMutation({
+    mutationFn: (id: string) => vanFetch(`/admin/drivers/${id}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["van-admin-drivers"] }); toast({ title: "Driver deactivated" }); },
+  });
+
+  const APPROVAL_COLORS: Record<string, string> = {
+    pending: "bg-yellow-100 text-yellow-800",
+    approved: "bg-green-100 text-green-800",
+    suspended: "bg-red-100 text-red-800",
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-muted-foreground">{drivers.length} driver{drivers.length !== 1 ? "s" : ""}</span>
+        <Button size="sm" onClick={() => { setForm({ userId: "", notes: "" }); setNewOpen(true); }}><Plus className="w-4 h-4 mr-1" />New Van Driver</Button>
+      </div>
+      {isLoading ? <div className="text-center py-8 text-muted-foreground">Loading…</div> : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Van Code</TableHead>
+              <TableHead>Driver Name</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Active</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {drivers.map(d => (
+              <TableRow key={d.id}>
+                <TableCell><span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded">{d.vanCode}</span></TableCell>
+                <TableCell className="font-medium">{d.userName || d.userId}</TableCell>
+                <TableCell className="text-sm">{d.userPhone || "—"}</TableCell>
+                <TableCell>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${APPROVAL_COLORS[d.approvalStatus] || "bg-gray-100 text-gray-700"}`}>
+                    {d.approvalStatus}
+                  </span>
+                </TableCell>
+                <TableCell><Badge variant={d.isActive ? "default" : "secondary"}>{d.isActive ? "Yes" : "No"}</Badge></TableCell>
+                <TableCell className="text-right space-x-1">
+                  <Select onValueChange={v => statusMut.mutate({ id: d.id, status: v })}>
+                    <SelectTrigger className="h-7 w-28 text-xs inline-flex"><SelectValue placeholder="Set status" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="approved">Approve</SelectItem>
+                      <SelectItem value="suspended">Suspend</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="icon" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => { if (confirm("Deactivate this van driver?")) deactivateMut.mutate(d.id); }}><Trash2 className="w-4 h-4" /></Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>New Van Driver</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">User ID (rider account)</label>
+              <Input placeholder="User ID" value={form.userId} onChange={e => setForm(f => ({ ...f, userId: e.target.value }))} />
+            </div>
+            <Input placeholder="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            <p className="text-xs text-muted-foreground">A unique Van Code (VAN-XXX) will be auto-generated.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancel</Button>
+            <Button onClick={() => createMut.mutate()} disabled={!form.userId || createMut.isPending}>
+              {createMut.isPending ? "Creating…" : "Create Driver"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -461,6 +727,7 @@ function BookingsTab() {
               <TableHead>Date</TableHead>
               <TableHead>Time</TableHead>
               <TableHead>Seats</TableHead>
+              <TableHead>Tier</TableHead>
               <TableHead>Fare</TableHead>
               <TableHead>Payment</TableHead>
               <TableHead>Status</TableHead>
@@ -474,7 +741,14 @@ function BookingsTab() {
                   <div className="font-medium text-sm">{b.passengerName || b.userName || "—"}</div>
                   <div className="text-xs text-muted-foreground">{b.userPhone || ""}</div>
                 </TableCell>
-                <TableCell className="text-sm">{b.routeName || "—"}</TableCell>
+                <TableCell className="text-sm">
+                  {b.routeName || "—"}
+                  {b.tripStatus === "in_progress" && (
+                    <span className="inline-flex items-center gap-0.5 ml-1 text-[10px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">
+                      <Navigation className="w-2.5 h-2.5" />LIVE
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="text-sm font-mono">{b.travelDate}</TableCell>
                 <TableCell className="text-sm font-mono">{b.departureTime || "—"}</TableCell>
                 <TableCell>
@@ -483,6 +757,17 @@ function BookingsTab() {
                       <span key={s} className="bg-indigo-100 text-indigo-800 text-xs font-bold rounded px-1.5 py-0.5">{s}</span>
                     ))}
                   </div>
+                </TableCell>
+                <TableCell>
+                  {b.tierBreakdown ? (
+                    <div className="flex gap-0.5 flex-wrap">
+                      {Object.entries(b.tierBreakdown).map(([tier, info]) => (
+                        <span key={tier} className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${TIER_COLORS[tier as SeatTier] || "bg-gray-100 text-gray-600"}`}>
+                          {tier.charAt(0).toUpperCase()}{(info as {count: number; fare: number}).count}
+                        </span>
+                      ))}
+                    </div>
+                  ) : "—"}
                 </TableCell>
                 <TableCell className="font-semibold text-green-700">Rs {parseFloat(b.fare).toFixed(0)}</TableCell>
                 <TableCell><Badge variant="outline">{b.paymentMethod}</Badge></TableCell>
@@ -519,7 +804,7 @@ export default function VanServicePage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Van Service Management</h1>
-          <p className="text-sm text-muted-foreground">Manage commercial van routes, schedules, vehicles and seat bookings</p>
+          <p className="text-sm text-muted-foreground">Manage commercial van routes, schedules, vehicles, drivers and seat bookings</p>
         </div>
       </div>
 
@@ -528,11 +813,13 @@ export default function VanServicePage() {
           <TabsTrigger value="routes"><Route className="w-4 h-4 mr-1.5" />Routes</TabsTrigger>
           <TabsTrigger value="schedules"><Clock className="w-4 h-4 mr-1.5" />Schedules</TabsTrigger>
           <TabsTrigger value="vehicles"><Bus className="w-4 h-4 mr-1.5" />Vehicles</TabsTrigger>
+          <TabsTrigger value="drivers"><UserCheck className="w-4 h-4 mr-1.5" />Drivers</TabsTrigger>
           <TabsTrigger value="bookings"><Calendar className="w-4 h-4 mr-1.5" />Bookings</TabsTrigger>
         </TabsList>
         <TabsContent value="routes"><RoutesTab /></TabsContent>
         <TabsContent value="schedules"><SchedulesTab /></TabsContent>
         <TabsContent value="vehicles"><VehiclesTab /></TabsContent>
+        <TabsContent value="drivers"><DriversTab /></TabsContent>
         <TabsContent value="bookings"><BookingsTab /></TabsContent>
       </Tabs>
     </div>

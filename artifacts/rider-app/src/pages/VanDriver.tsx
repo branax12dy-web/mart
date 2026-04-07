@@ -1,7 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bus, Users, CheckCircle, MapPin, Clock, Calendar, ChevronRight, AlertCircle } from "lucide-react";
+import { Bus, Users, CheckCircle, MapPin, Clock, Calendar, ChevronRight, AlertCircle, Play, Square, Navigation } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useAuth } from "../lib/auth";
+
+type SeatTier = "window" | "aisle" | "economy";
+
+const TIER_BADGE: Record<SeatTier, { bg: string; text: string; label: string }> = {
+  window:  { bg: "bg-amber-100", text: "text-amber-700", label: "Window" },
+  aisle:   { bg: "bg-blue-100", text: "text-blue-700", label: "Aisle" },
+  economy: { bg: "bg-green-100", text: "text-green-700", label: "Economy" },
+};
 
 interface VanSchedule {
   id: string;
@@ -15,11 +24,15 @@ interface VanSchedule {
   date: string;
   bookedCount: number;
   bookedSeats: number[];
+  vanCode?: string | null;
+  tripStatus?: string;
+  seatTiers?: Record<string, SeatTier>;
 }
 
 interface Passenger {
   id: string;
   seatNumbers: number[];
+  seatTiers?: Record<string, SeatTier> | null;
   status: string;
   passengerName?: string;
   passengerPhone?: string;
@@ -44,8 +57,19 @@ async function markBoarded(bookingId: string): Promise<void> {
   await apiFetch(`/van/driver/bookings/${bookingId}/board`, { method: "PATCH", body: JSON.stringify({}) });
 }
 
+async function startTrip(scheduleId: string, date: string): Promise<void> {
+  await apiFetch(`/van/driver/schedules/${scheduleId}/date/${date}/start-trip`, { method: "POST", body: JSON.stringify({}) });
+}
+
 async function completeTrip(scheduleId: string, date: string): Promise<void> {
   await apiFetch(`/van/driver/schedules/${scheduleId}/date/${date}/complete`, { method: "PATCH", body: JSON.stringify({}) });
+}
+
+async function sendLocation(scheduleId: string, date: string, lat: number, lng: number): Promise<void> {
+  await apiFetch(`/van/driver/location`, {
+    method: "POST",
+    body: JSON.stringify({ scheduleId, date, latitude: lat, longitude: lng }),
+  });
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -60,6 +84,8 @@ export default function VanDriver() {
   const qc = useQueryClient();
   const [selectedSchedule, setSelectedSchedule] = useState<VanSchedule | null>(null);
   const [error, setError] = useState("");
+  const [broadcasting, setBroadcasting] = useState(false);
+  const gpsIntervalRef = useRef<number | null>(null);
 
   const { data: schedules = [], isLoading } = useQuery<VanSchedule[]>({
     queryKey: ["van-driver-today"],
@@ -71,7 +97,7 @@ export default function VanDriver() {
     queryKey: ["van-passengers", selectedSchedule?.id, selectedSchedule?.date],
     queryFn: () => selectedSchedule ? fetchPassengers(selectedSchedule.id, selectedSchedule.date) : Promise.resolve([]),
     enabled: !!selectedSchedule,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   const boardMut = useMutation({
@@ -80,18 +106,65 @@ export default function VanDriver() {
     onError: (e: Error) => setError(e.message),
   });
 
+  const startMut = useMutation({
+    mutationFn: () => selectedSchedule ? startTrip(selectedSchedule.id, selectedSchedule.date) : Promise.resolve(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["van-driver-today"] });
+      startGpsBroadcast();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
   const completeMut = useMutation({
     mutationFn: () => selectedSchedule ? completeTrip(selectedSchedule.id, selectedSchedule.date) : Promise.resolve(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["van-passengers"] });
       qc.invalidateQueries({ queryKey: ["van-driver-today"] });
+      stopGpsBroadcast();
       setSelectedSchedule(null);
     },
     onError: (e: Error) => setError(e.message),
   });
 
+  function startGpsBroadcast() {
+    if (!selectedSchedule) return;
+    setBroadcasting(true);
+    const schedId = selectedSchedule.id;
+    const schedDate = selectedSchedule.date;
+    gpsIntervalRef.current = window.setInterval(() => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            sendLocation(schedId, schedDate, pos.coords.latitude, pos.coords.longitude).catch(() => {});
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      }
+    }, 5000);
+  }
+
+  function stopGpsBroadcast() {
+    setBroadcasting(false);
+    if (gpsIntervalRef.current) {
+      clearInterval(gpsIntervalRef.current);
+      gpsIntervalRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    return () => { stopGpsBroadcast(); };
+  }, []);
+
+  useEffect(() => {
+    if (selectedSchedule?.tripStatus === "in_progress" && !broadcasting) {
+      startGpsBroadcast();
+    }
+  }, [selectedSchedule?.tripStatus]);
+
   const boardedCount = passengers.filter(p => p.status === "boarded" || p.status === "completed").length;
   const confirmedCount = passengers.filter(p => p.status === "confirmed").length;
+  const isTripInProgress = selectedSchedule?.tripStatus === "in_progress" || broadcasting;
 
   if (isLoading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -104,16 +177,21 @@ export default function VanDriver() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-gradient-to-br from-indigo-900 to-indigo-700 px-4 pt-12 pb-6 text-white">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
             <Bus className="w-5 h-5 text-white" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-bold">Van Service</h1>
             <p className="text-indigo-200 text-sm">Today's route assignments</p>
           </div>
+          {schedules.length > 0 && schedules[0]?.vanCode && (
+            <div className="bg-white/15 px-3 py-1.5 rounded-lg">
+              <p className="text-xs text-indigo-200">Van Code</p>
+              <p className="text-lg font-bold text-white">{schedules[0].vanCode}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -143,6 +221,11 @@ export default function VanDriver() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
+                      {s.vanCode && (
+                        <div className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-1 rounded-md mb-2">
+                          <Bus className="w-3.5 h-3.5" />{s.vanCode}
+                        </div>
+                      )}
                       <div className="font-semibold text-gray-900">{s.routeName || s.routeId}</div>
                       <div className="text-sm text-gray-500 mt-0.5">{s.routeFrom} → {s.routeTo}</div>
                       <div className="flex items-center gap-3 mt-2">
@@ -152,10 +235,12 @@ export default function VanDriver() {
                         <span className="flex items-center gap-1 text-sm text-gray-500">
                           <Users className="w-4 h-4" />{s.bookedCount}/{s.totalSeats ?? "?"} booked
                         </span>
-                        <span className="flex items-center gap-1 text-sm text-gray-400">
-                          <Calendar className="w-4 h-4" />{s.date}
-                        </span>
                       </div>
+                      {s.tripStatus === "in_progress" && (
+                        <span className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                          <Navigation className="w-3 h-3" />In Progress
+                        </span>
+                      )}
                     </div>
                     <ChevronRight className="w-5 h-5 text-gray-400 mt-1" />
                   </div>
@@ -165,13 +250,15 @@ export default function VanDriver() {
           </>
         ) : (
           <>
-            {/* Back + header */}
             <div className="flex items-center gap-2">
-              <button onClick={() => setSelectedSchedule(null)} className="text-indigo-600 font-semibold text-sm hover:underline flex items-center gap-1">
+              <button onClick={() => { setSelectedSchedule(null); stopGpsBroadcast(); }} className="text-indigo-600 font-semibold text-sm hover:underline flex items-center gap-1">
                 ← Back
               </button>
               <span className="text-gray-400">|</span>
               <span className="font-semibold text-gray-800">{selectedSchedule.routeName}</span>
+              {selectedSchedule.vanCode && (
+                <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-md ml-auto">{selectedSchedule.vanCode}</span>
+              )}
             </div>
 
             {/* Stats */}
@@ -187,6 +274,30 @@ export default function VanDriver() {
                 </div>
               ))}
             </div>
+
+            {/* GPS broadcasting indicator */}
+            {broadcasting && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-green-700 text-sm font-medium">Broadcasting GPS to passengers</span>
+              </div>
+            )}
+
+            {/* Start Trip button */}
+            {!isTripInProgress && passengers.length > 0 && (
+              <button
+                onClick={() => {
+                  if (confirm("Start the trip? This will begin GPS broadcasting to all passengers.")) {
+                    startMut.mutate();
+                  }
+                }}
+                disabled={startMut.isPending}
+                className="w-full bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                <Play className="w-5 h-5" />
+                {startMut.isPending ? "Starting…" : "Start Trip"}
+              </button>
+            )}
 
             {/* Passengers */}
             {loadingPassengers ? (
@@ -208,10 +319,17 @@ export default function VanDriver() {
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLE[p.status] || "bg-gray-100 text-gray-600"}`}>{p.status}</span>
                           <span className="text-xs text-gray-400">{p.paymentMethod} · Rs {parseFloat(p.fare).toFixed(0)}</span>
                         </div>
-                        <div className="flex gap-1 mt-1.5">
-                          {(Array.isArray(p.seatNumbers) ? p.seatNumbers as number[] : []).map(s => (
-                            <span key={s} className="bg-indigo-100 text-indigo-700 text-xs font-bold rounded px-1.5 py-0.5">Seat {s}</span>
-                          ))}
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {(Array.isArray(p.seatNumbers) ? p.seatNumbers as number[] : []).map(s => {
+                            const tier = (p.seatTiers?.[String(s)] || "aisle") as SeatTier;
+                            const tb = TIER_BADGE[tier];
+                            return (
+                              <span key={s} className={`${tb.bg} ${tb.text} text-xs font-bold rounded px-1.5 py-0.5 inline-flex items-center gap-1`}>
+                                Seat {s}
+                                <span className="text-[10px] font-medium opacity-75">{tb.label}</span>
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                       {p.status === "confirmed" && (
@@ -235,19 +353,19 @@ export default function VanDriver() {
               </div>
             )}
 
-            {/* Complete trip */}
-            {passengers.some(p => p.status === "confirmed" || p.status === "boarded") && (
+            {/* End Trip button */}
+            {isTripInProgress && passengers.some(p => p.status === "confirmed" || p.status === "boarded") && (
               <button
                 onClick={() => {
-                  if (confirm("Mark entire trip as completed? This will complete all boarded passenger bookings.")) {
+                  if (confirm("End the trip? This will complete all boarded passengers and stop GPS broadcasting.")) {
                     completeMut.mutate();
                   }
                 }}
                 disabled={completeMut.isPending}
-                className="w-full bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                className="w-full bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                <CheckCircle className="w-5 h-5" />
-                {completeMut.isPending ? "Completing…" : "Complete Trip"}
+                <Square className="w-5 h-5" />
+                {completeMut.isPending ? "Ending…" : "End Trip"}
               </button>
             )}
           </>

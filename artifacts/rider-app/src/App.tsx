@@ -149,18 +149,32 @@ function AppRoutes() {
     return <MaintenanceScreen message={config.content.maintenanceMsg} appName={config.platform.appName} />;
   }
 
+  const userRoles = typeof user.roles === "string" ? user.roles : "";
+  const isVanDriver = userRoles.includes("van_driver");
+
+  if (isVanDriver) {
+    return (
+      <div className="max-w-md mx-auto relative flex flex-col min-h-screen">
+        {refreshFailToast && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg pointer-events-none">
+            Connection issue — profile sync failed
+          </div>
+        )}
+        <div className="flex-1">
+          <VanDriver />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-md mx-auto relative flex flex-col min-h-screen">
-      {/* ── Subtle sync-failure toast ── */}
       {refreshFailToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg pointer-events-none">
           Connection issue — profile sync failed
         </div>
       )}
 
-      {/* ── Sticky header stack: announcement + any future system bars.
-            max-h caps combined height so stacked bars never push content
-            off-screen on small viewports; overflow-y-auto scrolls if needed. ── */}
       <div className="sticky top-0 z-50 flex flex-col max-h-[30vh] overflow-y-auto">
         <AnnouncementBar message={config.content.announcement} />
       </div>

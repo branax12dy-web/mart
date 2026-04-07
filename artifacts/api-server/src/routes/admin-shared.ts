@@ -1432,3 +1432,44 @@ export async function ensureVendorLocationColumns() {
   }
   _vendorLocMigrated = true;
 }
+
+let _vanUpgradeMigrated = false;
+export async function ensureVanServiceUpgrade() {
+  if (_vanUpgradeMigrated) return;
+  try {
+    await db.execute(sql`
+      ALTER TABLE van_routes ADD COLUMN IF NOT EXISTS fare_window NUMERIC(10,2);
+      ALTER TABLE van_routes ADD COLUMN IF NOT EXISTS fare_aisle NUMERIC(10,2);
+      ALTER TABLE van_routes ADD COLUMN IF NOT EXISTS fare_economy NUMERIC(10,2);
+    `);
+    await db.execute(sql`
+      ALTER TABLE van_bookings ADD COLUMN IF NOT EXISTS seat_tiers JSONB DEFAULT NULL;
+      ALTER TABLE van_bookings ADD COLUMN IF NOT EXISTS tier_label TEXT;
+      ALTER TABLE van_bookings ADD COLUMN IF NOT EXISTS price_paid NUMERIC(10,2);
+      ALTER TABLE van_bookings ADD COLUMN IF NOT EXISTS tier_breakdown JSONB DEFAULT NULL;
+    `);
+    await db.execute(sql`
+      ALTER TABLE van_schedules ADD COLUMN IF NOT EXISTS van_driver_id TEXT;
+      ALTER TABLE van_schedules ADD COLUMN IF NOT EXISTS trip_status TEXT NOT NULL DEFAULT 'idle';
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS van_drivers (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        van_code TEXT NOT NULL UNIQUE,
+        approval_status TEXT NOT NULL DEFAULT 'pending',
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        notes TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS van_drivers_user_id_idx ON van_drivers(user_id);
+      CREATE INDEX IF NOT EXISTS van_drivers_van_code_idx ON van_drivers(van_code);
+    `);
+    logger.info("[migration] Van service upgrade ensured");
+  } catch (e) {
+    logger.error({ err: e }, "[migration] Van service upgrade failed — will retry next startup");
+    return;
+  }
+  _vanUpgradeMigrated = true;
+}

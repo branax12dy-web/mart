@@ -20,9 +20,32 @@ const C = Colors.light;
 
 const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-interface VanRoute { id: string; name: string; nameUrdu?: string; fromAddress: string; toAddress: string; farePerSeat: string; distanceKm?: string; durationMin?: number; notes?: string; }
-interface VanSchedule { id: string; departureTime: string; returnTime?: string; daysOfWeek: number[]; totalSeats?: number; vehiclePlate?: string; vehicleModel?: string; }
+type SeatTier = "window" | "aisle" | "economy";
+
+const TIER_COLORS: Record<SeatTier, { bg: string; border: string; textColor: string; label: string }> = {
+  window:  { bg: "#FFFBEB", border: "#F59E0B", textColor: "#B45309", label: "Window" },
+  aisle:   { bg: "#EFF6FF", border: "#3B82F6", textColor: "#1D4ED8", label: "Aisle" },
+  economy: { bg: "#F0FDF4", border: "#22C55E", textColor: "#15803D", label: "Economy" },
+};
+
+interface VanRoute {
+  id: string; name: string; nameUrdu?: string; fromAddress: string; toAddress: string;
+  farePerSeat: string; fareWindow?: string | null; fareAisle?: string | null; fareEconomy?: string | null;
+  distanceKm?: string; durationMin?: number; notes?: string;
+}
+interface VanSchedule {
+  id: string; departureTime: string; returnTime?: string; daysOfWeek: number[];
+  totalSeats?: number; vehiclePlate?: string; vehicleModel?: string; vanCode?: string | null;
+  seatLayout?: unknown;
+}
 interface RouteDetail extends VanRoute { schedules: VanSchedule[]; }
+
+interface AvailabilityData {
+  bookedSeats: number[]; totalSeats: number; seatsPerRow: number; available: boolean; reason?: string;
+  seatTiers: Record<string, SeatTier>;
+  fareWindow: number; fareAisle: number; fareEconomy: number; farePerSeat: number;
+  vanCode?: string | null; tripStatus?: string;
+}
 
 type Step = "routes" | "schedules" | "date" | "seats" | "confirm";
 
@@ -42,14 +65,13 @@ export default function VanServiceScreen() {
   const [selectedRoute, setSelectedRoute] = useState<RouteDetail | null>(null);
   const [selectedSchedule, setSelectedSchedule] = useState<VanSchedule | null>(null);
   const [travelDate, setTravelDate] = useState<string>(() => new Date().toISOString().split("T")[0]!);
-  const [availability, setAvailability] = useState<{ bookedSeats: number[]; totalSeats: number; seatsPerRow: number; available: boolean; reason?: string } | null>(null);
+  const [availability, setAvailability] = useState<AvailabilityData | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [passengerName, setPassengerName] = useState("");
   const [passengerPhone, setPassengerPhone] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
 
-  /* ── Load routes on mount ── */
   useEffect(() => {
     setLoading(true);
     fetch(`${API_BASE}/van/routes`)
@@ -98,6 +120,30 @@ export default function VanServiceScreen() {
     );
   }
 
+  function getSeatFare(seatNum: number): number {
+    if (!availability) return 0;
+    const tier = availability.seatTiers[String(seatNum)] || "aisle";
+    if (tier === "window") return availability.fareWindow;
+    if (tier === "economy") return availability.fareEconomy;
+    return availability.fareAisle;
+  }
+
+  function getSelectedTotal(): number {
+    return selectedSeats.reduce((sum, s) => sum + getSeatFare(s), 0);
+  }
+
+  function getTierBreakdown(): { tier: SeatTier; count: number; fare: number }[] {
+    if (!availability) return [];
+    const map: Record<string, { count: number; fare: number }> = {};
+    for (const s of selectedSeats) {
+      const tier = availability.seatTiers[String(s)] || "aisle";
+      const fare = getSeatFare(s);
+      if (!map[tier]) map[tier] = { count: 0, fare };
+      map[tier]!.count++;
+    }
+    return Object.entries(map).map(([tier, v]) => ({ tier: tier as SeatTier, ...v }));
+  }
+
   async function bookSeats() {
     if (!selectedSchedule || !selectedRoute) return;
     if (selectedSeats.length === 0) { showToast("Please select at least one seat.", "error"); return; }
@@ -106,10 +152,7 @@ export default function VanServiceScreen() {
     try {
       const res = await fetch(`${API_BASE}/van/bookings`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-auth-token": token || "",
-        },
+        headers: { "Content-Type": "application/json", "x-auth-token": token || "" },
         body: JSON.stringify({
           scheduleId: selectedSchedule.id,
           travelDate,
@@ -138,7 +181,6 @@ export default function VanServiceScreen() {
     else smartGoBack();
   }
 
-  /* ── Render helpers ── */
   function renderHeader(title: string, sub?: string) {
     return (
       <LinearGradient colors={["#4338CA","#6366F1","#818CF8"]} start={{ x:0, y:0 }} end={{ x:1, y:1 }}
@@ -160,38 +202,63 @@ export default function VanServiceScreen() {
   }
 
   /* ═══ ROUTES ═══ */
-  if (step === "routes") return (
-    <View style={ss.root}>
-      {renderHeader("Van Service", "Fixed-route commuter vans")}
-      {loading ? <View style={ss.center}><ActivityIndicator color={C.primary} size="large" /></View> : (
-        <ScrollView contentContainerStyle={ss.content}>
-          {routes.length === 0 ? (
-            <View style={ss.empty}>
-              <Ionicons name="bus-outline" size={48} color={C.textMuted} />
-              <Text style={ss.emptyTitle}>No Routes Available</Text>
-              <Text style={ss.emptyDesc}>Van service routes will appear here.</Text>
-            </View>
-          ) : routes.map(r => (
-            <TouchableOpacity activeOpacity={0.7} key={r.id} style={ss.routeCard} onPress={() => selectRoute(r)}>
-              <View style={ss.routeIcon}>
-                <Ionicons name="bus" size={22} color="#6366F1" />
+  if (step === "routes") {
+    const showTieredFare = routes.some(r => r.fareWindow || r.fareAisle || r.fareEconomy);
+    return (
+      <View style={ss.root}>
+        {renderHeader("Van Service", "Fixed-route commuter vans")}
+        {loading ? <View style={ss.center}><ActivityIndicator color={C.primary} size="large" /></View> : (
+          <ScrollView contentContainerStyle={ss.content}>
+            {routes.length === 0 ? (
+              <View style={ss.empty}>
+                <Ionicons name="bus-outline" size={48} color={C.textMuted} />
+                <Text style={ss.emptyTitle}>No Routes Available</Text>
+                <Text style={ss.emptyDesc}>Van service routes will appear here.</Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={ss.routeName}>{r.name}</Text>
-                <Text style={ss.routeFromTo}>{r.fromAddress} → {r.toAddress}</Text>
-                {r.distanceKm ? <Text style={ss.routeMeta}>{r.distanceKm} km{r.durationMin ? ` · ${r.durationMin} min` : ""}</Text> : null}
-              </View>
-              <View style={ss.routeFareCol}>
-                <Text style={ss.routeFare}>Rs {parseFloat(r.farePerSeat).toFixed(0)}</Text>
-                <Text style={ss.routeFareLabel}>per seat</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-    </View>
-  );
+            ) : routes.map(r => {
+              const hasWindow = r.fareWindow && parseFloat(r.fareWindow) > 0;
+              const fareMin = Math.min(
+                hasWindow ? parseFloat(r.fareWindow!) : parseFloat(r.farePerSeat),
+                r.fareAisle ? parseFloat(r.fareAisle) : parseFloat(r.farePerSeat),
+                r.fareEconomy ? parseFloat(r.fareEconomy) : parseFloat(r.farePerSeat),
+              );
+              const fareMax = Math.max(
+                hasWindow ? parseFloat(r.fareWindow!) : parseFloat(r.farePerSeat),
+                r.fareAisle ? parseFloat(r.fareAisle) : parseFloat(r.farePerSeat),
+                r.fareEconomy ? parseFloat(r.fareEconomy) : parseFloat(r.farePerSeat),
+              );
+              return (
+                <TouchableOpacity activeOpacity={0.7} key={r.id} style={ss.routeCard} onPress={() => selectRoute(r)}>
+                  <View style={ss.routeIcon}>
+                    <Ionicons name="bus" size={22} color="#6366F1" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={ss.routeName}>{r.name}</Text>
+                    <Text style={ss.routeFromTo}>{r.fromAddress} → {r.toAddress}</Text>
+                    {r.distanceKm ? <Text style={ss.routeMeta}>{r.distanceKm} km{r.durationMin ? ` · ${r.durationMin} min` : ""}</Text> : null}
+                  </View>
+                  <View style={ss.routeFareCol}>
+                    {fareMin !== fareMax ? (
+                      <>
+                        <Text style={ss.routeFare}>Rs {fareMin.toFixed(0)}–{fareMax.toFixed(0)}</Text>
+                        <Text style={ss.routeFareLabel}>per seat</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={ss.routeFare}>Rs {parseFloat(r.farePerSeat).toFixed(0)}</Text>
+                        <Text style={ss.routeFareLabel}>per seat</Text>
+                      </>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
+    );
+  }
 
   /* ═══ SCHEDULES ═══ */
   if (step === "schedules" && selectedRoute) return (
@@ -209,6 +276,12 @@ export default function VanServiceScreen() {
               <Text style={ss.scheduleTime}>{s.departureTime}</Text>
               {s.returnTime ? <><Text style={ss.scheduleSep}>·</Text><Ionicons name="return-down-back-outline" size={16} color={C.textMuted} /><Text style={ss.scheduleReturnTime}>{s.returnTime}</Text></> : null}
             </View>
+            {s.vanCode ? (
+              <View style={ss.vanCodeBadge}>
+                <Ionicons name="id-card-outline" size={14} color="#6366F1" />
+                <Text style={ss.vanCodeText}>{s.vanCode}</Text>
+              </View>
+            ) : null}
             <View style={ss.daysRow}>
               {(Array.isArray(s.daysOfWeek) ? s.daysOfWeek as number[] : []).map(d => {
                 const today = new Date().getDay();
@@ -229,7 +302,6 @@ export default function VanServiceScreen() {
       {renderHeader("Select Travel Date")}
       <ScrollView contentContainerStyle={ss.content}>
         <Text style={ss.sectionLabel}>Choose your travel date</Text>
-        {/* Date quick-picks for next 7 days */}
         {Array.from({ length: 7 }, (_, i) => {
           const d = new Date();
           d.setDate(d.getDate() + i);
@@ -275,6 +347,8 @@ export default function VanServiceScreen() {
     for (let i = 0; i < allSeats.length; i += seatsPerRow) {
       rows.push(allSeats.slice(i, i + seatsPerRow));
     }
+    const isLastRow = (seatNum: number) => seatNum > totalSeats - seatsPerRow;
+
     return (
       <View style={ss.root}>
         {renderHeader("Select Seats")}
@@ -288,8 +362,22 @@ export default function VanServiceScreen() {
             </View>
           ) : (
             <>
+              {/* Tier pricing legend */}
+              <View style={ss.tierLegend}>
+                {(["window", "aisle", "economy"] as SeatTier[]).map(tier => {
+                  const t = TIER_COLORS[tier];
+                  const fare = tier === "window" ? availability.fareWindow : tier === "aisle" ? availability.fareAisle : availability.fareEconomy;
+                  return (
+                    <View key={tier} style={[ss.tierLegendItem, { backgroundColor: t.bg, borderColor: t.border }]}>
+                      <Text style={[ss.tierLegendLabel, { color: t.textColor }]}>{t.label}</Text>
+                      <Text style={[ss.tierLegendFare, { color: t.textColor }]}>Rs {fare.toFixed(0)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+
               <View style={ss.seatLegend}>
-                {[{color:"#EEF2FF",border:"#A5B4FC",label:"Available"},{color:"#DCFCE7",border:"#86EFAC",label:"Selected"},{color:"#FEE2E2",border:"#FCA5A5",label:"Booked"}].map(l => (
+                {[{color:"#F5F5F5",border:"#D1D5DB",label:"Available"},{color:"#6366F1",border:"#6366F1",label:"Selected"},{color:"#FEE2E2",border:"#FCA5A5",label:"Booked"}].map(l => (
                   <View key={l.label} style={ss.legendItem}>
                     <View style={[ss.legendBox, { backgroundColor: l.color, borderColor: l.border }]} />
                     <Text style={ss.legendLabel}>{l.label}</Text>
@@ -299,20 +387,31 @@ export default function VanServiceScreen() {
 
               {/* Driver seat */}
               <View style={ss.driverRow}>
-                <View style={ss.driverSeat}><Ionicons name="person" size={16} color="#6366F1" /><Text style={ss.driverLabel}>Driver</Text></View>
+                <View style={ss.driverSeat}><Ionicons name="person" size={16} color="#6B7280" /><Text style={ss.driverLabel}>Driver</Text></View>
+                <View style={{ flex: 1 }} />
+                <Ionicons name="bus-outline" size={20} color="#9CA3AF" />
               </View>
 
-              {/* Seat grid — enforces exact seatsPerRow columns */}
-              <View style={{ gap }}>
+              {/* Seat grid */}
+              <View style={{ gap, marginBottom: 8 }}>
                 {rows.map((row, rowIdx) => (
                   <View key={rowIdx} style={{ flexDirection: "row", gap, justifyContent: "center" }}>
                     {row.map(num => {
                       const booked = availability.bookedSeats.includes(num);
                       const sel = selectedSeats.includes(num);
+                      const tier = (availability.seatTiers[String(num)] || "aisle") as SeatTier;
+                      const tc = TIER_COLORS[tier];
                       return (
-                        <TouchableOpacity activeOpacity={0.7} key={num} style={[ss.seat, { width: seatSize, height: seatSize }, booked ? ss.seatBooked : sel ? ss.seatSelected : ss.seatAvailable]} onPress={() => toggleSeat(num)} disabled={booked}>
-                          <Ionicons name="person" size={14} color={booked ? "#EF4444" : sel ? "#16A34A" : "#6366F1"} />
-                          <Text style={[ss.seatNum, { color: booked ? "#EF4444" : sel ? "#16A34A" : "#4338CA" }]}>{num}</Text>
+                        <TouchableOpacity activeOpacity={0.7} key={num}
+                          style={[
+                            ss.seat, { width: seatSize, height: seatSize },
+                            booked ? ss.seatBooked :
+                            sel ? { backgroundColor: "#6366F1", borderColor: "#4F46E5", borderWidth: 2 } :
+                            { backgroundColor: "#F9FAFB", borderColor: tc.border, borderWidth: 2 },
+                          ]}
+                          onPress={() => toggleSeat(num)} disabled={booked}>
+                          <Text style={[ss.seatNum, { color: booked ? "#EF4444" : sel ? "#fff" : tc.textColor }]}>{num}</Text>
+                          {!booked && !sel && <View style={[ss.tierDot, { backgroundColor: tc.border }]} />}
                         </TouchableOpacity>
                       );
                     })}
@@ -323,9 +422,20 @@ export default function VanServiceScreen() {
               {selectedSeats.length > 0 ? (
                 <View style={ss.seatSummary}>
                   <Text style={ss.seatSummaryText}>
-                    {selectedSeats.length} seat{selectedSeats.length > 1 ? "s" : ""} selected · Rs {(selectedSeats.length * parseFloat(selectedRoute.farePerSeat)).toFixed(0)}
+                    {selectedSeats.length} seat{selectedSeats.length > 1 ? "s" : ""} selected
                   </Text>
-                  <TouchableOpacity activeOpacity={0.7} style={ss.btnPrimary} onPress={() => setStep("confirm")}>
+                  {getTierBreakdown().map(tb => (
+                    <View key={tb.tier} style={ss.tierBreakdownRow}>
+                      <View style={[ss.tierBreakdownDot, { backgroundColor: TIER_COLORS[tb.tier].border }]} />
+                      <Text style={ss.tierBreakdownText}>{TIER_COLORS[tb.tier].label} × {tb.count}</Text>
+                      <Text style={ss.tierBreakdownFare}>Rs {(tb.count * tb.fare).toFixed(0)}</Text>
+                    </View>
+                  ))}
+                  <View style={[ss.tierBreakdownRow, { borderTopWidth: 1, borderTopColor: "#C7D2FE", paddingTop: 8, marginTop: 4 }]}>
+                    <Text style={[ss.tierBreakdownText, { fontFamily: Font.bold, color: "#4338CA" }]}>Total</Text>
+                    <Text style={[ss.tierBreakdownFare, { fontFamily: Font.bold, fontSize: 16, color: "#4338CA" }]}>Rs {getSelectedTotal().toFixed(0)}</Text>
+                  </View>
+                  <TouchableOpacity activeOpacity={0.7} style={[ss.btnPrimary, { marginTop: 12 }]} onPress={() => setStep("confirm")}>
                     <Text style={ss.btnPrimaryText}>Continue</Text>
                   </TouchableOpacity>
                 </View>
@@ -339,20 +449,38 @@ export default function VanServiceScreen() {
 
   /* ═══ CONFIRM ═══ */
   if (step === "confirm" && selectedRoute && selectedSchedule && availability) {
-    const fareTotal = selectedSeats.length * parseFloat(selectedRoute.farePerSeat);
+    const fareTotal = getSelectedTotal();
     return (
       <View style={ss.root}>
         {renderHeader("Confirm Booking")}
         <ScrollView contentContainerStyle={ss.content}>
-          <View style={ss.confirmCard}>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Route</Text><Text style={ss.confirmValue}>{selectedRoute.name}</Text></View>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>From</Text><Text style={ss.confirmValue}>{selectedRoute.fromAddress}</Text></View>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>To</Text><Text style={ss.confirmValue}>{selectedRoute.toAddress}</Text></View>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Departure</Text><Text style={ss.confirmValue}>{selectedSchedule.departureTime}</Text></View>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Date</Text><Text style={ss.confirmValue}>{travelDate}</Text></View>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Seats</Text><Text style={ss.confirmValue}>{selectedSeats.join(", ")}</Text></View>
-            <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Fare/Seat</Text><Text style={ss.confirmValue}>Rs {parseFloat(selectedRoute.farePerSeat).toFixed(0)}</Text></View>
-            <View style={[ss.confirmRow, ss.confirmTotal]}><Text style={ss.confirmTotalLabel}>Total</Text><Text style={ss.confirmTotalValue}>Rs {fareTotal.toFixed(0)}</Text></View>
+          {/* Ticket card */}
+          <View style={ss.ticketCard}>
+            <LinearGradient colors={["#4338CA","#6366F1"]} start={{x:0,y:0}} end={{x:1,y:1}} style={ss.ticketHeader}>
+              <Ionicons name="bus" size={24} color="#fff" />
+              <Text style={ss.ticketTitle}>{selectedRoute.name}</Text>
+              {availability.vanCode ? <Text style={ss.ticketVanCode}>{availability.vanCode}</Text> : null}
+            </LinearGradient>
+            <View style={ss.ticketBody}>
+              <View style={ss.confirmRow}><Text style={ss.confirmLabel}>From</Text><Text style={ss.confirmValue}>{selectedRoute.fromAddress}</Text></View>
+              <View style={ss.confirmRow}><Text style={ss.confirmLabel}>To</Text><Text style={ss.confirmValue}>{selectedRoute.toAddress}</Text></View>
+              <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Departure</Text><Text style={ss.confirmValue}>{selectedSchedule.departureTime}</Text></View>
+              <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Date</Text><Text style={ss.confirmValue}>{travelDate}</Text></View>
+              <View style={ss.confirmRow}><Text style={ss.confirmLabel}>Seats</Text><Text style={ss.confirmValue}>{selectedSeats.join(", ")}</Text></View>
+              {getTierBreakdown().map(tb => (
+                <View key={tb.tier} style={ss.confirmRow}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View style={[ss.tierBreakdownDot, { backgroundColor: TIER_COLORS[tb.tier].border }]} />
+                    <Text style={ss.confirmLabel}>{TIER_COLORS[tb.tier].label} × {tb.count}</Text>
+                  </View>
+                  <Text style={ss.confirmValue}>Rs {(tb.count * tb.fare).toFixed(0)}</Text>
+                </View>
+              ))}
+              <View style={[ss.confirmRow, ss.confirmTotal]}>
+                <Text style={ss.confirmTotalLabel}>Total</Text>
+                <Text style={ss.confirmTotalValue}>Rs {fareTotal.toFixed(0)}</Text>
+              </View>
+            </View>
           </View>
 
           <Text style={ss.sectionLabel}>Passenger Details (optional)</Text>
@@ -407,7 +535,7 @@ const ss = StyleSheet.create({
   routeFromTo: { fontFamily: Font.regular, fontSize: 13, color: "#6B7280", marginTop: 2 },
   routeMeta: { fontFamily: Font.regular, fontSize: 12, color: "#9CA3AF", marginTop: 2 },
   routeFareCol: { alignItems: "flex-end", marginRight: 8 },
-  routeFare: { fontFamily: Font.bold, fontSize: 16, color: "#16A34A" },
+  routeFare: { fontFamily: Font.bold, fontSize: 15, color: "#16A34A" },
   routeFareLabel: { fontFamily: Font.regular, fontSize: 11, color: "#9CA3AF" },
   scheduleCard: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 10, borderWidth: 2, borderColor: "transparent", shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
   scheduleCardSelected: { borderColor: "#6366F1" },
@@ -415,6 +543,8 @@ const ss = StyleSheet.create({
   scheduleTime: { fontFamily: Font.bold, fontSize: 20, color: "#111827" },
   scheduleSep: { color: "#9CA3AF" },
   scheduleReturnTime: { fontFamily: Font.regular, fontSize: 14, color: "#6B7280" },
+  vanCodeBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#EEF2FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start", marginTop: 8 },
+  vanCodeText: { fontFamily: Font.bold, fontSize: 13, color: "#4338CA" },
   daysRow: { flexDirection: "row", gap: 6, marginTop: 10 },
   dayBadge: { backgroundColor: "#F3F4F6", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   dayBadgeActive: { backgroundColor: "#EEF2FF" },
@@ -434,22 +564,32 @@ const ss = StyleSheet.create({
   btnPrimary: { backgroundColor: "#6366F1", borderRadius: 14, padding: 16, alignItems: "center", marginTop: 8 },
   btnPrimaryText: { fontFamily: Font.bold, fontSize: 16, color: "#fff" },
   btnDisabled: { opacity: 0.6 },
+  tierLegend: { flexDirection: "row", gap: 8, marginBottom: 12, justifyContent: "center" },
+  tierLegendItem: { flex: 1, alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, borderRadius: 10, borderWidth: 1.5 },
+  tierLegendLabel: { fontFamily: Font.semiBold, fontSize: 11, marginBottom: 2 },
+  tierLegendFare: { fontFamily: Font.bold, fontSize: 14 },
   seatLegend: { flexDirection: "row", gap: 16, marginBottom: 16, justifyContent: "center" },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendBox: { width: 16, height: 16, borderRadius: 4, borderWidth: 1.5 },
   legendLabel: { fontFamily: Font.regular, fontSize: 12, color: "#6B7280" },
-  driverRow: { flexDirection: "row", justifyContent: "flex-start", marginBottom: 8 },
-  driverSeat: { width: 56, height: 40, backgroundColor: "#E0E7FF", borderRadius: 10, alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2 },
-  driverLabel: { fontFamily: Font.semiBold, fontSize: 10, color: "#6366F1" },
-  seatGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 16 },
-  seat: { width: 56, height: 56, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, gap: 2 },
-  seatAvailable: { backgroundColor: "#EEF2FF", borderColor: "#A5B4FC" },
-  seatSelected: { backgroundColor: "#DCFCE7", borderColor: "#86EFAC" },
-  seatBooked: { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" },
-  seatNum: { fontFamily: Font.bold, fontSize: 12 },
+  driverRow: { flexDirection: "row", alignItems: "center", marginBottom: 8, paddingHorizontal: 4 },
+  driverSeat: { width: 56, height: 40, backgroundColor: "#E5E7EB", borderRadius: 10, alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2 },
+  driverLabel: { fontFamily: Font.semiBold, fontSize: 10, color: "#6B7280" },
+  seat: { borderRadius: 12, alignItems: "center", justifyContent: "center", gap: 2 },
+  seatBooked: { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5", borderWidth: 2 },
+  seatNum: { fontFamily: Font.bold, fontSize: 13 },
+  tierDot: { width: 6, height: 6, borderRadius: 3 },
   seatSummary: { backgroundColor: "#EEF2FF", borderRadius: 14, padding: 14, marginTop: 8 },
-  seatSummaryText: { fontFamily: Font.semiBold, fontSize: 14, color: "#4338CA", marginBottom: 10, textAlign: "center" },
-  confirmCard: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  seatSummaryText: { fontFamily: Font.semiBold, fontSize: 14, color: "#4338CA", marginBottom: 8, textAlign: "center" },
+  tierBreakdownRow: { flexDirection: "row", alignItems: "center", paddingVertical: 3, gap: 6 },
+  tierBreakdownDot: { width: 8, height: 8, borderRadius: 4 },
+  tierBreakdownText: { fontFamily: Font.regular, fontSize: 13, color: "#374151", flex: 1 },
+  tierBreakdownFare: { fontFamily: Font.semiBold, fontSize: 13, color: "#374151" },
+  ticketCard: { borderRadius: 16, overflow: "hidden", marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  ticketHeader: { padding: 16, flexDirection: "row", alignItems: "center", gap: 10 },
+  ticketTitle: { fontFamily: Font.bold, fontSize: 18, color: "#fff", flex: 1 },
+  ticketVanCode: { fontFamily: Font.bold, fontSize: 14, color: "#E0E7FF", backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  ticketBody: { backgroundColor: "#fff", padding: 16 },
   confirmRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
   confirmLabel: { fontFamily: Font.regular, fontSize: 13, color: "#6B7280" },
   confirmValue: { fontFamily: Font.semiBold, fontSize: 13, color: "#111827", maxWidth: "60%", textAlign: "right" },

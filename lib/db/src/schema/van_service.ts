@@ -21,6 +21,9 @@ export const vanRoutesTable = pgTable("van_routes", {
   distanceKm:     decimal("distance_km", { precision: 6, scale: 2 }),
   durationMin:    integer("duration_min"),
   farePerSeat:    decimal("fare_per_seat", { precision: 10, scale: 2 }).notNull(),
+  fareWindow:     decimal("fare_window", { precision: 10, scale: 2 }),
+  fareAisle:      decimal("fare_aisle", { precision: 10, scale: 2 }),
+  fareEconomy:    decimal("fare_economy", { precision: 10, scale: 2 }),
   notes:          text("notes"),
   isActive:       boolean("is_active").notNull().default(true),
   sortOrder:      integer("sort_order").notNull().default(0),
@@ -44,14 +47,30 @@ export const vanVehiclesTable = pgTable("van_vehicles", {
   index("van_vehicles_driver_id_idx").on(t.driverId),
 ]);
 
+export const vanDriversTable = pgTable("van_drivers", {
+  id:             text("id").primaryKey(),
+  userId:         text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  vanCode:        text("van_code").notNull().unique(),
+  approvalStatus: text("approval_status").notNull().default("pending"),
+  isActive:       boolean("is_active").notNull().default(true),
+  notes:          text("notes"),
+  createdAt:      timestamp("created_at").notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  index("van_drivers_user_id_idx").on(t.userId),
+  index("van_drivers_van_code_idx").on(t.vanCode),
+]);
+
 export const vanSchedulesTable = pgTable("van_schedules", {
   id:            text("id").primaryKey(),
   routeId:       text("route_id").notNull().references(() => vanRoutesTable.id, { onDelete: "cascade" }),
   vehicleId:     text("vehicle_id").references(() => vanVehiclesTable.id, { onDelete: "set null" }),
   driverId:      text("driver_id").references(() => usersTable.id, { onDelete: "set null" }),
+  vanDriverId:   text("van_driver_id"),
   departureTime: text("departure_time").notNull(),
   returnTime:    text("return_time"),
   daysOfWeek:    jsonb("days_of_week").notNull().default([1,2,3,4,5,6]),
+  tripStatus:    text("trip_status").notNull().default("idle"),
   isActive:      boolean("is_active").notNull().default(true),
   createdAt:     timestamp("created_at").notNull().defaultNow(),
   updatedAt:     timestamp("updated_at").notNull().defaultNow(),
@@ -67,9 +86,13 @@ export const vanBookingsTable = pgTable("van_bookings", {
   scheduleId:    text("schedule_id").notNull().references(() => vanSchedulesTable.id, { onDelete: "cascade" }),
   routeId:       text("route_id").notNull().references(() => vanRoutesTable.id, { onDelete: "cascade" }),
   seatNumbers:   jsonb("seat_numbers").notNull().default([]),
+  seatTiers:     jsonb("seat_tiers").default(null),
+  tierLabel:     text("tier_label"),
+  pricePaid:     decimal("price_paid", { precision: 10, scale: 2 }),
   travelDate:    text("travel_date").notNull(),
   status:        text("status").notNull().default("confirmed"),
   fare:          decimal("fare", { precision: 10, scale: 2 }).notNull(),
+  tierBreakdown: jsonb("tier_breakdown").default(null),
   paymentMethod: text("payment_method").notNull().default("cash"),
   passengerName: text("passenger_name"),
   passengerPhone: text("passenger_phone"),
@@ -88,5 +111,6 @@ export const vanBookingsTable = pgTable("van_bookings", {
 
 export type VanRoute    = typeof vanRoutesTable.$inferSelect;
 export type VanVehicle  = typeof vanVehiclesTable.$inferSelect;
+export type VanDriver   = typeof vanDriversTable.$inferSelect;
 export type VanSchedule = typeof vanSchedulesTable.$inferSelect;
 export type VanBooking  = typeof vanBookingsTable.$inferSelect;
