@@ -18,11 +18,11 @@ async function apiFetch(path: string, opts: RequestInit = {}) {
   return json.data !== undefined ? json.data : json;
 }
 
-interface OtherUser { id: string; name: string | null; ajkId: string | null; }
+interface OtherUser { id: string; name: string | null; ajkId: string | null; roles?: string | null; }
 interface Conversation { id: string; otherUser: OtherUser; lastMessage: { content: string } | null; unreadCount: number; lastMessageAt: string | null; }
 interface Message { id: string; content: string; senderId: string; messageType: string; createdAt: string; deliveryStatus: string; voiceNoteUrl?: string; imageUrl?: string; }
-interface CommRequest { id: string; status: string; senderId: string; sender?: { name: string; ajkId: string }; }
-interface SearchResult { id: string; name: string; ajkId: string; role: string; }
+interface CommRequest { id: string; status: string; senderId: string; sender?: { name: string; ajkId: string; roles?: string | null }; }
+interface SearchResult { id: string; name: string; ajkId: string; role: string; isOnline?: boolean; }
 interface IncomingCallData { callId: string; callerId: string; callerName?: string; callerAjkId?: string; }
 interface CallSignal { callId: string; callerId?: string; sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit; }
 

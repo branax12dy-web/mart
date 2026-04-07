@@ -93,7 +93,7 @@ function AppRoutes() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (user) {
+    if (user && typeof Notification !== "undefined" && Notification.requestPermission) {
       Notification.requestPermission().then(perm => {
         if (perm === "granted") registerPush().catch(() => {});
       }).catch(() => {});
