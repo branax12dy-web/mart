@@ -1441,6 +1441,7 @@ function WalletScreenInner() {
   const [sendPhoneError, setSendPhoneError] = useState("");
   const [sendReceiverName, setSendReceiverName] = useState("");
   const [sendNetworkError, setSendNetworkError] = useState(false);
+  const [sendMode, setSendMode] = useState<"phone" | "ajkid">("phone");
 
   const [pendingTopups,  setPendingTopups]  = useState<{ count: number; total: number }>({ count: 0, total: 0 });
 
@@ -1607,7 +1608,7 @@ function WalletScreenInner() {
   const resetSendState = () => {
     setSendPhone(""); setSendAmount(""); setSendNote("");
     setSendStep("input"); setSendPhoneError(""); setSendReceiverName(""); setSendLoading(false);
-    setSendNetworkError(false);
+    setSendNetworkError(false); setSendMode("phone");
   };
 
   const closeSendModal = () => {
@@ -1626,9 +1627,21 @@ function WalletScreenInner() {
     return true;
   };
 
+  const validateSendAjkId = (id: string): boolean => {
+    const cleaned = id.trim().toUpperCase();
+    if (!cleaned) { setSendPhoneError("AJK ID is required"); return false; }
+    if (!/^AJK-[A-Z0-9]{4,8}$/.test(cleaned)) { setSendPhoneError("AJK ID format: AJK-XXXXXX"); return false; }
+    setSendPhoneError("");
+    return true;
+  };
+
   const handleSendContinue = async () => {
     setSendNetworkError(false);
-    if (!validateSendPhone(sendPhone)) return;
+    if (sendMode === "ajkid") {
+      if (!validateSendAjkId(sendPhone)) return;
+    } else {
+      if (!validateSendPhone(sendPhone)) return;
+    }
     const num = parseFloat(sendAmount);
     const safeMinTransfer = minTransfer || 200;
     if (!num || !isFinite(num) || isNaN(num) || num < safeMinTransfer) { showToast(`Minimum transfer amount is Rs. ${safeMinTransfer.toLocaleString()}`, "error"); return; }
@@ -1639,10 +1652,13 @@ function WalletScreenInner() {
     setSendNetworkError(false);
     setSendLoading(true);
     try {
+      const resolveBody = sendMode === "ajkid"
+        ? { ajkId: sendPhone.trim().toUpperCase() }
+        : { phone: sendPhone.trim() };
       const res = await fetch(`${API}/wallet/resolve-phone`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ phone: sendPhone.trim() }),
+        body: JSON.stringify(resolveBody),
       });
       if (!res.ok) {
         if (__DEV__) console.warn("[Wallet] Receiver lookup returned HTTP error:", res.status);
@@ -1652,7 +1668,7 @@ function WalletScreenInner() {
       }
       const data = unwrapApiResponse(await res.json());
       if (!data.found) {
-        showToast("No AJKMart account found with this phone number.", "error");
+        showToast(sendMode === "ajkid" ? "No account found with this AJK ID." : "No AJKMart account found with this phone number.", "error");
         setSendLoading(false);
         return;
       }
@@ -1694,7 +1710,9 @@ function WalletScreenInner() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(activePinToken ? { "x-wallet-pin-token": activePinToken } : {}),
         },
-        body: JSON.stringify({ receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
+        body: JSON.stringify(sendMode === "ajkid"
+          ? { ajkId: sendPhone.trim().toUpperCase(), amount: num, note: sendNote || null }
+          : { receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
       });
       const data = unwrapApiResponse(await res.json());
       if (!res.ok) {
@@ -2023,21 +2041,56 @@ function WalletScreenInner() {
                   <>
                     <Text style={ws.sheetTitle}>Send Money</Text>
 
-                    <Text style={ws.sheetLbl}>Receiver's Phone Number</Text>
-                    <View style={[ws.inputWrap, sendPhoneError ? { borderColor: C.redBright } : {}]}>
-                      <View style={ws.phonePrefix}>
-                        <Text style={ws.phonePrefixTxt}>+92</Text>
-                      </View>
-                      <TextInput
-                        value={sendPhone}
-                        onChangeText={(t) => { setSendPhone(t); if (sendPhoneError) setSendPhoneError(""); setSendNetworkError(false); }}
-                        placeholder="3XX XXXXXXX"
-                        placeholderTextColor={C.textMuted}
-                        style={ws.sendInput}
-                        keyboardType="phone-pad"
-                        maxLength={10}
-                      />
+                    {/* Mode toggle: Phone vs AJK ID */}
+                    <View style={{ flexDirection: "row", gap: 6, marginBottom: 12, backgroundColor: C.surfaceAlt, borderRadius: 10, padding: 3 }}>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => { setSendMode("phone"); setSendPhone(""); setSendPhoneError(""); }}
+                        style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: sendMode === "phone" ? C.surface : "transparent", alignItems: "center" }}
+                      >
+                        <Text style={{ ...Typ.caption, fontFamily: sendMode === "phone" ? Font.bold : Font.regular, color: sendMode === "phone" ? C.text : C.textMuted }}>Phone Number</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => { setSendMode("ajkid"); setSendPhone(""); setSendPhoneError(""); }}
+                        style={{ flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: sendMode === "ajkid" ? C.surface : "transparent", alignItems: "center" }}
+                      >
+                        <Text style={{ ...Typ.caption, fontFamily: sendMode === "ajkid" ? Font.bold : Font.regular, color: sendMode === "ajkid" ? C.purple : C.textMuted }}>AJK ID</Text>
+                      </TouchableOpacity>
                     </View>
+
+                    <Text style={ws.sheetLbl}>{sendMode === "ajkid" ? "Receiver's AJK ID" : "Receiver's Phone Number"}</Text>
+                    {sendMode === "ajkid" ? (
+                      <View style={[ws.inputWrap, sendPhoneError ? { borderColor: C.redBright } : {}]}>
+                        <View style={ws.phonePrefix}>
+                          <Text style={[ws.phonePrefixTxt, { color: C.purple }]}>AJK-</Text>
+                        </View>
+                        <TextInput
+                          value={sendPhone.startsWith("AJK-") ? sendPhone.slice(4) : sendPhone}
+                          onChangeText={(t) => { setSendPhone("AJK-" + t.toUpperCase().replace(/[^A-Z0-9]/g, "")); if (sendPhoneError) setSendPhoneError(""); setSendNetworkError(false); }}
+                          placeholder="XXXXXX"
+                          placeholderTextColor={C.textMuted}
+                          style={ws.sendInput}
+                          autoCapitalize="characters"
+                          maxLength={8}
+                        />
+                      </View>
+                    ) : (
+                      <View style={[ws.inputWrap, sendPhoneError ? { borderColor: C.redBright } : {}]}>
+                        <View style={ws.phonePrefix}>
+                          <Text style={ws.phonePrefixTxt}>+92</Text>
+                        </View>
+                        <TextInput
+                          value={sendPhone}
+                          onChangeText={(t) => { setSendPhone(t); if (sendPhoneError) setSendPhoneError(""); setSendNetworkError(false); }}
+                          placeholder="3XX XXXXXXX"
+                          placeholderTextColor={C.textMuted}
+                          style={ws.sendInput}
+                          keyboardType="phone-pad"
+                          maxLength={10}
+                        />
+                      </View>
+                    )}
                     {sendPhoneError ? <Text style={{ ...Typ.caption, color: C.redBright, marginTop: 2, marginBottom: 6 }}>{sendPhoneError}</Text> : null}
 
                     {sendNetworkError ? (
@@ -2096,7 +2149,9 @@ function WalletScreenInner() {
                         <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>To</Text>
                         <View style={{ alignItems: "flex-end" }}>
                           {sendReceiverName ? <Text style={{ ...Typ.bodySemiBold, color: C.text }}>{sendReceiverName}</Text> : null}
-                          <Text style={{ ...Typ.body, fontSize: 13, color: sendReceiverName ? C.textMuted : C.text }}>+92 {sendPhone.trim()}</Text>
+                          <Text style={{ ...Typ.body, fontSize: 13, color: sendReceiverName ? C.textMuted : C.text }}>
+                            {sendMode === "ajkid" ? sendPhone.trim().toUpperCase() : `+92 ${sendPhone.trim()}`}
+                          </Text>
                         </View>
                       </View>
                       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>

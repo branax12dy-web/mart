@@ -51,6 +51,7 @@ import SearchAnalytics from "@/pages/search-analytics";
 import ErrorMonitor from "@/pages/error-monitor";
 import Communication from "@/pages/communication";
 import Loyalty from "@/pages/loyalty";
+import WalletTransfers from "@/pages/wallet-transfers";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -156,6 +157,7 @@ function Router() {
       <Route path="/error-monitor"><ProtectedRoute component={ErrorMonitor} /></Route>
       <Route path="/communication"><ProtectedRoute component={Communication} /></Route>
       <Route path="/loyalty"><ProtectedRoute component={Loyalty} /></Route>
+      <Route path="/wallet-transfers"><ProtectedRoute component={WalletTransfers} /></Route>
 
       <Route component={NotFound} />
     </Switch>

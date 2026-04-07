@@ -88,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navDepositRequests", href: "/deposit-requests", icon: CreditCard },
       { nameKey: "navLoyaltyPoints" as TranslationKey, href: "/loyalty", icon: Star },
       { nameKey: "navKyc",             href: "/kyc",              icon: BadgeCheck },
+      { nameKey: "navWalletTransfers",  href: "/wallet-transfers", icon: Wallet },
     ],
   },
   {

@@ -123,3 +123,5 @@ export const fetcherWithMeta = async (endpoint: string, options: RequestInit = {
 
   return json;
 };
+
+export const apiFetch = fetcher;
