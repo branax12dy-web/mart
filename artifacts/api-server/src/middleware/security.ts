@@ -872,6 +872,55 @@ export async function requireUserAuth(req: Request, res: Response, next: NextFun
 }
 
 /* ══════════════════════════════════════════════════════════════
+   ANY-USER AUTH MIDDLEWARE
+   Validates JWT and checks ban/active status, but does NOT
+   enforce a specific role. Any authenticated user is allowed.
+   Sets req.customerId, req.customerPhone, req.customerUser.
+══════════════════════════════════════════════════════════════ */
+export async function anyUserAuth(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers["authorization"] as string | undefined;
+  const tokenHeader = req.headers["x-auth-token"] as string | undefined;
+  const token = tokenHeader || authHeader?.replace(/^Bearer\s+/i, "");
+  const ip = getClientIp(req);
+
+  if (!token) {
+    res.status(401).json({ success: false, error: "Authentication required. Please log in.", message: "تصدیق ضروری ہے۔ براہ کرم لاگ ان کریں۔" });
+    return;
+  }
+
+  const payload = verifyUserJwt(token);
+  if (!payload) {
+    writeAuthAuditLog("auth_denied_invalid_token", { ip, metadata: { url: req.url } });
+    res.status(401).json({ success: false, error: "Invalid or expired session. Please log in again.", message: "غلط یا ختم شدہ سیشن۔ براہ کرم دوبارہ لاگ ان کریں۔" });
+    return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+  if (!user) { res.status(401).json({ success: false, error: "Account not found.", message: "اکاؤنٹ نہیں ملا۔" }); return; }
+  if (user.isBanned) {
+    writeAuthAuditLog("auth_denied_banned", { userId: user.id, ip });
+    res.status(403).json({ success: false, error: "Your account has been suspended. Contact support.", message: "آپ کا اکاؤنٹ معطل کر دیا گیا ہے۔ سپورٹ سے رابطہ کریں۔" });
+    return;
+  }
+  if (!user.isActive) {
+    writeAuthAuditLog("auth_denied_inactive", { userId: user.id, ip });
+    res.status(403).json({ success: false, error: "Your account is inactive. Contact support.", message: "آپ کا اکاؤنٹ غیر فعال ہے۔ سپورٹ سے رابطہ کریں۔" });
+    return;
+  }
+
+  if (typeof payload.tokenVersion === "number" && payload.tokenVersion !== (user.tokenVersion ?? 0)) {
+    writeAuthAuditLog("auth_denied_token_revoked", { userId: user.id, ip, metadata: { url: req.url } });
+    res.status(401).json({ success: false, error: "Session revoked. Please log in again.", message: "سیشن منسوخ کر دیا گیا۔ براہ کرم دوبارہ لاگ ان کریں۔" });
+    return;
+  }
+
+  req.customerId    = payload.userId;
+  req.customerPhone = payload.phone;
+  req.customerUser  = user;
+  next();
+}
+
+/* ══════════════════════════════════════════════════════════════
    REQUIRE ROLE — DRY factory that replaces customerAuth / riderAuth /
    vendorAuth with a single configurable middleware.
 

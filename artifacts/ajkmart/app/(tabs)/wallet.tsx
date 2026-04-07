@@ -25,7 +25,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "react-native-qrcode-svg";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -1760,7 +1760,7 @@ function WalletScreenInner() {
     );
   }
 
-  if (user.role !== "customer") {
+  if (!hasRole(user, "customer")) {
     return (
       <View style={{ flex: 1, backgroundColor: C.background, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
         <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.amberSoft, alignItems: "center", justifyContent: "center", marginBottom: 20 }}>

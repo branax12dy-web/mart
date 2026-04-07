@@ -810,9 +810,16 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     return;
   }
 
-  /* ── Cross-role enforcement ── */
+  /* ── Cross-role enforcement (non-customer apps only) ──
+     For the customer app context, role enforcement happens AFTER OTP proof
+     so the user can be offered the "add customer role" flow with a valid token.
+     For rider/vendor apps, block immediately if role mismatch. ── */
   const requestedRole = req.body.role as string | undefined;
-  if (requestedRole) {
+  const appIdHeader = req.headers["x-app-id"] as string | undefined;
+  const appIdQuery = req.query.appId as string | undefined;
+  const isCustomerAppContext = requestedRole === "customer" || appIdHeader === "customer" || appIdQuery === "customer";
+
+  if (requestedRole && !isCustomerAppContext) {
     const userRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
     if (!userRoles.includes(requestedRole)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRole}`, severity: "high" });
@@ -988,6 +995,41 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     .where(and(eq(refreshTokensTable.userId, u.id), lt(refreshTokensTable.expiresAt, new Date())))
     .catch(() => {});
 
+  /* ── Post-OTP customer app cross-role check ──
+     If the customer app context was detected and the user doesn't have the
+     customer role, return a token + canAddCustomerRole flag so the frontend
+     can offer the "Add Customer Access" flow from the wrong-app screen. ── */
+  const uRoles = (u.roles || u.role || "customer").split(",").map((r: string) => r.trim());
+  if (isCustomerAppContext && !uRoles.includes("customer")) {
+    addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: u.id, details: `User with roles [${u.roles}] logged in to customer app context — offering add-role`, severity: "low" });
+    res.json({
+      token:        accessToken,
+      refreshToken: refreshRaw,
+      expiresAt:    new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
+      sessionDays:  REFRESH_TOKEN_TTL_DAYS,
+      canAddCustomerRole: true,
+      code: "cross_app_account",
+      wrongApp: true,
+      user: {
+        id:            u.id,
+        phone:         u.phone,
+        name:          u.name,
+        email:         u.email,
+        username:      u.username,
+        role:          u.role,
+        roles:         u.roles ?? u.role ?? "customer",
+        avatar:        u.avatar,
+        walletBalance: parseFloat(u.walletBalance ?? "0"),
+        isActive:      u.isActive,
+        cnic:          u.cnic,
+        city:          u.city,
+        totpEnabled:   u.totpEnabled ?? false,
+        createdAt:     u.createdAt.toISOString(),
+      },
+    });
+    return;
+  }
+
   res.json({
     token:        accessToken,
     refreshToken: refreshRaw,
@@ -1000,7 +1042,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       email:         u.email,
       username:      u.username,
       role:          u.role,
-      roles:         u.roles,
+      roles:         u.roles ?? u.role ?? "customer",
       avatar:        u.avatar,
       walletBalance: parseFloat(u.walletBalance ?? "0"),
       isActive:      u.isActive,
@@ -1492,9 +1534,15 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     return;
   }
 
-  /* Cross-role enforcement: rider/vendor apps send their role; reject mismatches */
+  /* Cross-role enforcement: rider/vendor apps send their role; reject mismatches.
+     Customer app context is identified by X-App-Id header or role=customer body field.
+     For customer app, enforcement happens post-OTP so user can be issued a token and
+     offered the "Add Customer Access" flow from wrong-app screen. */
   const requestedEmailRole = req.body.role as string | undefined;
-  if (requestedEmailRole) {
+  const emailAppIdHeader = req.headers["x-app-id"] as string | undefined;
+  const emailAppIdQuery = req.query.appId as string | undefined;
+  const isEmailCustomerAppCtx = requestedEmailRole === "customer" || emailAppIdHeader === "customer" || emailAppIdQuery === "customer";
+  if (requestedEmailRole && !isEmailCustomerAppCtx) {
     const userRolesEmail = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
     if (!userRolesEmail.includes(requestedEmailRole)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried email OTP login as ${requestedEmailRole}`, severity: "high" });
@@ -1570,13 +1618,26 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
 
   writeAuthAuditLog("login_success", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "email_otp" } });
 
+  /* Post-OTP customer app cross-role check: issue token + wrongApp flag so frontend
+     can offer "Add Customer Access" flow from the wrong-app screen */
+  const emailUserRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+  if (isEmailCustomerAppCtx && !emailUserRoles.includes("customer")) {
+    addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] email-logged in to customer app context — offering add-role`, severity: "low" });
+    res.json({
+      token: accessToken, refreshToken: refreshRaw, expiresAt, sessionDays: REFRESH_TOKEN_TTL_DAYS,
+      canAddCustomerRole: true, code: "cross_app_account", wrongApp: true,
+      user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles ?? user.role ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
+    });
+    return;
+  }
+
   res.json({
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt,
     sessionDays:  REFRESH_TOKEN_TTL_DAYS,
     pendingApproval: false,
-    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
+    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles ?? user.role ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
   });
 });
 

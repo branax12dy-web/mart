@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable, ordersTable, walletTransactionsTable, ridesTable, savedAddressesTable, userSessionsTable, loginHistoryTable, refreshTokensTable, pharmacyOrdersTable, parcelBookingsTable } from "@workspace/db/schema";
 import { eq, desc, and, count, sql, isNull, ne, gte } from "drizzle-orm";
 import { getPlatformSettings } from "./admin-shared.js";
-import { customerAuth, getClientIp, writeAuthAuditLog, checkLockout, recordFailedAttempt, resetAttempts } from "../middleware/security.js";
+import { customerAuth, anyUserAuth, getClientIp, writeAuthAuditLog, checkLockout, recordFailedAttempt, resetAttempts } from "../middleware/security.js";
 import { randomUUID, createHash } from "crypto";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
@@ -67,9 +67,8 @@ function profileRateLimit(userId: string, maxPerMin = 10): boolean {
 
 const router: IRouter = Router();
 
-router.use(customerAuth);
-
-router.get("/profile", async (req, res) => {
+/* /profile and /add-role are role-agnostic — any valid authenticated user can access them */
+router.get("/profile", anyUserAuth, async (req, res) => {
   const userId = req.customerId!;
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) {
@@ -83,6 +82,7 @@ router.get("/profile", async (req, res) => {
     email: user.email,
     username: user.username ?? null,
     role: user.role,
+    roles: user.roles ?? user.role ?? "customer",
     avatar: user.avatar,
     walletBalance: parseFloat(user.walletBalance ?? "0"),
     isActive: user.isActive,
@@ -99,6 +99,46 @@ router.get("/profile", async (req, res) => {
     createdAt: user.createdAt.toISOString(),
   });
 });
+
+/* POST /users/add-role
+   Lets an authenticated user (any role) add "customer" to their roles field.
+   Idempotent — if they already have the role, returns success immediately. */
+router.post("/add-role", anyUserAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const { role } = req.body as { role?: string };
+
+  if (role !== "customer") {
+    sendError(res, "Only the 'customer' role can be self-assigned via this endpoint.", 400);
+    return;
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+
+  const existingRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim()).filter(Boolean);
+  if (existingRoles.includes("customer")) {
+    sendSuccess(res, {
+      role: user.role,
+      roles: user.roles ?? user.role ?? "customer",
+    }, "Customer role already active on this account.");
+    return;
+  }
+
+  const newRoles = [...existingRoles, "customer"].join(",");
+  await db.update(usersTable)
+    .set({ roles: newRoles, updatedAt: new Date() })
+    .where(eq(usersTable.id, userId));
+
+  const ip = getClientIp(req);
+  writeAuthAuditLog("role_added_customer", { userId, ip, userAgent: req.headers["user-agent"] as string, metadata: { previousRoles: user.roles, newRoles } });
+
+  sendSuccess(res, {
+    role: user.role,
+    roles: newRoles,
+  }, "Customer access added to your account successfully.");
+});
+
+router.use(customerAuth);
 
 router.get("/:id/debt", async (req, res) => {
   const userId = req.customerId!;

@@ -27,7 +27,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { useCollapsibleHeader } from "@/hooks/useCollapsibleHeader";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -360,7 +360,7 @@ function PharmacyScreenInner() {
       requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/pharmacy" });
       return;
     }
-    if (user?.role !== "customer") {
+    if (!hasRole(user ?? null, "customer")) {
       requireCustomerRole(() => {});
       return;
     }

@@ -29,7 +29,7 @@ import { RT } from "@/constants/rideTokens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
@@ -625,7 +625,7 @@ export function RideBookingForm({ onBooked, prefillPickup, prefillDrop, prefillT
       requireAuth(() => {}, { message: "Sign in to book a ride", returnTo: "/ride" });
       return;
     }
-    if (user?.role !== "customer") { requireCustomerRole(() => {}); return; }
+    if (!hasRole(user ?? null, "customer")) { requireCustomerRole(() => {}); return; }
     const selectedSvc = services.find((s) => s.key === rideType);
     if (isParcelService(rideType, selectedSvc)) {
       if (!receiverName.trim()) { showToast("Please enter the receiver's full name", "error"); return; }

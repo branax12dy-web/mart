@@ -1,26 +1,58 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { Font } from "@/constants/typography";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 
 const C = Colors.light;
+const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
 export default function WrongAppScreen() {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, token, logout, updateUser } = useAuth();
+  const [addingRole, setAddingRole] = useState(false);
+  const [addRoleError, setAddRoleError] = useState<string | null>(null);
 
   const roleLabel =
     user?.role === "rider" ? "Delivery Rider" :
     user?.role === "vendor" ? "Store Vendor" :
     "non-customer";
 
+  const canAddCustomerRole = user && !hasRole(user, "customer");
+
   const handleSignOut = async () => {
     await logout();
     router.replace("/auth");
+  };
+
+  const handleAddCustomerRole = async () => {
+    if (!token) return;
+    setAddingRole(true);
+    setAddRoleError(null);
+    try {
+      const res = await fetch(`${API_BASE}/users/add-role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role: "customer" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddRoleError(data.error || "Failed to add customer access. Please try again.");
+        return;
+      }
+      updateUser({ roles: data.data?.roles ?? data.roles ?? undefined });
+      router.replace("/(tabs)");
+    } catch {
+      setAddRoleError("Network error. Please check your connection and try again.");
+    } finally {
+      setAddingRole(false);
+    }
   };
 
   return (
@@ -42,6 +74,33 @@ export default function WrongAppScreen() {
           ? "Please use the AJKMart Vendor App to manage your store."
           : "Please sign in with a customer account to continue."}
       </Text>
+
+      {canAddCustomerRole && (
+        <>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.addRoleBtn}
+            onPress={handleAddCustomerRole}
+            disabled={addingRole}
+            accessibilityRole="button"
+          >
+            {addingRole ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="person-add-outline" size={18} color="#fff" />
+                <Text style={styles.addRoleTxt}>Add Customer Access</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          {addRoleError && (
+            <Text style={styles.errorTxt}>{addRoleError}</Text>
+          )}
+          <Text style={styles.addRoleHint}>
+            This will add customer access to your existing account — you can still use the Rider/Vendor app.
+          </Text>
+        </>
+      )}
 
       <TouchableOpacity
         activeOpacity={0.8}
@@ -106,7 +165,39 @@ const styles = StyleSheet.create({
     color: C.amber,
     textAlign: "center",
     lineHeight: 22,
-    marginBottom: 36,
+    marginBottom: 28,
+  },
+  addRoleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#16A34A",
+    borderRadius: 14,
+    paddingVertical: 15,
+    paddingHorizontal: 36,
+    width: "100%",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  addRoleTxt: {
+    fontFamily: Font.bold,
+    fontSize: 15,
+    color: "#fff",
+  },
+  addRoleHint: {
+    fontFamily: Font.regular,
+    fontSize: 12,
+    color: C.textMuted,
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  errorTxt: {
+    fontFamily: Font.regular,
+    fontSize: 13,
+    color: "#DC2626",
+    textAlign: "center",
+    marginBottom: 8,
   },
   signOutBtn: {
     flexDirection: "row",

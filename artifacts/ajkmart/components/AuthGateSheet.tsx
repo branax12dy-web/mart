@@ -6,7 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Colors, { radii, spacing } from "@/constants/colors";
 import { Font } from "@/constants/typography";
 import { BottomSheet } from "@/components/ui/BottomSheet";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -127,11 +127,11 @@ export function useRoleGate() {
   const { user } = useAuth();
   const [visible, setVisible] = useState(false);
 
-  const isCustomer = !user || user.role === "customer";
+  const isCustomer = !user || hasRole(user, "customer");
 
   const requireCustomerRole = useCallback(
     (action: () => void) => {
-      if (user && user.role !== "customer") {
+      if (user && !hasRole(user, "customer")) {
         setVisible(true);
         return;
       }

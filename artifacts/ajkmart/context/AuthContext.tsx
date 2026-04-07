@@ -20,6 +20,7 @@ export interface AppUser {
   email?: string;
   username?: string;
   role: UserRole;
+  roles?: string;
   avatar?: string;
   walletBalance: number;
   isActive: boolean;
@@ -34,6 +35,13 @@ export interface AppUser {
   kycStatus?: string;
   totpEnabled?: boolean;
   hasPassword?: boolean;
+}
+
+/** Returns true if the user has the given role in their comma-separated roles field (or primary role fallback). */
+export function hasRole(user: AppUser | null, role: string): boolean {
+  if (!user) return false;
+  const list = (user.roles || user.role || "").split(",").map(r => r.trim());
+  return list.includes(role);
 }
 
 interface TwoFactorPending {
@@ -239,7 +247,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const doLogout = async () => {
     const tok = tokenRef.current;
     const u   = userRef.current;
-    if (u?.role === "customer" && tok) {
+    if (u && hasRole(u, "customer") && tok) {
       clearCustomerLocation(u.id, tok).catch(() => {});
     }
 
@@ -346,7 +354,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (data.token) {
                   await secureSet(TOKEN_KEY, data.token);
                   if (data.refreshToken) await secureSet(REFRESH_TOKEN_KEY, data.refreshToken);
-                  const freshUser = data.user || parsedUser;
+                  /* Always fetch fresh profile from server (role-agnostic endpoint) to get latest roles */
+                  let freshUser: AppUser = data.user || parsedUser;
+                  try {
+                    const profileRes = await fetch(`${base}/api/users/profile`, {
+                      headers: { Authorization: `Bearer ${data.token}` },
+                    });
+                    if (profileRes.ok) {
+                      const profileData = await profileRes.json();
+                      freshUser = profileData.data || profileData.user || profileData || freshUser;
+                    }
+                  } catch {}
                   await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
                   setUser(freshUser);
                   setToken(data.token);
@@ -366,7 +384,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await secureDelete(TOKEN_KEY);
             await secureDelete(REFRESH_TOKEN_KEY);
           } else {
-            setUser(parsedUser);
+            /* Token still valid: fetch fresh profile BEFORE resolving auth state so that
+               role-gated route guards always see authoritative server roles, never stale cache. */
+            const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+            let resolvedUser: AppUser = parsedUser;
+            try {
+              const profileRes = await fetch(`${base}/api/users/profile`, {
+                headers: { Authorization: `Bearer ${storedToken}` },
+              });
+              if (profileRes.ok) {
+                const profileData = await profileRes.json();
+                const freshUser: AppUser = profileData.data || profileData.user || profileData;
+                if (freshUser && freshUser.id) {
+                  resolvedUser = freshUser;
+                  await AsyncStorage.setItem(USER_KEY, JSON.stringify(freshUser));
+                }
+              }
+            } catch {}
+            setUser(resolvedUser);
             setToken(storedToken);
             setAuthToken(storedToken);
             registerAuth(storedToken, storedRefresh);
@@ -411,7 +446,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     registerAuth(userToken, refreshToken ?? null);
     syncToServer(userToken).catch(() => {});
     /* Capture customer location on login (foreground only) */
-    if (userData.role === "customer") {
+    if (hasRole(userData, "customer")) {
       captureCustomerLocation(userData.id, userToken).catch(() => {});
     }
   };

@@ -20,7 +20,7 @@ import { initSentry, setSentryUser } from "@/utils/sentry";
 import { initAnalytics, trackScreen, identifyUser } from "@/utils/analytics";
 import { initErrorReporter } from "@/utils/error-reporter";
 import { registerPush } from "@/utils/push";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AuthProvider, useAuth, hasRole } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { LanguageProvider, useLanguage } from "@/context/LanguageContext";
 import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformConfigContext";
@@ -89,9 +89,9 @@ function AuthGuard() {
 
     if (!user && !isPublicRoute) {
       router.replace("/auth");
-    } else if (user && user.role !== "customer" && !onWrongAppScreen) {
+    } else if (user && !hasRole(user, "customer") && !onWrongAppScreen) {
       router.replace("/auth/wrong-app");
-    } else if (user && user.role === "customer" && (inAuthGroup || inRootIndex)) {
+    } else if (user && hasRole(user, "customer") && (inAuthGroup || inRootIndex)) {
       router.replace("/(tabs)");
     }
   }, [user, isLoading, segments]);
@@ -183,8 +183,7 @@ function MagicLinkHandler() {
         if (data.token && data.user) {
           const userData = data.user as import("@/context/AuthContext").AppUser;
           await login(userData, data.token, data.refreshToken);
-          const role: string = userData?.role ?? "customer";
-          if (role !== "customer") {
+          if (!hasRole(userData, "customer")) {
             router.replace("/auth/wrong-app");
           } else {
             router.replace("/(tabs)");

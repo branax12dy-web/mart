@@ -25,7 +25,7 @@ import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
@@ -886,7 +886,7 @@ function ProfileScreenInner() {
           />
         </SectionCard>
 
-        {user?.role === "customer" && (
+        {hasRole(user ?? null, "customer") && (
           <SectionCard title="Wallet">
             <Row icon="wallet-outline" label="My Wallet" sub="View balance & transactions" onPress={() => router.push("/(tabs)/wallet")} iconColor={C.primary} iconBg={C.primarySoft} />
             {pinSetup ? (

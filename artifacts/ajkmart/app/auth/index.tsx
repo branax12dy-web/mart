@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 
 import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
-import { useAuth, type AppUser } from "@/context/AuthContext";
+import { useAuth, hasRole, type AppUser } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
@@ -43,10 +43,10 @@ const API = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 type LoginMethod = "phone" | "email" | "username" | "magic" | "google" | "facebook";
 type Step = "continue" | "method" | "otp" | "totp" | "pending" | "complete-profile";
 
-async function authPost(path: string, body: object) {
+async function authPost(path: string, body: object, extraHeaders?: Record<string, string>) {
   const res = await fetch(`${API}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...extraHeaders },
     body: JSON.stringify(body),
   });
   const data = await res.json();
@@ -177,8 +177,12 @@ export default function AuthScreen() {
     }
   };
 
-  const navigateAfterLogin = async (role?: string) => {
-    if (role && role !== "customer") {
+  const navigateAfterLogin = async (userOrRole: AppUser | { role?: string; roles?: string } | string | null | undefined) => {
+    /* Normalise: biometric path returns role string; other paths pass user object */
+    const roleUser: { role?: string; roles?: string } =
+      typeof userOrRole === "string" ? { role: userOrRole } :
+      userOrRole ?? {};
+    if (!hasRole(roleUser as AppUser, "customer")) {
       router.replace("/auth/wrong-app");
       return;
     }
@@ -207,6 +211,13 @@ export default function AuthScreen() {
       setStep("pending");
       return;
     }
+    /* Cross-app account: user logged in successfully but doesn't have the
+       customer role. A token IS issued so they can call add-role from wrong-app. */
+    if (res.wrongApp && res.user && res.token) {
+      await login(res.user as AppUser, res.token, res.refreshToken);
+      router.replace("/auth/wrong-app");
+      return;
+    }
     if (res.user && !res.user.name) {
       setPendingToken(res.token);
       setPendingRefreshToken(res.refreshToken);
@@ -216,7 +227,7 @@ export default function AuthScreen() {
     }
     if (res.user && res.token) {
       await login(res.user as AppUser, res.token, res.refreshToken);
-      await navigateAfterLogin(res.user.role);
+      await navigateAfterLogin(res.user);
     }
   };
   /* FIX 2: Magic link is handled centrally in _layout.tsx MagicLinkHandler.
@@ -386,7 +397,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const fingerprint = await getDeviceFingerprint();
-      const res = await authPost("/auth/verify-otp", { phone: normalizePhone(phone), otp, deviceFingerprint: fingerprint });
+      const res = await authPost("/auth/verify-otp", { phone: normalizePhone(phone), otp, deviceFingerprint: fingerprint }, { "X-App-Id": "customer" });
       await handleLoginResult(res);
     } catch (e: any) { setError(e.message || "Invalid OTP."); }
     setLoading(false);
@@ -420,7 +431,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const fingerprint = await getDeviceFingerprint();
-      const res = await authPost("/auth/verify-email-otp", { email, otp: emailOtp, deviceFingerprint: fingerprint });
+      const res = await authPost("/auth/verify-email-otp", { email, otp: emailOtp, deviceFingerprint: fingerprint }, { "X-App-Id": "customer" });
       await handleLoginResult(res);
     } catch (e: any) { setError(e.message || "Invalid OTP."); }
     setLoading(false);
@@ -555,7 +566,7 @@ export default function AuthScreen() {
         } catch {}
       }
       await completeTwoFactorLogin(res.user as AppUser, res.token, res.refreshToken);
-      await navigateAfterLogin(res.user?.role);
+      await navigateAfterLogin(res.user as AppUser);
     } catch (e: any) { setError(e.message || "Invalid 2FA code."); }
     setLoading(false);
   };
@@ -566,7 +577,7 @@ export default function AuthScreen() {
     try {
       const res = await authPost("/auth/2fa/recovery", { tempToken: totpTempToken, backupCode: code });
       await completeTwoFactorLogin(res.user as AppUser, res.token, res.refreshToken);
-      await navigateAfterLogin(res.user?.role);
+      await navigateAfterLogin(res.user as AppUser);
     } catch (e: any) { setError(e.message || "Invalid backup code."); }
     setLoading(false);
   };
@@ -597,7 +608,7 @@ export default function AuthScreen() {
         walletBalance: 0, isActive: true, createdAt: new Date().toISOString(), ...res.user,
       };
       await login(completeUser, res.token ?? pendingToken, res.refreshToken ?? pendingRefreshToken);
-      await navigateAfterLogin(completeUser.role);
+      await navigateAfterLogin(completeUser);
     } catch (e: any) { setError(e.message || "Could not save profile."); }
     setLoading(false);
   };
@@ -774,7 +785,7 @@ export default function AuthScreen() {
                 onPress={async () => {
                   if (pendingToken && pendingUser) {
                     await login(pendingUser, pendingToken, pendingRefreshToken || undefined);
-                    await navigateAfterLogin(pendingUser.role);
+                    await navigateAfterLogin(pendingUser);
                   } else { setStep("continue"); setPendingToken(""); }
                 }}
                 style={styles.linkBtn}

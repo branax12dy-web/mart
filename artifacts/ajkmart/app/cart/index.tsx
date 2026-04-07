@@ -25,7 +25,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, hasRole } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
@@ -856,7 +856,7 @@ function CartScreenInner() {
       requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/cart" });
       return;
     }
-    if (user?.role !== "customer") {
+    if (!hasRole(user, "customer")) {
       requireCustomerRole(() => {});
       return;
     }
@@ -952,7 +952,7 @@ function CartScreenInner() {
       requireAuth(() => {}, { message: "Sign in to place your order", returnTo: "/cart" });
       return;
     }
-    if (user?.role !== "customer") {
+    if (!hasRole(user, "customer")) {
       requireCustomerRole(() => {});
       return;
     }
