@@ -533,9 +533,11 @@ export default function AuthScreen() {
   const handleBiometricLogin = async () => {
     setBiometricLoading(true);
     try {
-      const role = await attemptBiometricLogin();
-      if (role !== null) {
-        await navigateAfterLogin(role);
+      const result = await attemptBiometricLogin();
+      if (result === "transient_error") {
+        setError("Connection issue. Please check your network and try again.");
+      } else if (result !== null) {
+        await navigateAfterLogin(result);
       } else {
         setError("Biometric login failed. Please use another login method.");
       }

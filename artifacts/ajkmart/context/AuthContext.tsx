@@ -65,7 +65,7 @@ interface AuthContextType {
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   setTwoFactorPending: (pending: TwoFactorPending | null) => void;
   completeTwoFactorLogin: (user: AppUser, token: string, refreshToken?: string) => Promise<void>;
-  attemptBiometricLogin: () => Promise<string | null>;
+  attemptBiometricLogin: () => Promise<string | "transient_error" | null>;
   socket: Socket | null;
 }
 
@@ -526,16 +526,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!storedRefreshToken) return null;
 
       const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
-      const res = await fetch(`${base}/api/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: storedRefreshToken }),
-      });
-      if (!res.ok) {
+      let res: Response;
+      try {
+        res = await fetch(`${base}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+        });
+      } catch {
+        /* Network/connectivity error — do NOT disable biometrics; signal transient failure */
+        return "transient_error";
+      }
+      if (res.status === 401 || res.status === 403) {
+        /* Confirmed auth failure (token revoked/expired) — disable biometrics */
         await secureDelete(BIOMETRIC_TOKEN);
         setBiometricEnabledState(false);
         await AsyncStorage.setItem(BIOMETRIC_KEY, "false");
         return null;
+      }
+      if (!res.ok) {
+        /* Other server error (5xx, etc.) — transient; do NOT disable biometrics */
+        return "transient_error";
       }
       const data = await res.json() as any;
       if (!data.token) return null;
@@ -543,7 +554,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const meRes = await fetch(`${base}/api/users/profile`, {
         headers: { Authorization: `Bearer ${data.token}` },
       });
-      if (!meRes.ok) return null;
+      if (!meRes.ok) {
+        /* Profile fetch failure is transient if it's a server error */
+        if (meRes.status >= 500) return "transient_error";
+        return null;
+      }
       const meData = await meRes.json();
       const freshUser: AppUser = meData.data || meData.user || meData;
 
@@ -553,7 +568,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return freshUser.role ?? "customer";
     } catch {
-      return null;
+      /* Unexpected error — treat as transient to allow retry */
+      return "transient_error";
     }
   };
 

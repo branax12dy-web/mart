@@ -84,10 +84,8 @@ export default function OrderDetailScreen() {
   const isTablet = Platform.OS === "web" && screenWidth >= 768;
   const isWide   = Platform.OS === "web" && screenWidth >= 1080;
   const mapHeight = Math.min(Math.max(screenWidth * 0.34, 140), 220);
-  const { id: routeId, type, action } = useLocalSearchParams<{ id: string; type?: string; action?: string }>();
+  const { id: routeId } = useLocalSearchParams<{ id: string; type?: string; action?: string }>();
   const orderId = routeId;
-  const isParcel = type === "parcel";
-  const isRide = type === "ride";
   const { token } = useAuth();
   const { showToast } = useToast();
   const { config } = usePlatformConfig();
@@ -109,6 +107,11 @@ export default function OrderDetailScreen() {
   const RIDE_STEP_LABELS = [T("searching"), T("statusAccepted"), T("arrived"), T("inTransit"), T("completed")];
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
+
+  /* Type is always determined exclusively from fetched order data.
+     No URL-param fallback — the unified lookup endpoint returns the canonical type. */
+  const isParcel = order?.type === "parcel";
+  const isRide = order?.type === "ride";
   const [serverNow, setServerNow] = useState<number>(Date.now());
   const [loading, setLoading] = useState(true);
   const [refreshingOrder, setRefreshingOrder] = useState(false);
@@ -125,7 +128,7 @@ export default function OrderDetailScreen() {
 
   const mountedRef = useRef(true);
   const socketRef = useRef<Socket | null>(null);
-  const isPharmacyType = type === "pharmacy";
+  const isPharmacyType = order?.type === "pharmacy";
 
   const interpFromRef = useRef<{ lat: number; lng: number } | null>(null);
   const interpToRef   = useRef<{ lat: number; lng: number } | null>(null);
@@ -134,16 +137,12 @@ export default function OrderDetailScreen() {
   const interpRafRef   = useRef<number | null>(null);
   const INTERP_DURATION_MS = 4000;
 
+  /* Use the unified lookup endpoint so type is always determined by the server,
+     not by potentially-stale URL params. */
   const orderEndpoint = useMemo(() => {
     if (!orderId) return "";
-    return isParcel
-      ? `${API_BASE}/parcel-bookings/${orderId}`
-      : isPharmacyType
-      ? `${API_BASE}/pharmacy-orders/${orderId}`
-      : isRide
-      ? `${API_BASE}/rides/${orderId}`
-      : `${API_BASE}/orders/${orderId}`;
-  }, [orderId, isParcel, isRide, isPharmacyType]);
+    return `${API_BASE}/orders/lookup/${orderId}`;
+  }, [orderId]);
 
   const fetchOrderData = useCallback(async () => {
     const res = await fetch(orderEndpoint, {
@@ -380,7 +379,7 @@ export default function OrderDetailScreen() {
       mountedRef.current = false;
       if (ivRef !== null) clearInterval(ivRef);
     };
-  }, [orderId, isParcel, isRide, isPharmacyType, token]);
+  }, [orderId, token]);
 
   const handleOrderRefresh = useCallback(async () => {
     if (!orderId) return;
@@ -392,8 +391,8 @@ export default function OrderDetailScreen() {
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!orderId || !token || isParcel || isRide) return;
-    if (isPharmacyType) return;
+    if (!orderId || !token || !order) return;
+    if (isParcel || isRide || isPharmacyType) return;
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/payments/${encodeURIComponent(orderId)}/status`, {
@@ -409,10 +408,11 @@ export default function OrderDetailScreen() {
         if (__DEV__) console.warn("[OrderDetail] Payment status fetch failed:", err instanceof Error ? err.message : String(err));
       }
     })();
-  }, [orderId, token, isParcel, isRide, isPharmacyType]);
+  }, [orderId, token, order?.type]);
 
   useEffect(() => {
-    if (!orderId || !token || isParcel || isRide || isPharmacyType) return;
+    if (!orderId || !token || !order) return;
+    if (isParcel || isRide || isPharmacyType) return;
     const sub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
         (async () => {
@@ -433,7 +433,7 @@ export default function OrderDetailScreen() {
       }
     });
     return () => sub.remove();
-  }, [orderId, token, isParcel, isRide, isPharmacyType]);
+  }, [orderId, token, order?.type]);
 
   const mapUrl = useMemo(() => {
     if (riderLat === null || riderLng === null) return null;
@@ -455,7 +455,7 @@ export default function OrderDetailScreen() {
       <View style={[s.root, { paddingTop: topPad }]}>
         <View style={s.loadingWrap}>
           <ActivityIndicator color={C.primary} size="large" />
-          <Text style={s.loadingText}>{isParcel ? T("loadingParcel") : isRide ? T("loadingRide") : T("loadingOrder")}</Text>
+          <Text style={s.loadingText}>{T("loadingOrder")}</Text>
         </View>
       </View>
     );
@@ -492,8 +492,8 @@ export default function OrderDetailScreen() {
   const isActive = !["delivered", "cancelled", "completed"].includes(order.status);
   const stepIdx = activeSteps.indexOf(order.status);
   const isFood = order.type === "food";
-  const isPharmacy = order.type === "pharmacy" || type === "pharmacy";
-  const isParcelType = isParcel || order.type === "parcel";
+  const isPharmacy = order.type === "pharmacy";
+  const isParcelType = order.type === "parcel";
 
   const minutesSincePlaced = order.createdAt
     ? (serverNow - new Date(order.createdAt).getTime()) / 60000

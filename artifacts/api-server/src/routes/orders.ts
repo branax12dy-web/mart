@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
-import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable, idempotencyKeysTable } from "@workspace/db/schema";
+import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable, idempotencyKeysTable, parcelBookingsTable, ridesTable, pharmacyOrdersTable } from "@workspace/db/schema";
 import { eq, and, gte, count, sum, desc, SQL, sql, inArray, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -421,6 +421,136 @@ router.get("/", customerAuth, async (req, res) => {
     limit,
     hasMore: offset + orders.length < total,
   });
+});
+
+/* ── GET /orders/lookup/:id — Unified order lookup across all order types ──── */
+router.get("/lookup/:id", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const id = String(req.params["id"]);
+
+  /* Search all order tables in parallel to find the record by ID */
+  const [orderRow, parcelRow, rideRow, pharmacyRow] = await Promise.all([
+    db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1),
+    db.select().from(parcelBookingsTable).where(eq(parcelBookingsTable.id, id)).limit(1),
+    db.select().from(ridesTable).where(eq(ridesTable.id, id)).limit(1),
+    db.select().from(pharmacyOrdersTable).where(eq(pharmacyOrdersTable.id, id)).limit(1),
+  ]);
+
+  const order = orderRow[0];
+  const parcel = parcelRow[0];
+  const ride = rideRow[0];
+  const pharmacy = pharmacyRow[0];
+
+  if (order) {
+    if (idorGuard(res, order.userId, userId)) return;
+    const s = await getCachedSettings();
+    const orderItems = (order.items ?? []) as { price: number; quantity: number }[];
+    const itemsTotal = orderItems.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
+    const deliveryFee = calcDeliveryFee(s, order.type, itemsTotal);
+    const gstAmount   = calcGst(s, itemsTotal);
+    const codFee      = calcCodFee(s, order.paymentMethod, itemsTotal + deliveryFee + gstAmount);
+    let vendorName: string | null = null;
+    if (order.vendorId) {
+      const [vendor] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, order.vendorId)).limit(1);
+      vendorName = vendor?.name ?? null;
+    }
+    sendSuccess(res, { ...mapOrder(order, deliveryFee, gstAmount, codFee), vendorName });
+    return;
+  }
+
+  if (parcel) {
+    if (idorGuard(res, parcel.userId, userId)) return;
+    let parcelRiderName: string | null = null;
+    let parcelRiderPhone: string | null = null;
+    if (parcel.riderId) {
+      const [riderUser] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+        .from(usersTable).where(eq(usersTable.id, parcel.riderId)).limit(1);
+      parcelRiderName  = riderUser?.name  ?? null;
+      parcelRiderPhone = riderUser?.phone ?? null;
+    }
+    sendSuccess(res, {
+      id: parcel.id,
+      type: "parcel",
+      status: parcel.status,
+      userId: parcel.userId,
+      fare: parseFloat(parcel.fare),
+      paymentMethod: parcel.paymentMethod,
+      estimatedTime: parcel.estimatedTime,
+      riderId: parcel.riderId,
+      riderName: parcelRiderName,
+      riderPhone: parcelRiderPhone,
+      createdAt: parcel.createdAt.toISOString(),
+      updatedAt: parcel.updatedAt.toISOString(),
+      pickupAddress: parcel.pickupAddress,
+      dropAddress: parcel.dropAddress,
+      senderName: parcel.senderName,
+      senderPhone: parcel.senderPhone,
+      receiverName: parcel.receiverName,
+      receiverPhone: parcel.receiverPhone,
+      parcelType: parcel.parcelType,
+      weight: parcel.weight ? parseFloat(parcel.weight) : null,
+      description: parcel.description,
+    });
+    return;
+  }
+
+  if (ride) {
+    const isCustomer = ride.userId === userId;
+    const isRider    = ride.riderId === userId;
+    if (!isCustomer && !isRider) { sendForbidden(res, "Access denied — not your ride"); return; }
+    sendSuccess(res, {
+      id: ride.id,
+      type: "ride",
+      status: ride.status,
+      userId: ride.userId,
+      fare: parseFloat(ride.fare),
+      distance: parseFloat(ride.distance),
+      paymentMethod: ride.paymentMethod,
+      riderId: ride.riderId,
+      riderName: ride.riderName,
+      riderPhone: ride.riderPhone,
+      pickupAddress: ride.pickupAddress,
+      dropAddress: ride.dropAddress,
+      dropLat: ride.dropLat ? parseFloat(ride.dropLat) : null,
+      dropLng: ride.dropLng ? parseFloat(ride.dropLng) : null,
+      isParcel: ride.isParcel,
+      createdAt: ride.createdAt.toISOString(),
+      updatedAt: ride.updatedAt.toISOString(),
+    });
+    return;
+  }
+
+  if (pharmacy) {
+    if (idorGuard(res, pharmacy.userId, userId)) return;
+    let pharmRiderName: string | null = null;
+    let pharmRiderPhone: string | null = null;
+    if (pharmacy.riderId) {
+      const [riderUser] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+        .from(usersTable).where(eq(usersTable.id, pharmacy.riderId)).limit(1);
+      pharmRiderName  = riderUser?.name  ?? null;
+      pharmRiderPhone = riderUser?.phone ?? null;
+    }
+    sendSuccess(res, {
+      id: pharmacy.id,
+      type: "pharmacy",
+      status: pharmacy.status,
+      userId: pharmacy.userId,
+      total: pharmacy.total ? parseFloat(pharmacy.total) : null,
+      paymentMethod: pharmacy.paymentMethod,
+      riderId: pharmacy.riderId,
+      riderName: pharmRiderName,
+      riderPhone: pharmRiderPhone,
+      deliveryAddress: pharmacy.deliveryAddress,
+      estimatedTime: pharmacy.estimatedTime,
+      items: pharmacy.items,
+      prescriptionNote: pharmacy.prescriptionNote,
+      createdAt: pharmacy.createdAt.toISOString(),
+      updatedAt: pharmacy.updatedAt.toISOString(),
+    });
+    return;
+  }
+
+  sendNotFound(res, "Order not found");
 });
 
 /* ── GET /orders/:id ──────────────────────────────────────────────────────── */
