@@ -1,10 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
 import {
   AlertTriangle, Bug, Server, Monitor, Code, Zap,
   ChevronDown, ChevronRight, RefreshCw, Filter, X, CheckCircle2,
-  Flame, ShieldAlert, Inbox, CheckCheck, Layers,
+  Flame, ShieldAlert, Inbox, CheckCheck, Layers, ScanLine,
+  Clock, Calendar, RotateCcw, Play, Pause, Users, MessageSquare,
+  Lightbulb, AlertCircle, Wrench, Phone, Mail, Smartphone, Globe,
+  CheckSquare, XCircle, Eye, StickyNote,
 } from "lucide-react";
 
 type ErrorReport = {
@@ -25,8 +28,45 @@ type ErrorReport = {
   acknowledgedAt: string | null;
 };
 
+type CustomerReport = {
+  id: string;
+  timestamp: string;
+  customerName: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  userId: string | null;
+  appVersion: string | null;
+  deviceInfo: string | null;
+  platform: string | null;
+  screen: string | null;
+  description: string;
+  reproSteps: string | null;
+  status: string;
+  adminNote: string | null;
+  reviewedAt: string | null;
+};
+
+type ScanFinding = {
+  type: string;
+  severity: string;
+  message: string;
+  detail: string;
+};
+
+type ScanResult = {
+  scannedAt: string;
+  durationMs: number;
+  overallSeverity: string;
+  totalUnresolved: number;
+  criticalLastHour: number;
+  unresolvedCritical: number;
+  customerReportsPending: number;
+  findings: ScanFinding[];
+};
+
+type ScanMode = "manual" | "auto" | "daily" | "specific";
 type Pagination = { page: number; limit: number; total: number; totalPages: number };
-type Tab = "new" | "unresolved" | "completed";
+type Tab = "new" | "unresolved" | "completed" | "customers";
 
 const SOURCE_APPS = [
   { value: "", label: "All Sources" },
@@ -56,7 +96,7 @@ const SOURCE_ICONS: Record<string, typeof Monitor> = {
   customer: Monitor, rider: Zap, vendor: Code, admin: Bug, api: Server,
 };
 
-const TAB_STATUS_FILTERS: Record<Tab, string[]> = {
+const TAB_STATUS_FILTERS: Record<Exclude<Tab, "customers">, string[]> = {
   new:        ["new"],
   unresolved: ["acknowledged", "in_progress"],
   completed:  ["resolved"],
@@ -113,10 +153,25 @@ const TABS: {
   badgeBg: string;
   badgeColor: string;
 }[] = [
-  { id: "new",        label: "New",        icon: Flame,        activeColor: "#DC2626", activeBorder: "#DC2626", activeBg: "#FEF2F2", badgeBg: "#FEE2E2", badgeColor: "#B91C1C" },
-  { id: "unresolved", label: "Unresolved", icon: ShieldAlert,  activeColor: "#D97706", activeBorder: "#F59E0B", activeBg: "#FFFBEB", badgeBg: "#FEF3C7", badgeColor: "#92400E" },
-  { id: "completed",  label: "Completed",  icon: CheckCircle2, activeColor: "#16A34A", activeBorder: "#22C55E", activeBg: "#F0FDF4", badgeBg: "#DCFCE7", badgeColor: "#15803D" },
+  { id: "new",        label: "New",             icon: Flame,        activeColor: "#DC2626", activeBorder: "#DC2626", activeBg: "#FEF2F2", badgeBg: "#FEE2E2", badgeColor: "#B91C1C" },
+  { id: "unresolved", label: "Unresolved",      icon: ShieldAlert,  activeColor: "#D97706", activeBorder: "#F59E0B", activeBg: "#FFFBEB", badgeBg: "#FEF3C7", badgeColor: "#92400E" },
+  { id: "completed",  label: "Completed",       icon: CheckCircle2, activeColor: "#16A34A", activeBorder: "#22C55E", activeBg: "#F0FDF4", badgeBg: "#DCFCE7", badgeColor: "#15803D" },
+  { id: "customers",  label: "Customer Reports", icon: Users,        activeColor: "#7C3AED", activeBorder: "#8B5CF6", activeBg: "#F5F3FF", badgeBg: "#EDE9FE", badgeColor: "#6D28D9" },
 ];
+
+const AUTO_INTERVALS = [
+  { value: 30000,  label: "Every 30s" },
+  { value: 60000,  label: "Every 1 min" },
+  { value: 300000, label: "Every 5 min" },
+  { value: 900000, label: "Every 15 min" },
+];
+
+const SCAN_FINDING_COLORS: Record<string, { bg: string; border: string; color: string; dot: string }> = {
+  critical: { bg: "#FEF2F2", border: "#FECACA", color: "#B91C1C", dot: "#EF4444" },
+  medium:   { bg: "#FFFBEB", border: "#FDE68A", color: "#92400E", dot: "#F59E0B" },
+  minor:    { bg: "#EFF6FF", border: "#BFDBFE", color: "#1D4ED8", dot: "#3B82F6" },
+  ok:       { bg: "#F0FDF4", border: "#BBF7D0", color: "#15803D", dot: "#22C55E" },
+};
 
 function formatTimestamp(ts: string): string {
   const d = new Date(ts);
@@ -127,7 +182,148 @@ function formatTimestamp(ts: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function useTabCount(tab: Tab, sourceApp: string, severity: string, errorType: string) {
+function analyzeErrorCause(report: ErrorReport): {
+  causes: string[];
+  consequences: string[];
+  fixes: string[];
+} {
+  const msg = (report.errorMessage || "").toLowerCase();
+  const causes: string[] = [];
+  const consequences: string[] = [];
+  const fixes: string[] = [];
+
+  switch (report.errorType) {
+    case "db_error":
+      causes.push("Database connection pool exhausted or timed out");
+      causes.push("Invalid SQL query or schema mismatch after migration");
+      causes.push("Database server unreachable or down");
+      consequences.push("Users cannot place orders, make payments, or read data");
+      consequences.push("Background jobs that write to DB will fail silently");
+      consequences.push("Potential data inconsistency if mid-transaction");
+      fixes.push("Check database server health and connection pool settings");
+      fixes.push("Review recent schema migrations for conflicts");
+      fixes.push("Monitor DB CPU/RAM — scale up if at capacity");
+      break;
+    case "frontend_crash":
+      causes.push("Unhandled null/undefined reference inside a React component");
+      causes.push("Incompatible or unexpected shape of API response data");
+      causes.push("Missing error boundary — one component crashing takes the whole page");
+      consequences.push("User sees a blank white screen and cannot continue");
+      consequences.push("App becomes unresponsive until the user force-refreshes");
+      consequences.push("Potential loss of unsaved user input or cart items");
+      fixes.push("Wrap risky components in React Error Boundaries");
+      fixes.push("Add optional chaining (?.) and null checks before rendering");
+      fixes.push("Validate API response schema before passing to UI state");
+      break;
+    case "api_error":
+      causes.push("Third-party service or microservice is unavailable");
+      causes.push("Unhandled exception in server-side route handler");
+      causes.push("Rate limit exceeded or request payload too large");
+      consequences.push("Feature or page the user was using becomes unavailable");
+      consequences.push("Failed API calls may leave the UI in a broken loading state");
+      consequences.push("Potential duplicate actions if user retries without guidance");
+      fixes.push("Add proper try/catch in all route handlers");
+      fixes.push("Return user-friendly error messages instead of raw stack traces");
+      fixes.push("Implement retry logic with exponential backoff on the client");
+      break;
+    case "route_error":
+      causes.push("Route handler threw an unhandled exception");
+      causes.push("Middleware blocking request before it reaches handler");
+      causes.push("Incorrect URL pattern or missing route registration");
+      consequences.push("Endpoint is completely down — all users hitting this route are affected");
+      consequences.push("Could cause cascading failures in features that depend on this endpoint");
+      fixes.push("Check the route registration and middleware order");
+      fixes.push("Add global error handler middleware to catch unhandled route errors");
+      fixes.push("Review recent code changes that touched the routing configuration");
+      break;
+    case "ui_error":
+      causes.push("CSS/style conflict causing layout to break");
+      causes.push("Component receiving wrong prop types or missing required props");
+      causes.push("Browser compatibility issue with a specific CSS or JS feature");
+      consequences.push("UI elements overlap, disappear, or display incorrectly");
+      consequences.push("Users may not be able to find or click interactive elements");
+      fixes.push("Test on multiple browsers and screen sizes");
+      fixes.push("Add PropTypes or TypeScript strict checks on component props");
+      fixes.push("Use browser dev tools to identify the conflicting styles");
+      break;
+    case "unhandled_exception":
+      causes.push("Missing try/catch around async operations (await without catch)");
+      causes.push("Promise rejection that was never handled");
+      causes.push("Unexpected runtime error from a library or third-party code");
+      consequences.push("Server/worker process may crash and restart — brief downtime");
+      consequences.push("In-progress operations are abandoned — potential data inconsistency");
+      consequences.push("Memory leaks if cleanup code inside catch/finally was skipped");
+      fixes.push("Add process-level error handlers: process.on('uncaughtException')");
+      fixes.push("Wrap all async functions in try/catch");
+      fixes.push("Use a global error monitoring tool to catch these automatically");
+      break;
+  }
+
+  if (msg.includes("auth") || msg.includes("token") || msg.includes("unauthorized") || msg.includes("401")) {
+    causes.push("Authentication token expired, revoked, or tampered with");
+    consequences.push("Users are suddenly logged out during active sessions");
+    consequences.push("API calls silently fail — user sees stale data");
+    fixes.push("Implement automatic silent token refresh before expiry");
+    fixes.push("Handle 401 globally and redirect to login with a clear message");
+  }
+  if (msg.includes("payment") || msg.includes("stripe") || msg.includes("checkout")) {
+    causes.push("Payment gateway API credentials invalid or expired");
+    causes.push("Payment gateway is experiencing downtime");
+    consequences.push("Users cannot complete purchases — direct revenue loss");
+    consequences.push("Failed payment may still charge the card — serious risk");
+    fixes.push("Check payment gateway dashboard for alerts");
+    fixes.push("Implement idempotency keys to prevent double-charging");
+    fixes.push("Notify finance team immediately if transactions are affected");
+  }
+  if (msg.includes("timeout") || msg.includes("econnrefused") || msg.includes("econnreset")) {
+    causes.push("External service not responding within timeout window");
+    causes.push("Network connectivity issue between services");
+    consequences.push("Feature temporarily unavailable — users get loading spinners");
+    fixes.push("Implement circuit breaker pattern to fail fast");
+    fixes.push("Set sensible timeouts and surface them clearly to users");
+  }
+  if (msg.includes("not found") || msg.includes("404")) {
+    causes.push("Resource was deleted, moved, or never existed");
+    causes.push("Stale URL or cached link pointing to a removed resource");
+    consequences.push("Users following shared or bookmarked links see a broken page");
+    fixes.push("Implement proper 404 pages with navigation back to safety");
+    fixes.push("Check if a resource was recently deleted without redirects");
+  }
+  if (msg.includes("permission") || msg.includes("forbidden") || msg.includes("403")) {
+    causes.push("Access control policy change that was not communicated");
+    causes.push("User role changed but session cache was not invalidated");
+    consequences.push("Legitimate users blocked from features they previously had access to");
+    fixes.push("Audit recent RBAC/permission changes");
+    fixes.push("Ensure session invalidation on role changes");
+  }
+  if (msg.includes("memory") || msg.includes("heap") || msg.includes("oom")) {
+    causes.push("Memory leak — objects not being garbage collected");
+    causes.push("Very large dataset loaded into memory at once");
+    consequences.push("Server performance degrades over time and eventually crashes");
+    consequences.push("All users on the server are affected simultaneously");
+    fixes.push("Profile memory usage with Node.js inspector or heapdump");
+    fixes.push("Implement pagination for large data queries");
+    fixes.push("Consider increasing server memory or switching to streaming");
+  }
+
+  if (causes.length === 0) {
+    causes.push("Unexpected runtime condition not covered by existing error handling");
+    causes.push("Edge case in business logic triggered by unusual input");
+  }
+  if (consequences.length === 0) {
+    consequences.push("Feature or workflow affected — users may need to retry");
+    consequences.push("Error may go unnoticed if not visible in user interface");
+  }
+  if (fixes.length === 0) {
+    fixes.push("Review the error message and stack trace for specific clues");
+    fixes.push("Reproduce the error in a controlled environment");
+    fixes.push("Add more specific logging around this area of code");
+  }
+
+  return { causes, consequences, fixes };
+}
+
+function useTabCount(tab: Exclude<Tab, "customers">, sourceApp: string, severity: string, errorType: string) {
   const statuses = TAB_STATUS_FILTERS[tab];
   const p = new URLSearchParams({ page: "1", limit: "1" });
   statuses.forEach(s => p.append("status", s));
@@ -156,9 +352,29 @@ export default function ErrorMonitor() {
   const [fixingAll, setFixingAll] = useState(false);
   const [groupByCategory, setGroupByCategory] = useState(false);
 
-  const tabStatuses = TAB_STATUS_FILTERS[activeTab];
+  const [showScanPanel, setShowScanPanel] = useState(false);
+  const [scanMode, setScanMode] = useState<ScanMode>("manual");
+  const [autoInterval, setAutoInterval] = useState(60000);
+  const [dailyTime, setDailyTime] = useState("08:00");
+  const [specificDateTime, setSpecificDateTime] = useState("");
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const autoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const specificTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerStatusFilter, setCustomerStatusFilter] = useState("");
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
+
+  const tabStatuses = activeTab !== "customers" ? TAB_STATUS_FILTERS[activeTab] : [];
   const params = new URLSearchParams({ page: String(page), limit: "30" });
-  tabStatuses.forEach(s => params.append("status", s));
+  if (activeTab !== "customers") {
+    tabStatuses.forEach(s => params.append("status", s));
+  }
   if (sourceApp) params.set("sourceApp", sourceApp);
   if (severity) params.set("severity", severity);
   if (errorType) params.set("errorType", errorType);
@@ -167,17 +383,43 @@ export default function ErrorMonitor() {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["error-reports", activeTab, page, sourceApp, severity, errorType, dateFrom, dateTo],
-    queryFn: () => fetcher(`/error-reports?${params}`),
+    queryFn: () => activeTab === "customers" ? Promise.resolve(null) : fetcher(`/error-reports?${params}`),
     refetchInterval: 30000,
+    enabled: activeTab !== "customers",
+  });
+
+  const customerParams = new URLSearchParams({ page: String(customerPage), limit: "20" });
+  if (customerStatusFilter) customerParams.set("status", customerStatusFilter);
+
+  const { data: customerData, isLoading: customerLoading, refetch: refetchCustomers } = useQuery({
+    queryKey: ["customer-reports", customerPage, customerStatusFilter],
+    queryFn: () => fetcher(`/error-reports/customer-reports?${customerParams}`),
+    refetchInterval: 30000,
+    enabled: activeTab === "customers",
   });
 
   const reports: ErrorReport[] = data?.reports || [];
   const pagination: Pagination = data?.pagination || { page: 1, limit: 30, total: 0, totalPages: 0 };
+  const customerReports: CustomerReport[] = customerData?.reports || [];
+  const customerPagination: Pagination = customerData?.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 };
 
   const newCount        = useTabCount("new",        sourceApp, severity, errorType);
   const unresolvedCount = useTabCount("unresolved", sourceApp, severity, errorType);
   const completedCount  = useTabCount("completed",  sourceApp, severity, errorType);
-  const tabCounts: Record<Tab, number> = { new: newCount, unresolved: unresolvedCount, completed: completedCount };
+
+  const { data: customerCountData } = useQuery({
+    queryKey: ["customer-reports-count"],
+    queryFn: () => fetcher("/error-reports/customer-reports?status=new&limit=1"),
+    refetchInterval: 30000,
+  });
+  const customerNewCount = customerCountData?.pagination?.total ?? 0;
+
+  const tabCounts: Record<Tab, number> = {
+    new: newCount,
+    unresolved: unresolvedCount,
+    completed: completedCount,
+    customers: customerNewCount,
+  };
 
   const updateMutation = useMutation({
     mutationFn: ({ id, newStatus }: { id: string; newStatus: string }) =>
@@ -185,9 +427,83 @@ export default function ErrorMonitor() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["error-reports"] });
       queryClient.invalidateQueries({ queryKey: ["error-count"] });
-      queryClient.invalidateQueries({ queryKey: ["error-reports-count"] });
     },
   });
+
+  const updateCustomerReportMutation = useMutation({
+    mutationFn: ({ id, status, adminNote }: { id: string; status?: string; adminNote?: string }) =>
+      fetcher(`/error-reports/customer-reports/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, adminNote }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customer-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["customer-reports-count"] });
+    },
+  });
+
+  const runScan = useCallback(async () => {
+    if (isScanning) return;
+    setIsScanning(true);
+    setScanError(null);
+    try {
+      const result = await fetcher("/error-reports/scan", { method: "POST" });
+      setScanResult(result);
+      setLastScanAt(new Date().toISOString());
+      queryClient.invalidateQueries({ queryKey: ["error-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["error-count"] });
+      queryClient.invalidateQueries({ queryKey: ["customer-reports-count"] });
+    } catch {
+      setScanError("Scan failed. Check the API server connection.");
+    } finally {
+      setIsScanning(false);
+    }
+  }, [isScanning, queryClient]);
+
+  const startAutoScan = useCallback(() => {
+    if (autoIntervalRef.current) clearInterval(autoIntervalRef.current);
+    runScan();
+    autoIntervalRef.current = setInterval(runScan, autoInterval);
+    setIsAutoRunning(true);
+  }, [runScan, autoInterval]);
+
+  const stopAutoScan = useCallback(() => {
+    if (autoIntervalRef.current) { clearInterval(autoIntervalRef.current); autoIntervalRef.current = null; }
+    setIsAutoRunning(false);
+  }, []);
+
+  const scheduleSpecificScan = useCallback(() => {
+    if (!specificDateTime) return;
+    const target = new Date(specificDateTime).getTime();
+    const now = Date.now();
+    if (target <= now) { setScanError("Scheduled time must be in the future."); return; }
+    if (specificTimeoutRef.current) clearTimeout(specificTimeoutRef.current);
+    const delay = target - now;
+    specificTimeoutRef.current = setTimeout(() => { runScan(); }, delay);
+    setScanError(null);
+  }, [specificDateTime, runScan]);
+
+  const scheduleDailyScan = useCallback(() => {
+    const [h, m] = dailyTime.split(":").map(Number);
+    const now = new Date();
+    const target = new Date();
+    target.setHours(h!, m!, 0, 0);
+    if (target <= now) target.setDate(target.getDate() + 1);
+    const delay = target.getTime() - now.getTime();
+    if (specificTimeoutRef.current) clearTimeout(specificTimeoutRef.current);
+    specificTimeoutRef.current = setTimeout(() => {
+      runScan();
+      scheduleDailyScan();
+    }, delay);
+    setScanError(null);
+  }, [dailyTime, runScan]);
+
+  useEffect(() => {
+    return () => {
+      if (autoIntervalRef.current) clearInterval(autoIntervalRef.current);
+      if (specificTimeoutRef.current) clearTimeout(specificTimeoutRef.current);
+    };
+  }, []);
 
   const handleFixAll = async () => {
     if (fixingAll) return;
@@ -199,12 +515,11 @@ export default function ErrorMonitor() {
           sourceApp: sourceApp || undefined,
           severity: severity || undefined,
           errorType: errorType || undefined,
-          statusFilter: TAB_STATUS_FILTERS[activeTab],
+          statusFilter: activeTab !== "customers" ? TAB_STATUS_FILTERS[activeTab] : [],
         }),
       });
       queryClient.invalidateQueries({ queryKey: ["error-reports"] });
       queryClient.invalidateQueries({ queryKey: ["error-count"] });
-      queryClient.invalidateQueries({ queryKey: ["error-reports-count"] });
       setActiveTab("completed");
       setPage(1);
     } finally {
@@ -215,7 +530,7 @@ export default function ErrorMonitor() {
   const switchTab = (tab: Tab) => { setActiveTab(tab); setPage(1); setExpandedId(null); };
   const hasFilters = !!(sourceApp || severity || errorType || dateFrom || dateTo);
   const clearFilters = () => { setSourceApp(""); setSeverity(""); setErrorType(""); setDateFrom(""); setDateTo(""); setPage(1); };
-  const canFixAll = activeTab !== "completed" && pagination.total > 0;
+  const canFixAll = activeTab !== "completed" && activeTab !== "customers" && pagination.total > 0;
 
   const groupedReports = useMemo(() => {
     if (!groupByCategory) return null;
@@ -227,11 +542,54 @@ export default function ErrorMonitor() {
     return groups;
   }, [reports, groupByCategory]);
 
+  const renderCauseAnalysis = (report: ErrorReport) => {
+    const { causes, consequences, fixes } = analyzeErrorCause(report);
+    return (
+      <div style={{ marginTop: 16, borderTop: "1px dashed #E5E7EB", paddingTop: 16 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#7C3AED", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <Lightbulb style={{ width: 13, height: 13 }} /> Root Cause Analysis
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <div style={{ backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#92400E", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+              <AlertCircle style={{ width: 11, height: 11 }} /> Likely Causes
+            </p>
+            <ul style={{ margin: 0, padding: "0 0 0 14px" }}>
+              {causes.slice(0, 3).map((c, i) => (
+                <li key={i} style={{ fontSize: 11, color: "#78350F", marginBottom: 4, lineHeight: "1.4" }}>{c}</li>
+              ))}
+            </ul>
+          </div>
+          <div style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#B91C1C", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+              <AlertTriangle style={{ width: 11, height: 11 }} /> What This Can Cause
+            </p>
+            <ul style={{ margin: 0, padding: "0 0 0 14px" }}>
+              {consequences.slice(0, 3).map((c, i) => (
+                <li key={i} style={{ fontSize: 11, color: "#7F1D1D", marginBottom: 4, lineHeight: "1.4" }}>{c}</li>
+              ))}
+            </ul>
+          </div>
+          <div style={{ backgroundColor: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#15803D", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+              <Wrench style={{ width: 11, height: 11 }} /> Recommended Fixes
+            </p>
+            <ul style={{ margin: 0, padding: "0 0 0 14px" }}>
+              {fixes.slice(0, 3).map((f, i) => (
+                <li key={i} style={{ fontSize: 11, color: "#14532D", marginBottom: 4, lineHeight: "1.4" }}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderReportRow = (report: ErrorReport) => {
     const isExpanded = expandedId === report.id;
     const Icon = SOURCE_ICONS[report.sourceApp] || Server;
-    const sevBadge = SEVERITY_BADGE[report.severity] || SEVERITY_BADGE.medium;
-    const statusBadge = STATUS_BADGE[report.status] || STATUS_BADGE.new;
+    const sevBadge = SEVERITY_BADGE[report.severity] || SEVERITY_BADGE.medium!;
+    const statusBadge = STATUS_BADGE[report.status] || STATUS_BADGE.new!;
     const accentColor = LEFT_ACCENT[report.severity] || "#6366F1";
     const nextStep = STATUS_NEXT[report.status];
     const nextBtnStyle = nextStep ? NEXT_BTN_STYLE[nextStep.status] : null;
@@ -245,149 +603,75 @@ export default function ErrorMonitor() {
           borderBottom: "1px solid #F1F5F9",
         }}
       >
-        {/* Row */}
         <div
           style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", cursor: "pointer" }}
           onClick={() => setExpandedId(isExpanded ? null : report.id)}
           onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "#F8FAFC"}
           onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"}
         >
-          {/* Expand icon */}
           <div style={{ marginTop: 2, color: "#9CA3AF", flexShrink: 0 }}>
-            {isExpanded
-              ? <ChevronDown style={{ width: 16, height: 16 }} />
-              : <ChevronRight style={{ width: 16, height: 16 }} />}
+            {isExpanded ? <ChevronDown style={{ width: 16, height: 16 }} /> : <ChevronRight style={{ width: 16, height: 16 }} />}
           </div>
-
-          {/* Content */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Badges row */}
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <span style={{
-                display: "inline-flex", alignItems: "center",
-                padding: "2px 8px", borderRadius: 9999,
-                fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                backgroundColor: sevBadge.bg, color: sevBadge.color,
-                border: `1px solid ${sevBadge.border}`,
-              }}>{report.severity}</span>
-
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 4,
-                padding: "2px 8px", borderRadius: 9999,
-                fontSize: 11, fontWeight: 600,
-                backgroundColor: "#F1F5F9", color: "#374151",
-                border: "1px solid #E2E8F0", textTransform: "capitalize",
-              }}>
+              <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 9999, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", backgroundColor: sevBadge.bg, color: sevBadge.color, border: `1px solid ${sevBadge.border}` }}>{report.severity}</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 9999, fontSize: 11, fontWeight: 600, backgroundColor: "#F1F5F9", color: "#374151", border: "1px solid #E2E8F0", textTransform: "capitalize" }}>
                 <Icon style={{ width: 12, height: 12 }} />
                 {report.sourceApp === "api" ? "API Server" : report.sourceApp}
               </span>
-
-              <span style={{
-                fontSize: 11, color: "#6B7280",
-                backgroundColor: "#F9FAFB", padding: "2px 8px", borderRadius: 9999,
-                border: "1px solid #E5E7EB",
-              }}>
+              <span style={{ fontSize: 11, color: "#6B7280", backgroundColor: "#F9FAFB", padding: "2px 8px", borderRadius: 9999, border: "1px solid #E5E7EB" }}>
                 {report.errorType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
               </span>
-
-              <span style={{
-                display: "inline-flex", alignItems: "center",
-                padding: "2px 8px", borderRadius: 9999,
-                fontSize: 11, fontWeight: 600, textTransform: "capitalize",
-                backgroundColor: statusBadge.bg, color: statusBadge.color,
-              }}>
+              <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 9999, fontSize: 11, fontWeight: 600, textTransform: "capitalize", backgroundColor: statusBadge.bg, color: statusBadge.color }}>
                 {report.status.replace(/_/g, " ")}
               </span>
             </div>
-
-            {/* Message */}
-            <p style={{
-              fontSize: 14, fontWeight: 500, color: "#111827",
-              lineHeight: "1.4", marginBottom: 4,
-              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-            }}>
+            <p style={{ fontSize: 14, fontWeight: 500, color: "#111827", lineHeight: "1.4", marginBottom: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
               {report.errorMessage}
             </p>
-
-            {/* Meta */}
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, fontSize: 11, color: "#9CA3AF" }}>
               <span>{formatTimestamp(report.timestamp)}</span>
-              {report.functionName && (
-                <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>
-                  {report.functionName}
-                </span>
-              )}
-              {report.componentName && (
-                <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>
-                  {report.componentName}
-                </span>
-              )}
-              {report.shortImpact && (
-                <span style={{ fontStyle: "italic", color: "#9CA3AF" }}>{report.shortImpact}</span>
-              )}
+              {report.functionName && <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>{report.functionName}</span>}
+              {report.componentName && <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>{report.componentName}</span>}
+              {report.shortImpact && <span style={{ fontStyle: "italic", color: "#9CA3AF" }}>{report.shortImpact}</span>}
             </div>
           </div>
-
-          {/* Action button */}
           <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             {nextStep && nextBtnStyle ? (
               <button
                 onClick={() => updateMutation.mutate({ id: report.id, newStatus: nextStep.status })}
                 disabled={updateMutation.isPending}
-                style={{
-                  fontSize: 11, fontWeight: 600,
-                  padding: "5px 10px", borderRadius: 8,
-                  backgroundColor: nextBtnStyle.bg, color: nextBtnStyle.color,
-                  border: "none", cursor: "pointer",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
-                  opacity: updateMutation.isPending ? 0.6 : 1,
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle.hover; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle.bg; }}
-              >
-                {nextStep.label}
-              </button>
+                style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, backgroundColor: nextBtnStyle.bg, color: nextBtnStyle.color, border: "none", cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.15)", opacity: updateMutation.isPending ? 0.6 : 1 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle!.hover; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle!.bg; }}
+              >{nextStep.label}</button>
             ) : (
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 4,
-                fontSize: 11, fontWeight: 600, color: "#16A34A",
-                padding: "5px 10px", backgroundColor: "#F0FDF4",
-                borderRadius: 8, border: "1px solid #BBF7D0",
-              }}>
-                <CheckCircle2 style={{ width: 12, height: 12 }} />
-                Resolved
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#16A34A", padding: "5px 10px", backgroundColor: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
+                <CheckCircle2 style={{ width: 12, height: 12 }} /> Resolved
               </span>
             )}
           </div>
         </div>
 
-        {/* Expanded detail */}
         {isExpanded && (
           <div style={{ padding: "16px 16px 20px 44px", backgroundColor: "#F8FAFC", borderTop: "1px solid #F1F5F9" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
               {[
-                { label: "Timestamp",  value: new Date(report.timestamp).toLocaleString(), mono: false },
-                { label: "Module",     value: report.moduleName    || "—", mono: true },
-                { label: "Function",   value: report.functionName  || "—", mono: true },
-                { label: "Component",  value: report.componentName || "—", mono: true },
+                { label: "Timestamp", value: new Date(report.timestamp).toLocaleString(), mono: false },
+                { label: "Module", value: report.moduleName || "—", mono: true },
+                { label: "Function", value: report.functionName || "—", mono: true },
+                { label: "Component", value: report.componentName || "—", mono: true },
               ].map(f => (
                 <div key={f.label}>
-                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>
-                    {f.label}
-                  </p>
+                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>{f.label}</p>
                   <p style={{ fontSize: 12, color: "#374151", fontFamily: f.mono ? "monospace" : "inherit" }}>{f.value}</p>
                 </div>
               ))}
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>
-                Error Message
-              </p>
-              <p style={{
-                fontSize: 12, color: "#374151", whiteSpace: "pre-wrap", wordBreak: "break-all",
-                backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12,
-              }}>{report.errorMessage}</p>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Error Message</p>
+              <p style={{ fontSize: 12, color: "#374151", whiteSpace: "pre-wrap", wordBreak: "break-all", backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12 }}>{report.errorMessage}</p>
             </div>
 
             {report.shortImpact && (
@@ -400,28 +684,19 @@ export default function ErrorMonitor() {
             {report.stackTrace && (
               <div style={{ marginBottom: 12 }}>
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Stack Trace</p>
-                <pre style={{
-                  fontSize: 11, fontFamily: "monospace",
-                  backgroundColor: "#111827", color: "#86EFAC",
-                  border: "1px solid #374151", borderRadius: 8, padding: 12,
-                  overflowX: "auto", maxHeight: 256, whiteSpace: "pre-wrap", wordBreak: "break-all",
-                }}>{report.stackTrace}</pre>
+                <pre style={{ fontSize: 11, fontFamily: "monospace", backgroundColor: "#111827", color: "#86EFAC", border: "1px solid #374151", borderRadius: 8, padding: 12, overflowX: "auto", maxHeight: 256, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{report.stackTrace}</pre>
               </div>
             )}
 
             {report.metadata && Object.keys(report.metadata).length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Metadata</p>
-                <pre style={{
-                  fontSize: 11, fontFamily: "monospace", color: "#374151",
-                  backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12,
-                  overflowX: "auto", maxHeight: 160, whiteSpace: "pre-wrap",
-                }}>{JSON.stringify(report.metadata, null, 2)}</pre>
+                <pre style={{ fontSize: 11, fontFamily: "monospace", color: "#374151", backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, overflowX: "auto", maxHeight: 160, whiteSpace: "pre-wrap" }}>{JSON.stringify(report.metadata, null, 2)}</pre>
               </div>
             )}
 
             {(report.acknowledgedAt || report.resolvedAt) && (
-              <div style={{ display: "flex", gap: 24 }}>
+              <div style={{ display: "flex", gap: 24, marginBottom: 12 }}>
                 {report.acknowledgedAt && (
                   <div>
                     <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Acknowledged At</p>
@@ -434,6 +709,157 @@ export default function ErrorMonitor() {
                     <p style={{ fontSize: 12, color: "#16A34A", fontWeight: 600 }}>{new Date(report.resolvedAt).toLocaleString()}</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {renderCauseAnalysis(report)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderCustomerReportRow = (report: CustomerReport) => {
+    const isExpanded = expandedCustomerId === report.id;
+    const statusColors: Record<string, { bg: string; color: string }> = {
+      new:      { bg: "#FEF2F2", color: "#B91C1C" },
+      reviewed: { bg: "#FFFBEB", color: "#92400E" },
+      closed:   { bg: "#F0FDF4", color: "#15803D" },
+    };
+    const sc = statusColors[report.status] || statusColors.new!;
+    const platformIcon = report.platform === "ios" || report.platform === "android" ? Smartphone : Globe;
+    const PIcon = platformIcon;
+
+    return (
+      <div
+        key={report.id}
+        style={{ backgroundColor: "#ffffff", borderLeft: "4px solid #8B5CF6", borderBottom: "1px solid #F1F5F9" }}
+      >
+        <div
+          style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", cursor: "pointer" }}
+          onClick={() => setExpandedCustomerId(isExpanded ? null : report.id)}
+          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "#F8FAFC"}
+          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"}
+        >
+          <div style={{ marginTop: 2, color: "#9CA3AF", flexShrink: 0 }}>
+            {isExpanded ? <ChevronDown style={{ width: 16, height: 16 }} /> : <ChevronRight style={{ width: 16, height: 16 }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: "#1F2937" }}>
+                <Users style={{ width: 13, height: 13, color: "#7C3AED" }} />
+                {report.customerName}
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 9999, fontSize: 11, fontWeight: 600, textTransform: "capitalize", backgroundColor: sc.bg, color: sc.color }}>
+                {report.status}
+              </span>
+              {report.platform && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#6B7280", backgroundColor: "#F9FAFB", padding: "2px 8px", borderRadius: 9999, border: "1px solid #E5E7EB", textTransform: "capitalize" }}>
+                  <PIcon style={{ width: 11, height: 11 }} /> {report.platform}
+                </span>
+              )}
+              {report.screen && (
+                <span style={{ fontSize: 11, color: "#6B7280", backgroundColor: "#F3F4F6", padding: "2px 8px", borderRadius: 9999 }}>
+                  📍 {report.screen}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 13, color: "#374151", lineHeight: "1.4", marginBottom: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {report.description}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, fontSize: 11, color: "#9CA3AF" }}>
+              <span>{formatTimestamp(report.timestamp)}</span>
+              {report.customerEmail && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Mail style={{ width: 11, height: 11 }} />{report.customerEmail}</span>}
+              {report.customerPhone && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Phone style={{ width: 11, height: 11 }} />{report.customerPhone}</span>}
+              {report.appVersion && <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>v{report.appVersion}</span>}
+            </div>
+          </div>
+          <div style={{ flexShrink: 0, display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+            {report.status === "new" && (
+              <button
+                onClick={() => updateCustomerReportMutation.mutate({ id: report.id, status: "reviewed" })}
+                disabled={updateCustomerReportMutation.isPending}
+                style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, backgroundColor: "#F59E0B", color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                <Eye style={{ width: 12, height: 12, display: "inline", marginRight: 4 }} />
+                Mark Reviewed
+              </button>
+            )}
+            {report.status === "reviewed" && (
+              <button
+                onClick={() => updateCustomerReportMutation.mutate({ id: report.id, status: "closed" })}
+                disabled={updateCustomerReportMutation.isPending}
+                style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, backgroundColor: "#16A34A", color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                <XCircle style={{ width: 12, height: 12, display: "inline", marginRight: 4 }} />
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div style={{ padding: "16px 16px 20px 44px", backgroundColor: "#F8FAFC", borderTop: "1px solid #F1F5F9" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16 }}>
+              {[
+                { label: "Customer Name",  value: report.customerName },
+                { label: "Email",          value: report.customerEmail || "—" },
+                { label: "Phone",          value: report.customerPhone || "—" },
+                { label: "User ID",        value: report.userId || "—" },
+                { label: "Platform",       value: report.platform || "—" },
+                { label: "App Version",    value: report.appVersion ? `v${report.appVersion}` : "—" },
+                { label: "Device Info",    value: report.deviceInfo || "—" },
+                { label: "Screen / Page",  value: report.screen || "—" },
+                { label: "Submitted",      value: new Date(report.timestamp).toLocaleString() },
+              ].map(f => (
+                <div key={f.label}>
+                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>{f.label}</p>
+                  <p style={{ fontSize: 12, color: "#374151" }}>{f.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Issue Description</p>
+              <p style={{ fontSize: 13, color: "#374151", backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, whiteSpace: "pre-wrap" }}>{report.description}</p>
+            </div>
+
+            {report.reproSteps && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Steps to Reproduce</p>
+                <p style={{ fontSize: 12, color: "#374151", backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, whiteSpace: "pre-wrap" }}>{report.reproSteps}</p>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>
+                <StickyNote style={{ width: 11, height: 11, display: "inline", marginRight: 4 }} />
+                Admin Note
+              </p>
+              <textarea
+                value={noteInputs[report.id] !== undefined ? noteInputs[report.id] : (report.adminNote || "")}
+                onChange={e => setNoteInputs(n => ({ ...n, [report.id]: e.target.value }))}
+                placeholder="Add an internal note about this report..."
+                rows={3}
+                style={{ width: "100%", fontSize: 12, color: "#374151", backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+              />
+              <button
+                onClick={() => {
+                  const note = noteInputs[report.id] ?? report.adminNote ?? "";
+                  updateCustomerReportMutation.mutate({ id: report.id, adminNote: note });
+                  setNoteInputs(n => { const x = { ...n }; delete x[report.id]; return x; });
+                }}
+                disabled={updateCustomerReportMutation.isPending}
+                style={{ marginTop: 6, fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 8, backgroundColor: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                Save Note
+              </button>
+            </div>
+
+            {report.reviewedAt && (
+              <div>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Reviewed At</p>
+                <p style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>{new Date(report.reviewedAt).toLocaleString()}</p>
               </div>
             )}
           </div>
@@ -452,7 +878,11 @@ export default function ErrorMonitor() {
             <Bug style={{ width: 22, height: 22, color: "#EF4444" }} />
             Error Monitor
           </h1>
-          <p style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>Real-time error tracking across all apps</p>
+          <p style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
+            Real-time error tracking across all apps
+            {lastScanAt && <span style={{ marginLeft: 8, color: "#9CA3AF" }}>· Last scan: {formatTimestamp(lastScanAt)}</span>}
+            {isAutoRunning && <span style={{ marginLeft: 8, color: "#16A34A", fontWeight: 600 }}>· Auto-scan ON</span>}
+          </p>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -460,24 +890,32 @@ export default function ErrorMonitor() {
             <button
               onClick={handleFixAll}
               disabled={fixingAll}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "7px 14px", borderRadius: 8, border: "none",
-                backgroundColor: "#16A34A", color: "#ffffff",
-                fontSize: 13, fontWeight: 600, cursor: "pointer",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
-                opacity: fixingAll ? 0.7 : 1,
-              }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "none", backgroundColor: "#16A34A", color: "#ffffff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: fixingAll ? 0.7 : 1 }}
             >
               <CheckCheck style={{ width: 15, height: 15 }} />
               {fixingAll ? "Fixing…" : `Fix All (${pagination.total})`}
             </button>
           )}
+
+          <button
+            onClick={() => setShowScanPanel(p => !p)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8,
+              border: `1px solid ${showScanPanel ? "#6366F1" : "#D1D5DB"}`,
+              backgroundColor: showScanPanel ? "#EEF2FF" : "#ffffff",
+              color: showScanPanel ? "#4F46E5" : "#374151",
+              fontSize: 13, fontWeight: 500, cursor: "pointer",
+            }}
+          >
+            <ScanLine style={{ width: 14, height: 14 }} />
+            Scan System
+            {isAutoRunning && <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "#16A34A", display: "inline-block" }} />}
+          </button>
+
           <button
             onClick={() => setGroupByCategory(g => !g)}
             style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8,
+              display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8,
               border: `1px solid ${groupByCategory ? "#A78BFA" : "#D1D5DB"}`,
               backgroundColor: groupByCategory ? "#EDE9FE" : "#ffffff",
               color: groupByCategory ? "#7C3AED" : "#374151",
@@ -487,11 +925,11 @@ export default function ErrorMonitor() {
             <Layers style={{ width: 14, height: 14 }} />
             Group by Type
           </button>
+
           <button
             onClick={() => setShowFilters(f => !f)}
             style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8,
+              display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8,
               border: `1px solid ${hasFilters ? "#818CF8" : "#D1D5DB"}`,
               backgroundColor: hasFilters ? "#EEF2FF" : "#ffffff",
               color: hasFilters ? "#4F46E5" : "#374151",
@@ -502,34 +940,185 @@ export default function ErrorMonitor() {
             Filters
             {hasFilters && <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "#6366F1", display: "inline-block" }} />}
           </button>
+
           <button
-            onClick={() => refetch()}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8,
-              border: "1px solid #D1D5DB", backgroundColor: "#ffffff",
-              color: "#374151", fontSize: 13, fontWeight: 500, cursor: "pointer",
-            }}
+            onClick={() => activeTab === "customers" ? refetchCustomers() : refetch()}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", fontSize: 13, fontWeight: 500, cursor: "pointer" }}
           >
-            <RefreshCw style={{ width: 14, height: 14, animation: isLoading ? "spin 1s linear infinite" : "none" }} />
+            <RefreshCw style={{ width: 14, height: 14, animation: (isLoading || customerLoading) ? "spin 1s linear infinite" : "none" }} />
             Refresh
           </button>
         </div>
       </div>
 
+      {/* ── Scan Panel ── */}
+      {showScanPanel && (
+        <div style={{ backgroundColor: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#1F2937", display: "flex", alignItems: "center", gap: 6 }}>
+              <ScanLine style={{ width: 16, height: 16, color: "#4F46E5" }} />
+              System Scan
+            </span>
+            <button onClick={() => setShowScanPanel(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280" }}>
+              <X style={{ width: 16, height: 16 }} />
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            {([
+              { id: "manual",   label: "On Demand",     icon: Play },
+              { id: "auto",     label: "Auto Refresh",  icon: RotateCcw },
+              { id: "daily",    label: "Daily",         icon: Calendar },
+              { id: "specific", label: "Specific Time", icon: Clock },
+            ] as { id: ScanMode; label: string; icon: typeof Play }[]).map(m => (
+              <button
+                key={m.id}
+                onClick={() => { setScanMode(m.id); stopAutoScan(); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+                  border: `1px solid ${scanMode === m.id ? "#4F46E5" : "#C7D2FE"}`,
+                  backgroundColor: scanMode === m.id ? "#4F46E5" : "#ffffff",
+                  color: scanMode === m.id ? "#ffffff" : "#374151",
+                  cursor: "pointer",
+                }}
+              >
+                <m.icon style={{ width: 13, height: 13 }} />
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            {scanMode === "manual" && (
+              <button
+                onClick={runScan}
+                disabled={isScanning}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, backgroundColor: "#4F46E5", color: "#fff", border: "none", cursor: isScanning ? "not-allowed" : "pointer", opacity: isScanning ? 0.7 : 1 }}
+              >
+                <Play style={{ width: 13, height: 13, animation: isScanning ? "spin 1s linear infinite" : "none" }} />
+                {isScanning ? "Scanning…" : "Run Scan Now"}
+              </button>
+            )}
+
+            {scanMode === "auto" && (
+              <>
+                <div>
+                  <p style={{ fontSize: 11, color: "#4B5563", fontWeight: 600, marginBottom: 4 }}>Scan Interval</p>
+                  <select
+                    value={autoInterval}
+                    onChange={e => { setAutoInterval(Number(e.target.value)); stopAutoScan(); }}
+                    style={{ backgroundColor: "#fff", border: "1px solid #C7D2FE", borderRadius: 8, padding: "7px 12px", fontSize: 13, color: "#374151" }}
+                  >
+                    {AUTO_INTERVALS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                  </select>
+                </div>
+                <button
+                  onClick={isAutoRunning ? stopAutoScan : startAutoScan}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, backgroundColor: isAutoRunning ? "#EF4444" : "#16A34A", color: "#fff", border: "none", cursor: "pointer" }}
+                >
+                  {isAutoRunning ? <><Pause style={{ width: 13, height: 13 }} /> Stop Auto-Scan</> : <><Play style={{ width: 13, height: 13 }} /> Start Auto-Scan</>}
+                </button>
+              </>
+            )}
+
+            {scanMode === "daily" && (
+              <>
+                <div>
+                  <p style={{ fontSize: 11, color: "#4B5563", fontWeight: 600, marginBottom: 4 }}>Daily Scan Time</p>
+                  <input
+                    type="time"
+                    value={dailyTime}
+                    onChange={e => setDailyTime(e.target.value)}
+                    style={{ backgroundColor: "#fff", border: "1px solid #C7D2FE", borderRadius: 8, padding: "7px 12px", fontSize: 13, color: "#374151", outline: "none" }}
+                  />
+                </div>
+                <button
+                  onClick={scheduleDailyScan}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, backgroundColor: "#4F46E5", color: "#fff", border: "none", cursor: "pointer" }}
+                >
+                  <Calendar style={{ width: 13, height: 13 }} /> Schedule Daily Scan
+                </button>
+                <button
+                  onClick={runScan}
+                  disabled={isScanning}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, backgroundColor: "#fff", color: "#374151", border: "1px solid #C7D2FE", cursor: "pointer" }}
+                >
+                  <Play style={{ width: 13, height: 13 }} /> Run Now
+                </button>
+              </>
+            )}
+
+            {scanMode === "specific" && (
+              <>
+                <div>
+                  <p style={{ fontSize: 11, color: "#4B5563", fontWeight: 600, marginBottom: 4 }}>Schedule at</p>
+                  <input
+                    type="datetime-local"
+                    value={specificDateTime}
+                    onChange={e => setSpecificDateTime(e.target.value)}
+                    style={{ backgroundColor: "#fff", border: "1px solid #C7D2FE", borderRadius: 8, padding: "7px 12px", fontSize: 13, color: "#374151", outline: "none" }}
+                  />
+                </div>
+                <button
+                  onClick={scheduleSpecificScan}
+                  disabled={!specificDateTime}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, backgroundColor: "#4F46E5", color: "#fff", border: "none", cursor: !specificDateTime ? "not-allowed" : "pointer", opacity: !specificDateTime ? 0.6 : 1 }}
+                >
+                  <Clock style={{ width: 13, height: 13 }} /> Schedule Scan
+                </button>
+              </>
+            )}
+          </div>
+
+          {scanError && (
+            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 6, color: "#B91C1C", fontSize: 12, backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 12px" }}>
+              <AlertCircle style={{ width: 13, height: 13, flexShrink: 0 }} /> {scanError}
+            </div>
+          )}
+
+          {scanResult && (
+            <div style={{ marginTop: 14, borderTop: "1px solid #C7D2FE", paddingTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>
+                  Scan completed in {scanResult.durationMs}ms ·
+                </span>
+                {[
+                  { label: "Unresolved", value: scanResult.totalUnresolved, color: "#374151" },
+                  { label: "Critical (1h)", value: scanResult.criticalLastHour, color: scanResult.criticalLastHour > 0 ? "#B91C1C" : "#15803D" },
+                  { label: "Customer Reports", value: scanResult.customerReportsPending, color: scanResult.customerReportsPending > 0 ? "#92400E" : "#15803D" },
+                ].map(s => (
+                  <span key={s.label} style={{ fontSize: 12, color: s.color, fontWeight: 600, backgroundColor: "#ffffff", padding: "2px 10px", borderRadius: 9999, border: "1px solid #E5E7EB" }}>
+                    {s.label}: {s.value}
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {scanResult.findings.map((f, i) => {
+                  const fc = SCAN_FINDING_COLORS[f.severity] || SCAN_FINDING_COLORS.ok!;
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, backgroundColor: fc.bg, border: `1px solid ${fc.border}`, borderRadius: 8, padding: "8px 12px" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: fc.dot, flexShrink: 0, marginTop: 4 }} />
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 600, color: fc.color, margin: 0 }}>{f.message}</p>
+                        <p style={{ fontSize: 11, color: fc.color, opacity: 0.8, margin: "2px 0 0 0" }}>{f.detail}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Filter Bar ── */}
-      {showFilters && (
-        <div style={{
-          backgroundColor: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 12,
-          padding: 16, marginBottom: 16,
-        }}>
+      {showFilters && activeTab !== "customers" && (
+        <div style={{ backgroundColor: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 12, padding: 16, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Filters</span>
             {hasFilters && (
-              <button onClick={clearFilters} style={{
-                display: "flex", alignItems: "center", gap: 4, fontSize: 12,
-                color: "#DC2626", background: "none", border: "none", cursor: "pointer",
-              }}>
+              <button onClick={clearFilters} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#DC2626", background: "none", border: "none", cursor: "pointer" }}>
                 <X style={{ width: 12, height: 12 }} /> Clear all
               </button>
             )}
@@ -541,60 +1130,64 @@ export default function ErrorMonitor() {
               { value: errorType, onChange: (v: string) => { setErrorType(v); setPage(1); }, options: ERROR_TYPES },
             ].map((sel, i) => (
               <select key={i} value={sel.value} onChange={e => sel.onChange(e.target.value)}
-                style={{
-                  backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8,
-                  padding: "8px 12px", fontSize: 13, color: "#374151",
-                  outline: "none", cursor: "pointer",
-                }}>
+                style={{ backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none", cursor: "pointer" }}>
                 {sel.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             ))}
             <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              style={{
-                backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8,
-                padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none",
-              }} />
+              style={{ backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none" }} />
             <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-              style={{
-                backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8,
-                padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none",
-              }} />
+              style={{ backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none" }} />
           </div>
         </div>
       )}
 
+      {/* ── Customer Report Filter ── */}
+      {activeTab === "customers" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>Filter by status:</span>
+          {["", "new", "reviewed", "closed"].map(s => (
+            <button
+              key={s}
+              onClick={() => { setCustomerStatusFilter(s); setCustomerPage(1); }}
+              style={{
+                padding: "5px 14px", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer",
+                border: `1px solid ${customerStatusFilter === s ? "#6366F1" : "#D1D5DB"}`,
+                backgroundColor: customerStatusFilter === s ? "#EEF2FF" : "#ffffff",
+                color: customerStatusFilter === s ? "#4F46E5" : "#374151",
+              }}
+            >
+              {s === "" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Tabs ── */}
-      <div style={{ display: "flex", borderBottom: "2px solid #E5E7EB", marginBottom: 16 }}>
+      <div style={{ display: "flex", borderBottom: "2px solid #E5E7EB", marginBottom: 16, overflowX: "auto" }}>
         {TABS.map(tab => {
           const Icon = tab.icon;
-          const count = tabCounts[tab.id];
+          const cnt = tabCounts[tab.id];
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => switchTab(tab.id)}
               style={{
-                display: "flex", alignItems: "center", gap: 7,
+                display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
                 padding: "10px 18px", fontSize: 13, fontWeight: 600,
                 border: "none", borderBottom: isActive ? `2px solid ${tab.activeBorder}` : "2px solid transparent",
                 marginBottom: -2, cursor: "pointer",
                 backgroundColor: isActive ? tab.activeBg : "transparent",
                 color: isActive ? tab.activeColor : "#6B7280",
-                borderRadius: "8px 8px 0 0",
-                transition: "all 0.15s",
+                borderRadius: "8px 8px 0 0", transition: "all 0.15s",
               }}
             >
               <Icon style={{ width: 15, height: 15 }} />
               {tab.label}
-              {count > 0 && (
-                <span style={{
-                  fontSize: 11, fontWeight: 700,
-                  padding: "1px 7px", borderRadius: 9999,
-                  backgroundColor: isActive ? tab.badgeBg : "#F3F4F6",
-                  color: isActive ? tab.badgeColor : "#6B7280",
-                  minWidth: 20, textAlign: "center",
-                }}>
-                  {count > 999 ? "999+" : count}
+              {cnt > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, backgroundColor: isActive ? tab.badgeBg : "#F3F4F6", color: isActive ? tab.badgeColor : "#6B7280", minWidth: 20, textAlign: "center" }}>
+                  {cnt > 999 ? "999+" : cnt}
                 </span>
               )}
             </button>
@@ -602,99 +1195,76 @@ export default function ErrorMonitor() {
         })}
       </div>
 
-      {/* ── Error List ── */}
+      {/* ── Error / Customer List ── */}
       <div style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-        {isLoading && reports.length === 0 ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: "50%",
-              border: "4px solid #6366F1", borderTopColor: "transparent",
-              animation: "spin 0.8s linear infinite",
-            }} />
-          </div>
-        ) : reports.length === 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", color: "#9CA3AF" }}>
-            {activeTab === "completed" ? (
-              <>
-                <CheckCircle2 style={{ width: 48, height: 48, color: "#4ADE80", marginBottom: 12 }} />
-                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No completed errors</p>
-                <p style={{ fontSize: 13, marginTop: 4 }}>Resolved errors will appear here</p>
-              </>
-            ) : activeTab === "unresolved" ? (
-              <>
-                <ShieldAlert style={{ width: 48, height: 48, color: "#FCD34D", marginBottom: 12 }} />
-                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No unresolved errors</p>
-                <p style={{ fontSize: 13, marginTop: 4 }}>Acknowledged / in-progress errors appear here</p>
-              </>
-            ) : (
-              <>
-                <Inbox style={{ width: 48, height: 48, color: "#4ADE80", marginBottom: 12 }} />
-                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No new errors</p>
-                <p style={{ fontSize: 13, marginTop: 4 }}>All systems are running smoothly</p>
-              </>
-            )}
-          </div>
-        ) : groupedReports ? (
-          <div>
-            {Object.entries(groupedReports).map(([cat, catReports]) => (
-              <div key={cat}>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "10px 16px", backgroundColor: "#F8FAFC",
-                  borderBottom: "1px solid #E5E7EB", position: "sticky", top: 0, zIndex: 10,
-                }}>
-                  <AlertTriangle style={{ width: 13, height: 13, color: "#9CA3AF" }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#4B5563" }}>
-                    {CATEGORY_LABELS[cat] || cat}
-                  </span>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700,
-                    padding: "1px 7px", borderRadius: 9999,
-                    backgroundColor: "#E5E7EB", color: "#4B5563",
-                  }}>
-                    {catReports.length}
-                  </span>
-                </div>
-                <div>{catReports.map(r => renderReportRow(r))}</div>
+        {activeTab === "customers" ? (
+          <>
+            {customerLoading && customerReports.length === 0 ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", border: "4px solid #7C3AED", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
               </div>
-            ))}
-          </div>
+            ) : customerReports.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", color: "#9CA3AF" }}>
+                <MessageSquare style={{ width: 48, height: 48, color: "#A78BFA", marginBottom: 12 }} />
+                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No customer reports</p>
+                <p style={{ fontSize: 13, marginTop: 4 }}>Customer-submitted bug reports will appear here</p>
+              </div>
+            ) : (
+              <div>{customerReports.map(r => renderCustomerReportRow(r))}</div>
+            )}
+            {customerPagination.totalPages > 1 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid #F1F5F9", backgroundColor: "#F8FAFC" }}>
+                <span style={{ fontSize: 12, color: "#6B7280" }}>Page {customerPagination.page} of {customerPagination.totalPages} · {customerPagination.total} total</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setCustomerPage(p => Math.max(1, p - 1))} disabled={customerPage <= 1} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 12, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", cursor: customerPage <= 1 ? "not-allowed" : "pointer", opacity: customerPage <= 1 ? 0.5 : 1 }}>Previous</button>
+                  <button onClick={() => setCustomerPage(p => Math.min(customerPagination.totalPages, p + 1))} disabled={customerPage >= customerPagination.totalPages} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 12, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", cursor: customerPage >= customerPagination.totalPages ? "not-allowed" : "pointer", opacity: customerPage >= customerPagination.totalPages ? 0.5 : 1 }}>Next</button>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
-          <div>{reports.map(r => renderReportRow(r))}</div>
-        )}
+          <>
+            {isLoading && reports.length === 0 ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", border: "4px solid #6366F1", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
+              </div>
+            ) : reports.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", color: "#9CA3AF" }}>
+                {activeTab === "completed" ? (
+                  <><CheckCircle2 style={{ width: 48, height: 48, color: "#4ADE80", marginBottom: 12 }} /><p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No completed errors</p><p style={{ fontSize: 13, marginTop: 4 }}>Resolved errors will appear here</p></>
+                ) : activeTab === "unresolved" ? (
+                  <><ShieldAlert style={{ width: 48, height: 48, color: "#FCD34D", marginBottom: 12 }} /><p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No unresolved errors</p><p style={{ fontSize: 13, marginTop: 4 }}>Acknowledged / in-progress errors appear here</p></>
+                ) : (
+                  <><Inbox style={{ width: 48, height: 48, color: "#4ADE80", marginBottom: 12 }} /><p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No new errors</p><p style={{ fontSize: 13, marginTop: 4 }}>All systems are running smoothly</p></>
+                )}
+              </div>
+            ) : groupedReports ? (
+              <div>
+                {Object.entries(groupedReports).map(([cat, catReports]) => (
+                  <div key={cat}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", backgroundColor: "#F8FAFC", borderBottom: "1px solid #E5E7EB", position: "sticky", top: 0, zIndex: 10 }}>
+                      <AlertTriangle style={{ width: 13, height: 13, color: "#9CA3AF" }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#4B5563" }}>{CATEGORY_LABELS[cat] || cat}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, backgroundColor: "#E5E7EB", color: "#4B5563" }}>{catReports.length}</span>
+                    </div>
+                    <div>{catReports.map(r => renderReportRow(r))}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div>{reports.map(r => renderReportRow(r))}</div>
+            )}
 
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "12px 16px", borderTop: "1px solid #F1F5F9", backgroundColor: "#F8FAFC",
-          }}>
-            <span style={{ fontSize: 12, color: "#6B7280" }}>
-              Page {pagination.page} of {pagination.totalPages} · {pagination.total} total
-            </span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                style={{
-                  padding: "5px 14px", borderRadius: 8, fontSize: 12,
-                  border: "1px solid #D1D5DB", backgroundColor: "#ffffff",
-                  color: "#374151", cursor: page <= 1 ? "not-allowed" : "pointer",
-                  opacity: page <= 1 ? 0.5 : 1,
-                }}
-              >Previous</button>
-              <button
-                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                disabled={page >= pagination.totalPages}
-                style={{
-                  padding: "5px 14px", borderRadius: 8, fontSize: 12,
-                  border: "1px solid #D1D5DB", backgroundColor: "#ffffff",
-                  color: "#374151", cursor: page >= pagination.totalPages ? "not-allowed" : "pointer",
-                  opacity: page >= pagination.totalPages ? 0.5 : 1,
-                }}
-              >Next</button>
-            </div>
-          </div>
+            {pagination.totalPages > 1 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid #F1F5F9", backgroundColor: "#F8FAFC" }}>
+                <span style={{ fontSize: 12, color: "#6B7280" }}>Page {pagination.page} of {pagination.totalPages} · {pagination.total} total</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 12, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", cursor: page <= 1 ? "not-allowed" : "pointer", opacity: page <= 1 ? 0.5 : 1 }}>Previous</button>
+                  <button onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page >= pagination.totalPages} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 12, border: "1px solid #D1D5DB", backgroundColor: "#ffffff", color: "#374151", cursor: page >= pagination.totalPages ? "not-allowed" : "pointer", opacity: page >= pagination.totalPages ? 0.5 : 1 }}>Next</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

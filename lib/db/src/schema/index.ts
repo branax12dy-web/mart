@@ -55,4 +55,5 @@ export * from "./offer_templates";
 export * from "./support_messages";
 export * from "./faqs";
 export * from "./error_reports";
+export * from "./customer_error_reports";
 export * from "./communication";

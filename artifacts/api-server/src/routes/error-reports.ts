@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { errorReportsTable } from "@workspace/db/schema";
-import { eq, desc, and, gte, lte, count, inArray, ne, type SQL } from "drizzle-orm";
+import { errorReportsTable, customerErrorReportsTable } from "@workspace/db/schema";
+import { eq, desc, and, gte, lte, count, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendError, sendNotFound, sendValidationError } from "../lib/response.js";
 import { adminAuth, type AdminRequest } from "./admin-shared.js";
@@ -218,6 +218,141 @@ router.post("/bulk-resolve", adminAuth, async (req, res) => {
   }
 });
 
+router.post("/scan", adminAuth, async (req, res) => {
+  try {
+    const startedAt = new Date();
+    const findings: Array<{ type: string; severity: string; message: string; detail: string }> = [];
+
+    const oneHourAgo = new Date(Date.now() - 3600000);
+    const oneDayAgo  = new Date(Date.now() - 86400000);
+
+    const [
+      [dbCheck],
+      criticalLastHour,
+      unresolvedCritical,
+      errorsByType,
+      [totalUnresolved],
+    ] = await Promise.all([
+      db.select({ now: sql<string>`now()` }).from(errorReportsTable).limit(1),
+      db.select({ count: count() }).from(errorReportsTable).where(
+        and(eq(errorReportsTable.severity, "critical"), gte(errorReportsTable.timestamp, oneHourAgo))
+      ),
+      db.select({ count: count() }).from(errorReportsTable).where(
+        and(eq(errorReportsTable.severity, "critical"), ne(errorReportsTable.status, "resolved"))
+      ),
+      db.select({ errorType: errorReportsTable.errorType, count: count() })
+        .from(errorReportsTable)
+        .where(gte(errorReportsTable.timestamp, oneDayAgo))
+        .groupBy(errorReportsTable.errorType)
+        .orderBy(desc(count())),
+      db.select({ count: count() }).from(errorReportsTable).where(
+        ne(errorReportsTable.status, "resolved")
+      ),
+    ]);
+
+    const dbOk = !!dbCheck;
+    if (!dbOk) {
+      findings.push({
+        type: "db_health",
+        severity: "critical",
+        message: "Database connectivity failure",
+        detail: "Unable to reach the database. All data operations are at risk.",
+      });
+    } else {
+      findings.push({
+        type: "db_health",
+        severity: "ok",
+        message: "Database is healthy",
+        detail: "Connection confirmed and responding normally.",
+      });
+    }
+
+    const criticalCount = criticalLastHour[0]?.count ?? 0;
+    if (criticalCount >= 10) {
+      findings.push({
+        type: "critical_spike",
+        severity: "critical",
+        message: `Critical error spike: ${criticalCount} critical errors in the last hour`,
+        detail: "High volume of critical errors detected. Immediate investigation recommended.",
+      });
+    } else if (criticalCount >= 3) {
+      findings.push({
+        type: "critical_spike",
+        severity: "medium",
+        message: `Elevated critical errors: ${criticalCount} in the last hour`,
+        detail: "Multiple critical errors detected in a short window. Monitor closely.",
+      });
+    }
+
+    const unresolvedCrit = unresolvedCritical[0]?.count ?? 0;
+    if (unresolvedCrit > 0) {
+      findings.push({
+        type: "unresolved_critical",
+        severity: "critical",
+        message: `${unresolvedCrit} unresolved critical error${unresolvedCrit > 1 ? "s" : ""}`,
+        detail: "Critical errors that have not been resolved. Users may currently be affected.",
+      });
+    }
+
+    for (const row of errorsByType) {
+      const cnt = row.count ?? 0;
+      if (cnt >= 20) {
+        findings.push({
+          type: "error_type_spike",
+          severity: "medium",
+          message: `High ${row.errorType.replace(/_/g, " ")} frequency: ${cnt} in 24h`,
+          detail: `This error type is occurring frequently. Consider a systemic fix.`,
+        });
+      }
+    }
+
+    const totalUnres = totalUnresolved?.count ?? 0;
+    if (totalUnres >= 50) {
+      findings.push({
+        type: "backlog_alert",
+        severity: "medium",
+        message: `Error backlog: ${totalUnres} unresolved errors`,
+        detail: "Large number of unresolved errors accumulating. Review and triage recommended.",
+      });
+    }
+
+    const customerReportCount = await db.select({ count: count() })
+      .from(customerErrorReportsTable)
+      .where(eq(customerErrorReportsTable.status, "new"));
+
+    const custCount = customerReportCount[0]?.count ?? 0;
+    if (custCount > 0) {
+      findings.push({
+        type: "customer_reports",
+        severity: custCount >= 5 ? "medium" : "minor",
+        message: `${custCount} unreviewed customer report${custCount > 1 ? "s" : ""}`,
+        detail: "Customers have submitted bug reports awaiting admin review.",
+      });
+    }
+
+    const durationMs = Date.now() - startedAt.getTime();
+    const overallSeverity = findings.some(f => f.severity === "critical")
+      ? "critical"
+      : findings.some(f => f.severity === "medium")
+      ? "medium"
+      : "ok";
+
+    sendSuccess(res, {
+      scannedAt: startedAt.toISOString(),
+      durationMs,
+      overallSeverity,
+      totalUnresolved: totalUnres,
+      criticalLastHour: criticalCount,
+      unresolvedCritical: unresolvedCrit,
+      customerReportsPending: custCount,
+      findings,
+    });
+  } catch (err) {
+    logger.error({ err }, "Scan failed");
+    sendError(res, "Scan failed", 500);
+  }
+});
+
 const STATUS_TRANSITIONS: Record<string, string> = {
   new: "acknowledged",
   acknowledged: "in_progress",
@@ -279,6 +414,127 @@ router.patch("/:id", adminAuth, validateBody(updateStatusSchema), async (req, re
   } catch (err) {
     logger.error({ err }, "Failed to update error report");
     sendError(res, "Failed to update error report", 500);
+  }
+});
+
+const customerReportSchema = z.object({
+  customerName:  z.string().min(1).max(200),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().max(30).optional(),
+  userId:        z.string().optional(),
+  appVersion:    z.string().max(50).optional(),
+  deviceInfo:    z.string().max(500).optional(),
+  platform:      z.enum(["ios", "android", "web"]).optional(),
+  screen:        z.string().max(200).optional(),
+  description:   z.string().min(5).max(5000),
+  reproSteps:    z.string().max(5000).optional(),
+});
+
+router.post("/customer-report", validateBody(customerReportSchema), async (req, res) => {
+  try {
+    const body = req.body;
+    const id = generateId();
+    const [report] = await db.insert(customerErrorReportsTable).values({
+      id,
+      customerName:  body.customerName,
+      customerEmail: body.customerEmail || null,
+      customerPhone: body.customerPhone || null,
+      userId:        body.userId || null,
+      appVersion:    body.appVersion || null,
+      deviceInfo:    body.deviceInfo || null,
+      platform:      body.platform || null,
+      screen:        body.screen || null,
+      description:   body.description,
+      reproSteps:    body.reproSteps || null,
+    }).returning();
+
+    sendSuccess(res, { id: report.id, message: "Report submitted successfully" }, undefined, 201);
+  } catch (err) {
+    logger.error({ err }, "Failed to submit customer report");
+    sendError(res, "Failed to submit customer error report", 500);
+  }
+});
+
+router.get("/customer-reports", adminAuth, async (req, res) => {
+  try {
+    const page  = Math.max(1, parseInt(String(req.query["page"] || "1")));
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query["limit"] || "30"))));
+    const offset = (page - 1) * limit;
+
+    const statusParam = req.query["status"] as string | undefined;
+    const conditions: SQL[] = [];
+    if (statusParam && ["new", "reviewed", "closed"].includes(statusParam)) {
+      conditions.push(eq(customerErrorReportsTable.status, statusParam as "new" | "reviewed" | "closed"));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [reports, [totalRow]] = await Promise.all([
+      db.select().from(customerErrorReportsTable)
+        .where(where)
+        .orderBy(desc(customerErrorReportsTable.timestamp))
+        .limit(limit).offset(offset),
+      db.select({ count: count() }).from(customerErrorReportsTable).where(where),
+    ]);
+
+    const total = totalRow?.count ?? 0;
+    sendSuccess(res, {
+      reports: reports.map(r => ({
+        ...r,
+        timestamp:  r.timestamp.toISOString(),
+        reviewedAt: r.reviewedAt?.toISOString() || null,
+      })),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch customer reports");
+    sendError(res, "Failed to fetch customer reports", 500);
+  }
+});
+
+const updateCustomerReportSchema = z.object({
+  status:    z.enum(["new", "reviewed", "closed"]).optional(),
+  adminNote: z.string().max(2000).optional(),
+});
+
+router.patch("/customer-reports/:id", adminAuth, validateBody(updateCustomerReportSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body;
+
+    const updates: Record<string, unknown> = {};
+    if (body.status) {
+      updates.status = body.status;
+      if (body.status === "reviewed" || body.status === "closed") {
+        updates.reviewedAt = new Date();
+      }
+    }
+    if (body.adminNote !== undefined) {
+      updates.adminNote = body.adminNote;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      sendValidationError(res, "No fields to update");
+      return;
+    }
+
+    const [updated] = await db.update(customerErrorReportsTable)
+      .set(updates)
+      .where(eq(customerErrorReportsTable.id, id!))
+      .returning();
+
+    if (!updated) {
+      sendNotFound(res, "Customer report not found");
+      return;
+    }
+
+    sendSuccess(res, {
+      ...updated,
+      timestamp:  updated.timestamp.toISOString(),
+      reviewedAt: updated.reviewedAt?.toISOString() || null,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to update customer report");
+    sendError(res, "Failed to update customer report", 500);
   }
 });
 

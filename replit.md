@@ -1,5 +1,25 @@
 # AJKMart Super App — Workspace
 
+### Error Monitor — Enhanced (Admin Panel)
+
+#### Scan System
+- **Scan Panel** (`/admin/error-monitor`): Collapsible panel with 4 scan modes: On Demand, Auto Refresh (interval: 30s/1m/5m/15m), Daily (time picker with repeat scheduling), Specific Time (one-time scheduled scan)
+- **Scan API** (`POST /api/error-reports/scan`): Admin-only. Checks DB health, critical errors in last hour, unresolved critical count, error type frequency spikes, pending customer reports. Returns structured findings with severity and recommended actions.
+- Auto-scan uses `setInterval`; daily/specific-time use `setTimeout` stored in component refs with cleanup on unmount.
+
+#### Root Cause Analysis
+- Each expanded error now shows a 3-column "Root Cause Analysis" panel (Likely Causes · What This Can Cause · Recommended Fixes)
+- Logic is rule-based: `analyzeErrorCause()` in `error-monitor.tsx` generates contextual analysis from `errorType` + keyword analysis on `errorMessage` (auth, payment, timeout, memory, etc.)
+
+#### Customer Error Reporting (Full Stack)
+- **DB Table**: `customer_error_reports` — stores customerName, email, phone, userId, platform, appVersion, deviceInfo, screen, description, reproSteps, status (new/reviewed/closed), adminNote, reviewedAt
+- **Migration**: `lib/db/migrations/0030_customer_error_reports.sql`
+- **Public API** (`POST /api/error-reports/customer-report`): No auth required. Customers can submit bug reports.
+- **Admin API** (`GET /api/error-reports/customer-reports`): Paginated list with status filter. (`PATCH /api/error-reports/customer-reports/:id`): Update status + add admin note.
+- **Admin UI**: "Customer Reports" tab (4th tab, purple) in error monitor. Shows customer info (name, email, phone, userId, platform, version, device, screen), full description + repro steps, status workflow (new → reviewed → closed), admin note textarea with save.
+
+
+
 ### Vendor Store Pages & Product Videos
 
 #### Product Videos (TikTok Shop-style)
