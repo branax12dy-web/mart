@@ -128,12 +128,10 @@ function UserActivityModal({ userId, userName, user: userData, onClose }: { user
               <span className="text-muted-foreground text-xs">MPIN Status:</span>
               {(() => {
                 const hasMpin = !!userData.walletPinHash;
-                const isLocked = !!userData.walletPinLockedUntil && new Date(userData.walletPinLockedUntil).getTime() > Date.now();
+                const isLocked = !!userData.isMpinLocked;
                 if (!hasMpin) return <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-600 border-gray-300">Not Set</Badge>;
                 if (isLocked) {
-                  const lockedUntil = new Date(userData.walletPinLockedUntil);
-                  const minsLeft = Math.ceil((lockedUntil.getTime() - Date.now()) / 60000);
-                  return <Badge variant="outline" className="text-[10px] bg-red-100 text-red-700 border-red-300">Locked · {minsLeft} min left</Badge>;
+                  return <Badge variant="outline" className="text-[10px] bg-red-100 text-red-700 border-red-300">Locked</Badge>;
                 }
                 return <Badge variant="outline" className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300">Active</Badge>;
               })()}
@@ -588,8 +586,7 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
             </h3>
             {(() => {
               const hasMpin = !!user.walletPinHash;
-              const isLocked = !!user.walletPinLockedUntil && new Date(user.walletPinLockedUntil).getTime() > Date.now();
-              const lockedUntil = isLocked ? new Date(user.walletPinLockedUntil) : null;
+              const isLocked = !!user.isMpinLocked;
 
               const statusLabel = !hasMpin ? "Not Set" : isLocked ? "Locked" : "Active";
               const statusColor = !hasMpin ? "bg-gray-50 border-gray-200" : isLocked ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200";
@@ -608,9 +605,9 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
                         </div>
                         {!hasMpin && <p className="text-xs text-gray-500 mt-0.5">User has not configured a wallet MPIN yet</p>}
                         {hasMpin && !isLocked && <p className="text-xs text-emerald-600 mt-0.5">MPIN is active — reset only if user cannot recover it</p>}
-                        {isLocked && lockedUntil && (
+                        {isLocked && (
                           <p className="text-xs text-red-600 mt-0.5">
-                            Locked until {lockedUntil.toLocaleString()} ({Math.ceil((lockedUntil.getTime() - Date.now()) / 60000)} min remaining)
+                            MPIN is currently locked due to too many failed attempts
                           </p>
                         )}
                       </div>

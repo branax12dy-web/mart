@@ -179,6 +179,10 @@ export default function Orders() {
   const orders: any[] = data?.orders || [];
   const serverTotal: number = data?.total ?? orders.length;
 
+  const liveSelectedOrder = selectedOrder
+    ? orders.find((o: any) => o.id === selectedOrder.id) ?? selectedOrder
+    : null;
+
   const totalPages = Math.max(1, Math.ceil(serverTotal / pageSize));
   const safePage = Math.min(page, totalPages);
 
@@ -364,7 +368,7 @@ export default function Orders() {
       )}
 
       <OrderDetailDrawer
-        selectedOrder={selectedOrder}
+        selectedOrder={liveSelectedOrder}
         onClose={() => { setSelectedOrder(null); setShowCancelConfirm(false); setShowRefundConfirm(false); }}
         showCancelConfirm={showCancelConfirm}
         setShowCancelConfirm={setShowCancelConfirm}

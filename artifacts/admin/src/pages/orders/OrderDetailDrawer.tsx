@@ -108,7 +108,7 @@ export function OrderDetailDrawer({
 
           {selectedOrder.proofPhotoUrl && (() => {
             const rawUrl: string = selectedOrder.proofPhotoUrl as string;
-            const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+            const apiBase = window.location.origin;
             const resolvedUrl = /^\/api\/uploads\/[\w.\-]+$/.test(rawUrl) || /^\/uploads\/[\w.\-]+$/.test(rawUrl)
               ? `${apiBase}${rawUrl}`
               : (() => { try { const u = new URL(rawUrl); return (u.protocol === "https:" || u.protocol === "http:") && (u.pathname.startsWith("/api/uploads/") || u.pathname.startsWith("/uploads/")) ? rawUrl : null; } catch { return null; } })();

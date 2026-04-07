@@ -14,7 +14,6 @@ export const setToken = (token: string) => {
 
 export const clearToken = () => {
   sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-  localStorage.removeItem(ADMIN_TOKEN_KEY);
 };
 
 function decodeJwtExp(tok: string): number | null {
