@@ -14,6 +14,7 @@ import popupsRoutes from "./admin/popups.js";
 import supportChatAdminRoutes from "./admin/support-chat.js";
 import faqAdminRoutes from "./admin/faq.js";
 import communicationAdminRoutes from "./admin/communication.js";
+import loyaltyAdminRoutes from "./admin/loyalty.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -54,5 +55,6 @@ router.use(popupsRoutes);
 router.use("/support-chat", supportChatAdminRoutes);
 router.use("/faqs", faqAdminRoutes);
 router.use(communicationAdminRoutes);
+router.use(loyaltyAdminRoutes);
 
 export default router;

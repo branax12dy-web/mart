@@ -615,8 +615,13 @@ async function computeLoyaltyPoints(tx: typeof db, userId: string): Promise<{ to
   let totalRedeemed = 0;
   for (const r of rows) {
     const amt = parseFloat(r.amount ?? "0");
-    if (r.type === "loyalty") totalEarned += amt;
-    if (r.type === "credit" && typeof r.reference === "string" && r.reference.startsWith("loyalty_redeem_")) totalRedeemed += amt;
+    if (r.reference === "admin_loyalty_debit") {
+      totalRedeemed += amt;
+    } else if (r.type === "loyalty") {
+      totalEarned += amt;
+    } else if (r.type === "credit" && typeof r.reference === "string" && r.reference.startsWith("loyalty_redeem_")) {
+      totalRedeemed += amt;
+    }
   }
   const available = Math.max(0, Math.floor(totalEarned) - Math.floor(totalRedeemed));
   return { totalEarned: Math.floor(totalEarned), totalRedeemed: Math.floor(totalRedeemed), available };

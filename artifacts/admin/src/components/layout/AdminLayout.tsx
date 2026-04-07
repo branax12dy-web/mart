@@ -41,6 +41,7 @@ import {
   BarChart2,
   Bug,
   Radio,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -85,6 +86,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navTransactions",    href: "/transactions",     icon: Receipt },
       { nameKey: "navWithdrawals",     href: "/withdrawals",      icon: Wallet },
       { nameKey: "navDepositRequests", href: "/deposit-requests", icon: CreditCard },
+      { nameKey: "navLoyaltyPoints" as TranslationKey, href: "/loyalty", icon: Star },
       { nameKey: "navKyc",             href: "/kyc",              icon: BadgeCheck },
     ],
   },
