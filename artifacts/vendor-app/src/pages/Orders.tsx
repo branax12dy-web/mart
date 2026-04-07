@@ -79,34 +79,29 @@ export default function Orders() {
   const [rejectDialog, setRejectDialog] = useState<{ id: string } | null>(null);
   const [assignModal, setAssignModal] = useState<{ orderId: string } | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const [riderPositions, setRiderPositions] = useState<Record<string, { lat: number; lng: number; updatedAt: string }>>({});
 
-  const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-  const vendorToken = () => localStorage.getItem("ajkmart_vendor_token") ?? "";
+  /* Vendor's own lat/lng — prefer backend-persisted location, fall back to browser */
+  const [vendorLat, setVendorLat] = useState<number | null>(null);
+  const [vendorLng, setVendorLng] = useState<number | null>(null);
 
   const { data: availableRidersData, isLoading: ridersLoading } = useQuery({
     queryKey: ["vendor-available-riders", vendorLat, vendorLng],
     queryFn: async () => {
       if (vendorLat === null || vendorLng === null) return { riders: [] };
-      const r = await fetch(`${BASE}/api/vendor/orders/available-riders?lat=${vendorLat}&lng=${vendorLng}&maxKm=10`, {
-        headers: { Authorization: `Bearer ${vendorToken()}` },
-      });
-      if (!r.ok) return { riders: [] };
-      return r.json() as Promise<{ riders: { id: string; name: string; phone: string; distanceKm: number; walletBalance: number }[] }>;
+      try {
+        return await api.getAvailableRiders(vendorLat, vendorLng) as { riders: { id: string; name: string; phone: string; distanceKm: number; walletBalance: number }[] };
+      } catch {
+        return { riders: [] };
+      }
     },
     enabled: !!assignModal && vendorLat !== null && vendorLng !== null,
     staleTime: 30_000,
   });
 
   const assignRiderMut = useMutation({
-    mutationFn: async ({ orderId, riderId }: { orderId: string; riderId: string }) => {
-      const r = await fetch(`${BASE}/api/vendor/orders/${orderId}/assign-rider`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${vendorToken()}` },
-        body: JSON.stringify({ riderId }),
-      });
-      if (!r.ok) { const d = await r.json(); throw new Error(d.error || "Assignment failed"); }
-      return r.json();
-    },
+    mutationFn: ({ orderId, riderId }: { orderId: string; riderId: string }) =>
+      api.assignRider(orderId, riderId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vendor-orders"] });
       setAssignModal(null);
@@ -116,15 +111,9 @@ export default function Orders() {
   });
 
   const autoAssignMut = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: (orderId: string) => {
       if (vendorLat === null || vendorLng === null) throw new Error("Vendor location not available");
-      const r = await fetch(`${BASE}/api/vendor/orders/${orderId}/auto-assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${vendorToken()}` },
-        body: JSON.stringify({ vendorLat, vendorLng }),
-      });
-      if (!r.ok) { const d = await r.json(); throw new Error(d.error || "Auto-assign failed"); }
-      return r.json();
+      return api.autoAssignRider(orderId, vendorLat, vendorLng);
     },
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["vendor-orders"] });
@@ -135,23 +124,16 @@ export default function Orders() {
       showToast("❌ " + e.message);
     },
   });
-  const [riderPositions, setRiderPositions] = useState<Record<string, { lat: number; lng: number; updatedAt: string }>>({});
-
-  /* Vendor's own lat/lng — prefer backend-persisted location, fall back to browser */
-  const [vendorLat, setVendorLat] = useState<number | null>(null);
-  const [vendorLng, setVendorLng] = useState<number | null>(null);
-
   /* Fetch vendor's persisted location from the backend live_locations store */
   const { data: vendorLocData } = useQuery({
     queryKey: ["vendor-live-location", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const token = localStorage.getItem("ajkmart_vendor_token") ?? "";
-      const res = await fetch(`${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/api/locations/${user.id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return null;
-      return res.json() as Promise<{ latitude: number; longitude: number } | null>;
+      try {
+        return await api.getLocation(user.id) as { latitude: number; longitude: number } | null;
+      } catch {
+        return null;
+      }
     },
     enabled: !!user?.id,
     refetchInterval: 30_000,
@@ -161,18 +143,10 @@ export default function Orders() {
   /* Save vendor location to backend (used for rider dispatch radius checks) */
   const saveVendorLocationToBackend = async (lat: number, lng: number) => {
     try {
-      const token = localStorage.getItem("ajkmart_vendor_token") ?? "";
-      if (!token) return;
-      const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-      await fetch(`${base}/api/locations/update`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ latitude: lat, longitude: lng, role: "vendor" }),
-      });
-    } catch {}
+      await api.updateLocation({ latitude: lat, longitude: lng, role: "vendor" });
+    } catch {
+      showToast("⚠️ " + T("locationSaveFailed"));
+    }
   };
 
   useEffect(() => {

@@ -290,6 +290,15 @@ export const api = {
     return { url: data.url };
   },
 
+  /* Location */
+  getLocation:       (userId: string) => apiFetch(`/locations/${userId}`),
+  updateLocation:    (data: { latitude: number; longitude: number; role: string }) => apiFetch("/locations/update", { method: "POST", body: JSON.stringify(data) }),
+
+  /* Rider assignment */
+  getAvailableRiders: (lat: number, lng: number, maxKm = 10) => apiFetch(`/vendor/orders/available-riders?lat=${lat}&lng=${lng}&maxKm=${maxKm}`),
+  assignRider:        (orderId: string, riderId: string) => apiFetch(`/vendor/orders/${orderId}/assign-rider`, { method: "POST", body: JSON.stringify({ riderId }) }),
+  autoAssignRider:    (orderId: string, vendorLat: number, vendorLng: number) => apiFetch(`/vendor/orders/${orderId}/auto-assign`, { method: "POST", body: JSON.stringify({ vendorLat, vendorLng }) }),
+
   /* Delivery Access */
   getDeliveryAccessStatus: () => apiFetch("/vendor/delivery-access/status"),
   requestDeliveryAccess:   (data: { serviceType?: string; reason?: string }) => apiFetch("/vendor/delivery-access/request", { method: "POST", body: JSON.stringify(data) }),

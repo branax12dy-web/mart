@@ -35,11 +35,11 @@ export function ImageUploader({
   const handleFile = async (file: File) => {
     if (uploading) return;
     if (!file.type.startsWith("image/")) {
-      setError(T("somethingWentWrong"));
+      setError(T("invalidFileType"));
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setError(T("somethingWentWrong"));
+      setError(T("fileTooLarge"));
       return;
     }
     setError("");

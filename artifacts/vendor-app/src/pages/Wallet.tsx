@@ -23,9 +23,13 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defa
   const [step, setStep]       = useState<"form"|"confirm"|"done">("form");
   const [err, setErr]         = useState("");
 
+  const qc = useQueryClient();
   const mut = useMutation({
     mutationFn: () => api.withdrawWallet({ amount: Number(amount), bankName: bank, accountNumber: acNo, accountTitle: acName, note }),
-    onSuccess: () => setStep("done"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendor-wallet"] });
+      setStep("done");
+    },
     onError: (e: Error) => setErr(errMsg(e)),
   });
 
