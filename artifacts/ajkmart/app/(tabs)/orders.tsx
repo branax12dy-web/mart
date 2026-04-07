@@ -163,7 +163,6 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
       onPress={handleCardPress}
       {...(hoverProps as object)}
       style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
-      accessibilityRole="button"
       accessibilityLabel={`${orderChip.label} order ${order.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${order.total?.toLocaleString()}`}
     >
       <View style={styles.cardTop}>
@@ -335,7 +334,6 @@ function RideCard({ ride, liveTracking, reviews, ratingWindowHours, serverNow, o
       onPress={handleCardPress}
       {...(hoverProps as object)}
       style={[styles.card, webPointer, hovered && { opacity: 0.88 }]}
-      accessibilityRole="button"
       accessibilityLabel={`${ride.type || "car"} ride ${ride.id.slice(-8).toUpperCase()}, ${T(cfg.labelKey)}, Rs. ${(ride.fare != null ? Number(ride.fare) : 0).toLocaleString()}`}
     >
       <View style={styles.cardTop}>
