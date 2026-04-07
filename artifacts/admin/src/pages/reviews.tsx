@@ -2,7 +2,8 @@ import { useState, useCallback, useRef } from "react";
 import {
   Star, Search, RefreshCw, Download, Upload, CheckCircle2, XCircle,
   ShieldAlert, ShieldCheck, AlertTriangle, MessageSquare, Play,
-  Filter, CalendarDays, ChevronDown, ChevronUp, Eye, EyeOff, Trash2
+  Filter, CalendarDays, ChevronDown, ChevronUp, Eye, EyeOff, Trash2,
+  Store, TrendingDown, TrendingUp, BarChart3, ExternalLink
 } from "lucide-react";
 import {
   useAdminReviews, useModerationQueue, useApproveReview,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useLanguage } from "@/lib/useLanguage";
@@ -534,32 +536,44 @@ export default function ReviewsPage() {
             {T("moderateCustomerReviews")} · {total} {T("totalInView")}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowModQueue(true)} className="relative">
-            <ShieldAlert className="w-4 h-4 mr-1 text-amber-500" />
-            Moderation Queue
-            {pendingCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">{pendingCount}</span>
-            )}
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-1" /> Export CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
-            <Upload className="w-4 h-4 mr-1" /> Import CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={runSuspension} disabled={runSuspensionM.isPending}>
-            {runSuspensionM.isPending
-              ? <div className="w-4 h-4 border-2 border-foreground border-t-transparent rounded-full animate-spin mr-1" />
-              : <Play className="w-4 h-4 mr-1 text-orange-500" />}
-            Run Auto-Suspend
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        </div>
       </div>
+
+      <Tabs defaultValue="reviews">
+        <TabsList className="mb-2">
+          <TabsTrigger value="reviews" className="flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5" /> All Reviews
+          </TabsTrigger>
+          <TabsTrigger value="vendor-ratings" className="flex items-center gap-1.5">
+            <BarChart3 className="w-3.5 h-3.5" /> Vendor Ratings
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="reviews" className="space-y-4">
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setShowModQueue(true)} className="relative">
+              <ShieldAlert className="w-4 h-4 mr-1 text-amber-500" />
+              Moderation Queue
+              {pendingCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">{pendingCount}</span>
+              )}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExport}>
+              <Download className="w-4 h-4 mr-1" /> Export CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-1" /> Import CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={runSuspension} disabled={runSuspensionM.isPending}>
+              {runSuspensionM.isPending
+                ? <div className="w-4 h-4 border-2 border-foreground border-t-transparent rounded-full animate-spin mr-1" />
+                : <Play className="w-4 h-4 mr-1 text-orange-500" />}
+              Run Auto-Suspend
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statusStats.map(s => (
@@ -745,8 +759,277 @@ export default function ReviewsPage() {
         </div>
       )}
 
+        </TabsContent>
+
+        <TabsContent value="vendor-ratings">
+          <VendorRatingsTab />
+        </TabsContent>
+      </Tabs>
+
       {showModQueue && <ModerationModal onClose={() => setShowModQueue(false)} T={T} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onSuccess={() => refetch()} />}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/* Vendor Ratings Leaderboard Tab                              */
+/* ─────────────────────────────────────────────────────────── */
+
+type VendorRating = {
+  vendorId: string | null;
+  storeName: string;
+  storeType: string | null;
+  isActive: boolean;
+  phone: string | null;
+  avgRating: string | null;
+  totalReviews: number;
+  oneStarCount: number;
+  twoStarCount: number;
+  fiveStarCount: number;
+  pendingCount: number;
+  hiddenCount: number;
+  recentAvg: string | null;
+  recentCount: number;
+  latestReviewAt: string | null;
+};
+
+function StarBar({ rating }: { rating: number }) {
+  const full = Math.floor(rating);
+  const half = rating - full >= 0.5;
+  return (
+    <span className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Star
+          key={i}
+          className={`w-3.5 h-3.5 ${
+            i <= full ? "fill-amber-400 text-amber-400" :
+            i === full + 1 && half ? "fill-amber-400/50 text-amber-400" :
+            "text-muted-foreground/30"
+          }`}
+        />
+      ))}
+    </span>
+  );
+}
+
+function RatingBadge({ rating }: { rating: number }) {
+  const color = rating >= 4 ? "bg-green-100 text-green-700 border-green-200"
+    : rating >= 3 ? "bg-amber-100 text-amber-700 border-amber-200"
+    : "bg-red-100 text-red-700 border-red-200";
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${color}`}>
+      {rating.toFixed(1)}
+    </span>
+  );
+}
+
+function VendorRatingsTab() {
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"rating_asc" | "rating_desc" | "reviews" | "recent">("rating_asc");
+  const [showInactive, setShowInactive] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["admin-vendor-ratings"],
+    queryFn: () => fetcher("/vendor-ratings"),
+    staleTime: 30_000,
+  });
+
+  const vendors: VendorRating[] = data?.vendors ?? [];
+
+  const filtered = vendors
+    .filter(v => showInactive ? true : v.isActive !== false)
+    .filter(v => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return v.storeName?.toLowerCase().includes(q) || v.phone?.includes(q) || v.vendorId?.includes(q);
+    })
+    .sort((a, b) => {
+      const aR = parseFloat(a.avgRating ?? "5");
+      const bR = parseFloat(b.avgRating ?? "5");
+      if (sortBy === "rating_asc") return aR - bR;
+      if (sortBy === "rating_desc") return bR - aR;
+      if (sortBy === "reviews") return b.totalReviews - a.totalReviews;
+      /* recent: sort by recentAvg ascending (worst recent perf first) */
+      const aRec = parseFloat(a.recentAvg ?? "5");
+      const bRec = parseFloat(b.recentAvg ?? "5");
+      return aRec - bRec;
+    });
+
+  const atRisk = vendors.filter(v => parseFloat(v.avgRating ?? "5") < 3 && v.totalReviews >= 5).length;
+  const needsAttention = vendors.filter(v => parseFloat(v.avgRating ?? "5") < 2 && v.totalReviews >= 5).length;
+  const excellent = vendors.filter(v => parseFloat(v.avgRating ?? "5") >= 4.5 && v.totalReviews >= 5).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-black text-blue-600">{vendors.length}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">Total Vendors Rated</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-black text-green-600">{excellent}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">Excellent (≥4.5★)</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-black text-amber-600">{atRisk}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">At Risk (&lt;3★)</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-black text-red-600">{needsAttention}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">Critical (&lt;2★)</p>
+        </Card>
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            className="w-full pl-8 pr-3 h-8 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Search vendor name or phone..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <Select value={sortBy} onValueChange={v => setSortBy(v as typeof sortBy)}>
+          <SelectTrigger className="h-8 text-xs w-[180px]">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="rating_asc">Worst First (↑ Rating)</SelectItem>
+            <SelectItem value="rating_desc">Best First (↓ Rating)</SelectItem>
+            <SelectItem value="reviews">Most Reviews</SelectItem>
+            <SelectItem value="recent">Recent Trend (Worst)</SelectItem>
+          </SelectContent>
+        </Select>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showInactive}
+            onChange={e => setShowInactive(e.target.checked)}
+            className="rounded"
+          />
+          Show inactive vendors
+        </label>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
+        </Button>
+      </div>
+
+      {/* Table */}
+      <Card>
+        {isLoading ? (
+          <div className="p-12 text-center">
+            <RefreshCw className="h-8 w-8 animate-spin mx-auto text-muted-foreground/20" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center text-muted-foreground">
+            <Store className="w-10 h-10 mx-auto mb-2 opacity-20" />
+            <p className="text-sm">{vendors.length === 0 ? "No vendor reviews yet." : "No vendors match your search."}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
+                  <th className="text-left px-4 py-2.5 font-medium">#</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Vendor</th>
+                  <th className="text-center px-3 py-2.5 font-medium">Rating</th>
+                  <th className="text-center px-3 py-2.5 font-medium">Reviews</th>
+                  <th className="text-center px-3 py-2.5 font-medium">1★ / 5★</th>
+                  <th className="text-center px-3 py-2.5 font-medium">30-day avg</th>
+                  <th className="text-center px-3 py-2.5 font-medium">Pending</th>
+                  <th className="text-center px-3 py-2.5 font-medium">Status</th>
+                  <th className="text-left px-3 py-2.5 font-medium">Last Review</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((v, idx) => {
+                  const rating = parseFloat(v.avgRating ?? "5");
+                  const recentRating = v.recentAvg ? parseFloat(v.recentAvg) : null;
+                  const trend = recentRating !== null
+                    ? recentRating > rating + 0.2 ? "up"
+                    : recentRating < rating - 0.2 ? "down"
+                    : "flat"
+                    : "flat";
+                  const isCritical = rating < 2 && v.totalReviews >= 5;
+                  const isAtRisk = rating < 3 && v.totalReviews >= 5;
+
+                  return (
+                    <tr
+                      key={v.vendorId ?? idx}
+                      className={`border-b last:border-0 hover:bg-muted/20 transition-colors ${
+                        isCritical ? "bg-red-50/50" : isAtRisk ? "bg-amber-50/30" : ""
+                      }`}
+                    >
+                      <td className="px-4 py-3 text-muted-foreground text-xs">{idx + 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-sm leading-tight">{v.storeName}</div>
+                        {v.storeType && (
+                          <div className="text-xs text-muted-foreground capitalize">{v.storeType.replace(/_/g, " ")}</div>
+                        )}
+                        {v.phone && <div className="text-xs text-muted-foreground">{v.phone}</div>}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <RatingBadge rating={rating} />
+                          <StarBar rating={rating} />
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="font-semibold">{v.totalReviews}</span>
+                        {v.hiddenCount > 0 && (
+                          <div className="text-xs text-muted-foreground">{v.hiddenCount} hidden</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <div className="flex items-center justify-center gap-2 text-xs">
+                          <span className="text-red-600 font-semibold">{v.oneStarCount}★</span>
+                          <span className="text-muted-foreground">/</span>
+                          <span className="text-green-600 font-semibold">{v.fiveStarCount}★</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {recentRating !== null ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-xs font-medium">{recentRating.toFixed(1)}</span>
+                            {trend === "up" && <TrendingUp className="w-3.5 h-3.5 text-green-500" />}
+                            {trend === "down" && <TrendingDown className="w-3.5 h-3.5 text-red-500" />}
+                            <span className="text-xs text-muted-foreground">({v.recentCount})</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {v.pendingCount > 0 ? (
+                          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                            {v.pendingCount} pending
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {v.isActive ? (
+                          <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">Active</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">Suspended</Badge>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {v.latestReviewAt ? formatDate(v.latestReviewAt) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

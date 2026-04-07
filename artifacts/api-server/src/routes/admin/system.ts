@@ -1036,6 +1036,84 @@ router.delete("/ride-ratings/:id", adminAuth, async (req, res) => {
   sendSuccess(res);
 });
 
+/* ── GET /admin/vendor-ratings — vendor rating leaderboard ─────────── */
+router.get("/vendor-ratings", adminAuth, async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    /* Aggregate all visible + pending reviews grouped by vendorId */
+    const vendorStats = await db
+      .select({
+        vendorId: reviewsTable.vendorId,
+        avgRating: avg(reviewsTable.rating),
+        totalReviews: count(),
+        oneStarCount: sql<number>`COUNT(*) FILTER (WHERE ${reviewsTable.rating} = 1)`,
+        twoStarCount: sql<number>`COUNT(*) FILTER (WHERE ${reviewsTable.rating} = 2)`,
+        fiveStarCount: sql<number>`COUNT(*) FILTER (WHERE ${reviewsTable.rating} = 5)`,
+        pendingCount: sql<number>`COUNT(*) FILTER (WHERE ${reviewsTable.status} = 'pending_moderation')`,
+        hiddenCount: sql<number>`COUNT(*) FILTER (WHERE ${reviewsTable.hidden} = true)`,
+        recentAvg: sql<number>`AVG(${reviewsTable.rating}) FILTER (WHERE ${reviewsTable.createdAt} >= ${thirtyDaysAgo})`,
+        recentCount: sql<number>`COUNT(*) FILTER (WHERE ${reviewsTable.createdAt} >= ${thirtyDaysAgo})`,
+        latestReviewAt: sql<string>`MAX(${reviewsTable.createdAt})`,
+      })
+      .from(reviewsTable)
+      .where(and(
+        isNotNull(reviewsTable.vendorId),
+        isNull(reviewsTable.deletedAt),
+      ))
+      .groupBy(reviewsTable.vendorId)
+      .orderBy(asc(avg(reviewsTable.rating)));
+
+    if (vendorStats.length === 0) {
+      sendSuccess(res, { vendors: [] });
+      return;
+    }
+
+    /* Enrich with vendor profile info */
+    const vendorIds = vendorStats.map(v => v.vendorId).filter(Boolean) as string[];
+    const vendorProfiles = await db
+      .select({
+        userId: vendorProfilesTable.userId,
+        storeName: vendorProfilesTable.storeName,
+        storeType: vendorProfilesTable.storeType,
+        isActive: vendorProfilesTable.isActive,
+        phone: usersTable.phone,
+        name: usersTable.name,
+      })
+      .from(vendorProfilesTable)
+      .leftJoin(usersTable, eq(vendorProfilesTable.userId, usersTable.id))
+      .where(sql`${vendorProfilesTable.userId} = ANY(${vendorIds})`);
+
+    const profileMap = new Map(vendorProfiles.map(p => [p.userId, p]));
+
+    const vendors = vendorStats.map(v => {
+      const profile = v.vendorId ? profileMap.get(v.vendorId) : null;
+      return {
+        vendorId: v.vendorId,
+        storeName: profile?.storeName ?? profile?.name ?? v.vendorId,
+        storeType: profile?.storeType ?? null,
+        isActive: profile?.isActive ?? true,
+        phone: profile?.phone ?? null,
+        avgRating: v.avgRating ? parseFloat(String(v.avgRating)).toFixed(2) : null,
+        totalReviews: Number(v.totalReviews),
+        oneStarCount: Number(v.oneStarCount),
+        twoStarCount: Number(v.twoStarCount),
+        fiveStarCount: Number(v.fiveStarCount),
+        pendingCount: Number(v.pendingCount),
+        hiddenCount: Number(v.hiddenCount),
+        recentAvg: v.recentAvg ? parseFloat(String(v.recentAvg)).toFixed(2) : null,
+        recentCount: Number(v.recentCount),
+        latestReviewAt: v.latestReviewAt,
+      };
+    });
+
+    sendSuccess(res, { vendors });
+  } catch (e) {
+    logger.error({ err: e }, "[admin] vendor-ratings error");
+    sendError(res, "Failed to load vendor ratings.", 500);
+  }
+});
+
 /* ── GET /admin/reviews/export — export CSV ────────────────────────────── */
 router.get("/reviews/export", async (req, res) => {
   const { status, type } = req.query as Record<string, string>;
