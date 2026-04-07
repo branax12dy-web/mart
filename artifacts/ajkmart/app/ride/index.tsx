@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
@@ -17,6 +17,7 @@ import { TouchableOpacity, Text, Platform } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
+import { useApiCall } from "@/hooks/useApiCall";
 
 const C = Colors.light;
 
@@ -34,27 +35,25 @@ function RideScreenInner() {
   const { rideId: urlRideId, prefillPickup, prefillDrop, prefillType } = useLocalSearchParams<{ rideId?: string; prefillPickup?: string; prefillDrop?: string; prefillType?: string }>();
 
   const [booked, setBooked] = useState<any>(null);
-  const [rideLoadError, setRideLoadError] = useState(false);
-  const [retryNonce, setRetryNonce] = useState(0);
+
+  const fetchRideFn = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/rides/${urlRideId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Failed to load ride");
+    const data = unwrapApiResponse(await res.json());
+    return { id: urlRideId!, type: data.type || "bike" };
+  }, [urlRideId, token]);
+
+  const rideLoader = useApiCall(fetchRideFn, {
+    showErrorToast: false,
+    onSuccess: (result) => setBooked(result),
+  });
 
   useEffect(() => {
     if (!urlRideId || !token) return;
-    setRideLoadError(false);
-    fetch(`${API_BASE}/rides/${urlRideId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => {
-        if (!r.ok) throw new Error("fetch failed");
-        return r.json();
-      })
-      .then(unwrapApiResponse)
-      .then(data => {
-        setBooked({ id: urlRideId, type: data.type || "bike" });
-      })
-      .catch(() => {
-        setRideLoadError(true);
-      });
-  }, [urlRideId, token, retryNonce]);
+    rideLoader.execute();
+  }, [urlRideId, token]);
 
   if (inMaintenance) {
     return (
@@ -211,7 +210,7 @@ function RideScreenInner() {
     );
   }
 
-  if (rideLoadError) {
+  if (rideLoader.error) {
     return (
       <View
         style={{
@@ -266,7 +265,7 @@ function RideScreenInner() {
               paddingVertical: 14,
               marginBottom: 10,
             }}
-            onPress={() => { setRetryNonce(n => n + 1); }}
+            onPress={() => { rideLoader.retry(); }}
           >
             <Text style={{ ...Typ.button, fontFamily: Font.bold, color: C.textInverse }}>
               {T("tryAgain")}

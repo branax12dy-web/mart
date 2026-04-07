@@ -28,6 +28,7 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { CancelModal } from "@/components/CancelModal";
 import type { CancelTarget } from "@/components/CancelModal";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
+import { useApiCall } from "@/hooks/useApiCall";
 import { staticMapUrl } from "@/hooks/useMaps";
 import {
   ORDER_STATUS_MAP,
@@ -133,6 +134,60 @@ export default function OrderDetailScreen() {
   const interpRafRef   = useRef<number | null>(null);
   const INTERP_DURATION_MS = 4000;
 
+  const orderEndpoint = useMemo(() => {
+    if (!orderId) return "";
+    return isParcel
+      ? `${API_BASE}/parcel-bookings/${orderId}`
+      : isPharmacyType
+      ? `${API_BASE}/pharmacy-orders/${orderId}`
+      : isRide
+      ? `${API_BASE}/rides/${orderId}`
+      : `${API_BASE}/orders/${orderId}`;
+  }, [orderId, isParcel, isRide, isPharmacyType]);
+
+  const fetchOrderData = useCallback(async () => {
+    const res = await fetch(orderEndpoint, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const serverDate = res.headers.get("Date");
+    if (serverDate && mountedRef.current) {
+      setServerNow(new Date(serverDate).getTime());
+    }
+    if (!res.ok) throw new Error("Failed to load order data");
+    const data = unwrapApiResponse(await res.json()) as Record<string, unknown>;
+    return (data.order || data.booking || data) as OrderDetail;
+  }, [orderEndpoint, token]);
+
+  const orderLoader = useApiCall(fetchOrderData, {
+    showErrorToast: false,
+    onSuccess: (fetched) => setOrder(fetched),
+    onError: () => showToast(isParcel ? T("parcelLoadError") : T("orderLoadError"), "error"),
+  });
+
+  const orderPoller = useApiCall(fetchOrderData, {
+    showErrorToast: false,
+    maxRetries: 1,
+    onSuccess: (fetched) => setOrder(fetched),
+  });
+
+  const refundFn = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/refund-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+    const data = unwrapApiResponse(await res.json()) as Record<string, unknown>;
+    if (!res.ok) throw new Error((data.error as string) || "Refund request failed");
+    return data;
+  }, [orderId, token]);
+
+  const refundCall = useApiCall(refundFn, {
+    maxRetries: 0,
+    onSuccess: () => {
+      setRefundRequested(true);
+      showToast(T("refundSubmitted"), "success");
+    },
+  });
+
   const animateToLocation = (newLat: number, newLng: number) => {
     if (!mountedRef.current) return;
     const renderedLat = interpRenderedRef.current?.lat ?? interpToRef.current?.lat ?? newLat;
@@ -219,9 +274,10 @@ export default function OrderDetailScreen() {
     const isTerminal = ["delivered", "cancelled", "completed"].includes(order.status ?? "");
     if (isTerminal) return;
 
-    /* Use the order's own type field for room determination — not URL params */
-    const effectiveType = order.type ?? (isRide ? "ride" : isParcel ? "parcel" : "mart");
-    const room = getSocketRoom(orderId, effectiveType);
+    /* Use the order's own type field for room determination — not URL params.
+       If type is not yet available from fetched data, skip socket setup. */
+    if (!order.type) return;
+    const room = getSocketRoom(orderId, order.type);
 
     const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
     const socketUrl = `https://${domain}`;
@@ -301,71 +357,37 @@ export default function OrderDetailScreen() {
         interpRafRef.current = null;
       }
     };
-  }, [order?.status, orderId, token, isRide, isParcel]);
+  }, [order?.status, order?.type, orderId, token]);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!orderId) return;
-    const endpoint = isParcel
-      ? `${API_BASE}/parcel-bookings/${orderId}`
-      : isPharmacyType
-      ? `${API_BASE}/pharmacy-orders/${orderId}`
-      : isRide
-      ? `${API_BASE}/rides/${orderId}`
-      : `${API_BASE}/orders/${orderId}`;
-    let ivRef: ReturnType<typeof setInterval> | null = null;
-    const fetchAndMaybeClear = async () => {
-      try {
-        const res = await fetch(endpoint, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const serverDate = res.headers.get("Date");
-        if (serverDate && mountedRef.current) {
-          setServerNow(new Date(serverDate).getTime());
-        }
-        const data = unwrapApiResponse(await res.json());
-        const fetched = data.order || data.booking || data;
-        if (mountedRef.current) {
-          setOrder(fetched);
-          if (fetched && ["delivered", "cancelled", "completed"].includes(fetched.status)) {
-            if (ivRef !== null) clearInterval(ivRef);
-          }
-        }
-      } catch {
-        if (mountedRef.current) {
-          showToast(isParcel ? T("parcelLoadError") : T("orderLoadError"), "error");
-        }
-      }
+    if (!orderId || !token) return;
+
+    orderLoader.execute().then(() => {
       if (mountedRef.current) setLoading(false);
-    };
-    fetchAndMaybeClear();
-    ivRef = setInterval(fetchAndMaybeClear, 10000);
+    });
+
+    let ivRef: ReturnType<typeof setInterval> | null = null;
+    ivRef = setInterval(() => {
+      orderPoller.execute().then((fetched) => {
+        if (mountedRef.current && fetched && ["delivered", "cancelled", "completed"].includes(fetched.status)) {
+          if (ivRef !== null) clearInterval(ivRef);
+        }
+      });
+    }, 10000);
+
     return () => {
       mountedRef.current = false;
       if (ivRef !== null) clearInterval(ivRef);
     };
-  }, [orderId, isParcel, isRide]);
+  }, [orderId, isParcel, isRide, isPharmacyType, token]);
 
   const handleOrderRefresh = useCallback(async () => {
     if (!orderId) return;
     setRefreshingOrder(true);
-    const endpoint = isParcel
-      ? `${API_BASE}/parcel-bookings/${orderId}`
-      : isPharmacyType
-      ? `${API_BASE}/pharmacy-orders/${orderId}`
-      : isRide
-      ? `${API_BASE}/rides/${orderId}`
-      : `${API_BASE}/orders/${orderId}`;
-    try {
-      const res = await fetch(endpoint, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      const data = unwrapApiResponse(await res.json());
-      const fetched = data.order || data.booking || data;
-      if (mountedRef.current) setOrder(fetched);
-    } catch (err) {
-      if (__DEV__) console.warn("[OrderDetail] Refresh fetch failed:", err instanceof Error ? err.message : String(err));
-    }
+    await orderLoader.execute();
     setRefreshingOrder(false);
-  }, [orderId, isParcel, isRide, isPharmacyType, token]);
+  }, [orderId, orderLoader]);
 
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
@@ -494,19 +516,7 @@ export default function OrderDetailScreen() {
 
   const handleRefundRequest = async () => {
     setRefundRequesting(true);
-    try {
-      const res = await fetch(`${API_BASE}/orders/${orderId}/refund-request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      });
-      const data = unwrapApiResponse(await res.json());
-      if (!res.ok) throw new Error(data.error || "Refund request failed");
-      setRefundRequested(true);
-      showToast(T("refundSubmitted"), "success");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Refund request failed";
-      showToast(msg, "error");
-    }
+    await refundCall.execute();
     setRefundRequesting(false);
   };
 

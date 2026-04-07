@@ -139,7 +139,9 @@ export default function ChatDetailScreen() {
         const msgs = await apiFetch(`/conversations/${id}/messages`);
         setMessages(msgs);
         await apiFetch(`/conversations/${id}/read-all`, { method: "PATCH" });
-      } catch {}
+      } catch (err) {
+        console.warn("[Chat] Failed to load messages:", err instanceof Error ? err.message : String(err));
+      }
       setLoading(false);
     };
     loadMessages();
@@ -189,21 +191,28 @@ export default function ChatDetailScreen() {
           });
         }
         socket.emit("comm:call:answer", { callId: data.callId, targetUserId: data.callerId, sdp: pcRef.current?.localDescription });
-      } catch {}
+      } catch (err) {
+        console.warn("[Chat] WebRTC offer handling failed:", err instanceof Error ? err.message : String(err));
+        showToast("Call connection failed. Please try again.", "error");
+      }
     });
 
     socket.on("comm:call:answer", async (data: CallSignal) => {
       if (!pcRef.current || !data.sdp) return;
       try {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
-      } catch {}
+      } catch (err) {
+        console.warn("[Chat] WebRTC answer handling failed:", err instanceof Error ? err.message : String(err));
+      }
     });
 
     socket.on("comm:call:ice-candidate", async (data: CallSignal) => {
       if (!pcRef.current || !data.candidate) return;
       try {
         await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-      } catch {}
+      } catch (err) {
+        console.warn("[Chat] ICE candidate handling failed:", err instanceof Error ? err.message : String(err));
+      }
     });
 
     return () => { socket.disconnect(); };
