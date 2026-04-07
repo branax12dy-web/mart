@@ -112,8 +112,9 @@ async function assertSecureSettings() {
 }
 
 let _listenAttempt = 0;
-const MAX_LISTEN_ATTEMPTS = 5;
+const MAX_LISTEN_ATTEMPTS = 10;
 const LISTEN_BASE_DELAY_MS = 1000;
+const LISTEN_MAX_DELAY_MS = 4000;
 
 function startListening(): void {
   _listenAttempt++;
@@ -126,7 +127,7 @@ function startListening(): void {
 
 httpServer.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EADDRINUSE" && _listenAttempt < MAX_LISTEN_ATTEMPTS) {
-    const delay = LISTEN_BASE_DELAY_MS * Math.pow(2, _listenAttempt - 1);
+    const delay = Math.min(LISTEN_BASE_DELAY_MS * Math.pow(2, _listenAttempt - 1), LISTEN_MAX_DELAY_MS);
     logger.warn({ port, attempt: _listenAttempt, nextAttempt: _listenAttempt + 1, delayMs: delay }, "Port in use — retrying with exponential back-off");
     httpServer.close();
     setTimeout(() => startListening(), delay);
