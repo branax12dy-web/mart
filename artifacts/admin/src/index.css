@@ -51,6 +51,7 @@
 }
 
 :root {
+  color-scheme: light;
   /* Off-white canvas background #F8FAFC */
   --background: 210 40% 98%;
   --foreground: 222 47% 11%;

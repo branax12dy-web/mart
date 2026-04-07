@@ -1,8 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetcher } from "@/lib/api";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   AlertTriangle, Bug, Server, Monitor, Code, Zap,
   ChevronDown, ChevronRight, RefreshCw, Filter, X, CheckCircle2,
@@ -54,17 +52,6 @@ const ERROR_TYPES = [
   { value: "unhandled_exception", label: "Unhandled Exception" },
 ];
 
-const SEVERITY_STYLE: Record<string, string> = {
-  critical: "bg-red-100 text-red-700 border-red-200",
-  medium:   "bg-amber-100 text-amber-700 border-amber-200",
-  minor:    "bg-blue-100 text-blue-700 border-blue-200",
-};
-const STATUS_STYLE: Record<string, string> = {
-  new:          "bg-red-100 text-red-700",
-  acknowledged: "bg-amber-100 text-amber-700",
-  in_progress:  "bg-blue-100 text-blue-700",
-  resolved:     "bg-green-100 text-green-700",
-};
 const SOURCE_ICONS: Record<string, typeof Monitor> = {
   customer: Monitor, rider: Zap, vendor: Code, admin: Bug, api: Server,
 };
@@ -75,10 +62,10 @@ const TAB_STATUS_FILTERS: Record<Tab, string[]> = {
   completed:  ["resolved"],
 };
 
-const STATUS_NEXT: Record<string, { status: string; label: string; btnClass: string } | null> = {
-  new:          { status: "acknowledged", label: "Acknowledge",       btnClass: "bg-amber-500 hover:bg-amber-600 text-white" },
-  acknowledged: { status: "in_progress",  label: "Mark In Progress",  btnClass: "bg-blue-500 hover:bg-blue-600 text-white" },
-  in_progress:  { status: "resolved",     label: "Resolve",           btnClass: "bg-green-600 hover:bg-green-700 text-white" },
+const STATUS_NEXT: Record<string, { status: string; label: string } | null> = {
+  new:          { status: "acknowledged", label: "Acknowledge" },
+  acknowledged: { status: "in_progress",  label: "Mark In Progress" },
+  in_progress:  { status: "resolved",     label: "Resolve" },
   resolved:     null,
 };
 
@@ -91,10 +78,44 @@ const CATEGORY_LABELS: Record<string, string> = {
   unhandled_exception: "Unhandled Exception",
 };
 
-const TABS: { id: Tab; label: string; icon: typeof Flame; activeClass: string; badgeClass: string }[] = [
-  { id: "new",        label: "New",        icon: Flame,        activeClass: "border-red-500 text-red-600 bg-red-50",       badgeClass: "bg-red-100 text-red-700" },
-  { id: "unresolved", label: "Unresolved", icon: ShieldAlert,  activeClass: "border-amber-500 text-amber-600 bg-amber-50", badgeClass: "bg-amber-100 text-amber-700" },
-  { id: "completed",  label: "Completed",  icon: CheckCircle2, activeClass: "border-green-500 text-green-600 bg-green-50",  badgeClass: "bg-green-100 text-green-700" },
+const SEVERITY_BADGE: Record<string, { bg: string; color: string; border: string }> = {
+  critical: { bg: "#FEF2F2", color: "#B91C1C", border: "#FECACA" },
+  medium:   { bg: "#FFFBEB", color: "#92400E", border: "#FDE68A" },
+  minor:    { bg: "#EFF6FF", color: "#1D4ED8", border: "#BFDBFE" },
+};
+
+const STATUS_BADGE: Record<string, { bg: string; color: string }> = {
+  new:          { bg: "#FEF2F2", color: "#B91C1C" },
+  acknowledged: { bg: "#FFFBEB", color: "#92400E" },
+  in_progress:  { bg: "#EFF6FF", color: "#1D4ED8" },
+  resolved:     { bg: "#F0FDF4", color: "#15803D" },
+};
+
+const NEXT_BTN_STYLE: Record<string, { bg: string; hover: string; color: string }> = {
+  acknowledged: { bg: "#F59E0B", hover: "#D97706", color: "#fff" },
+  in_progress:  { bg: "#3B82F6", hover: "#2563EB", color: "#fff" },
+  resolved:     { bg: "#16A34A", hover: "#15803D", color: "#fff" },
+};
+
+const LEFT_ACCENT: Record<string, string> = {
+  critical: "#EF4444",
+  medium:   "#F59E0B",
+  minor:    "#3B82F6",
+};
+
+const TABS: {
+  id: Tab;
+  label: string;
+  icon: typeof Flame;
+  activeColor: string;
+  activeBorder: string;
+  activeBg: string;
+  badgeBg: string;
+  badgeColor: string;
+}[] = [
+  { id: "new",        label: "New",        icon: Flame,        activeColor: "#DC2626", activeBorder: "#DC2626", activeBg: "#FEF2F2", badgeBg: "#FEE2E2", badgeColor: "#B91C1C" },
+  { id: "unresolved", label: "Unresolved", icon: ShieldAlert,  activeColor: "#D97706", activeBorder: "#F59E0B", activeBg: "#FFFBEB", badgeBg: "#FEF3C7", badgeColor: "#92400E" },
+  { id: "completed",  label: "Completed",  icon: CheckCircle2, activeColor: "#16A34A", activeBorder: "#22C55E", activeBg: "#F0FDF4", badgeBg: "#DCFCE7", badgeColor: "#15803D" },
 ];
 
 function formatTimestamp(ts: string): string {
@@ -209,135 +230,208 @@ export default function ErrorMonitor() {
   const renderReportRow = (report: ErrorReport) => {
     const isExpanded = expandedId === report.id;
     const Icon = SOURCE_ICONS[report.sourceApp] || Server;
-    const sevStyle = SEVERITY_STYLE[report.severity] || SEVERITY_STYLE.medium;
-    const statusStyle = STATUS_STYLE[report.status] || STATUS_STYLE.new;
-    const leftAccent = report.severity === "critical"
-      ? "border-l-4 border-l-red-400"
-      : report.severity === "medium"
-      ? "border-l-4 border-l-amber-400"
-      : "border-l-4 border-l-blue-400";
+    const sevBadge = SEVERITY_BADGE[report.severity] || SEVERITY_BADGE.medium;
+    const statusBadge = STATUS_BADGE[report.status] || STATUS_BADGE.new;
+    const accentColor = LEFT_ACCENT[report.severity] || "#6366F1";
     const nextStep = STATUS_NEXT[report.status];
+    const nextBtnStyle = nextStep ? NEXT_BTN_STYLE[nextStep.status] : null;
 
     return (
-      <div key={report.id} className={`bg-white ${leftAccent} hover:bg-gray-50 transition-colors`}>
+      <div
+        key={report.id}
+        style={{
+          backgroundColor: "#ffffff",
+          borderLeft: `4px solid ${accentColor}`,
+          borderBottom: "1px solid #F1F5F9",
+        }}
+      >
+        {/* Row */}
         <div
-          className="flex items-start gap-3 px-4 py-3.5 cursor-pointer"
+          style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", cursor: "pointer" }}
           onClick={() => setExpandedId(isExpanded ? null : report.id)}
+          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "#F8FAFC"}
+          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"}
         >
-          <div className="mt-1 shrink-0 text-gray-400">
-            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          {/* Expand icon */}
+          <div style={{ marginTop: 2, color: "#9CA3AF", flexShrink: 0 }}>
+            {isExpanded
+              ? <ChevronDown style={{ width: 16, height: 16 }} />
+              : <ChevronRight style={{ width: 16, height: 16 }} />}
           </div>
 
-          <div className="flex-1 min-w-0 space-y-1.5">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${sevStyle}`}>
-                {report.severity}
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600 border border-gray-200 capitalize">
-                <Icon className="w-3 h-3" />
+          {/* Content */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Badges row */}
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center",
+                padding: "2px 8px", borderRadius: 9999,
+                fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                backgroundColor: sevBadge.bg, color: sevBadge.color,
+                border: `1px solid ${sevBadge.border}`,
+              }}>{report.severity}</span>
+
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "2px 8px", borderRadius: 9999,
+                fontSize: 11, fontWeight: 600,
+                backgroundColor: "#F1F5F9", color: "#374151",
+                border: "1px solid #E2E8F0", textTransform: "capitalize",
+              }}>
+                <Icon style={{ width: 12, height: 12 }} />
                 {report.sourceApp === "api" ? "API Server" : report.sourceApp}
               </span>
-              <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+
+              <span style={{
+                fontSize: 11, color: "#6B7280",
+                backgroundColor: "#F9FAFB", padding: "2px 8px", borderRadius: 9999,
+                border: "1px solid #E5E7EB",
+              }}>
                 {report.errorType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
               </span>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${statusStyle}`}>
+
+              <span style={{
+                display: "inline-flex", alignItems: "center",
+                padding: "2px 8px", borderRadius: 9999,
+                fontSize: 11, fontWeight: 600, textTransform: "capitalize",
+                backgroundColor: statusBadge.bg, color: statusBadge.color,
+              }}>
                 {report.status.replace(/_/g, " ")}
               </span>
             </div>
 
-            <p className="text-sm text-gray-800 font-medium leading-snug line-clamp-2">
+            {/* Message */}
+            <p style={{
+              fontSize: 14, fontWeight: 500, color: "#111827",
+              lineHeight: "1.4", marginBottom: 4,
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+            }}>
               {report.errorMessage}
             </p>
 
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
+            {/* Meta */}
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, fontSize: 11, color: "#9CA3AF" }}>
               <span>{formatTimestamp(report.timestamp)}</span>
               {report.functionName && (
-                <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.functionName}</span>
+                <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>
+                  {report.functionName}
+                </span>
               )}
               {report.componentName && (
-                <span className="font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded text-[10px]">{report.componentName}</span>
+                <span style={{ fontFamily: "monospace", backgroundColor: "#F3F4F6", color: "#6B7280", padding: "1px 6px", borderRadius: 4 }}>
+                  {report.componentName}
+                </span>
               )}
               {report.shortImpact && (
-                <span className="text-gray-400 italic">{report.shortImpact}</span>
+                <span style={{ fontStyle: "italic", color: "#9CA3AF" }}>{report.shortImpact}</span>
               )}
             </div>
           </div>
 
-          <div className="shrink-0 flex flex-col items-end gap-1" onClick={e => e.stopPropagation()}>
-            {nextStep ? (
+          {/* Action button */}
+          <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            {nextStep && nextBtnStyle ? (
               <button
                 onClick={() => updateMutation.mutate({ id: report.id, newStatus: nextStep.status })}
                 disabled={updateMutation.isPending}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg shadow-sm transition-all disabled:opacity-60 ${nextStep.btnClass}`}
+                style={{
+                  fontSize: 11, fontWeight: 600,
+                  padding: "5px 10px", borderRadius: 8,
+                  backgroundColor: nextBtnStyle.bg, color: nextBtnStyle.color,
+                  border: "none", cursor: "pointer",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                  opacity: updateMutation.isPending ? 0.6 : 1,
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle.hover; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = nextBtnStyle.bg; }}
               >
                 {nextStep.label}
               </button>
             ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-semibold px-2 py-1 bg-green-50 rounded-lg border border-green-200">
-                <CheckCircle2 className="w-3 h-3" /> Resolved
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                fontSize: 11, fontWeight: 600, color: "#16A34A",
+                padding: "5px 10px", backgroundColor: "#F0FDF4",
+                borderRadius: 8, border: "1px solid #BBF7D0",
+              }}>
+                <CheckCircle2 style={{ width: 12, height: 12 }} />
+                Resolved
               </span>
             )}
           </div>
         </div>
 
+        {/* Expanded detail */}
         {isExpanded && (
-          <div className="px-4 pb-5 pl-11 space-y-4 bg-gray-50 border-t border-gray-100">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
+          <div style={{ padding: "16px 16px 20px 44px", backgroundColor: "#F8FAFC", borderTop: "1px solid #F1F5F9" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
               {[
-                { label: "Timestamp",  value: new Date(report.timestamp).toLocaleString() },
+                { label: "Timestamp",  value: new Date(report.timestamp).toLocaleString(), mono: false },
                 { label: "Module",     value: report.moduleName    || "—", mono: true },
                 { label: "Function",   value: report.functionName  || "—", mono: true },
                 { label: "Component",  value: report.componentName || "—", mono: true },
               ].map(f => (
                 <div key={f.label}>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">{f.label}</p>
-                  <p className={`text-xs text-gray-700 ${f.mono ? "font-mono" : ""}`}>{f.value}</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>
+                    {f.label}
+                  </p>
+                  <p style={{ fontSize: 12, color: "#374151", fontFamily: f.mono ? "monospace" : "inherit" }}>{f.value}</p>
                 </div>
               ))}
             </div>
 
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Error Message</p>
-              <p className="text-xs text-gray-700 whitespace-pre-wrap break-all bg-white border border-gray-200 rounded-lg p-3">{report.errorMessage}</p>
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>
+                Error Message
+              </p>
+              <p style={{
+                fontSize: 12, color: "#374151", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12,
+              }}>{report.errorMessage}</p>
             </div>
 
             {report.shortImpact && (
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Impact</p>
-                <p className="text-xs text-gray-700">{report.shortImpact}</p>
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Impact</p>
+                <p style={{ fontSize: 12, color: "#374151" }}>{report.shortImpact}</p>
               </div>
             )}
 
             {report.stackTrace && (
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Stack Trace</p>
-                <pre className="text-[11px] bg-gray-900 text-green-300 border border-gray-300 rounded-lg p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-all font-mono">
-                  {report.stackTrace}
-                </pre>
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Stack Trace</p>
+                <pre style={{
+                  fontSize: 11, fontFamily: "monospace",
+                  backgroundColor: "#111827", color: "#86EFAC",
+                  border: "1px solid #374151", borderRadius: 8, padding: 12,
+                  overflowX: "auto", maxHeight: 256, whiteSpace: "pre-wrap", wordBreak: "break-all",
+                }}>{report.stackTrace}</pre>
               </div>
             )}
 
             {report.metadata && Object.keys(report.metadata).length > 0 && (
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Metadata</p>
-                <pre className="text-[11px] text-gray-600 bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
-                  {JSON.stringify(report.metadata, null, 2)}
-                </pre>
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Metadata</p>
+                <pre style={{
+                  fontSize: 11, fontFamily: "monospace", color: "#374151",
+                  backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 8, padding: 12,
+                  overflowX: "auto", maxHeight: 160, whiteSpace: "pre-wrap",
+                }}>{JSON.stringify(report.metadata, null, 2)}</pre>
               </div>
             )}
 
             {(report.acknowledgedAt || report.resolvedAt) && (
-              <div className="flex gap-6">
+              <div style={{ display: "flex", gap: 24 }}>
                 {report.acknowledgedAt && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Acknowledged At</p>
-                    <p className="text-xs text-gray-700">{new Date(report.acknowledgedAt).toLocaleString()}</p>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Acknowledged At</p>
+                    <p style={{ fontSize: 12, color: "#374151" }}>{new Date(report.acknowledgedAt).toLocaleString()}</p>
                   </div>
                 )}
                 {report.resolvedAt && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Resolved At</p>
-                    <p className="text-xs text-green-700 font-semibold">{new Date(report.resolvedAt).toLocaleString()}</p>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9CA3AF", marginBottom: 4 }}>Resolved At</p>
+                    <p style={{ fontSize: 12, color: "#16A34A", fontWeight: 600 }}>{new Date(report.resolvedAt).toLocaleString()}</p>
                   </div>
                 )}
               </div>
@@ -346,91 +440,131 @@ export default function ErrorMonitor() {
         )}
       </div>
     );
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-6 space-y-5">
+    <div style={{ minHeight: "100vh", backgroundColor: "#F8FAFC", padding: "24px", fontFamily: "Inter, sans-serif" }}>
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Bug className="w-6 h-6 text-red-500" />
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+            <Bug style={{ width: 22, height: 22, color: "#EF4444" }} />
             Error Monitor
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">Real-time error tracking across all apps</p>
+          <p style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>Real-time error tracking across all apps</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {canFixAll && (
-            <Button
+            <button
               onClick={handleFixAll}
               disabled={fixingAll}
-              size="sm"
-              className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", borderRadius: 8, border: "none",
+                backgroundColor: "#16A34A", color: "#ffffff",
+                fontSize: 13, fontWeight: 600, cursor: "pointer",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                opacity: fixingAll ? 0.7 : 1,
+              }}
             >
-              <CheckCheck className={`w-4 h-4 ${fixingAll ? "animate-spin" : ""}`} />
+              <CheckCheck style={{ width: 15, height: 15 }} />
               {fixingAll ? "Fixing…" : `Fix All (${pagination.total})`}
-            </Button>
+            </button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={() => setGroupByCategory(g => !g)}
-            className={groupByCategory ? "border-purple-400 text-purple-600 bg-purple-50" : ""}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8,
+              border: `1px solid ${groupByCategory ? "#A78BFA" : "#D1D5DB"}`,
+              backgroundColor: groupByCategory ? "#EDE9FE" : "#ffffff",
+              color: groupByCategory ? "#7C3AED" : "#374151",
+              fontSize: 13, fontWeight: 500, cursor: "pointer",
+            }}
           >
-            <Layers className="w-4 h-4 mr-1.5" />
+            <Layers style={{ width: 14, height: 14 }} />
             Group by Type
-            {groupByCategory && <span className="ml-1.5 w-2 h-2 rounded-full bg-purple-500 inline-block" />}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+          </button>
+          <button
             onClick={() => setShowFilters(f => !f)}
-            className={hasFilters ? "border-indigo-400 text-indigo-600 bg-indigo-50" : ""}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8,
+              border: `1px solid ${hasFilters ? "#818CF8" : "#D1D5DB"}`,
+              backgroundColor: hasFilters ? "#EEF2FF" : "#ffffff",
+              color: hasFilters ? "#4F46E5" : "#374151",
+              fontSize: 13, fontWeight: 500, cursor: "pointer",
+            }}
           >
-            <Filter className="w-4 h-4 mr-1.5" />
+            <Filter style={{ width: 14, height: 14 }} />
             Filters
-            {hasFilters && <span className="ml-1.5 w-2 h-2 rounded-full bg-indigo-500 inline-block" />}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
+            {hasFilters && <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "#6366F1", display: "inline-block" }} />}
+          </button>
+          <button
+            onClick={() => refetch()}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8,
+              border: "1px solid #D1D5DB", backgroundColor: "#ffffff",
+              color: "#374151", fontSize: 13, fontWeight: 500, cursor: "pointer",
+            }}
+          >
+            <RefreshCw style={{ width: 14, height: 14, animation: isLoading ? "spin 1s linear infinite" : "none" }} />
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* ── Filter Bar ── */}
       {showFilters && (
-        <Card className="p-4 space-y-3 border-indigo-100 bg-indigo-50/40">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-600">Filters</span>
+        <div style={{
+          backgroundColor: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 12,
+          padding: 16, marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Filters</span>
             {hasFilters && (
-              <button onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1">
-                <X className="w-3 h-3" /> Clear all
+              <button onClick={clearFilters} style={{
+                display: "flex", alignItems: "center", gap: 4, fontSize: 12,
+                color: "#DC2626", background: "none", border: "none", cursor: "pointer",
+              }}>
+                <X style={{ width: 12, height: 12 }} /> Clear all
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
             {[
               { value: sourceApp, onChange: (v: string) => { setSourceApp(v); setPage(1); }, options: SOURCE_APPS },
               { value: severity,  onChange: (v: string) => { setSeverity(v);  setPage(1); }, options: SEVERITIES },
               { value: errorType, onChange: (v: string) => { setErrorType(v); setPage(1); }, options: ERROR_TYPES },
             ].map((sel, i) => (
               <select key={i} value={sel.value} onChange={e => sel.onChange(e.target.value)}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300">
+                style={{
+                  backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8,
+                  padding: "8px 12px", fontSize: 13, color: "#374151",
+                  outline: "none", cursor: "pointer",
+                }}>
                 {sel.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             ))}
             <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400" />
+              style={{
+                backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8,
+                padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none",
+              }} />
             <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-              className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400" />
+              style={{
+                backgroundColor: "#ffffff", border: "1px solid #D1D5DB", borderRadius: 8,
+                padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none",
+              }} />
           </div>
-        </Card>
+        </div>
       )}
 
       {/* ── Tabs ── */}
-      <div className="flex items-stretch border-b border-gray-200">
+      <div style={{ display: "flex", borderBottom: "2px solid #E5E7EB", marginBottom: 16 }}>
         {TABS.map(tab => {
           const Icon = tab.icon;
           const count = tabCounts[tab.id];
@@ -439,18 +573,27 @@ export default function ErrorMonitor() {
             <button
               key={tab.id}
               onClick={() => switchTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-all -mb-px ${
-                isActive
-                  ? `${tab.activeClass} border-b-2`
-                  : "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"
-              }`}
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                padding: "10px 18px", fontSize: 13, fontWeight: 600,
+                border: "none", borderBottom: isActive ? `2px solid ${tab.activeBorder}` : "2px solid transparent",
+                marginBottom: -2, cursor: "pointer",
+                backgroundColor: isActive ? tab.activeBg : "transparent",
+                color: isActive ? tab.activeColor : "#6B7280",
+                borderRadius: "8px 8px 0 0",
+                transition: "all 0.15s",
+              }}
             >
-              <Icon className="w-4 h-4" />
+              <Icon style={{ width: 15, height: 15 }} />
               {tab.label}
               {count > 0 && (
-                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
-                  isActive ? tab.badgeClass : "bg-gray-100 text-gray-600"
-                }`}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700,
+                  padding: "1px 7px", borderRadius: 9999,
+                  backgroundColor: isActive ? tab.badgeBg : "#F3F4F6",
+                  color: isActive ? tab.badgeColor : "#6B7280",
+                  minWidth: 20, textAlign: "center",
+                }}>
                   {count > 999 ? "999+" : count}
                 </span>
               )}
@@ -460,71 +603,102 @@ export default function ErrorMonitor() {
       </div>
 
       {/* ── Error List ── */}
-      <Card className="overflow-hidden border-gray-200 shadow-sm">
+      <div style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
         {isLoading && reports.length === 0 ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: "50%",
+              border: "4px solid #6366F1", borderTopColor: "transparent",
+              animation: "spin 0.8s linear infinite",
+            }} />
           </div>
         ) : reports.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", color: "#9CA3AF" }}>
             {activeTab === "completed" ? (
-              <><CheckCircle2 className="w-12 h-12 mb-3 text-green-400" /><p className="text-lg font-semibold text-gray-600">No completed errors</p><p className="text-sm mt-1">Resolved errors will appear here</p></>
+              <>
+                <CheckCircle2 style={{ width: 48, height: 48, color: "#4ADE80", marginBottom: 12 }} />
+                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No completed errors</p>
+                <p style={{ fontSize: 13, marginTop: 4 }}>Resolved errors will appear here</p>
+              </>
             ) : activeTab === "unresolved" ? (
-              <><ShieldAlert className="w-12 h-12 mb-3 text-amber-400" /><p className="text-lg font-semibold text-gray-600">No unresolved errors</p><p className="text-sm mt-1">Acknowledged / in-progress errors appear here</p></>
+              <>
+                <ShieldAlert style={{ width: 48, height: 48, color: "#FCD34D", marginBottom: 12 }} />
+                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No unresolved errors</p>
+                <p style={{ fontSize: 13, marginTop: 4 }}>Acknowledged / in-progress errors appear here</p>
+              </>
             ) : (
-              <><Inbox className="w-12 h-12 mb-3 text-green-400" /><p className="text-lg font-semibold text-gray-600">No new errors</p><p className="text-sm mt-1">All systems are running smoothly</p></>
+              <>
+                <Inbox style={{ width: 48, height: 48, color: "#4ADE80", marginBottom: 12 }} />
+                <p style={{ fontSize: 18, fontWeight: 600, color: "#374151", margin: 0 }}>No new errors</p>
+                <p style={{ fontSize: 13, marginTop: 4 }}>All systems are running smoothly</p>
+              </>
             )}
           </div>
         ) : groupedReports ? (
           <div>
-            {Object.entries(groupedReports).map(([cat, catReports]) => {
-              const resolvedCount = catReports.filter(r => r.status === "resolved").length;
-              return (
-                <div key={cat}>
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
-                    <AlertTriangle className="w-3.5 h-3.5 text-gray-400" />
-                    <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-                      {CATEGORY_LABELS[cat] || cat}
-                    </span>
-                    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 min-w-[20px] text-center">
-                      {catReports.length}
-                    </span>
-                    {resolvedCount > 0 && (
-                      <span className="text-[11px] text-green-600 font-semibold">
-                        · {resolvedCount} resolved
-                      </span>
-                    )}
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {catReports.map(r => renderReportRow(r))}
-                  </div>
+            {Object.entries(groupedReports).map(([cat, catReports]) => (
+              <div key={cat}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "10px 16px", backgroundColor: "#F8FAFC",
+                  borderBottom: "1px solid #E5E7EB", position: "sticky", top: 0, zIndex: 10,
+                }}>
+                  <AlertTriangle style={{ width: 13, height: 13, color: "#9CA3AF" }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#4B5563" }}>
+                    {CATEGORY_LABELS[cat] || cat}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700,
+                    padding: "1px 7px", borderRadius: 9999,
+                    backgroundColor: "#E5E7EB", color: "#4B5563",
+                  }}>
+                    {catReports.length}
+                  </span>
                 </div>
-              );
-            })}
+                <div>{catReports.map(r => renderReportRow(r))}</div>
+              </div>
+            ))}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {reports.map(r => renderReportRow(r))}
-          </div>
+          <div>{reports.map(r => renderReportRow(r))}</div>
         )}
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
-            <span className="text-xs text-gray-500">
-              Page {pagination.page} of {pagination.totalPages} &middot; {pagination.total} total
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "12px 16px", borderTop: "1px solid #F1F5F9", backgroundColor: "#F8FAFC",
+          }}>
+            <span style={{ fontSize: 12, color: "#6B7280" }}>
+              Page {pagination.page} of {pagination.totalPages} · {pagination.total} total
             </span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page >= pagination.totalPages}>
-                Next
-              </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                style={{
+                  padding: "5px 14px", borderRadius: 8, fontSize: 12,
+                  border: "1px solid #D1D5DB", backgroundColor: "#ffffff",
+                  color: "#374151", cursor: page <= 1 ? "not-allowed" : "pointer",
+                  opacity: page <= 1 ? 0.5 : 1,
+                }}
+              >Previous</button>
+              <button
+                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                disabled={page >= pagination.totalPages}
+                style={{
+                  padding: "5px 14px", borderRadius: 8, fontSize: 12,
+                  border: "1px solid #D1D5DB", backgroundColor: "#ffffff",
+                  color: "#374151", cursor: page >= pagination.totalPages ? "not-allowed" : "pointer",
+                  opacity: page >= pagination.totalPages ? 0.5 : 1,
+                }}
+              >Next</button>
             </div>
           </div>
         )}
-      </Card>
+      </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
