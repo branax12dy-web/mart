@@ -420,12 +420,140 @@ function VehiclesTab() {
 }
 
 /* ══════════════════════════════════════════════════════════
+   SEAT INVENTORY MODAL
+══════════════════════════════════════════════════════════ */
+interface SeatAvailability {
+  scheduleId: string; date: string; available: boolean;
+  bookedSeats: number[]; availableSeats: number; totalSeats: number;
+  seatsPerRow: number; seatTiers: Record<string, SeatTier>;
+  fareWindow: number; fareAisle: number; fareEconomy: number;
+  farePerSeat: number; departureTime: string; returnTime?: string;
+  vehiclePlate?: string; vehicleModel?: string;
+}
+
+function SeatInventoryModal({ schedule, onClose }: { schedule: VanSchedule; onClose: () => void }) {
+  const today = new Date().toISOString().split("T")[0]!;
+  const [date, setDate] = useState(today);
+
+  const { data: avail, isLoading, error } = useQuery<SeatAvailability>({
+    queryKey: ["van-seat-inventory", schedule.id, date],
+    queryFn: () => vanFetch(`/schedules/${schedule.id}/availability?date=${date}`),
+    retry: false,
+  });
+
+  const rows: number[][] = [];
+  if (avail) {
+    const spr = avail.seatsPerRow || 4;
+    for (let i = 1; i <= avail.totalSeats; i += spr) {
+      rows.push(Array.from({ length: Math.min(spr, avail.totalSeats - i + 1) }, (_, j) => i + j));
+    }
+  }
+
+  function getSeatColor(num: number): string {
+    if (!avail) return "bg-gray-100 text-gray-400 border-gray-200";
+    if (avail.bookedSeats.includes(num)) return "bg-red-100 text-red-700 border-red-300";
+    const tier = avail.seatTiers[String(num)] || "aisle";
+    return TIER_COLORS[tier] + " opacity-80";
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-indigo-600" />
+            Seat Inventory — {schedule.routeName || "Schedule"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground mb-1 block">Travel Date</label>
+              <Input type="date" value={date} min={today} onChange={e => setDate(e.target.value)} />
+            </div>
+            {avail && (
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Departure</p>
+                <p className="font-mono font-bold text-indigo-700">{avail.departureTime}</p>
+              </div>
+            )}
+          </div>
+
+          {isLoading && <div className="text-center py-8 text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>}
+          {error && <div className="text-center py-4 text-red-500 text-sm flex items-center gap-2 justify-center"><AlertTriangle className="w-4 h-4" />{(error as Error).message}</div>}
+
+          {avail && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
+                  <p className="text-2xl font-bold text-green-700">{avail.availableSeats}</p>
+                  <p className="text-xs text-green-600 font-medium">Available</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3 text-center border border-red-200">
+                  <p className="text-2xl font-bold text-red-700">{avail.bookedSeats.length}</p>
+                  <p className="text-xs text-red-600 font-medium">Booked</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
+                  <p className="text-2xl font-bold text-gray-700">{avail.totalSeats}</p>
+                  <p className="text-xs text-gray-600 font-medium">Total Seats</p>
+                </div>
+              </div>
+
+              {avail.vehiclePlate && (
+                <p className="text-xs text-muted-foreground">Vehicle: <span className="font-semibold">{avail.vehiclePlate} {avail.vehicleModel}</span></p>
+              )}
+
+              <div className="border rounded-xl p-4 bg-gray-50">
+                <p className="text-xs font-semibold text-muted-foreground uppercase mb-3 text-center">Seat Map</p>
+                <div className="flex gap-3 mb-3 justify-center flex-wrap">
+                  <span className="text-[10px] font-bold px-2 py-1 rounded border bg-green-100 text-green-700 border-green-300">Available</span>
+                  <span className="text-[10px] font-bold px-2 py-1 rounded border bg-red-100 text-red-700 border-red-300">Booked</span>
+                  <span className="text-[10px] font-bold px-2 py-1 rounded border bg-amber-100 text-amber-700 border-amber-300">Window</span>
+                  <span className="text-[10px] font-bold px-2 py-1 rounded border bg-blue-100 text-blue-700 border-blue-300">Aisle</span>
+                </div>
+                <div className="flex justify-center mb-2">
+                  <div className="bg-gray-200 rounded-lg px-3 py-1 text-xs font-medium text-gray-500">🚐 Driver</div>
+                </div>
+                <div className="space-y-1.5">
+                  {rows.map((row, ri) => (
+                    <div key={ri} className="flex justify-center gap-1.5">
+                      {row.map(num => (
+                        <div key={num} className={`w-10 h-10 rounded-lg border-2 text-xs font-bold flex items-center justify-center ${getSeatColor(num)}`}>
+                          {num}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="text-xs"><p className="text-amber-700 font-bold">Rs {avail.fareWindow.toFixed(0)}</p><p className="text-muted-foreground">Window</p></div>
+                <div className="text-xs"><p className="text-blue-700 font-bold">Rs {avail.fareAisle.toFixed(0)}</p><p className="text-muted-foreground">Aisle</p></div>
+                <div className="text-xs"><p className="text-green-700 font-bold">Rs {avail.fareEconomy.toFixed(0)}</p><p className="text-muted-foreground">Economy</p></div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
    SCHEDULES TAB
 ══════════════════════════════════════════════════════════ */
 function SchedulesTab() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [newOpen, setNewOpen] = useState(false);
+  const [editSchedule, setEditSchedule] = useState<VanSchedule | null>(null);
+  const [inventorySchedule, setInventorySchedule] = useState<VanSchedule | null>(null);
   const [form, setForm] = useState({ routeId: "", vehicleId: "", driverId: "", departureTime: "07:00", returnTime: "", daysOfWeek: [1,2,3,4,5,6] });
 
   const { data: schedules = [], isLoading } = useQuery<VanSchedule[]>({
@@ -441,7 +569,7 @@ function SchedulesTab() {
     queryFn: () => vanFetch("/admin/vehicles"),
   });
 
-  const saveMut = useMutation({
+  const createMut = useMutation({
     mutationFn: () => vanFetch("/admin/schedules", {
       method: "POST",
       body: JSON.stringify({
@@ -453,6 +581,18 @@ function SchedulesTab() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const editMut = useMutation({
+    mutationFn: (id: string) => vanFetch(`/admin/schedules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        vehicleId: form.vehicleId || null, driverId: form.driverId || null,
+        departureTime: form.departureTime, returnTime: form.returnTime || null, daysOfWeek: form.daysOfWeek,
+      }),
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["van-admin-schedules"] }); setEditSchedule(null); toast({ title: "Schedule updated" }); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const deleteMut = useMutation({
     mutationFn: (id: string) => vanFetch(`/admin/schedules/${id}`, { method: "DELETE" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["van-admin-schedules"] }); toast({ title: "Schedule deactivated" }); },
@@ -460,11 +600,73 @@ function SchedulesTab() {
 
   const toggleDay = (d: number) => setForm(f => ({ ...f, daysOfWeek: f.daysOfWeek.includes(d) ? f.daysOfWeek.filter(x => x !== d) : [...f.daysOfWeek, d].sort() }));
 
+  function openNew() {
+    setForm({ routeId: "", vehicleId: "", driverId: "", departureTime: "07:00", returnTime: "", daysOfWeek: [1,2,3,4,5,6] });
+    setNewOpen(true);
+  }
+
+  function openEdit(s: VanSchedule) {
+    setEditSchedule(s);
+    setForm({
+      routeId: s.routeId,
+      vehicleId: s.vehicleId || "",
+      driverId: s.driverId || "",
+      departureTime: s.departureTime,
+      returnTime: s.returnTime || "",
+      daysOfWeek: Array.isArray(s.daysOfWeek) ? (s.daysOfWeek as number[]) : [1,2,3,4,5,6],
+    });
+  }
+
+  const ScheduleFormBody = () => (
+    <div className="space-y-3">
+      {!editSchedule && (
+        <Select value={form.routeId} onValueChange={v => setForm(f => ({ ...f, routeId: v }))}>
+          <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
+          <SelectContent>{routes.filter(r => r.isActive).map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+        </Select>
+      )}
+      {editSchedule && (
+        <div className="bg-indigo-50 rounded-lg px-3 py-2 text-sm font-medium text-indigo-700 border border-indigo-200">
+          Route: {editSchedule.routeName || editSchedule.routeId}
+        </div>
+      )}
+      <Select value={form.vehicleId || "__none__"} onValueChange={v => setForm(f => ({ ...f, vehicleId: v === "__none__" ? "" : v }))}>
+        <SelectTrigger><SelectValue placeholder="Select vehicle (optional)" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">No vehicle</SelectItem>
+          {vehicles.filter(v => v.isActive).map(v => <SelectItem key={v.id} value={v.id}>{v.plateNumber} – {v.model}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Input placeholder="Driver user ID (optional)" value={form.driverId} onChange={e => setForm(f => ({ ...f, driverId: e.target.value }))} />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Departure time</label>
+          <Input type="time" value={form.departureTime} onChange={e => setForm(f => ({ ...f, departureTime: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Return time (optional)</label>
+          <Input type="time" value={form.returnTime} onChange={e => setForm(f => ({ ...f, returnTime: e.target.value }))} />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground mb-2 block">Days of operation</label>
+        <div className="flex gap-1 flex-wrap">
+          {[1,2,3,4,5,6,7].map(d => (
+            <button key={d} type="button"
+              className={`px-2.5 py-1 rounded text-xs font-bold border transition-colors ${form.daysOfWeek.includes(d) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-600 border-gray-300"}`}
+              onClick={() => toggleDay(d)}>{DAY_LABELS[d]}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-muted-foreground">{schedules.length} schedule{schedules.length !== 1 ? "s" : ""}</span>
-        <Button size="sm" onClick={() => setNewOpen(true)}><Plus className="w-4 h-4 mr-1" />New Schedule</Button>
+        <Button size="sm" onClick={openNew}><Plus className="w-4 h-4 mr-1" />New Schedule</Button>
       </div>
       {isLoading ? <div className="text-center py-8 text-muted-foreground">Loading…</div> : (
         <Table>
@@ -485,7 +687,7 @@ function SchedulesTab() {
             {schedules.map(s => (
               <TableRow key={s.id}>
                 <TableCell className="font-medium text-sm">{s.routeName || s.routeId}</TableCell>
-                <TableCell><span className="font-mono">{s.departureTime}</span></TableCell>
+                <TableCell><span className="font-mono font-semibold text-indigo-700">{s.departureTime}</span></TableCell>
                 <TableCell><span className="font-mono text-muted-foreground">{s.returnTime || "—"}</span></TableCell>
                 <TableCell>
                   <div className="flex gap-0.5 flex-wrap">
@@ -494,14 +696,22 @@ function SchedulesTab() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm">{s.vehiclePlate || "—"}</TableCell>
-                <TableCell className="text-sm">{s.driverName || "—"}</TableCell>
+                <TableCell className="text-sm">{s.vehiclePlate || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
+                <TableCell className="text-sm">{s.driverName || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
                 <TableCell>
                   {s.vanCode ? <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded">{s.vanCode}</span> : "—"}
                 </TableCell>
                 <TableCell><Badge variant={s.isActive ? "default" : "secondary"}>{s.isActive ? "Active" : "Inactive"}</Badge></TableCell>
-                <TableCell className="text-right">
-                  <Button size="icon" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => { if (confirm("Deactivate this schedule?")) deleteMut.mutate(s.id); }}><Trash2 className="w-4 h-4" /></Button>
+                <TableCell className="text-right space-x-1">
+                  <Button size="icon" variant="ghost" title="View seat inventory" onClick={() => setInventorySchedule(s)}>
+                    <Users className="w-4 h-4 text-indigo-500" />
+                  </Button>
+                  <Button size="icon" variant="ghost" title="Edit schedule" onClick={() => openEdit(s)}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="text-red-500 hover:text-red-700" title="Deactivate" onClick={() => { if (confirm("Deactivate this schedule?")) deleteMut.mutate(s.id); }}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -509,52 +719,40 @@ function SchedulesTab() {
         </Table>
       )}
 
+      {/* New Schedule Dialog */}
       <Dialog open={newOpen} onOpenChange={setNewOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>New Schedule</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Select value={form.routeId} onValueChange={v => setForm(f => ({ ...f, routeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
-              <SelectContent>{routes.filter(r => r.isActive).map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={form.vehicleId} onValueChange={v => setForm(f => ({ ...f, vehicleId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select vehicle (optional)" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">No vehicle</SelectItem>
-                {vehicles.filter(v => v.isActive).map(v => <SelectItem key={v.id} value={v.id}>{v.plateNumber} – {v.model}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input placeholder="Driver user ID (optional)" value={form.driverId} onChange={e => setForm(f => ({ ...f, driverId: e.target.value }))} />
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Departure time</label>
-                <Input type="time" value={form.departureTime} onChange={e => setForm(f => ({ ...f, departureTime: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Return time (optional)</label>
-                <Input type="time" value={form.returnTime} onChange={e => setForm(f => ({ ...f, returnTime: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-2 block">Days of operation</label>
-              <div className="flex gap-1 flex-wrap">
-                {[1,2,3,4,5,6,7].map(d => (
-                  <button key={d} type="button"
-                    className={`px-2.5 py-1 rounded text-xs font-bold border transition-colors ${form.daysOfWeek.includes(d) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-600 border-gray-300"}`}
-                    onClick={() => toggleDay(d)}>{DAY_LABELS[d]}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          <ScheduleFormBody />
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveMut.mutate()} disabled={!form.routeId || saveMut.isPending}>
-              {saveMut.isPending ? "Saving…" : "Create Schedule"}
+            <Button onClick={() => createMut.mutate()} disabled={!form.routeId || createMut.isPending}>
+              {createMut.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving…</> : "Create Schedule"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Schedule Dialog */}
+      {editSchedule && (
+        <Dialog open onOpenChange={() => setEditSchedule(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>Edit Schedule</DialogTitle></DialogHeader>
+            <ScheduleFormBody />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditSchedule(null)}>Cancel</Button>
+              <Button onClick={() => editMut.mutate(editSchedule.id)} disabled={editMut.isPending}>
+                {editMut.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving…</> : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Seat Inventory Modal */}
+      {inventorySchedule && (
+        <SeatInventoryModal schedule={inventorySchedule} onClose={() => setInventorySchedule(null)} />
+      )}
     </div>
   );
 }
