@@ -194,132 +194,178 @@ function normalizeVehicleTypeSync(raw: string | null | undefined, serviceKeys: S
   return v;
 }
 
-async function broadcastRide(rideId: string) {
-  try {
-    const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-    if (!ride || ride.riderId) return;
-    if (!["searching", "bargaining"].includes(ride.status)) return;
+async function broadcastRideAttempt(rideId: string) {
+  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
+  if (!ride || ride.riderId) return;
+  if (!["searching", "bargaining"].includes(ride.status)) return;
 
-    const s = await getPlatformSettings();
-    const radiusKm = parseFloat(s["dispatch_min_radius_km"] ?? "5");
-    const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
+  const s = await getPlatformSettings();
+  const radiusKm = parseFloat(s["dispatch_min_radius_km"] ?? "5");
+  const avgSpeed = parseFloat(s["dispatch_avg_speed_kmh"] ?? "25");
 
-    const pickupLat = parseFloat(ride.pickupLat ?? "");
-    const pickupLng = parseFloat(ride.pickupLng ?? "");
-    if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) {
-      logger.error(`[broadcast] Ride ${rideId} has invalid coordinates — skipping dispatch`);
-      return;
+  const pickupLat = parseFloat(ride.pickupLat ?? "");
+  const pickupLng = parseFloat(ride.pickupLng ?? "");
+  if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) {
+    logger.error({ rideId, pickupLat: ride.pickupLat, pickupLng: ride.pickupLng }, "[broadcast] Ride has invalid coordinates — skipping dispatch");
+    return;
+  }
+
+  const onlineRiders = await db.select({
+    userId: liveLocationsTable.userId,
+    latitude: liveLocationsTable.latitude,
+    longitude: liveLocationsTable.longitude,
+    isActive: usersTable.isActive,
+    isBanned: usersTable.isBanned,
+    isRestricted: usersTable.isRestricted,
+    vehicleType: riderProfilesTable.vehicleType,
+  }).from(liveLocationsTable)
+    .innerJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
+    .leftJoin(riderProfilesTable, eq(liveLocationsTable.userId, riderProfilesTable.userId))
+    .where(and(
+      eq(liveLocationsTable.role, "rider"),
+      gte(liveLocationsTable.updatedAt, new Date(Date.now() - 5 * 60 * 1000)),
+      eq(usersTable.isActive, true),
+      eq(usersTable.isBanned, false),
+      eq(usersTable.isRestricted, false),
+    ));
+
+  const [alreadyNotified, busyRiders] = await Promise.all([
+    db.select({ riderId: rideNotifiedRidersTable.riderId })
+      .from(rideNotifiedRidersTable)
+      .where(eq(rideNotifiedRidersTable.rideId, rideId)),
+    db.select({ riderId: ridesTable.riderId })
+      .from(ridesTable)
+      .where(sql`${ridesTable.riderId} IS NOT NULL AND ${ridesTable.status} IN ('accepted', 'arrived', 'in_transit')`),
+  ]);
+  const alreadySet = new Set(alreadyNotified.map(r => r.riderId));
+  const busySet = new Set(busyRiders.map(r => r.riderId));
+
+  let notifiedCount = 0;
+  const failedSocketRiderIds: string[] = [];
+  const failedPushRiderIds: { userId: string; fareStr: string }[] = [];
+  const serviceKeys = await getServiceKeys();
+  const rideVt = ride.type ? normalizeVehicleTypeSync(ride.type, serviceKeys) : null;
+  const rideSummary = `${ride.pickupAddress} → ${ride.dropAddress}`;
+
+  for (const r of onlineRiders) {
+    if (alreadySet.has(r.userId)) continue;
+    if (busySet.has(r.userId)) continue;
+    if (rideVt) {
+      const riderVt = normalizeVehicleTypeSync(r.vehicleType, serviceKeys);
+      if (!riderVt || riderVt !== rideVt) continue;
     }
+    const rLat = parseFloat(String(r.latitude));
+    const rLng = parseFloat(String(r.longitude));
+    if (!Number.isFinite(rLat) || !Number.isFinite(rLng)) continue;
+    const dist = calcDistance(pickupLat, pickupLng, rLat, rLng);
+    if (dist > radiusKm) continue;
 
-    const onlineRiders = await db.select({
-      userId: liveLocationsTable.userId,
-      latitude: liveLocationsTable.latitude,
-      longitude: liveLocationsTable.longitude,
-      isActive: usersTable.isActive,
-      isBanned: usersTable.isBanned,
-      isRestricted: usersTable.isRestricted,
-      vehicleType: riderProfilesTable.vehicleType,
-    }).from(liveLocationsTable)
-      .innerJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
-      .leftJoin(riderProfilesTable, eq(liveLocationsTable.userId, riderProfilesTable.userId))
-      .where(and(
-        eq(liveLocationsTable.role, "rider"),
-        gte(liveLocationsTable.updatedAt, new Date(Date.now() - 5 * 60 * 1000)),
-        eq(usersTable.isActive, true),
-        eq(usersTable.isBanned, false),
-        eq(usersTable.isRestricted, false),
-      ));
+    const etaMin = Math.max(1, Math.round((dist / avgSpeed) * 60));
+    const fareStr = parseFloat(ride.fare ?? "0").toFixed(0);
+    const riderLang = await getUserLanguage(r.userId);
+    const titleKey = ride.status === "bargaining" ? "notifRideBargaining" : "notifRideRequest";
+    const bodyStr = t("notifRideRequestBody", riderLang)
+      .replace("{from}", ride.pickupAddress)
+      .replace("{to}", ride.dropAddress)
+      .replace("{fare}", fareStr)
+      .replace("{dist}", dist.toFixed(1))
+      .replace("{eta}", String(etaMin));
 
-    const [alreadyNotified, busyRiders] = await Promise.all([
-      db.select({ riderId: rideNotifiedRidersTable.riderId })
-        .from(rideNotifiedRidersTable)
-        .where(eq(rideNotifiedRidersTable.rideId, rideId)),
-      db.select({ riderId: ridesTable.riderId })
-        .from(ridesTable)
-        .where(sql`${ridesTable.riderId} IS NOT NULL AND ${ridesTable.status} IN ('accepted', 'arrived', 'in_transit')`),
-    ]);
-    const alreadySet = new Set(alreadyNotified.map(r => r.riderId));
-    const busySet = new Set(busyRiders.map(r => r.riderId));
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: r.userId,
+      title: `${t(titleKey, riderLang)} 🚗`,
+      body: bodyStr,
+      type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
+    }).catch((e: Error) => logger.warn({ rideId, riderId: r.userId, err: e.message }, "[broadcast] notification insert failed"));
 
-    let notifiedCount = 0;
-    const serviceKeys = await getServiceKeys();
-    const rideVt = ride.type ? normalizeVehicleTypeSync(ride.type, serviceKeys) : null;
+    await db.insert(rideNotifiedRidersTable).values({
+      id: generateId(),
+      rideId,
+      riderId: r.userId,
+    }).catch((e: Error) => logger.warn({ rideId, riderId: r.userId, err: e.message }, "[broadcast] rideNotifiedRiders insert failed"));
 
-    for (const r of onlineRiders) {
-      if (alreadySet.has(r.userId)) continue;
-      if (busySet.has(r.userId)) continue;
-      if (rideVt) {
-        const riderVt = normalizeVehicleTypeSync(r.vehicleType, serviceKeys);
-        if (!riderVt || riderVt !== rideVt) continue;
-      }
-      const rLat = parseFloat(String(r.latitude));
-      const rLng = parseFloat(String(r.longitude));
-      if (!Number.isFinite(rLat) || !Number.isFinite(rLng)) continue;
-      const dist = calcDistance(pickupLat, pickupLng, rLat, rLng);
-      if (dist > radiusKm) continue;
-
-      const etaMin = Math.max(1, Math.round((dist / avgSpeed) * 60));
-      const fareStr = parseFloat(ride.fare ?? "0").toFixed(0);
-      const riderLang = await getUserLanguage(r.userId);
-      const titleKey = ride.status === "bargaining" ? "notifRideBargaining" : "notifRideRequest";
-      const bodyStr = t("notifRideRequestBody", riderLang)
-        .replace("{from}", ride.pickupAddress)
-        .replace("{to}", ride.dropAddress)
-        .replace("{fare}", fareStr)
-        .replace("{dist}", dist.toFixed(1))
-        .replace("{eta}", String(etaMin));
-
-      await db.insert(notificationsTable).values({
-        id: generateId(), userId: r.userId,
-        title: `${t(titleKey, riderLang)} 🚗`,
-        body: bodyStr,
-        type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
-      }).catch((e: Error) => logger.warn({ rideId, riderId: r.userId, err: e.message }, "[broadcast] notification insert failed"));
-
-      await db.insert(rideNotifiedRidersTable).values({
-        id: generateId(),
-        rideId,
-        riderId: r.userId,
-      }).catch((e: Error) => logger.warn({ rideId, riderId: r.userId, err: e.message }, "[broadcast] rideNotifiedRiders insert failed"));
-
+    try {
       emitRiderNewRequest(r.userId, {
         type: "ride",
         requestId: rideId,
-        summary: `${ride.pickupAddress} → ${ride.dropAddress}`,
+        summary: rideSummary,
       });
+    } catch (emitErr) {
+      failedSocketRiderIds.push(r.userId);
+      logger.warn({ rideId, riderId: r.userId, err: (emitErr as Error).message }, "[broadcast] socket emit to rider failed on first attempt");
+    }
 
-      sendPushToUser(r.userId, {
+    try {
+      await sendPushToUser(r.userId, {
         title: "🚗 New Ride Request",
-        body: `${ride.pickupAddress} → ${ride.dropAddress} · Rs. ${fareStr}`,
+        body: `${rideSummary} · Rs. ${fareStr}`,
         tag: `ride-request-${rideId}`,
         data: { rideId },
-      }).catch((e: Error) => logger.warn({ rideId, riderId: r.userId, err: e.message }, "[broadcast] push notification failed"));
-
-      notifiedCount++;
-    }
-
-    if (notifiedCount === 0 && alreadySet.size === 0) {
-      logger.warn(`[broadcast] NO_RIDERS_AVAILABLE for ride ${rideId} — no eligible riders within ${radiusKm}km`);
-      await db.insert(notificationsTable).values({
-        id: generateId(), userId: ride.userId,
-        title: "No riders available",
-        body: "No riders are currently available in your area. We'll keep searching — you'll be notified as soon as a rider accepts.",
-        type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
-      }).catch((e: Error) => logger.warn({ rideId, userId: ride.userId, err: e.message }, "[broadcast] no-riders notification insert failed"));
-      emitRideDispatchUpdate({
-        rideId,
-        action: "NO_RIDERS_AVAILABLE",
-        status: "searching",
       });
+    } catch (pushErr) {
+      failedPushRiderIds.push({ userId: r.userId, fareStr });
+      logger.warn({ rideId, riderId: r.userId, err: (pushErr as Error).message }, "[broadcast] push notification failed on first attempt");
     }
 
-    await db.update(ridesTable).set({
-      dispatchedAt: ride.dispatchedAt ?? new Date(),
-      updatedAt: new Date(),
-    }).where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)));
+    notifiedCount++;
+  }
 
+  if (failedSocketRiderIds.length > 0) {
+    logger.warn({ rideId, notifiedCount, socketFailures: failedSocketRiderIds.length }, "[broadcast] retrying failed socket emissions");
+    await new Promise((r) => setTimeout(r, 500));
+    for (const riderId of failedSocketRiderIds) {
+      try {
+        emitRiderNewRequest(riderId, { type: "ride", requestId: rideId, summary: rideSummary });
+      } catch (retryErr) {
+        logger.error({ rideId, riderId, err: (retryErr as Error).message }, "[broadcast] socket retry also failed — giving up for rider");
+      }
+    }
+  }
+
+  if (failedPushRiderIds.length > 0) {
+    logger.warn({ rideId, pushFailures: failedPushRiderIds.length }, "[broadcast] retrying failed push notifications");
+    for (const { userId: rid, fareStr } of failedPushRiderIds) {
+      sendPushToUser(rid, {
+        title: "🚗 New Ride Request",
+        body: `${rideSummary} · Rs. ${fareStr}`,
+        tag: `ride-request-${rideId}`,
+        data: { rideId },
+      }).catch((e: Error) => logger.error({ rideId, riderId: rid, err: e.message }, "[broadcast] push retry also failed — giving up for rider"));
+    }
+  }
+
+  if (notifiedCount === 0 && alreadySet.size === 0) {
+    logger.warn({ rideId, radiusKm, onlineRiderCount: onlineRiders.length }, "[broadcast] NO_RIDERS_AVAILABLE — no eligible riders within radius");
+    await db.insert(notificationsTable).values({
+      id: generateId(), userId: ride.userId,
+      title: "No riders available",
+      body: "No riders are currently available in your area. We'll keep searching — you'll be notified as soon as a rider accepts.",
+      type: "ride", icon: "car-outline", link: `/ride/${rideId}`,
+    }).catch((e: Error) => logger.warn({ rideId, userId: ride.userId, err: e.message }, "[broadcast] no-riders notification insert failed"));
+    emitRideDispatchUpdate({
+      rideId,
+      action: "NO_RIDERS_AVAILABLE",
+      status: "searching",
+    });
+  }
+
+  await db.update(ridesTable).set({
+    dispatchedAt: ride.dispatchedAt ?? new Date(),
+    updatedAt: new Date(),
+  }).where(and(eq(ridesTable.id, rideId), isNull(ridesTable.riderId)));
+}
+
+async function broadcastRide(rideId: string) {
+  try {
+    await broadcastRideAttempt(rideId);
   } catch (err) {
-    logger.error(`[broadcast] Error for ride ${rideId}:`, err);
+    logger.error({ rideId, err: (err as Error).message, stack: (err as Error).stack }, "[broadcast] first attempt failed for ride, retrying");
+    try {
+      await new Promise((r) => setTimeout(r, 1500));
+      await broadcastRideAttempt(rideId);
+    } catch (retryErr) {
+      logger.error({ rideId, err: (retryErr as Error).message, stack: (retryErr as Error).stack }, "[broadcast] retry also failed for ride — giving up");
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
-import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable } from "@workspace/db/schema";
+import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable, idempotencyKeysTable } from "@workspace/db/schema";
 import { eq, and, gte, count, sum, desc, SQL, sql, inArray, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -16,15 +16,19 @@ const router: IRouter = Router();
 
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
-const idempotencyCache = new Map<string, any>();
 const IDEMPOTENCY_TTL_MS = 30 * 60_000;
 const MAX_ITEM_QUANTITY = 99;
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of idempotencyCache) {
-    if (now - val._ts > IDEMPOTENCY_TTL_MS) idempotencyCache.delete(key);
+
+setInterval(async () => {
+  try {
+    const cutoff = new Date(Date.now() - IDEMPOTENCY_TTL_MS);
+    await db.delete(idempotencyKeysTable).where(
+      sql`${idempotencyKeysTable.createdAt} < ${cutoff}`,
+    );
+  } catch (e) {
+    logger.warn({ err: (e as Error).message }, "[idempotency] cleanup of expired keys failed");
   }
-}, 60_000);
+}, 5 * 60_000);
 
 function broadcastNewOrder(order: ReturnType<typeof mapOrder>, vendorId?: string | null) {
   const io = getIO();
@@ -69,9 +73,6 @@ function broadcastWalletUpdate(userId: string, newBalance: number) {
 async function notifyOnlineRidersOfOrder(orderId: string, orderType: string): Promise<void> {
   try {
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
-    /* Filter strictly to riders (role='rider') who are marked online — prevents
-       non-rider accounts (customers, vendors, service providers) from receiving
-       rider:new-request events, avoiding cross-role metadata leakage. */
     const onlineRiders = await db
       .select({ userId: liveLocationsTable.userId })
       .from(liveLocationsTable)
@@ -82,11 +83,56 @@ async function notifyOnlineRidersOfOrder(orderId: string, orderType: string): Pr
         eq(usersTable.isOnline, true),
         gte(liveLocationsTable.updatedAt, tenMinAgo),
       ));
+    const failedRiderIds: string[] = [];
     for (const { userId } of onlineRiders) {
-      emitRiderNewRequest(userId, { type: "order", requestId: orderId, summary: orderType });
+      try {
+        emitRiderNewRequest(userId, { type: "order", requestId: orderId, summary: orderType });
+      } catch (emitErr) {
+        failedRiderIds.push(userId);
+        logger.warn({ orderId, riderId: userId, err: (emitErr as Error).message }, "[notifyRiders] emit failed for rider on first attempt");
+      }
     }
-  } catch {
-    /* intentionally ignored — socket push is best-effort */
+    if (failedRiderIds.length > 0) {
+      logger.warn({ orderId, orderType, totalRiders: onlineRiders.length, failures: failedRiderIds.length }, "[notifyRiders] retrying failed rider notifications");
+      await new Promise((r) => setTimeout(r, 500));
+      let retryFailures = 0;
+      for (const riderId of failedRiderIds) {
+        try {
+          emitRiderNewRequest(riderId, { type: "order", requestId: orderId, summary: orderType });
+        } catch (retryErr) {
+          retryFailures++;
+          logger.error({ orderId, riderId, err: (retryErr as Error).message }, "[notifyRiders] retry also failed for rider — giving up");
+        }
+      }
+      if (retryFailures > 0) {
+        logger.error({ orderId, orderType, failedRiders: retryFailures, totalAttempted: failedRiderIds.length }, "[notifyRiders] some rider notifications failed after retry");
+      }
+    }
+  } catch (err) {
+    logger.error({ orderId, orderType, err: (err as Error).message, stack: (err as Error).stack }, "[notifyRiders] query-level failure, retrying entire broadcast");
+    try {
+      await new Promise((r) => setTimeout(r, 1000));
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const onlineRiders = await db
+        .select({ userId: liveLocationsTable.userId })
+        .from(liveLocationsTable)
+        .innerJoin(usersTable, eq(liveLocationsTable.userId, usersTable.id))
+        .where(and(
+          eq(liveLocationsTable.role, "rider"),
+          ilike(usersTable.roles, "%rider%"),
+          eq(usersTable.isOnline, true),
+          gte(liveLocationsTable.updatedAt, tenMinAgo),
+        ));
+      for (const { userId } of onlineRiders) {
+        try {
+          emitRiderNewRequest(userId, { type: "order", requestId: orderId, summary: orderType });
+        } catch (emitErr) {
+          logger.error({ orderId, riderId: userId, err: (emitErr as Error).message }, "[notifyRiders] emit failed on full retry — giving up for rider");
+        }
+      }
+    } catch (retryErr) {
+      logger.error({ orderId, orderType, err: (retryErr as Error).message, stack: (retryErr as Error).stack }, "[notifyRiders] full retry also failed — giving up");
+    }
   }
 }
 
@@ -478,10 +524,26 @@ router.post("/", customerAuth, async (req, res) => {
     : typeof req.body?.idempotencyKey === "string"
     ? req.body.idempotencyKey.trim() : null;
   if (idempotencyKey) {
-    const cached = idempotencyCache.get(`${userId}:${idempotencyKey}`);
-    if (cached) {
-      sendSuccess(res, cached);
-      return;
+    const ttlCutoff = new Date(Date.now() - IDEMPOTENCY_TTL_MS);
+    const [existing] = await db.select()
+      .from(idempotencyKeysTable)
+      .where(and(
+        eq(idempotencyKeysTable.userId, userId),
+        eq(idempotencyKeysTable.idempotencyKey, idempotencyKey),
+        gte(idempotencyKeysTable.createdAt, ttlCutoff),
+      ))
+      .limit(1);
+    if (existing) {
+      const parsed = (() => { try { return JSON.parse(existing.responseData); } catch { return null; } })();
+      if (parsed && parsed.id) {
+        sendSuccess(res, parsed);
+        return;
+      }
+      if (existing.responseData === "{}") {
+        sendError(res, "Your previous order request is still being processed. Please wait a moment and try again.", 409);
+        return;
+      }
+      logger.warn({ userId, idempotencyKey }, "[orders/create] corrupt idempotency record — proceeding with new order");
     }
   }
 
@@ -751,6 +813,28 @@ router.post("/", customerAuth, async (req, res) => {
 
   const total = Math.max(0, itemsTotal + effectiveDeliveryFee + gstAmount + codFee - promoDiscount);
 
+  const rawClientTotal = req.body.total;
+  const clientTotal = (typeof rawClientTotal === "number" || typeof rawClientTotal === "string")
+    ? parseFloat(String(rawClientTotal)) : NaN;
+  if (!Number.isFinite(clientTotal)) {
+    sendValidationError(res, "A valid order total is required. Please update your app and try again.");
+    return;
+  }
+  const totalDiff = Math.abs(clientTotal - total);
+  if (totalDiff > 0.01) {
+    logger.warn({
+      userId, clientTotal, serverTotal: total,
+      deliveryFee: effectiveDeliveryFee, gstAmount, codFee, promoDiscount, itemsTotal,
+    }, "[orders/create] client total mismatch — rejecting");
+    sendErrorWithData(
+      res,
+      `Order total mismatch: you submitted Rs. ${clientTotal.toFixed(2)} but the server calculated Rs. ${total.toFixed(2)}. Please refresh your cart and try again.`,
+      { clientTotal, serverTotal: total, deliveryFee: effectiveDeliveryFee, gstAmount, codFee, promoDiscount },
+      400,
+    );
+    return;
+  }
+
   /* ── Prep time from admin Order settings ── */
   const preptimeMin = parseInt(s["order_preptime_min"] ?? "15", 10);
   const estimatedTime = `${preptimeMin}–${preptimeMin + 20} min`;
@@ -932,6 +1016,15 @@ router.post("/", customerAuth, async (req, res) => {
            SELECT ... FOR UPDATE acquires a row-level lock so that only one
            transaction at a time can read-then-deduct this user's balance.
            All other concurrent requests queue behind this lock. */
+        if (idempotencyKey) {
+          await tx.insert(idempotencyKeysTable).values({
+            id: generateId(),
+            userId,
+            idempotencyKey,
+            responseData: "{}",
+          });
+        }
+
         await tx.execute(sql`SELECT id FROM users WHERE id = ${userId} LIMIT 1 FOR UPDATE`);
 
         const [freshUser] = await tx.select({ walletBalance: usersTable.walletBalance }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -940,8 +1033,6 @@ router.post("/", customerAuth, async (req, res) => {
         const balance = parseFloat(freshUser.walletBalance ?? "0");
         if (balance < total) throw new Error(`Insufficient wallet balance. Balance: Rs. ${balance.toFixed(0)}, Required: Rs. ${total.toFixed(0)}`);
 
-        /* DB floor guard — deducts only if balance ≥ amount at UPDATE time,
-           eliminating negative-balance race even when pre-flight checks pass concurrently */
         const [deducted] = await tx.update(usersTable)
           .set({ walletBalance: sql`wallet_balance - ${total.toFixed(2)}` })
           .where(and(eq(usersTable.id, userId), gte(usersTable.walletBalance, total.toFixed(2))))
@@ -998,10 +1089,21 @@ router.post("/", customerAuth, async (req, res) => {
         if (io) io.to(`user:${userId}`).emit("wallet:balance", { balance: newBalance });
       }
 
+      if (idempotencyKey) {
+        await db.update(idempotencyKeysTable)
+          .set({ responseData: JSON.stringify(mapped) })
+          .where(and(eq(idempotencyKeysTable.userId, userId), eq(idempotencyKeysTable.idempotencyKey, idempotencyKey)))
+          .catch((e: Error) => logger.warn({ userId, idempotencyKey, err: e.message }, "[orders/create] wallet idempotency response update failed"));
+      }
       sendCreated(res, mapped);
       notifyOnlineRidersOfOrder(order.id, type || "mart").catch((e: Error) => logger.warn({ orderId: order.id, err: e.message }, "[orders/create] wallet notifyOnlineRiders failed"));
     } catch (e: unknown) {
-      sendValidationError(res, (e as Error).message);
+      const errMsg = (e as Error).message ?? "";
+      if (idempotencyKey && (errMsg.includes("idempotency_keys_user_key_uniq") || errMsg.includes("duplicate key"))) {
+        sendError(res, "Duplicate order request detected. Please wait a moment and try again.", 409);
+        return;
+      }
+      sendValidationError(res, errMsg);
     }
     return;
   }
@@ -1009,6 +1111,14 @@ router.post("/", customerAuth, async (req, res) => {
   /* ── Cash / JazzCash / EasyPaisa / Bank — wrapped in try/catch to prevent unhandled rejections ── */
   try {
     const [order] = await db.transaction(async (tx) => {
+      if (idempotencyKey) {
+        await tx.insert(idempotencyKeysTable).values({
+          id: generateId(),
+          userId,
+          idempotencyKey,
+          responseData: "{}",
+        });
+      }
       const [newOrder] = await tx.insert(ordersTable).values({
         id: generateId(), userId, type, items,
         status: "pending", total: total.toFixed(2),
@@ -1039,6 +1149,13 @@ router.post("/", customerAuth, async (req, res) => {
     });
     const mapped = { ...mapOrder(order!, effectiveDeliveryFee, gstAmount, codFee), promoDiscount };
 
+    if (idempotencyKey) {
+      await db.update(idempotencyKeysTable)
+        .set({ responseData: JSON.stringify(mapped) })
+        .where(and(eq(idempotencyKeysTable.userId, userId), eq(idempotencyKeysTable.idempotencyKey, idempotencyKey)))
+        .catch((e: Error) => logger.warn({ userId, idempotencyKey, err: e.message }, "[orders/create] idempotency response update failed"));
+    }
+
     /* ── Emit to admin IMMEDIATELY after DB commit (Task 7: <500ms latency) ── */
     broadcastNewOrder(mapped, (order as any)?.vendorId);
 
@@ -1046,12 +1163,14 @@ router.post("/", customerAuth, async (req, res) => {
     const io = getIO();
     if (io) io.to(`user:${userId}`).emit("order:ack", { orderId: order!.id, status: "pending", createdAt: order!.createdAt.toISOString() });
 
-    if (idempotencyKey) {
-      idempotencyCache.set(`${userId}:${idempotencyKey}`, { ...mapped, _ts: Date.now() });
-    }
     sendCreated(res, mapped);
     notifyOnlineRidersOfOrder(order!.id, type || "mart").catch((e: Error) => logger.warn({ orderId: order!.id, err: e.message }, "[orders/create] cash notifyOnlineRiders failed"));
   } catch (e: unknown) {
+    const errMsg = (e as Error).message ?? "";
+    if (idempotencyKey && (errMsg.includes("idempotency_keys_user_key_uniq") || errMsg.includes("duplicate key"))) {
+      sendError(res, "Duplicate order request detected. Please wait a moment and try again.", 409);
+      return;
+    }
     sendError(res, "Order could not be created. Please try again.", 500);
   }
 });
