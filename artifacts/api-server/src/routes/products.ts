@@ -36,7 +36,10 @@ function mapSlimProduct(p: typeof productsTable.$inferSelect) {
 
 /* ── GET /products/flash-deals ──────────────────────────────────────────── */
 router.get("/flash-deals", async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+  const s = await getPlatformSettings();
+  const flashDefault = parseInt(s["pagination_flash_deals"] ?? "20") || 20;
+  const flashMax = Math.max(flashDefault, parseInt(s["pagination_products_max"] ?? "50") || 50);
+  const limit = Math.min(parseInt(req.query.limit as string) || flashDefault, flashMax);
   const now = new Date();
 
   try {
@@ -97,7 +100,10 @@ router.get("/flash-deals", async (req, res) => {
 
 /* ── GET /products/trending-searches — top search terms (MVP: top product names) ── */
 router.get("/trending-searches", async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit as string) || 12, 30);
+  const s2 = await getPlatformSettings();
+  const trendingDefault = parseInt(s2["pagination_trending_limit"] ?? "12") || 12;
+  const trendingMax = parseInt(s2["pagination_products_max"] ?? "50") || 50;
+  const limit = Math.min(parseInt(req.query.limit as string) || trendingDefault, trendingMax);
 
   const topProducts = await db
     .select({ name: productsTable.name })
@@ -148,8 +154,11 @@ router.get("/trending-searches", async (req, res) => {
    ─────────────────────────────────────────────────────────────────────── */
 router.get("/search", async (req, res) => {
   const { q, type, sort, minPrice, maxPrice, minRating, category } = req.query;
+  const ps = await getPlatformSettings();
+  const defaultPP = parseInt(ps["pagination_products_default"] ?? "20") || 20;
+  const maxPP = parseInt(ps["pagination_products_max"] ?? "50") || 50;
   const page = Math.max(parseInt(req.query.page as string) || 1, 1);
-  const perPage = Math.min(Math.max(parseInt(req.query.perPage as string) || 20, 1), 50);
+  const perPage = Math.min(Math.max(parseInt(req.query.perPage as string) || defaultPP, 1), maxPP);
   const offset = (page - 1) * perPage;
 
   if (!q || typeof q !== "string" || !q.trim()) {
@@ -223,8 +232,11 @@ router.get("/search", async (req, res) => {
 /* ── GET /products — paginated list with filters ──────────────────────── */
 router.get("/", async (req, res) => {
   const { category, search, type, minPrice, maxPrice, minRating, sort, vendor } = req.query;
+  const ps2 = await getPlatformSettings();
+  const defaultPP2 = parseInt(ps2["pagination_products_default"] ?? "20") || 20;
+  const maxPP2 = parseInt(ps2["pagination_products_max"] ?? "50") || 50;
   const page = Math.max(parseInt(req.query.page as string) || 1, 1);
-  const perPage = Math.min(Math.max(parseInt(req.query.perPage as string) || 20, 1), 100);
+  const perPage = Math.min(Math.max(parseInt(req.query.perPage as string) || defaultPP2, 1), maxPP2);
   const offset = (page - 1) * perPage;
 
   if (type && typeof type === "string") {

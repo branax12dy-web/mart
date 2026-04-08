@@ -15,7 +15,8 @@ export type CatKey =
   "general" | "features" | "rides" | "orders" | "delivery" |
   "customer" | "rider" | "vendor" | "finance" | "payment" |
   "content" | "integrations" | "security" | "system" | "weather" |
-  "dispatch" | "branding" | "system_limits" | "regional";
+  "dispatch" | "branding" | "system_limits" | "regional" |
+  "notifications" | "uploads" | "pagination" | "van" | "onboarding" | "moderation";
 
 export const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
@@ -62,6 +63,9 @@ export const TOGGLE_KEYS = new Set([
   "ride_bargaining_enabled",
   "ride_payment_cash","ride_payment_wallet","ride_payment_jazzcash","ride_payment_easypaisa",
   "rider_ignore_restrict_enabled",
+  "vendor_auto_schedule_enabled",
+  "van_auto_notify_cancel","van_require_start_trip",
+  "comm_hide_phone","comm_hide_email","comm_hide_cnic","comm_hide_bank","comm_hide_address",
   /* email alert toggles */
   "email_alert_new_vendor","email_alert_high_value_order","email_alert_fraud",
   "email_alert_low_balance","email_alert_daily_summary","email_alert_weekly_report",
@@ -113,6 +117,22 @@ export const TEXT_KEYS = new Set([
   "brand_color_parcel","brand_color_van","brand_map_center_lat","brand_map_center_lng","brand_map_center_label",
   "system_log_retention_days","system_cache_ttl_sec","system_json_body_limit","system_upload_size_limit",
   "regional_phone_format","regional_phone_hint","regional_timezone","regional_currency_symbol","regional_country_code",
+  "upload_max_image_mb","upload_max_video_mb","upload_max_video_duration_sec",
+  "upload_allowed_image_formats","upload_allowed_video_formats",
+  "pagination_products_default","pagination_products_max","pagination_trending_limit","pagination_flash_deals",
+  "email_template_verify_html","email_template_reset_html","email_template_magic_html",
+  "notif_text_ride_request","notif_text_order_update",
+  "alert_high_value_threshold",
+  "fraud_same_address_limit","fraud_gps_mismatch_threshold_m","fraud_new_account_order_limit","fraud_daily_order_limit",
+  "vendor_auto_schedule_hours","onboarding_slides",
+  "moderation_custom_patterns","comm_flag_keywords",
+  "comm_mask_format_phone","comm_mask_format_email","comm_mask_format_cnic",
+  "van_min_advance_hours","van_max_seats_per_booking","van_cancellation_window_hours",
+  "van_refund_type","van_refund_partial_pct","van_seat_hold_minutes",
+  "van_min_passengers","van_min_check_hours_before",
+  "van_max_driver_trips_day","van_driver_rest_hours",
+  "van_peak_surcharge_pct","van_peak_hours","van_weekend_surcharge_pct",
+  "van_holiday_surcharge_pct","van_holiday_dates",
 ]);
 
 const FEATURE_ICONS: Record<string,string> = {
@@ -2025,6 +2045,332 @@ export function renderSection(
           </div>
         </div>
 
+      </div>
+    );
+  }
+
+  if (cat === "notifications") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+    const NField = ({ k, label, hint, rows }: { k: string; label: string; hint?: string; rows?: number }) => {
+      const isDirty = d(k);
+      return (
+        <div className={`rounded-xl border p-4 space-y-2 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-semibold text-foreground">{label}</label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+          </div>
+          {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+          {rows ? (
+            <textarea value={v(k)} onChange={e => handleChange(k, e.target.value)} rows={rows}
+              className={`w-full rounded-lg border text-sm p-2.5 font-mono ${isDirty ? "border-amber-300 bg-amber-50/50" : "border-gray-200"}`} />
+          ) : (
+            <Input value={v(k)} onChange={e => handleChange(k, e.target.value)}
+              className={`h-9 rounded-lg text-sm ${isDirty ? "border-amber-300 bg-amber-50/50" : ""}`} />
+          )}
+          <p className="text-[10px] text-muted-foreground/60 font-mono">{k}</p>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <SLabel icon={MessageSquare}>Email Templates</SLabel>
+          <p className="text-xs text-muted-foreground mb-3">HTML templates for transactional emails. Use {"{link}"}, {"{otp}"}, {"{userName}"}, {"{appName}"} as placeholders.</p>
+          <div className="space-y-4">
+            <NField k="email_template_verify_html" label="Verification Email HTML" hint="Sent when a user registers — include {link} placeholder" rows={5} />
+            <NField k="email_template_reset_html" label="Password Reset Email HTML" hint="Sent for password reset — include {otp} placeholder" rows={5} />
+            <NField k="email_template_magic_html" label="Magic Link Email HTML" hint="Passwordless login email — include {link} placeholder" rows={5} />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={MessageSquare}>Push Notification Text</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <NField k="notif_text_ride_request" label="Ride Request Notification" hint="Sent to rider when a new ride is available" />
+            <NField k="notif_text_order_update" label="Order Status Update" hint="Sent to customer when order status changes" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={AlertTriangle}>Fraud Alert Thresholds</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <NField k="alert_high_value_threshold" label="High Value Order Threshold (Rs.)" hint="Orders above this trigger admin alert" />
+            <NField k="fraud_same_address_limit" label="Same Address Limit" hint="Max orders from same address before flagging" />
+            <NField k="fraud_gps_mismatch_threshold_m" label="GPS Mismatch Threshold (m)" hint="Distance mismatch that triggers GPS fraud flag" />
+            <NField k="fraud_new_account_order_limit" label="New Account Order Limit" hint="Max orders for accounts under 24h old" />
+            <NField k="fraud_daily_order_limit" label="Daily Order Limit" hint="Max orders per user per day before review" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (cat === "uploads") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+    const UField = ({ k, label, suffix, hint }: { k: string; label: string; suffix?: string; hint?: string }) => {
+      const isDirty = d(k);
+      return (
+        <div className={`rounded-xl border p-4 space-y-2 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-semibold text-foreground">{label}</label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+          </div>
+          {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+          <div className="relative">
+            <Input value={v(k)} onChange={e => handleChange(k, e.target.value)}
+              className={`h-9 rounded-lg text-sm ${suffix ? "pr-14" : ""} ${isDirty ? "border-amber-300 bg-amber-50/50" : ""}`} />
+            {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">{suffix}</span>}
+          </div>
+          <p className="text-[10px] text-muted-foreground/60 font-mono">{k}</p>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <SLabel icon={Package}>File Size Limits</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <UField k="upload_max_image_mb" label="Max Image Size" suffix="MB" hint="Maximum file size for image uploads" />
+            <UField k="upload_max_video_mb" label="Max Video Size" suffix="MB" hint="Maximum file size for video uploads" />
+            <UField k="upload_max_video_duration_sec" label="Max Video Duration" suffix="sec" hint="Maximum video length in seconds" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={FileText}>Allowed Formats</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <UField k="upload_allowed_image_formats" label="Image Formats" hint="Comma-separated, e.g. jpg,png,webp" />
+            <UField k="upload_allowed_video_formats" label="Video Formats" hint="Comma-separated, e.g. mp4,mov" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (cat === "pagination") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+    const PField = ({ k, label, hint }: { k: string; label: string; hint?: string }) => {
+      const isDirty = d(k);
+      return (
+        <div className={`rounded-xl border p-4 space-y-2 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-semibold text-foreground">{label}</label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+          </div>
+          {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+          <Input type="number" min={1} value={v(k)} onChange={e => handleChange(k, e.target.value)}
+            className={`h-9 rounded-lg text-sm ${isDirty ? "border-amber-300 bg-amber-50/50" : ""}`} />
+          <p className="text-[10px] text-muted-foreground/60 font-mono">{k}</p>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <SLabel icon={BarChart3}>Product Listing Limits</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <PField k="pagination_products_default" label="Products Per Page (Default)" hint="Default page size for product listings" />
+            <PField k="pagination_products_max" label="Products Per Page (Max)" hint="Maximum page size a client can request" />
+            <PField k="pagination_trending_limit" label="Trending Searches Shown" hint="Number of trending search terms displayed" />
+            <PField k="pagination_flash_deals" label="Flash Deals Per Page" hint="Number of flash deal items shown per page" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (cat === "van") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+    const VField = ({ k, label, suffix, hint }: { k: string; label: string; suffix?: string; hint?: string }) => {
+      const isDirty = d(k);
+      return (
+        <div className={`rounded-xl border p-4 space-y-2 transition-all ${isDirty ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-semibold text-foreground">{label}</label>
+            {isDirty && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+          </div>
+          {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+          <div className="relative">
+            <Input value={v(k)} onChange={e => handleChange(k, e.target.value)}
+              className={`h-9 rounded-lg text-sm ${suffix ? "pr-14" : ""} ${isDirty ? "border-amber-300 bg-amber-50/50" : ""}`} />
+            {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">{suffix}</span>}
+          </div>
+          <p className="text-[10px] text-muted-foreground/60 font-mono">{k}</p>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <SLabel icon={Car}>Booking Rules</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <VField k="van_min_advance_hours" label="Min Advance Booking" suffix="hrs" hint="How many hours before departure a booking must be made" />
+            <VField k="van_max_seats_per_booking" label="Max Seats Per Booking" suffix="seats" hint="Maximum seats one customer can book at once" />
+            <VField k="van_cancellation_window_hours" label="Cancellation Window" suffix="hrs" hint="Hours before departure that free cancellation is allowed" />
+            <VField k="van_seat_hold_minutes" label="Seat Hold Duration" suffix="min" hint="Minutes a seat is held during unpaid checkout" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Shield}>Refund & Passenger Rules</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <VField k="van_refund_type" label="Refund Type" hint="full or partial — type of refund on cancellation" />
+            <VField k="van_refund_partial_pct" label="Partial Refund %" suffix="%" hint="Percentage refunded if refund type is partial" />
+            <VField k="van_min_passengers" label="Min Passengers to Depart" suffix="pax" hint="Minimum passengers required or trip may be cancelled" />
+            <VField k="van_min_check_hours_before" label="Min Passenger Check Before" suffix="hrs" hint="Hours before departure to check minimum passengers" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <Toggle checked={(localValues["van_auto_notify_cancel"] ?? "on") === "on"} isDirty={d("van_auto_notify_cancel")}
+              onChange={val => handleToggle("van_auto_notify_cancel", val)}
+              label="Auto-Notify on Cancel" sub="Notify passengers when trip is cancelled" />
+            <Toggle checked={(localValues["van_require_start_trip"] ?? "on") === "on"} isDirty={d("van_require_start_trip")}
+              onChange={val => handleToggle("van_require_start_trip", val)}
+              label="Require Start Trip" sub="Driver must tap Start before passengers can board" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Truck}>Driver Limits</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <VField k="van_max_driver_trips_day" label="Max Driver Trips/Day" suffix="trips" hint="Maximum trips a driver can make per day" />
+            <VField k="van_driver_rest_hours" label="Driver Rest Between Trips" suffix="hrs" hint="Mandatory rest period between trips" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Percent}>Pricing Surcharges</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <VField k="van_peak_surcharge_pct" label="Peak Hours Surcharge" suffix="%" hint="Extra charge during peak hours" />
+            <VField k="van_peak_hours" label="Peak Hours" hint="Comma-separated hours, e.g. 7,8,9,17,18" />
+            <VField k="van_weekend_surcharge_pct" label="Weekend Surcharge" suffix="%" hint="Extra charge on weekends" />
+            <VField k="van_holiday_surcharge_pct" label="Holiday Surcharge" suffix="%" hint="Extra charge on holidays" />
+            <VField k="van_holiday_dates" label="Holiday Dates" hint="Comma-separated YYYY-MM-DD dates" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (cat === "onboarding") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <SLabel icon={ToggleRight}>Vendor Auto-Schedule</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Toggle checked={(localValues["vendor_auto_schedule_enabled"] ?? "off") === "on"} isDirty={d("vendor_auto_schedule_enabled")}
+              onChange={val => handleToggle("vendor_auto_schedule_enabled", val)}
+              label="Enable Auto-Schedule" sub="Automatically open/close vendor stores on a weekly schedule" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Settings}>Schedule Hours</SLabel>
+          <p className="text-xs text-muted-foreground mb-2">JSON format: {`{"mon":"09:00-21:00","tue":"09:00-21:00",...}`}</p>
+          <div className={`rounded-xl border p-4 space-y-2 transition-all ${d("vendor_auto_schedule_hours") ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-semibold text-foreground">Weekly Schedule JSON</label>
+              {d("vendor_auto_schedule_hours") && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+            </div>
+            <textarea value={v("vendor_auto_schedule_hours")} onChange={e => handleChange("vendor_auto_schedule_hours", e.target.value)} rows={4}
+              className={`w-full rounded-lg border text-sm p-2.5 font-mono ${d("vendor_auto_schedule_hours") ? "border-amber-300 bg-amber-50/50" : "border-gray-200"}`} />
+            <p className="text-[10px] text-muted-foreground/60 font-mono">vendor_auto_schedule_hours</p>
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Star}>Onboarding Slides</SLabel>
+          <p className="text-xs text-muted-foreground mb-2">JSON array of slide objects: {`[{"title":"...","subtitle":"...","image":"..."}]`}</p>
+          <div className={`rounded-xl border p-4 space-y-2 transition-all ${d("onboarding_slides") ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-semibold text-foreground">Onboarding Slides JSON</label>
+              {d("onboarding_slides") && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+            </div>
+            <textarea value={v("onboarding_slides")} onChange={e => handleChange("onboarding_slides", e.target.value)} rows={6}
+              className={`w-full rounded-lg border text-sm p-2.5 font-mono ${d("onboarding_slides") ? "border-amber-300 bg-amber-50/50" : "border-gray-200"}`} />
+            <p className="text-[10px] text-muted-foreground/60 font-mono">onboarding_slides</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (cat === "moderation") {
+    const v = (k: string) => localValues[k] ?? catSettings.find(s => s.key === k)?.value ?? "";
+    const d = (k: string) => dirtyKeys.has(k);
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <SLabel icon={ShieldCheck}>Auto-Masking Rules</SLabel>
+          <p className="text-xs text-muted-foreground mb-3">Toggle which types of personal data are automatically masked in chat and reviews</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Toggle checked={(localValues["comm_hide_phone"] ?? "on") === "on"} isDirty={d("comm_hide_phone")}
+              onChange={val => handleToggle("comm_hide_phone", val)}
+              label="Mask Phone Numbers" sub="Replace phone numbers with asterisks" />
+            <Toggle checked={(localValues["comm_hide_email"] ?? "on") === "on"} isDirty={d("comm_hide_email")}
+              onChange={val => handleToggle("comm_hide_email", val)}
+              label="Mask Email Addresses" sub="Replace emails with masked format" />
+            <Toggle checked={(localValues["comm_hide_cnic"] ?? "on") === "on"} isDirty={d("comm_hide_cnic")}
+              onChange={val => handleToggle("comm_hide_cnic", val)}
+              label="Mask CNIC Numbers" sub="Replace national ID numbers" />
+            <Toggle checked={(localValues["comm_hide_bank"] ?? "on") === "on"} isDirty={d("comm_hide_bank")}
+              onChange={val => handleToggle("comm_hide_bank", val)}
+              label="Mask Bank Accounts" sub="Replace bank account/IBAN numbers" />
+            <Toggle checked={(localValues["comm_hide_address"] ?? "on") === "on"} isDirty={d("comm_hide_address")}
+              onChange={val => handleToggle("comm_hide_address", val)}
+              label="Mask Addresses" sub="Replace street addresses" />
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Settings}>Mask Formats</SLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[
+              { k: "comm_mask_format_phone", label: "Phone Mask Format", hint: "e.g. 03XX-XXXXXXX" },
+              { k: "comm_mask_format_email", label: "Email Mask Format", hint: "e.g. u***@***.com" },
+              { k: "comm_mask_format_cnic", label: "CNIC Mask Format", hint: "e.g. XXXXX-XXXXXXX-X" },
+            ].map(({ k, label, hint }) => (
+              <div key={k} className={`rounded-xl border p-4 space-y-2 transition-all ${d(k) ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-semibold text-foreground">{label}</label>
+                  {d(k) && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+                </div>
+                <p className="text-[11px] text-muted-foreground">{hint}</p>
+                <Input value={v(k)} onChange={e => handleChange(k, e.target.value)}
+                  className={`h-9 rounded-lg text-sm ${d(k) ? "border-amber-300 bg-amber-50/50" : ""}`} />
+                <p className="text-[10px] text-muted-foreground/60 font-mono">{k}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={AlertTriangle}>Flagged Keywords</SLabel>
+          <div className={`rounded-xl border p-4 space-y-2 transition-all ${d("comm_flag_keywords") ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-semibold text-foreground">Flag Keywords</label>
+              {d("comm_flag_keywords") && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+            </div>
+            <p className="text-[11px] text-muted-foreground">Comma-separated words that trigger content flagging for admin review</p>
+            <textarea value={v("comm_flag_keywords")} onChange={e => handleChange("comm_flag_keywords", e.target.value)} rows={3}
+              className={`w-full rounded-lg border text-sm p-2.5 ${d("comm_flag_keywords") ? "border-amber-300 bg-amber-50/50" : "border-gray-200"}`} />
+            <p className="text-[10px] text-muted-foreground/60 font-mono">comm_flag_keywords</p>
+          </div>
+        </div>
+        <div className="border-t border-border/40 pt-5">
+          <SLabel icon={Shield}>Custom Regex Patterns</SLabel>
+          <p className="text-xs text-muted-foreground mb-2">JSON array: {`[{"pattern":"regex","severity":"low|medium|high","label":"description"}]`}</p>
+          <div className={`rounded-xl border p-4 space-y-2 transition-all ${d("moderation_custom_patterns") ? "border-amber-300 bg-amber-50/30" : "border-border bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-semibold text-foreground">Custom Patterns JSON</label>
+              {d("moderation_custom_patterns") && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-bold">CHANGED</Badge>}
+            </div>
+            <textarea value={v("moderation_custom_patterns")} onChange={e => handleChange("moderation_custom_patterns", e.target.value)} rows={5}
+              className={`w-full rounded-lg border text-sm p-2.5 font-mono ${d("moderation_custom_patterns") ? "border-amber-300 bg-amber-50/50" : "border-gray-200"}`} />
+            <p className="text-[10px] text-muted-foreground/60 font-mono">moderation_custom_patterns</p>
+          </div>
+        </div>
       </div>
     );
   }

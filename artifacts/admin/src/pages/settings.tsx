@@ -9,7 +9,7 @@ import {
   ToggleRight, Settings, RotateCcw, Package,
   Gift, Star, Percent, ShieldCheck, UserPlus, Server,
   Database, Download, Upload, Trash2, HardDrive, RefreshCcw, FlaskConical,
-  Clock, X, SlidersHorizontal, Palette, MapPin, Gauge, Languages,
+  Clock, X, SlidersHorizontal, Palette, MapPin, Gauge, Languages, Bell, ImageUp, List, Bus, Sparkles, ShieldAlert,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
@@ -31,9 +31,11 @@ import { renderSection, Setting, CatKey, TEXT_KEYS } from "./settings-render";
 const CAT_ORDER = [
   "general","features",
   "dispatch","rides","orders","delivery",
+  "notifications","uploads","pagination",
   "customer","rider","vendor",
   "finance","payment",
   "branding","content","integrations",
+  "van","onboarding","moderation",
   "security","system_limits","system","weather",
   "regional",
 ] as const;
@@ -42,10 +44,14 @@ const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
   { label: "App & Platform",  emoji: "🏢", items: ["general", "features"] },
   { label: "Dispatch & Ops",  emoji: "🚀", items: ["dispatch"] },
   { label: "Service Config",  emoji: "⚙️", items: ["rides", "orders", "delivery"] },
+  { label: "Notifications",   emoji: "🔔", items: ["notifications"] },
+  { label: "Upload & Display",emoji: "📤", items: ["uploads", "pagination"] },
   { label: "Role Settings",   emoji: "👤", items: ["customer", "rider", "vendor"] },
   { label: "Finance",         emoji: "💰", items: ["finance", "payment"] },
   { label: "Branding & UI",   emoji: "🎨", items: ["branding"] },
   { label: "Communication",   emoji: "📢", items: ["content", "integrations"] },
+  { label: "Transport & UX",  emoji: "🚐", items: ["van", "onboarding"] },
+  { label: "Moderation",      emoji: "🛡️", items: ["moderation"] },
   { label: "Security",        emoji: "🔒", items: ["security"] },
   { label: "System",          emoji: "🔧", items: ["system_limits", "system"] },
   { label: "Regional",        emoji: "🌍", items: ["regional"] },
@@ -72,6 +78,12 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
   system_limits:{ label: "System Limits",         icon: Server,      color: "text-slate-600",   bg: "bg-slate-50",   activeBg: "bg-slate-600",   description: "Log retention, cache TTL, body limit and upload size" },
   regional:     { label: "Regional & Validation", icon: Languages,   color: "text-lime-600",    bg: "bg-lime-50",    activeBg: "bg-lime-600",    description: "Phone format, timezone, currency symbol and country code" },
   weather:      { label: "Weather Widget",      icon: Globe,        color: "text-sky-600",     bg: "bg-sky-50",     activeBg: "bg-sky-600",     description: "Toggle weather widget and manage displayed cities" },
+  notifications:{ label: "Notifications",        icon: Bell,         color: "text-yellow-600",  bg: "bg-yellow-50",  activeBg: "bg-yellow-600",  description: "Email templates, push notification text, fraud alert thresholds" },
+  uploads:      { label: "Upload Limits",        icon: ImageUp,      color: "text-cyan-600",    bg: "bg-cyan-50",    activeBg: "bg-cyan-600",    description: "Image/video file size limits and allowed formats" },
+  pagination:   { label: "Pagination",           icon: List,         color: "text-lime-600",    bg: "bg-lime-50",    activeBg: "bg-lime-600",    description: "Products per page, trending searches limit, flash deals display" },
+  van:          { label: "Van / Transport",      icon: Bus,          color: "text-stone-600",   bg: "bg-stone-50",   activeBg: "bg-stone-600",   description: "Intercity van booking rules, driver limits, pricing surcharges" },
+  onboarding:   { label: "Onboarding & UX",     icon: Sparkles,     color: "text-fuchsia-600", bg: "bg-fuchsia-50", activeBg: "bg-fuchsia-600", description: "Vendor auto-schedule, onboarding slides, app experience" },
+  moderation:   { label: "Content Moderation",   icon: ShieldAlert,  color: "text-rose-600",    bg: "bg-rose-50",    activeBg: "bg-rose-600",    description: "Auto-masking rules, custom regex patterns, flagged content" },
 };
 
 export default function SettingsPage() {
@@ -253,7 +265,8 @@ export default function SettingsPage() {
 
   /* helper: is a category visible */
   const isCatVisible = (cat: CatKey) =>
-    (grouped[cat]?.length ?? 0) > 0 || cat === "payment" || cat === "system" || cat === "security" || cat === "weather";
+    (grouped[cat]?.length ?? 0) > 0 || cat === "payment" || cat === "system" || cat === "security" || cat === "weather"
+    || cat === "notifications" || cat === "uploads" || cat === "pagination" || cat === "van" || cat === "onboarding" || cat === "moderation";
 
   return (
     <div className="space-y-4 max-w-5xl">

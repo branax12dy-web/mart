@@ -65,15 +65,25 @@ export interface EmailResult {
   error?: string;
 }
 
+function applyTemplateVars(html: string, vars: Record<string, string>): string {
+  let result = html;
+  for (const [key, val] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{${key}\\}`, "g"), val);
+  }
+  return result;
+}
+
 export async function sendVerificationEmail(
   to: string,
   verificationLink: string,
   name?: string,
   language?: string,
+  settings?: Record<string, string>,
 ): Promise<{ sent: boolean; reason?: string }> {
   const lang = resolveLanguage(language);
   const dir = lang === "ur" ? "rtl" : "ltr";
   const greeting = name ? `, ${name}` : "";
+  const appName = settings?.["app_name"] ?? "AJKMart";
 
   const subject  = t("emailVerifySubject", lang);
   const heading  = t("emailVerifyHeading", lang).replace("{name}", greeting);
@@ -82,18 +92,16 @@ export async function sendVerificationEmail(
   const expiry   = t("emailVerifyExpiry", lang);
   const ignore   = t("emailVerifyIgnore", lang);
 
-  const tr = getEnvTransporter();
-  if (!tr) {
+  const customTemplate = settings?.["email_template_verify_html"]?.trim();
+
+  const tr = settings ? buildTransporterFromSettings(settings) : null;
+  const transport = tr || getEnvTransporter();
+  if (!transport) {
     console.log(`[EMAIL] Verification email for ${to} — SMTP not configured. Link: ${verificationLink}`);
     return { sent: false, reason: "SMTP not configured" };
   }
 
-  try {
-    await tr.sendMail({
-      from: resolveFrom(),
-      to,
-      subject,
-      html: `
+  const defaultHtml = `
         <div dir="${dir}" style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
           <h2>${heading}</h2>
           <p>${body}</p>
@@ -102,7 +110,18 @@ export async function sendVerificationEmail(
           <p>${expiry}</p>
           <p style="color:#9ca3af;font-size:12px;">${ignore}</p>
         </div>
-      `,
+      `;
+
+  const html = customTemplate
+    ? applyTemplateVars(customTemplate, { link: verificationLink, userName: name || "", appName, otp: "" })
+    : defaultHtml;
+
+  try {
+    await transport.sendMail({
+      from: resolveFrom(settings),
+      to,
+      subject,
+      html,
       text: `${heading}\n\n${body}\n${verificationLink}\n\n${expiry}\n${ignore}`,
     });
     return { sent: true };
@@ -117,10 +136,12 @@ export async function sendPasswordResetEmail(
   otp: string,
   name?: string,
   language?: string,
+  settings?: Record<string, string>,
 ): Promise<{ sent: boolean; reason?: string }> {
   const lang = resolveLanguage(language);
   const dir = lang === "ur" ? "rtl" : "ltr";
   const greeting = name ? ` — ${name}` : "";
+  const appName = settings?.["app_name"] ?? "AJKMart";
 
   const subject = t("emailResetSubject", lang);
   const heading = t("emailResetHeading", lang).replace("{name}", greeting);
@@ -128,18 +149,16 @@ export async function sendPasswordResetEmail(
   const expiry  = t("emailResetExpiry", lang);
   const ignore  = t("emailResetIgnore", lang);
 
-  const tr = getEnvTransporter();
-  if (!tr) {
+  const customTemplate = settings?.["email_template_reset_html"]?.trim();
+
+  const tr = settings ? buildTransporterFromSettings(settings) : null;
+  const transport = tr || getEnvTransporter();
+  if (!transport) {
     console.log(`[EMAIL] Password reset OTP for ${to} — SMTP not configured.`);
     return { sent: false, reason: "SMTP not configured" };
   }
 
-  try {
-    await tr.sendMail({
-      from: resolveFrom(),
-      to,
-      subject,
-      html: `
+  const defaultHtml = `
         <div dir="${dir}" style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
           <h2>${heading}</h2>
           <p>${body}</p>
@@ -147,7 +166,18 @@ export async function sendPasswordResetEmail(
           <p>${expiry}</p>
           <p style="color:#9ca3af;font-size:12px;">${ignore}</p>
         </div>
-      `,
+      `;
+
+  const html = customTemplate
+    ? applyTemplateVars(customTemplate, { otp, userName: name || "", appName, link: "" })
+    : defaultHtml;
+
+  try {
+    await transport.sendMail({
+      from: resolveFrom(settings),
+      to,
+      subject,
+      html,
       text: `${heading}\n\n${body} ${otp}\n\n${expiry}\n${ignore}`,
     });
     return { sent: true };
@@ -179,7 +209,9 @@ export async function sendMagicLinkEmail(
   const button  = t("emailMagicButton", lang);
   const ignore  = t("emailMagicIgnore", lang);
 
-  const html = `
+  const customTemplate = settings["email_template_magic_html"]?.trim();
+
+  const defaultHtml = `
     <div dir="${dir}" style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="color: #2563eb;">${appName}</h2>
       <p>${body}</p>
@@ -194,7 +226,11 @@ export async function sendMagicLinkEmail(
     </div>
   `;
 
-  const tr = getEnvTransporter();
+  const html = customTemplate
+    ? applyTemplateVars(customTemplate, { link: magicUrl, userName: "", appName, otp: "" })
+    : defaultHtml;
+
+  const tr = buildTransporterFromSettings(settings) || getEnvTransporter();
   if (!tr) {
     console.log(`[EMAIL] Magic link for ${email}: ${magicUrl}`);
     return { sent: false, error: "SMTP not configured — logged to console" };

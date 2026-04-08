@@ -8,17 +8,50 @@ import os from "os";
 import multer from "multer";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../lib/response.js";
 import { customerAuth, riderAuth, requireRole } from "../middleware/security.js";
+import { getPlatformSettings } from "./admin-shared.js";
 
 const execFileAsync = promisify(execFile);
-const MAX_VIDEO_DURATION_SECS = 60;
 
 const router: IRouter = Router();
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
-const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+
+const DEFAULT_MAX_IMAGE_MB = 5;
+const DEFAULT_MAX_VIDEO_MB = 50;
+const DEFAULT_MAX_VIDEO_DURATION_SECS = 60;
+const DEFAULT_IMAGE_FORMATS = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+const DEFAULT_VIDEO_FORMATS = ["video/mp4", "video/quicktime", "video/webm"];
+
+function formatToMime(fmt: string): string {
+  const f = fmt.trim().toLowerCase();
+  if (f === "jpg" || f === "jpeg") return "image/jpeg";
+  if (f === "png") return "image/png";
+  if (f === "webp") return "image/webp";
+  if (f === "mp4") return "video/mp4";
+  if (f === "quicktime" || f === "mov") return "video/quicktime";
+  if (f === "webm") return "video/webm";
+  return f.includes("/") ? f : `image/${f}`;
+}
+
+async function getUploadLimits() {
+  const s = await getPlatformSettings();
+  const maxImageMb = parseInt(s["upload_max_image_mb"] ?? String(DEFAULT_MAX_IMAGE_MB)) || DEFAULT_MAX_IMAGE_MB;
+  const maxVideoMb = parseInt(s["upload_max_video_mb"] ?? String(DEFAULT_MAX_VIDEO_MB)) || DEFAULT_MAX_VIDEO_MB;
+  const maxVideoDuration = parseInt(s["upload_max_video_duration_sec"] ?? String(DEFAULT_MAX_VIDEO_DURATION_SECS)) || DEFAULT_MAX_VIDEO_DURATION_SECS;
+  const imageFormats = s["upload_allowed_image_formats"]
+    ? s["upload_allowed_image_formats"].split(",").map(formatToMime).filter(Boolean)
+    : DEFAULT_IMAGE_FORMATS;
+  const videoFormats = s["upload_allowed_video_formats"]
+    ? s["upload_allowed_video_formats"].split(",").map(formatToMime).filter(Boolean)
+    : DEFAULT_VIDEO_FORMATS;
+  return {
+    maxImageSize: maxImageMb * 1024 * 1024,
+    maxVideoSize: maxVideoMb * 1024 * 1024,
+    maxVideoDuration,
+    imageFormats: imageFormats.length ? imageFormats : DEFAULT_IMAGE_FORMATS,
+    videoFormats: videoFormats.length ? videoFormats : DEFAULT_VIDEO_FORMATS,
+  };
+}
 
 const prescriptionRefMap = new Map<string, string>();
 
@@ -26,29 +59,17 @@ async function ensureDir() {
   await mkdir(UPLOADS_DIR, { recursive: true });
 }
 
-/* ── Multer instance for multipart/form-data (memory storage) ── */
+const MULTER_PERMISSIVE_IMAGE_LIMIT = 50 * 1024 * 1024;
+const MULTER_PERMISSIVE_VIDEO_LIMIT = 500 * 1024 * 1024;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE },
-  fileFilter: (_req, file, cb) => {
-    if (ALLOWED_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only JPEG, PNG, and WebP images are allowed"));
-    }
-  },
+  limits: { fileSize: MULTER_PERMISSIVE_IMAGE_LIMIT },
 });
 
 const videoUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_VIDEO_SIZE },
-  fileFilter: (_req, file, cb) => {
-    if (ALLOWED_VIDEO_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only MP4, MOV, and WebM videos are allowed"));
-    }
-  },
+  limits: { fileSize: MULTER_PERMISSIVE_VIDEO_LIMIT },
 });
 
 /* ── Helper: save a buffer and return the public URL ── */
@@ -78,8 +99,9 @@ router.post("/", customerAuth, async (req, res) => {
       return;
     }
 
+    const limits = await getUploadLimits();
     const mime = mimeType || "image/jpeg";
-    if (!ALLOWED_TYPES.includes(mime)) {
+    if (!limits.imageFormats.includes(mime)) {
       sendValidationError(res, "Only JPEG, PNG, and WebP images are allowed");
       return;
     }
@@ -87,8 +109,8 @@ router.post("/", customerAuth, async (req, res) => {
     const base64Data = file.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
 
-    if (buffer.length > MAX_FILE_SIZE) {
-      sendValidationError(res, "File too large. Maximum 5MB allowed");
+    if (buffer.length > limits.maxImageSize) {
+      sendValidationError(res, `File too large. Maximum ${Math.round(limits.maxImageSize / 1024 / 1024)}MB allowed`);
       return;
     }
 
@@ -117,7 +139,7 @@ router.post(
     upload.single("file")(req, res, (err) => {
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          sendValidationError(res, "File too large. Maximum 5MB allowed");
+          sendValidationError(res, "File too large");
           return;
         }
         sendValidationError(res, err.message);
@@ -139,8 +161,13 @@ router.post(
 
       const { mimetype, buffer, originalname } = req.file;
 
-      if (!ALLOWED_TYPES.includes(mimetype)) {
+      const limits = await getUploadLimits();
+      if (!limits.imageFormats.includes(mimetype)) {
         sendValidationError(res, "Only JPEG, PNG, and WebP images are allowed");
+        return;
+      }
+      if (buffer.length > limits.maxImageSize) {
+        sendValidationError(res, `File too large. Maximum ${Math.round(limits.maxImageSize / (1024*1024))}MB allowed`);
         return;
       }
 
@@ -168,7 +195,7 @@ router.post(
     upload.single("file")(req, res, (err) => {
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          sendValidationError(res, "File too large. Maximum 5MB allowed");
+          sendValidationError(res, "File too large");
           return;
         }
         sendValidationError(res, err.message);
@@ -190,8 +217,13 @@ router.post(
 
       const { mimetype, buffer, originalname } = req.file;
 
-      if (!ALLOWED_TYPES.includes(mimetype)) {
+      const limits = await getUploadLimits();
+      if (!limits.imageFormats.includes(mimetype)) {
         sendValidationError(res, "Only JPEG, PNG, and WebP images are allowed");
+        return;
+      }
+      if (buffer.length > limits.maxImageSize) {
+        sendValidationError(res, `File too large. Maximum ${Math.round(limits.maxImageSize / (1024*1024))}MB allowed`);
         return;
       }
 
@@ -224,8 +256,9 @@ router.post("/prescription", customerAuth, async (req, res) => {
       return;
     }
 
+    const limits = await getUploadLimits();
     const mime = mimeType || "image/jpeg";
-    if (!ALLOWED_TYPES.includes(mime)) {
+    if (!limits.imageFormats.includes(mime)) {
       sendValidationError(res, "Only JPEG, PNG, and WebP images are allowed");
       return;
     }
@@ -233,8 +266,8 @@ router.post("/prescription", customerAuth, async (req, res) => {
     const base64Data = file.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
 
-    if (buffer.length > MAX_FILE_SIZE) {
-      sendValidationError(res, "File too large. Maximum 5MB allowed");
+    if (buffer.length > limits.maxImageSize) {
+      sendValidationError(res, `File too large. Maximum ${Math.round(limits.maxImageSize / 1024 / 1024)}MB allowed`);
       return;
     }
 
@@ -289,8 +322,13 @@ router.post(
 
       const { mimetype, buffer, originalname } = req.file;
 
-      if (!ALLOWED_VIDEO_TYPES.includes(mimetype)) {
+      const limits = await getUploadLimits();
+      if (!limits.videoFormats.includes(mimetype)) {
         sendValidationError(res, "Only MP4, MOV, and WebM videos are allowed");
+        return;
+      }
+      if (buffer.length > limits.maxVideoSize) {
+        sendValidationError(res, `Video too large. Maximum ${Math.round(limits.maxVideoSize / (1024*1024))}MB allowed`);
         return;
       }
 
@@ -308,8 +346,8 @@ router.post(
           sendValidationError(res, "Could not determine video duration. Please upload a valid video file.");
           return;
         }
-        if (duration > MAX_VIDEO_DURATION_SECS) {
-          sendValidationError(res, `Video must be ${MAX_VIDEO_DURATION_SECS} seconds or less. Your video is ${Math.ceil(duration)}s.`);
+        if (duration > limits.maxVideoDuration) {
+          sendValidationError(res, `Video must be ${limits.maxVideoDuration} seconds or less. Your video is ${Math.ceil(duration)}s.`);
           return;
         }
       } catch {

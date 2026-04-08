@@ -601,6 +601,43 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "regional_timezone",          value: "Asia/Karachi",  label: "Default Timezone",                  category: "regional" },
   { key: "regional_currency_symbol",   value: "Rs.",           label: "Currency Symbol",                   category: "regional" },
   { key: "regional_country_code",      value: "+92",           label: "Country Dialing Code",              category: "regional" },
+  /* ═══════════════════  Upload & File Limits (Cat 7)  ═══════════════════ */
+  { key: "upload_max_image_mb",           value: "5",                            label: "Max Image Upload Size (MB)",                   category: "uploads" },
+  { key: "upload_max_video_mb",           value: "50",                           label: "Max Video Upload Size (MB)",                   category: "uploads" },
+  { key: "upload_max_video_duration_sec", value: "60",                           label: "Max Video Duration (seconds)",                 category: "uploads" },
+  { key: "upload_allowed_image_formats",  value: "jpeg,png,webp",                label: "Allowed Image Formats (comma-sep)",            category: "uploads" },
+  { key: "upload_allowed_video_formats",  value: "mp4,quicktime,webm",           label: "Allowed Video Formats (comma-sep)",            category: "uploads" },
+  /* ═══════════════════  Pagination & Display Limits (Cat 8)  ═══════════════════ */
+  { key: "pagination_products_default",   value: "20",                           label: "Products Per Page (default)",                  category: "pagination" },
+  { key: "pagination_products_max",       value: "50",                           label: "Products Per Page (max)",                      category: "pagination" },
+  { key: "pagination_trending_limit",     value: "12",                           label: "Trending Searches Limit",                      category: "pagination" },
+  { key: "pagination_flash_deals",        value: "20",                           label: "Flash Deals Per Page",                         category: "pagination" },
+  /* ═══════════════════  Notification Templates (Cat 6)  ═══════════════════ */
+  { key: "email_template_verify_html",    value: "",                             label: "Email Template: Verification (HTML)",           category: "notifications" },
+  { key: "email_template_reset_html",     value: "",                             label: "Email Template: Password Reset (HTML)",         category: "notifications" },
+  { key: "email_template_magic_html",     value: "",                             label: "Email Template: Magic Link (HTML)",             category: "notifications" },
+  { key: "notif_text_ride_request",       value: "New ride request near you!",   label: "Push: Ride Request Text",                      category: "notifications" },
+  { key: "notif_text_order_update",       value: "Your order status has been updated.", label: "Push: Order Update Text",                category: "notifications" },
+  { key: "alert_high_value_threshold",    value: "10000",                        label: "High Value Order Alert Threshold (Rs.)",       category: "notifications" },
+  { key: "fraud_same_address_limit",      value: "5",                            label: "Same Address Orders/Hr Limit (Fraud)",         category: "notifications" },
+  { key: "fraud_gps_mismatch_threshold_m",value: "500",                          label: "GPS Mismatch Threshold (metres, Fraud)",       category: "notifications" },
+  { key: "fraud_new_account_order_limit", value: "3",                            label: "New Account Order Limit (first 7 days, Fraud)",category: "notifications" },
+  { key: "fraud_daily_order_limit",       value: "20",                           label: "Daily Order Limit Per Customer (Fraud)",       category: "notifications" },
+  /* ═══════════════════  Onboarding & App Experience (Cat 11)  ═══════════════════ */
+  { key: "vendor_auto_schedule_enabled",  value: "off",                          label: "Vendor Weekly Auto Open/Close Schedule",       category: "onboarding" },
+  { key: "vendor_auto_schedule_hours",    value: '{"mon":"08:00-20:00","tue":"08:00-20:00","wed":"08:00-20:00","thu":"08:00-20:00","fri":"08:00-20:00","sat":"08:00-20:00","sun":""}', label: "Default Auto Schedule Hours (JSON)", category: "onboarding" },
+  { key: "onboarding_slides",            value: "[]",                            label: "Onboarding Slides (JSON array)",               category: "onboarding" },
+  /* ═══════════════════  Content Moderation (Cat 13)  ═══════════════════ */
+  { key: "moderation_custom_patterns",    value: "[]",                           label: "Custom Moderation Regex Patterns (JSON)",      category: "moderation" },
+  { key: "comm_hide_phone",              value: "on",                            label: "Auto-Mask Phone Numbers",                      category: "moderation" },
+  { key: "comm_hide_email",              value: "on",                            label: "Auto-Mask Email Addresses",                    category: "moderation" },
+  { key: "comm_hide_cnic",               value: "on",                            label: "Auto-Mask CNIC Numbers",                      category: "moderation" },
+  { key: "comm_hide_bank",               value: "on",                            label: "Auto-Mask Bank Account Numbers",               category: "moderation" },
+  { key: "comm_hide_address",            value: "on",                            label: "Auto-Mask Physical Addresses",                 category: "moderation" },
+  { key: "comm_flag_keywords",           value: "",                              label: "Flagged Keywords (comma-separated)",            category: "moderation" },
+  { key: "comm_mask_format_phone",       value: "",                              label: "Phone Mask Format (empty = default)",           category: "moderation" },
+  { key: "comm_mask_format_email",       value: "",                              label: "Email Mask Format (empty = default)",           category: "moderation" },
+  { key: "comm_mask_format_cnic",        value: "",                              label: "CNIC Mask Format (empty = default)",            category: "moderation" },
 ];
 
 let _authMethodColumnMigrated = false;

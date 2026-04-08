@@ -15,8 +15,28 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendV
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads/kyc");
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
-const MAX_KYC_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB per image
+const DEFAULT_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+const DEFAULT_MAX_KYC_IMAGE_SIZE = 5 * 1024 * 1024;
+
+function kycFormatToMime(fmt: string): string {
+  const f = fmt.trim().toLowerCase();
+  if (f === "jpg" || f === "jpeg") return "image/jpeg";
+  if (f === "png") return "image/png";
+  if (f === "webp") return "image/webp";
+  return f.includes("/") ? f : `image/${f}`;
+}
+
+async function getKycUploadLimits() {
+  const s = await getPlatformSettings();
+  const maxMb = parseInt(s["upload_max_image_mb"] ?? "5") || 5;
+  const formats = s["upload_allowed_image_formats"]
+    ? s["upload_allowed_image_formats"].split(",").map(kycFormatToMime).filter(Boolean)
+    : DEFAULT_ALLOWED_TYPES;
+  return {
+    maxSize: maxMb * 1024 * 1024,
+    allowedTypes: formats.length ? formats : DEFAULT_ALLOWED_TYPES,
+  };
+}
 
 /* Magic byte signatures for MIME validation */
 const MIME_MAGIC: Record<string, number[][]> = {
@@ -34,12 +54,15 @@ function detectMime(buf: Buffer): string | null {
   return null;
 }
 
+const KYC_PERMISSIVE_LIMIT = 50 * 1024 * 1024;
+
 const kycUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_KYC_IMAGE_SIZE },
+  limits: { fileSize: KYC_PERMISSIVE_LIMIT },
   fileFilter: (_req, file, cb) => {
-    if (ALLOWED_TYPES.includes(file.mimetype)) cb(null, true);
-    else cb(new Error("Only JPEG, PNG, WebP images allowed"));
+    const allImageTypes = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif", "image/bmp", "image/tiff"];
+    if (allImageTypes.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("Only image files are allowed"));
   },
 });
 
@@ -148,6 +171,18 @@ router.post(
     if (!frontFile)  { res.status(400).json({ success: false, error: "Front side of CNIC is required" }); return; }
     if (!backFile)   { res.status(400).json({ success: false, error: "Back side of CNIC is required" }); return; }
     if (!selfieFile) { res.status(400).json({ success: false, error: "Selfie photo is required" }); return; }
+
+    const kycLimits = await getKycUploadLimits();
+    for (const f of [frontFile, backFile, selfieFile]) {
+      if (f.size > kycLimits.maxSize) {
+        res.status(400).json({ success: false, error: `File ${f.originalname} exceeds ${Math.round(kycLimits.maxSize / 1024 / 1024)}MB limit` });
+        return;
+      }
+      if (!kycLimits.allowedTypes.includes(f.mimetype)) {
+        res.status(400).json({ success: false, error: `File type ${f.mimetype} is not allowed` });
+        return;
+      }
+    }
 
     const rawBody = req.body;
     const fullName = typeof rawBody.fullName === "string" ? stripHtml(rawBody.fullName) : "";
@@ -309,20 +344,21 @@ router.post("/submit-base64", customerAuth, async (req, res) => {
 
   const cnicClean = cnic.replace(/[-\s]/g, "");
 
+  const kycLimits = await getKycUploadLimits();
+
   function base64ToBuffer(dataUrl: string, fieldName: string): { buffer: Buffer; mime: string } {
     const match = dataUrl.match(/^data:(image\/[\w]+);base64,(.+)$/);
     if (!match) throw Object.assign(new Error(`Invalid image data for ${fieldName}`), { statusCode: 400 });
 
     const claimedMime = match[1]!;
-    if (!ALLOWED_TYPES.includes(claimedMime)) {
+    if (!kycLimits.allowedTypes.includes(claimedMime)) {
       throw Object.assign(new Error(`${fieldName}: Only JPEG, PNG, or WebP images are allowed`), { statusCode: 400 });
     }
 
     const buffer = Buffer.from(match[2]!, "base64");
 
-    /* Size cap: 5MB per image */
-    if (buffer.length > MAX_KYC_IMAGE_SIZE) {
-      throw Object.assign(new Error(`${fieldName}: Image too large. Maximum 5MB allowed`), { statusCode: 400 });
+    if (buffer.length > kycLimits.maxSize) {
+      throw Object.assign(new Error(`${fieldName}: Image too large. Maximum ${Math.round(kycLimits.maxSize / (1024*1024))}MB allowed`), { statusCode: 400 });
     }
 
     /* Magic byte MIME verification — reject if bytes match no known format OR mismatch */
