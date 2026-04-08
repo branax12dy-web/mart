@@ -29,6 +29,7 @@ import {
   customerCounterOffer as customerCounterOfferApi,
 } from "@workspace/api-client-react";
 import { API_BASE } from "@/utils/api";
+import { useCurrency } from "@/context/PlatformConfigContext";
 
 interface RideBid {
   id: string;
@@ -139,6 +140,7 @@ export function NegotiationScreen({
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { showToast } = useToast();
+  const { symbol: currencySymbol } = useCurrency();
 
   const ring1 = useRef(new Animated.Value(1)).current;
   const ring2 = useRef(new Animated.Value(1)).current;
@@ -287,8 +289,8 @@ export function NegotiationScreen({
   const validateOffer = (val: string): string => {
     const amt = parseFloat(val);
     if (isNaN(amt) || amt <= 0) return "Please enter a valid amount";
-    if (amt < minCounterOffer) return `Minimum offer is Rs. ${minCounterOffer}`;
-    if (maxOffer > 0 && amt > maxOffer) return `Offer cannot exceed the platform fare of Rs. ${Math.round(maxOffer)}`;
+    if (amt < minCounterOffer) return `Minimum offer is ${currencySymbol} ${minCounterOffer}`;
+    if (maxOffer > 0 && amt > maxOffer) return `Offer cannot exceed the platform fare of ${currencySymbol} ${Math.round(maxOffer)}`;
     return "";
   };
 
@@ -389,7 +391,7 @@ export function NegotiationScreen({
 
             {/* Your offer */}
             <View style={{ backgroundColor: RT.accentBg, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, alignItems: "center", borderWidth: 1.5, borderColor: RT.accentBorder }}>
-              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: RT.accent }}>Rs. {offeredFare}</Text>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 22, color: RT.accent }}>{currencySymbol} {offeredFare}</Text>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: "rgba(252,211,77,0.65)" }}>Your Offer</Text>
             </View>
           </View>
@@ -429,7 +431,7 @@ export function NegotiationScreen({
               <Text style={{ fontFamily: "Inter_700Bold", fontSize: 21, color: RT.textPrimary, textAlign: "center" }}>Broadcasting Your Offer</Text>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: RT.textSecondary, textAlign: "center", marginTop: 6, lineHeight: 20, maxWidth: 260 }}>
                 Nearby riders are reviewing your offer of{" "}
-                <Text style={{ fontFamily: "Inter_700Bold", color: RT.accent }}>Rs. {offeredFare}</Text>
+                <Text style={{ fontFamily: "Inter_700Bold", color: RT.accent }}>{currencySymbol} {offeredFare}</Text>
                 . Bids appear here instantly.
               </Text>
 
@@ -552,10 +554,10 @@ export function NegotiationScreen({
                         {/* Fare badge */}
                         <View style={{ alignItems: "flex-end" }}>
                           <View style={{ backgroundColor: RT.accentBg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: RT.accentBorder, marginBottom: 3 }}>
-                            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: RT.accent }}>Rs. {Math.round(bid.fare)}</Text>
+                            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: RT.accent }}>{currencySymbol} {Math.round(bid.fare)}</Text>
                           </View>
                           <Text style={{ fontFamily: "Inter_500Medium", fontSize: 10, color: bid.fare <= offeredFare ? RT.emerald : RT.textMuted, textAlign: "right" }}>
-                            {bid.fare === offeredFare ? "Matches your offer" : fareGap > 0 ? `+Rs. ${fareGap}` : `-Rs. ${Math.abs(fareGap)} saved`}
+                            {bid.fare === offeredFare ? "Matches your offer" : fareGap > 0 ? `+${currencySymbol} ${fareGap}` : `-${currencySymbol} ${Math.abs(fareGap)} saved`}
                           </Text>
                         </View>
                       </View>
@@ -576,7 +578,7 @@ export function NegotiationScreen({
                             ) : (
                               <>
                                 <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Accept · Rs. {Math.round(bid.fare)}</Text>
+                                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: "#fff" }}>Accept · {currencySymbol} {Math.round(bid.fare)}</Text>
                               </>
                             )}
                           </LinearGradient>
@@ -623,12 +625,12 @@ export function NegotiationScreen({
                 <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
                   <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                   <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: RT.textMuted }}>
-                    A new offer cancels all pending bids · Min: Rs. {minCounterOffer}
+                    A new offer cancels all pending bids · Min: {currencySymbol} {minCounterOffer}
                   </Text>
                   {offerError ? <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: RT.red }}>{offerError}</Text> : null}
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <View style={{ flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 13, paddingHorizontal: 14, borderWidth: 1, borderColor: offerError ? "rgba(239,68,68,0.5)" : "rgba(255,255,255,0.12)" }}>
-                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: RT.textMuted }}>Rs.</Text>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: RT.textMuted }}>{currencySymbol}</Text>
                       <TextInput
                         value={counterInput}
                         onChangeText={(v) => { setCounterInput(v); setOfferError(""); }}

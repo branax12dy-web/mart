@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, useCurrency } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
@@ -15,6 +15,8 @@ const BANKS = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfa
 function safeBalance(v: any): number { return v ? Number(v) : 0; }
 
 function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defaultBank, defaultAcNo, defaultAcName }: { balance: number; minPayout: number; maxPayout: number | null; onClose: () => void; onSuccess: () => void; defaultBank?: string; defaultAcNo?: string; defaultAcName?: string }) {
+  const { symbol: currencySymbol } = useCurrency();
+  const fcLocal = (n: number) => fc(n, currencySymbol);
   const [amount, setAmount]   = useState("");
   const [bank, setBank]       = useState(defaultBank || "");
   const [acNo, setAcNo]       = useState(defaultAcNo || "");
@@ -36,9 +38,9 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defa
   const validate = () => {
     const amt = Number(amount);
     if (!amount || isNaN(amt) || amt <= 0)  { setErr("Raqam darj karein / Valid amount required"); return; }
-    if (amt < minPayout)                     { setErr(`Kam az kam ${fc(minPayout)} hona chahiye / Minimum withdrawal is ${fc(minPayout)}`); return; }
-    if (maxPayout != null && amt > maxPayout) { setErr(`Zyada se zyada ${fc(maxPayout)} / Maximum single withdrawal is ${fc(maxPayout)}`); return; }
-    if (amt > balance)                       { setErr(`Dastiyab balance: ${fc(balance)} / Max available: ${fc(balance)}`); return; }
+    if (amt < minPayout)                     { setErr(`Kam az kam ${fcLocal(minPayout)} hona chahiye / Minimum withdrawal is ${fcLocal(minPayout)}`); return; }
+    if (maxPayout != null && amt > maxPayout) { setErr(`Zyada se zyada ${fcLocal(maxPayout)} / Maximum single withdrawal is ${fcLocal(maxPayout)}`); return; }
+    if (amt > balance)                       { setErr(`Dastiyab balance: ${fcLocal(balance)} / Max available: ${fcLocal(balance)}`); return; }
     if (!bank)                               { setErr("Bank / wallet chunein / Select your bank or wallet"); return; }
     if (!acNo.trim())                        { setErr("Account / phone number darj karein / Account number required"); return; }
     if (!acName.trim())                      { setErr("Account holder ka naam darj karein / Account holder name required"); return; }
@@ -52,7 +54,7 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defa
           <div className="p-8 text-center">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">✅</div>
             <h3 className="text-xl font-extrabold text-gray-800">Request Submitted!</h3>
-            <p className="text-gray-500 mt-2 text-sm">Your withdrawal of <span className="font-bold text-orange-500">{fc(Number(amount))}</span> has been queued. Admin will process within 24–48 hours.</p>
+            <p className="text-gray-500 mt-2 text-sm">Your withdrawal of <span className="font-bold text-orange-500">{fcLocal(Number(amount))}</span> has been queued. Admin will process within 24–48 hours.</p>
             <div className="mt-4 bg-amber-50 rounded-2xl p-4 text-left space-y-1.5">
               <div className="flex justify-between text-sm"><span className="text-gray-500">Bank / Wallet</span><span className="font-bold">{bank}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Account #</span><span className="font-bold">{acNo}</span></div>
@@ -64,7 +66,7 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defa
           <div className="p-6">
             <h3 className="text-lg font-extrabold text-gray-800 mb-4">Confirm Withdrawal</h3>
             <div className="bg-orange-50 rounded-2xl p-4 space-y-2 mb-5">
-              <div className="flex justify-between"><span className="text-gray-500 text-sm">Amount</span><span className="font-extrabold text-orange-600 text-lg">{fc(Number(amount))}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500 text-sm">Amount</span><span className="font-extrabold text-orange-600 text-lg">{fcLocal(Number(amount))}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">To</span><span className="font-bold">{bank}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Account</span><span className="font-bold">{acNo}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Name</span><span className="font-bold">{acName}</span></div>
@@ -86,12 +88,12 @@ function WithdrawModal({ balance, minPayout, maxPayout, onClose, onSuccess, defa
             </div>
             <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white mb-5">
               <p className="text-sm text-orange-100">Available Balance</p>
-              <p className="text-3xl font-extrabold mt-0.5">{fc(balance)}</p>
-              <p className="text-xs text-orange-200 mt-1.5">Minimum withdrawal: {fc(minPayout)}</p>
+              <p className="text-3xl font-extrabold mt-0.5">{fcLocal(balance)}</p>
+              <p className="text-xs text-orange-200 mt-1.5">Minimum withdrawal: {fcLocal(minPayout)}</p>
             </div>
             <div className="space-y-3">
               <div>
-                <label className={LABEL}>Amount (Rs.) *</label>
+                <label className={LABEL}>Amount ({currencySymbol}) *</label>
                 <div className="relative">
                   <input type="number" inputMode="numeric" value={amount} onChange={e => { setAmount(e.target.value); setErr(""); }}
                     placeholder="0" className={INPUT}/>
@@ -138,6 +140,7 @@ function txBadge(type: string) {
 export default function Wallet() {
   const { user, refreshUser } = useAuth();
   const { config } = usePlatformConfig();
+  const { symbol: currencySymbol } = useCurrency();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const fin = config.finance;
@@ -222,7 +225,7 @@ export default function Wallet() {
           <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-white/10 rounded-full"/>
           <div className="relative">
             <p className="text-sm text-orange-100 font-semibold">{T("availableBalance")}</p>
-            <p className={`text-5xl font-extrabold mt-1 tracking-tight ${balance < 0 ? "text-red-200" : ""}`}>{fc(balance)}</p>
+            <p className={`text-5xl font-extrabold mt-1 tracking-tight ${balance < 0 ? "text-red-200" : ""}`}>{fc(balance, currencySymbol)}</p>
             <p className="text-xs text-orange-200 mt-2">{vendorKeepPct}% → {T("wallet")} · {commissionPct}% {T("platformFeeLabel")}</p>
             <div className="flex gap-3 mt-4">
               {withdrawalEnabled ? (
@@ -232,8 +235,8 @@ export default function Wallet() {
                     💸 {T("withdraw")}
                   </button>
                 ) : (
-                  <div className="flex-1 h-12 bg-white/30 rounded-2xl flex flex-col items-center justify-center text-sm font-bold text-white/80 cursor-not-allowed" title={`Minimum payout: ${fc(minPayout)}`}>
-                    <span>💸 {T("minWithdrawalLabel")}: {fc(minPayout)}</span>
+                  <div className="flex-1 h-12 bg-white/30 rounded-2xl flex flex-col items-center justify-center text-sm font-bold text-white/80 cursor-not-allowed" title={`Minimum payout: ${fc(minPayout, currencySymbol)}`}>
+                    <span>💸 {T("minWithdrawalLabel")}: {fc(minPayout, currencySymbol)}</span>
                   </div>
                 )
               ) : (
@@ -254,9 +257,9 @@ export default function Wallet() {
         {/* ── Earnings Stats ── */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: T("earnedToday"),    value: fc(todayEarned), icon: "☀️", color: "bg-amber-50" },
-            { label: T("earnedThisWeek"), value: fc(weekEarned),  icon: "📅", color: "bg-blue-50"  },
-            { label: T("totalCredits"),   value: fc(credits),     icon: "💰", color: "bg-green-50" },
+            { label: T("earnedToday"),    value: fc(todayEarned, currencySymbol), icon: "☀️", color: "bg-amber-50" },
+            { label: T("earnedThisWeek"), value: fc(weekEarned, currencySymbol),  icon: "📅", color: "bg-blue-50"  },
+            { label: T("totalCredits"),   value: fc(credits, currencySymbol),     icon: "💰", color: "bg-green-50" },
           ].map(s => (
             <div key={s.label} className={`${s.color} rounded-2xl p-3 text-center`}>
               <p className="text-xl">{s.icon}</p>
@@ -282,7 +285,7 @@ export default function Wallet() {
           <span className="text-2xl flex-shrink-0">📅</span>
           <div>
             <p className="text-sm font-bold text-amber-800">{T("settlementCycle")}</p>
-            <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">Earnings are settled every <strong>{settleDays} days</strong> after order completion. Min. withdrawal is <strong>{fc(minPayout)}</strong>{maxPayout != null ? <> · Max. <strong>{fc(maxPayout)}</strong> per request</> : " · No maximum limit set by admin"}.</p>
+            <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">Earnings are settled every <strong>{settleDays} days</strong> after order completion. Min. withdrawal is <strong>{fc(minPayout, currencySymbol)}</strong>{maxPayout != null ? <> · Max. <strong>{fc(maxPayout, currencySymbol)}</strong> per request</> : " · No maximum limit set by admin"}.</p>
           </div>
         </div>
         {/* ── Withdrawal Info ── */}
@@ -290,7 +293,7 @@ export default function Wallet() {
           <span className="text-2xl flex-shrink-0">🔒</span>
           <div>
             <p className="text-sm font-bold text-blue-800">{T("secureWithdrawals")}</p>
-            <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">All withdrawal requests are reviewed by admin. Funds transferred within 24–48 hours. Min: {fc(minPayout)}{maxPayout != null ? ` – Max: ${fc(maxPayout)} per request` : " · No maximum limit configured"}.</p>
+            <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">All withdrawal requests are reviewed by admin. Funds transferred within 24–48 hours. Min: {fc(minPayout, currencySymbol)}{maxPayout != null ? ` – Max: ${fc(maxPayout, currencySymbol)} per request` : " · No maximum limit configured"}.</p>
           </div>
         </div>
 
@@ -299,7 +302,7 @@ export default function Wallet() {
           <div className={CARD_HEADER}>
             <div>
               <p className="font-bold text-gray-800 text-sm">{T("transactionHistory")}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{transactions.length} records · Total debits: {fc(debits)}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{transactions.length} records · Total debits: {fc(debits, currencySymbol)}</p>
             </div>
             <span className="text-xs text-gray-400 font-medium">50</span>
           </div>
@@ -334,7 +337,7 @@ export default function Wallet() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className={`text-base font-extrabold ${t.type === "credit" || t.type === "bonus" ? "text-green-600" : "text-red-500"}`}>
-                      {t.type === "debit" ? "-" : "+"}{fc(Number(t.amount))}
+                      {t.type === "debit" ? "-" : "+"}{fc(Number(t.amount), currencySymbol)}
                     </p>
                     <div className="mt-0.5">{txBadge(t.type)}</div>
                   </div>

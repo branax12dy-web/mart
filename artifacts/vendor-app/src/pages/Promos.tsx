@@ -4,6 +4,7 @@ import { apiFetch } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { PullToRefresh } from "../components/PullToRefresh";
 import { fc, CARD, INPUT, SELECT, BTN_PRIMARY, BTN_SECONDARY, LABEL, errMsg } from "../lib/ui";
+import { useCurrency } from "../lib/useConfig";
 
 const EMPTY_PROMO = {
   title: "",
@@ -17,6 +18,7 @@ const EMPTY_PROMO = {
 
 export default function Promos() {
   const qc = useQueryClient();
+  const { symbol: currencySymbol } = useCurrency();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_PROMO });
   const [toast, setToast] = useState("");
@@ -93,7 +95,7 @@ export default function Promos() {
                 <label className={LABEL}>Discount Type *</label>
                 <select value={form.discountType} onChange={e => f("discountType", e.target.value)} className={SELECT}>
                   <option value="percentage">Percentage (%)</option>
-                  <option value="fixed">Fixed Amount (Rs.)</option>
+                  <option value="fixed">Fixed Amount ({currencySymbol})</option>
                 </select>
               </div>
               <div>
@@ -101,7 +103,7 @@ export default function Promos() {
                 <input type="number" min="0" value={form.discountValue} onChange={e => f("discountValue", e.target.value)} placeholder={form.discountType === "percentage" ? "20" : "50"} className={INPUT} />
               </div>
               <div>
-                <label className={LABEL}>Minimum Order (Rs.)</label>
+                <label className={LABEL}>Minimum Order ({currencySymbol})</label>
                 <input type="number" min="0" value={form.minOrder} onChange={e => f("minOrder", e.target.value)} placeholder="Optional" className={INPUT} />
               </div>
               <div>
@@ -147,8 +149,8 @@ export default function Promos() {
                     <p className="text-xs text-gray-500 mt-0.5">
                       {promo.discountType === "percentage"
                         ? `${promo.discountValue}% off`
-                        : `${fc(promo.discountValue)} off`}
-                      {promo.minOrder ? ` · Min order ${fc(promo.minOrder)}` : ""}
+                        : `${fc(promo.discountValue, currencySymbol)} off`}
+                      {promo.minOrder ? ` · Min order ${fc(promo.minOrder, currencySymbol)}` : ""}
                       {promo.maxUses  ? ` · Max ${promo.maxUses} uses` : ""}
                     </p>
                     {promo.expiresAt && (

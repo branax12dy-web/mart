@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, useCurrency } from "../lib/useConfig";
 import { PageHeader } from "../components/PageHeader";
 import { fc, CARD, INPUT, BTN_PRIMARY, LABEL, errMsg } from "../lib/ui";
 import { useLanguage } from "../lib/useLanguage";
@@ -25,6 +25,7 @@ type EditSection = "personal" | "bank" | null;
 export default function Profile() {
   const { user, logout, refreshUser } = useAuth();
   const { config } = usePlatformConfig();
+  const { symbol: currencySymbol } = useCurrency();
 
   const { data: notifData } = useQuery({
     queryKey: ["vendor-notifs-count"],
@@ -484,7 +485,7 @@ export default function Profile() {
                   <div className="px-4 pb-1 space-y-2">
                     {[
                       { icon: "✅", text: "85% earnings — 15% platform fee" },
-                      { icon: "💸", text: "Minimum withdrawal: Rs. 500" },
+                      { icon: "💸", text: `Minimum withdrawal: ${currencySymbol} ${config.vendor.minPayout}` },
                       { icon: "⏱️", text: "Processed in 24–48 hours by admin" },
                       { icon: "🔒", text: "CNIC verification required for large withdrawals" },
                     ].map((p, i) => (

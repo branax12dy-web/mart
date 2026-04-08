@@ -417,6 +417,8 @@ router.get("/", async (req, res) => {
       currencySymbol:  s["currency_symbol"] ?? s["regional_currency_symbol"] ?? "Rs.",
       countryCode:     s["regional_country_code"]      ?? "+92",
     },
+    currencySymbol:  s["currency_symbol"] ?? s["regional_currency_symbol"] ?? "Rs.",
+    currencyCode:    s["currency_code"] ?? "PKR",
     payment: {
       methods:              paymentMethods,
       currency:             s["currency_code"] ?? "PKR",

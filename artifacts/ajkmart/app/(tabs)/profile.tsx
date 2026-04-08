@@ -27,7 +27,7 @@ import Colors, { spacing, radii, shadows, typography } from "@/constants/colors"
 import { T as Typ, Font } from "@/constants/typography";
 import { useAuth, hasRole } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { usePlatformConfig, useCurrency } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
@@ -416,6 +416,7 @@ function ProfileScreenInner() {
   const T = (key: TranslationKey) => tDual(key, language);
 
   const { config: platformConfig } = usePlatformConfig();
+  const { symbol: currencySymbol } = useCurrency();
   const platformCfg = {
     tncUrl:          platformConfig.content.tncUrl,
     privacyUrl:      platformConfig.content.privacyUrl,
@@ -651,7 +652,7 @@ function ProfileScreenInner() {
                 </View>
                 <View style={ph.statDiv} />
                 <View style={ph.stat}>
-                  <Text style={ph.statVal}>Rs.{stats.spent.toLocaleString()}</Text>
+                  <Text style={ph.statVal}>{currencySymbol}{stats.spent.toLocaleString()}</Text>
                   <Text style={ph.statLbl}>{T("spentLabel")}</Text>
                 </View>
               </>
@@ -775,7 +776,7 @@ function ProfileScreenInner() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={rc.title}>{T("referAndEarn")}</Text>
-                <Text style={rc.sub}>Invite a friend — both of you get Rs. {platformConfig.customer.referralBonus.toLocaleString()}</Text>
+                <Text style={rc.sub}>Invite a friend — both of you get {currencySymbol} {platformConfig.customer.referralBonus.toLocaleString()}</Text>
                 <View style={rc.codeRow}>
                   <Text style={rc.codeLabel}>Your Code:</Text>
                   <View style={rc.codePill}>
@@ -806,7 +807,7 @@ function ProfileScreenInner() {
                       const bonus = platformConfig.customer.referralBonus;
                       try {
                         await Share.share({
-                          message: `Join ${appName} using my referral code ${code} and we both get Rs. ${bonus} bonus! Download the app now.`,
+                          message: `Join ${appName} using my referral code ${code} and we both get ${currencySymbol} ${bonus} bonus! Download the app now.`,
                           title: `Join ${appName}`,
                         });
                       } catch {}
@@ -831,7 +832,7 @@ function ProfileScreenInner() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={rc.title}>{T("loyaltyPointsLabel")}</Text>
-                <Text style={rc.sub}>Earn {platformConfig.customer.loyaltyPtsPerRs100} points for every Rs. 100 spent</Text>
+                <Text style={rc.sub}>Earn {platformConfig.customer.loyaltyPtsPerRs100} points for every {currencySymbol} 100 spent</Text>
                 <View style={rc.codeRow}>
                   <Text style={rc.codeLabel}>Available:</Text>
                   <View style={[rc.codePill, { backgroundColor: C.amberBorder }]}>
@@ -853,7 +854,7 @@ function ProfileScreenInner() {
                       const data = await res.json();
                       if (!res.ok) { showToast(data?.error || "Could not redeem points. Try again.", "error"); return; }
                       const redeemed = data?.data?.redeemed ?? data?.redeemed ?? 0;
-                      showToast(`Rs. ${redeemed} added to your wallet from loyalty points!`, "success");
+                      showToast(`${currencySymbol} ${redeemed} added to your wallet from loyalty points!`, "success");
                       if (updateUser && data?.data?.newBalance !== undefined) {
                         updateUser({ walletBalance: data.data.newBalance });
                       }

@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 
 export interface PlatformConfig {
+  currencySymbol?: string;
+  currencyCode?: string;
+  regional?: { currencySymbol?: string; [key: string]: unknown };
   vendor: {
     commissionPct: number;
     settleDays: number;
@@ -28,6 +31,8 @@ export interface PlatformConfig {
     commissionPct: number;
     vendorCommissionPct: number;
     minOrderAmount: number;
+    currencySymbol?: string;
+    currencyCode?: string;
   };
   features: {
     mart: boolean;
@@ -220,4 +225,12 @@ export function usePlatformConfig() {
     retry: 2,
   });
   return { config: data ?? DEFAULT_CONFIG, isLoading };
+}
+
+export function useCurrency() {
+  const { config } = usePlatformConfig();
+  return {
+    symbol: config.platform.currencySymbol ?? config.currencySymbol ?? config.regional?.currencySymbol ?? "Rs.",
+    code:   config.platform.currencyCode   ?? config.currencyCode   ?? "PKR",
+  };
 }

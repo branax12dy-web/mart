@@ -4,6 +4,7 @@ import { apiFetch } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { PullToRefresh } from "../components/PullToRefresh";
 import { CARD, BTN_PRIMARY, BTN_SECONDARY, errMsg } from "../lib/ui";
+import { useCurrency } from "../lib/useConfig";
 
 type Participation = {
   id: string;
@@ -43,12 +44,13 @@ const THEME_EMOJIS: Record<string, string> = {
   loyalty: "💎", weekend: "📅", newuser: "⭐", cashback: "💰",
 };
 
-function CampaignCard({ campaign, onJoin, onWithdraw, joining, withdrawing }: {
+function CampaignCard({ campaign, onJoin, onWithdraw, joining, withdrawing, currencySymbol }: {
   campaign: Campaign;
   onJoin: (id: string) => void;
   onWithdraw: (participationId: string) => void;
   joining: boolean;
   withdrawing: boolean;
+  currencySymbol: string;
 }) {
   const endDate = new Date(campaign.endDate);
   const now = new Date();
@@ -86,7 +88,7 @@ function CampaignCard({ campaign, onJoin, onWithdraw, joining, withdrawing }: {
         {campaign.budgetCap && (
           <div className="flex-1 bg-gray-50 rounded-lg p-2 text-center">
             <p className="text-xs text-gray-500">Budget</p>
-            <p className="font-bold text-sm text-gray-800">Rs.{campaign.budgetCap.toLocaleString()}</p>
+            <p className="font-bold text-sm text-gray-800">{currencySymbol}{campaign.budgetCap.toLocaleString()}</p>
           </div>
         )}
         {campaign.maxParticipatingVendors && (
@@ -136,6 +138,7 @@ function CampaignCard({ campaign, onJoin, onWithdraw, joining, withdrawing }: {
 
 export default function Campaigns() {
   const qc = useQueryClient();
+  const { symbol: currencySymbol } = useCurrency();
   const [toast, setToast] = useState("");
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
@@ -244,6 +247,7 @@ export default function Campaigns() {
                       onWithdraw={(pid) => withdrawMut.mutate(pid)}
                       joining={false}
                       withdrawing={withdrawingId === campaign.participation?.id}
+                      currencySymbol={currencySymbol}
                     />
                   ))}
                 </div>
@@ -265,6 +269,7 @@ export default function Campaigns() {
                       onWithdraw={() => {}}
                       joining={joiningId === campaign.id}
                       withdrawing={false}
+                      currencySymbol={currencySymbol}
                     />
                   ))}
                 </div>

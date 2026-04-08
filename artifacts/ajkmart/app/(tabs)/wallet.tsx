@@ -27,7 +27,7 @@ import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { useAuth, hasRole } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { usePlatformConfig } from "@/context/PlatformConfigContext";
+import { usePlatformConfig, useCurrency } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual } from "@workspace/i18n";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
@@ -93,6 +93,7 @@ function isDebitTx(tx: WalletTx): boolean {
 }
 
 function TxItem({ tx }: { tx: WalletTx }) {
+  const { symbol: currencySymbol } = useCurrency();
   const txStatus: string = tx.status ?? TX_STATUS_PENDING;
   const isManualTx = tx.type === "deposit" || tx.type === "withdrawal";
   const isPending  = isManualTx && txStatus === TX_STATUS_PENDING;
@@ -130,7 +131,7 @@ function TxItem({ tx }: { tx: WalletTx }) {
   const iconColor = isPending ? C.amber : isRejected ? C.amber : isCredit ? C.success : C.danger;
 
   return (
-    <View style={ws.txRow} accessibilityLabel={`${tx.description}, ${prefix}Rs. ${Number(tx.amount).toLocaleString()}${suffix}, ${date}`}>
+    <View style={ws.txRow} accessibilityLabel={`${tx.description}, ${prefix}${currencySymbol} ${Number(tx.amount).toLocaleString()}${suffix}, ${date}`}>
       <View style={[ws.txIcon, { backgroundColor: bgColor }]}>
         <Ionicons name={iconName as keyof typeof Ionicons.glyphMap} size={18} color={iconColor} />
       </View>
@@ -140,7 +141,7 @@ function TxItem({ tx }: { tx: WalletTx }) {
       </View>
       <View style={{ alignItems: "flex-end" }}>
         <Text style={[ws.txAmt, { color: amtColor }]}>
-          {prefix}Rs. {Number(tx.amount).toLocaleString()}
+          {prefix}{currencySymbol} {Number(tx.amount).toLocaleString()}
         </Text>
         {suffix ? <Text style={{ fontSize: 9, color: amtColor, fontFamily: Font.medium }}>{suffix}</Text> : null}
       </View>
@@ -646,6 +647,7 @@ type WithdrawStep = "method" | "details" | "confirm" | "done";
 const NOTE_MAX_LENGTH = 200;
 
 function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdrawal, pinToken }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; balance: number; minWithdrawal: number; pinToken?: string | null }) {
+  const { symbol: currencySymbol, code: currencyCode } = useCurrency();
   const [step, setStep]               = useState<WithdrawStep>("method");
   const [withdrawMethods, setWithdrawMethods] = useState<WithdrawMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
@@ -691,8 +693,8 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
   const goToConfirm = () => {
     const amt = parseFloat(amount);
     if (!amount || !isFinite(amt) || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
-    if (amt < (minWithdrawal ?? 0))                          { setErr(`Minimum withdrawal amount is Rs. ${(minWithdrawal ?? 0).toLocaleString()}`); return; }
-    if (amt > balance)                                        { setErr(`Insufficient balance. Available: Rs. ${balance.toLocaleString()}`); return; }
+    if (amt < (minWithdrawal ?? 0))                          { setErr(`Minimum withdrawal amount is ${currencySymbol} ${(minWithdrawal ?? 0).toLocaleString()}`); return; }
+    if (amt > balance)                                        { setErr(`Insufficient balance. Available: ${currencySymbol} ${balance.toLocaleString()}`); return; }
     if (!accountNumber.trim())                                { setErr("Account number is required"); return; }
     setErr("");
     setStep("confirm");
@@ -759,7 +761,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                     <View style={{ height: 1, backgroundColor: C.border }} />
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
-                      <Text style={{ ...Typ.h2, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                      <Text style={{ ...Typ.h2, color: C.danger }}>{currencySymbol} {parseFloat(amount).toLocaleString()}</Text>
                     </View>
                   </View>
                   <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]} accessibilityRole="button" accessibilityLabel="Done">
@@ -808,9 +810,9 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                     <Text style={[ws.sheetTitle, { marginBottom: 0 }]}>{selectedMethod.label} Withdrawal</Text>
                   </View>
 
-                  <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
+                  <Text style={ws.sheetLbl}>Amount ({currencyCode}) *</Text>
                   <View style={ws.amtWrap}>
-                    <Text style={ws.rupee}>Rs.</Text>
+                    <Text style={ws.rupee}>{currencySymbol}</Text>
                     <TextInput
                       style={ws.amtInput}
                       value={amount}
@@ -822,14 +824,14 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                   </View>
                   <View style={ws.quickRow}>
                     {QUICK_AMOUNTS.map(a => (
-                      <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`Rs. ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
-                        <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
+                      <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`${currencySymbol} ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
+                        <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>{currencySymbol} {a.toLocaleString()}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.amberBorder }}>
                     <Ionicons name="wallet-outline" size={14} color={C.amber} />
-                    <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Available: Rs. {balance.toLocaleString()}</Text>
+                    <Text style={{ ...Typ.caption, color: C.amberDark, flex: 1 }}>Available: {currencySymbol} {balance.toLocaleString()}</Text>
                   </View>
 
                   <Text style={ws.sheetLbl}>Your {selectedMethod.label} Account *</Text>
@@ -900,7 +902,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
                     <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Amount</Text>
-                      <Text style={{ ...Typ.h2, fontSize: 24, color: C.danger }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                      <Text style={{ ...Typ.h2, fontSize: 24, color: C.danger }}>{currencySymbol} {parseFloat(amount).toLocaleString()}</Text>
                     </View>
                   </View>
 
@@ -940,6 +942,7 @@ const SUBMITTED_TX_KEY = "wallet_submitted_tx_ids";
 let inMemorySubmittedTxIds: Set<string> = new Set();
 
 function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup }: { onClose: () => void; onSuccess: () => void; onFrozen?: () => void; token: string | null; minTopup: number; maxTopup: number }) {
+  const { symbol: currencySymbol, code: currencyCode } = useCurrency();
   const [step, setStep]               = useState<DepositStep>("method");
   const [methods, setMethods]         = useState<PayMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
@@ -1025,8 +1028,8 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
   const goToConfirm = () => {
     const amt = parseFloat(amount);
     if (!amount || !isFinite(amt) || isNaN(amt) || amt <= 0) { setErr("Please enter a valid amount"); return; }
-    if (amt < safeMinTopup)  { setErr(`Minimum deposit amount is Rs. ${safeMinTopup.toLocaleString()}`); return; }
-    if (amt > safeMaxTopup) { setErr(`Maximum deposit amount is Rs. ${safeMaxTopup.toLocaleString()}`); return; }
+    if (amt < safeMinTopup)  { setErr(`Minimum deposit amount is ${currencySymbol} ${safeMinTopup.toLocaleString()}`); return; }
+    if (amt > safeMaxTopup) { setErr(`Maximum deposit amount is ${currencySymbol} ${safeMaxTopup.toLocaleString()}`); return; }
     if (!txId.trim()) { setErr("Transaction ID is required"); return; }
     setErr("");
     setStep("confirm");
@@ -1143,7 +1146,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                     <View style={{ height: 1, backgroundColor: C.border }} />
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
-                      <Text style={{ ...Typ.h2, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                      <Text style={{ ...Typ.h2, color: C.success }}>{currencySymbol} {parseFloat(amount).toLocaleString()}</Text>
                     </View>
                   </View>
                   <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={[ws.actionBtn, { backgroundColor: C.primary, marginTop: 16, width: "100%" }]} accessibilityRole="button" accessibilityLabel="Done">
@@ -1266,9 +1269,9 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                   <Text style={ws.sheetTitle}>Transaction Details</Text>
                   <Text style={{ ...Typ.body, color: C.textMuted, marginBottom: 18 }}>Enter your payment details</Text>
 
-                  <Text style={ws.sheetLbl}>Amount (PKR) *</Text>
+                  <Text style={ws.sheetLbl}>Amount ({currencyCode}) *</Text>
                   <View style={ws.amtWrap}>
-                    <Text style={ws.rupee}>Rs.</Text>
+                    <Text style={ws.rupee}>{currencySymbol}</Text>
                     <TextInput
                       style={ws.amtInput}
                       value={amount}
@@ -1280,13 +1283,13 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                   </View>
                   <Text style={{ ...Typ.caption, color: C.textMuted, marginTop: 4, marginBottom: 4 }}>
                     {minTopup && maxTopup
-                      ? `Limits: Rs. ${safeMinTopup.toLocaleString()} – Rs. ${safeMaxTopup.toLocaleString()}`
+                      ? `Limits: ${currencySymbol} ${safeMinTopup.toLocaleString()} – ${currencySymbol} ${safeMaxTopup.toLocaleString()}`
                       : "Loading limits…"}
                   </Text>
                   <View style={ws.quickRow}>
                     {QUICK_AMOUNTS.map(a => (
-                      <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`Rs. ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
-                        <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>Rs. {a.toLocaleString()}</Text>
+                      <TouchableOpacity activeOpacity={0.7} key={a} onPress={() => setAmount(a.toString())} style={[ws.quickBtn, amount === a.toString() && ws.quickBtnActive]} accessibilityRole="button" accessibilityLabel={`${currencySymbol} ${a.toLocaleString()}`} accessibilityState={{ selected: amount === a.toString() }}>
+                        <Text style={[ws.quickTxt, amount === a.toString() && ws.quickTxtActive]}>{currencySymbol} {a.toLocaleString()}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1375,7 +1378,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
                     <View style={{ height: 1, backgroundColor: C.border, marginVertical: 4 }} />
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ ...Typ.buttonSmall, color: C.textMuted }}>Amount</Text>
-                      <Text style={{ ...Typ.h2, fontSize: 24, color: C.success }}>Rs. {parseFloat(amount).toLocaleString()}</Text>
+                      <Text style={{ ...Typ.h2, fontSize: 24, color: C.success }}>{currencySymbol} {parseFloat(amount).toLocaleString()}</Text>
                     </View>
                   </View>
 
@@ -1458,6 +1461,7 @@ function WalletScreenInner() {
   const [pendingTopups,  setPendingTopups]  = useState<{ count: number; total: number }>({ count: 0, total: 0 });
 
   const { config: platformConfig } = usePlatformConfig();
+  const { symbol: currencySymbol, code: currencyCode } = useCurrency();
   const appName     = platformConfig.platform.appName;
   const minTransfer = platformConfig.customer.minTransfer;
   const p2pEnabled  = platformConfig.customer.p2pEnabled;
@@ -1656,10 +1660,10 @@ function WalletScreenInner() {
     }
     const num = parseFloat(sendAmount);
     const safeMinTransfer = minTransfer || 200;
-    if (!num || !isFinite(num) || isNaN(num) || num < safeMinTransfer) { showToast(`Minimum transfer amount is Rs. ${safeMinTransfer.toLocaleString()}`, "error"); return; }
+    if (!num || !isFinite(num) || isNaN(num) || num < safeMinTransfer) { showToast(`Minimum transfer amount is ${currencySymbol} ${safeMinTransfer.toLocaleString()}`, "error"); return; }
     const feeAmount = Math.round(num * p2pFee) / 100;
     const totalRequired = num + feeAmount;
-    if (totalRequired > balance) { showToast(`Insufficient balance. Need Rs. ${totalRequired.toLocaleString()} (includes Rs. ${feeAmount.toLocaleString()} fee)`, "error"); return; }
+    if (totalRequired > balance) { showToast(`Insufficient balance. Need ${currencySymbol} ${totalRequired.toLocaleString()} (includes ${currencySymbol} ${feeAmount.toLocaleString()} fee)`, "error"); return; }
     setSendReceiverName("");
     setSendNetworkError(false);
     setSendLoading(true);
@@ -1739,7 +1743,7 @@ function WalletScreenInner() {
       updateUser({ walletBalance: data.newBalance });
       qc.invalidateQueries({ queryKey: walletQueryKey });
       closeSendModal();
-      showToast(`Rs. ${num.toLocaleString()} sent to ${data.receiverName || sendPhone}!`, "success");
+      showToast(`${currencySymbol} ${num.toLocaleString()} sent to ${data.receiverName || sendPhone}!`, "success");
     } catch {
       showToast("Network error. Please try again.", "error");
       setSendLoading(false);
@@ -1842,7 +1846,7 @@ function WalletScreenInner() {
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 2 }}>
                 <Text style={{ fontFamily: Font.bold, fontSize: 34, color: "#FFFFFF" }}>
-                  {walletHidden ? "Rs. ••••••" : `Rs. ${balance.toLocaleString()}`}
+                  {walletHidden ? `${currencySymbol} ••••••` : `${currencySymbol} ${balance.toLocaleString()}`}
                 </Text>
                 <TouchableOpacity activeOpacity={0.7} onPress={toggleWalletVisibility} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel={walletHidden ? "Show balance" : "Hide balance"}>
                   <Ionicons name={walletHidden ? "eye-off" : "eye"} size={22} color="rgba(255,255,255,0.7)" />
@@ -1885,7 +1889,7 @@ function WalletScreenInner() {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 12, marginTop: 12, padding: 12, borderWidth: 1, borderColor: C.amberBorder }}>
                   <Ionicons name="time-outline" size={14} color={C.amber} />
                   <Text style={{ ...Typ.captionMedium, color: C.amberDark, flex: 1 }}>
-                    {pendingTopups.count} pending ({`Rs. ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
+                    {pendingTopups.count} pending ({`${currencySymbol} ${pendingTopups.total.toLocaleString()}`}) — awaiting approval
                   </Text>
                 </View>
               )}
@@ -1908,14 +1912,14 @@ function WalletScreenInner() {
               <Ionicons name="arrow-down-outline" size={16} color={C.success} />
             </View>
             <Text style={ws.statLbl}>{T("moneyIn")}</Text>
-            <Text style={[ws.statAmt, { color: C.success }]}>Rs. {totalIn.toLocaleString()}</Text>
+            <Text style={[ws.statAmt, { color: C.success }]}>{currencySymbol} {totalIn.toLocaleString()}</Text>
           </View>
           <View style={ws.statCard}>
             <View style={[ws.statIcon, { backgroundColor: C.redSoft }]}>
               <Ionicons name="arrow-up-outline" size={16} color={C.danger} />
             </View>
             <Text style={ws.statLbl}>{T("moneyOut")}</Text>
-            <Text style={[ws.statAmt, { color: C.danger }]}>Rs. {totalOut.toLocaleString()}</Text>
+            <Text style={[ws.statAmt, { color: C.danger }]}>{currencySymbol} {totalOut.toLocaleString()}</Text>
           </View>
           <View style={ws.statCard}>
             <View style={[ws.statIcon, { backgroundColor: C.brandBlueSoft }]}>
@@ -2115,9 +2119,9 @@ function WalletScreenInner() {
                       </View>
                     ) : null}
 
-                    <Text style={ws.sheetLbl}>Amount (PKR)</Text>
+                    <Text style={ws.sheetLbl}>Amount ({currencyCode})</Text>
                     <View style={ws.amtWrap}>
-                      <Text style={ws.rupee}>Rs.</Text>
+                      <Text style={ws.rupee}>{currencySymbol}</Text>
                       <TextInput style={ws.amtInput} value={sendAmount} onChangeText={t => setSendAmount(t.replace(/[^0-9]/g, ""))} keyboardType="numeric" placeholder="0" placeholderTextColor={C.textMuted} />
                     </View>
 
@@ -2129,7 +2133,7 @@ function WalletScreenInner() {
 
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, marginTop: 4 }}>
                       <Ionicons name="wallet-outline" size={14} color={C.primary} />
-                      <Text style={{ ...Typ.caption, color: C.textMuted, flex: 1 }}>Available: Rs. {balance.toLocaleString()} · Min: Rs. {(minTransfer || 200).toLocaleString()}</Text>
+                      <Text style={{ ...Typ.caption, color: C.textMuted, flex: 1 }}>Available: {currencySymbol} {balance.toLocaleString()} · Min: {currencySymbol} {(minTransfer || 200).toLocaleString()}</Text>
                     </View>
                     {p2pFee > 0 && (
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
@@ -2168,12 +2172,12 @@ function WalletScreenInner() {
                       </View>
                       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                         <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>Amount</Text>
-                        <Text style={{ ...Typ.h3, fontSize: 16, color: C.purple }}>Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
+                        <Text style={{ ...Typ.h3, fontSize: 16, color: C.purple }}>{currencySymbol} {parseFloat(sendAmount || "0").toLocaleString()}</Text>
                       </View>
                       {p2pFee > 0 && (
                         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                           <Text style={{ ...Typ.body, fontSize: 13, color: C.textMuted }}>P2P Fee ({p2pFee}%)</Text>
-                          <Text style={{ ...Typ.body, fontSize: 13, color: C.danger }}>Rs. {(Math.round(parseFloat(sendAmount || "0") * p2pFee) / 100).toLocaleString()}</Text>
+                          <Text style={{ ...Typ.body, fontSize: 13, color: C.danger }}>{currencySymbol} {(Math.round(parseFloat(sendAmount || "0") * p2pFee) / 100).toLocaleString()}</Text>
                         </View>
                       )}
                       {sendNote ? (
@@ -2195,11 +2199,11 @@ function WalletScreenInner() {
                       <Text style={{ ...Typ.buttonSmall, color: C.primary }}>Edit Details</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity activeOpacity={0.7} onPress={handleSendConfirm} disabled={sendLoading || !sendIdempotencyKey} style={[ws.actionBtn, { backgroundColor: C.purple }, (sendLoading || !sendIdempotencyKey) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={`Send Rs. ${parseFloat(sendAmount || "0").toLocaleString()}`} accessibilityState={{ disabled: sendLoading || !sendIdempotencyKey }}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={handleSendConfirm} disabled={sendLoading || !sendIdempotencyKey} style={[ws.actionBtn, { backgroundColor: C.purple }, (sendLoading || !sendIdempotencyKey) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={`Send ${currencySymbol} ${parseFloat(sendAmount || "0").toLocaleString()}`} accessibilityState={{ disabled: sendLoading || !sendIdempotencyKey }}>
                       {sendLoading ? <ActivityIndicator color={C.textInverse} /> : (
                         <>
                           <Ionicons name="send" size={17} color={C.textInverse} />
-                          <Text style={ws.actionBtnTxt}>Send Rs. {parseFloat(sendAmount || "0").toLocaleString()}</Text>
+                          <Text style={ws.actionBtnTxt}>Send {currencySymbol} {parseFloat(sendAmount || "0").toLocaleString()}</Text>
                         </>
                       )}
                     </TouchableOpacity>

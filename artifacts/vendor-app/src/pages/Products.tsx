@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import Papa from "papaparse";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, useCurrency } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
@@ -22,6 +22,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function Products() {
   const qc = useQueryClient();
   const { config } = usePlatformConfig();
+  const { symbol: currencySymbol, code: currencyCode } = useCurrency();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const maxItems = config.vendor?.maxItems ?? 100;
@@ -421,7 +422,7 @@ export default function Products() {
                     <input className={`${B_INPUT} ${!row.name && row.price ? "border-red-300 bg-red-50" : ""}`}
                       value={row.name} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,name:e.target.value} : x))} placeholder="Product name *"/>
                     <input className={`${B_INPUT} ${row.name && !row.price ? "border-red-300 bg-red-50" : ""}`}
-                      type="number" inputMode="numeric" value={row.price} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,price:e.target.value} : x))} placeholder="Rs. *"/>
+                      type="number" inputMode="numeric" value={row.price} onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,price:e.target.value} : x))} placeholder={`${currencySymbol} *`}/>
                     <input className={B_INPUT} value={row.description}
                       onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,description:e.target.value} : x))} placeholder="Short description"/>
                     <input className={B_INPUT} type="url" value={row.image}
@@ -466,7 +467,7 @@ export default function Products() {
                     onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,name:e.target.value} : x))} placeholder="Product name"/>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 mb-1">PRICE (Rs.) *</p>
+                  <p className="text-[10px] font-bold text-gray-400 mb-1">PRICE ({currencySymbol}) *</p>
                   <input className={`${B_INPUT} h-10`} type="number" inputMode="numeric" value={row.price}
                     onChange={e => setBulkRows(r => r.map((x,j) => j===i ? {...x,price:e.target.value} : x))} placeholder="0"/>
                 </div>
@@ -644,8 +645,8 @@ export default function Products() {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="font-extrabold text-orange-600 text-base">{fc(p.price)}</p>
-                        {p.originalPrice && p.originalPrice > p.price && <p className="text-[10px] text-gray-400 line-through">{fc(p.originalPrice)}</p>}
+                        <p className="font-extrabold text-orange-600 text-base">{fc(p.price, currencySymbol)}</p>
+                        {p.originalPrice && p.originalPrice > p.price && <p className="text-[10px] text-gray-400 line-through">{fc(p.originalPrice, currencySymbol)}</p>}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-2.5">

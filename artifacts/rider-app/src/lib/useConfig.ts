@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 
 export interface PlatformConfig {
+  currencySymbol?: string;
+  currencyCode?: string;
+  regional?: { currencySymbol?: string; [key: string]: unknown };
   rider?: {
     keepPct: number;
     bonusPerTrip: number;
@@ -39,6 +42,7 @@ export interface PlatformConfig {
     vendorCommissionPct: number;
     minOrderAmount: number;
     currencySymbol?: string;
+    currencyCode?: string;
   };
   features: {
     mart: boolean;
@@ -217,6 +221,8 @@ const DEFAULT_CONFIG: PlatformConfig = {
     commissionPct: 10,
     vendorCommissionPct: 15,
     minOrderAmount: 100,
+    currencySymbol: "Rs.",
+    currencyCode: "PKR",
   },
   features: { mart: true, food: true, rides: true, pharmacy: true, parcel: true, wallet: true, referral: true, newUsers: true, chat: false, liveTracking: true, reviews: true, sos: true },
   content: { trackerBannerEnabled: true, trackerBannerPosition: "top", showBanner: true, banner: "Free delivery on your first order! 🎉", announcement: "", maintenanceMsg: "We're performing scheduled maintenance. Back soon!", supportMsg: "Need help? Chat with us!", vendorNotice: "", riderNotice: "", tncUrl: "", privacyUrl: "", refundPolicyUrl: "", faqUrl: "", aboutUrl: "" },
@@ -324,4 +330,12 @@ export function usePlatformConfig() {
     retry: 2,
   });
   return { config: data ?? DEFAULT_CONFIG, isLoading };
+}
+
+export function useCurrency() {
+  const { config } = usePlatformConfig();
+  return {
+    symbol: config.platform.currencySymbol ?? config.currencySymbol ?? config.regional?.currencySymbol ?? "Rs.",
+    code:   config.platform.currencyCode   ?? config.currencyCode   ?? "PKR",
+  };
 }

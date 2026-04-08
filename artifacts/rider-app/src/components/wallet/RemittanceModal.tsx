@@ -6,8 +6,7 @@ import {
   CheckCircle, AlertTriangle, Loader2, Lightbulb,
 } from "lucide-react";
 import type { PayMethod } from "./WithdrawModal";
-
-const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
+import { useCurrency } from "../../lib/useConfig";
 const INPUT = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:bg-white transition-colors";
 
 function MethodLogo({ id }: { id: string }) {
@@ -19,6 +18,8 @@ function MethodLogo({ id }: { id: string }) {
 export default function RemittanceModal({ netOwed, onClose, onSuccess }: {
   netOwed: number; onClose: () => void; onSuccess: () => void;
 }) {
+  const { symbol: currencySymbol } = useCurrency();
+  const fc = (n: number) => `${currencySymbol} ${Math.round(n).toLocaleString()}`;
   const [step, setStep]     = useState<"method"|"details"|"confirm"|"done">("method");
   const [method, setMethod] = useState<PayMethod | null>(null);
   const [amount, setAmount] = useState(String(Math.ceil(netOwed)));
@@ -64,7 +65,7 @@ export default function RemittanceModal({ netOwed, onClose, onSuccess }: {
 
   const goToConfirm = () => {
     const amt = Number(amount);
-    if (!amount || isNaN(amt) || amt < 1) { setErr("Amount kam az kam Rs. 1 hona chahiye"); return; }
+    if (!amount || isNaN(amt) || amt < 1) { setErr(`Amount kam az kam ${currencySymbol} 1 hona chahiye`); return; }
     if (amt > netOwed) { setErr(`Amount ${fc(amt)} owed amount ${fc(netOwed)} se zyada nahi ho sakta`); return; }
     if (!acNo.trim()) { setErr("Account / phone number required"); return; }
     if (!txId.trim()) { setErr("Transaction reference ID required hai"); return; }
@@ -184,7 +185,7 @@ export default function RemittanceModal({ netOwed, onClose, onSuccess }: {
 
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount (Rs.) *</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount ({currencySymbol}) *</p>
                   <input type="number" inputMode="numeric" value={amount} min={1} max={Math.ceil(netOwed)}
                     onChange={e => { setAmount(e.target.value); setErr(""); }} className={INPUT} placeholder="0"/>
                 </div>

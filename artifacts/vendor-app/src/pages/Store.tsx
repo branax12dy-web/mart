@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, useCurrency } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
@@ -74,6 +74,7 @@ const DEFAULT_HOURS = Object.fromEntries(DAYS.map(d => [d, { open:"09:00", close
 export default function Store() {
   const { user, refreshUser } = useAuth();
   const { config } = usePlatformConfig();
+  const { symbol: currencySymbol, code: currencyCode } = useCurrency();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const promoEnabled = config.vendor?.promoEnabled !== false;
@@ -309,7 +310,7 @@ export default function Store() {
                   <input type="text" value={sf.storeDeliveryTime} onChange={e => s("storeDeliveryTime", e.target.value)} placeholder="30-45 min" className={INPUT}/>
                 </div>
                 <div>
-                  <label className={LABEL}>{T("minOrder")} (Rs.)</label>
+                  <label className={LABEL}>{T("minOrder")} ({currencySymbol})</label>
                   <input type="number" inputMode="numeric" value={sf.storeMinOrder} onChange={e => s("storeMinOrder", e.target.value)} placeholder="0" className={INPUT}/>
                 </div>
                 <div>
@@ -505,7 +506,7 @@ export default function Store() {
                   <label className={LABEL}>{T("discountType")}</label>
                   <div className="flex gap-2">
                     <button onClick={() => p("type","pct")}  className={`flex-1 h-11 rounded-xl text-sm font-bold border-2 android-press min-h-0 ${pf.type==="pct"  ? "border-orange-500 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-400"}`}>% {T("percentage")}</button>
-                    <button onClick={() => p("type","flat")} className={`flex-1 h-11 rounded-xl text-sm font-bold border-2 android-press min-h-0 ${pf.type==="flat" ? "border-orange-500 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-400"}`}>Rs. {T("flatAmount")}</button>
+                    <button onClick={() => p("type","flat")} className={`flex-1 h-11 rounded-xl text-sm font-bold border-2 android-press min-h-0 ${pf.type==="flat" ? "border-orange-500 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-400"}`}>{currencySymbol} {T("flatAmount")}</button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -514,7 +515,7 @@ export default function Store() {
                     <input type="number" inputMode="numeric" value={pf.type==="pct" ? pf.discountPct : pf.discountFlat} onChange={e => p(pf.type==="pct" ? "discountPct" : "discountFlat", e.target.value)} placeholder={pf.type==="pct" ? "20" : "100"} className={INPUT}/>
                   </div>
                   <div>
-                    <label className={LABEL}>{T("minOrder")} (Rs.)</label>
+                    <label className={LABEL}>{T("minOrder")} ({currencySymbol})</label>
                     <input type="number" inputMode="numeric" value={pf.minOrderAmount} onChange={e => p("minOrderAmount",e.target.value)} placeholder="500" className={INPUT}/>
                   </div>
                   <div>
@@ -560,9 +561,9 @@ export default function Store() {
                             {pm.description && <p className="text-xs text-gray-500 mt-0.5">{pm.description}</p>}
                             <div className="flex items-center gap-2 mt-2 flex-wrap">
                               <span className="text-xs bg-orange-50 text-orange-600 font-bold px-2.5 py-1 rounded-full">
-                                {pm.discountPct > 0 ? `${pm.discountPct}% OFF` : `Rs. ${pm.discountFlat} OFF`}
+                                {pm.discountPct > 0 ? `${pm.discountPct}% OFF` : `${currencySymbol} ${pm.discountFlat} OFF`}
                               </span>
-                              {pm.minOrderAmount > 0 && <span className="text-xs text-gray-400">Min: {fc(pm.minOrderAmount)}</span>}
+                              {pm.minOrderAmount > 0 && <span className="text-xs text-gray-400">Min: {fc(pm.minOrderAmount, currencySymbol)}</span>}
                               {pm.usageLimit && <span className="text-xs text-gray-400">{pm.usedCount}/{pm.usageLimit} used</span>}
                             </div>
                           </div>
@@ -596,7 +597,7 @@ export default function Store() {
                                 <input type="number" inputMode="numeric" value={pf.type==="pct" ? pf.discountPct : pf.discountFlat} onChange={e => p(pf.type==="pct" ? "discountPct" : "discountFlat", e.target.value)} className={INPUT}/>
                               </div>
                               <div>
-                                <label className={LABEL}>{T("minOrder")} (Rs.)</label>
+                                <label className={LABEL}>{T("minOrder")} ({currencySymbol})</label>
                                 <input type="number" inputMode="numeric" value={pf.minOrderAmount} onChange={e => p("minOrderAmount", e.target.value)} className={INPUT}/>
                               </div>
                               <div>

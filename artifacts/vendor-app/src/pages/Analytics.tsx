@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, useCurrency } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PageHeader } from "../components/PageHeader";
@@ -26,6 +26,7 @@ export default function Analytics() {
   const [days, setDays] = useState(30);
   const { user } = useAuth();
   const { config } = usePlatformConfig();
+  const { symbol: currencySymbol } = useCurrency();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
 
@@ -85,9 +86,9 @@ export default function Analytics() {
         {/* ── KPI Cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: T("revenue"),       value: fc(totalRevenue),             icon: "💰", sub: `${days} ${T("dayTrend")}`, bg: "bg-orange-50", val: "text-orange-600" },
-            { label: T("orders"),        value: String(totalOrders),          icon: "📦", sub: `${days} ${T("dayTrend")}`, bg: "bg-blue-50",   val: "text-blue-600"   },
-            { label: T("avgOrder"),      value: fc(avgOrderValue),            icon: "📊", sub: T("avgOrder"),       bg: "bg-purple-50", val: "text-purple-600" },
+            { label: T("revenue"),       value: fc(totalRevenue, currencySymbol),             icon: "💰", sub: `${days} ${T("dayTrend")}`, bg: "bg-orange-50", val: "text-orange-600" },
+            { label: T("orders"),        value: String(totalOrders),                          icon: "📦", sub: `${days} ${T("dayTrend")}`, bg: "bg-blue-50",   val: "text-blue-600"   },
+            { label: T("avgOrder"),      value: fc(avgOrderValue, currencySymbol),            icon: "📊", sub: T("avgOrder"),       bg: "bg-purple-50", val: "text-purple-600" },
             { label: T("completion"),    value: `${completionRate}%`,         icon: "✅", sub: T("delivered"),      bg: "bg-green-50",  val: "text-green-600"  },
           ].map(k => (
             <div key={k.label} className={`${k.bg} rounded-2xl p-4`}>
@@ -111,7 +112,7 @@ export default function Analytics() {
                 <p className="font-bold text-gray-800 text-sm">{T("dailyRevenue")}</p>
                 <p className="text-xs text-gray-400">{days} {T("dayTrend")}</p>
               </div>
-              <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2.5 py-1 rounded-full">Rs.</span>
+              <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2.5 py-1 rounded-full">{currencySymbol}</span>
             </div>
             <div className="p-4">
               {isLoading ? (
@@ -126,7 +127,7 @@ export default function Analytics() {
                       return (
                         <div key={i} className="flex-shrink-0 flex flex-col items-center justify-end gap-0.5 group relative" style={{ minWidth: `${Math.max(4, Math.floor(100 / days))}%`, width: `${Math.max(4, Math.floor(100 / days))}%` }}>
                           <div className="absolute bottom-full mb-1 bg-gray-800 text-white text-[10px] font-bold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                            {fc(d.revenue || 0)}<br/>{d.date}
+                            {fc(d.revenue || 0, currencySymbol)}<br/>{d.date}
                           </div>
                           <div className="w-full bg-orange-400 rounded-t-sm hover:bg-orange-500 transition-colors"
                             style={{ height: `${Math.max(pct, 2)}%` }}/>
@@ -231,7 +232,7 @@ export default function Analytics() {
                       <p className="text-xs text-gray-400">{p.orders} {T("ordersSold")}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-orange-500">{fc(p.revenue || 0)}</p>
+                      <p className="text-sm font-bold text-orange-500">{fc(p.revenue || 0, currencySymbol)}</p>
                     </div>
                   </div>
                 ))

@@ -6,8 +6,7 @@ import {
   CheckCircle, AlertTriangle, Loader2,
 } from "lucide-react";
 import type { PayMethod } from "./WithdrawModal";
-
-const fc = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`;
+import { useCurrency } from "../../lib/useConfig";
 const INPUT = "w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-teal-400 focus:bg-white transition-colors";
 
 function MethodLogo({ id }: { id: string }) {
@@ -21,6 +20,8 @@ export default function DepositModal({
 }: {
   minBalance: number; balance: number; onClose: () => void; onSuccess: () => void;
 }) {
+  const { symbol: currencySymbol } = useCurrency();
+  const fc = (n: number) => `${currencySymbol} ${Math.round(n).toLocaleString()}`;
   const [amount, setAmount]         = useState("");
   const [selectedMethod, setMethod] = useState<PayMethod | null>(null);
   const [txId, setTxId]             = useState("");
@@ -65,7 +66,7 @@ export default function DepositModal({
 
   const goToMethod = () => {
     const amt = Number(amount);
-    if (!amount || isNaN(amt) || amt < 100) { setErr("Minimum deposit Rs. 100 hai"); return; }
+    if (!amount || isNaN(amt) || amt < 100) { setErr(`Minimum deposit ${currencySymbol} 100 hai`); return; }
     setErr(""); setStep("method");
   };
 
@@ -152,7 +153,7 @@ export default function DepositModal({
               )}
               <p className="text-sm text-gray-600 mb-4">Kitna deposit karna chahte hain?</p>
               <div className="relative mb-2">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">Rs.</span>
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">{currencySymbol}</span>
                 <input
                   value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
                   inputMode="numeric" placeholder="0"
@@ -263,7 +264,7 @@ export default function DepositModal({
                 <div className="border-t border-teal-200 pt-2 mt-2">
                   <p className="text-xs text-teal-700">
                     {selectedMethod.manualInstructions || selectedMethod.instructions ||
-                      `Rs. ${Number(amount).toLocaleString()} transfer karein aur Transaction ID yahan daalen.`}
+                      `${currencySymbol} ${Number(amount).toLocaleString()} transfer karein aur Transaction ID yahan daalen.`}
                   </p>
                 </div>
               </div>

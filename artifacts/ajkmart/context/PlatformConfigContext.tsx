@@ -130,10 +130,6 @@ export interface PlatformConfig {
     walletCashbackRides: boolean;
     walletCashbackPharm: boolean;
   };
-  payment: {
-    jazzcashProofRequired: boolean;
-    paymentReceiptRequired: boolean;
-  };
   integrations: {
     pushNotif: boolean;
     analytics: boolean;
@@ -156,6 +152,14 @@ export interface PlatformConfig {
   security: {
     orderGpsCaptureEnabled: boolean;
     gpsMismatchThresholdM: number;
+  };
+  regional: {
+    currencySymbol: string;
+  };
+  payment: {
+    jazzcashProofRequired: boolean;
+    paymentReceiptRequired: boolean;
+    currency: string;
   };
   profile: {
     showSavedAddresses: boolean;
@@ -320,9 +324,13 @@ const DEFAULT: PlatformConfig = {
     maxOrdersDay: 10, signupBonus: 0, p2pEnabled: true, p2pFeePct: 0,
     walletCashbackPct: 0, walletCashbackOrders: true, walletCashbackRides: false, walletCashbackPharm: false,
   },
+  regional: {
+    currencySymbol: "Rs.",
+  },
   payment: {
     jazzcashProofRequired: false,
     paymentReceiptRequired: false,
+    currency: "PKR",
   },
   security: {
     orderGpsCaptureEnabled: false,
@@ -556,9 +564,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           walletCashbackRides:      raw.customer?.walletCashbackRides      ?? DEFAULT.customer.walletCashbackRides,
           walletCashbackPharm:      raw.customer?.walletCashbackPharm      ?? DEFAULT.customer.walletCashbackPharm,
         },
+        regional: {
+          currencySymbol: raw.regional?.currencySymbol ?? raw.currencySymbol ?? DEFAULT.regional.currencySymbol,
+        },
         payment: {
           jazzcashProofRequired:  raw.payment?.jazzcashProofRequired  ?? DEFAULT.payment.jazzcashProofRequired,
           paymentReceiptRequired: raw.payment?.paymentReceiptRequired ?? DEFAULT.payment.paymentReceiptRequired,
+          currency: raw.payment?.currency ?? raw.currencyCode ?? DEFAULT.payment.currency,
         },
         security: {
           orderGpsCaptureEnabled: raw.security?.orderGpsCaptureEnabled ?? DEFAULT.security.orderGpsCaptureEnabled,
@@ -703,4 +715,12 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
 
 export function usePlatformConfig() {
   return useContext(PlatformConfigContext);
+}
+
+export function useCurrency() {
+  const { config } = useContext(PlatformConfigContext);
+  return {
+    symbol: config.regional?.currencySymbol ?? "Rs.",
+    code:   config.payment?.currency        ?? "PKR",
+  };
 }

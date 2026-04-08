@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { usePlatformConfig } from "../lib/useConfig";
+import { usePlatformConfig, useCurrency } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { useAuth } from "../lib/auth";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -57,6 +57,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 export default function Orders() {
   const qc = useQueryClient();
   const { config } = usePlatformConfig();
+  const { symbol: currencySymbol } = useCurrency();
   const { language } = useLanguage();
   const { user } = useAuth();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -582,7 +583,7 @@ export default function Orders() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-xs font-bold text-indigo-600">{rider.distanceKm.toFixed(1)} km</p>
-                        <p className="text-[10px] text-green-600 font-semibold">Rs. {rider.walletBalance.toFixed(0)}</p>
+                        <p className="text-[10px] text-green-600 font-semibold">{currencySymbol} {rider.walletBalance.toFixed(0)}</p>
                       </div>
                     </button>
                   ))}

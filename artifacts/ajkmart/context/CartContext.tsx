@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { Alert } from "react-native";
 import { useAuth } from "@/context/AuthContext";
+import { useCurrency } from "@/context/PlatformConfigContext";
 import { unwrapApiResponse } from "../utils/api";
 
 export interface CartItem {
@@ -56,6 +57,7 @@ const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { token, socket } = useAuth();
+  const { symbol: currencySymbol } = useCurrency();
   const [items, setItems] = useState<CartItem[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -235,7 +237,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           messages.push(`Removed (unavailable): ${data.removed.join(", ")}`);
         }
         if (data.priceChanges?.length > 0) {
-          const changes = data.priceChanges.map((c: any) => `${c.name}: Rs.${c.oldPrice} → Rs.${c.newPrice}`).join("\n");
+          const changes = data.priceChanges.map((c: any) => `${c.name}: ${currencySymbol}${c.oldPrice} → ${currencySymbol}${c.newPrice}`).join("\n");
           messages.push(`Prices updated:\n${changes}`);
         }
         if (messages.length > 0) {
