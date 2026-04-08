@@ -1474,3 +1474,22 @@ All 30+ empty `.catch(() => {})` blocks in the API server now log meaningful mes
 #### Admin Navigation
 - Experiments page added under Analytics & Tools group.
 - New "Integrations" nav group (green) with Webhooks and Deep Links pages.
+
+### Critical Bug Fixes — Auth & Registration Flow
+
+#### Register Page Phone OTP Bug Fixed (`artifacts/ajkmart/app/auth/register.tsx`)
+- **Root Cause**: `check-identifier` endpoint by design ALWAYS returns `action: "send_phone_otp"` for any phone number (new or existing) — this is a security hardening to prevent phone enumeration. The register page was checking `action && action !== "register"` which would ALWAYS be true for phones, making registration completely impossible.
+- **Fix**: Removed the `action !== "register"` gate; now only blocks on explicit error actions: `registration_closed`, `blocked`, `locked`, `no_method`.
+- **Additional fix**: After OTP verification in register flow, if `verify-otp` returns a fully-profiled user (`name` + `id` present in response), auto-login the user and redirect to home instead of proceeding to the registration form steps.
+
+#### Admin ProtectedRoute JWT Expiry Check (`artifacts/admin/src/App.tsx`)
+- Admin panel now decodes the JWT and checks the `exp` claim on every route guard. Previously only checked token existence, not expiry — expired tokens were treated as valid.
+- QueryCache 401 subscriber improved to detect "session expired" and "please log in" message patterns.
+
+#### Admin Users Page Error State (`artifacts/admin/src/pages/users.tsx`)
+- Shows "Re-Login" button alongside Retry when a 401/session-expired error occurs.
+
+#### OTP Notes for Production
+- In production (`NODE_ENV=production`), OTPs are delivered only via WhatsApp or SMS — never in the API response.
+- If SMS/WhatsApp is not configured, users will not receive OTPs. Admin can enable "Dev OTP Mode" (`security_global_dev_otp`) from Admin → Settings → Security for testing.
+- Production DB currently has 0 users; 1 pending_otp entry (unverified registration attempt).

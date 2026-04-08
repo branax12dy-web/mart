@@ -1527,11 +1527,16 @@ export default function Users() {
             </div>
             <div>
               <p className="font-semibold text-red-800">Failed to load users</p>
-              <p className="text-sm text-red-600 mt-1">Check your connection and try again.</p>
+              <p className="text-sm text-red-600 mt-1">Your session may have expired. Please log in again.</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-2 rounded-xl border-red-200 text-red-700 hover:bg-red-100">
-              <RefreshCw className="w-4 h-4 mr-2" /> Retry
-            </Button>
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" size="sm" onClick={() => refetch()} className="rounded-xl border-red-200 text-red-700 hover:bg-red-100">
+                <RefreshCw className="w-4 h-4 mr-2" /> Retry
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => { sessionStorage.removeItem("ajkmart_admin_token"); window.location.href = (import.meta.env.BASE_URL?.replace(/\/$/, "") || "") + "/login"; }} className="rounded-xl border-red-200 text-red-700 hover:bg-red-100">
+                Re-Login
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (

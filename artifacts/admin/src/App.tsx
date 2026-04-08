@@ -76,8 +76,11 @@ const queryClient = new QueryClient({
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const err = event.action.error as any;
+    const msg = (err?.message || "").toLowerCase();
     const is401 =
-      err?.message?.toLowerCase().includes("unauthorized") ||
+      msg.includes("unauthorized") ||
+      msg.includes("session expired") ||
+      msg.includes("please log in") ||
       err?.status === 401;
     if (is401 && sessionStorage.getItem("ajkmart_admin_token")) {
       sessionStorage.removeItem("ajkmart_admin_token");
@@ -95,9 +98,20 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     const token = sessionStorage.getItem("ajkmart_admin_token");
     if (!token) {
       setLocation("/login");
-    } else {
-      setIsChecking(false);
+      return;
     }
+    try {
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob((parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/")));
+        if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
+          sessionStorage.removeItem("ajkmart_admin_token");
+          setLocation("/login");
+          return;
+        }
+      }
+    } catch {}
+    setIsChecking(false);
   }, [location, setLocation]);
 
   if (isChecking) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;

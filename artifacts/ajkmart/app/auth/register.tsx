@@ -67,6 +67,7 @@ export default function RegisterScreen() {
   const [step, setStep] = useState<RegStep>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [alreadyExists, setAlreadyExists] = useState(false);
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -121,7 +122,7 @@ export default function RegisterScreen() {
     };
   }, []);
 
-  const clearError = () => setError("");
+  const clearError = () => { setError(""); setAlreadyExists(false); };
 
   const normalizedPhone = normalizePhone(phone);
 
@@ -244,8 +245,8 @@ export default function RegisterScreen() {
           setLoading(false);
           return;
         }
-        if (action && action !== "register") {
-          setError("An account already exists with this number. Please log in.");
+        if (action === "no_method") {
+          setError("Phone OTP is currently disabled. Please contact support.");
           setLoading(false);
           return;
         }
@@ -307,6 +308,14 @@ export default function RegisterScreen() {
       }
       if (data.refreshToken) setAuthRefreshToken(data.refreshToken);
       if (data.user) setAuthUser(data.user);
+
+      if (data.token && data.user?.name && data.user?.id) {
+        await login({ ...data.user, walletBalance: data.user.walletBalance ?? 0, isActive: data.user.isActive ?? true, createdAt: data.user.createdAt ?? new Date().toISOString() }, data.token, data.refreshToken || undefined);
+        try { const SS = await import("expo-secure-store"); await SS.deleteItemAsync("ajkmart_reg_token"); } catch {}
+        router.replace("/(tabs)");
+        return;
+      }
+
       setStep(2);
     } catch (e: any) { setError(e.message || "Verification fail."); }
     setLoading(false);
@@ -787,38 +796,68 @@ export default function RegisterScreen() {
             </>
           )}
 
-          {error ? <AlertBox type="error" message={error} /> : null}
+          {alreadyExists && step === 1 ? (
+            <View style={{ marginTop: 8 }}>
+              <View style={{ backgroundColor: "#EFF6FF", borderRadius: 14, borderWidth: 1, borderColor: "#93C5FD", padding: 16, alignItems: "center", marginBottom: 12 }}>
+                <Ionicons name="information-circle" size={28} color="#2563EB" style={{ marginBottom: 6 }} />
+                <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#1E40AF", textAlign: "center", marginBottom: 4 }}>
+                  Number Already Registered
+                </Text>
+                <Text style={{ fontSize: 13, color: "#3B82F6", textAlign: "center" }}>
+                  This phone number already has an account. Please log in instead.
+                </Text>
+              </View>
+              <AuthButton
+                label="Login to Existing Account"
+                onPress={() => router.replace("/auth")}
+                icon="log-in-outline"
+              />
+              <TouchableOpacity activeOpacity={0.7}
+                onPress={() => { setPhone(""); clearError(); }}
+                style={{ marginTop: 12, alignItems: "center" }}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: C.primary, fontSize: 13, fontFamily: "Inter_500Medium" }}>
+                  Use a different number
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {error ? <AlertBox type="error" message={error} /> : null}
 
-          <AuthButton
-            label={
-              step === 1
-                ? otpSent ? "Verify OTP" : "Send OTP"
-                : step === 2 ? "Continue"
-                : step === 3 ? "Continue"
-                : "Create Account"
-            }
-            onPress={
-              step === 1
-                ? otpSent ? handleVerifyOtp : handleSendOtp
-                : step === 2 ? handleStep2
-                : step === 3 ? handleStep3
-                : handleStep4
-            }
-            loading={loading}
-            icon={step === 4 ? "shield-checkmark-outline" : step === 1 && !otpSent ? "send-outline" : step === 3 ? "location-outline" : undefined}
-          />
+              <AuthButton
+                label={
+                  step === 1
+                    ? otpSent ? "Verify OTP" : "Send OTP"
+                    : step === 2 ? "Continue"
+                    : step === 3 ? "Continue"
+                    : "Create Account"
+                }
+                onPress={
+                  step === 1
+                    ? otpSent ? handleVerifyOtp : handleSendOtp
+                    : step === 2 ? handleStep2
+                    : step === 3 ? handleStep3
+                    : handleStep4
+                }
+                loading={loading}
+                icon={step === 4 ? "shield-checkmark-outline" : step === 1 && !otpSent ? "send-outline" : step === 3 ? "location-outline" : undefined}
+              />
 
-          {step === 1 && (
-            <TouchableOpacity activeOpacity={0.7}
-              onPress={() => router.replace("/auth")}
-              style={s.loginLink}
-              accessibilityLabel="Go to login"
-              accessibilityRole="link"
-            >
-              <Text style={s.loginLinkText}>
-                Already have an account? <Text style={{ fontFamily: "Inter_700Bold" }}>Login</Text>
-              </Text>
-            </TouchableOpacity>
+              {step === 1 && (
+                <TouchableOpacity activeOpacity={0.7}
+                  onPress={() => router.replace("/auth")}
+                  style={s.loginLink}
+                  accessibilityLabel="Go to login"
+                  accessibilityRole="link"
+                >
+                  <Text style={s.loginLinkText}>
+                    Already have an account? <Text style={{ fontFamily: "Inter_700Bold" }}>Login</Text>
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
 
           {step === 3 && (
