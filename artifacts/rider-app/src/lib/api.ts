@@ -157,6 +157,16 @@ export interface RiderRequestsResponse {
   _serverTime: string | null;
 }
 
+/* ── Configurable network settings ────────────────────────────────────────────
+   These are updated at startup by the platform config. Defaults match the
+   hardcoded values that were previously used so existing behaviour is preserved
+   when the platform config cannot be fetched. */
+let _apiTimeoutMs = 30_000;
+
+export function setApiTimeoutMs(ms: number): void {
+  if (Number.isFinite(ms) && ms > 0) _apiTimeoutMs = Math.min(ms, 300_000);
+}
+
 export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudget = 2, _returnEnvelope = false): Promise<any> {
   const token = getToken();
   const isFormData = opts.body instanceof FormData;
@@ -166,9 +176,9 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
     ...(opts.headers as Record<string, string> || {}),
   };
 
-  /* Build a combined signal: always include a 30s timeout, plus any caller-provided signal */
+  /* Build a combined signal: always include a configurable timeout, plus any caller-provided signal */
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
+  const timeoutId = setTimeout(() => timeoutController.abort(), _apiTimeoutMs);
   const externalSignal = opts.signal as AbortSignal | undefined;
   const signal: AbortSignal = externalSignal
     ? (typeof AbortSignal.any === "function"

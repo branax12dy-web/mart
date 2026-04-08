@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/context/ToastContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 
 type ApiCallState<T> = {
   data: T | null;
@@ -12,8 +13,8 @@ type ApiCallState<T> = {
   reset: () => void;
 };
 
-const BACKOFF_BASE_MS = 1000;
-const MAX_RETRIES = 3;
+const DEFAULT_BACKOFF_BASE_MS = 1000;
+const DEFAULT_MAX_RETRIES = 3;
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -39,9 +40,14 @@ export function useApiCall<T>(
   const abortControllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const { showToast } = useToast();
+  const { config } = usePlatformConfig();
+
+  const configMaxRetries: number = config.network?.maxRetryAttempts ?? DEFAULT_MAX_RETRIES;
+  const configBackoffBase: number = config.network?.retryBackoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
 
   const showErr = options?.showErrorToast !== false;
-  const maxRetries = options?.maxRetries ?? MAX_RETRIES;
+  const maxRetries = options?.maxRetries ?? configMaxRetries;
+  const backoffBaseMs = configBackoffBase;
 
   const extractError = (e: any): string => {
     if (e instanceof Error) return e.message || "Something went wrong. Please try again.";
@@ -90,7 +96,7 @@ export function useApiCall<T>(
               "warning",
             );
           }
-          await delay(BACKOFF_BASE_MS * Math.pow(2, attempt - 1));
+          await delay(backoffBaseMs * Math.pow(2, attempt - 1));
         }
 
         try {
@@ -121,7 +127,7 @@ export function useApiCall<T>(
       }
       return null;
     },
-    [apiFn, maxRetries, showErr, showToast, options?.retryMessage],
+    [apiFn, maxRetries, backoffBaseMs, showErr, showToast, options?.retryMessage],
   );
 
   const execute = useCallback(

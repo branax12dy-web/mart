@@ -17,7 +17,7 @@ export type CatKey =
   "content" | "integrations" | "security" | "system" | "weather" |
   "dispatch" | "branding" | "system_limits" | "regional" |
   "notifications" | "uploads" | "pagination" | "van" | "onboarding" | "moderation" |
-  "cache" | "jwt" | "ratelimit" | "geo" | "localization";
+  "cache" | "jwt" | "ratelimit" | "geo" | "localization" | "network";
 
 export const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
@@ -123,6 +123,7 @@ export const TEXT_KEYS = new Set([
   "brand_color_mart","brand_color_food","brand_color_rides","brand_color_pharmacy",
   "brand_color_parcel","brand_color_van","brand_map_center_lat","brand_map_center_lng","brand_map_center_label",
   "system_log_retention_days","system_cache_ttl_sec","system_json_body_limit","system_upload_size_limit",
+  "api_timeout_ms","max_retry_attempts","retry_backoff_base_ms","rider_gps_queue_max","rider_dismissed_request_ttl_sec",
   "regional_phone_format","regional_phone_hint","regional_timezone","regional_currency_symbol","regional_country_code",
   "upload_max_image_mb","upload_max_video_mb","upload_max_video_duration_sec",
   "upload_allowed_image_formats","upload_allowed_video_formats",

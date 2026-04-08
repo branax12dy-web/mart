@@ -353,6 +353,13 @@ router.get("/", async (req, res) => {
       jsonBodyLimit:    s["system_json_body_limit"]             ?? "256kb",
       uploadSizeLimit:  s["system_upload_size_limit"]           ?? "10mb",
     },
+    network: {
+      apiTimeoutMs:              parseInt(s["api_timeout_ms"]                ?? "30000", 10),
+      maxRetryAttempts:          parseInt(s["max_retry_attempts"]            ?? "3",     10),
+      retryBackoffBaseMs:        parseInt(s["retry_backoff_base_ms"]         ?? "1000",  10),
+      riderGpsQueueMax:          parseInt(s["rider_gps_queue_max"]           ?? "500",   10),
+      riderDismissedRequestTtlSec: parseInt(s["rider_dismissed_request_ttl_sec"] ?? "90", 10),
+    },
     maintenance: (() => {
       const start = s["maintenance_scheduled_start"] ?? "";
       const end = s["maintenance_scheduled_end"] ?? "";

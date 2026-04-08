@@ -8,6 +8,8 @@ export {
   setRefreshTokenGetter,
   setOnTokenRefreshed,
   setOnApiError,
+  setMaxRetryAttempts,
+  setRetryBackoffBaseMs,
 } from "./custom-fetch";
 export type { AuthTokenGetter } from "./custom-fetch";
 export {

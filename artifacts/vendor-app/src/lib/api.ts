@@ -72,6 +72,15 @@ async function _doRefresh(): Promise<RefreshResult> {
   }
 }
 
+/* ── Configurable network settings ────────────────────────────────────────────
+   Updated at startup from the platform config. Defaults match the previously
+   hardcoded value (30 s) so existing behaviour is preserved. */
+let _apiTimeoutMs = 30_000;
+
+export function setApiTimeoutMs(ms: number): void {
+  if (Number.isFinite(ms) && ms > 0) _apiTimeoutMs = Math.min(ms, 300_000);
+}
+
 export async function apiFetch(path: string, opts: RequestInit & { _timeoutMs?: number } = {}, _retryBudget = 2): Promise<any> {
   const token = getToken();
   const isFormData = opts.body instanceof FormData;
@@ -81,9 +90,9 @@ export async function apiFetch(path: string, opts: RequestInit & { _timeoutMs?: 
     ...(opts.headers as Record<string, string> || {}),
   };
 
-  /* Build a combined signal: include a timeout (default 30s, overridable via _timeoutMs),
+  /* Build a combined signal: include a timeout (default from config, overridable via _timeoutMs),
      plus any caller-provided signal. Pass _timeoutMs: 0 to disable the timeout entirely. */
-  const timeoutMs = opts._timeoutMs !== undefined ? opts._timeoutMs : 30000;
+  const timeoutMs = opts._timeoutMs !== undefined ? opts._timeoutMs : _apiTimeoutMs;
   const timeoutController = new AbortController();
   const timeoutId = timeoutMs > 0 ? setTimeout(() => timeoutController.abort(), timeoutMs) : null;
   const externalSignal = opts.signal as AbortSignal | undefined;

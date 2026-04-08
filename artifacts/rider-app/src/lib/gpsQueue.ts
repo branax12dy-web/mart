@@ -29,7 +29,20 @@ const STORE      = "pings";
 const DISMISSED  = "dismissed";
 const DB_VER     = 2;
 
-const DISMISSED_TTL_MS = 90_000;
+let DISMISSED_TTL_MS = 90_000;
+
+/* ── Configurable limits ───────────────────────────────────────────────────
+   Updated at startup from the platform config. Defaults preserve existing
+   behaviour when the platform config cannot be fetched. */
+let _maxQueueSize = 500;
+
+export function setGpsQueueMax(max: number): void {
+  if (Number.isFinite(max) && max > 0) _maxQueueSize = Math.min(Math.floor(max), 10_000);
+}
+
+export function setDismissedRequestTtlSec(sec: number): void {
+  if (Number.isFinite(sec) && sec > 0) DISMISSED_TTL_MS = Math.min(sec, 86_400) * 1000;
+}
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -60,8 +73,6 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-const MAX_QUEUE_SIZE = 500;
-
 export async function enqueue(ping: QueuedPing): Promise<void> {
   try {
     const db = await openDB();
@@ -73,7 +84,7 @@ export async function enqueue(ping: QueuedPing): Promise<void> {
       tx.onerror = () => { db.close(); reject(tx.error); };
       tx.onabort = () => { db.close(); reject(tx.error); };
       countReq.onsuccess = () => {
-        if (countReq.result >= MAX_QUEUE_SIZE) {
+        if (countReq.result >= _maxQueueSize) {
           const idx = store.index("timestamp");
           const cursorReq = idx.openCursor();
           cursorReq.onsuccess = () => {

@@ -379,9 +379,25 @@ async function attemptTokenRefresh(baseUrl: string | null): Promise<TokenRefresh
   }
 }
 
-const MAX_RETRIES = 3;
-const RETRY_BASE_MS = 1000;
+let MAX_RETRIES = 3;
+let RETRY_BASE_MS = 1000;
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "DELETE"]);
+
+/**
+ * Override the maximum number of retry attempts for idempotent requests.
+ * Call this at app startup after loading platform config.
+ */
+export function setMaxRetryAttempts(n: number): void {
+  if (Number.isFinite(n) && n >= 0) MAX_RETRIES = Math.min(Math.floor(n), 10);
+}
+
+/**
+ * Override the exponential-backoff base delay in milliseconds.
+ * Call this at app startup after loading platform config.
+ */
+export function setRetryBackoffBaseMs(ms: number): void {
+  if (Number.isFinite(ms) && ms > 0) RETRY_BASE_MS = Math.min(ms, 30_000);
+}
 
 function isNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) return true;

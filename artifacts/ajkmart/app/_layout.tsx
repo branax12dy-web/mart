@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { setBaseUrl, setOnApiError } from "@workspace/api-client-react";
+import { setBaseUrl, setOnApiError, setMaxRetryAttempts, setRetryBackoffBaseMs } from "@workspace/api-client-react";
 import * as Linking from "expo-linking";
 import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
 import { router, Stack, useSegments } from "expo-router";
@@ -356,6 +356,14 @@ function RootLayoutNav() {
       });
     });
   }, []);
+
+  /* ── Apply network/retry settings from platform config on startup ── */
+  useEffect(() => {
+    const net = config?.network;
+    if (!net) return;
+    setMaxRetryAttempts(net.maxRetryAttempts);
+    setRetryBackoffBaseMs(net.retryBackoffBaseMs);
+  }, [config]);
 
   /* ── Defer non-critical init (Sentry, analytics) until after first render ── */
   const deferredInitDone = useRef(false);

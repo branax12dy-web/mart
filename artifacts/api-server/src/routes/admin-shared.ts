@@ -591,6 +591,12 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "brand_map_center_lat",   value: "34.37",          label: "Default Map Center Latitude",         category: "branding" },
   { key: "brand_map_center_lng",   value: "73.47",          label: "Default Map Center Longitude",        category: "branding" },
   { key: "brand_map_center_label", value: "Muzaffarabad",   label: "Default Map Center Label",            category: "branding" },
+  /* ═══════════════════  Network & Retry Policies  ═══════════════════ */
+  { key: "api_timeout_ms",                  value: "30000", label: "API Timeout (ms)",                        category: "network" },
+  { key: "max_retry_attempts",              value: "3",     label: "Max Retry Attempts",                      category: "network" },
+  { key: "retry_backoff_base_ms",           value: "1000",  label: "Retry Backoff Base (ms)",                 category: "network" },
+  { key: "rider_gps_queue_max",             value: "500",   label: "Rider GPS Offline Queue Max Size",        category: "network" },
+  { key: "rider_dismissed_request_ttl_sec", value: "90",    label: "Rider Dismissed-Request TTL (seconds)",   category: "network" },
   /* ═══════════════════  System Limits  ═══════════════════ */
   { key: "system_log_retention_days",  value: "30",     label: "Log Retention (days)",                category: "system_limits" },
   { key: "system_cache_ttl_sec",       value: "300",    label: "Settings Cache TTL (seconds)",        category: "system_limits" },

@@ -179,6 +179,13 @@ export interface PlatformConfig {
     enabledLanguages: string[];
   };
   cities: string[];
+  network: {
+    apiTimeoutMs: number;
+    maxRetryAttempts: number;
+    retryBackoffBaseMs: number;
+    riderGpsQueueMax: number;
+    riderDismissedRequestTtlSec: number;
+  };
 }
 
 const DEFAULT: PlatformConfig = {
@@ -292,6 +299,13 @@ const DEFAULT: PlatformConfig = {
     "Abbottabad", "Bahawalpur", "Sargodha", "Sukkur", "Mardan",
     "Mansehra", "Gilgit", "Skardu",
   ],
+  network: {
+    apiTimeoutMs: 30_000,
+    maxRetryAttempts: 3,
+    retryBackoffBaseMs: 1_000,
+    riderGpsQueueMax: 500,
+    riderDismissedRequestTtlSec: 90,
+  },
 };
 
 function isMethodEnabled(val: boolean | Record<string, boolean> | undefined | null, role = "customer"): boolean {
@@ -525,6 +539,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
         cities: Array.isArray(raw.cities) && raw.cities.length > 0
           ? raw.cities
           : DEFAULT.cities,
+        network: {
+          apiTimeoutMs:              raw.network?.apiTimeoutMs              ?? DEFAULT.network.apiTimeoutMs,
+          maxRetryAttempts:          raw.network?.maxRetryAttempts          ?? DEFAULT.network.maxRetryAttempts,
+          retryBackoffBaseMs:        raw.network?.retryBackoffBaseMs        ?? DEFAULT.network.retryBackoffBaseMs,
+          riderGpsQueueMax:          raw.network?.riderGpsQueueMax          ?? DEFAULT.network.riderGpsQueueMax,
+          riderDismissedRequestTtlSec: raw.network?.riderDismissedRequestTtlSec ?? DEFAULT.network.riderDismissedRequestTtlSec,
+        },
       };
       _cached = parsed;
       _cachedAt = Date.now();

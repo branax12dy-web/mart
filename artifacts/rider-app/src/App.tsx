@@ -5,13 +5,13 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import { usePlatformConfig, getRiderModules } from "./lib/useConfig";
 import { useLanguage, LanguageProvider } from "./lib/useLanguage";
 import { SocketProvider } from "./lib/socket";
-import { registerDrainHandler, type QueuedPing } from "./lib/gpsQueue";
+import { registerDrainHandler, setGpsQueueMax, setDismissedRequestTtlSec, type QueuedPing } from "./lib/gpsQueue";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { registerPush } from "./lib/push";
 import { initSentry, setSentryUser } from "./lib/sentry";
 import { initAnalytics, trackEvent, identifyUser } from "./lib/analytics";
 import { initErrorReporter } from "./lib/error-reporter";
-import { api } from "./lib/api";
+import { api, setApiTimeoutMs } from "./lib/api";
 import { BottomNav } from "./components/BottomNav";
 import { AnnouncementBar } from "./components/AnnouncementBar";
 import { PwaInstallBanner } from "./components/PwaInstallBanner";
@@ -47,6 +47,15 @@ function AppRoutes() {
   }, []);
 
   useEffect(() => { initErrorReporter(); }, []);
+
+  /* ── Apply network/retry settings from platform config on startup ── */
+  useEffect(() => {
+    const net = config?.network;
+    if (!net) return;
+    if (typeof net.apiTimeoutMs === "number")                setApiTimeoutMs(net.apiTimeoutMs);
+    if (typeof net.riderGpsQueueMax === "number")            setGpsQueueMax(net.riderGpsQueueMax);
+    if (typeof net.riderDismissedRequestTtlSec === "number") setDismissedRequestTtlSec(net.riderDismissedRequestTtlSec);
+  }, [config]);
 
   /* ── Sentry + Analytics init from platform config ── */
   useEffect(() => {

@@ -36,7 +36,7 @@ const CAT_ORDER = [
   "finance","payment",
   "branding","content","integrations",
   "van","onboarding","moderation",
-  "security","system_limits","system","weather",
+  "security","network","system_limits","system","weather",
   "regional",
   "cache","jwt","ratelimit","geo","localization",
 ] as const;
@@ -54,6 +54,7 @@ const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
   { label: "Transport & UX",  emoji: "🚐", items: ["van", "onboarding"] },
   { label: "Moderation",      emoji: "🛡️", items: ["moderation"] },
   { label: "Security",        emoji: "🔒", items: ["security"] },
+  { label: "Network & Retry", emoji: "🌐", items: ["network"] },
   { label: "System",          emoji: "🔧", items: ["system_limits", "system", "cache"] },
   { label: "Regional",        emoji: "🌍", items: ["regional", "localization"] },
   { label: "Auth & Tokens",   emoji: "🔑", items: ["jwt"] },
@@ -93,6 +94,7 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
   ratelimit:    { label: "Endpoint Rate Limits", icon: SlidersHorizontal, color: "text-rose-600", bg: "bg-rose-50", activeBg: "bg-rose-600",    description: "Per-endpoint rate limits for bargaining, booking, cancellation and estimates" },
   geo:          { label: "Geo & Zones",         icon: MapPin,       color: "text-emerald-600", bg: "bg-emerald-50", activeBg: "bg-emerald-600", description: "Default zone radius and open-world fallback behavior" },
   localization: { label: "Localization",        icon: Languages,    color: "text-lime-600",    bg: "bg-lime-50",    activeBg: "bg-lime-600",    description: "Currency code and symbol used across the platform" },
+  network:      { label: "Network & Retry",     icon: Wifi,         color: "text-cyan-600",    bg: "bg-cyan-50",    activeBg: "bg-cyan-600",    description: "API timeout, retry attempts, backoff delay, GPS queue size and dismissed-request TTL" },
 };
 
 export default function SettingsPage() {

@@ -125,6 +125,13 @@ export interface PlatformConfig {
     sms: boolean;
     email: boolean;
   };
+  network?: {
+    apiTimeoutMs: number;
+    maxRetryAttempts: number;
+    retryBackoffBaseMs: number;
+    riderGpsQueueMax: number;
+    riderDismissedRequestTtlSec: number;
+  };
 }
 
 const DEFAULT_CONFIG: PlatformConfig = {

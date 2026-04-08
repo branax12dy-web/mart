@@ -8,6 +8,7 @@ import { registerPush } from "./lib/push";
 import { initSentry, setSentryUser } from "./lib/sentry";
 import { initAnalytics, trackEvent, identifyUser } from "./lib/analytics";
 import { initErrorReporter } from "./lib/error-reporter";
+import { setApiTimeoutMs } from "./lib/api";
 import { BottomNav } from "./components/BottomNav";
 import { PwaInstallBanner } from "./components/PwaInstallBanner";
 import { SideNav } from "./components/SideNav";
@@ -70,6 +71,13 @@ function AppRoutes() {
   useLanguage(); /* initialises RTL + language from API on mount */
 
   useEffect(() => { initErrorReporter(); }, []);
+
+  /* ── Apply network/retry settings from platform config on startup ── */
+  useEffect(() => {
+    const net = config?.network;
+    if (!net) return;
+    if (typeof net.apiTimeoutMs === "number") setApiTimeoutMs(net.apiTimeoutMs);
+  }, [config]);
 
   /* ── Sentry + Analytics init from platform config ── */
   useEffect(() => {
