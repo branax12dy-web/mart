@@ -1,14 +1,33 @@
+import { randomBytes } from "crypto";
 import { db } from "@workspace/db";
 import { webhookRegistrationsTable, webhookLogsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 
-const generateLogId = () => {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  for (let i = 0; i < 20; i++) id += chars[Math.floor(Math.random() * chars.length)];
-  return id;
-};
+const generateLogId = () => randomBytes(10).toString("hex");
+
+const WEBHOOK_CONCURRENCY_LIMIT = 5;
+
+async function runWithConcurrencyLimit<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number,
+): Promise<void> {
+  const executing: Promise<void>[] = [];
+  for (const task of tasks) {
+    const p = task().then(
+      () => { executing.splice(executing.indexOf(p), 1); },
+      (err: Error) => {
+        executing.splice(executing.indexOf(p), 1);
+        logger.error({ err: err.message }, "[webhook-emitter] concurrency dispatch failed");
+      },
+    );
+    executing.push(p);
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+}
 
 export async function emitWebhookEvent(event: string, data: Record<string, unknown>) {
   try {
@@ -28,13 +47,12 @@ export async function emitWebhookEvent(event: string, data: Record<string, unkno
       data,
     };
 
-    for (const webhook of matching) {
-      dispatchWebhook(webhook, event, payload).catch(err => {
-        logger.error(`[webhook-emitter] Failed to dispatch to ${webhook.url}: ${err.message}`);
-      });
-    }
-  } catch (err: any) {
-    logger.error(`[webhook-emitter] Error emitting event ${event}: ${err.message}`);
+    await runWithConcurrencyLimit(
+      matching.map(webhook => () => dispatchWebhook(webhook, event, payload)),
+      WEBHOOK_CONCURRENCY_LIMIT,
+    );
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message }, `[webhook-emitter] Error emitting event ${event}`);
   }
 }
 
@@ -78,13 +96,18 @@ async function dispatchWebhook(
     });
 
     if (!response.ok) {
+      logger.warn({ webhookId: webhook.id, url: webhook.url, status: response.status }, "[webhook-emitter] Dispatch returned non-2xx, scheduling retry");
       const retryTimeout = setTimeout(() => {
-        retryWebhook(webhook, event, payload).catch(() => {});
+        retryWebhook(webhook, event, payload).catch((retryErr: Error) => {
+          logger.error({ webhookId: webhook.id, url: webhook.url, err: retryErr.message }, "[webhook-emitter] Retry failed");
+        });
       }, 5000);
       if (retryTimeout.unref) retryTimeout.unref();
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     const durationMs = Date.now() - startTime;
+    const errMsg = (err as Error).message || "Unknown error";
+    logger.error({ webhookId: webhook.id, url: webhook.url, err: errMsg }, "[webhook-emitter] Dispatch threw error");
     await db.insert(webhookLogsTable).values({
       id: logId,
       webhookId: webhook.id,
@@ -93,12 +116,14 @@ async function dispatchWebhook(
       status: 0,
       requestBody: payload,
       success: false,
-      error: err.message || "Unknown error",
+      error: errMsg,
       durationMs,
-    }).catch(() => {});
+    }).catch((dbErr: Error) => { logger.error({ err: dbErr.message }, "[webhook-emitter] Failed to write error log"); });
 
     const retryTimeout = setTimeout(() => {
-      retryWebhook(webhook, event, payload).catch(() => {});
+      retryWebhook(webhook, event, payload).catch((retryErr: Error) => {
+        logger.error({ webhookId: webhook.id, url: webhook.url, err: retryErr.message }, "[webhook-emitter] Retry failed");
+      });
     }, 5000);
     if (retryTimeout.unref) retryTimeout.unref();
   }
@@ -142,9 +167,15 @@ async function retryWebhook(
       responseBody: responseText.slice(0, 2000),
       success: response.ok,
       durationMs,
-    }).catch(() => {});
-  } catch (err: any) {
+    }).catch((dbErr: Error) => { logger.error({ err: dbErr.message }, "[webhook-emitter] Failed to write retry log"); });
+
+    if (!response.ok) {
+      logger.warn({ webhookId: webhook.id, url: webhook.url, status: response.status }, "[webhook-emitter] Retry also returned non-2xx — giving up");
+    }
+  } catch (err: unknown) {
     const durationMs = Date.now() - startTime;
+    const errMsg = (err as Error).message || "Unknown error";
+    logger.error({ webhookId: webhook.id, url: webhook.url, err: errMsg }, "[webhook-emitter] Retry threw error — giving up");
     await db.insert(webhookLogsTable).values({
       id: logId,
       webhookId: webhook.id,
@@ -153,8 +184,8 @@ async function retryWebhook(
       status: 0,
       requestBody: payload,
       success: false,
-      error: err.message || "Unknown error",
+      error: errMsg,
       durationMs,
-    }).catch(() => {});
+    }).catch((dbErr: Error) => { logger.error({ err: dbErr.message }, "[webhook-emitter] Failed to write retry error log"); });
   }
 }

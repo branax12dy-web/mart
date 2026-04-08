@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { logger } from "../lib/logger.js";
 import { isInServiceZone } from "../lib/geofence.js";
 import { Router, type IRouter } from "express";
@@ -390,9 +391,9 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Generates a random 4-digit OTP string (1000–9999) */
+/** Generates a cryptographically secure 4-digit OTP string (1000–9999) */
 function generateOtp(): string {
-  return String(Math.floor(1000 + Math.random() * 9000));
+  return String(randomInt(1000, 10000));
 }
 
 /**

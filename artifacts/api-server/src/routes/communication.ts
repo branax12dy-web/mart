@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
@@ -71,7 +72,7 @@ function generateAjkId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let result = "AJK-";
   for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(randomInt(0, chars.length));
   }
   return result;
 }

@@ -36,7 +36,7 @@ import {
 } from "../middleware/security.js";
 import { sendOtpSMS } from "../services/sms.js";
 import { sendWhatsAppOTP } from "../services/whatsapp.js";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes, createHash, randomInt } from "crypto";
 import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
 import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri, encryptTotpSecret, decryptTotpSecret } from "../services/totp.js";
 import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail, alertNewVendor } from "../services/email.js";
@@ -590,7 +590,9 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
   }
 
   writeAuthAuditLog("otp_sent", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
-  req.log.info({ phone, otp }, "OTP sent");
+  if (process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1") {
+    req.log.info({ phone, otp }, "OTP sent");
+  }
 
   const otpUserId = existingUser[0]?.id;
   const otpLang = otpUserId ? await getUserLanguage(otpUserId) : await getPlatformDefaultLanguage();
@@ -2173,7 +2175,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   let ajkId = "";
   for (let attempt = 0; attempt < 10; attempt++) {
     ajkId = "AJK-";
-    for (let i = 0; i < 6; i++) ajkId += ajkChars.charAt(Math.floor(Math.random() * ajkChars.length));
+    for (let i = 0; i < 6; i++) ajkId += ajkChars.charAt(randomInt(0, ajkChars.length));
     const [dup] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.ajkId, ajkId)).limit(1);
     if (!dup) break;
     if (attempt === 9) throw new Error("Failed to generate unique AJK ID after 10 attempts");
@@ -2596,7 +2598,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
 
   const requireApproval = (settings["user_require_approval"] ?? "off") === "on";
   const userId = generateId();
-  const tempPhone = `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tempPhone = `email_${Date.now()}_${randomBytes(3).toString("hex")}`;
 
   const rawToken = generateVerificationToken();
   const tokenHash = hashVerificationToken(rawToken);
@@ -2641,8 +2643,8 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
   writeAuthAuditLog("email_register", { userId, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { email: normalizedEmail, role: userRole, emailSent: emailResult.sent } });
   emitWebhookEvent("user_registered", { userId, email: normalizedEmail, role: userRole, method: "email" }).catch(() => {});
 
-  const isDev = process.env.NODE_ENV !== "production";
-  if (isDev) {
+  const isDevTokenLog = process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1";
+  if (isDevTokenLog) {
     req.log.info({ email: normalizedEmail, emailSent: emailResult.sent }, "Email verification token generated");
   }
 
@@ -2654,8 +2656,8 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     role: userRole,
     pendingApproval: requireApproval,
     emailSent: emailResult.sent,
-    verificationLink: isDev ? verificationLink : undefined,
-    ...(isDev ? { verificationToken: rawToken } : {}),
+    verificationLink: isDevTokenLog ? verificationLink : undefined,
+    ...(isDevTokenLog ? { verificationToken: rawToken } : {}),
   });
 });
 
@@ -3324,10 +3326,10 @@ router.post("/magic-link/send", async (req, res) => {
   addAuditEntry({ action: "magic_link_sent", ip, details: `Magic link sent to: ${normalized}`, result: "success" });
   writeAuthAuditLog("magic_link_sent", { ip, metadata: { email: normalized } });
 
-  const isDev = process.env.NODE_ENV !== "production";
+  const isDevTokenLog = process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1";
   res.json({
     message: "If an account exists with this email, a magic link has been sent.",
-    ...(isDev ? { token: rawToken } : {}),
+    ...(isDevTokenLog ? { token: rawToken } : {}),
   });
 });
 

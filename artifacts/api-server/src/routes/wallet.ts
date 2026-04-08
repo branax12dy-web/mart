@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
@@ -192,9 +193,13 @@ router.post("/topup", adminAuth, async (req, res) => {
 
   try {
     const result = await db.transaction(async (tx) => {
-      const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+      /* Lock the user row for update to prevent concurrent top-up races */
+      const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1).for("update");
       if (!user) throw new Error("User not found");
 
+      /* Atomic conditional increment: only succeeds if balance + amount <= maxBalance.
+         The WHERE clause is the enforcement gate; the pre-check above is an early exit
+         for a clearer error message. Both must agree to prevent overflow. */
       const currentBalance = parseFloat(user.walletBalance ?? "0");
       if (currentBalance + topupAmt > maxBalance) {
         throw new Error(`Wallet balance limit is Rs. ${maxBalance}. Current: Rs. ${currentBalance}`);
@@ -338,6 +343,12 @@ router.post("/deposit", customerAuth, async (req, res) => {
 
     try {
       await db.transaction(async (tx) => {
+        /* Lock the user row to prevent concurrent deposits from racing past the balance cap */
+        const [lockedUser] = await tx.select({ id: usersTable.id, walletBalance: usersTable.walletBalance })
+          .from(usersTable).where(eq(usersTable.id, userId)).limit(1).for("update");
+        if (!lockedUser) throw new Error("User not found");
+
+        /* Atomic conditional credit: only succeeds if resulting balance stays within cap */
         const [credited] = await tx.update(usersTable)
           .set({ walletBalance: sql`wallet_balance + ${amt.toFixed(2)}` })
           .where(and(eq(usersTable.id, userId), sql`CAST(wallet_balance AS numeric) + ${amt} <= ${maxBalance}`))
@@ -1215,7 +1226,7 @@ router.post("/pin/forgot", customerAuth, async (req, res) => {
       return;
     }
 
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otp = String(randomInt(100000, 1000000));
     const otpHash = await import("crypto").then(c => c.createHash("sha256").update(otp).digest("hex"));
     await db.update(usersTable).set({
       otpCode: otpHash,
@@ -1224,7 +1235,9 @@ router.post("/pin/forgot", customerAuth, async (req, res) => {
       updatedAt: new Date(),
     }).where(eq(usersTable.id, userId));
 
-    logger.info(`[wallet /pin/forgot] OTP for ${user.phone}: ${otp}`);
+    if (process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1") {
+      logger.info(`[wallet /pin/forgot] OTP for ${user.phone}: ${otp}`);
+    }
 
     const responseData: Record<string, unknown> = {
       message: "OTP sent to your phone number",

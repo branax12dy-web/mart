@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { logger } from "../lib/logger.js";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
@@ -1313,7 +1314,7 @@ router.post("/rides/:id/accept", rideAcceptLimiter, async (req, res) => {
   }).catch((err: Error) => { logger.error("[rider] background op failed:", err.message); });
 
   /* Generate trip OTP and emit to customer */
-  const tripOtp = String(Math.floor(1000 + Math.random() * 9000));
+  const tripOtp = String(randomInt(1000, 10000));
   await db.update(ridesTable).set({ tripOtp, updatedAt: new Date() }).where(eq(ridesTable.id, updated.id)).catch((e: Error) => { logger.error({ rideId: updated.id, err: e.message }, "[rider] tripOtp DB update failed"); });
   emitRideOtp(updated.userId, updated.id, tripOtp);
 

@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import {
@@ -1466,7 +1467,7 @@ export async function ensureCommunicationTables() {
       for (const u of batch) {
         for (let attempt = 0; attempt < 10; attempt++) {
           let ajkId = "AJK-";
-          for (let i = 0; i < 6; i++) ajkId += chars.charAt(Math.floor(Math.random() * chars.length));
+          for (let i = 0; i < 6; i++) ajkId += chars.charAt(randomInt(0, chars.length));
           try {
             await db.update(usersTable).set({ ajkId }).where(and(eq(usersTable.id, u.id), sql`${usersTable.ajkId} IS NULL`));
             break;
