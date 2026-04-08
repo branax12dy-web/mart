@@ -1,8 +1,7 @@
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import Colors, { typography } from "@/constants/colors";
-
-const C = Colors.light;
+import { ActivityIndicator, Text, View } from "react-native";
+import { useTheme } from "@/context/ThemeContext";
+import { useTypography } from "@/hooks/useTypography";
 
 interface LoadingStateProps {
   message?: string;
@@ -10,28 +9,13 @@ interface LoadingStateProps {
 }
 
 export function LoadingState({ message, fullScreen = false }: LoadingStateProps) {
+  const { colors: C } = useTheme();
+  const T = useTypography();
+
   return (
-    <View style={[styles.container, fullScreen && styles.fullScreen]}>
+    <View style={[{ alignItems: "center", justifyContent: "center", padding: 40 }, fullScreen && { flex: 1, backgroundColor: C.background }]}>
       <ActivityIndicator size="large" color={C.primary} />
-      {message && <Text style={styles.message}>{message}</Text>}
+      {message && <Text style={{ ...T.body, color: C.textMuted, marginTop: 16, textAlign: "center" }}>{message}</Text>}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 40,
-  },
-  fullScreen: {
-    flex: 1,
-    backgroundColor: C.background,
-  },
-  message: {
-    ...typography.body,
-    color: C.textMuted,
-    marginTop: 16,
-    textAlign: "center",
-  },
-});

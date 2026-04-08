@@ -26,9 +26,11 @@ import { registerPush } from "@/utils/push";
 import { AuthProvider, useAuth, hasRole } from "@/context/AuthContext";
 import { hasSeenOnboarding } from "./onboarding";
 import { CartProvider } from "@/context/CartContext";
+import { FontSizeProvider } from "@/context/FontSizeContext";
 import { LanguageProvider, useLanguage } from "@/context/LanguageContext";
 import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformConfigContext";
 import { PerformanceProvider } from "@/context/PerformanceContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import { ToastProvider } from "@/context/ToastContext";
 
 function DeferredProviders({ children }: { children: React.ReactNode }) {
@@ -768,20 +770,24 @@ export default function RootLayout() {
           <PersistQueryClientProvider client={queryClient} persistOptions={{ persister: asyncStoragePersister, maxAge: 1000 * 60 * 60 * 24 }}>
             <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>
-                <PlatformConfigProvider>
-                  <PerformanceProvider>
-                    <LanguageProvider>
-                      <AuthProvider>
-                        <DeferredProviders>
-                          <OfflineBar />
-                          <SlowConnectionBar />
-                          <RootLayoutNav />
-                          <PwaInstallBanner />
-                        </DeferredProviders>
-                      </AuthProvider>
-                    </LanguageProvider>
-                  </PerformanceProvider>
-                </PlatformConfigProvider>
+                <FontSizeProvider>
+                  <ThemeProvider>
+                    <PlatformConfigProvider>
+                      <PerformanceProvider>
+                        <LanguageProvider>
+                          <AuthProvider>
+                            <DeferredProviders>
+                              <OfflineBar />
+                              <SlowConnectionBar />
+                              <RootLayoutNav />
+                              <PwaInstallBanner />
+                            </DeferredProviders>
+                          </AuthProvider>
+                        </LanguageProvider>
+                      </PerformanceProvider>
+                    </PlatformConfigProvider>
+                  </ThemeProvider>
+                </FontSizeProvider>
               </KeyboardProvider>
             </GestureHandlerRootView>
           </PersistQueryClientProvider>

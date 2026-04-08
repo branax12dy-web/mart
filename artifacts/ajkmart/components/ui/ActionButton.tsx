@@ -1,15 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
+  AccessibilityRole,
   ActivityIndicator,
   TouchableOpacity,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import Colors, { radii, shadows, typography } from "@/constants/colors";
-
-const C = Colors.light;
+import { radii, shadows } from "@/constants/colors";
+import { useFontSize } from "@/context/FontSizeContext";
+import { useTheme } from "@/context/ThemeContext";
 
 type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
@@ -24,15 +25,10 @@ interface ActionButtonProps {
   loading?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
-
-const VARIANT_STYLES: Record<Variant, { bg: string; text: string; border?: string }> = {
-  primary: { bg: C.primary, text: "#FFFFFF" },
-  secondary: { bg: C.primarySoft, text: C.primary },
-  outline: { bg: "transparent", text: C.primary, border: C.primary },
-  ghost: { bg: "transparent", text: C.textSecondary },
-  danger: { bg: C.danger, text: "#FFFFFF" },
-};
 
 const SIZE_MAP: Record<Size, { h: number; px: number; iconSize: number }> = {
   sm: { h: 38, px: 14, iconSize: 16 },
@@ -50,15 +46,37 @@ export function ActionButton({
   loading = false,
   disabled = false,
   fullWidth = true,
+  accessibilityLabel,
+  accessibilityRole = "button",
+  accessibilityHint,
 }: ActionButtonProps) {
+  const { colors: C } = useTheme();
+  const { fontScale } = useFontSize();
+
+  const VARIANT_STYLES: Record<Variant, { bg: string; text: string; border?: string }> = {
+    primary: { bg: C.primary, text: "#FFFFFF" },
+    secondary: { bg: C.primarySoft, text: C.primary },
+    outline: { bg: "transparent", text: C.primary, border: C.primary },
+    ghost: { bg: "transparent", text: C.textSecondary },
+    danger: { bg: C.danger, text: "#FFFFFF" },
+  };
+
   const v = VARIANT_STYLES[variant];
   const s = SIZE_MAP[size];
   const isDisabled = disabled || loading;
 
+  const buttonFontSize = size === "sm" ? Math.round(13 * fontScale * 10) / 10 : Math.round(15 * fontScale * 10) / 10;
+  const buttonLineHeight = size === "sm" ? Math.round(18 * fontScale * 10) / 10 : Math.round(20 * fontScale * 10) / 10;
+
   return (
-    <TouchableOpacity activeOpacity={0.7}
+    <TouchableOpacity
+      activeOpacity={0.7}
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityRole={accessibilityRole}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       style={[
         styles.base,
         {
@@ -79,10 +97,12 @@ export function ActionButton({
         <View style={styles.inner}>
           {icon && <Ionicons name={icon} size={s.iconSize} color={v.text} />}
           <Text
-            style={[
-              size === "sm" ? typography.buttonSmall : typography.button,
-              { color: v.text },
-            ]}
+            style={{
+              fontFamily: "Inter_600SemiBold",
+              fontSize: buttonFontSize,
+              lineHeight: buttonLineHeight,
+              color: v.text,
+            }}
           >
             {label}
           </Text>

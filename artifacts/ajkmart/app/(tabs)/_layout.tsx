@@ -12,10 +12,9 @@ import Colors, { radii, shadows, typography } from "@/constants/colors";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
 import { tDual } from "@workspace/i18n";
 import { getActiveServices } from "@/constants/serviceRegistry";
-
-const C = Colors.light;
 
 function useAdaptiveTabConfig() {
   const { config } = usePlatformConfig();
@@ -94,11 +93,15 @@ function TabIconWithBadge({ name, focusedName, color, focused, badgeCount }: {
   focused: boolean;
   badgeCount?: number;
 }) {
+  const { colors: C } = useTheme();
   return (
-    <View style={focused ? tabStyles.activeIconWrap : tabStyles.iconWrap}>
+    <View style={focused
+      ? { position: "relative", alignItems: "center", justifyContent: "center", backgroundColor: C.primarySoft, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 5 }
+      : { position: "relative", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, paddingVertical: 5 }
+    }>
       <Ionicons name={focused ? focusedName : name} size={22} color={color} />
       {(badgeCount ?? 0) > 0 && (
-        <View style={tabStyles.badge}>
+        <View style={[tabStyles.badge, { backgroundColor: C.danger, borderColor: C.surface }]}>
           <Text style={tabStyles.badgeText}>{badgeCount! > 9 ? "9+" : badgeCount}</Text>
         </View>
       )}
@@ -112,6 +115,7 @@ function ClassicTabLayout() {
   const insets = useSafeAreaInsets();
   const tabConfig = useAdaptiveTabConfig();
   const { itemCount } = useCart();
+  const { colors: C, isDark } = useTheme();
 
   return (
     <Tabs
@@ -130,7 +134,7 @@ function ClassicTabLayout() {
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView intensity={100} tint="light" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={100} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
           ) : (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: C.surface }]} />
           ),
@@ -201,27 +205,10 @@ function ClassicTabLayout() {
 }
 
 const tabStyles = StyleSheet.create({
-  iconWrap: {
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 5,
-  },
-  activeIconWrap: {
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: C.primarySoft,
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 5,
-  },
   badge: {
     position: "absolute",
     top: -4,
     right: -4,
-    backgroundColor: C.danger,
     borderRadius: 9,
     minWidth: 17,
     height: 17,
@@ -229,7 +216,6 @@ const tabStyles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 4,
     borderWidth: 1.5,
-    borderColor: C.surface,
   },
   badgeText: {
     fontFamily: "Inter_700Bold",
@@ -248,7 +234,6 @@ const ms = StyleSheet.create({
     padding: 24,
   },
   card: {
-    backgroundColor: C.surface,
     borderRadius: radii.xxl,
     padding: 32,
     alignItems: "center",
@@ -257,19 +242,20 @@ const ms = StyleSheet.create({
     ...shadows.xl,
   },
   icon: { fontSize: 52, marginBottom: 16 },
-  title: { ...typography.h2, color: C.text, marginBottom: 10, textAlign: "center" },
-  msg: { ...typography.body, color: C.textSecondary, textAlign: "center", lineHeight: 22, marginBottom: 8 },
-  sub: { ...typography.caption, color: C.textMuted, textAlign: "center", lineHeight: 18 },
+  title: { ...typography.h2, marginBottom: 10, textAlign: "center" },
+  msg: { ...typography.body, textAlign: "center", lineHeight: 22, marginBottom: 8 },
+  sub: { ...typography.caption, textAlign: "center", lineHeight: 18 },
 });
 
 function MaintenanceOverlay({ message }: { message: string }) {
+  const { colors: C } = useTheme();
   return (
     <View style={ms.overlay}>
-      <View style={ms.card}>
+      <View style={[ms.card, { backgroundColor: C.surface }]}>
         <Text style={ms.icon}>🔧</Text>
-        <Text style={ms.title}>Under Maintenance</Text>
-        <Text style={ms.msg}>{message}</Text>
-        <Text style={ms.sub}>Please check back later. We apologize for the inconvenience.</Text>
+        <Text style={[ms.title, { color: C.text }]}>Under Maintenance</Text>
+        <Text style={[ms.msg, { color: C.textSecondary }]}>{message}</Text>
+        <Text style={[ms.sub, { color: C.textMuted }]}>Please check back later. We apologize for the inconvenience.</Text>
       </View>
     </View>
   );
@@ -277,12 +263,13 @@ function MaintenanceOverlay({ message }: { message: string }) {
 
 export default function TabLayout() {
   const { config } = usePlatformConfig();
+  const { colors: C } = useTheme();
   const inMaintenance = config.appStatus === "maintenance";
 
   const inner = isLiquidGlassAvailable() ? <NativeTabLayout /> : <ClassicTabLayout />;
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: C.background }}>
       {inner}
       {inMaintenance && (
         <MaintenanceOverlay message={config.content.maintenanceMsg} />

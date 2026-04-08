@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
-import Colors, { spacing, typography } from "@/constants/colors";
+import { Text, View } from "react-native";
+import { spacing } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import { useTypography } from "@/hooks/useTypography";
 import { ActionButton } from "./ActionButton";
-
-const C = Colors.light;
 
 interface ErrorStateProps {
   title?: string;
@@ -23,19 +23,22 @@ export function ErrorState({
   retryLabel = "Try Again",
   onRetry,
 }: ErrorStateProps) {
+  const { colors: C } = useTheme();
+  const T = useTypography();
+
   return (
-    <View style={styles.container}>
-      <View style={styles.iconWrap}>
+    <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: spacing.xxxl }}>
+      <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: C.dangerSoft, alignItems: "center", justifyContent: "center", marginBottom: spacing.xl }}>
         {emoji ? (
-          <Text style={styles.emoji}>{emoji}</Text>
+          <Text style={{ fontSize: 44 }}>{emoji}</Text>
         ) : (
           <Ionicons name={icon} size={44} color={C.danger} />
         )}
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      <Text style={{ ...T.h3, color: C.text, textAlign: "center", marginBottom: spacing.sm }}>{title}</Text>
+      {subtitle && <Text style={{ ...T.body, color: C.textMuted, textAlign: "center", lineHeight: 21 }}>{subtitle}</Text>}
       {onRetry && (
-        <View style={styles.btnWrap}>
+        <View style={{ marginTop: spacing.xl }}>
           <ActionButton
             label={retryLabel}
             onPress={onRetry}
@@ -49,25 +52,3 @@ export function ErrorState({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    paddingHorizontal: spacing.xxxl,
-  },
-  iconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: C.dangerSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.xl,
-  },
-  emoji: { fontSize: 44 },
-  title: { ...typography.h3, color: C.text, textAlign: "center", marginBottom: spacing.sm },
-  subtitle: { ...typography.body, color: C.textMuted, textAlign: "center", lineHeight: 21 },
-  btnWrap: { marginTop: spacing.xl },
-});

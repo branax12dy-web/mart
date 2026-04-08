@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, TouchableOpacity, StyleSheet, Text, View } from "react-native";
+import { Platform, TouchableOpacity, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Colors, { spacing, typography, shadows } from "@/constants/colors";
-
-const C = Colors.light;
+import { spacing, shadows } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import { useTypography } from "@/hooks/useTypography";
 
 interface ScreenHeaderProps {
   title: string;
@@ -21,27 +21,28 @@ export function ScreenHeader({
   rightElement,
   transparent = false,
 }: ScreenHeaderProps) {
+  const { colors: C } = useTheme();
+  const T = useTypography();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   return (
     <View
       style={[
-        styles.container,
-        { paddingTop: topPad + 12 },
-        !transparent && styles.solid,
+        { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, paddingTop: topPad + 12 },
+        !transparent && { backgroundColor: C.surface, ...shadows.sm },
       ]}
     >
-      <View style={styles.row}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
         {onBack && (
-          <TouchableOpacity activeOpacity={0.7} onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity activeOpacity={0.7} onPress={onBack} style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(241,245,249,0.9)", alignItems: "center", justifyContent: "center" }}>
             <Ionicons name="chevron-back" size={22} color={transparent ? "#fff" : C.text} />
           </TouchableOpacity>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={[styles.title, transparent && { color: "#fff" }]}>{title}</Text>
+          <Text style={[{ ...T.h3, color: C.text }, transparent && { color: "#fff" }]}>{title}</Text>
           {subtitle && (
-            <Text style={[styles.subtitle, transparent && { color: "rgba(255,255,255,0.8)" }]}>
+            <Text style={[{ ...T.caption, color: C.textMuted, marginTop: 2 }, transparent && { color: "rgba(255,255,255,0.8)" }]}>
               {subtitle}
             </Text>
           )}
@@ -51,29 +52,3 @@ export function ScreenHeader({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  solid: {
-    backgroundColor: C.surface,
-    ...shadows.sm,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(241,245,249,0.9)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: { ...typography.h3, color: C.text },
-  subtitle: { ...typography.caption, color: C.textMuted, marginTop: 2 },
-});

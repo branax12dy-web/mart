@@ -1,8 +1,7 @@
 import React from "react";
-import { TouchableOpacity, StyleSheet, View, type ViewStyle } from "react-native";
-import Colors, { radii, shadows } from "@/constants/colors";
-
-const C = Colors.light;
+import { TouchableOpacity, View, type ViewStyle } from "react-native";
+import { radii, shadows } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
 
 interface CardProps {
   children: React.ReactNode;
@@ -19,21 +18,22 @@ export function Card({
   variant = "elevated",
   padding = 16,
 }: CardProps) {
-  const cardStyle: ViewStyle[] = [
-    styles.base,
-    { padding },
-    variant === "elevated" && styles.elevated,
-    variant === "outlined" && styles.outlined,
-    variant === "filled" && styles.filled,
-    style as ViewStyle,
-  ].filter(Boolean) as ViewStyle[];
+  const { colors: C } = useTheme();
+
+  const baseStyle: ViewStyle = {
+    borderRadius: radii.xl,
+    backgroundColor: variant === "filled" ? C.surfaceSecondary : C.surface,
+    overflow: "hidden",
+    padding,
+    ...(variant === "elevated" ? { ...shadows.md, borderWidth: 1, borderColor: "rgba(226,232,240,0.5)" } : {}),
+    ...(variant === "outlined" ? { borderWidth: 1.5, borderColor: C.border } : {}),
+  };
+
+  const cardStyle = [baseStyle, style].filter(Boolean) as ViewStyle[];
 
   if (onPress) {
     return (
-      <TouchableOpacity activeOpacity={0.7}
-        onPress={onPress}
-        style={cardStyle}
-      >
+      <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={cardStyle}>
         {children}
       </TouchableOpacity>
     );
@@ -41,23 +41,3 @@ export function Card({
 
   return <View style={cardStyle}>{children}</View>;
 }
-
-const styles = StyleSheet.create({
-  base: {
-    borderRadius: radii.xl,
-    backgroundColor: C.surface,
-    overflow: "hidden",
-  },
-  elevated: {
-    ...shadows.md,
-    borderWidth: 1,
-    borderColor: "rgba(226,232,240,0.5)",
-  },
-  outlined: {
-    borderWidth: 1.5,
-    borderColor: C.border,
-  },
-  filled: {
-    backgroundColor: C.surfaceSecondary,
-  },
-});

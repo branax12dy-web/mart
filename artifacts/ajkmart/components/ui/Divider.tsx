@@ -1,8 +1,8 @@
 import React from "react";
-import { StyleSheet, Text, View, type ViewStyle } from "react-native";
-import Colors, { spacing, typography } from "@/constants/colors";
-
-const C = Colors.light;
+import { Text, View, type ViewStyle } from "react-native";
+import { spacing } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import { useTypography } from "@/hooks/useTypography";
 
 interface DividerProps {
   label?: string;
@@ -14,46 +14,24 @@ interface DividerProps {
 export function Divider({
   label,
   spacing: verticalSpacing = spacing.lg,
-  color = C.border,
+  color,
   style,
 }: DividerProps) {
+  const { colors: C } = useTheme();
+  const T = useTypography();
+  const lineColor = color ?? C.border;
+
   if (label) {
     return (
-      <View style={[styles.labelContainer, { marginVertical: verticalSpacing }, style]}>
-        <View style={[styles.line, { backgroundColor: color }]} />
-        <Text style={styles.label}>{label}</Text>
-        <View style={[styles.line, { backgroundColor: color }]} />
+      <View style={[{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginVertical: verticalSpacing }, style]}>
+        <View style={{ flex: 1, height: 1, backgroundColor: lineColor }} />
+        <Text style={{ ...T.captionMedium, color: C.textMuted }}>{label}</Text>
+        <View style={{ flex: 1, height: 1, backgroundColor: lineColor }} />
       </View>
     );
   }
 
   return (
-    <View
-      style={[
-        styles.simple,
-        { backgroundColor: color, marginVertical: verticalSpacing },
-        style,
-      ]}
-    />
+    <View style={[{ height: 1, width: "100%", backgroundColor: lineColor, marginVertical: verticalSpacing }, style]} />
   );
 }
-
-const styles = StyleSheet.create({
-  simple: {
-    height: 1,
-    width: "100%",
-  },
-  labelContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  line: {
-    flex: 1,
-    height: 1,
-  },
-  label: {
-    ...typography.captionMedium,
-    color: C.textMuted,
-  },
-});

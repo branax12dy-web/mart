@@ -12,10 +12,9 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewProps,
 } from "react-native";
-import Colors, { spacing } from "@/constants/colors";
+import { spacing } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
 import Svg, { Circle } from "react-native-svg";
-
-const C = Colors.light;
 
 interface SmartRefreshProps extends ScrollViewProps {
   onRefresh: () => Promise<void>;
@@ -49,10 +48,12 @@ function CircularArcIndicator({
   progress,
   phase,
   color,
+  successColor,
 }: {
   progress: number;
   phase: RefreshPhase;
   color: string;
+  successColor: string;
 }) {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const spinRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -82,31 +83,14 @@ function CircularArcIndicator({
 
   const dashOffset = ARC_CIRCUMFERENCE * (1 - Math.min(progress, 1));
   const isReady = phase === "ready";
-  const arcColor = isReady ? C.success : color;
+  const arcColor = isReady ? successColor : color;
 
   if (phase === "refreshing") {
     return (
       <Animated.View style={{ transform: [{ rotate: spinRotate }] }}>
         <Svg width={INDICATOR_SIZE} height={INDICATOR_SIZE} viewBox={`0 0 ${INDICATOR_SIZE} ${INDICATOR_SIZE}`}>
-          <Circle
-            cx={INDICATOR_SIZE / 2}
-            cy={INDICATOR_SIZE / 2}
-            r={ARC_RADIUS}
-            stroke={color + "20"}
-            strokeWidth={ARC_STROKE}
-            fill="none"
-          />
-          <Circle
-            cx={INDICATOR_SIZE / 2}
-            cy={INDICATOR_SIZE / 2}
-            r={ARC_RADIUS}
-            stroke={color}
-            strokeWidth={ARC_STROKE}
-            fill="none"
-            strokeDasharray={`${ARC_CIRCUMFERENCE * 0.7} ${ARC_CIRCUMFERENCE * 0.3}`}
-            strokeLinecap="round"
-            transform={`rotate(-90 ${INDICATOR_SIZE / 2} ${INDICATOR_SIZE / 2})`}
-          />
+          <Circle cx={INDICATOR_SIZE / 2} cy={INDICATOR_SIZE / 2} r={ARC_RADIUS} stroke={color + "20"} strokeWidth={ARC_STROKE} fill="none" />
+          <Circle cx={INDICATOR_SIZE / 2} cy={INDICATOR_SIZE / 2} r={ARC_RADIUS} stroke={color} strokeWidth={ARC_STROKE} fill="none" strokeDasharray={`${ARC_CIRCUMFERENCE * 0.7} ${ARC_CIRCUMFERENCE * 0.3}`} strokeLinecap="round" transform={`rotate(-90 ${INDICATOR_SIZE / 2} ${INDICATOR_SIZE / 2})`} />
         </Svg>
       </Animated.View>
     );
@@ -115,128 +99,75 @@ function CircularArcIndicator({
   return (
     <View>
       <Svg width={INDICATOR_SIZE} height={INDICATOR_SIZE} viewBox={`0 0 ${INDICATOR_SIZE} ${INDICATOR_SIZE}`}>
-        <Circle
-          cx={INDICATOR_SIZE / 2}
-          cy={INDICATOR_SIZE / 2}
-          r={ARC_RADIUS}
-          stroke={arcColor + "20"}
-          strokeWidth={ARC_STROKE}
-          fill="none"
-        />
-        <Circle
-          cx={INDICATOR_SIZE / 2}
-          cy={INDICATOR_SIZE / 2}
-          r={ARC_RADIUS}
-          stroke={arcColor}
-          strokeWidth={ARC_STROKE}
-          fill="none"
-          strokeDasharray={`${ARC_CIRCUMFERENCE}`}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${INDICATOR_SIZE / 2} ${INDICATOR_SIZE / 2})`}
-        />
+        <Circle cx={INDICATOR_SIZE / 2} cy={INDICATOR_SIZE / 2} r={ARC_RADIUS} stroke={arcColor + "20"} strokeWidth={ARC_STROKE} fill="none" />
+        <Circle cx={INDICATOR_SIZE / 2} cy={INDICATOR_SIZE / 2} r={ARC_RADIUS} stroke={arcColor} strokeWidth={ARC_STROKE} fill="none" strokeDasharray={`${ARC_CIRCUMFERENCE}`} strokeDashoffset={dashOffset} strokeLinecap="round" transform={`rotate(-90 ${INDICATOR_SIZE / 2} ${INDICATOR_SIZE / 2})`} />
       </Svg>
-      <View style={pi.iconOverlay}>
+      <View style={staticStyles.iconOverlay}>
         {isReady ? (
-          <Text style={[pi.iconText, { color: C.success }]}>↑</Text>
+          <Text style={[staticStyles.iconText, { color: successColor }]}>↑</Text>
         ) : (
-          <Text style={[pi.iconText, { color }]}>↓</Text>
+          <Text style={[staticStyles.iconText, { color }]}>↓</Text>
         )}
       </View>
     </View>
   );
 }
 
-function PullLabel({ phase }: { phase: RefreshPhase }) {
+function PullLabel({ phase, successColor, mutedColor }: { phase: RefreshPhase; successColor: string; mutedColor: string }) {
   if (phase === "idle" || phase === "refreshing" || phase === "success") return null;
-
   const text = phase === "ready" ? "Release to refresh" : "Pull to refresh";
-  const color = phase === "ready" ? C.success : C.textMuted;
-
-  return (
-    <Text style={[pi.labelText, { color }]}>{text}</Text>
-  );
+  const color = phase === "ready" ? successColor : mutedColor;
+  return <Text style={[staticStyles.labelText, { color }]}>{text}</Text>;
 }
 
-function StatusBanner({
-  phase,
-  timeStr,
-  accentColor,
-  bannerAnim,
-  bannerContent,
-}: {
-  phase: RefreshPhase;
-  timeStr: string;
-  accentColor: string;
-  bannerAnim: Animated.Value;
-  bannerContent: RefreshPhase | "stale";
-}) {
-  const translateY = bannerAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-36, 0],
-  });
-
-  const opacity = bannerAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 0.8, 1],
-  });
-
-  let content;
-  if (bannerContent === "refreshing") {
-    content = (
-      <View style={banner.statusRow}>
-        <BannerSpinner size={12} color={accentColor} />
-        <Text style={[banner.statusText, { color: accentColor }]}>Refreshing...</Text>
-      </View>
-    );
-  } else if (bannerContent === "success") {
-    content = (
-      <View style={banner.statusRow}>
-        <Text style={[banner.successIcon, { color: C.success }]}>✓</Text>
-        <Text style={[banner.statusText, { color: C.success }]}>Updated</Text>
-      </View>
-    );
-  } else if (bannerContent === "stale" && timeStr) {
-    content = (
-      <Text style={banner.timeText}>Updated {timeStr}</Text>
-    );
-  }
-
+function BannerSpinner({ size = 12, color }: { size?: number; color: string }) {
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const anim = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: Platform.OS !== "web" }));
+    anim.start();
+    return () => anim.stop();
+  }, []);
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
   return (
-    <Animated.View style={[banner.wrap, { transform: [{ translateY }], opacity }]}>
-      <View style={banner.inner}>{content}</View>
+    <Animated.View style={{ width: size, height: size, transform: [{ rotate }] }}>
+      <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color + "30", borderTopColor: color }} />
     </Animated.View>
   );
 }
 
-function BannerSpinner({ size = 12, color = C.primary }: { size?: number; color?: string }) {
-  const spin = useRef(new Animated.Value(0)).current;
+function StatusBanner({
+  phase, timeStr, accentColor, bannerAnim, bannerContent, surfaceColor, borderColor, successColor, mutedColor,
+}: {
+  phase: RefreshPhase; timeStr: string; accentColor: string; bannerAnim: Animated.Value;
+  bannerContent: RefreshPhase | "stale"; surfaceColor: string; borderColor: string; successColor: string; mutedColor: string;
+}) {
+  const translateY = bannerAnim.interpolate({ inputRange: [0, 1], outputRange: [-36, 0] });
+  const opacity = bannerAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.8, 1] });
 
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 800,
-        easing: Easing.linear,
-        useNativeDriver: Platform.OS !== "web",
-      })
+  let content;
+  if (bannerContent === "refreshing") {
+    content = (
+      <View style={staticStyles.statusRow}>
+        <BannerSpinner size={12} color={accentColor} />
+        <Text style={[staticStyles.statusText, { color: accentColor }]}>Refreshing...</Text>
+      </View>
     );
-    anim.start();
-    return () => anim.stop();
-  }, []);
-
-  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  } else if (bannerContent === "success") {
+    content = (
+      <View style={staticStyles.statusRow}>
+        <Text style={[staticStyles.successIcon, { color: successColor }]}>✓</Text>
+        <Text style={[staticStyles.statusText, { color: successColor }]}>Updated</Text>
+      </View>
+    );
+  } else if (bannerContent === "stale" && timeStr) {
+    content = <Text style={[staticStyles.timeText, { color: mutedColor }]}>Updated {timeStr}</Text>;
+  }
 
   return (
-    <Animated.View style={{ width: size, height: size, transform: [{ rotate }] }}>
-      <View style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 2,
-        borderColor: color + "30",
-        borderTopColor: color,
-      }} />
+    <Animated.View style={[{ position: "absolute", top: 0, left: 0, right: 0, paddingHorizontal: spacing.lg, paddingVertical: 6, backgroundColor: surfaceColor, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: borderColor, zIndex: 50 }, { transform: [{ translateY }], opacity }]}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", minHeight: 18 }}>
+        {content}
+      </View>
     </Animated.View>
   );
 }
@@ -245,9 +176,12 @@ export function SmartRefresh({
   onRefresh,
   children,
   lastUpdated,
-  accentColor = C.primary,
+  accentColor: accentColorProp,
   ...scrollProps
 }: SmartRefreshProps) {
+  const { colors: C } = useTheme();
+  const accentColor = accentColorProp ?? C.primary;
+
   const [refreshing, setRefreshing] = useState(false);
   const [lastTime, setLastTime] = useState<Date | null>(lastUpdated ?? null);
   const [timeStr, setTimeStr] = useState("");
@@ -270,9 +204,7 @@ export function SmartRefresh({
     };
   }, []);
 
-  useEffect(() => {
-    setLastTime(lastUpdated ?? null);
-  }, [lastUpdated]);
+  useEffect(() => { setLastTime(lastUpdated ?? null); }, [lastUpdated]);
 
   useEffect(() => {
     setTimeStr(formatLastUpdated(lastTime));
@@ -284,35 +216,16 @@ export function SmartRefresh({
     const isStale = !!timeStr && timeStr !== "Just now";
     if (phase === "refreshing") {
       setBannerContent("refreshing");
-      Animated.spring(bannerAnim, {
-        toValue: 1,
-        tension: 60,
-        friction: 10,
-        useNativeDriver: Platform.OS !== "web",
-      }).start();
+      Animated.spring(bannerAnim, { toValue: 1, tension: 60, friction: 10, useNativeDriver: Platform.OS !== "web" }).start();
     } else if (phase === "success") {
       setBannerContent("success");
-      Animated.timing(bannerAnim, {
-        toValue: 1,
-        duration: 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: Platform.OS !== "web",
-      }).start();
+      Animated.timing(bannerAnim, { toValue: 1, duration: 200, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }).start();
     } else if (phase === "pulling" || phase === "ready") {
-      Animated.timing(bannerAnim, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: Platform.OS !== "web",
-      }).start();
+      Animated.timing(bannerAnim, { toValue: 0, duration: 150, useNativeDriver: Platform.OS !== "web" }).start();
     } else if (phase === "idle") {
       if (isStale) {
         setBannerContent("stale");
-        Animated.timing(bannerAnim, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: Platform.OS !== "web",
-        }).start();
+        Animated.timing(bannerAnim, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }).start();
       }
     }
   }, [phase, timeStr]);
@@ -321,57 +234,26 @@ export function SmartRefresh({
     if (successTimerRef.current) clearTimeout(successTimerRef.current);
     setPhase("refreshing");
     setRefreshing(true);
-
     Animated.parallel([
-      Animated.spring(indicatorOpacityAnim, {
-        toValue: 1,
-        tension: 80,
-        friction: 10,
-        useNativeDriver: Platform.OS !== "web",
-      }),
-      Animated.spring(indicatorScaleAnim, {
-        toValue: 1,
-        tension: 80,
-        friction: 10,
-        useNativeDriver: Platform.OS !== "web",
-      }),
+      Animated.spring(indicatorOpacityAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: Platform.OS !== "web" }),
+      Animated.spring(indicatorScaleAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: Platform.OS !== "web" }),
     ]).start();
-
     try {
       await onRefresh();
       if (mountedRef.current) setLastTime(new Date());
     } catch {}
-
     if (!mountedRef.current) return;
-
     setRefreshing(false);
     setPhase("success");
     setPullProg(0);
     pullProgRef.current = 0;
-
     Animated.parallel([
-      Animated.timing(indicatorOpacityAnim, {
-        toValue: 0,
-        duration: 350,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: Platform.OS !== "web",
-      }),
-      Animated.timing(indicatorScaleAnim, {
-        toValue: 0.3,
-        duration: 350,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: Platform.OS !== "web",
-      }),
+      Animated.timing(indicatorOpacityAnim, { toValue: 0, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }),
+      Animated.timing(indicatorScaleAnim, { toValue: 0.3, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }),
     ]).start();
-
     successTimerRef.current = setTimeout(() => {
       if (!mountedRef.current) return;
-      Animated.timing(bannerAnim, {
-        toValue: 0,
-        duration: 350,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: Platform.OS !== "web",
-      }).start(() => {
+      Animated.timing(bannerAnim, { toValue: 0, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }).start(() => {
         if (mountedRef.current) setPhase("idle");
       });
     }, 1200);
@@ -386,15 +268,10 @@ export function SmartRefresh({
       const progress = Math.min(Math.abs(y) / PULL_THRESHOLD, 1);
       pullProgRef.current = progress;
       setPullProg(progress);
-
       indicatorOpacityAnim.setValue(Math.min(progress * 1.5, 1));
       indicatorScaleAnim.setValue(0.3 + progress * 0.7);
-
-      if (progress >= 1) {
-        setPhase("ready");
-      } else if (progress > 0) {
-        setPhase("pulling");
-      }
+      if (progress >= 1) setPhase("ready");
+      else if (progress > 0) setPhase("pulling");
     }
     scrollProps.onScroll?.(e);
   }, [refreshing, isWeb]);
@@ -405,23 +282,10 @@ export function SmartRefresh({
     } else if (isWeb && !refreshing) {
       setPhase("idle");
       pullProgRef.current = 0;
-
       Animated.parallel([
-        Animated.timing(indicatorOpacityAnim, {
-          toValue: 0,
-          duration: 250,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: Platform.OS !== "web",
-        }),
-        Animated.timing(indicatorScaleAnim, {
-          toValue: 0.3,
-          duration: 250,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: Platform.OS !== "web",
-        }),
-      ]).start(() => {
-        if (mountedRef.current) setPullProg(0);
-      });
+        Animated.timing(indicatorOpacityAnim, { toValue: 0, duration: 250, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }),
+        Animated.timing(indicatorScaleAnim, { toValue: 0.3, duration: 250, easing: Easing.out(Easing.ease), useNativeDriver: Platform.OS !== "web" }),
+      ]).start(() => { if (mountedRef.current) setPullProg(0); });
     }
     scrollProps.onScrollEndDrag?.(e);
   }, [isWeb, refreshing, doRefresh]);
@@ -444,14 +308,7 @@ export function SmartRefresh({
   }, [onRefresh]);
 
   if (!isWeb) {
-    const nativeTitle = phase === "refreshing"
-      ? "Refreshing..."
-      : phase === "success"
-        ? "Updated ✓"
-        : timeStr
-          ? `Updated ${timeStr}`
-          : "Pull to refresh";
-
+    const nativeTitle = phase === "refreshing" ? "Refreshing..." : phase === "success" ? "Updated ✓" : timeStr ? `Updated ${timeStr}` : "Pull to refresh";
     return (
       <ScrollView
         {...scrollProps}
@@ -469,8 +326,8 @@ export function SmartRefresh({
       >
         {children}
         {timeStr ? (
-          <View style={ts.wrap}>
-            <Text style={ts.text}>Updated {timeStr}</Text>
+          <View style={{ alignItems: "center", paddingVertical: spacing.md, paddingBottom: spacing.xl }}>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted }}>Updated {timeStr}</Text>
           </View>
         ) : null}
       </ScrollView>
@@ -479,23 +336,13 @@ export function SmartRefresh({
 
   return (
     <View style={{ flex: 1 }}>
-      <StatusBanner phase={phase} timeStr={timeStr} accentColor={accentColor} bannerAnim={bannerAnim} bannerContent={bannerContent} />
+      <StatusBanner phase={phase} timeStr={timeStr} accentColor={accentColor} bannerAnim={bannerAnim} bannerContent={bannerContent} surfaceColor={C.surface} borderColor={C.border} successColor={C.success} mutedColor={C.textMuted} />
 
-      <Animated.View style={[
-        pi.wrap,
-        {
-          opacity: indicatorOpacityAnim,
-          transform: [{ scale: indicatorScaleAnim }],
-        },
-      ]}>
-        <View style={[pi.circle, { borderColor: accentColor + "15" }]}>
-          <CircularArcIndicator
-            progress={pullProg}
-            phase={phase}
-            color={accentColor}
-          />
+      <Animated.View style={[staticStyles.indicatorWrap, { opacity: indicatorOpacityAnim, transform: [{ scale: indicatorScaleAnim }] }]}>
+        <View style={[staticStyles.circle, { borderColor: accentColor + "15", backgroundColor: C.surface }]}>
+          <CircularArcIndicator progress={pullProg} phase={phase} color={accentColor} successColor={C.success} />
         </View>
-        <PullLabel phase={phase} />
+        <PullLabel phase={phase} successColor={C.success} mutedColor={C.textMuted} />
       </Animated.View>
 
       <ScrollView
@@ -510,8 +357,8 @@ export function SmartRefresh({
   );
 }
 
-const pi = StyleSheet.create({
-  wrap: {
+const staticStyles = StyleSheet.create({
+  indicatorWrap: {
     position: "absolute",
     top: 36,
     left: 0,
@@ -524,7 +371,6 @@ const pi = StyleSheet.create({
     width: INDICATOR_SIZE + 8,
     height: INDICATOR_SIZE + 8,
     borderRadius: (INDICATOR_SIZE + 8) / 2,
-    backgroundColor: C.surface,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -535,73 +381,14 @@ const pi = StyleSheet.create({
   },
   iconOverlay: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     alignItems: "center",
     justifyContent: "center",
   },
-  iconText: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  labelText: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 11,
-    marginTop: 4,
-    textAlign: "center",
-  },
-});
-
-const banner = StyleSheet.create({
-  wrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 6,
-    backgroundColor: C.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.border,
-    zIndex: 50,
-  },
-  inner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 18,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statusText: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-  },
-  successIcon: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  timeText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: C.textMuted,
-  },
-});
-
-const ts = StyleSheet.create({
-  wrap: {
-    alignItems: "center",
-    paddingVertical: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  text: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: C.textMuted,
-  },
+  iconText: { fontSize: 16, fontWeight: "700" },
+  labelText: { fontFamily: "Inter_500Medium", fontSize: 11, marginTop: 4, textAlign: "center" },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  statusText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  successIcon: { fontSize: 14, fontWeight: "700" },
+  timeText: { fontFamily: "Inter_400Regular", fontSize: 11 },
 });

@@ -3,13 +3,12 @@ import React from "react";
 import {
   Modal as RNModal,
   TouchableOpacity,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
-import Colors, { radii, shadows, spacing, typography } from "@/constants/colors";
-
-const C = Colors.light;
+import { radii, shadows, spacing } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import { useTypography } from "@/hooks/useTypography";
 
 interface ModalProps {
   visible: boolean;
@@ -28,18 +27,21 @@ export function Modal({
   children,
   showCloseButton = true,
 }: ModalProps) {
+  const { colors: C } = useTheme();
+  const T = useTypography();
+
   return (
     <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity activeOpacity={0.7} style={styles.overlay} onPress={onClose}>
-        <TouchableOpacity activeOpacity={0.7} style={styles.content} onPress={(e) => e.stopPropagation()}>
+      <TouchableOpacity activeOpacity={0.7} style={{ flex: 1, backgroundColor: C.overlay, justifyContent: "center", alignItems: "center", padding: spacing.xxl }} onPress={onClose}>
+        <TouchableOpacity activeOpacity={0.7} style={{ backgroundColor: C.surface, borderRadius: radii.xxl, padding: spacing.xxl, maxWidth: 400, width: "100%", ...shadows.xl }} onPress={(e) => e.stopPropagation()}>
           {(title || showCloseButton) && (
-            <View style={styles.header}>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.lg }}>
               <View style={{ flex: 1 }}>
-                {title && <Text style={styles.title}>{title}</Text>}
-                {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+                {title && <Text style={{ ...T.h3, color: C.text }}>{title}</Text>}
+                {subtitle && <Text style={{ ...T.caption, color: C.textMuted, marginTop: 4 }}>{subtitle}</Text>}
               </View>
               {showCloseButton && (
-                <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={styles.closeBtn} hitSlop={8}>
+                <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginLeft: spacing.sm }} hitSlop={8}>
                   <Ionicons name="close" size={22} color={C.textSecondary} />
                 </TouchableOpacity>
               )}
@@ -51,37 +53,3 @@ export function Modal({
     </RNModal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: C.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.xxl,
-  },
-  content: {
-    backgroundColor: C.surface,
-    borderRadius: radii.xxl,
-    padding: spacing.xxl,
-    maxWidth: 400,
-    width: "100%",
-    ...shadows.xl,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: spacing.lg,
-  },
-  title: { ...typography.h3, color: C.text },
-  subtitle: { ...typography.caption, color: C.textMuted, marginTop: 4 },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: C.surfaceSecondary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: spacing.sm,
-  },
-});

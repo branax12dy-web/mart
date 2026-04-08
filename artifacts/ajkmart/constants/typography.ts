@@ -1,3 +1,5 @@
+import { useFontSize } from "@/context/FontSizeContext";
+
 export { typography, getTypography, getFontFamily } from "./colors";
 export type { } from "./colors";
 
@@ -29,3 +31,27 @@ export const Font = {
   semiBold: "Inter_600SemiBold" as const,
   bold: "Inter_700Bold" as const,
 } as const;
+
+type TypEntry = { fontFamily: string; fontSize: number; lineHeight: number };
+type ScaledTypography = { [K in keyof typeof T]: TypEntry };
+
+function scaleTypography(scale: number): ScaledTypography {
+  return Object.fromEntries(
+    (Object.keys(T) as Array<keyof typeof T>).map((key) => {
+      const entry = T[key];
+      return [
+        key,
+        {
+          fontFamily: entry.fontFamily,
+          fontSize: Math.round(entry.fontSize * scale * 10) / 10,
+          lineHeight: Math.round(entry.lineHeight * scale * 10) / 10,
+        },
+      ];
+    })
+  ) as ScaledTypography;
+}
+
+export function useScaledTypography(): ScaledTypography {
+  const { fontScale } = useFontSize();
+  return scaleTypography(fontScale);
+}

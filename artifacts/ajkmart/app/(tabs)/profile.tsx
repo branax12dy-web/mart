@@ -14,6 +14,7 @@ import {
   Modal,
   Platform,
   Share,
+  Switch,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -23,11 +24,13 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
+import { spacing, radii, shadows, typography } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 import { useAuth, hasRole } from "@/context/AuthContext";
+import { useFontSize, type FontSizeLevel } from "@/context/FontSizeContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, useCurrency } from "@/context/PlatformConfigContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { SmartRefresh } from "@/components/ui/SmartRefresh";
@@ -40,7 +43,7 @@ import {
   PrivacyModal,
   AddressesModal,
 } from "@/components/profile";
-import { C, stripPkCode, btnStyles } from "@/components/profile/shared";
+import { stripPkCode } from "@/components/profile/shared";
 
 function validateMpin(pin: string): string | null {
   if (pin.length !== 4) return "Enter a 4-digit MPIN";
@@ -57,6 +60,7 @@ function validateMpin(pin: string): string | null {
 function ProfileMpinInput({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
   const inputRef = useRef<TextInput>(null);
   const { language } = useLanguage();
+  const { colors: C } = useTheme();
   const T = (key: TranslationKey) => tDual(key, language);
   useEffect(() => {
     if (!autoFocus) return;
@@ -92,6 +96,8 @@ function ProfileMpinInput({ value, onChange, autoFocus }: { value: string; onCha
 }
 
 function ProfileMpinChangeModal({ token, onClose, onSuccess }: { token: string | null; onClose: () => void; onSuccess: () => void }) {
+  const { colors: C } = useTheme();
+  const mpinStyles = getMpinStyles(C);
   const [oldPin, setOldPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -240,6 +246,8 @@ function ProfileMpinChangeModal({ token, onClose, onSuccess }: { token: string |
 }
 
 function ProfileMpinForgotModal({ token, onClose, onReset }: { token: string | null; onClose: () => void; onReset: () => void }) {
+  const { colors: C } = useTheme();
+  const mpinStyles = getMpinStyles(C);
   const [step, setStep] = useState<"request" | "verify">("request");
   const [otp, setOtp] = useState("");
   const [newPin, setNewPin] = useState("");
@@ -347,19 +355,31 @@ function ProfileMpinForgotModal({ token, onClose, onReset }: { token: string | n
   );
 }
 
-const mpinStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: C.overlayDark50, justifyContent: "flex-end" },
-  sheet: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingBottom: Platform.OS === "web" ? 40 : 48, paddingTop: 12 },
-  handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4, backgroundColor: C.primary },
-  actionBtnTxt: { ...Typ.h3, fontSize: 16, color: C.textInverse },
-  input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, ...Typ.body, color: C.text, fontSize: 16, textAlign: "center" },
-});
+function getMpinStyles(C: ReturnType<typeof useTheme>["colors"]) {
+  return {
+    overlay: { flex: 1, backgroundColor: C.overlayDark50, justifyContent: "flex-end" } as const,
+    sheet: { backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingBottom: Platform.OS === "web" ? 40 : 48, paddingTop: 12 } as const,
+    handle: { width: 40, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: "center", marginBottom: 20 } as const,
+    actionBtn: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const, gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4, backgroundColor: C.primary } as const,
+    actionBtnTxt: { ...Typ.h3, fontSize: 16, color: C.textInverse } as const,
+    input: { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, ...Typ.body, color: C.text, fontSize: 16, textAlign: "center" as const } as const,
+  };
+}
 
 function ProfileScreenInner() {
   const insets = useSafeAreaInsets();
   const { user, logout, updateUser, token } = useAuth();
   const { showToast } = useToast();
+  const { colors: C } = useTheme();
+  const lvl = getLvlStyles(C);
+  const kycSt = getKycStyles(C);
+  const pi = getPiStyles(C);
+  const rc = getRcStyles(C);
+  const sec = getSecStyles(C);
+  const row = getRowStyles(C);
+  const appInfo = getAppInfoStyles(C);
+  const signOut = getSignOutStyles(C);
+  const dynBtnStyles = getBtnStyles(C);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const TAB_H  = Platform.OS === "web" ? 72 : 49;
 
@@ -414,6 +434,9 @@ function ProfileScreenInner() {
 
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+
+  const { fontSizeLevel, setFontSizeLevel } = useFontSize();
+  const { isDark, toggleDarkMode } = useTheme();
 
   const { config: platformConfig } = usePlatformConfig();
   const { symbol: currencySymbol } = useCurrency();
@@ -887,6 +910,61 @@ function ProfileScreenInner() {
           />
         </SectionCard>
 
+        <View style={[sec.wrap]}>
+          <Text style={sec.title}>DISPLAY & ACCESSIBILITY</Text>
+          <View style={sec.card}>
+            <View style={[row.wrap, { borderBottomWidth: 1, borderBottomColor: C.borderLight }]} accessible accessibilityLabel="Dark Mode">
+              <View style={[row.icon, { backgroundColor: isDark ? C.infoSoft : C.surfaceSecondary }]}>
+                <Ionicons name={isDark ? "moon" : "moon-outline"} size={18} color={isDark ? C.info : C.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={row.label}>Dark Mode</Text>
+                <Text style={row.sub}>{isDark ? "Dark theme active" : "Light theme active"}</Text>
+              </View>
+              <Switch
+                value={isDark}
+                onValueChange={toggleDarkMode}
+                trackColor={{ false: C.border, true: C.primary + "88" }}
+                thumbColor={isDark ? C.primary : C.textMuted}
+                accessibilityLabel="Toggle dark mode"
+                accessibilityRole="switch"
+              />
+            </View>
+            <View style={[row.wrap, { borderBottomWidth: 0 }]} accessible accessibilityLabel="Font Size">
+              <View style={[row.icon, { backgroundColor: C.primarySoft }]}>
+                <Ionicons name="text-outline" size={18} color={C.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 8 }}>
+                <Text style={row.label}>Font Size</Text>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {(["small", "medium", "large"] as FontSizeLevel[]).map((level) => (
+                    <TouchableOpacity
+                      key={level}
+                      onPress={() => setFontSizeLevel(level)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: radii.md,
+                        borderWidth: 1.5,
+                        borderColor: fontSizeLevel === level ? C.primary : C.border,
+                        backgroundColor: fontSizeLevel === level ? C.primarySoft : C.surfaceSecondary,
+                        alignItems: "center",
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Font size ${level}`}
+                      accessibilityState={{ selected: fontSizeLevel === level }}
+                    >
+                      <Text style={{ fontFamily: Font.semiBold, fontSize: 12, color: fontSizeLevel === level ? C.primary : C.textSecondary, textTransform: "capitalize" }}>
+                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {hasRole(user ?? null, "customer") && (
           <SectionCard title="Wallet">
             <Row icon="wallet-outline" label="My Wallet" sub="View balance & transactions" onPress={() => router.push("/(tabs)/wallet")} iconColor={C.primary} iconBg={C.primarySoft} />
@@ -1023,11 +1101,11 @@ function ProfileScreenInner() {
                 </View>
               </View>
               <View style={{ flexDirection: "row", gap: 10 }}>
-                <TouchableOpacity activeOpacity={0.7} onPress={() => setShowSignOutConfirm(false)} style={btnStyles.cancel} accessibilityRole="button" accessibilityLabel={T("cancelNo")}>
-                  <Text style={btnStyles.cancelTxt}>{T("cancelNo")}</Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => setShowSignOutConfirm(false)} style={dynBtnStyles.cancel} accessibilityRole="button" accessibilityLabel={T("cancelNo")}>
+                  <Text style={dynBtnStyles.cancelTxt}>{T("cancelNo")}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.7} onPress={doSignOut} disabled={signingOut} style={[btnStyles.save, { backgroundColor: C.danger }, signingOut && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel={T("signOutYes")}>
-                  {signingOut ? <ActivityIndicator color={C.textInverse} size="small" /> : <Text style={btnStyles.saveTxt}>{T("signOutYes")}</Text>}
+                <TouchableOpacity activeOpacity={0.7} onPress={doSignOut} disabled={signingOut} style={[dynBtnStyles.save, { backgroundColor: C.danger }, signingOut && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel={T("signOutYes")}>
+                  {signingOut ? <ActivityIndicator color={C.textInverse} size="small" /> : <Text style={dynBtnStyles.saveTxt}>{T("signOutYes")}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -1070,35 +1148,6 @@ function ProfileScreenInner() {
 
 export default withErrorBoundary(ProfileScreenInner);
 
-const lvl = StyleSheet.create({
-  strip: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.md, borderWidth: 1, borderColor: C.borderLight, ...shadows.sm },
-  badge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radii.full, borderWidth: 1.5 },
-  badgeTxt: { ...Typ.captionBold },
-  progressWrap: { flex: 1 },
-  progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
-  progressLabel: { ...typography.captionMedium, color: C.text },
-  progressCount: { fontFamily: Font.bold, fontSize: 12, color: C.primary },
-  progressBar: { height: 7, backgroundColor: C.surfaceSecondary, borderRadius: 4, overflow: "hidden" },
-  progressFill: { height: 7, borderRadius: 4 },
-  progressHint: { ...typography.small, color: C.textMuted, marginTop: 4 },
-});
-
-const kycSt = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.sm, backgroundColor: C.primarySoft, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: `${C.primary}30` },
-  iconWrap: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
-  title: { ...typography.subtitle, color: C.text, marginBottom: 2 },
-  sub: { ...typography.caption, color: C.textSecondary, lineHeight: 17 },
-});
-
-const pi = StyleSheet.create({
-  wrap: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
-  card: { backgroundColor: C.surface, borderRadius: radii.xl, borderWidth: 1, borderColor: C.borderLight, overflow: "hidden", ...shadows.sm },
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.borderLight },
-  iconWrap: { width: 34, height: 34, borderRadius: radii.md, alignItems: "center", justifyContent: "center" },
-  label: { ...typography.small, color: C.textMuted, marginBottom: 1 },
-  value: { ...typography.bodyMedium, color: C.text },
-});
-
 const ph = StyleSheet.create({
   card: { paddingHorizontal: spacing.lg, paddingBottom: 0, overflow: "hidden" },
   blob: { position: "absolute", borderRadius: 999, backgroundColor: "#fff" },
@@ -1128,46 +1177,102 @@ const wb = StyleSheet.create({
   btnTxt: { ...typography.captionMedium, color: "#fff" },
 });
 
-const rc = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", backgroundColor: C.infoSoft, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: C.indigoBorder },
-  left: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md, flex: 1 },
-  iconBox: { width: 44, height: 44, borderRadius: radii.lg, backgroundColor: C.indigoSoft, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  title: { ...typography.subtitle, color: C.text, marginBottom: 3 },
-  sub: { ...typography.caption, color: C.textSecondary, lineHeight: 17, marginBottom: spacing.sm },
-  codeRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  codeLabel: { ...typography.smallMedium, color: C.textMuted },
-  codePill: { backgroundColor: C.indigoBorder, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.full },
-  code: { ...Typ.captionBold, color: C.info, letterSpacing: 1 },
-});
+type ProfileColors = ReturnType<typeof useTheme>["colors"];
 
-const sec = StyleSheet.create({
-  wrap: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
-  title: { ...Typ.tiny, color: C.textMuted, letterSpacing: 1, marginBottom: 6 },
-  card: { backgroundColor: C.surface, borderRadius: radii.xl, borderWidth: 1, borderColor: C.borderLight, overflow: "hidden", ...shadows.sm },
-  secureBadge: { backgroundColor: C.successSoft, paddingHorizontal: 7, paddingVertical: 3, borderRadius: radii.full },
-  secureTxt: { ...typography.smallMedium, color: C.success },
-});
+function getLvlStyles(C: ProfileColors) {
+  return {
+    strip: { flexDirection: "row" as const, alignItems: "center" as const, gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.md, borderWidth: 1, borderColor: C.borderLight, ...shadows.sm },
+    badge: { flexDirection: "row" as const, alignItems: "center" as const, gap: 5, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radii.full, borderWidth: 1.5 },
+    badgeTxt: { ...Typ.captionBold },
+    progressWrap: { flex: 1 },
+    progressRow: { flexDirection: "row" as const, justifyContent: "space-between" as const, alignItems: "center" as const, marginBottom: 5 },
+    progressLabel: { ...typography.captionMedium, color: C.text },
+    progressCount: { fontFamily: Font.bold, fontSize: 12, color: C.primary },
+    progressBar: { height: 7, backgroundColor: C.surfaceSecondary, borderRadius: 4, overflow: "hidden" as const },
+    progressFill: { height: 7, borderRadius: 4 },
+    progressHint: { ...typography.small, color: C.textMuted, marginTop: 4 },
+  };
+}
 
-const row = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: C.borderLight },
-  icon: { width: 36, height: 36, borderRadius: radii.md, alignItems: "center", justifyContent: "center" },
-  label: { ...typography.bodyMedium, color: C.text },
-  sub: { ...typography.small, color: C.textMuted, marginTop: 1 },
-  badge: { backgroundColor: C.danger, borderRadius: 10, minWidth: 20, height: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 5, marginRight: 4 },
-  badgeTxt: { ...Typ.tiny, color: C.textInverse },
-});
+function getKycStyles(C: ProfileColors) {
+  return {
+    wrap: { flexDirection: "row" as const, alignItems: "center" as const, gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.sm, backgroundColor: C.primarySoft, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: `${C.primary}30` },
+    iconWrap: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: C.surface, alignItems: "center" as const, justifyContent: "center" as const },
+    title: { ...typography.subtitle, color: C.text, marginBottom: 2 },
+    sub: { ...typography.caption, color: C.textSecondary, lineHeight: 17 },
+  };
+}
 
-const appInfo = StyleSheet.create({
-  wrap: { alignItems: "center", marginTop: spacing.xxxl, marginBottom: spacing.lg, gap: 6 },
-  logo: { width: 56, height: 56, borderRadius: radii.xl, backgroundColor: C.primarySoft, alignItems: "center", justifyContent: "center" },
-  name: { ...typography.subtitle, color: C.text },
-  version: { ...typography.caption, color: C.textMuted },
-});
+function getPiStyles(C: ProfileColors) {
+  return {
+    wrap: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
+    card: { backgroundColor: C.surface, borderRadius: radii.xl, borderWidth: 1, borderColor: C.borderLight, overflow: "hidden" as const, ...shadows.sm },
+    row: { flexDirection: "row" as const, alignItems: "center" as const, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+    iconWrap: { width: 34, height: 34, borderRadius: radii.md, alignItems: "center" as const, justifyContent: "center" as const },
+    label: { ...typography.small, color: C.textMuted, marginBottom: 1 },
+    value: { ...typography.bodyMedium, color: C.text },
+  };
+}
 
-const signOut = StyleSheet.create({
-  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 15, backgroundColor: C.dangerSoft, borderRadius: radii.xl },
-  txt: { ...typography.bodySemiBold, color: C.danger },
-  confirmBox: { backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1.5, borderColor: C.dangerSoft },
-  confirmTitle: { ...typography.subtitle, color: C.text },
-  confirmSub: { ...typography.caption, color: C.textMuted, marginTop: 2 },
-});
+function getRcStyles(C: ProfileColors) {
+  return {
+    wrap: { flexDirection: "row" as const, alignItems: "center" as const, backgroundColor: C.infoSoft, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1, borderColor: C.indigoBorder },
+    left: { flexDirection: "row" as const, alignItems: "flex-start" as const, gap: spacing.md, flex: 1 },
+    iconBox: { width: 44, height: 44, borderRadius: radii.lg, backgroundColor: C.indigoSoft, alignItems: "center" as const, justifyContent: "center" as const, flexShrink: 0 },
+    title: { ...typography.subtitle, color: C.text, marginBottom: 3 },
+    sub: { ...typography.caption, color: C.textSecondary, lineHeight: 17, marginBottom: spacing.sm },
+    codeRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: spacing.sm },
+    codeLabel: { ...typography.smallMedium, color: C.textMuted },
+    codePill: { backgroundColor: C.indigoBorder, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.full },
+    code: { ...Typ.captionBold, color: C.info, letterSpacing: 1 },
+  };
+}
+
+function getSecStyles(C: ProfileColors) {
+  return {
+    wrap: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+    title: { ...Typ.tiny, color: C.textMuted, letterSpacing: 1, marginBottom: 6 },
+    card: { backgroundColor: C.surface, borderRadius: radii.xl, borderWidth: 1, borderColor: C.borderLight, overflow: "hidden" as const, ...shadows.sm },
+    secureBadge: { backgroundColor: C.successSoft, paddingHorizontal: 7, paddingVertical: 3, borderRadius: radii.full },
+    secureTxt: { ...typography.smallMedium, color: C.success },
+  };
+}
+
+function getRowStyles(C: ProfileColors) {
+  return {
+    wrap: { flexDirection: "row" as const, alignItems: "center" as const, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+    icon: { width: 36, height: 36, borderRadius: radii.md, alignItems: "center" as const, justifyContent: "center" as const },
+    label: { ...typography.bodyMedium, color: C.text },
+    sub: { ...typography.small, color: C.textMuted, marginTop: 1 },
+    badge: { backgroundColor: C.danger, borderRadius: 10, minWidth: 20, height: 20, alignItems: "center" as const, justifyContent: "center" as const, paddingHorizontal: 5, marginRight: 4 },
+    badgeTxt: { ...Typ.tiny, color: C.textInverse },
+  };
+}
+
+function getAppInfoStyles(C: ProfileColors) {
+  return {
+    wrap: { alignItems: "center" as const, marginTop: spacing.xxxl, marginBottom: spacing.lg, gap: 6 },
+    logo: { width: 56, height: 56, borderRadius: radii.xl, backgroundColor: C.primarySoft, alignItems: "center" as const, justifyContent: "center" as const },
+    name: { ...typography.subtitle, color: C.text },
+    version: { ...typography.caption, color: C.textMuted },
+  };
+}
+
+function getSignOutStyles(C: ProfileColors) {
+  return {
+    btn: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const, gap: 10, paddingVertical: 15, backgroundColor: C.dangerSoft, borderRadius: radii.xl },
+    txt: { ...typography.bodySemiBold, color: C.danger },
+    confirmBox: { backgroundColor: C.surface, borderRadius: radii.xl, padding: spacing.lg, borderWidth: 1.5, borderColor: C.dangerSoft },
+    confirmTitle: { ...typography.subtitle, color: C.text },
+    confirmSub: { ...typography.caption, color: C.textMuted, marginTop: 2 },
+  };
+}
+
+function getBtnStyles(C: ProfileColors) {
+  return {
+    cancel: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: radii.lg, paddingVertical: 14, alignItems: "center" as const },
+    cancelTxt: { ...typography.bodySemiBold, color: C.textSecondary },
+    save: { flex: 2, backgroundColor: C.primary, borderRadius: radii.lg, paddingVertical: 14, alignItems: "center" as const },
+    saveTxt: { ...typography.button, color: C.textInverse },
+  };
+}

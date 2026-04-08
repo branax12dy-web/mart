@@ -1,8 +1,6 @@
 import React from "react";
-import { Image, StyleSheet, Text, View, type ImageStyle, type ViewStyle } from "react-native";
-import Colors from "@/constants/colors";
-
-const C = Colors.light;
+import { Image, Text, View, type ImageStyle, type ViewStyle } from "react-native";
+import { useTheme } from "@/context/ThemeContext";
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -29,28 +27,28 @@ function getInitials(name: string): string {
   return (name[0] || "?").toUpperCase();
 }
 
-function getColor(name: string): string {
-  const palette = [
-    C.primary, C.mart, C.food, C.wallet, C.pharmacy,
-    C.parcel, C.emerald, C.indigo, C.purple, C.cyan,
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return palette[Math.abs(hash) % palette.length];
-}
-
 export function Avatar({ uri, name, size = "md", style }: AvatarProps) {
+  const { colors: C } = useTheme();
   const s = SIZE_MAP[size];
+
+  function getColor(n: string): string {
+    const palette = [
+      C.primary, C.mart, C.food, C.wallet, C.pharmacy,
+      C.parcel, C.emerald, C.indigo, C.purple, C.cyan,
+    ];
+    let hash = 0;
+    for (let i = 0; i < n.length; i++) {
+      hash = n.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return palette[Math.abs(hash) % palette.length];
+  }
 
   if (uri) {
     return (
       <Image
         source={{ uri }}
         style={[
-          { width: s.size, height: s.size, borderRadius: s.size / 2 },
-          styles.image,
+          { width: s.size, height: s.size, borderRadius: s.size / 2, backgroundColor: C.surfaceSecondary },
           style as ImageStyle,
         ]}
       />
@@ -68,26 +66,13 @@ export function Avatar({ uri, name, size = "md", style }: AvatarProps) {
           height: s.size,
           borderRadius: s.size / 2,
           backgroundColor: bg,
+          alignItems: "center",
+          justifyContent: "center",
         },
-        styles.fallback,
-        style,
+        style as ViewStyle,
       ]}
     >
-      <Text style={[styles.text, { fontSize: s.fontSize }]}>{initials}</Text>
+      <Text style={{ fontSize: s.fontSize, color: "#FFFFFF", fontFamily: "Inter_700Bold" }}>{initials}</Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  image: {
-    backgroundColor: C.surfaceSecondary,
-  },
-  fallback: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  text: {
-    color: "#FFFFFF",
-    fontFamily: "Inter_700Bold",
-  },
-});

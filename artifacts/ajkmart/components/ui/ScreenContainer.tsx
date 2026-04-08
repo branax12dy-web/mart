@@ -1,10 +1,8 @@
 import React from "react";
-import { Platform, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import { Platform, ScrollView, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Colors from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-
-const C = Colors.light;
 
 interface ScreenContainerProps {
   children: React.ReactNode;
@@ -20,16 +18,21 @@ export function ScreenContainer({
   children,
   scroll = true,
   edges = ["top", "left", "right"],
-  backgroundColor = C.background,
+  backgroundColor,
   style,
   contentStyle,
   keyboardAware = false,
 }: ScreenContainerProps) {
+  const { colors: C } = useTheme();
+  const bg = backgroundColor ?? C.background;
+
+  const scrollContent = { flexGrow: 1, paddingBottom: Platform.OS === "web" ? 40 : 100 };
+
   const inner = scroll ? (
     keyboardAware ? (
       <KeyboardAwareScrollViewCompat
-        style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, contentStyle]}
+        style={{ flex: 1 }}
+        contentContainerStyle={[scrollContent, contentStyle]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -37,8 +40,8 @@ export function ScreenContainer({
       </KeyboardAwareScrollViewCompat>
     ) : (
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, contentStyle]}
+        style={{ flex: 1 }}
+        contentContainerStyle={[scrollContent, contentStyle]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -46,28 +49,12 @@ export function ScreenContainer({
       </ScrollView>
     )
   ) : (
-    <View style={[styles.fill, contentStyle]}>{children}</View>
+    <View style={[{ flex: 1 }, contentStyle]}>{children}</View>
   );
 
   return (
-    <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor }, style]}>
+    <SafeAreaView edges={edges} style={[{ flex: 1, backgroundColor: bg }, style]}>
       {inner}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-  },
-  fill: {
-    flex: 1,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: Platform.OS === "web" ? 40 : 100,
-  },
-});

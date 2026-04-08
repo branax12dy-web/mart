@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, type StyleProp, type ViewStyle } from "react-native";
-import Colors, { radii } from "@/constants/colors";
-
-const C = Colors.light;
+import { radii } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
 
 export function SkeletonBlock({
   w,
@@ -15,7 +14,9 @@ export function SkeletonBlock({
   r?: number;
   style?: StyleProp<ViewStyle>;
 }) {
+  const { colors: C } = useTheme();
   const op = useRef(new Animated.Value(0.35)).current;
+
   useEffect(() => {
     const blink = Animated.loop(
       Animated.sequence([
@@ -26,6 +27,7 @@ export function SkeletonBlock({
     blink.start();
     return () => blink.stop();
   }, []);
+
   return (
     <Animated.View
       style={[
