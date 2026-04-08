@@ -72,7 +72,16 @@ export default function Login() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp]     = useState("");
   const [devOtp, setDevOtp] = useState("");
-  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendCooldown, setResendCooldown] = useState<number>(() => {
+    try {
+      const expiry = localStorage.getItem("vendor_otp_cooldown_expiry");
+      if (expiry) {
+        const remaining = Math.ceil((parseInt(expiry, 10) - Date.now()) / 1000);
+        if (remaining > 0) return remaining;
+      }
+    } catch { /* ignore */ }
+    return 0;
+  });
 
   const [email, setEmail]     = useState("");
   const [emailOtp, setEmailOtp] = useState("");
@@ -322,11 +331,23 @@ export default function Login() {
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
-    const id = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    const id = setTimeout(() => {
+      setResendCooldown(c => {
+        const next = c - 1;
+        if (next <= 0) {
+          try { localStorage.removeItem("vendor_otp_cooldown_expiry"); } catch { /* ignore */ }
+        }
+        return next;
+      });
+    }, 1000);
     return () => clearTimeout(id);
   }, [resendCooldown]);
 
-  const startCooldown = () => setResendCooldown(60);
+  const startCooldown = () => {
+    const expiry = Date.now() + 60 * 1000;
+    try { localStorage.setItem("vendor_otp_cooldown_expiry", String(expiry)); } catch { /* ignore */ }
+    setResendCooldown(60);
+  };
 
   useEffect(() => {
     if (!regUsername || regUsername.length < 3) { setRegUsernameStatus("idle"); return; }

@@ -176,8 +176,8 @@ export default function Orders() {
     }
   }, [statusFilter, typeFilter, debouncedSearch, dateFrom, dateTo, sortKey, sortDir, toast]);
 
-  const orders: any[] = data?.orders || [];
-  const serverTotal: number = data?.total ?? orders.length;
+  const orders: any[] = Array.isArray(data?.orders) ? data.orders : [];
+  const serverTotal: number = typeof data?.total === "number" ? data.total : orders.length;
 
   const liveSelectedOrder = selectedOrder
     ? orders.find((o: any) => o.id === selectedOrder.id) ?? selectedOrder

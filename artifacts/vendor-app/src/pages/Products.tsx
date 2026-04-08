@@ -44,7 +44,10 @@ export default function Products() {
     try {
       const duration = await getVideoDuration(file);
       if (duration > 60) { showToast(`❌ Video must be 60 seconds or less (yours is ${Math.ceil(duration)}s)`); return; }
-    } catch {}
+    } catch {
+      showToast("❌ Could not read video file — it may be corrupted or unsupported. Please try a different file.");
+      return;
+    }
     setVideoUploading(true);
     try {
       const result = await api.uploadVideo(file);
@@ -77,11 +80,11 @@ export default function Products() {
   });
   const products: any[] = Array.isArray(data?.products) ? data.products : [];
 
-  const { data: allData } = useQuery({
+  const { data: allData, isLoading: allDataLoading, isSuccess: allDataSuccess } = useQuery({
     queryKey: ["vendor-products-all"],
     queryFn: () => api.getProducts(),
   });
-  const totalProductCount = allData?.products?.length ?? products.length;
+  const totalProductCount = allDataSuccess && Array.isArray(allData?.products) ? allData.products.length : null;
 
   const categories = useMemo(() => {
     const s = new Set<string>();
@@ -93,6 +96,7 @@ export default function Products() {
 
   const createMut = useMutation({
     mutationFn: () => {
+      if (totalProductCount === null) throw new Error("Cannot verify product count — please wait and try again.");
       if (totalProductCount >= maxItems) throw new Error(`Product limit of ${maxItems} reached. Delete existing products to add new ones.`);
       return api.createProduct({ ...form, price: Number(form.price), originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined, stock: form.stock !== "" ? Number(form.stock) : undefined, videoUrl: form.videoUrl || undefined });
     },
@@ -164,6 +168,7 @@ export default function Products() {
   const bulkMut = useMutation({
     mutationFn: () => {
       const valid = bulkRows.filter(r => r.name.trim() && r.price && !Number.isNaN(Number(r.price)));
+      if (totalProductCount === null) throw new Error("Cannot verify product count — please wait and try again.");
       if (totalProductCount + valid.length > maxItems) {
         throw new Error(`Product limit reached. You can add at most ${maxItems - totalProductCount} more product(s).`);
       }
@@ -524,8 +529,8 @@ export default function Products() {
           )}
           <div className="flex gap-3">
             <button onClick={() => setView("list")} className={BTN_SECONDARY}>Cancel</button>
-            <button onClick={() => bulkMut.mutate()} disabled={bulkMut.isPending || validRows.length === 0} className={BTN_PRIMARY}>
-              {bulkMut.isPending ? "Adding..." : `➕ Add ${validRows.length} Products`}
+            <button onClick={() => bulkMut.mutate()} disabled={bulkMut.isPending || validRows.length === 0 || allDataLoading} className={BTN_PRIMARY}>
+              {allDataLoading ? "Checking limit..." : bulkMut.isPending ? "Adding..." : `➕ Add ${validRows.length} Products`}
             </button>
           </div>
         </div>
@@ -539,11 +544,11 @@ export default function Products() {
     <PullToRefresh onRefresh={handlePullRefresh} className="min-h-screen bg-gray-50 md:bg-transparent">
       <PageHeader
         title={T("products")}
-        subtitle={`${totalProductCount}/${maxItems} items used`}
+        subtitle={totalProductCount !== null ? `${totalProductCount}/${maxItems} items used` : `—/${maxItems} items`}
         actions={
           <div className="flex gap-2">
-            <button onClick={() => setView("bulk")} disabled={totalProductCount >= maxItems} className={`h-9 px-3.5 text-xs font-bold rounded-xl android-press min-h-0 ${totalProductCount >= maxItems ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-white/20 md:bg-gray-100 md:text-gray-700 text-white"}`}>Bulk Add</button>
-            <button onClick={() => setShowAdd(true)} disabled={totalProductCount >= maxItems} className={`h-9 px-3.5 text-sm font-bold rounded-xl android-press min-h-0 ${totalProductCount >= maxItems ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-white text-orange-500 md:bg-orange-500 md:text-white"}`}>+ Add</button>
+            <button onClick={() => setView("bulk")} disabled={allDataLoading || totalProductCount === null || totalProductCount >= maxItems} className={`h-9 px-3.5 text-xs font-bold rounded-xl android-press min-h-0 ${(allDataLoading || totalProductCount === null || totalProductCount >= maxItems) ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-white/20 md:bg-gray-100 md:text-gray-700 text-white"}`}>Bulk Add</button>
+            <button onClick={() => setShowAdd(true)} disabled={allDataLoading || totalProductCount === null || totalProductCount >= maxItems} className={`h-9 px-3.5 text-sm font-bold rounded-xl android-press min-h-0 ${(allDataLoading || totalProductCount === null || totalProductCount >= maxItems) ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-white text-orange-500 md:bg-orange-500 md:text-white"}`}>+ Add</button>
           </div>
         }
         mobileContent={

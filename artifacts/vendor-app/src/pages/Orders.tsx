@@ -312,7 +312,7 @@ export default function Orders() {
         ) : (
           <div className="md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0">
             {orders.map((o: any) => {
-              const next = NEXT_KEYS[o.status];
+              const next = o.status ? NEXT_KEYS[o.status] : undefined;
               const items = Array.isArray(o.items) ? o.items : [];
               const isExp = expanded === o.id;
 
@@ -358,8 +358,8 @@ export default function Orders() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_BADGE[o.status] || "bg-gray-100 text-gray-600"}`}>
-                          {o.status.replace(/_/g," ").toUpperCase()}
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${(o.status && STATUS_BADGE[o.status]) || "bg-gray-100 text-gray-600"}`}>
+                          {o.status ? o.status.replace(/_/g," ").toUpperCase() : "UNKNOWN"}
                         </span>
                         <span className="text-xs text-gray-400 font-mono">#{(o.id || "").slice(-6).toUpperCase()}</span>
                       </div>
