@@ -13,6 +13,7 @@ import { getPlatformSettings } from "./routes/admin.js";
 import { locationLogsTable, pendingOtpsTable } from "@workspace/db/schema";
 import { lt } from "drizzle-orm";
 import { cleanupExpiredBackups, runAutoResolve, ensureErrorResolutionTables, getAutoResolveSettings, setOnAutoResolveSettingsChanged } from "./routes/error-reports.js";
+import { runSqlMigrations } from "./services/sqlMigrationRunner.js";
 
 const rawPort = process.env["PORT"];
 
@@ -148,7 +149,8 @@ httpServer.on("error", (err: NodeJS.ErrnoException) => {
   }
 });
 
-ensureAuthMethodColumn()
+runSqlMigrations()
+  .then(() => ensureAuthMethodColumn())
   .then(() => ensureRideBidsMigration())
   .then(() => ensureOrdersGpsColumns())
   .then(() => ensurePromotionsTables())
