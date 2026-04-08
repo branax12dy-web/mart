@@ -34,7 +34,7 @@ import {
   verifyCaptcha,
   checkAvailableRateLimit,
 } from "../middleware/security.js";
-import { sendOtpSMS, isSMSProviderConfigured } from "../services/sms.js";
+import { sendOtpSMS, isSMSProviderConfigured, isSMSConsoleActive } from "../services/sms.js";
 import { sendWhatsAppOTP, isWhatsAppProviderConfigured } from "../services/whatsapp.js";
 import { randomBytes, createHash, randomInt } from "crypto";
 import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
@@ -668,10 +668,12 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
    * knows to configure a provider.
    * ----------------------------------------------------------------------- */
   const smsReady      = isSMSProviderConfigured(settings);
+  const smsConsole    = isSMSConsoleActive(settings);   /* dev/staging fallback */
   const whatsappReady = isWhatsAppProviderConfigured(settings);
   const emailReady    = isEmailProviderConfigured(settings) && !!userEmail;
 
-  if (!smsReady && !whatsappReady && !emailReady) {
+  /* Console mode counts as an active channel — OTP is logged to terminal */
+  if (!smsReady && !smsConsole && !whatsappReady && !emailReady) {
     /* otp_require_when_no_provider = "on"  → block login (admin chose strict mode)
      * otp_require_when_no_provider = "off" (default) → auto-bypass               */
     const strictMode = settings["otp_require_when_no_provider"] === "on";

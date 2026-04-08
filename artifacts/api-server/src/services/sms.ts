@@ -135,8 +135,8 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
 }
 
 /**
- * Returns true only when the SMS integration is enabled AND a real provider
- * (not "console") has all required credentials filled in.
+ * Returns true when SMS integration is ON and a real provider
+ * (Twilio / MSG91 / Zong) has all required credentials filled in.
  */
 export function isSMSProviderConfigured(settings: Record<string, string>): boolean {
   if (settings["integration_sms"] !== "on") return false;
@@ -152,6 +152,16 @@ export function isSMSProviderConfigured(settings: Record<string, string>): boole
   if (provider === "msg91") return !!(settings["sms_msg91_key"]?.trim());
   if (provider === "zong")   return !!(settings["sms_api_key"]?.trim());
   return false;
+}
+
+/**
+ * Returns true when SMS integration is ON and the provider is "console".
+ * Console mode logs OTP to the server terminal — OTP is still required from
+ * the user (dev/staging scenario), so this counts as an "active" channel.
+ */
+export function isSMSConsoleActive(settings: Record<string, string>): boolean {
+  return settings["integration_sms"] === "on" &&
+         (settings["sms_provider"] ?? "console") === "console";
 }
 
 export async function sendOtpSMS(

@@ -190,7 +190,8 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   /* ── SMS ── */
   const smsProvider = val("sms_provider") || "console";
   const smsEnabled  = (localValues["integration_sms"] ?? "off") === "on";
-  const smsConfigured = smsEnabled && smsProvider !== "console" && !!(val("sms_api_key") || val("sms_msg91_key"));
+  const smsConsoleActive = smsEnabled && smsProvider === "console";
+  const smsConfigured    = smsEnabled && smsProvider !== "console" && !!(val("sms_api_key") || val("sms_msg91_key"));
   /* ── Email ── */
   const emailEnabled   = (localValues["integration_email"] ?? "off") === "on";
   const smtpConfigured = emailEnabled && !!(val("smtp_host") && val("smtp_user") && val("smtp_password"));
@@ -211,7 +212,8 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   const whatsappWebhookUrl = `${webhookBaseUrl}/api/webhooks/whatsapp`;
 
   /* ── OTP delivery health ── */
-  const anyOtpProviderReady   = smsConfigured || smtpConfigured || waConfigured;
+  /* Console mode counts as active (OTP goes to server terminal) */
+  const anyOtpProviderReady   = smsConfigured || smsConsoleActive || smtpConfigured || waConfigured;
   const strictWhenNoProvider  = (localValues["otp_require_when_no_provider"] ?? "off") === "on";
 
   return (
@@ -231,9 +233,19 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
               </p>
               <p className={`text-xs mt-0.5 ${anyOtpProviderReady ? "text-green-700" : "text-amber-700"}`}>
                 {anyOtpProviderReady
-                  ? `Active: ${[smsConfigured && "SMS", waConfigured && "WhatsApp", smtpConfigured && "Email"].filter(Boolean).join(", ")}`
+                  ? `Active: ${[
+                      smsConfigured && "SMS",
+                      smsConsoleActive && !smsConfigured && "SMS Console (Dev)",
+                      waConfigured && "WhatsApp",
+                      smtpConfigured && "Email",
+                    ].filter(Boolean).join(", ")}`
                   : "SMS, WhatsApp aur Email — koi bhi configured nahi hai."}
               </p>
+              {smsConsoleActive && !smsConfigured && (
+                <p className="text-[10px] text-amber-600 mt-1 font-medium">
+                  ⚠️ Console (Dev) mode active — OTP sirf server terminal mein print hota hai, real SMS nahi jaata.
+                </p>
+              )}
             </div>
           </div>
           <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ${anyOtpProviderReady ? "bg-green-200 text-green-800" : "bg-amber-200 text-amber-800"}`}>
