@@ -231,11 +231,21 @@ async function isAuthorizedForConversationRoom(convId: string, userId: string): 
   }
 }
 
+function buildAllowedOrigins(): string | string[] {
+  if (process.env.NODE_ENV !== "production") return "*";
+  const explicit = (process.env.ALLOWED_ORIGINS ?? "").split(",").filter(Boolean);
+  if (explicit.length > 0) return explicit;
+  const replitDomains = (process.env.REPLIT_DOMAINS ?? "").split(",").filter(Boolean);
+  const origins = replitDomains.flatMap(d => [`https://${d.trim()}`, `http://${d.trim()}`]);
+  return origins.length > 0 ? origins : "*";
+}
+
 export function initSocketIO(httpServer: HttpServer): SocketIOServer {
   const isDev = process.env.NODE_ENV !== "production";
+  const allowedOrigins = buildAllowedOrigins();
   _io = new SocketIOServer(httpServer, {
     cors: {
-      origin: isDev ? "*" : (process.env.ALLOWED_ORIGINS ?? "").split(",").filter(Boolean),
+      origin: allowedOrigins,
       methods: ["GET", "POST"],
       credentials: !isDev,
     },
