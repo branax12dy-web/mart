@@ -575,6 +575,17 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     return;
   }
 
+  /* ── Timed admin global OTP disable: auto-pass (no OTP delivery) ── */
+  const otpGlobalDisabledUntilStrSend = settings["otp_global_disabled_until"];
+  if (otpGlobalDisabledUntilStrSend) {
+    const otpGlobalDisabledUntilSend = new Date(otpGlobalDisabledUntilStrSend);
+    if (otpGlobalDisabledUntilSend > new Date()) {
+      writeAuthAuditLog("otp_send_global_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, reason: "timed_disable" } });
+      res.json({ otpRequired: false, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
+      return;
+    }
+  }
+
   /* ── Admin OTP bypass: skip all delivery if bypass is active ──
      When an admin has set a bypass window for an existing user, the next
      verify-otp call will succeed regardless of OTP code. We must NOT send
@@ -610,7 +621,6 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
       .where(eq(usersTable.phone, phone));
   }
 
-  writeAuthAuditLog("otp_sent", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
   if (process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1") {
     req.log.info({ phone, otp }, "OTP sent");
   }
@@ -636,9 +646,20 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     channelOrder.push(preferredChannel);
     for (const ch of availableChannels) { if (ch !== preferredChannel) channelOrder.push(ch); }
   } else {
-    if (whatsappEnabled) channelOrder.push("whatsapp");
-    if (smsEnabled) channelOrder.push("sms");
-    if (emailEnabled && userEmail) channelOrder.push("email");
+    /* Use admin-configured channel priority order if set */
+    const adminPriorityRaw = settings["otp_channel_priority"];
+    const adminPriority = adminPriorityRaw
+      ? adminPriorityRaw.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : ["whatsapp", "sms", "email"];
+    for (const ch of adminPriority) {
+      if (ch === "whatsapp" && whatsappEnabled) channelOrder.push("whatsapp");
+      else if (ch === "sms" && smsEnabled) channelOrder.push("sms");
+      else if (ch === "email" && emailEnabled && userEmail) channelOrder.push("email");
+    }
+    /* Append any channels not covered by the admin order */
+    if (!channelOrder.includes("whatsapp") && whatsappEnabled) channelOrder.push("whatsapp");
+    if (!channelOrder.includes("sms") && smsEnabled) channelOrder.push("sms");
+    if (!channelOrder.includes("email") && emailEnabled && userEmail) channelOrder.push("email");
   }
 
   for (const channel of channelOrder) {
@@ -673,6 +694,14 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
   }
 
   const fallbackChannels = availableChannels.filter(ch => ch !== deliveryChannel);
+
+  writeAuthAuditLog("otp_sent", {
+    userId: otpUserId,
+    ip,
+    userAgent: req.headers["user-agent"] ?? undefined,
+    metadata: { phone, channel: deliveryChannel, result: "success" },
+  });
+
   const response: Record<string, unknown> = {
     otpRequired: true,
     message: "OTP sent successfully",
@@ -705,12 +734,21 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     return;
   }
 
+  /* ── Global admin OTP temp-disable: auto-pass while active ── */
+  const otpGlobalDisabledUntilStr = settings["otp_global_disabled_until"];
+  const otpGlobalDisabledUntil = otpGlobalDisabledUntilStr ? new Date(otpGlobalDisabledUntilStr) : null;
+  const isTimedGlobalDisableActive = !!(otpGlobalDisabledUntil && otpGlobalDisabledUntil > new Date());
+  if (isTimedGlobalDisableActive) {
+    addAuditEntry({ action: "user_login_timed_otp_disable_bypass", ip, details: `Timed global OTP disable active — auto-pass for ${phone}`, result: "success" });
+    writeAuthAuditLog("login_global_otp_bypass", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, reason: "timed_disable" } });
+  }
+
   const maxAttempts    = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
   const lockoutMinutes = parseInt(settings["security_lockout_minutes"]    ?? "30", 10);
 
-  /* ── Lockout check ── */
+  /* ── Lockout check ── (skipped during global disable for emergency recovery) */
   const lockoutStatus = await checkLockout(phone, maxAttempts, lockoutMinutes);
-  if (lockoutStatus.locked) {
+  if (lockoutStatus.locked && !isTimedGlobalDisableActive) {
     addAuditEntry({ action: "verify_otp_lockout", ip, details: `Locked account OTP attempt: ${phone}`, result: "fail" });
     res.status(429).json({
       error: `Account temporarily locked. Please try again in ${lockoutStatus.minutesLeft} minute(s).`,
@@ -749,14 +787,16 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       .where(eq(pendingOtpsTable.phone, phone))
       .limit(1);
 
-    if (!pending) {
+    /* During global disable, allow new-user registration even with no pending OTP row
+       (send-otp short-circuited and never created a pending entry). */
+    const globalBypassForNew = settings["security_otp_bypass"] === "on" || isTimedGlobalDisableActive;
+    if (!pending && !globalBypassForNew) {
       res.status(404).json({ error: "User not found. Please request a new OTP." });
       return;
     }
 
     /* Verify OTP from pending_otps — skip validation if global bypass is enabled */
-    const globalBypassForNew = settings["security_otp_bypass"] === "on";
-    const otpValid = globalBypassForNew || (pending.otpHash === hashOtp(otp) && new Date() < pending.otpExpiry);
+    const otpValid = globalBypassForNew || !!(pending && pending.otpHash === hashOtp(otp) && new Date() < pending.otpExpiry);
     if (!otpValid) {
       /* Increment failed attempts */
       const newAttempts = (pending.attempts ?? 0) + 1;
@@ -886,8 +926,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
      no user notification — bypass is silent by admin design. ── */
   const otpBypassActive = !!(user.otpBypassUntil && user.otpBypassUntil > new Date());
 
-  /* ── Global OTP bypass: when enabled in Danger Zone, accept any code for all users ── */
-  const globalOtpBypass = settings["security_otp_bypass"] === "on";
+  /* ── Global OTP bypass: when enabled in Danger Zone or during timed disable, accept any code for all users ── */
+  const globalOtpBypass = settings["security_otp_bypass"] === "on" || isTimedGlobalDisableActive;
 
   /* ── Atomic OTP consumption via a single conditional UPDATE ──
      The WHERE clause combines: correct code + not-yet-used + not-expired.
@@ -906,7 +946,10 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
           .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now })
           .where(eq(usersTable.phone, phone));
         addAuditEntry({ action: "user_login_global_otp_bypass", ip, details: `Global OTP bypass login for ${phone}`, result: "success" });
-        writeAuthAuditLog("login_global_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+        /* Skip duplicate writeAuthAuditLog when timed disable already logged it above */
+        if (!isTimedGlobalDisableActive) {
+          writeAuthAuditLog("login_global_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+        }
         return { id: user.id, lastLoginAt: now };
       }
 
@@ -1032,7 +1075,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
   }
 
   addAuditEntry({ action: "user_login", ip, details: `Successful login for phone: ${phone} (role: ${u.role})`, result: "success" });
-  writeAuthAuditLog("login_success", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.role } });
+  writeAuthAuditLog("otp_verified", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.role, method: "phone_otp", result: "success" } });
+  writeAuthAuditLog("login_success", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.role, method: "phone_otp" } });
 
   /* ── Issue short-lived access token + long-lived refresh token ── */
   const accessToken  = signAccessToken(u.id, phone, u.role ?? "customer", u.roles ?? u.role ?? "customer", u.tokenVersion ?? 0);

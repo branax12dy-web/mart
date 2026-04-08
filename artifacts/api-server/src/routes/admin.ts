@@ -25,6 +25,7 @@ import webhookRegistrationsRoutes from "./admin/webhook-registrations.js";
 import deepLinksRoutes from "./admin/deep-links.js";
 import releaseNotesRoutes from "./admin/release-notes.js";
 import launchRoutes, { ensureLaunchData } from "./admin/launch.js";
+import otpRoutes from "./admin/otp.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -80,5 +81,6 @@ router.use(webhookRegistrationsRoutes);
 router.use(deepLinksRoutes);
 router.use(releaseNotesRoutes);
 router.use("/launch", launchRoutes);
+router.use(otpRoutes);
 
 export default router;

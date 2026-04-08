@@ -59,6 +59,7 @@ import Experiments from "@/pages/experiments";
 import WebhookManager from "@/pages/webhook-manager";
 import DeepLinks from "@/pages/deep-links";
 import LaunchControl from "@/pages/launch-control";
+import OtpControl from "@/pages/otp-control";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -186,6 +187,7 @@ function Router() {
       <Route path="/webhooks"><ProtectedRoute component={WebhookManager} /></Route>
       <Route path="/deep-links"><ProtectedRoute component={DeepLinks} /></Route>
       <Route path="/launch-control"><ProtectedRoute component={LaunchControl} /></Route>
+      <Route path="/otp-control"><ProtectedRoute component={OtpControl} /></Route>
 
       <Route component={NotFound} />
     </Switch>

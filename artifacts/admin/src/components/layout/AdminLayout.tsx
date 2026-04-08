@@ -49,6 +49,7 @@ import {
   Webhook,
   Link2,
   Rocket,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -102,10 +103,11 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: "navSafetyAndSecurity",
     color: "#EF4444",
     items: [
-      { nameKey: "navSosAlerts",       href: "/sos-alerts",  icon: AlertTriangle, sosBadge: true },
+      { nameKey: "navSosAlerts",       href: "/sos-alerts",    icon: AlertTriangle, sosBadge: true },
       { nameKey: "navErrorMonitor",    href: "/error-monitor", icon: Bug, errorBadge: true },
-      { nameKey: "navAuditLogs",       href: "/security",    icon: FileText },
-      { nameKey: "navUserPermissions", href: "/users",       icon: Lock },
+      { nameKey: "navAuditLogs",       href: "/security",      icon: FileText },
+      { nameKey: "navOtpControl" as TranslationKey, href: "/otp-control", icon: KeyRound },
+      { nameKey: "navUserPermissions", href: "/users",         icon: Lock },
     ],
   },
   {

@@ -119,6 +119,33 @@ router.post("/users", async (req, res) => {
   }
 });
 
+/* GET /admin/users/search?q=...&limit=20
+   Lightweight server-side user search used by OTP Control and other admin tools.
+   Returns users matching name or phone query (partial, case-insensitive). */
+router.get("/users/search", async (req, res) => {
+  const q = ((req.query?.q as string) ?? "").trim();
+  const limitN = Math.min(50, Math.max(1, parseInt((req.query?.limit as string) ?? "20", 10)));
+
+  const where = q
+    ? or(ilike(usersTable.name, `%${q}%`), ilike(usersTable.phone, `%${q}%`))
+    : undefined;
+
+  const rows = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      phone: usersTable.phone,
+      role: usersTable.role,
+      otpBypassUntil: sql<string | null>`${usersTable}.otp_bypass_until`,
+    })
+    .from(usersTable)
+    .where(where)
+    .orderBy(asc(usersTable.name))
+    .limit(limitN);
+
+  sendSuccess(res, { users: rows, total: rows.length });
+});
+
 /* GET /admin/users/search-riders?q=...&limit=20&onlineOnly=true
    Lightweight server-side rider search used by RideDetailModal for reassignment.
    Returns only active, non-rejected riders matching the search query.
@@ -530,8 +557,8 @@ router.post("/users/:id/reset-otp", async (req, res) => {
 router.post("/users/:id/otp/bypass", async (req, res) => {
   const userId = req.params["id"]!;
   const minutes = Number(req.body?.minutes);
-  if (![15, 30, 60].includes(minutes)) {
-    sendValidationError(res, "minutes must be 15, 30, or 60");
+  if (!minutes || minutes <= 0 || minutes > 1440 || !Number.isInteger(minutes)) {
+    sendValidationError(res, "minutes must be a positive integer between 1 and 1440");
     return;
   }
   const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -545,6 +572,12 @@ router.post("/users/:id/otp/bypass", async (req, res) => {
   const ip = getClientIp(req);
   const adminReq = req as unknown as AdminRequest;
   addAuditEntry({ action: "admin_otp_bypass_set", ip, adminId: adminReq.adminId, details: `Admin set ${minutes}min OTP bypass for user ${userId} (${user.phone}), expires ${bypassUntil.toISOString()}`, result: "success" });
+  writeAuthAuditLog("admin_otp_bypass_set", {
+    userId,
+    ip,
+    userAgent: req.headers["user-agent"] ?? undefined,
+    metadata: { phone: user.phone, adminId: adminReq.adminId, minutes, bypassUntil: bypassUntil.toISOString(), result: "success" },
+  });
 
   sendSuccess(res, { bypassUntil: bypassUntil.toISOString(), minutes });
 });
@@ -561,6 +594,12 @@ router.delete("/users/:id/otp/bypass", async (req, res) => {
   const ip = getClientIp(req);
   const adminReq = req as unknown as AdminRequest;
   addAuditEntry({ action: "admin_otp_bypass_cancel", ip, adminId: adminReq.adminId, details: `Admin cancelled OTP bypass for user ${userId} (${user.phone})`, result: "success" });
+  writeAuthAuditLog("admin_otp_bypass_cancel", {
+    userId,
+    ip,
+    userAgent: req.headers["user-agent"] ?? undefined,
+    metadata: { phone: user.phone, adminId: adminReq.adminId, result: "success" },
+  });
 
   sendSuccess(res, { success: true });
 });
