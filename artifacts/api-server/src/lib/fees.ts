@@ -72,7 +72,7 @@ export function calcCodFee(
   orderTotal: number,
 ): number {
   if (paymentMethod !== "cash" && paymentMethod !== "cod") return 0;
-  const fee    = parseFloat(s["cod_fee"]        ?? "0");
+  const fee    = parseFloat(s["cod_fee_amount"] ?? s["cod_fee"] ?? "0");
   const freeAb = parseFloat(s["cod_free_above"] ?? "2000");
   return fee > 0 && orderTotal < freeAb ? fee : 0;
 }

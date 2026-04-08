@@ -9,7 +9,7 @@ import {
   ToggleRight, Settings, RotateCcw, Package,
   Gift, Star, Percent, ShieldCheck, UserPlus, Server,
   Database, Download, Upload, Trash2, HardDrive, RefreshCcw, FlaskConical,
-  Clock, X, SlidersHorizontal,
+  Clock, X, SlidersHorizontal, Palette, MapPin, Gauge, Languages,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
@@ -30,21 +30,25 @@ import { renderSection, Setting, CatKey, TEXT_KEYS } from "./settings-render";
 
 const CAT_ORDER = [
   "general","features",
-  "rides","orders","delivery",
+  "dispatch","rides","orders","delivery",
   "customer","rider","vendor",
   "finance","payment",
-  "content","integrations",
-  "security","system","weather",
+  "branding","content","integrations",
+  "security","system_limits","system","weather",
+  "regional",
 ] as const;
 
 const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
   { label: "App & Platform",  emoji: "🏢", items: ["general", "features"] },
+  { label: "Dispatch & Ops",  emoji: "🚀", items: ["dispatch"] },
   { label: "Service Config",  emoji: "⚙️", items: ["rides", "orders", "delivery"] },
   { label: "Role Settings",   emoji: "👤", items: ["customer", "rider", "vendor"] },
   { label: "Finance",         emoji: "💰", items: ["finance", "payment"] },
+  { label: "Branding & UI",   emoji: "🎨", items: ["branding"] },
   { label: "Communication",   emoji: "📢", items: ["content", "integrations"] },
   { label: "Security",        emoji: "🔒", items: ["security"] },
-  { label: "System",          emoji: "🔧", items: ["system"] },
+  { label: "System",          emoji: "🔧", items: ["system_limits", "system"] },
+  { label: "Regional",        emoji: "🌍", items: ["regional"] },
   { label: "Widgets",         emoji: "🌤️", items: ["weather"] },
 ];
 
@@ -63,6 +67,10 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
   integrations: { label: "Integrations",         icon: Puzzle,       color: "text-indigo-600",  bg: "bg-indigo-50",  activeBg: "bg-indigo-600",  description: "Push notifications, SMS, WhatsApp, analytics, maps and monitoring" },
   security:     { label: "Security",             icon: Shield,       color: "text-red-600",     bg: "bg-red-50",     activeBg: "bg-red-600",     description: "OTP modes, GPS tracking, rate limits, sessions and API credentials" },
   system:       { label: "System & Data",        icon: Database,     color: "text-rose-600",    bg: "bg-rose-50",    activeBg: "bg-rose-600",    description: "Database stats, backup, restore and data management tools" },
+  dispatch:     { label: "Dispatch & Operations", icon: Gauge,       color: "text-cyan-600",    bg: "bg-cyan-50",    activeBg: "bg-cyan-600",    description: "Dispatch timeout, broadcast radius, max fare and counter-offer rules" },
+  branding:     { label: "Branding & UI",        icon: Palette,     color: "text-fuchsia-600", bg: "bg-fuchsia-50", activeBg: "bg-fuchsia-600", description: "Service colors, map center coordinates and label" },
+  system_limits:{ label: "System Limits",         icon: Server,      color: "text-slate-600",   bg: "bg-slate-50",   activeBg: "bg-slate-600",   description: "Log retention, cache TTL, body limit and upload size" },
+  regional:     { label: "Regional & Validation", icon: Languages,   color: "text-lime-600",    bg: "bg-lime-50",    activeBg: "bg-lime-600",    description: "Phone format, timezone, currency symbol and country code" },
   weather:      { label: "Weather Widget",      icon: Globe,        color: "text-sky-600",     bg: "bg-sky-50",     activeBg: "bg-sky-600",     description: "Toggle weather widget and manage displayed cities" },
 };
 
@@ -190,6 +198,8 @@ export default function SettingsPage() {
     if (key.includes("_pts") || key.includes("_items") || key.includes("_deliveries")) return "#";
     if (key === "security_rate_limit") return "req/min";
     if (key === "payment_timeout_mins") return "min";
+    if (key.includes("_sec")) return "sec";
+    if (key.includes("_multiplier")) return "×";
     return "Rs.";
   };
   const getPlaceholder = (key: string) => {

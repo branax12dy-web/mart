@@ -1234,4 +1234,17 @@ adminMapsRouter.post("/test",        adminAuth, handleMapsTest);
 adminMapsRouter.get("/usage",        adminAuth, handleMapsUsage);
 adminMapsRouter.post("/cache/clear", adminAuth, handleMapsCacheClear);
 
+router.get("/default-center", async (_req, res) => {
+  try {
+    const s = await getPlatformSettings() as Record<string, string>;
+    sendSuccess(res, {
+      lat:   parseFloat(s["brand_map_center_lat"]   ?? "34.37"),
+      lng:   parseFloat(s["brand_map_center_lng"]   ?? "73.47"),
+      label: s["brand_map_center_label"] ?? "Muzaffarabad",
+    });
+  } catch (e) {
+    sendSuccess(res, { lat: 34.37, lng: 73.47, label: "Muzaffarabad" });
+  }
+});
+
 export default router;

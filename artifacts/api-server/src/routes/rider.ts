@@ -163,11 +163,11 @@ const RIDE_STATUS_TRANSITIONS: Record<string, string[]> = {
   in_transit: ["completed", "cancelled"],
 };
 
-const MAX_COUNTER_FARE = 100_000;
+const DEFAULT_MAX_COUNTER_FARE = 100_000;
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
 const counterSchema = z.object({
-  counterFare: z.number().positive().max(MAX_COUNTER_FARE, `Counter fare cannot exceed Rs. ${MAX_COUNTER_FARE}`),
+  counterFare: z.number().positive(),
   note: z.string().max(300).transform(stripHtml).optional(),
 });
 
@@ -1575,8 +1575,15 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
   const platformFare  = safeNum(ride.fare);
   const offeredAmt    = safeNum(ride.offeredFare ?? 0);
 
-  if (parsedCounter > platformFare) {
-    sendValidationError(res, `Counter offer cannot exceed platform fare (Rs. ${platformFare.toFixed(0)})`); return;
+  const rideSettings = await getPlatformSettings();
+  const maxFare = parseFloat(rideSettings["ride_max_fare"] ?? String(DEFAULT_MAX_COUNTER_FARE));
+  if (parsedCounter > maxFare) {
+    sendValidationError(res, `Counter offer cannot exceed Rs. ${maxFare.toFixed(0)}`); return;
+  }
+  const maxMultiplier = parseFloat(rideSettings["ride_counter_offer_max_multiplier"] ?? "3");
+  const maxAllowedByMultiplier = platformFare > 0 ? platformFare * maxMultiplier : maxFare;
+  if (parsedCounter > maxAllowedByMultiplier) {
+    sendValidationError(res, `Counter offer cannot exceed ${maxMultiplier}× the platform fare (Rs. ${maxAllowedByMultiplier.toFixed(0)})`); return;
   }
   if (parsedCounter <= offeredAmt) {
     sendValidationError(res, `Counter offer must be higher than customer's offer (Rs. ${offeredAmt.toFixed(0)})`); return;
@@ -1584,7 +1591,6 @@ router.post("/rides/:id/counter", rideBidLimiter, async (req, res) => {
 
   /* Enforce service min_fare — check platform_settings first, fall back to rideServiceTypesTable
      so the constraint works even when per-type settings haven't been configured in the admin panel */
-  const rideSettings = await getPlatformSettings();
   const minFareKey = `ride_${ride.type}_min_fare`;
   const psMinFare = rideSettings[minFareKey];
   let serviceMinFare = psMinFare !== undefined ? parseFloat(psMinFare) : 0;

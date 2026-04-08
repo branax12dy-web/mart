@@ -6,6 +6,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { captureBackendError, detectErrorType } from "./lib/error-capture.js";
 import { rateLimitMiddleware, securityHeadersMiddleware } from "./middleware/security.js";
+import { getPlatformSettings } from "./routes/admin-shared.js";
 
 const app: Express = express();
 
@@ -33,106 +34,115 @@ app.use(securityHeadersMiddleware);
 
 app.use(cors());
 
-/* Large JSON parser for upload-capable routes (base64 image payloads).
-   Must be registered BEFORE the tight global parser so these paths are
-   matched first and the 256kb global limit is never applied to them. */
 const UPLOAD_PATHS = ["/api/uploads", "/api/users/avatar", "/api/admin/uploads/admin"];
-app.use(UPLOAD_PATHS, express.json({ limit: "10mb" }));
 
-/* Tight global JSON limit for all other API routes (mitigates oversized-body DoS). */
-app.use(express.json({ limit: "256kb" }));
-app.use(express.urlencoded({ extended: true, limit: "256kb" }));
+export async function initApp(): Promise<Express> {
+  let uploadLimit = "10mb";
+  let bodyLimit = "256kb";
+  try {
+    const s = await getPlatformSettings();
+    uploadLimit = s["system_upload_size_limit"] ?? uploadLimit;
+    bodyLimit = s["system_json_body_limit"] ?? bodyLimit;
+  } catch {}
 
-app.use(rateLimitMiddleware);
+  app.use(UPLOAD_PATHS, express.json({ limit: uploadLimit }));
+  app.use(express.json({ limit: bodyLimit }));
+  app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
+  logger.info({ uploadLimit, bodyLimit }, "[app] Body parsers initialized from settings");
 
-app.use("/api/uploads", express.static(path.resolve(process.cwd(), "uploads")));
-app.use("/api", router);
+  app.use(rateLimitMiddleware);
 
-app.use("/api/{*path}", (req: Request, res: Response) => {
-  captureBackendError({
-    errorType: "route_error",
-    errorMessage: `404 Not Found: ${req.method} ${req.url}`,
-    statusCode: 404,
-    functionName: req.url?.split("?")[0] || undefined,
-    moduleName: `${req.method} unmatched`,
-    metadata: { method: req.method, url: req.url?.split("?")[0] },
-  });
+  app.use("/api/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+  app.use("/api", router);
 
-  res.status(404).json({
-    success: false,
-    error: "Resource not found.",
-    message: "وسیلہ نہیں ملا۔",
-    code: "NOT_FOUND",
-  });
-});
-
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: "Not Found" });
-});
-
-interface AppError { status?: number; statusCode?: number; code?: string; message?: string }
-function isAppError(e: unknown): e is AppError {
-  return typeof e === "object" && e !== null;
-}
-
-const ERROR_MESSAGES: Record<string, { en: string; ur: string }> = {
-  NOT_FOUND:       { en: "Resource not found.",                                    ur: "وسیلہ نہیں ملا۔" },
-  FORBIDDEN:       { en: "Access denied.",                                          ur: "رسائی سے انکار۔" },
-  UNAUTHORIZED:    { en: "Authentication required. Please log in.",                ur: "تصدیق ضروری ہے۔ براہ کرم لاگ ان کریں۔" },
-  BAD_REQUEST:     { en: "Bad request.",                                            ur: "غلط درخواست۔" },
-  VALIDATION:      { en: "Validation error. Please check your input.",             ur: "توثیق کی خرابی۔ اپنا ان پٹ چیک کریں۔" },
-  RATE_LIMITED:    { en: "Too many requests. Please slow down.",                   ur: "بہت زیادہ درخواستیں۔ براہ کرم آہستہ کریں۔" },
-  INTERNAL_ERROR:  { en: "An unexpected error occurred. Please try again later.",  ur: "ایک غیر متوقع خرابی ہوئی۔ براہ کرم بعد میں دوبارہ کوشش کریں۔" },
-};
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
-  const appErr     = isAppError(err) ? err : {};
-  const statusCode = appErr.status ?? appErr.statusCode ?? 500;
-  const code       = appErr.code ?? (
-    statusCode === 401 ? "UNAUTHORIZED" :
-    statusCode === 404 ? "NOT_FOUND" :
-    statusCode === 403 ? "FORBIDDEN" :
-    statusCode === 429 ? "RATE_LIMITED" :
-    statusCode < 500   ? "BAD_REQUEST" :
-    "INTERNAL_ERROR"
-  );
-
-  const msgs = ERROR_MESSAGES[code] ?? ERROR_MESSAGES["INTERNAL_ERROR"];
-  const message = statusCode < 500
-    ? (appErr.message ?? msgs.en)
-    : msgs.en;
-
-  logger.error({
-    err,
-    method: req.method,
-    url: req.url?.split("?")[0],
-    statusCode,
-    code,
-    ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
-  }, "Unhandled route error");
-
-  const fallbackType = statusCode >= 500 ? "route_error" : "api_error";
-  const detectedType = detectErrorType(err, fallbackType);
-
-  captureBackendError({
-    errorType: detectedType,
-    errorMessage: appErr.message || message,
-    statusCode,
-    functionName: req.url?.split("?")[0] || undefined,
-    moduleName: `${req.method} handler`,
-    stackTrace: err instanceof Error ? err.stack : undefined,
-    metadata: { code, method: req.method, url: req.url?.split("?")[0] },
-  });
-
-  if (!res.headersSent) {
-    res.status(statusCode).json({
-      success: false,
-      error: message,
-      message: msgs.ur,
-      code,
+  app.use("/api/{*path}", (req: Request, res: Response) => {
+    captureBackendError({
+      errorType: "route_error",
+      errorMessage: `404 Not Found: ${req.method} ${req.url}`,
+      statusCode: 404,
+      functionName: req.url?.split("?")[0] || undefined,
+      moduleName: `${req.method} unmatched`,
+      metadata: { method: req.method, url: req.url?.split("?")[0] },
     });
+
+    res.status(404).json({
+      success: false,
+      error: "Resource not found.",
+      message: "وسیلہ نہیں ملا۔",
+      code: "NOT_FOUND",
+    });
+  });
+
+  app.use((_req: Request, res: Response) => {
+    res.status(404).json({ error: "Not Found" });
+  });
+
+  interface AppError { status?: number; statusCode?: number; code?: string; message?: string }
+  function isAppError(e: unknown): e is AppError {
+    return typeof e === "object" && e !== null;
   }
-});
+
+  const ERROR_MESSAGES: Record<string, { en: string; ur: string }> = {
+    NOT_FOUND:       { en: "Resource not found.",                                    ur: "وسیلہ نہیں ملا۔" },
+    FORBIDDEN:       { en: "Access denied.",                                          ur: "رسائی سے انکار۔" },
+    UNAUTHORIZED:    { en: "Authentication required. Please log in.",                ur: "تصدیق ضروری ہے۔ براہ کرم لاگ ان کریں۔" },
+    BAD_REQUEST:     { en: "Bad request.",                                            ur: "غلط درخواست۔" },
+    VALIDATION:      { en: "Validation error. Please check your input.",             ur: "توثیق کی خرابی۔ اپنا ان پٹ چیک کریں۔" },
+    RATE_LIMITED:    { en: "Too many requests. Please slow down.",                   ur: "بہت زیادہ درخواستیں۔ براہ کرم آہستہ کریں۔" },
+    INTERNAL_ERROR:  { en: "An unexpected error occurred. Please try again later.",  ur: "ایک غیر متوقع خرابی ہوئی۔ براہ کرم بعد میں دوبارہ کوشش کریں۔" },
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    const appErr     = isAppError(err) ? err : {};
+    const statusCode = appErr.status ?? appErr.statusCode ?? 500;
+    const code       = appErr.code ?? (
+      statusCode === 401 ? "UNAUTHORIZED" :
+      statusCode === 404 ? "NOT_FOUND" :
+      statusCode === 403 ? "FORBIDDEN" :
+      statusCode === 429 ? "RATE_LIMITED" :
+      statusCode < 500   ? "BAD_REQUEST" :
+      "INTERNAL_ERROR"
+    );
+
+    const msgs = ERROR_MESSAGES[code] ?? ERROR_MESSAGES["INTERNAL_ERROR"];
+    const message = statusCode < 500
+      ? (appErr.message ?? msgs.en)
+      : msgs.en;
+
+    logger.error({
+      err,
+      method: req.method,
+      url: req.url?.split("?")[0],
+      statusCode,
+      code,
+      ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress,
+    }, "Unhandled route error");
+
+    const fallbackType = statusCode >= 500 ? "route_error" : "api_error";
+    const detectedType = detectErrorType(err, fallbackType);
+
+    captureBackendError({
+      errorType: detectedType,
+      errorMessage: appErr.message || message,
+      statusCode,
+      functionName: req.url?.split("?")[0] || undefined,
+      moduleName: `${req.method} handler`,
+      stackTrace: err instanceof Error ? err.stack : undefined,
+      metadata: { code, method: req.method, url: req.url?.split("?")[0] },
+    });
+
+    if (!res.headersSent) {
+      res.status(statusCode).json({
+        success: false,
+        error: message,
+        message: msgs.ur,
+        code,
+      });
+    }
+  });
+
+  return app;
+}
 
 export default app;

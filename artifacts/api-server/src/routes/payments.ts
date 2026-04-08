@@ -88,7 +88,7 @@ router.get("/methods", async (req, res) => {
       mode:        "live",
       description: s["cod_notes"] || "Delivery par cash dein",
       maxAmount:   parseFloat(s["cod_max_amount"] ?? "5000"),
-      fee:         parseFloat(s["cod_fee"] ?? "0"),
+      fee:         parseFloat(s["cod_fee_amount"] ?? s["cod_fee"] ?? "0"),
       freeAbove:   parseFloat(s["cod_free_above"] ?? "2000"),
     });
   }

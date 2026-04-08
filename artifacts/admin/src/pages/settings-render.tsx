@@ -14,7 +14,8 @@ export interface Setting { key: string; value: string; label: string; category: 
 export type CatKey = 
   "general" | "features" | "rides" | "orders" | "delivery" |
   "customer" | "rider" | "vendor" | "finance" | "payment" |
-  "content" | "integrations" | "security" | "system" | "weather";
+  "content" | "integrations" | "security" | "system" | "weather" |
+  "dispatch" | "branding" | "system_limits" | "regional";
 
 export const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
@@ -107,6 +108,11 @@ export const TEXT_KEYS = new Set([
   "bank_name","bank_account_title","bank_account_number","bank_iban","bank_branch_code","bank_swift_code","bank_instructions",
   "cod_restricted_areas","cod_notes",
   "wallet_topup_methods",
+  "dispatch_broadcast_timeout_sec","ride_max_fare","ride_counter_offer_max_multiplier",
+  "brand_color_mart","brand_color_food","brand_color_rides","brand_color_pharmacy",
+  "brand_color_parcel","brand_color_van","brand_map_center_lat","brand_map_center_lng","brand_map_center_label",
+  "system_log_retention_days","system_cache_ttl_sec","system_json_body_limit","system_upload_size_limit",
+  "regional_phone_format","regional_phone_hint","regional_timezone","regional_currency_symbol","regional_country_code",
 ]);
 
 const FEATURE_ICONS: Record<string,string> = {

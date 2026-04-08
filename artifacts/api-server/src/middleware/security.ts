@@ -577,7 +577,8 @@ export async function getCachedSettings(): Promise<Record<string, string>> {
   if (Date.now() < settingsCacheExpiry) return settingsCache;
   try {
     settingsCache = await getPlatformSettings();
-    settingsCacheExpiry = Date.now() + 30_000;
+    const cacheTtl = parseInt(settingsCache["system_cache_ttl_sec"] ?? "300", 10);
+    settingsCacheExpiry = Date.now() + Math.max(5, Math.min(3600, cacheTtl)) * 1000;
   } catch {}
   return settingsCache;
 }

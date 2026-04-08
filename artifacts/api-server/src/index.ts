@@ -1,6 +1,6 @@
 import http from "http";
 import cron from "node-cron";
-import app from "./app";
+import app, { initApp } from "./app";
 import { logger } from "./lib/logger";
 import { startDispatchEngine, dispatchScheduledRides } from "./routes/rides.js";
 import { migrateAdminSecrets } from "./services/adminSecretMigration.js";
@@ -32,40 +32,51 @@ const httpServer = http.createServer(app);
 initSocketIO(httpServer);
 initVapid();
 
-/* ── Cron: dispatch scheduled rides every minute ── */
-cron.schedule("* * * * *", () => {
-  dispatchScheduledRides().catch(e => logger.error({ err: e }, "[cron] dispatchScheduledRides failed"));
-}, { timezone: "Asia/Karachi" });
+/* ── Helper: resolve regional timezone from platform settings ── */
+async function getCronTimezone(): Promise<string> {
+  try {
+    const s = await getPlatformSettings();
+    return s["regional_timezone"] ?? "Asia/Karachi";
+  } catch { return "Asia/Karachi"; }
+}
 
-/* ── Cron: van departure reminders (every minute) ── */
-cron.schedule("* * * * *", () => {
-  sendVanDepartureReminders().catch(e => logger.error({ err: e }, "[cron] vanDepartureReminders failed"));
-}, { timezone: "Asia/Karachi" });
+/* ── Cron bootstrap (reads timezone from settings once at startup) ── */
+(async () => {
+  const tz = await getCronTimezone();
 
-/* ── Cron: cleanup jobs (runs at midnight) ── */
-cron.schedule("0 0 * * *", async () => {
-  /* location_logs older than 30 days */
-  try {
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const result = await db.delete(locationLogsTable).where(lt(locationLogsTable.createdAt, cutoff));
-    logger.info({ cutoff, result }, "[cron] location_logs cleanup complete");
-  } catch (e) {
-    logger.error({ err: e }, "[cron] location_logs cleanup failed");
-  }
-  /* pending_otps expired (phantom registration prevention) */
-  try {
-    const result = await db.delete(pendingOtpsTable).where(lt(pendingOtpsTable.otpExpiry, new Date()));
-    logger.info({ result }, "[cron] pending_otps cleanup complete");
-  } catch (e) {
-    logger.error({ err: e }, "[cron] pending_otps cleanup failed");
-  }
-  /* error resolution backups TTL cleanup */
-  try {
-    await cleanupExpiredBackups();
-  } catch (e) {
-    logger.error({ err: e }, "[cron] backup cleanup failed");
-  }
-}, { timezone: "Asia/Karachi" });
+  cron.schedule("* * * * *", () => {
+    dispatchScheduledRides().catch(e => logger.error({ err: e }, "[cron] dispatchScheduledRides failed"));
+  }, { timezone: tz });
+
+  cron.schedule("* * * * *", () => {
+    sendVanDepartureReminders().catch(e => logger.error({ err: e }, "[cron] vanDepartureReminders failed"));
+  }, { timezone: tz });
+
+  cron.schedule("0 0 * * *", async () => {
+    try {
+      const s = await getPlatformSettings();
+      const retentionDays = parseInt(s["system_log_retention_days"] ?? "30", 10);
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const result = await db.delete(locationLogsTable).where(lt(locationLogsTable.createdAt, cutoff));
+      logger.info({ cutoff, retentionDays, result }, "[cron] location_logs cleanup complete");
+    } catch (e) {
+      logger.error({ err: e }, "[cron] location_logs cleanup failed");
+    }
+    try {
+      const result = await db.delete(pendingOtpsTable).where(lt(pendingOtpsTable.otpExpiry, new Date()));
+      logger.info({ result }, "[cron] pending_otps cleanup complete");
+    } catch (e) {
+      logger.error({ err: e }, "[cron] pending_otps cleanup failed");
+    }
+    try {
+      await cleanupExpiredBackups();
+    } catch (e) {
+      logger.error({ err: e }, "[cron] backup cleanup failed");
+    }
+  }, { timezone: tz });
+
+  logger.info({ timezone: tz }, "[cron] All cron jobs scheduled");
+})();
 
 let autoResolveTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -150,6 +161,7 @@ ensureAuthMethodColumn()
   .then(() => ensureErrorResolutionTables())
   .then(() => scheduleAutoResolve())
   .then(() => assertSecureSettings())
+  .then(() => initApp())
   .then(() => startListening())
   .catch(e => {
     logger.error({ err: e }, "Failed to run startup migrations");

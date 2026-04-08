@@ -89,7 +89,7 @@ function toNumber(v: unknown): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
-const MAX_FARE = 100_000;
+const DEFAULT_MAX_FARE = 100_000;
 
 const bookRideSchema = z.object({
   type: z.string().min(1),
@@ -100,7 +100,7 @@ const bookRideSchema = z.object({
   dropLat: z.preprocess(toNumber, latitudeSchema),
   dropLng: z.preprocess(toNumber, coordinateSchema),
   paymentMethod: z.string().min(1),
-  offeredFare: z.preprocess((v) => (v != null && v !== "" ? Number(v) : undefined), z.number().positive().max(MAX_FARE).optional()),
+  offeredFare: z.preprocess((v) => (v != null && v !== "" ? Number(v) : undefined), z.number().positive().optional()),
   bargainNote: z.string().max(500).transform(stripHtml).optional(),
   /* ── Parcel delivery fields ── */
   isParcel: z.boolean().optional().default(false),
@@ -130,7 +130,7 @@ const acceptBidSchema = z.object({
 });
 
 const customerCounterSchema = z.object({
-  offeredFare: z.preprocess(toNumber, z.number().positive().max(MAX_FARE)),
+  offeredFare: z.preprocess(toNumber, z.number().positive()),
   note: z.string().max(300).transform(stripHtml).optional(),
 });
 
@@ -696,8 +696,9 @@ router.post("/", customerAuth, bookRideLimiter, async (req, res) => {
   if (offeredFare !== undefined && bargainEnabled) {
     validatedOffer = offeredFare;
     /* Reject fares above the configurable maximum */
-    if (validatedOffer > MAX_FARE) {
-      sendErrorWithData(res, `Offered fare cannot exceed Rs. ${MAX_FARE}`, { code: "FARE_TOO_HIGH" }, 422); return;
+    const maxFare = parseFloat(s["ride_max_fare"] ?? String(DEFAULT_MAX_FARE));
+    if (validatedOffer > maxFare) {
+      sendErrorWithData(res, `Offered fare cannot exceed Rs. ${maxFare}`, { code: "FARE_TOO_HIGH" }, 422); return;
     }
     /* Enforce absolute service min_fare — no offer can go below this regardless of bargaining percentage */
     if (serviceMinFare > 0 && validatedOffer < serviceMinFare) {
@@ -1334,6 +1335,15 @@ router.patch("/:id/customer-counter", bargainLimiter, customerAuth, requireRideS
   const bargainMinPct = parseFloat(s["ride_bargaining_min_pct"] ?? "70");
   const platformFare  = parseFloat(ride.fare);
 
+  const maxFare = parseFloat(s["ride_max_fare"] ?? "100000");
+  if (newOffer > maxFare) {
+    sendErrorWithData(res, `Offered fare cannot exceed Rs. ${maxFare.toFixed(0)}`, { code: "FARE_ABOVE_MAX" }, 422); return;
+  }
+  const maxMultiplier = parseFloat(s["ride_counter_offer_max_multiplier"] ?? "3");
+  if (platformFare > 0 && newOffer > platformFare * maxMultiplier) {
+    sendErrorWithData(res, `Offered fare cannot exceed ${maxMultiplier}× the platform fare (Rs. ${(platformFare * maxMultiplier).toFixed(0)})`, { code: "FARE_ABOVE_MAX" }, 422); return;
+  }
+
   /* Enforce absolute service min_fare floor (matches booking + rider-counter logic). */
   const psMin = s[`ride_${ride.type}_min_fare`];
   let serviceMinFare = psMin ? parseFloat(psMin) : 0;
@@ -1883,7 +1893,7 @@ router.get("/:id/dispatch-status", customerAuth, loadRide(), requireRideOwner("u
   const rideId = ride.id;
 
   const s = await getPlatformSettings();
-  const totalTimeoutSec = parseInt(s["dispatch_broadcast_timeout_sec"] ?? s["dispatch_request_timeout_sec"] ?? "120", 10);
+  const totalTimeoutSec = parseInt(s["dispatch_broadcast_timeout_sec"] ?? "90", 10);
 
   const [notifiedRow] = await db.select({ c: count() })
     .from(rideNotifiedRidersTable)
@@ -1937,7 +1947,7 @@ async function runDispatchCycle() {
   dispatchCycleRunning = true;
   try {
     const s = await getPlatformSettings();
-    const totalTimeoutSec = parseInt(s["dispatch_broadcast_timeout_sec"] ?? s["dispatch_request_timeout_sec"] ?? "120", 10);
+    const totalTimeoutSec = parseInt(s["dispatch_broadcast_timeout_sec"] ?? "90", 10);
 
     const pendingRides = await db.select().from(ridesTable)
       .where(and(

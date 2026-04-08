@@ -161,8 +161,14 @@ function hashVerificationToken(token: string): string {
 }
 
 
-function isValidCanonicalPhone(phone: string): boolean {
-  return /^3\d{9}$/.test(phone);
+async function isValidCanonicalPhone(phone: string): Promise<boolean> {
+  try {
+    const s = await getCachedSettings();
+    const pattern = s["regional_phone_format"] ?? "^0?3\\d{9}$";
+    return new RegExp(pattern).test(phone);
+  } catch {
+    return /^3\d{9}$/.test(phone);
+  }
 }
 
 const router: IRouter = Router();
@@ -471,7 +477,7 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
   const preferredChannel = req.body.preferredChannel;
   const phone = canonicalizePhone(rawPhone);
 
-  if (!isValidCanonicalPhone(phone)) {
+  if (!(await isValidCanonicalPhone(phone))) {
     res.status(400).json({ error: "Invalid phone number. Please enter a valid Pakistani mobile number (e.g. 03001234567).", field: "phone" });
     return;
   }
@@ -670,7 +676,7 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
 router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), async (req, res) => {
   const phone = canonicalizePhone(req.body.phone);
 
-  if (!isValidCanonicalPhone(phone)) {
+  if (!(await isValidCanonicalPhone(phone))) {
     res.status(400).json({ error: "Invalid phone number format.", field: "phone" });
     return;
   }

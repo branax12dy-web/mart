@@ -350,6 +350,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "cod_enabled",                  value: "on",       label: "Cash on Delivery Enable",              category: "payment" },
   { key: "cod_max_amount",               value: "5000",     label: "Max COD Order Amount (Rs.)",           category: "payment" },
   { key: "cod_fee",                      value: "0",        label: "COD Service Fee (Rs.)",                category: "payment" },
+  { key: "cod_fee_amount",               value: "0",        label: "COD Fee Amount (Rs.) — alias for cod_fee", category: "payment" },
   { key: "cod_free_above",               value: "2000",     label: "Free COD Fee Above (Rs.)",             category: "payment" },
   { key: "cod_allowed_mart",             value: "on",       label: "COD for Mart/Grocery Orders",          category: "payment" },
   { key: "cod_allowed_food",             value: "on",       label: "COD for Food Delivery",                category: "payment" },
@@ -454,9 +455,9 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   /* ═══════════════════  Ride Dispatch Engine  ═══════════════════ */
   { key: "dispatch_request_timeout_sec",      value: "30",   label: "Rider Accept Timeout (seconds)",                    category: "rides" },
   { key: "dispatch_max_loops",                value: "2",    label: "Max Dispatch Loops Before Expiry",                  category: "rides" },
-  { key: "dispatch_min_radius_km",            value: "5",    label: "Min Request Radius (KM)",                           category: "rides" },
+  { key: "dispatch_min_radius_km",            value: "5",    label: "Min Request Radius (KM)",                           category: "dispatch" },
   { key: "dispatch_ride_start_proximity_m",   value: "200",  label: "Ride Start Proximity (meters from pickup)",         category: "rides" },
-  { key: "dispatch_avg_speed_kmh",            value: "25",   label: "Average Rider Speed for ETA (km/h)",                category: "rides" },
+  { key: "dispatch_avg_speed_kmh",            value: "25",   label: "Average Rider Speed for ETA (km/h)",                category: "dispatch" },
   /* ═══════════════════  Rider Ignore Penalty  ═══════════════════ */
   { key: "dispatch_ignore_threshold",         value: "10",   label: "Ignore Threshold (per day)",                        category: "rides" },
   { key: "dispatch_ignore_penalty",           value: "25",   label: "Ignore Penalty Amount (Rs.)",                       category: "rides" },
@@ -575,6 +576,31 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "van_weekend_surcharge_pct",    value: "0",       label: "Weekend Surcharge % (Sat/Sun)",                category: "van" },
   { key: "van_holiday_surcharge_pct",    value: "0",       label: "Holiday Surcharge %",                          category: "van" },
   { key: "van_holiday_dates",           value: "[]",       label: "Holiday Dates (JSON array of YYYY-MM-DD)",     category: "van" },
+  /* ═══════════════════  Dispatch & Operations  ═══════════════════ */
+  { key: "dispatch_broadcast_timeout_sec", value: "90",      label: "Dispatch Broadcast Timeout (seconds)",           category: "dispatch" },
+  { key: "ride_max_fare",                  value: "100000",  label: "Maximum Ride Fare (Rs.)",                        category: "dispatch" },
+  { key: "ride_counter_offer_max_multiplier", value: "3",    label: "Counter Offer Max Multiplier (× platform fare)", category: "dispatch" },
+  /* ═══════════════════  Branding & UI  ═══════════════════ */
+  { key: "brand_color_mart",       value: "#00C48C",        label: "Mart Service Color",                  category: "branding" },
+  { key: "brand_color_food",       value: "#FF9500",        label: "Food Service Color",                  category: "branding" },
+  { key: "brand_color_rides",      value: "#00C48C",        label: "Rides Service Color",                 category: "branding" },
+  { key: "brand_color_pharmacy",   value: "#4A90D9",        label: "Pharmacy Service Color",              category: "branding" },
+  { key: "brand_color_parcel",     value: "#8B5CF6",        label: "Parcel Service Color",                category: "branding" },
+  { key: "brand_color_van",        value: "#0066FF",        label: "Van / Intercity Service Color",       category: "branding" },
+  { key: "brand_map_center_lat",   value: "34.37",          label: "Default Map Center Latitude",         category: "branding" },
+  { key: "brand_map_center_lng",   value: "73.47",          label: "Default Map Center Longitude",        category: "branding" },
+  { key: "brand_map_center_label", value: "Muzaffarabad",   label: "Default Map Center Label",            category: "branding" },
+  /* ═══════════════════  System Limits  ═══════════════════ */
+  { key: "system_log_retention_days",  value: "30",     label: "Log Retention (days)",                category: "system_limits" },
+  { key: "system_cache_ttl_sec",       value: "300",    label: "Settings Cache TTL (seconds)",        category: "system_limits" },
+  { key: "system_json_body_limit",     value: "256kb",  label: "JSON Body Size Limit",               category: "system_limits" },
+  { key: "system_upload_size_limit",   value: "10mb",   label: "Upload Size Limit",                  category: "system_limits" },
+  /* ═══════════════════  Regional & Validation  ═══════════════════ */
+  { key: "regional_phone_format",      value: "^0?3\\d{9}$",  label: "Phone Number Regex Pattern",        category: "regional" },
+  { key: "regional_phone_hint",        value: "03XXXXXXXXX",  label: "Phone Number Hint / Placeholder",   category: "regional" },
+  { key: "regional_timezone",          value: "Asia/Karachi",  label: "Default Timezone",                  category: "regional" },
+  { key: "regional_currency_symbol",   value: "Rs.",           label: "Currency Symbol",                   category: "regional" },
+  { key: "regional_country_code",      value: "+92",           label: "Country Dialing Code",              category: "regional" },
 ];
 
 let _authMethodColumnMigrated = false;
@@ -865,6 +891,7 @@ export async function ensurePromotionsTables() {
  * the very next request re-reads from the DB. */
 let _platformSettingsCache: Record<string, string> | null = null;
 let _platformSettingsCacheExpiry = 0;
+let _categoryBackfillDone = false;
 
 export function invalidatePlatformSettingsCache(): void {
   _platformSettingsCache = null;
@@ -876,6 +903,18 @@ export async function getPlatformSettings(): Promise<Record<string, string>> {
     return _platformSettingsCache;
   }
   await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+  if (!_categoryBackfillDone) {
+    const categoryUpdates: Record<string, string> = {};
+    for (const d of DEFAULT_PLATFORM_SETTINGS) categoryUpdates[d.key] = d.category;
+    const existing = await db.select({ key: platformSettingsTable.key, category: platformSettingsTable.category }).from(platformSettingsTable);
+    for (const row of existing) {
+      const expected = categoryUpdates[row.key];
+      if (expected && row.category !== expected) {
+        await db.update(platformSettingsTable).set({ category: expected }).where(eq(platformSettingsTable.key, row.key));
+      }
+    }
+    _categoryBackfillDone = true;
+  }
   const rows = await db.select().from(platformSettingsTable);
   _platformSettingsCache = Object.fromEntries(rows.map(r => [r.key, r.value]));
   _platformSettingsCacheExpiry = Date.now() + 10_000;
