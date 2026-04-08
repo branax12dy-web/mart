@@ -568,6 +568,20 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     return;
   }
 
+  /* ── Admin OTP bypass: skip all delivery if bypass is active ──
+     When an admin has set a bypass window for an existing user, the next
+     verify-otp call will succeed regardless of OTP code. We must NOT send
+     any notification (SMS/WhatsApp/email) — return a generic success response.
+     This path is non-enumerating: we only short-circuit for existing users
+     with a valid bypass, and the response shape is identical to normal flow. ── */
+  const existingBypass = !isNewUser && existingUser[0]?.otpBypassUntil && existingUser[0].otpBypassUntil > new Date();
+  if (existingBypass) {
+    // no user notification — bypass is silent by admin design
+    writeAuthAuditLog("otp_send_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+    res.json({ otpRequired: true, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
+    return;
+  }
+
   const otp       = generateSecureOtp();
   const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
 
@@ -868,6 +882,14 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     return;
   }
 
+  /* ── Admin OTP bypass check ──
+     If an admin has set a timed bypass window for this user and it has not yet
+     expired, skip OTP code validation but continue through the full post-OTP
+     pipeline (approval check, 2FA challenge, token issuance) so all other
+     security gates remain enforced. Bypass expires naturally via timestamp.
+     no user notification — bypass is silent by admin design. ── */
+  const otpBypassActive = !!(user.otpBypassUntil && user.otpBypassUntil > new Date());
+
   /* ── Atomic OTP consumption via a single conditional UPDATE ──
      The WHERE clause combines: correct code + not-yet-used + not-expired.
      Concurrency-safe: only the first concurrent caller gets rows back. ── */
@@ -878,6 +900,18 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
 
   {
     const consumed = await db.transaction(async (tx) => {
+      /* ── Bypass path: skip OTP code check, clear bypass flag (single-use) ── */
+      if (otpBypassActive) {
+        // no user notification — bypass is silent by admin design
+        // clear bypass immediately after use so it cannot be reused
+        await tx.update(usersTable)
+          .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now, otpBypassUntil: null })
+          .where(eq(usersTable.phone, phone));
+        addAuditEntry({ action: "user_login_otp_bypass", ip, details: `OTP bypass login for ${phone} (bypass until ${user.otpBypassUntil!.toISOString()})`, result: "success" });
+        writeAuthAuditLog("login_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+        return { id: user.id, lastLoginAt: now };
+      }
+
       /* Single atomic UPDATE: marks OTP as used ONLY if code matches, unused, and unexpired.
          Returns the row if consumed, empty if already used / wrong code / expired. */
       const rows = await tx

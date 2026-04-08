@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Search, CheckCircle2, XCircle, Wallet, RefreshCw, Trash2,
@@ -270,6 +270,23 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
   const [tempOtpData, setTempOtpData] = useState<{ otp: string; phone: string; expiresAt: string } | null>(null);
   const [impersonateData, setImpersonateData] = useState<{ token: string; phone: string; name: string; expiresAt: string } | null>(null);
 
+  /* ── OTP Tools state ── */
+  const [generatedOtp, setGeneratedOtp] = useState<{ otp: string; phone: string; expiresAt: string } | null>(null);
+  const [otpGeneratedAt, setOtpGeneratedAt] = useState<number | null>(null);
+  const [bypassMinutes, setBypassMinutes] = useState<15 | 30 | 60>(15);
+  const [bypassActive, setBypassActive] = useState<boolean>(
+    !!(user.otpBypassUntil && new Date(user.otpBypassUntil) > new Date())
+  );
+  const [bypassUntil, setBypassUntil] = useState<string | null>(
+    user.otpBypassUntil && new Date(user.otpBypassUntil) > new Date() ? user.otpBypassUntil : null
+  );
+
+  useEffect(() => {
+    if (!otpGeneratedAt) return;
+    const timer = setTimeout(() => { setGeneratedOtp(null); setOtpGeneratedAt(null); }, 30_000);
+    return () => clearTimeout(timer);
+  }, [otpGeneratedAt]);
+
   const securityMutation = useMutation({
     mutationFn: (body: any) => fetcher(`/users/${user.id}/security`, { method: "PATCH", body: JSON.stringify(body) }),
     onSuccess: (_data, vars: any) => {
@@ -312,6 +329,32 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     mutationFn: () => fetcher(`/users/${user.id}/impersonate`, { method: "POST", body: "{}" }),
     onSuccess: (d: any) => { setImpersonateData(d); },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const generateOtpMutation = useMutation({
+    mutationFn: () => fetcher(`/users/${user.id}/otp/generate`, { method: "POST", body: "{}" }),
+    onSuccess: (d: any) => { setGeneratedOtp(d); setOtpGeneratedAt(Date.now()); },
+    onError: (e: any) => toast({ title: "Failed to generate OTP", description: e.message, variant: "destructive" }),
+  });
+
+  const setBypassMutation = useMutation({
+    mutationFn: (minutes: number) => fetcher(`/users/${user.id}/otp/bypass`, { method: "POST", body: JSON.stringify({ minutes }) }),
+    onSuccess: (d: any) => {
+      setBypassActive(true);
+      setBypassUntil(d.bypassUntil);
+      toast({ title: "OTP bypass enabled", description: `User can log in without OTP until ${new Date(d.bypassUntil).toLocaleTimeString()}` });
+    },
+    onError: (e: any) => toast({ title: "Failed to set bypass", description: e.message, variant: "destructive" }),
+  });
+
+  const cancelBypassMutation = useMutation({
+    mutationFn: () => fetcher(`/users/${user.id}/otp/bypass`, { method: "DELETE", body: "{}" }),
+    onSuccess: () => {
+      setBypassActive(false);
+      setBypassUntil(null);
+      toast({ title: "OTP bypass cancelled" });
+    },
+    onError: (e: any) => toast({ title: "Failed to cancel bypass", description: e.message, variant: "destructive" }),
   });
 
   const disable2faMutation = useMutation({
@@ -556,6 +599,105 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
               <p className="text-xs text-muted-foreground">OTP will be returned in API response instead of sent via SMS — for testing only</p>
             </div>
             {devOtpEnabled && <Badge variant="outline" className="ml-auto text-[10px] bg-emerald-50 text-emerald-600 border-emerald-200">ENABLED</Badge>}
+          </div>
+
+          {/* ── OTP Tools ── */}
+          <div className="border border-violet-200 rounded-xl overflow-hidden">
+            <div className="bg-violet-50 px-4 py-2.5 flex items-center gap-2 border-b border-violet-200">
+              <KeyRound className="w-4 h-4 text-violet-600 flex-shrink-0" />
+              <span className="text-sm font-bold text-violet-800">OTP Tools</span>
+              <span className="text-xs text-violet-500 ml-1">Admin support — no notifications sent to user</span>
+            </div>
+            <div className="p-3 space-y-3">
+              {/* Generate OTP */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Generate OTP</p>
+                  <p className="text-xs text-muted-foreground">Create a 6-digit code — show to user over phone support</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-violet-300 text-violet-700 hover:bg-violet-50 rounded-lg text-xs shrink-0"
+                  onClick={() => { setGeneratedOtp(null); setOtpGeneratedAt(null); generateOtpMutation.mutate(); }}
+                  disabled={generateOtpMutation.isPending}
+                >
+                  {generateOtpMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Generating...</> : "Generate OTP"}
+                </Button>
+              </div>
+              {generatedOtp && otpGeneratedAt && (() => {
+                return (
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] text-violet-500 font-medium uppercase tracking-wide">One-Time Code · visible for 30s</p>
+                      <p className="text-2xl font-mono font-bold text-violet-800 tracking-widest">{generatedOtp.otp}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Phone {generatedOtp.phone} · Expires {new Date(generatedOtp.expiresAt).toLocaleTimeString()}</p>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="shrink-0 text-violet-600 hover:bg-violet-100"
+                      onClick={() => { navigator.clipboard.writeText(generatedOtp.otp); toast({ title: "OTP copied" }); }}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                );
+              })()}
+
+              {/* Bypass OTP */}
+              <div className="space-y-2 pt-1 border-t border-violet-100">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-foreground">Bypass OTP</p>
+                    <p className="text-xs text-muted-foreground">Allow login without OTP for a limited window</p>
+                  </div>
+                  <Select
+                    value={String(bypassMinutes)}
+                    onValueChange={(v) => setBypassMinutes(Number(v) as 15 | 30 | 60)}
+                  >
+                    <SelectTrigger className="w-24 h-8 text-xs rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15">15 min</SelectItem>
+                      <SelectItem value="30">30 min</SelectItem>
+                      <SelectItem value="60">1 hour</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!bypassActive ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-400 text-amber-700 hover:bg-amber-50 rounded-lg text-xs shrink-0"
+                      onClick={() => setBypassMutation.mutate(bypassMinutes)}
+                      disabled={setBypassMutation.isPending}
+                    >
+                      {setBypassMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Enabling...</> : "Enable"}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-300 text-red-700 hover:bg-red-50 rounded-lg text-xs shrink-0"
+                      onClick={() => cancelBypassMutation.mutate()}
+                      disabled={cancelBypassMutation.isPending}
+                    >
+                      {cancelBypassMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Cancelling...</> : "Cancel"}
+                    </Button>
+                  )}
+                </div>
+                {bypassActive && bypassUntil && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <p className="text-xs font-semibold text-amber-800">
+                      Bypass active — expires {new Date(bypassUntil).toLocaleTimeString()}
+                    </p>
+                    <Badge variant="outline" className="ml-auto text-[10px] bg-amber-100 text-amber-700 border-amber-300">ACTIVE</Badge>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">

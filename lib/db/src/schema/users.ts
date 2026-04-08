@@ -84,6 +84,8 @@ export const usersTable = pgTable("users", {
   tokenVersion:    integer("token_version").notNull().default(0),
   /* ── Dev OTP mode — admin-controlled per-user OTP display in response ── */
   devOtpEnabled:   boolean("dev_otp_enabled").notNull().default(false),
+  /* ── OTP bypass — admin-set window during which OTP verification is skipped ── */
+  otpBypassUntil:  timestamp("otp_bypass_until"),
   /* ── User metrics — aggregated for admin condition engine ── */
   cancellationRate:    decimal("cancellation_rate", { precision: 5, scale: 2 }).notNull().default("0"),
   fraudIncidents:      integer("fraud_incidents").notNull().default(0),

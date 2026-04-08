@@ -494,12 +494,73 @@ router.post("/users/:id/set-temp-otp", async (req, res) => {
   sendSuccess(res, { otp, expiresAt: otpExpiry.toISOString(), phone: user.phone });
 });
 
+/* ── POST /admin/users/:id/otp/generate — generate a plaintext OTP for support use ── */
+router.post("/users/:id/otp/generate", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+
+  const { generateSecureOtp } = await import("../../services/password.js");
+  const otp = generateSecureOtp();
+  const otpHash = createHash("sha256").update(otp).digest("hex");
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  // no user notification — admin generates this for phone support only
+  await db.update(usersTable).set({ otpCode: otpHash, otpExpiry, otpUsed: false, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+
+  const ip = getClientIp(req);
+  const adminReq = req as unknown as AdminRequest;
+  addAuditEntry({ action: "admin_otp_generate", ip, adminId: adminReq.adminId, details: `Admin generated OTP for user ${userId} (${user.phone})`, result: "success" });
+
+  sendSuccess(res, { otp, expiresAt: otpExpiry.toISOString(), phone: user.phone });
+});
+
+/* ── POST /admin/users/:id/otp/bypass — set a timed OTP bypass ── */
+router.post("/users/:id/otp/bypass", async (req, res) => {
+  const userId = req.params["id"]!;
+  const minutes = Number(req.body?.minutes);
+  if (![15, 30, 60].includes(minutes)) {
+    sendValidationError(res, "minutes must be 15, 30, or 60");
+    return;
+  }
+  const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+
+  const bypassUntil = new Date(Date.now() + minutes * 60 * 1000);
+
+  // no user notification — admin-only action
+  await db.update(usersTable).set({ otpBypassUntil: bypassUntil, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+
+  const ip = getClientIp(req);
+  const adminReq = req as unknown as AdminRequest;
+  addAuditEntry({ action: "admin_otp_bypass_set", ip, adminId: adminReq.adminId, details: `Admin set ${minutes}min OTP bypass for user ${userId} (${user.phone}), expires ${bypassUntil.toISOString()}`, result: "success" });
+
+  sendSuccess(res, { bypassUntil: bypassUntil.toISOString(), minutes });
+});
+
+/* ── DELETE /admin/users/:id/otp/bypass — cancel an active OTP bypass ── */
+router.delete("/users/:id/otp/bypass", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+
+  // no user notification — admin-only action
+  await db.update(usersTable).set({ otpBypassUntil: null, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+
+  const ip = getClientIp(req);
+  const adminReq = req as unknown as AdminRequest;
+  addAuditEntry({ action: "admin_otp_bypass_cancel", ip, adminId: adminReq.adminId, details: `Admin cancelled OTP bypass for user ${userId} (${user.phone})`, result: "success" });
+
+  sendSuccess(res, { success: true });
+});
+
 /* ── POST /admin/users/:id/impersonate — generate silent access token ── */
 router.post("/users/:id/impersonate", async (req, res) => {
   const userId = req.params["id"]!;
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) { sendNotFound(res, "User not found"); return; }
 
+  // no user notification — impersonation is silent by design
   const token = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? user.role ?? "customer", user.tokenVersion ?? 0);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
