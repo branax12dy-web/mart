@@ -6,8 +6,9 @@ import { promisify } from "util";
 import path from "path";
 import os from "os";
 import multer from "multer";
+import sharp from "sharp";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../lib/response.js";
-import { customerAuth, riderAuth, requireRole } from "../middleware/security.js";
+import { customerAuth, riderAuth, requireRole, getCachedSettings } from "../middleware/security.js";
 import { getPlatformSettings } from "./admin-shared.js";
 
 const execFileAsync = promisify(execFile);
@@ -72,12 +73,34 @@ const videoUpload = multer({
   limits: { fileSize: MULTER_PERMISSIVE_VIDEO_LIMIT },
 });
 
+/* ── Helper: optionally compress an image buffer based on platform settings ── */
+async function maybeCompressImage(buffer: Buffer, mimeType: string): Promise<Buffer> {
+  try {
+    const s = await getCachedSettings();
+    const compressEnabled = (s["security_compress_images"] ?? "on") === "on";
+    if (!compressEnabled) return buffer;
+    const quality = Math.max(1, Math.min(100, parseInt(s["security_img_quality"] ?? "80", 10) || 80));
+    let pipeline = sharp(buffer);
+    if (mimeType === "image/png") {
+      pipeline = pipeline.png({ quality, compressionLevel: 6 });
+    } else if (mimeType === "image/webp") {
+      pipeline = pipeline.webp({ quality });
+    } else {
+      pipeline = pipeline.jpeg({ quality, mozjpeg: true });
+    }
+    return await pipeline.toBuffer();
+  } catch {
+    return buffer;
+  }
+}
+
 /* ── Helper: save a buffer and return the public URL ── */
 async function saveBuffer(buffer: Buffer, prefix: string, mimeType: string): Promise<string> {
   const ext = mimeType === "image/png" ? ".png" : mimeType === "image/webp" ? ".webp" : ".jpg";
   const uniqueName = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
   await ensureDir();
-  await writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
+  const processed = await maybeCompressImage(buffer, mimeType);
+  await writeFile(path.join(UPLOADS_DIR, uniqueName), processed);
   return `/api/uploads/${uniqueName}`;
 }
 

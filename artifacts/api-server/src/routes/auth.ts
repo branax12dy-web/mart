@@ -28,7 +28,9 @@ import {
   verifyUserJwt,
   writeAuthAuditLog,
   REFRESH_TOKEN_TTL_DAYS,
+  getRefreshTokenTtlDays,
   ACCESS_TOKEN_TTL_SEC,
+  getAccessTokenTtlSec,
   verifyCaptcha,
   checkAvailableRateLimit,
 } from "../middleware/security.js";
@@ -798,7 +800,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
     await db.insert(refreshTokensTable).values({
       id: generateId(), userId: newUserId, tokenHash: refreshHash,
-      authMethod: "phone_otp", expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
+      authMethod: "phone_otp", expiresAt: new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000),
     });
 
     emitWebhookEvent("user_registered", { userId: newUserId, phone, role: "customer", method: "phone_otp" }).catch(() => {});
@@ -806,7 +808,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     res.json({
       token: accessToken,
       refreshToken: refreshRaw,
-      expiresAt: new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
       user: { id: newUserId, phone, name: null, email: null, username: null, role: "customer", roles: "customer",
               walletBalance: signupBonus, isActive: !requireApproval, totpEnabled: false },
       ...(requireApproval ? { pendingApproval: true } : {}),
@@ -989,7 +991,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
   /* ── Issue short-lived access token + long-lived refresh token ── */
   const accessToken  = signAccessToken(u.id, phone, u.role ?? "customer", u.roles ?? u.role ?? "customer", u.tokenVersion ?? 0);
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
-  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
   await db.insert(refreshTokensTable).values({
     id:        generateId(),
@@ -1014,8 +1016,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     res.json({
       token:        accessToken,
       refreshToken: refreshRaw,
-      expiresAt:    new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
-      sessionDays:  REFRESH_TOKEN_TTL_DAYS,
+      expiresAt:    new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
+      sessionDays:  getRefreshTokenTtlDays(),
       canAddCustomerRole: true,
       code: "cross_app_account",
       wrongApp: true,
@@ -1042,8 +1044,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
   res.json({
     token:        accessToken,
     refreshToken: refreshRaw,
-    expiresAt:    new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
-    sessionDays:  REFRESH_TOKEN_TTL_DAYS,
+    expiresAt:    new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
+    sessionDays:  getRefreshTokenTtlDays(),
     user: {
       id:            u.id,
       phone:         u.phone,
@@ -1303,7 +1305,7 @@ async function handleRefreshToken(req: Request, res: any) {
 
   const newAccessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? user.role ?? "customer", user.tokenVersion ?? 0);
   const { raw: newRefreshRaw, hash: newRefreshHash } = generateRefreshToken();
-  const newRefreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const newRefreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
   await db.insert(refreshTokensTable).values({
     id:        generateId(),
@@ -1318,7 +1320,7 @@ async function handleRefreshToken(req: Request, res: any) {
   res.json({
     token:        newAccessToken,
     refreshToken: newRefreshRaw,
-    expiresAt:    new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
+    expiresAt:    new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
   });
 }
 
@@ -1609,7 +1611,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
 
   /* Issue short-lived access token + refresh token (consistent with OTP flow) */
   const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
-  const expiresAt   = new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString();
+  const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
 
   if (isPendingApproval) {
     res.json({
@@ -1621,7 +1623,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   }
 
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
-  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
   await db.insert(refreshTokensTable).values({ id: generateId(), userId: user.id, tokenHash: refreshHash, authMethod: "email_otp", expiresAt: refreshExpiresAt });
   db.delete(refreshTokensTable).where(and(eq(refreshTokensTable.userId, user.id), lt(refreshTokensTable.expiresAt, new Date()))).catch(() => {});
 
@@ -1633,7 +1635,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   if (isEmailCustomerAppCtx && !emailUserRoles.includes("customer")) {
     addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] email-logged in to customer app context — offering add-role`, severity: "low" });
     res.json({
-      token: accessToken, refreshToken: refreshRaw, expiresAt, sessionDays: REFRESH_TOKEN_TTL_DAYS,
+      token: accessToken, refreshToken: refreshRaw, expiresAt, sessionDays: getRefreshTokenTtlDays(),
       canAddCustomerRole: true, code: "cross_app_account", wrongApp: true,
       user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles ?? user.role ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
     });
@@ -1644,7 +1646,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt,
-    sessionDays:  REFRESH_TOKEN_TTL_DAYS,
+    sessionDays:  getRefreshTokenTtlDays(),
     pendingApproval: false,
     user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles ?? user.role ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
   });
@@ -1768,7 +1770,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   }
 
   const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
-  const expiresAt   = new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString();
+  const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
 
   if (isPendingApproval) {
     res.json({
@@ -1780,7 +1782,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   }
 
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
-  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
   await db.insert(refreshTokensTable).values({ id: generateId(), userId: user.id, tokenHash: refreshHash, authMethod: "password", expiresAt: refreshExpiresAt });
   db.delete(refreshTokensTable).where(and(eq(refreshTokensTable.userId, user.id), lt(refreshTokensTable.expiresAt, new Date()))).catch(() => {});
 
@@ -1790,7 +1792,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt,
-    sessionDays:  REFRESH_TOKEN_TTL_DAYS,
+    sessionDays:  getRefreshTokenTtlDays(),
     pendingApproval: false,
     identifierType: idType,
     user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false },
@@ -1912,7 +1914,7 @@ router.post("/complete-profile", async (req, res) => {
 
   const accessToken = signAccessToken(updated!.id, updated!.phone ?? "", updated!.role ?? "customer", updated!.roles ?? updated!.role ?? "customer", updated!.tokenVersion ?? 0);
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
-  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
   await db.insert(refreshTokensTable).values({
     id:        generateId(),
@@ -2750,7 +2752,7 @@ function parseUserAgent(ua?: string): { deviceName: string; browser: string; os:
 async function issueTokensForUser(user: any, ip: string, method: string, userAgent?: string) {
   const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? user.role ?? "customer", user.tokenVersion ?? 0);
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
-  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
   const refreshTokenId = generateId();
   await db.insert(refreshTokensTable).values({ id: refreshTokenId, userId: user.id, tokenHash: refreshHash, authMethod: method, expiresAt: refreshExpiresAt });
@@ -2789,8 +2791,8 @@ async function issueTokensForUser(user: any, ip: string, method: string, userAge
   return {
     token: accessToken,
     refreshToken: refreshRaw,
-    expiresAt: new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
-    sessionDays: REFRESH_TOKEN_TTL_DAYS,
+    expiresAt: new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
+    sessionDays: getRefreshTokenTtlDays(),
     user: {
       id: user.id, phone: user.phone, name: user.name, email: user.email,
       role: user.role, roles: user.roles, avatar: user.avatar,
@@ -3307,7 +3309,7 @@ router.post("/magic-link/send", async (req, res) => {
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashPassword(rawToken);
-  const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_SEC * 1000);
+  const expiresAt = new Date(Date.now() + getAccessTokenTtlSec() * 1000);
 
   await db.insert(magicLinkTokensTable).values({
     id: generateId(),

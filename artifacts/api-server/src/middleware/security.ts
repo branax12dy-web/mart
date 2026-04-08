@@ -21,10 +21,22 @@ if (!_jwtSecret || _jwtSecret.length < 32) {
 }
 export const JWT_SECRET: string = _jwtSecret;
 
-/* Access token TTL: 1 hour — short-lived for security; proactive refresh handles session persistence */
+/* Access token TTL defaults — overridden at runtime by platform settings jwt_access_ttl_sec / jwt_refresh_ttl_days */
 export const ACCESS_TOKEN_TTL_SEC = 60 * 60;
-/* Refresh token TTL: 90 days */
 export const REFRESH_TOKEN_TTL_DAYS = 90;
+
+function safeInt(val: string | undefined, fallback: number, min = 1): number {
+  const n = parseInt(val ?? String(fallback), 10);
+  return Number.isFinite(n) ? Math.max(min, n) : fallback;
+}
+
+export function getRefreshTokenTtlDays(): number {
+  return safeInt(settingsCache["jwt_refresh_ttl_days"], REFRESH_TOKEN_TTL_DAYS, 1);
+}
+
+export function getAccessTokenTtlSec(): number {
+  return safeInt(settingsCache["jwt_access_ttl_sec"], ACCESS_TOKEN_TTL_SEC, 60);
+}
 
 /* ══════════════════════════════════════════════════════════════
    ADMIN JWT CONFIGURATION — separate from user JWT
@@ -45,7 +57,7 @@ export const ADMIN_TOKEN_TTL_HRS = 24;
 ══════════════════════════════════════════════════════════════ */
 let torExitNodes: Set<string> = new Set();
 let torListFetchedAt = 0;
-const TOR_LIST_TTL_MS = 60 * 60 * 1000;
+let TOR_LIST_TTL_MS = 60 * 60 * 1000;
 
 async function refreshTorExitNodes(): Promise<void> {
   try {
@@ -81,7 +93,7 @@ async function isTorExitNode(ip: string): Promise<boolean> {
    VPN / PROXY DETECTION
 ══════════════════════════════════════════════════════════════ */
 const vpnCache: Map<string, { isVpn: boolean; cachedAt: number }> = new Map();
-const VPN_CACHE_TTL_MS = 10 * 60 * 1000;
+let VPN_CACHE_TTL_MS = 10 * 60 * 1000;
 
 async function isVpnOrProxy(ip: string): Promise<boolean> {
   const cached = vpnCache.get(ip);
@@ -303,12 +315,13 @@ export function signUserJwt(
   );
 }
 
-/** Sign a short-lived access token (15 minutes), embedding tokenVersion for revocation checks. */
+/** Sign a short-lived access token, embedding tokenVersion for revocation checks.
+ *  TTL is read from cached platform settings (jwt_access_ttl_sec), falling back to ACCESS_TOKEN_TTL_SEC. */
 export function signAccessToken(userId: string, phone: string, role: string, roles: string, tokenVersion = 0): string {
   return jwt.sign(
     { sub: userId, phone, role, roles, tokenVersion, type: "access" },
     JWT_SECRET,
-    { algorithm: "HS256", expiresIn: ACCESS_TOKEN_TTL_SEC },
+    { algorithm: "HS256", expiresIn: getAccessTokenTtlSec() },
   );
 }
 
@@ -316,7 +329,7 @@ export function sign2faChallengeToken(userId: string, phone: string, role: strin
   return jwt.sign(
     { sub: userId, phone, role, roles, type: "2fa_challenge", authMethod: authMethod ?? undefined },
     JWT_SECRET,
-    { algorithm: "HS256", expiresIn: 300 },
+    { algorithm: "HS256", expiresIn: safeInt(settingsCache["jwt_2fa_challenge_sec"], 300, 30) },
   );
 }
 
@@ -577,8 +590,10 @@ export async function getCachedSettings(): Promise<Record<string, string>> {
   if (Date.now() < settingsCacheExpiry) return settingsCache;
   try {
     settingsCache = await getPlatformSettings();
-    const cacheTtl = parseInt(settingsCache["system_cache_ttl_sec"] ?? "300", 10);
-    settingsCacheExpiry = Date.now() + Math.max(5, Math.min(3600, cacheTtl)) * 1000;
+    const cacheTtl = safeInt(settingsCache["cache_settings_ttl_sec"] ?? settingsCache["system_cache_ttl_sec"], 30, 5);
+    settingsCacheExpiry = Date.now() + Math.min(3600, cacheTtl) * 1000;
+    VPN_CACHE_TTL_MS = safeInt(settingsCache["cache_vpn_ttl_min"], 10, 1) * 60 * 1000;
+    TOR_LIST_TTL_MS = safeInt(settingsCache["cache_tor_ttl_min"], 60, 1) * 60 * 1000;
   } catch {}
   return settingsCache;
 }

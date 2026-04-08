@@ -13,7 +13,7 @@ import { and, asc, eq, ne, sql, or, isNull, gte, count } from "drizzle-orm";
 import { z } from "zod";
 import { generateId } from "../lib/id.js";
 import { ensureDefaultRideServices, ensureDefaultLocations, getPlatformSettings, adminAuth } from "./admin.js";
-import { customerAuth, riderAuth } from "../middleware/security.js";
+import { customerAuth, riderAuth, getCachedSettings } from "../middleware/security.js";
 import { loadRide, requireRideState, requireRideOwner } from "../middleware/ride-guards.js";
 import { getIO } from "../lib/socketio.js";
 import { sendSuccess, sendCreated, sendError, sendErrorWithData, sendNotFound, sendForbidden, sendValidationError } from "../lib/response.js";
@@ -32,23 +32,19 @@ import rateLimit from "express-rate-limit";
 
 const router: IRouter = Router();
 
-/* ── Rate limiters ─────────────────────────────────────────────────────── */
+/* ── Rate limiters (max values read dynamically from platform settings) ── */
 const bargainLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: async () => { const s = await getCachedSettings(); const n = parseInt(s["rate_bargain_per_min"] ?? "5", 10); return Number.isFinite(n) && n > 0 ? n : 5; },
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many bargain requests. Please wait a minute before trying again." },
   validate: { xForwardedForHeader: false },
 });
 
-/** Book-ride limiter: 5 booking attempts per user per minute.
- *  IMPORTANT: this must be mounted AFTER customerAuth so req.customerId is set
- *  when keyGenerator runs. Placing it before auth would collapse all requests
- *  into a single shared "anonymous" bucket, enabling DoS against all customers. */
 const bookRideLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: async () => { const s = await getCachedSettings(); const n = parseInt(s["rate_booking_per_min"] ?? "5", 10); return Number.isFinite(n) && n > 0 ? n : 5; },
   keyGenerator: (req) => req.customerId ?? "anonymous",
   standardHeaders: true,
   legacyHeaders: false,
@@ -56,11 +52,9 @@ const bookRideLimiter = rateLimit({
   validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
 });
 
-/** Cancel-ride limiter: 3 cancellation attempts per user per minute.
- *  Same ordering rule: mount AFTER customerAuth. */
 const cancelRideLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 3,
+  max: async () => { const s = await getCachedSettings(); const n = parseInt(s["rate_cancel_per_min"] ?? "3", 10); return Number.isFinite(n) && n > 0 ? n : 3; },
   keyGenerator: (req) => req.customerId ?? "anonymous",
   standardHeaders: true,
   legacyHeaders: false,
@@ -68,10 +62,9 @@ const cancelRideLimiter = rateLimit({
   validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
 });
 
-/** Fare-estimate limiter: 30 estimate calls per IP per minute */
 const estimateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: async () => { const s = await getCachedSettings(); const n = parseInt(s["rate_estimate_per_min"] ?? "30", 10); return Number.isFinite(n) && n > 0 ? n : 30; },
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many fare estimate requests. Please wait a moment." },

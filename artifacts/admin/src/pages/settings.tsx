@@ -38,6 +38,7 @@ const CAT_ORDER = [
   "van","onboarding","moderation",
   "security","system_limits","system","weather",
   "regional",
+  "cache","jwt","ratelimit","geo","localization",
 ] as const;
 
 const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
@@ -53,8 +54,11 @@ const NAV_GROUPS: { label: string; emoji: string; items: CatKey[] }[] = [
   { label: "Transport & UX",  emoji: "🚐", items: ["van", "onboarding"] },
   { label: "Moderation",      emoji: "🛡️", items: ["moderation"] },
   { label: "Security",        emoji: "🔒", items: ["security"] },
-  { label: "System",          emoji: "🔧", items: ["system_limits", "system"] },
-  { label: "Regional",        emoji: "🌍", items: ["regional"] },
+  { label: "System",          emoji: "🔧", items: ["system_limits", "system", "cache"] },
+  { label: "Regional",        emoji: "🌍", items: ["regional", "localization"] },
+  { label: "Auth & Tokens",   emoji: "🔑", items: ["jwt"] },
+  { label: "Rate Limits",     emoji: "⏱️", items: ["ratelimit"] },
+  { label: "Geo & Zones",     emoji: "📍", items: ["geo"] },
   { label: "Widgets",         emoji: "🌤️", items: ["weather"] },
 ];
 
@@ -84,6 +88,11 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
   van:          { label: "Van / Transport",      icon: Bus,          color: "text-stone-600",   bg: "bg-stone-50",   activeBg: "bg-stone-600",   description: "Intercity van booking rules, driver limits, pricing surcharges" },
   onboarding:   { label: "Onboarding & UX",     icon: Sparkles,     color: "text-fuchsia-600", bg: "bg-fuchsia-50", activeBg: "bg-fuchsia-600", description: "Vendor auto-schedule, onboarding slides, app experience" },
   moderation:   { label: "Content Moderation",   icon: ShieldAlert,  color: "text-rose-600",    bg: "bg-rose-50",    activeBg: "bg-rose-600",    description: "Auto-masking rules, custom regex patterns, flagged content" },
+  cache:        { label: "Cache TTLs",          icon: Clock,        color: "text-amber-600",   bg: "bg-amber-50",   activeBg: "bg-amber-600",   description: "Platform settings, VPN detection, TOR node and zone cache lifetimes" },
+  jwt:          { label: "JWT & Sessions",      icon: KeyRound,     color: "text-indigo-600",  bg: "bg-indigo-50",  activeBg: "bg-indigo-600",  description: "Access token, refresh token and 2FA challenge timeouts" },
+  ratelimit:    { label: "Endpoint Rate Limits", icon: SlidersHorizontal, color: "text-rose-600", bg: "bg-rose-50", activeBg: "bg-rose-600",    description: "Per-endpoint rate limits for bargaining, booking, cancellation and estimates" },
+  geo:          { label: "Geo & Zones",         icon: MapPin,       color: "text-emerald-600", bg: "bg-emerald-50", activeBg: "bg-emerald-600", description: "Default zone radius and open-world fallback behavior" },
+  localization: { label: "Localization",        icon: Languages,    color: "text-lime-600",    bg: "bg-lime-50",    activeBg: "bg-lime-600",    description: "Currency code and symbol used across the platform" },
 };
 
 export default function SettingsPage() {

@@ -4,6 +4,7 @@ import { serviceZonesTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../lib/response.js";
 import { invalidateZoneCache } from "../../lib/geofence.js";
+import { getCachedSettings } from "../../middleware/security.js";
 import type { AdminRequest } from "../admin.js";
 
 const router: IRouter = Router();
@@ -34,7 +35,9 @@ router.post("/", async (req, res) => {
     sendValidationError(res, "Invalid lat/lng values"); return;
   }
 
-  const radiusNum = radiusKm != null ? parseFloat(String(radiusKm)) : 30;
+  const s = await getCachedSettings();
+  const defaultRadius = parseFloat(s["geo_default_zone_radius_km"] ?? "30");
+  const radiusNum = radiusKm != null ? parseFloat(String(radiusKm)) : (Number.isFinite(defaultRadius) ? defaultRadius : 30);
   if (isNaN(radiusNum) || radiusNum <= 0 || radiusNum > 5000) {
     sendValidationError(res, "radius_km must be between 0 and 5000"); return;
   }

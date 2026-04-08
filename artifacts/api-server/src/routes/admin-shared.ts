@@ -648,6 +648,26 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "retention_audit_days",         value: "365",  label: "Audit Log Retention (days)",           category: "retention" },
   { key: "retention_notifications_days", value: "30",   label: "Notification History Retention (days)", category: "retention" },
   { key: "retention_last_cleanup",       value: "",     label: "Last Cleanup Timestamp",               category: "retention" },
+  /* ═══════════════════  Cache TTLs (Cat 14)  ═══════════════════ */
+  { key: "cache_settings_ttl_sec",    value: "30",    label: "Platform Settings Cache TTL (seconds)",       category: "cache" },
+  { key: "cache_vpn_ttl_min",         value: "10",    label: "VPN/Proxy Detection Cache TTL (minutes)",     category: "cache" },
+  { key: "cache_tor_ttl_min",         value: "60",    label: "TOR Exit Nodes Cache TTL (minutes)",          category: "cache" },
+  { key: "cache_zone_ttl_min",        value: "2",     label: "Service Zone Cache TTL (minutes)",            category: "cache" },
+  /* ═══════════════════  JWT & Session TTLs (Cat 15)  ═══════════════════ */
+  { key: "jwt_access_ttl_sec",        value: "3600",  label: "Access Token Lifetime (seconds)",             category: "jwt" },
+  { key: "jwt_refresh_ttl_days",      value: "90",    label: "Refresh Token Lifetime (days)",               category: "jwt" },
+  { key: "jwt_2fa_challenge_sec",     value: "300",   label: "2FA Challenge Timeout (seconds)",             category: "jwt" },
+  /* ═══════════════════  Endpoint Rate Limits (Cat 16)  ═══════════════════ */
+  { key: "rate_bargain_per_min",      value: "5",     label: "Bargaining Rate Limit (req/min)",             category: "ratelimit" },
+  { key: "rate_booking_per_min",      value: "5",     label: "Booking Rate Limit (req/min)",                category: "ratelimit" },
+  { key: "rate_cancel_per_min",       value: "3",     label: "Cancellation Rate Limit (req/min)",           category: "ratelimit" },
+  { key: "rate_estimate_per_min",     value: "30",    label: "Fare Estimate Rate Limit (req/min)",          category: "ratelimit" },
+  /* ═══════════════════  Geo & Service Zone Defaults (Cat 17)  ═══════════════════ */
+  { key: "geo_default_zone_radius_km",value: "30",    label: "Default Zone Radius (km)",                    category: "geo" },
+  { key: "geo_open_world_fallback",   value: "off",   label: "Open-World Fallback (allow if no zone matches)", category: "geo" },
+  /* ═══════════════════  Localization & Currency (Cat 18)  ═══════════════════ */
+  { key: "currency_code",             value: "PKR",   label: "Currency Code (ISO 4217)",                    category: "localization" },
+  { key: "currency_symbol",           value: "Rs.",   label: "Currency Symbol",                             category: "localization" },
 ];
 
 let _authMethodColumnMigrated = false;

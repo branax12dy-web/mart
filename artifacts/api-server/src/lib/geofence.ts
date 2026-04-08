@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { serviceZonesTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { getCachedSettings } from "../middleware/security.js";
 
 /* ── Haversine distance in km ── */
 export function haversineKm(
@@ -32,9 +33,12 @@ type ZoneRow = {
 };
 let _zoneCache: ZoneRow[] = [];
 let _zoneCacheAt = 0;
-const ZONE_CACHE_TTL_MS = 2 * 60 * 1000;
+let ZONE_CACHE_TTL_MS = 2 * 60 * 1000;
 
 async function getActiveZones(): Promise<ZoneRow[]> {
+  const s = await getCachedSettings();
+  const zoneTtlMin = parseInt(s["cache_zone_ttl_min"] ?? "2", 10);
+  ZONE_CACHE_TTL_MS = Math.max(10_000, (Number.isFinite(zoneTtlMin) ? zoneTtlMin : 2) * 60 * 1000);
   if (Date.now() - _zoneCacheAt < ZONE_CACHE_TTL_MS) return _zoneCache;
   try {
     _zoneCache = await db
@@ -86,8 +90,9 @@ export async function isInServiceZone(
     return true;
   });
 
-  /* No zones configured for this service → open access */
-  if (relevant.length === 0) return { allowed: true };
+  const s = await getCachedSettings();
+  const openWorldFallback = (s["geo_open_world_fallback"] ?? "off") === "on";
+  if (relevant.length === 0) return { allowed: openWorldFallback };
 
   for (const z of relevant) {
     const distKm = haversineKm(
@@ -100,5 +105,5 @@ export async function isInServiceZone(
     }
   }
 
-  return { allowed: false };
+  return { allowed: openWorldFallback };
 }

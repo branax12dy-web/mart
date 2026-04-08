@@ -16,7 +16,8 @@ export type CatKey =
   "customer" | "rider" | "vendor" | "finance" | "payment" |
   "content" | "integrations" | "security" | "system" | "weather" |
   "dispatch" | "branding" | "system_limits" | "regional" |
-  "notifications" | "uploads" | "pagination" | "van" | "onboarding" | "moderation";
+  "notifications" | "uploads" | "pagination" | "van" | "onboarding" | "moderation" |
+  "cache" | "jwt" | "ratelimit" | "geo" | "localization";
 
 export const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",
@@ -34,6 +35,7 @@ export const TOGGLE_KEYS = new Set([
   "security_pwd_strong","security_allow_uploads","security_compress_images","security_scan_uploads",
   "security_fake_order_detect","security_auto_block_ip","security_phone_verify","security_single_phone",
   "security_audit_log",
+  "geo_open_world_fallback",
   "order_gps_capture_enabled",
   "profile_show_saved_addresses",
   "upload_payment_proof","upload_kyc_docs","upload_rider_docs","upload_vendor_docs","upload_product_imgs","upload_cod_proof",
@@ -97,6 +99,11 @@ export const TEXT_KEYS = new Set([
   "security_max_file_mb","security_allowed_types","security_img_quality",
   "security_max_daily_orders","security_new_acct_limit","security_same_addr_limit",
   "gps_mismatch_threshold_m",
+  "cache_settings_ttl_sec","cache_vpn_ttl_min","cache_tor_ttl_min","cache_zone_ttl_min",
+  "jwt_access_ttl_sec","jwt_refresh_ttl_days","jwt_2fa_challenge_sec",
+  "rate_bargain_per_min","rate_booking_per_min","rate_cancel_per_min","rate_estimate_per_min",
+  "geo_default_zone_radius_km",
+  "currency_code","currency_symbol",
   "security_admin_ip_whitelist","security_maintenance_key",
   "fcm_server_key","fcm_project_id","fcm_sender_id","fcm_app_id","fcm_vapid_key",
   "sms_provider","sms_api_key","sms_account_sid","sms_sender_id","sms_msg91_key","sms_template_otp","sms_template_order",
