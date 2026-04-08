@@ -1491,5 +1491,5 @@ All 30+ empty `.catch(() => {})` blocks in the API server now log meaningful mes
 
 #### OTP Notes for Production
 - In production (`NODE_ENV=production`), OTPs are delivered only via WhatsApp or SMS — never in the API response.
-- If SMS/WhatsApp is not configured, users will not receive OTPs. Admin can enable "Dev OTP Mode" (`security_global_dev_otp`) from Admin → Settings → Security for testing.
+- If SMS/WhatsApp is not configured, users will not receive OTPs. In development mode (`NODE_ENV=development`), the OTP is returned in the API response when all delivery channels fail.
 - Production DB currently has 0 users; 1 pending_otp entry (unverified registration attempt).

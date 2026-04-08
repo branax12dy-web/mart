@@ -188,7 +188,6 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   /* Security & API Keys */
   /* ═══════════════════  Security & API  ═══════════════════ */
   /* Auth & Sessions */
-  { key: "security_global_dev_otp",     value: "off",    label: "Global Dev OTP Mode — show OTP in API response (testing only)", category: "security" },
   { key: "security_otp_bypass",        value: "off",    label: "OTP Bypass Mode (Dev Only — DANGER)",        category: "security" },
   { key: "security_mfa_required",      value: "off",    label: "Two-Factor Auth for Admin Login",             category: "security" },
   { key: "security_multi_device",      value: "on",     label: "Allow Multiple Device Logins",                category: "security" },

@@ -659,14 +659,12 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
   }
 
   const isDev = process.env.NODE_ENV !== "production";
-  const userDevOtp = existingUser[0]?.devOtpEnabled === true;
-  const globalDevOtp = settings["security_global_dev_otp"] === "on";
   const isConsoleDelivery = deliveryProvider === "console";
 
   if (!deliverySuccess) {
-    if (isDev || userDevOtp || globalDevOtp) {
+    if (isDev) {
       deliveryChannel = "dev";
-      req.log.warn({ phone }, "All OTP delivery channels failed — returning OTP in dev/devOtp mode");
+      req.log.warn({ phone }, "All OTP delivery channels failed — returning OTP in dev mode");
     } else {
       req.log.error({ phone }, "All OTP delivery channels failed");
       res.status(502).json({ error: "Could not deliver OTP. Please try again or use an alternative login method.", fallbackChannels: availableChannels });
@@ -682,12 +680,9 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     fallbackChannels,
   };
 
-  /* Dev OTP: expose OTP in response when in non-production mode AND any of:
-     - admin enabled devOtpEnabled on this specific user (per-user flag in Users page)
-     - global Dev OTP Mode platform setting is "on" (Security settings in admin)
-     - delivery channel is "dev" (all real channels failed, only dev fallback available)
-     - delivery was via console SMS provider (no real SMS configured — dev environment) */
-  if (isDev && (userDevOtp || globalDevOtp || deliveryChannel === "dev" || isConsoleDelivery)) {
+  /* Dev OTP: expose OTP in response when in non-production mode AND delivery
+     channel is "dev" (all real channels failed) or console SMS provider is used */
+  if (isDev && (deliveryChannel === "dev" || isConsoleDelivery)) {
     response.otp = otp;
     response.devMode = true;
   }
@@ -1567,13 +1562,11 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
 
   addAuditEntry({ action: "email_otp_sent", ip, details: `Email OTP for: ${normalized} (delivered: ${emailResult.sent})`, result: "success" });
 
-  const globalDevOtpEmail = settings["security_global_dev_otp"] === "on";
-  const userDevOtpEmail = user.devOtpEnabled === true;
   const emailConsoleFallback = !emailResult.sent;
   res.json({
     message: "OTP aapki email par bhej diya gaya hai",
     channel: emailResult.sent ? "email" : "console",
-    ...(isDev && (globalDevOtpEmail || userDevOtpEmail || emailConsoleFallback) ? { otp, devMode: true } : {}),
+    ...(isDev && emailConsoleFallback ? { otp, devMode: true } : {}),
   });
 });
 
