@@ -21,8 +21,9 @@ import {
   ensureDefaultRideServices, ensureDefaultLocations, formatSvc,
   type AdminRequest, revokeAllUserSessions,
 } from "../admin-shared.js";
-import { writeAuthAuditLog } from "../../middleware/security.js";
+import { writeAuthAuditLog, signAccessToken } from "../../middleware/security.js";
 import { hashPassword } from "../../services/password.js";
+import { createHash } from "crypto";
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../lib/response.js";
 import { reconcileUserFlags } from "./conditions.js";
 
@@ -472,6 +473,41 @@ router.patch("/users/:id/identity", async (req, res) => {
 router.post("/users/:id/reset-otp", async (req, res) => {
   await db.update(usersTable).set({ otpCode: null, otpExpiry: null, updatedAt: new Date() }).where(eq(usersTable.id, req.params["id"]!));
   sendSuccess(res, { success: true, message: "OTP cleared — user must re-authenticate" });
+});
+
+/* ── POST /admin/users/:id/set-temp-otp — inject a known OTP without SMS ── */
+router.post("/users/:id/set-temp-otp", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const otpHash = createHash("sha256").update(otp).digest("hex");
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db.update(usersTable).set({ otpCode: otpHash, otpExpiry, otpUsed: false, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+
+  const ip = getClientIp(req);
+  const adminReq = req as unknown as AdminRequest;
+  addAuditEntry({ action: "admin_set_temp_otp", ip, adminId: adminReq.adminId, details: `Admin injected temp OTP for user ${userId} (${user.phone})`, result: "success" });
+
+  sendSuccess(res, { otp, expiresAt: otpExpiry.toISOString(), phone: user.phone });
+});
+
+/* ── POST /admin/users/:id/impersonate — generate silent access token ── */
+router.post("/users/:id/impersonate", async (req, res) => {
+  const userId = req.params["id"]!;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { sendNotFound(res, "User not found"); return; }
+
+  const token = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? user.role ?? "customer", user.tokenVersion ?? 0);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  const ip = getClientIp(req);
+  const adminReq = req as unknown as AdminRequest;
+  addAuditEntry({ action: "admin_impersonate", ip, adminId: adminReq.adminId, details: `Admin generated impersonation token for user ${userId} (${user.phone})`, result: "success" });
+
+  sendSuccess(res, { token, expiresAt: expiresAt.toISOString(), userId: user.id, phone: user.phone, name: user.name });
 });
 
 /* ── Force-disable 2FA for a user (admin action) ── */

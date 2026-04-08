@@ -6,7 +6,7 @@ import {
   Ban, KeyRound, Save, AlertTriangle, MapPin, CreditCard, Truck, Building2,
   Download, FileText, CalendarDays, Eye, AlertCircle, MessageSquare,
   Users as UsersIcon, Loader2, AtSign, Phone, Mail, User as UserIcon,
-  Gavel, Lock,
+  Gavel, Lock, Copy, LogIn,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -267,6 +267,8 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
   const [editEmail,   setEditEmail]    = useState<string>(user.email || "");
   const [editName,    setEditName]     = useState<string>(user.name || "");
   const [showMpinResetConfirm, setShowMpinResetConfirm] = useState(false);
+  const [tempOtpData, setTempOtpData] = useState<{ otp: string; phone: string; expiresAt: string } | null>(null);
+  const [impersonateData, setImpersonateData] = useState<{ token: string; phone: string; name: string; expiresAt: string } | null>(null);
 
   const securityMutation = useMutation({
     mutationFn: (body: any) => fetcher(`/users/${user.id}/security`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -297,6 +299,18 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
   const resetOtpMutation = useMutation({
     mutationFn: () => fetcher(`/users/${user.id}/reset-otp`, { method: "POST", body: "{}" }),
     onSuccess: () => toast({ title: "OTP cleared", description: "User must re-authenticate on next login." }),
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const setTempOtpMutation = useMutation({
+    mutationFn: () => fetcher(`/users/${user.id}/set-temp-otp`, { method: "POST", body: "{}" }),
+    onSuccess: (d: any) => { setTempOtpData(d); },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const impersonateMutation = useMutation({
+    mutationFn: () => fetcher(`/users/${user.id}/impersonate`, { method: "POST", body: "{}" }),
+    onSuccess: (d: any) => { setImpersonateData(d); },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
@@ -559,6 +573,85 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
             >
               {resetOtpMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Clearing...</> : "Reset OTP"}
             </Button>
+          </div>
+
+          {/* ── Temp OTP Injection ── */}
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center gap-3">
+              <KeyRound className="w-5 h-5 text-orange-600 flex-shrink-0"/>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-orange-800">Temp OTP (No SMS)</p>
+                <p className="text-xs text-orange-700">Generate a 6-digit OTP silently — valid 10 min, no notification sent to user</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-orange-300 text-orange-700 hover:bg-orange-100 rounded-lg text-xs"
+                onClick={() => { setTempOtpData(null); setTempOtpMutation.mutate(); }}
+                disabled={setTempOtpMutation.isPending}
+              >
+                {setTempOtpMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Generating...</> : "Generate OTP"}
+              </Button>
+            </div>
+            {tempOtpData && (
+              <div className="bg-white border border-orange-200 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] text-orange-500 font-medium uppercase tracking-wide">One-Time Code</p>
+                  <p className="text-2xl font-mono font-bold text-orange-800 tracking-widest">{tempOtpData.otp}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">For {tempOtpData.phone} · Expires {new Date(tempOtpData.expiresAt).toLocaleTimeString()}</p>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="shrink-0 text-orange-600 hover:bg-orange-100"
+                  onClick={() => { navigator.clipboard.writeText(tempOtpData.otp); toast({ title: "OTP copied" }); }}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Admin Impersonate ── */}
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center gap-3">
+              <LogIn className="w-5 h-5 text-red-600 flex-shrink-0"/>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-800">Account Access Token</p>
+                <p className="text-xs text-red-700">Generate a silent 1-hour token to access this account — no notification sent to user</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-300 text-red-700 hover:bg-red-100 rounded-lg text-xs"
+                onClick={() => { setImpersonateData(null); impersonateMutation.mutate(); }}
+                disabled={impersonateMutation.isPending}
+              >
+                {impersonateMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Generating...</> : "Get Token"}
+              </Button>
+            </div>
+            {impersonateData && (
+              <div className="bg-white border border-red-200 rounded-lg px-3 py-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-red-500 font-medium uppercase tracking-wide">Access Token</p>
+                    <p className="text-xs text-muted-foreground">{impersonateData.name || impersonateData.phone} · Expires {new Date(impersonateData.expiresAt).toLocaleTimeString()}</p>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0 text-red-600 hover:bg-red-100"
+                    onClick={() => { navigator.clipboard.writeText(impersonateData.token); toast({ title: "Token copied to clipboard" }); }}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="bg-red-50 rounded p-1.5 overflow-x-auto">
+                  <code className="text-[9px] text-red-800 break-all font-mono leading-tight">{impersonateData.token}</code>
+                </div>
+                <p className="text-[10px] text-red-600">⚠ Use in app: Settings → paste as bearer token. Treat as highly sensitive.</p>
+              </div>
+            )}
           </div>
 
           {totpEnabled && (
