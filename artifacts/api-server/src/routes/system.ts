@@ -18,6 +18,7 @@ import {
   userSettingsTable,
   liveLocationsTable,
   systemSnapshotsTable,
+  demoBackupsTable,
   bannersTable,
   vendorProfilesTable,
   riderProfilesTable,
@@ -1011,7 +1012,110 @@ router.delete("/snapshots/:id", async (req, res) => {
    BACKUP / RESTORE
 ═══════════════════════════════════════════════════════════════════════════ */
 
-/* GET /admin/system/backup */
+/* ─────────────────────────────────────────────────────────────────────────────
+   DEMO BACKUP ENDPOINTS
+   Server-side named snapshots — stored in DB, no file upload/download needed.
+───────────────────────────────────────────────────────────────────────────── */
+
+/* GET /admin/system/demo-backups — list all saved demo backups */
+router.get("/demo-backups", async (_req, res) => {
+  const rows = await db.select({
+    id: demoBackupsTable.id,
+    label: demoBackupsTable.label,
+    rowsTotal: demoBackupsTable.rowsTotal,
+    sizeKb: demoBackupsTable.sizeKb,
+    createdAt: demoBackupsTable.createdAt,
+  }).from(demoBackupsTable).orderBy(demoBackupsTable.createdAt);
+  sendSuccess(res, rows);
+});
+
+/* POST /admin/system/demo-backups — create a new demo backup */
+router.post("/demo-backups", async (req, res) => {
+  const label = (req.body?.label as string | undefined)?.trim() || `Demo Backup ${new Date().toLocaleDateString("ur-PK")}`;
+
+  const [
+    users, orders, rides, pharmacy, parcel, products,
+    walletTx, notifications, reviews, promos, flashDeals,
+    settings, savedAddr, userSettings, banners, vendors, riders,
+  ] = await Promise.all([
+    db.select().from(usersTable),
+    db.select().from(ordersTable),
+    db.select().from(ridesTable),
+    db.select().from(pharmacyOrdersTable),
+    db.select().from(parcelBookingsTable),
+    db.select().from(productsTable),
+    db.select().from(walletTransactionsTable),
+    db.select().from(notificationsTable),
+    db.select().from(reviewsTable),
+    db.select().from(promoCodesTable),
+    db.select().from(flashDealsTable),
+    db.select().from(platformSettingsTable),
+    db.select().from(savedAddressesTable),
+    db.select().from(userSettingsTable),
+    db.select().from(bannersTable),
+    db.select().from(vendorProfilesTable),
+    db.select().from(riderProfilesTable),
+  ]);
+
+  const tables = {
+    users:               users.map(u => ({ ...u, otpCode: undefined, otpExpiry: undefined })),
+    orders, rides,
+    pharmacy_orders:     pharmacy,
+    parcel_bookings:     parcel,
+    products,
+    wallet_transactions: walletTx,
+    notifications,
+    reviews,
+    promo_codes:         promos,
+    flash_deals:         flashDeals,
+    platform_settings:   settings,
+    saved_addresses:     savedAddr,
+    user_settings:       userSettings,
+    banners,
+    vendor_profiles:     vendors,
+    rider_profiles:      riders,
+  };
+
+  const tablesJson = JSON.stringify(tables);
+  const sizeKb = Math.ceil(Buffer.byteLength(tablesJson, "utf8") / 1024);
+  const rowsTotal = Object.values(tables).reduce((s, t) => s + (Array.isArray(t) ? t.length : 0), 0);
+
+  const id = generateId();
+  await db.insert(demoBackupsTable).values({ id, label, tablesJson, rowsTotal, sizeKb });
+
+  sendSuccess(res, { id, label, rowsTotal, sizeKb, createdAt: new Date().toISOString() });
+});
+
+/* POST /admin/system/demo-backups/:id/restore — restore from a demo backup */
+router.post("/demo-backups/:id/restore", async (req, res) => {
+  const { id } = req.params;
+  const row = await db.select().from(demoBackupsTable).where(eq(demoBackupsTable.id, id)).limit(1);
+  if (!row[0]) { sendNotFound(res, "Demo backup not found"); return; }
+
+  const tables = JSON.parse(row[0].tablesJson) as Record<string, any[]>;
+
+  const snap = await snapshotBefore(`Demo Restore: ${row[0].label}`, "demo-restore", Object.keys(TABLE_MAP));
+  const { restored, errors } = await restoreTables(tables);
+
+  res.json({
+    success: errors.length === 0,
+    message: errors.length === 0
+      ? `Restored from demo backup "${row[0].label}" successfully.`
+      : `Restore completed with ${errors.length} error(s).`,
+    restored,
+    errors: errors.length > 0 ? errors : undefined,
+    ...snap,
+  });
+});
+
+/* DELETE /admin/system/demo-backups/:id — delete a demo backup */
+router.delete("/demo-backups/:id", async (req, res) => {
+  const { id } = req.params;
+  await db.delete(demoBackupsTable).where(eq(demoBackupsTable.id, id));
+  sendSuccess(res, { deleted: id });
+});
+
+/* GET /admin/system/backup — full database export as JSON file */
 router.get("/backup", async (_req, res) => {
   const [
     users, orders, rides, pharmacy, parcel, products,

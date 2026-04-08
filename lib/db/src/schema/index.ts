@@ -16,6 +16,7 @@ export * from "./promo_codes";
 export * from "./admin_accounts";
 export * from "./reviews";
 export * from "./system_snapshots";
+export * from "./demo_backups";
 export * from "./ride_service_types";
 export * from "./popular_locations";
 export * from "./school_routes";

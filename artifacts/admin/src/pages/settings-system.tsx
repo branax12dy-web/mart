@@ -4,7 +4,7 @@ import {
   FlaskConical, RotateCcw, Clock, AlertTriangle, Settings,
   Loader2, X, RefreshCw, Plus, UserPlus,
   ShoppingCart, Tag, Zap, ChevronDown, ChevronUp,
-  Wrench, Shield, FileSpreadsheet, Calendar,
+  Wrench, Shield, FileSpreadsheet, Calendar, BookCopy, Save, RotateCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -42,6 +42,15 @@ export function SystemSection() {
 
   const [showOldActions, setShowOldActions] = useState(false);
 
+  type DemoBackupMeta = { id: string; label: string; rowsTotal: number; sizeKb: number; createdAt: string };
+  const [demoBackups, setDemoBackups] = useState<DemoBackupMeta[]>([]);
+  const [demoBackupsLoading, setDemoBackupsLoading] = useState(true);
+  const [newBackupLabel, setNewBackupLabel] = useState("");
+  const [demoSaving, setDemoSaving] = useState(false);
+  const [demoRestoring, setDemoRestoring] = useState<string | null>(null);
+  const [demoDeleting, setDemoDeleting] = useState<string | null>(null);
+  const [confirmDemoRestore, setConfirmDemoRestore] = useState<DemoBackupMeta | null>(null);
+
   useEffect(() => {
     const t = setInterval(() => {
       const ts = Date.now();
@@ -74,6 +83,7 @@ export function SystemSection() {
 
   useEffect(() => {
     loadStats();
+    loadDemoBackups();
     apiFetch("/snapshots").then(data => {
       if (data?.snapshots?.length) {
         setPendingUndos(data.snapshots.map((s: any) => ({
@@ -176,6 +186,55 @@ export function SystemSection() {
       toast({ title: "Restore failed", description: e.message, variant: "destructive" });
     }
     setActionLoading(null);
+  };
+
+  const loadDemoBackups = useCallback(async () => {
+    setDemoBackupsLoading(true);
+    try {
+      const data = await apiFetch("/demo-backups");
+      setDemoBackups(data.data ?? data);
+    } catch {}
+    setDemoBackupsLoading(false);
+  }, [adminSecret]);
+
+  const handleSaveDemoBackup = async () => {
+    const label = newBackupLabel.trim() || `Demo Backup ${new Date().toLocaleDateString("en-PK")}`;
+    setDemoSaving(true);
+    try {
+      await apiFetch("/demo-backups", { method: "POST", body: JSON.stringify({ label }) });
+      toast({ title: "Demo backup saved!", description: `"${label}" saved to server.` });
+      setNewBackupLabel("");
+      await loadDemoBackups();
+    } catch (e: any) {
+      toast({ title: "Backup failed", description: e.message, variant: "destructive" });
+    }
+    setDemoSaving(false);
+  };
+
+  const handleRestoreDemoBackup = async (backup: DemoBackupMeta) => {
+    setDemoRestoring(backup.id);
+    setConfirmDemoRestore(null);
+    try {
+      const data = await apiFetch(`/demo-backups/${backup.id}/restore`, { method: "POST" });
+      toast({ title: "Restored!", description: `"${backup.label}" restored. Undo available for 30 min.` });
+      addUndoFromResponse(data, `Demo Restore: ${backup.label}`);
+      await loadStats();
+    } catch (e: any) {
+      toast({ title: "Restore failed", description: e.message, variant: "destructive" });
+    }
+    setDemoRestoring(null);
+  };
+
+  const handleDeleteDemoBackup = async (id: string, label: string) => {
+    setDemoDeleting(id);
+    try {
+      await apiFetch(`/demo-backups/${id}`, { method: "DELETE" });
+      toast({ title: "Deleted", description: `"${label}" deleted.` });
+      setDemoBackups(prev => prev.filter(b => b.id !== id));
+    } catch (e: any) {
+      toast({ title: "Delete failed", description: e.message, variant: "destructive" });
+    }
+    setDemoDeleting(null);
   };
 
   const handleOldAction = async (endpoint: string, label: string) => {
@@ -653,6 +712,100 @@ export function SystemSection() {
             </label>
           </div>
         </div>
+      </div>
+
+      {/* ── Demo Backup & Restore ── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <BookCopy size={15} className="text-indigo-500" />
+          <p className="font-semibold text-sm text-slate-700">Demo Data Snapshots</p>
+          <span className="ml-auto text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">Server-side</span>
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3">Save the current database state as a named snapshot. Restore anytime in one click — no file upload needed.</p>
+
+        {/* Save new demo backup */}
+        <div className="flex gap-2 mb-4">
+          <input
+            value={newBackupLabel}
+            onChange={e => setNewBackupLabel(e.target.value)}
+            placeholder="Snapshot name (e.g. Clean Demo State)"
+            className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            onKeyDown={e => { if (e.key === "Enter" && !demoSaving) handleSaveDemoBackup(); }}
+          />
+          <button
+            onClick={handleSaveDemoBackup}
+            disabled={demoSaving}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all disabled:opacity-60 shrink-0">
+            {demoSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {demoSaving ? "Saving..." : "Save Snapshot"}
+          </button>
+        </div>
+
+        {/* List of saved demo backups */}
+        {demoBackupsLoading ? (
+          <div className="flex items-center justify-center py-6 text-slate-400">
+            <Loader2 size={18} className="animate-spin mr-2" /> Loading snapshots...
+          </div>
+        ) : demoBackups.length === 0 ? (
+          <div className="border border-dashed border-slate-200 rounded-xl py-6 text-center text-[12px] text-slate-400">
+            No demo snapshots saved yet. Save one above to get started.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {demoBackups.map(b => (
+              <div key={b.id} className="border border-indigo-100 bg-indigo-50/50 rounded-xl px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm text-slate-800 truncate">{b.label}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {b.rowsTotal.toLocaleString()} rows · {b.sizeKb} KB · {new Date(b.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setConfirmDemoRestore(b)}
+                  disabled={!!demoRestoring || !!demoDeleting}
+                  title="Restore this snapshot"
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 shrink-0">
+                  {demoRestoring === b.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
+                  {demoRestoring === b.id ? "Restoring..." : "Restore"}
+                </button>
+                <button
+                  onClick={() => handleDeleteDemoBackup(b.id, b.label)}
+                  disabled={!!demoDeleting || !!demoRestoring}
+                  title="Delete this snapshot"
+                  className="flex items-center gap-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50 shrink-0">
+                  {demoDeleting === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Confirm restore dialog */}
+        {confirmDemoRestore && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={18} className="text-amber-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-slate-800">Restore Demo Snapshot?</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">This will overwrite current data with "{confirmDemoRestore.label}". Undo available for 30 min.</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDemoRestore(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold py-2 rounded-xl transition-all">
+                  Cancel
+                </button>
+                <button onClick={() => handleRestoreDemoBackup(confirmDemoRestore)}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold py-2 rounded-xl transition-all">
+                  Yes, Restore
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div>
