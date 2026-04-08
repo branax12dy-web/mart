@@ -1218,7 +1218,7 @@ router.post("/vendor-register", async (req, res) => {
     return;
   }
 
-  const { storeName, storeCategory, name, cnic, address, city, bankName, bankAccount, bankAccountTitle, username } = req.body;
+  const { storeName, storeCategory, name, cnic, address, city, bankName, bankAccount, bankAccountTitle, username, acceptedTermsVersion } = req.body;
   if (!storeName) {
     res.status(400).json({ error: "Store name is required" });
     return;
@@ -1281,8 +1281,19 @@ router.post("/vendor-register", async (req, res) => {
     bankAccountTitle: bankAccountTitle || user.bankAccountTitle || null,
     approvalStatus: autoApprove ? "approved" : "pending",
     isActive: autoApprove ? true : false,
+    ...(acceptedTermsVersion ? { acceptedTermsVersion: String(acceptedTermsVersion) } : {}),
     updatedAt: new Date(),
   }).where(eq(usersTable.id, user.id));
+
+  if (acceptedTermsVersion) {
+    try {
+      const ip = getClientIp(req);
+      await db.execute(sql`
+        INSERT INTO consent_log (id, user_id, consent_type, consent_version, ip_address, created_at)
+        VALUES (${generateId()}, ${user.id}, 'terms_acceptance', ${String(acceptedTermsVersion)}, ${ip}, NOW())
+      `);
+    } catch {}
+  }
 
   await db.insert(notificationsTable).values({
     id: generateId(),
@@ -2299,10 +2310,21 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   }
 
   const normalizedPhone = canonicalizePhone(phone);
-  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
-  if (existing) {
-    res.status(409).json({ error: "An account with this phone number already exists" });
-    return;
+  const [existingReg] = await db.select().from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
+  if (existingReg) {
+    /* Allow re-registration only if the account is pending approval AND phone was never OTP-verified.
+       This covers the case where a rider went back during registration and is retrying with the same number. */
+    const canOverwrite = existingReg.approvalStatus === "pending" && !existingReg.phoneVerified;
+    if (!canOverwrite) {
+      /* Verified or approved account — guide user to login instead */
+      const friendly = existingReg.phoneVerified
+        ? "An account with this phone number already exists. Please log in instead."
+        : "An account with this phone number is already pending approval. Please log in to check your status.";
+      res.status(409).json({ error: friendly, existingAccount: true });
+      return;
+    }
+    /* Stale unverified pending record — delete and allow fresh registration */
+    await db.delete(usersTable).where(eq(usersTable.id, existingReg.id));
   }
 
   if (email) {
@@ -2333,6 +2355,14 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   const autoApproveVendor = userRole === "vendor" && settings["vendor_auto_approve"] === "on";
   const needsApproval = requireApproval && !autoApproveRider && !autoApproveVendor;
 
+  /* ── OTP bypass detection — mirrors send-otp bypass logic ──────────────── */
+  const otpGlobalBypass = settings["security_otp_bypass"] === "on";
+  const otpGlobalDisabledUntilStr = settings["otp_global_disabled_until"];
+  const otpTimedBypass = otpGlobalDisabledUntilStr
+    ? new Date(otpGlobalDisabledUntilStr) > new Date()
+    : false;
+  const otpBypassed = otpGlobalBypass || otpTimedBypass;
+
   const otp = generateSecureOtp();
   const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
   const userId = generateId();
@@ -2359,6 +2389,8 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     otpCode: hashOtp(otp),
     otpExpiry,
     otpUsed: false,
+    /* When OTP is bypassed, mark the phone as verified immediately */
+    phoneVerified: otpBypassed,
     walletBalance: "0",
     isActive: !needsApproval,
     approvalStatus: needsApproval ? "pending" : "approved",
@@ -2381,6 +2413,43 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     ntn: ntn || null,
   });
 
+  writeAuthAuditLog("register", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone: normalizedPhone, role: userRole } });
+  emitWebhookEvent("user_registered", { userId, phone: normalizedPhone, role: userRole, method: "username_password" }).catch(() => {});
+
+  /* ── OTP bypass: skip delivery; issue tokens when account is immediately active ── */
+  if (otpBypassed) {
+    writeAuthAuditLog("register_otp_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone: normalizedPhone, role: userRole } });
+    if (!needsApproval) {
+      /* Account auto-approved and active — issue access + refresh tokens now */
+      const accessToken = signAccessToken(userId, normalizedPhone, userRole, userRole, 0);
+      const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
+      await db.insert(refreshTokensTable).values({
+        id: generateId(), userId, tokenHash: refreshHash, authMethod: "register_otp_bypass",
+        expiresAt: new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000),
+      });
+      res.status(201).json({
+        message: "Registration successful.",
+        userId, role: userRole,
+        pendingApproval: false,
+        otpRequired: false,
+        channel: "bypass",
+        token: accessToken,
+        refreshToken: refreshRaw,
+        expiresAt: new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
+      });
+    } else {
+      /* Needs approval — no token yet, flag as pending */
+      res.status(201).json({
+        message: "Registration submitted. Your account is pending admin approval.",
+        userId, role: userRole,
+        pendingApproval: true,
+        otpRequired: false,
+        channel: "bypass",
+      });
+    }
+    return;
+  }
+
   const registerLang = await getUserLanguage(userId);
   const smsResult = await sendOtpSMS(normalizedPhone, otp, settings, registerLang);
   if (settings["integration_whatsapp"] === "on") {
@@ -2389,15 +2458,13 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     );
   }
 
-  writeAuthAuditLog("register", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone: normalizedPhone, role: userRole } });
-  emitWebhookEvent("user_registered", { userId, phone: normalizedPhone, role: userRole, method: "username_password" }).catch(() => {});
-
   const isDev = process.env.NODE_ENV !== "production";
   res.status(201).json({
     message: "Registration successful. Please verify your phone with the OTP sent.",
     userId,
     role: userRole,
     pendingApproval: needsApproval,
+    otpRequired: true,
     channel: smsResult.sent ? smsResult.provider : "console",
   });
 });

@@ -152,6 +152,11 @@ export interface PlatformConfig {
     currencySymbol?: string;
     countryCode?: string;
   };
+  compliance?: {
+    termsVersion?: string;
+    privacyVersion?: string;
+    minAppVersion?: string;
+  };
 }
 
 const DEFAULT_CONFIG: PlatformConfig = {

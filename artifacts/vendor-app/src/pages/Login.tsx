@@ -128,6 +128,7 @@ export default function Login() {
   const regUsernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regUsernameAbort = useRef<AbortController | null>(null);
   const checkIdentifierAbort = useRef<AbortController | null>(null);
+  const [regTermsAccepted, setRegTermsAccepted] = useState(false);
 
   const [magicLinkEmail, setMagicLinkEmail] = useState("");
 
@@ -547,8 +548,21 @@ export default function Login() {
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(regPhone);
-      if (res.otpRequired === false && res.token) {
-        api.storeTokens(res.token, res.refreshToken);
+      if (res.otpRequired === false) {
+        /* OTP globally disabled — skip OTP step entirely.
+           If no token was returned (new user bypass), call verify-otp immediately
+           with a dummy code to create the provisional user record and get a token.
+           verify-otp global bypass accepts any code. */
+        if (res.token) {
+          api.storeTokens(res.token, res.refreshToken);
+        } else {
+          try {
+            const verifyRes = await api.verifyOtp(regPhone, "000000");
+            if (verifyRes.token) api.storeTokens(verifyRes.token, verifyRes.refreshToken);
+          } catch {
+            /* If verify-otp fails, still proceed — vendor-register will give auth error */
+          }
+        }
         setStep("register-info");
         setLoading(false); return;
       }
@@ -576,9 +590,11 @@ export default function Login() {
     if (!regUsername || regUsername.length < 3) { setError("Username is required (min 3 characters)"); return; }
     if (regUsernameStatus === "taken") { setError("Username is already taken"); return; }
     if (regUsernameStatus !== "available") { setError("Please wait for username availability check"); return; }
+    if (!regTermsAccepted) { setError("Please accept the Terms & Conditions to continue"); return; }
     setLoading(true); clearError();
     try {
-      const res = await api.vendorRegister({ phone: regPhone, ...regForm, username: regUsername.trim() });
+      const termsVersion = config.compliance?.termsVersion;
+      const res = await api.vendorRegister({ phone: regPhone, ...regForm, username: regUsername.trim(), ...(termsVersion && { acceptedTermsVersion: termsVersion }) });
       if (res.status === "approved") {
         setStep("input");
         setError("Your vendor account is already approved! Please log in.");
@@ -854,6 +870,26 @@ export default function Login() {
                       </div>
                     </div>
                   </div>
+
+                  <label className="flex items-start gap-3 mt-4 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={regTermsAccepted}
+                      onChange={e => setRegTermsAccepted(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-orange-500 flex-shrink-0 cursor-pointer"
+                    />
+                    <span className="text-xs text-gray-500 leading-relaxed">
+                      I have read and agree to the{" "}
+                      {config.content.tncUrl ? (
+                        <a href={config.content.tncUrl} target="_blank" rel="noopener noreferrer" className="text-orange-500 font-semibold hover:underline">Terms & Conditions</a>
+                      ) : (
+                        <span className="text-orange-500 font-semibold">Terms & Conditions</span>
+                      )}
+                      {config.content.privacyUrl ? (
+                        <> and <a href={config.content.privacyUrl} target="_blank" rel="noopener noreferrer" className="text-orange-500 font-semibold hover:underline">Privacy Policy</a></>
+                      ) : null}
+                    </span>
+                  </label>
                 </>
               )}
 
@@ -882,7 +918,7 @@ export default function Login() {
               )}
 
               {step === "register-info" && (
-                <button onClick={submitRegistration} disabled={loading || !regForm.storeName.trim() || !regForm.name.trim()}
+                <button onClick={submitRegistration} disabled={loading || !regForm.storeName.trim() || !regForm.name.trim() || !regTermsAccepted}
                   className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-base mt-4">
                   {loading ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Submitting...</> : "Submit Application ✓"}
                 </button>

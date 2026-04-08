@@ -266,14 +266,17 @@ export default function RegisterScreen() {
         setLoading(false);
         return;
       }
-      if (sendOtpData.otpRequired === false && sendOtpData.token) {
-        setAuthToken(sendOtpData.token);
-        if (sendOtpData.refreshToken) setAuthRefreshToken(sendOtpData.refreshToken);
-        if (sendOtpData.user) setAuthUser(sendOtpData.user);
-        try {
-          const SecureStore = await import("expo-secure-store");
-          await SecureStore.setItemAsync("ajkmart_reg_token", sendOtpData.token);
-        } catch {}
+      if (sendOtpData.otpRequired === false) {
+        /* OTP is globally disabled by admin — skip OTP step entirely */
+        if (sendOtpData.token) {
+          setAuthToken(sendOtpData.token);
+          if (sendOtpData.refreshToken) setAuthRefreshToken(sendOtpData.refreshToken);
+          if (sendOtpData.user) setAuthUser(sendOtpData.user);
+          try {
+            const SecureStore = await import("expo-secure-store");
+            await SecureStore.setItemAsync("ajkmart_reg_token", sendOtpData.token);
+          } catch {}
+        }
         setStep(2);
         setLoading(false);
         return;
@@ -281,8 +284,8 @@ export default function RegisterScreen() {
       if (sendOtpData.otp) setDevOtp(sendOtpData.otp);
       setResendCooldown(60);
       setOtpSent(true);
-    } catch (e: any) {
-      setError(e.message || "Could not send OTP.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not send OTP.");
     }
     setLoading(false);
   };
@@ -364,6 +367,7 @@ export default function RegisterScreen() {
         return;
       }
 
+      const termsVersion = config.compliance?.termsVersion || "";
       const profileRes = await fetch(`${API}/auth/complete-profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${activeToken}` },
@@ -378,6 +382,7 @@ export default function RegisterScreen() {
           ...(latitude && { latitude }),
           ...(longitude && { longitude }),
           password,
+          ...(termsVersion && { acceptedTermsVersion: termsVersion }),
         }),
       });
       const profileData = await profileRes.json();

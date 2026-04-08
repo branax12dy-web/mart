@@ -111,6 +111,15 @@ async function attemptTokenRefresh(): Promise<RefreshResult> {
 
 type RefreshResult = "refreshed" | "auth_failed" | "transient";
 
+export interface ApiError extends Error {
+  status?: number;
+  responseData?: { existingAccount?: boolean; [key: string]: unknown };
+}
+
+export function isApiError(e: unknown): e is ApiError {
+  return e instanceof Error && ("status" in e || "responseData" in e);
+}
+
 async function _doRefresh(): Promise<RefreshResult> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return "auth_failed";

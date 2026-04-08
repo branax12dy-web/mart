@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { api } from "../lib/api";
+import { api, isApiError } from "../lib/api";
 import { usePlatformConfig, getRiderAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -111,6 +111,7 @@ export default function Register() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [existingAccountError, setExistingAccountError] = useState(false);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -153,7 +154,7 @@ export default function Register() {
   const availabilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [availabilityStatus, setAvailabilityStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
 
-  const clearError = () => setError("");
+  const clearError = () => { setError(""); setExistingAccountError(false); };
 
   const handleFileUpload = useCallback(async (file: File, field: string, setter: (doc: UploadedDoc) => void) => {
     setUploadingField(field);
@@ -360,22 +361,40 @@ export default function Register() {
         } else {
           try {
             const res = await api.registerRider(regData);
-            if (res.otpRequired === false && res.token) {
-              api.storeTokens(res.token, res.refreshToken);
-              if (res.pendingApproval) {
+            if (res.otpRequired === false) {
+              /* OTP globally bypassed by admin — skip Step 4 */
+              if (res.token) {
+                api.storeTokens(res.token, res.refreshToken);
+                if (res.pendingApproval) {
+                  setCompleted(true);
+                  setLoading(false); return;
+                }
+                let profile: AuthUser | null = res.user ?? null;
+                if (!profile) {
+                  try { profile = await api.getMe() as AuthUser; } catch { api.clearTokens(); setCompleted(true); setLoading(false); return; }
+                }
+                authLogin(res.token, profile!, res.refreshToken);
+                navigate("/");
+              } else {
+                /* No token yet — pending OTP-less registration (needs approval) */
                 setCompleted(true);
-                setLoading(false); return;
               }
-              let profile: AuthUser | null = res.user ?? null;
-              if (!profile) {
-                try { profile = await api.getMe() as AuthUser; } catch { api.clearTokens(); setCompleted(true); setLoading(false); return; }
-              }
-              authLogin(res.token, profile!, res.refreshToken);
-              navigate("/");
               setLoading(false); return;
             }
             setDevOtp(res.otp || "");
-          } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); setLoading(false); return; }
+          } catch (e: unknown) {
+            const err = e instanceof Error ? e : new Error(T("loginFailed"));
+            const apiErr = isApiError(e) ? e : null;
+            const isExisting = apiErr?.status === 409 || apiErr?.responseData?.existingAccount === true;
+            if (isExisting) {
+              /* Account already exists — show friendly message with login link */
+              setError(err.message || T("alreadyRegistered"));
+              setExistingAccountError(true);
+              setLoading(false); return;
+            }
+            setError(err.message);
+            setLoading(false); return;
+          }
         }
         setStep(4);
       } catch (e: unknown) { setError(e instanceof Error ? e.message : T("loginFailed")); }
@@ -839,7 +858,16 @@ export default function Register() {
             </div>
           )}
 
-          {error && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          {error && (
+            <div className="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <p className="text-red-600 text-sm">{error}</p>
+              {existingAccountError && (
+                <Link href="/" className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-gray-900 underline underline-offset-2 hover:text-gray-700">
+                  <ArrowLeft size={13} /> {T("goToLogin")}
+                </Link>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-2 mt-5">
             {step > 1 && (

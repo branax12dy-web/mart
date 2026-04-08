@@ -181,7 +181,7 @@ export const api = {
   refreshToken: () => attemptTokenRefresh(),
   checkAvailable: (data: { phone?: string; email?: string; username?: string }, signal?: AbortSignal) =>
     apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data), signal }),
-  vendorRegister: (data: { phone: string; storeName: string; storeCategory?: string; name?: string; cnic?: string; address?: string; city?: string; bankName?: string; bankAccount?: string; bankAccountTitle?: string; username?: string }) =>
+  vendorRegister: (data: { phone: string; storeName: string; storeCategory?: string; name?: string; cnic?: string; address?: string; city?: string; bankName?: string; bankAccount?: string; bankAccountTitle?: string; username?: string; acceptedTermsVersion?: string }) =>
     apiFetch("/auth/vendor-register", { method: "POST", body: JSON.stringify(data) }),
   socialGoogle: (data: { idToken: string }) =>
     apiFetch("/auth/social/google", { method: "POST", body: JSON.stringify({ ...data, role: "vendor" }) }),
