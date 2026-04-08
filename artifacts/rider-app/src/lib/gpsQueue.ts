@@ -34,15 +34,25 @@ const DISMISSED_TTL_MS = 90_000;
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: "id" });
-        store.createIndex("timestamp", "timestamp", { unique: false });
+      const tx = (event.target as IDBOpenDBRequest).transaction;
+      if (tx) {
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error ?? new Error("IndexedDB upgrade aborted"));
       }
-      if (!db.objectStoreNames.contains(DISMISSED)) {
-        const ds = db.createObjectStore(DISMISSED, { keyPath: "id" });
-        ds.createIndex("expiresAt", "expiresAt", { unique: false });
+      try {
+        if (!db.objectStoreNames.contains(STORE)) {
+          const store = db.createObjectStore(STORE, { keyPath: "id" });
+          store.createIndex("timestamp", "timestamp", { unique: false });
+        }
+        if (!db.objectStoreNames.contains(DISMISSED)) {
+          const ds = db.createObjectStore(DISMISSED, { keyPath: "id" });
+          ds.createIndex("expiresAt", "expiresAt", { unique: false });
+        }
+      } catch (e) {
+        if (tx) tx.abort();
+        reject(e);
       }
     };
     req.onsuccess = () => resolve(req.result);

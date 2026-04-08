@@ -274,7 +274,11 @@ export default function Home() {
         clearInterval(soundIntervalRef.current);
         soundIntervalRef.current = null;
       }
-    } else if (hasUnseenRequestsRef.current && !soundIntervalRef.current) {
+    } else if (hasUnseenRequestsRef.current) {
+      if (soundIntervalRef.current) {
+        clearInterval(soundIntervalRef.current);
+        soundIntervalRef.current = null;
+      }
       soundIntervalRef.current = setInterval(() => {
         if (
           hasUnseenRequestsRef.current &&

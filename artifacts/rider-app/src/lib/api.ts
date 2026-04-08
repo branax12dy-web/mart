@@ -271,7 +271,7 @@ export const api = {
     address?: string; city?: string; emergencyContact?: string;
     vehiclePlate?: string; vehiclePhoto?: string; documents?: string;
   }) =>
-    apiFetch("/auth/email-register", { method: "POST", body: JSON.stringify({ ...data, role: "rider" }) }),
+    apiFetch("/auth/email-register", { method: "POST", body: JSON.stringify({ ...data, role: "rider", vehicleRegNo: data.vehicleRegistration }) }),
   uploadFile: (data: { file: string; filename?: string; mimeType?: string }) =>
     apiFetch("/uploads", { method: "POST", body: JSON.stringify(data) }),
   /* Multipart/form-data upload — avoids large base64 payload; used for delivery proof.

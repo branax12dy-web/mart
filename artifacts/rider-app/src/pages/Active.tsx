@@ -64,11 +64,12 @@ function useRiderTileConfig() {
 
 function AutoFitMap({ positions }: { positions: [number, number][] }) {
   const map = useMap();
+  const validPositions = positions.filter(p => p != null && p[0] != null && p[1] != null);
   useEffect(() => {
-    if (!positions.length) return;
-    if (positions.length === 1) { map.setView(positions[0]!, 15); return; }
-    map.fitBounds(L.latLngBounds(positions), { padding: [30, 30], maxZoom: 16 });
-  }, [positions.map(p => p.join(",")).join("|")]);
+    if (!validPositions.length) return;
+    if (validPositions.length === 1) { map.setView(validPositions[0]!, 15); return; }
+    map.fitBounds(L.latLngBounds(validPositions), { padding: [30, 30], maxZoom: 16 });
+  }, [validPositions.map(p => p.join(",")).join("|")]);
   return null;
 }
 
@@ -214,8 +215,9 @@ function SkeletonActive() {
 function useElapsedTimer(startIso?: string | null) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    if (!startIso) return;
+    if (!startIso) { setElapsed(0); return; }
     const base = new Date(startIso).getTime();
+    if (isNaN(base)) { setElapsed(0); return; }
     const tick = () => setElapsed(Math.floor((Date.now() - base) / 1000));
     tick();
     const id = setInterval(tick, 1000);
