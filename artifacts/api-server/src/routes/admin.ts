@@ -24,6 +24,7 @@ import experimentsRoutes from "./admin/experiments.js";
 import webhookRegistrationsRoutes from "./admin/webhook-registrations.js";
 import deepLinksRoutes from "./admin/deep-links.js";
 import releaseNotesRoutes from "./admin/release-notes.js";
+import launchRoutes, { ensureLaunchData } from "./admin/launch.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -46,6 +47,8 @@ export {
   ensureDefaultLocations,
   type AdminRequest,
 } from "./admin-shared.js";
+
+export { ensureLaunchData };
 
 const router: IRouter = Router();
 
@@ -76,5 +79,6 @@ router.use(experimentsRoutes);
 router.use(webhookRegistrationsRoutes);
 router.use(deepLinksRoutes);
 router.use(releaseNotesRoutes);
+router.use("/launch", launchRoutes);
 
 export default router;

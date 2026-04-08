@@ -72,6 +72,19 @@ router.post("/orders", async (req, res) => {
 
 router.get("/orders", async (req, res) => {
   const { status, type, limit: lim } = req.query;
+  const settings = await getCachedSettings();
+  const isDemoMode = (settings["platform_mode"] ?? "demo") === "demo";
+
+  if (isDemoMode) {
+    const { getDemoSnapshot } = await import("../../lib/demo-snapshot.js");
+    const snap = await getDemoSnapshot();
+    const filtered = snap.orders
+      .filter(o => !status || o.status === status)
+      .filter(o => !type   || o.type   === type);
+    sendSuccess(res, { orders: filtered, total: filtered.length, isDemo: true });
+    return;
+  }
+
   const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(Number(lim) || 200);
 
   const filtered = orders
@@ -86,6 +99,7 @@ router.get("/orders", async (req, res) => {
       updatedAt: o.updatedAt.toISOString(),
     })),
     total: filtered.length,
+    isDemo: false,
   });
 });
 

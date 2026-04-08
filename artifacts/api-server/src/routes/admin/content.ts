@@ -27,6 +27,16 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError 
 
 const router = Router();
 router.get("/products", async (_req, res) => {
+  const settings = await getCachedSettings();
+  const isDemoMode = (settings["platform_mode"] ?? "demo") === "demo";
+
+  if (isDemoMode) {
+    const { getDemoSnapshot } = await import("../../lib/demo-snapshot.js");
+    const snap = await getDemoSnapshot();
+    sendSuccess(res, { products: snap.products, total: snap.products.length, isDemo: true });
+    return;
+  }
+
   const products = await db.select().from(productsTable).orderBy(desc(productsTable.createdAt));
   sendSuccess(res, {
     products: products.map(p => ({
@@ -37,6 +47,7 @@ router.get("/products", async (_req, res) => {
       createdAt: p.createdAt.toISOString(),
     })),
     total: products.length,
+    isDemo: false,
   });
 });
 

@@ -58,6 +58,7 @@ import QrCodes from "@/pages/qr-codes";
 import Experiments from "@/pages/experiments";
 import WebhookManager from "@/pages/webhook-manager";
 import DeepLinks from "@/pages/deep-links";
+import LaunchControl from "@/pages/launch-control";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -184,6 +185,7 @@ function Router() {
       <Route path="/experiments"><ProtectedRoute component={Experiments} /></Route>
       <Route path="/webhooks"><ProtectedRoute component={WebhookManager} /></Route>
       <Route path="/deep-links"><ProtectedRoute component={DeepLinks} /></Route>
+      <Route path="/launch-control"><ProtectedRoute component={LaunchControl} /></Route>
 
       <Route component={NotFound} />
     </Switch>

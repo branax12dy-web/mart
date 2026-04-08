@@ -67,6 +67,16 @@ router.get("/transactions-enriched", async (_req, res) => {
 
 /* ── Vendors list ── */
 router.get("/vendors", async (_req, res) => {
+  const settings = await getCachedSettings();
+  const isDemoMode = (settings["platform_mode"] ?? "demo") === "demo";
+
+  if (isDemoMode) {
+    const { getDemoSnapshot } = await import("../../lib/demo-snapshot.js");
+    const snap = await getDemoSnapshot();
+    sendSuccess(res, { vendors: snap.vendors, total: snap.vendors.length, isDemo: true });
+    return;
+  }
+
   const vendors = await db.select({
     id: usersTable.id, phone: usersTable.phone, name: usersTable.name,
     email: usersTable.email, roles: usersTable.roles,
@@ -189,6 +199,16 @@ router.post("/vendors/:id/credit", async (req, res) => {
    RIDER MANAGEMENT
 ══════════════════════════════════════ */
 router.get("/riders", async (_req, res) => {
+  const settings = await getCachedSettings();
+  const isDemoMode = (settings["platform_mode"] ?? "demo") === "demo";
+
+  if (isDemoMode) {
+    const { getDemoSnapshot } = await import("../../lib/demo-snapshot.js");
+    const snap = await getDemoSnapshot();
+    sendSuccess(res, { riders: snap.riders, total: snap.riders.length, isDemo: true });
+    return;
+  }
+
   const riders = await db.select().from(usersTable).where(
     ilike(usersTable.roles, "%rider%")
   ).orderBy(desc(usersTable.createdAt));

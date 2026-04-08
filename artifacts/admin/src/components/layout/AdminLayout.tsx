@@ -48,6 +48,7 @@ import {
   FlaskConical,
   Webhook,
   Link2,
+  Rocket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -155,6 +156,7 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: "navConfig",
     color: "#F59E0B",
     items: [
+      { nameKey: "navLaunchControl" as TranslationKey, href: "/launch-control", icon: Rocket },
       { nameKey: "navSettings",        href: "/settings",       icon: Settings2 },
       { nameKey: "navFeatureToggles",  href: "/app-management", icon: ToggleLeft },
       { nameKey: "navDeliveryAccess",  href: "/delivery-access", icon: Truck },

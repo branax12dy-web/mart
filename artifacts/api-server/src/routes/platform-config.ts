@@ -13,6 +13,13 @@ const router: IRouter = Router();
 // Public endpoint — all client apps fetch this for config + feature flags
 router.get("/", async (req, res) => {
   const s = await getPlatformSettings();
+  const isDemoMode = s["platform_mode"] !== "live";
+  let demoData: { vendors: unknown[]; orders: unknown[]; riders: unknown[]; products: unknown[]; source: string } | null = null;
+  if (isDemoMode) {
+    const { getDemoSnapshot } = await import("../lib/demo-snapshot.js");
+    const snap = await getDemoSnapshot();
+    demoData = { vendors: snap.vendors, orders: snap.orders, riders: snap.riders, products: snap.products, source: snap.source };
+  }
 
   const jazzcashEnabled  = (s["jazzcash_enabled"]  ?? "off") === "on";
   const easypaisaEnabled = (s["easypaisa_enabled"] ?? "off") === "on";
@@ -386,6 +393,7 @@ router.get("/", async (req, res) => {
       cacheTtlSec:      parseInt(s["system_cache_ttl_sec"]     ?? "300", 10),
       jsonBodyLimit:    s["system_json_body_limit"]             ?? "256kb",
       uploadSizeLimit:  s["system_upload_size_limit"]           ?? "10mb",
+      platformMode:     (s["platform_mode"] === "live" ? "live" : "demo") as "demo" | "live",
     },
     network: {
       apiTimeoutMs:              parseInt(s["api_timeout_ms"]                ?? "30000", 10),
@@ -482,6 +490,7 @@ router.get("/", async (req, res) => {
         return assignments;
       } catch { return []; }
     })(),
+    demoData,
   });
 });
 
