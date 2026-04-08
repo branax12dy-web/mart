@@ -23,6 +23,7 @@ import userAddressesRoutes from "./admin/user-addresses.js";
 import experimentsRoutes from "./admin/experiments.js";
 import webhookRegistrationsRoutes from "./admin/webhook-registrations.js";
 import deepLinksRoutes from "./admin/deep-links.js";
+import releaseNotesRoutes from "./admin/release-notes.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -36,6 +37,7 @@ export {
   ensureVendorLocationColumns,
   ensureVanServiceUpgrade,
   ensureWalletP2PColumns,
+  ensureComplianceTables,
   getPlatformSettings,
   getAdminSecret,
   adminAuth,
@@ -73,5 +75,6 @@ router.use(userAddressesRoutes);
 router.use(experimentsRoutes);
 router.use(webhookRegistrationsRoutes);
 router.use(deepLinksRoutes);
+router.use(releaseNotesRoutes);
 
 export default router;

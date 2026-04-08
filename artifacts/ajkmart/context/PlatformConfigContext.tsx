@@ -213,6 +213,19 @@ export interface PlatformConfig {
     parcel?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
     van?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
   };
+  compliance: {
+    minAppVersion: string;
+    termsVersion:  string;
+    appStoreUrl:   string;
+    playStoreUrl:  string;
+  };
+  releaseNotes: Array<{
+    id:          string;
+    version:     string;
+    releaseDate: string;
+    notes:       string[];
+    sortOrder:   number;
+  }>;
 }
 
 const DEFAULT: PlatformConfig = {
@@ -333,6 +346,13 @@ const DEFAULT: PlatformConfig = {
     riderGpsQueueMax: 500,
     riderDismissedRequestTtlSec: 90,
   },
+  compliance: {
+    minAppVersion: "1.0.0",
+    termsVersion:  "1.0",
+    appStoreUrl:   "",
+    playStoreUrl:  "",
+  },
+  releaseNotes: [],
 };
 
 function isMethodEnabled(val: boolean | Record<string, boolean> | undefined | null, role = "customer"): boolean {
@@ -599,6 +619,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           parcel:   raw.serviceContent.parcel   ?? undefined,
           van:      raw.serviceContent.van      ?? undefined,
         } : undefined,
+        compliance: {
+          minAppVersion: raw.compliance?.minAppVersion ?? DEFAULT.compliance.minAppVersion,
+          termsVersion:  raw.compliance?.termsVersion  ?? DEFAULT.compliance.termsVersion,
+          appStoreUrl:   raw.compliance?.appStoreUrl   ?? "",
+          playStoreUrl:  raw.compliance?.playStoreUrl  ?? "",
+        },
+        releaseNotes: Array.isArray(raw.releaseNotes) ? raw.releaseNotes : [],
       };
       _cached = parsed;
       _cachedAt = Date.now();

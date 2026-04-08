@@ -8,7 +8,8 @@ import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
 import { router, Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, TouchableOpacity, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Platform, ScrollView, TouchableOpacity, StyleSheet, Text, View } from "react-native";
+import Constants from "expo-constants";
 import { PopupEngine } from "@/components/PopupEngine";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -314,6 +315,158 @@ function DeepLinkHandler() {
   return null;
 }
 
+function semverGte(a: string, b: string): boolean {
+  const pa = a.split(".").map(n => parseInt(n, 10) || 0);
+  const pb = b.split(".").map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
+
+const WHATS_NEW_KEY = "@ajkmart_last_whats_new_version";
+
+function ForceUpdateDialog({ visible, storeUrl }: { visible: boolean; storeUrl: string }) {
+  const openStore = () => {
+    if (storeUrl) Linking.openURL(storeUrl).catch(() => {});
+  };
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <View style={{ backgroundColor: "#fff", borderRadius: 20, padding: 28, width: "100%", maxWidth: 360, alignItems: "center" }}>
+          <Text style={{ fontSize: 48, marginBottom: 12 }}>🚀</Text>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827", textAlign: "center", marginBottom: 10 }}>
+            Update Required
+          </Text>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#6B7280", textAlign: "center", lineHeight: 22, marginBottom: 24 }}>
+            A newer version of AJKMart is required to continue. Please update the app to access all features.
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={openStore}
+            style={{ backgroundColor: "#7C3AED", borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, width: "100%" }}
+          >
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff", textAlign: "center" }}>
+              Update Now
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function TermsModal({ visible, termsVersion, onAccept }: { visible: boolean; termsVersion: string; onAccept: () => void }) {
+  const { token } = useAuth();
+  const [accepting, setAccepting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAccept = async () => {
+    if (accepting) return;
+    setAccepting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/platform-config/accept-terms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ termsVersion }),
+      });
+      if (!res.ok) throw new Error("Failed to record acceptance");
+      onAccept();
+    } catch {
+      setError("Unable to save your acceptance. Please check your connection and try again.");
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }}>
+        <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "80%" }}>
+          <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827", marginBottom: 6 }}>
+            Updated Terms & Conditions
+          </Text>
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280", marginBottom: 16 }}>
+            Version {termsVersion} — We've updated our terms of service. Please review and accept to continue.
+          </Text>
+          <ScrollView style={{ maxHeight: 220, backgroundColor: "#F9FAFB", borderRadius: 12, padding: 14, marginBottom: 20 }}>
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: "#374151", lineHeight: 22 }}>
+              By using AJKMart, you agree to our Terms of Service and Privacy Policy. You must be at least 13 years of age to use our services. We collect and process your data as described in our Privacy Policy. You may not misuse our services or interfere with their normal operation. We reserve the right to suspend or terminate accounts that violate these terms.{"\n\n"}These terms were last updated and require your explicit acknowledgment to continue using the platform.
+            </Text>
+          </ScrollView>
+          {error && (
+            <View style={{ backgroundColor: "#FEF2F2", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#DC2626" }}>{error}</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleAccept}
+            disabled={accepting}
+            style={{ backgroundColor: accepting ? "#A78BFA" : "#7C3AED", borderRadius: 14, paddingVertical: 14, alignItems: "center", marginBottom: 10 }}
+          >
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>
+              {accepting ? "Accepting..." : "I Accept the Terms"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function WhatsNewSheet({ visible, releaseNotes, appVersion, onDismiss }: {
+  visible: boolean;
+  releaseNotes: Array<{ id: string; version: string; releaseDate: string; notes: string[]; sortOrder: number }>;
+  appVersion: string;
+  onDismiss: () => void;
+}) {
+  const currentNotes = releaseNotes.filter(n => n.version === appVersion);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+        <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "80%" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
+            <Text style={{ fontSize: 28, marginRight: 10 }}>🎉</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: "#111827" }}>
+                What's New
+              </Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: "#6B7280" }}>
+                Version {appVersion}
+              </Text>
+            </View>
+          </View>
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            {currentNotes.length > 0 ? currentNotes[0].notes.map((note, i) => (
+              <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 12 }}>
+                <Text style={{ color: "#7C3AED", fontSize: 16, marginRight: 8, marginTop: 1 }}>•</Text>
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#374151", lineHeight: 22, flex: 1 }}>
+                  {note}
+                </Text>
+              </View>
+            )) : (
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: "#6B7280", lineHeight: 22 }}>
+                Bug fixes and performance improvements.
+              </Text>
+            )}
+          </ScrollView>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onDismiss}
+            style={{ backgroundColor: "#7C3AED", borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 16 }}
+          >
+            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: "#fff" }}>Got it!</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function MisconfigScreen() {
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: "#0f172a" }}>
@@ -334,6 +487,33 @@ function RootLayoutNav() {
   const qc = useQueryClient();
   const segments = useSegments();
   const prevUserRef = useRef<string | null>(null);
+
+  const installedVersion = Constants.expoConfig?.version ?? "1.0.0";
+  const minAppVersion = config.compliance?.minAppVersion ?? "1.0.0";
+  const forceUpdate = !semverGte(installedVersion, minAppVersion);
+  const storeUrl = Platform.OS === "ios"
+    ? (config.compliance?.appStoreUrl ?? "")
+    : (config.compliance?.playStoreUrl ?? "");
+
+  const [showTerms, setShowTerms] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const termsCheckedRef = useRef(false);
+  const whatsNewCheckedRef = useRef(false);
+
+  /* ── Reset compliance checks on user change (login/logout) ── */
+  const prevComplianceUserRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    if (uid !== prevComplianceUserRef.current) {
+      termsCheckedRef.current = false;
+      whatsNewCheckedRef.current = false;
+      if (!uid) {
+        setShowTerms(false);
+        setShowWhatsNew(false);
+      }
+      prevComplianceUserRef.current = uid;
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     const uid = user?.id ?? null;
@@ -396,6 +576,46 @@ function RootLayoutNav() {
     return () => clearTimeout(timer);
   }, [user?.id, token]);
 
+  /* ── When terms version changes, allow re-check in the same session ── */
+  const lastCheckedTermsVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentTermsVersion = config.compliance?.termsVersion ?? null;
+    if (currentTermsVersion && currentTermsVersion !== lastCheckedTermsVersionRef.current) {
+      termsCheckedRef.current = false;
+    }
+  }, [config.compliance?.termsVersion]);
+
+  /* ── Terms re-acceptance check ── */
+  useEffect(() => {
+    if (!user?.id || termsCheckedRef.current || forceUpdate) return;
+    termsCheckedRef.current = true;
+    const termsVersion = config.compliance?.termsVersion;
+    if (!termsVersion) return;
+    lastCheckedTermsVersionRef.current = termsVersion;
+    fetch(`${API_BASE}/platform-config/compliance-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const accepted = data?.data?.acceptedTermsVersion ?? data?.acceptedTermsVersion;
+        if (!accepted || accepted !== termsVersion) {
+          setShowTerms(true);
+        }
+      })
+      .catch(() => {});
+  }, [user?.id, config.compliance?.termsVersion, forceUpdate]);
+
+  /* ── What's New check ── */
+  useEffect(() => {
+    if (!user?.id || whatsNewCheckedRef.current || forceUpdate) return;
+    whatsNewCheckedRef.current = true;
+    AsyncStorage.getItem(WHATS_NEW_KEY).then(lastSeen => {
+      if (lastSeen !== installedVersion && config.releaseNotes?.length > 0) {
+        setTimeout(() => setShowWhatsNew(true), 1500);
+      }
+    }).catch(() => {});
+  }, [user?.id, installedVersion, config.releaseNotes?.length, forceUpdate]);
+
   if (isSuspended) return <SuspendedScreen />;
   if (config.appStatus === "maintenance" && user) return <MaintenanceScreen />;
 
@@ -405,6 +625,21 @@ function RootLayoutNav() {
       <MagicLinkHandler />
       <DeepLinkHandler />
       {_domain && <PopupEngine apiBase={`https://${_domain}/api`} triggerKey={segments.join("/")} />}
+      <ForceUpdateDialog visible={forceUpdate} storeUrl={storeUrl} />
+      <TermsModal
+        visible={!forceUpdate && showTerms}
+        termsVersion={config.compliance?.termsVersion ?? "1.0"}
+        onAccept={() => setShowTerms(false)}
+      />
+      <WhatsNewSheet
+        visible={!forceUpdate && !showTerms && showWhatsNew}
+        releaseNotes={config.releaseNotes ?? []}
+        appVersion={installedVersion}
+        onDismiss={() => {
+          AsyncStorage.setItem(WHATS_NEW_KEY, installedVersion).catch(() => {});
+          setShowWhatsNew(false);
+        }}
+      />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index"          options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)"         options={{ headerShown: false }} />

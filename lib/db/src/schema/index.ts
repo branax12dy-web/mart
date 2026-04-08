@@ -68,3 +68,5 @@ export * from "./ab_experiments";
 export * from "./webhook_registrations";
 export * from "./deep_links";
 export * from "./stock_subscriptions";
+export * from "./consent_log";
+export * from "./release_notes";

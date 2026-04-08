@@ -1043,11 +1043,17 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     return;
   }
 
+  const currentTermsVersion = settings["terms_version"] ?? "";
+  const requiresTermsAcceptance = currentTermsVersion
+    ? (u.acceptedTermsVersion ?? null) !== currentTermsVersion
+    : false;
+
   res.json({
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt:    new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
     sessionDays:  getRefreshTokenTtlDays(),
+    requiresTermsAcceptance,
     user: {
       id:            u.id,
       phone:         u.phone,
@@ -1062,6 +1068,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       cnic:          u.cnic,
       city:          u.city,
       totpEnabled:   u.totpEnabled ?? false,
+      acceptedTermsVersion: u.acceptedTermsVersion ?? null,
       createdAt:     u.createdAt.toISOString(),
     },
   });
@@ -1813,7 +1820,7 @@ router.post("/complete-profile", async (req, res) => {
   /* Accept token from body OR Authorization: Bearer header */
   const authHeader = req.headers["authorization"] as string | undefined;
   const rawToken = req.body?.token || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
-  const { name, email, username, password, currentPassword, cnic, address, city, area, latitude, longitude } = req.body;
+  const { name, email, username, password, currentPassword, cnic, address, city, area, latitude, longitude, acceptedTermsVersion } = req.body;
   if (!rawToken) { res.status(401).json({ error: "Token required" }); return; }
 
   /* Verify JWT to get userId */
@@ -1908,11 +1915,34 @@ router.post("/complete-profile", async (req, res) => {
   else if (filledCount >= 3) newLevel = "silver";
   updates.accountLevel = newLevel;
 
+  if (acceptedTermsVersion && typeof acceptedTermsVersion === "string") {
+    updates.acceptedTermsVersion = acceptedTermsVersion;
+  } else {
+    /* Auto-assign current termsVersion if not provided and this is first profile completion */
+    try {
+      const s = await getCachedSettings();
+      const currentTermsVer = s["terms_version"] ?? "";
+      if (currentTermsVer && !user.acceptedTermsVersion) {
+        updates.acceptedTermsVersion = currentTermsVer;
+      }
+    } catch {}
+  }
+
   if (Object.keys(updates).length === 1) {
     res.status(400).json({ error: "Koi update nahi kiya — name, email, username ya password provide karein" }); return;
   }
 
   const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, userId)).returning();
+
+  if ((updates as any).acceptedTermsVersion) {
+    try {
+      const ip = getClientIp(req);
+      await db.execute(sql`
+        INSERT INTO consent_log (id, user_id, consent_type, consent_version, ip_address, created_at)
+        VALUES (${generateId()}, ${userId}, 'terms_acceptance', ${(updates as any).acceptedTermsVersion}, ${ip}, NOW())
+      `);
+    } catch {}
+  }
 
   const accessToken = signAccessToken(updated!.id, updated!.phone ?? "", updated!.role ?? "customer", updated!.roles ?? updated!.role ?? "customer", updated!.tokenVersion ?? 0);
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
@@ -2803,7 +2833,17 @@ async function issueTokensForUser(user: any, ip: string, method: string, userAge
       emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false,
       totpEnabled: user.totpEnabled ?? false,
       needsProfileCompletion: !user.cnic || !user.name,
+      acceptedTermsVersion: (user as any).acceptedTermsVersion ?? null,
     },
+    requiresTermsAcceptance: await (async () => {
+      try {
+        const s = await getCachedSettings();
+        const currentTermsVersion = s["terms_version"] ?? "";
+        if (!currentTermsVersion) return false;
+        const userAccepted = (user as any).acceptedTermsVersion ?? null;
+        return userAccepted !== currentTermsVersion;
+      } catch { return false; }
+    })(),
   };
 }
 

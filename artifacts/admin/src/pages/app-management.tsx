@@ -5,7 +5,7 @@ import {
   Wallet, Shield, Plus, Pencil, Trash2, Save, X,
   ToggleRight, ToggleLeft, RefreshCw, CheckCircle2,
   AlertTriangle, WrenchIcon, Eye, EyeOff, ScrollText, CalendarDays, ChevronLeft, ChevronRight,
-  Zap, Activity, Download,
+  Zap, Activity, Download, Smartphone, FileText, List,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -145,13 +145,25 @@ export default function AppManagement() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"overview"|"admins"|"maintenance"|"audit-log">("overview");
+  const [tab, setTab] = useState<"overview"|"admins"|"maintenance"|"release-notes"|"audit-log">("overview");
   const [adminForm, setAdminForm] = useState({ ...EMPTY_ADMIN });
   const [editingAdmin, setEditingAdmin] = useState<AdminAccount | null>(null);
   const [adminDialog, setAdminDialog] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [maintenanceMsg, setMaintenanceMsg] = useState("");
   const [savingMaintenance, setSavingMaintenance] = useState(false);
+
+  /* ── Release Notes state ── */
+  const [rnDialog, setRnDialog] = useState(false);
+  const [editingRn, setEditingRn] = useState<any>(null);
+  const [rnForm, setRnForm] = useState({ version: "", releaseDate: new Date().toISOString().split("T")[0], notes: "", sortOrder: "0" });
+
+  /* ── Compliance settings state ── */
+  const [complianceSaving, setComplianceSaving] = useState(false);
+  const [minAppVersion, setMinAppVersion] = useState("");
+  const [termsVersion, setTermsVersion] = useState("");
+  const [appStoreUrl, setAppStoreUrl] = useState("");
+  const [playStoreUrl, setPlayStoreUrl] = useState("");
 
   /* ── Queries ── */
   const { data: overview, isLoading: overviewLoading, refetch: refetchOverview } = useQuery<AppOverview>({
@@ -170,10 +182,87 @@ export default function AppManagement() {
     queryFn: () => fetcher("/platform-settings"),
   });
 
+  const { data: rnData, isLoading: rnLoading, refetch: refetchRn } = useQuery({
+    queryKey: ["admin-release-notes"],
+    queryFn: () => fetcher("/admin/release-notes"),
+  });
+
   const admins: AdminAccount[] = adminsData?.accounts || [];
   const settings: any[] = settingsData?.settings || [];
   const appStatus = settings.find((s: any) => s.key === "app_status")?.value || "active";
   const maintenanceMsgSaved = settings.find((s: any) => s.key === "content_maintenance_msg")?.value || "";
+  const releaseNotes: any[] = rnData?.releaseNotes || [];
+
+  /* ── Sync compliance state from platform settings ── */
+  const savedMinAppVersion = settings.find((s: any) => s.key === "min_app_version")?.value || "";
+  const savedTermsVersion  = settings.find((s: any) => s.key === "terms_version")?.value  || "";
+  const savedAppStoreUrl   = settings.find((s: any) => s.key === "app_store_url")?.value   || "";
+  const savedPlayStoreUrl  = settings.find((s: any) => s.key === "play_store_url")?.value  || "";
+
+  if (savedMinAppVersion && minAppVersion === "") setMinAppVersion(savedMinAppVersion);
+  if (savedTermsVersion  && termsVersion  === "") setTermsVersion(savedTermsVersion);
+  if (savedAppStoreUrl   && appStoreUrl   === "") setAppStoreUrl(savedAppStoreUrl);
+  if (savedPlayStoreUrl  && playStoreUrl  === "") setPlayStoreUrl(savedPlayStoreUrl);
+
+  /* ── Release Notes Mutations ── */
+  const saveRn = useMutation({
+    mutationFn: async (body: any) => {
+      if (editingRn) return fetcher(`/admin/release-notes/${editingRn.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      return fetcher("/admin/release-notes", { method: "POST", body: JSON.stringify(body) });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-release-notes"] });
+      setRnDialog(false); setEditingRn(null); setRnForm({ version: "", releaseDate: new Date().toISOString().split("T")[0], notes: "", sortOrder: "0" });
+      toast({ title: editingRn ? "Release note updated ✅" : "Release note created ✅" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteRn = useMutation({
+    mutationFn: (id: string) => fetcher(`/admin/release-notes/${id}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-release-notes"] }); toast({ title: "Release note deleted" }); },
+  });
+
+  const openNewRn = () => {
+    setEditingRn(null);
+    setRnForm({ version: "", releaseDate: new Date().toISOString().split("T")[0], notes: "", sortOrder: "0" });
+    setRnDialog(true);
+  };
+
+  const openEditRn = (rn: any) => {
+    setEditingRn(rn);
+    setRnForm({
+      version: rn.version,
+      releaseDate: rn.releaseDate ?? new Date().toISOString().split("T")[0],
+      notes: Array.isArray(rn.notes) ? rn.notes.join("\n") : rn.notes ?? "",
+      sortOrder: String(rn.sortOrder ?? 0),
+    });
+    setRnDialog(true);
+  };
+
+  const submitRn = () => {
+    if (!rnForm.version.trim()) { toast({ title: "Version required", variant: "destructive" }); return; }
+    if (!rnForm.notes.trim())   { toast({ title: "Release notes required", variant: "destructive" }); return; }
+    const notesArr = rnForm.notes.split("\n").map(s => s.trim()).filter(Boolean);
+    saveRn.mutate({ version: rnForm.version.trim(), releaseDate: rnForm.releaseDate, notes: notesArr, sortOrder: parseInt(rnForm.sortOrder) || 0 });
+  };
+
+  /* ── Compliance settings save ── */
+  const handleComplianceSave = async () => {
+    setComplianceSaving(true);
+    try {
+      const pairs = [
+        { key: "min_app_version", value: minAppVersion.trim() || "1.0.0" },
+        { key: "terms_version",   value: termsVersion.trim()   || "1.0"  },
+        { key: "app_store_url",   value: appStoreUrl.trim()            },
+        { key: "play_store_url",  value: playStoreUrl.trim()           },
+      ].filter(p => p.value !== "");
+      await fetcher("/platform-settings", { method: "PUT", body: JSON.stringify({ settings: pairs }) });
+      qc.invalidateQueries({ queryKey: ["admin-platform-settings"] });
+      toast({ title: "Compliance settings saved ✅" });
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    setComplianceSaving(false);
+  };
 
   /* ── Admin Mutations ── */
   const saveAdmin = useMutation({
@@ -304,10 +393,11 @@ export default function AppManagement() {
       <div className="overflow-x-auto -mx-1 px-1">
         <div className="flex gap-1 bg-muted p-1 rounded-xl w-max min-w-full">
           {[
-            { id: "overview",    label: "📊 Overview" },
-            { id: "admins",      label: "👥 Admin Accounts" },
-            { id: "maintenance", label: "🔧 Services & Maintenance" },
-            { id: "audit-log",   label: "📋 Audit Log" },
+            { id: "overview",       label: "📊 Overview" },
+            { id: "admins",         label: "👥 Admin Accounts" },
+            { id: "maintenance",    label: "🔧 Services & Maintenance" },
+            { id: "release-notes",  label: "🚀 Release Notes" },
+            { id: "audit-log",      label: "📋 Audit Log" },
           ].map(t => (
             <button
               key={t.id}
@@ -546,6 +636,184 @@ export default function AppManagement() {
           </Card>
         </div>
       )}
+
+      {/* ══ Release Notes Tab ══ */}
+      {tab === "release-notes" && (
+        <div className="space-y-5">
+          {/* Compliance Settings */}
+          <Card className="rounded-2xl border-border/50 shadow-sm">
+            <div className="p-5 border-b border-border/50 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center"><Smartphone className="w-5 h-5 text-purple-600"/></div>
+              <div>
+                <h2 className="font-bold">App Version Compliance</h2>
+                <p className="text-xs text-muted-foreground">Force-update enforcement and terms versioning</p>
+              </div>
+            </div>
+            <CardContent className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Minimum Required Version</label>
+                  <Input
+                    placeholder="e.g. 1.2.0"
+                    value={minAppVersion}
+                    onChange={e => setMinAppVersion(e.target.value)}
+                    className="h-10 rounded-xl font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">Users on older versions will be forced to update</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Terms Version</label>
+                  <Input
+                    placeholder="e.g. 2.0"
+                    value={termsVersion}
+                    onChange={e => setTermsVersion(e.target.value)}
+                    className="h-10 rounded-xl font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">Changing this forces users to re-accept T&amp;Cs</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">App Store URL (iOS)</label>
+                  <Input
+                    placeholder="https://apps.apple.com/..."
+                    value={appStoreUrl}
+                    onChange={e => setAppStoreUrl(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Play Store URL (Android)</label>
+                  <Input
+                    placeholder="https://play.google.com/store/apps/..."
+                    value={playStoreUrl}
+                    onChange={e => setPlayStoreUrl(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+              </div>
+              <Button onClick={handleComplianceSave} disabled={complianceSaving} className="rounded-xl gap-2">
+                <Save className="w-4 h-4"/>
+                {complianceSaving ? "Saving..." : "Save Compliance Settings"}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Release Notes List */}
+          <Card className="rounded-2xl border-border/50 shadow-sm">
+            <div className="p-5 border-b border-border/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600"/></div>
+                <div>
+                  <h2 className="font-bold">What's New — Release Notes</h2>
+                  <p className="text-xs text-muted-foreground">Shown to users after app update</p>
+                </div>
+              </div>
+              <Button onClick={openNewRn} className="h-9 rounded-xl gap-2 text-sm">
+                <Plus className="w-4 h-4"/> Add Release
+              </Button>
+            </div>
+            <CardContent className="p-5">
+              {rnLoading ? (
+                <div className="space-y-3">{[1,2,3].map(i=><div key={i} className="h-16 bg-muted rounded-xl animate-pulse"/>)}</div>
+              ) : releaseNotes.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3"/>
+                  <p className="text-muted-foreground text-sm">No release notes yet. Add your first one!</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {releaseNotes.map((rn: any) => (
+                    <div key={rn.id} className="border border-border/50 rounded-xl p-4 hover:bg-muted/20 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="text-xs font-mono bg-purple-50 text-purple-700 border-purple-200">
+                              v{rn.version}
+                            </Badge>
+                            {rn.releaseDate && (
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <CalendarDays className="w-3 h-3"/> {rn.releaseDate}
+                              </span>
+                            )}
+                          </div>
+                          <ul className="space-y-1">
+                            {(Array.isArray(rn.notes) ? rn.notes : []).slice(0, 3).map((note: string, i: number) => (
+                              <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                <span className="text-purple-500 mt-0.5">•</span>
+                                <span className="line-clamp-1">{note}</span>
+                              </li>
+                            ))}
+                            {Array.isArray(rn.notes) && rn.notes.length > 3 && (
+                              <li className="text-xs text-muted-foreground/60">+{rn.notes.length - 3} more</li>
+                            )}
+                          </ul>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button onClick={() => openEditRn(rn)} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Pencil className="w-3.5 h-3.5"/>
+                          </button>
+                          <button
+                            onClick={() => { if (confirm(`Delete release notes for v${rn.version}?`)) deleteRn.mutate(rn.id); }}
+                            className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-muted-foreground hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5"/>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ══ Release Notes Dialog ══ */}
+      <Dialog open={rnDialog} onOpenChange={v => { setRnDialog(v); if (!v) { setEditingRn(null); } }}>
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-purple-600"/>
+              {editingRn ? "Edit Release Notes" : "Add Release Notes"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold">Version <span className="text-red-500">*</span></label>
+                <Input placeholder="e.g. 1.2.0" value={rnForm.version} onChange={e => setRnForm(f=>({...f, version: e.target.value}))} className="h-10 rounded-xl font-mono"/>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold">Release Date</label>
+                <Input type="date" value={rnForm.releaseDate} onChange={e => setRnForm(f=>({...f, releaseDate: e.target.value}))} className="h-10 rounded-xl"/>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold">Release Notes <span className="text-red-500">*</span></label>
+              <textarea
+                placeholder={"One note per line:\nNew feature added\nBug fix: order tracking\nImproved performance"}
+                value={rnForm.notes}
+                onChange={e => setRnForm(f=>({...f, notes: e.target.value}))}
+                rows={6}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">Enter one bullet point per line — each line becomes a separate item in the "What's New" sheet</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold">Sort Order</label>
+              <Input type="number" placeholder="0" value={rnForm.sortOrder} onChange={e => setRnForm(f=>({...f, sortOrder: e.target.value}))} className="h-10 rounded-xl w-32"/>
+              <p className="text-xs text-muted-foreground">Lower number = shown first</p>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setRnDialog(false)}>Cancel</Button>
+              <Button onClick={submitRn} disabled={saveRn.isPending} className="flex-1 rounded-xl gap-2">
+                <Save className="w-4 h-4"/>
+                {saveRn.isPending ? "Saving..." : (editingRn ? "Update" : "Create")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ══ Admin Account Dialog ══ */}
       <Dialog open={adminDialog} onOpenChange={v => { setAdminDialog(v); if (!v) { setEditingAdmin(null); setAdminForm({ ...EMPTY_ADMIN }); } }}>

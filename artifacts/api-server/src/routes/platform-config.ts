@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
 import { getPlatformSettings } from "./admin.js";
-import { sendSuccess, sendValidationError, sendNotFound } from "../lib/response.js";
+import { sendSuccess, sendValidationError, sendNotFound, sendError } from "../lib/response.js";
 import { db } from "@workspace/db";
 import { faqsTable, abExperimentsTable, abAssignmentsTable } from "@workspace/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq, asc, and, desc, sql } from "drizzle-orm";
 import crypto from "crypto";
+import { customerAuth, getClientIp } from "../middleware/security.js";
+import { generateId } from "../lib/id.js";
 
 const router: IRouter = Router();
 
@@ -399,6 +401,29 @@ router.get("/", async (req, res) => {
       jazzcashProofRequired:   (s["jazzcash_proof_required"]   ?? "off") === "on",
       paymentReceiptRequired:  (s["payment_receipt_required"]  ?? "off") === "on",
     },
+    compliance: {
+      minAppVersion:  s["min_app_version"]  ?? "1.0.0",
+      termsVersion:   s["terms_version"]    ?? "1.0",
+      appStoreUrl:    s["app_store_url"]    ?? "",
+      playStoreUrl:   s["play_store_url"]   ?? "",
+    },
+    releaseNotes: await (async () => {
+      try {
+        const rows = await db.execute(sql`
+          SELECT id, version, release_date, notes, sort_order, created_at
+          FROM release_notes
+          ORDER BY sort_order DESC, created_at DESC
+          LIMIT 20
+        `);
+        return (rows.rows as any[]).map(r => ({
+          id:          r.id,
+          version:     r.version,
+          releaseDate: r.release_date,
+          notes:       (() => { try { return JSON.parse(r.notes as string); } catch { return [r.notes]; } })(),
+          sortOrder:   r.sort_order,
+        }));
+      } catch { return []; }
+    })(),
     experiments: await (async () => {
       const userId = (req.query["userId"] as string) || "";
       if (!userId) return [];
@@ -547,6 +572,61 @@ router.get("/faqs", async (_req, res) => {
     sendSuccess(res, { faqs });
   } catch {
     sendSuccess(res, { faqs: FALLBACK_FAQS.map(f => ({ id: f.id, category: f.category, question: f.question, answer: f.answer })) });
+  }
+});
+
+/* ── POST /platform-config/consent-log — Log a consent event ── */
+router.post("/consent-log", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const { consentType, consentVersion } = req.body as { consentType?: string; consentVersion?: string };
+  if (!consentType || !consentVersion) {
+    sendValidationError(res, "consentType and consentVersion are required");
+    return;
+  }
+  const ip = getClientIp(req);
+  try {
+    await db.execute(sql`
+      INSERT INTO consent_log (id, user_id, consent_type, consent_version, ip_address, created_at)
+      VALUES (${generateId()}, ${userId}, ${consentType}, ${consentVersion}, ${ip}, NOW())
+    `);
+    sendSuccess(res, { logged: true });
+  } catch (e) {
+    sendError(res, "Failed to log consent");
+  }
+});
+
+/* ── GET /platform-config/compliance-status — Get user's accepted terms version ── */
+router.get("/compliance-status", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  try {
+    const rows = await db.execute(sql`SELECT accepted_terms_version FROM users WHERE id = ${userId}`);
+    const user = (rows as any).rows?.[0] ?? (Array.isArray(rows) ? rows[0] : null);
+    sendSuccess(res, { acceptedTermsVersion: user?.accepted_terms_version ?? null });
+  } catch {
+    sendSuccess(res, { acceptedTermsVersion: null });
+  }
+});
+
+/* ── POST /platform-config/accept-terms — Update user's accepted terms version ── */
+router.post("/accept-terms", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const { termsVersion } = req.body as { termsVersion?: string };
+  if (!termsVersion) {
+    sendValidationError(res, "termsVersion is required");
+    return;
+  }
+  const ip = getClientIp(req);
+  try {
+    await db.execute(sql`
+      UPDATE users SET accepted_terms_version = ${termsVersion} WHERE id = ${userId}
+    `);
+    await db.execute(sql`
+      INSERT INTO consent_log (id, user_id, consent_type, consent_version, ip_address, created_at)
+      VALUES (${generateId()}, ${userId}, 'terms_acceptance', ${termsVersion}, ${ip}, NOW())
+    `);
+    sendSuccess(res, { accepted: true });
+  } catch (e) {
+    sendError(res, "Failed to record terms acceptance");
   }
 });
 

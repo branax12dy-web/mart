@@ -99,8 +99,9 @@ export const usersTable = pgTable("users", {
   ajkId:             text("ajk_id").unique(),
   chatMuted:         boolean("chat_muted").notNull().default(false),
   commBlocked:       boolean("comm_blocked").notNull().default(false),
-  lastLoginAt:       timestamp("last_login_at"),
-  lastActive:        timestamp("last_active"),
+  lastLoginAt:         timestamp("last_login_at"),
+  lastActive:          timestamp("last_active"),
+  acceptedTermsVersion: text("accepted_terms_version"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
   updatedAt:       timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

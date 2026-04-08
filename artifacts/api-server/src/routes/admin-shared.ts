@@ -249,6 +249,11 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "security_audit_log",         value: "on",     label: "Admin Action Audit Log",                      category: "security" },
   { key: "security_admin_ip_whitelist",value: "",        label: "Admin IP Whitelist (comma-separated, blank=any)", category: "security" },
   { key: "security_maintenance_key",   value: "",        label: "Maintenance Mode Access Key",                category: "security" },
+  /* ═══════════════════  Compliance  ═══════════════════ */
+  { key: "min_app_version",  value: "1.0.0", label: "Minimum Required App Version (force-update)", category: "compliance" },
+  { key: "terms_version",    value: "1.0",   label: "Terms & Conditions Version",                  category: "compliance" },
+  { key: "app_store_url",    value: "",       label: "iOS App Store URL",                           category: "compliance" },
+  { key: "play_store_url",   value: "",       label: "Android Play Store URL",                      category: "compliance" },
   /* ═══════════════════  Platform Integrations  ═══════════════════ */
   /* Firebase FCM — Push Notifications */
   { key: "integration_push_notif",    value: "off",      label: "Firebase Push Notifications",            category: "integrations" },
@@ -1632,4 +1637,40 @@ export async function ensureWalletP2PColumns() {
     return;
   }
   _walletP2PMigrated = true;
+}
+
+let _complianceMigrated = false;
+export async function ensureComplianceTables() {
+  if (_complianceMigrated) return;
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS consent_log (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        consent_type TEXT NOT NULL,
+        consent_version TEXT NOT NULL,
+        ip_address TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS consent_log_user_id_idx ON consent_log(user_id);
+      CREATE INDEX IF NOT EXISTS consent_log_type_idx ON consent_log(consent_type);
+
+      CREATE TABLE IF NOT EXISTS release_notes (
+        id TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        release_date TEXT NOT NULL,
+        notes TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms_version TEXT;
+    `);
+    logger.info("[migration] Compliance tables (consent_log, release_notes) and acceptedTermsVersion column ensured");
+  } catch (e) {
+    logger.error({ err: e }, "[migration] Compliance tables migration failed — will retry next startup");
+    return;
+  }
+  _complianceMigrated = true;
 }
