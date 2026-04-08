@@ -59,6 +59,19 @@ function resolveLanguage(language?: string): Language {
   return "en";
 }
 
+/**
+ * Returns true when email integration is enabled AND SMTP credentials are set.
+ * Used to decide if email can be used as an OTP delivery channel.
+ */
+export function isEmailProviderConfigured(settings: Record<string, string>): boolean {
+  if ((settings["integration_email"] ?? "off") !== "on") return false;
+  return !!(
+    settings["smtp_host"]?.trim() &&
+    settings["smtp_user"]?.trim() &&
+    settings["smtp_password"]?.trim()
+  );
+}
+
 export interface EmailResult {
   sent: boolean;
   reason?: string;

@@ -189,11 +189,14 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   const fcmConfigured = !!(val("fcm_server_key") || val("fcm_project_id"));
   /* ── SMS ── */
   const smsProvider = val("sms_provider") || "console";
-  const smsConfigured = smsProvider !== "console" && !!(val("sms_api_key") || val("sms_msg91_key"));
+  const smsEnabled  = (localValues["integration_sms"] ?? "off") === "on";
+  const smsConfigured = smsEnabled && smsProvider !== "console" && !!(val("sms_api_key") || val("sms_msg91_key"));
   /* ── Email ── */
-  const smtpConfigured = !!(val("smtp_host") && val("smtp_user"));
+  const emailEnabled   = (localValues["integration_email"] ?? "off") === "on";
+  const smtpConfigured = emailEnabled && !!(val("smtp_host") && val("smtp_user") && val("smtp_password"));
   /* ── WhatsApp ── */
-  const waConfigured = !!(val("wa_phone_number_id") && val("wa_access_token"));
+  const waEnabled    = (localValues["integration_whatsapp"] ?? "off") === "on";
+  const waConfigured = waEnabled && !!(val("wa_phone_number_id") && val("wa_access_token"));
   /* ── Analytics ── */
   const analyticsPlatform = val("analytics_platform") || "none";
   const analyticsConfigured = analyticsPlatform !== "none" && !!val("analytics_tracking_id");
@@ -207,8 +210,90 @@ export function IntegrationsSection({ localValues, dirtyKeys, handleChange, hand
   const webhookBaseUrl = window.location.origin;
   const whatsappWebhookUrl = `${webhookBaseUrl}/api/webhooks/whatsapp`;
 
+  /* ── OTP delivery health ── */
+  const anyOtpProviderReady   = smsConfigured || smtpConfigured || waConfigured;
+  const strictWhenNoProvider  = (localValues["otp_require_when_no_provider"] ?? "off") === "on";
+
   return (
     <div className="space-y-4">
+      {/* ── OTP Default Control Panel ── */}
+      <div className={`rounded-2xl border-2 p-4 space-y-4 ${anyOtpProviderReady ? "border-green-200 bg-green-50" : "border-amber-300 bg-amber-50"}`}>
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            {anyOtpProviderReady
+              ? <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              : <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            }
+            <div>
+              <p className={`text-sm font-bold ${anyOtpProviderReady ? "text-green-800" : "text-amber-800"}`}>
+                {anyOtpProviderReady ? "OTP Delivery Active" : "OTP Delivery — No Provider Configured"}
+              </p>
+              <p className={`text-xs mt-0.5 ${anyOtpProviderReady ? "text-green-700" : "text-amber-700"}`}>
+                {anyOtpProviderReady
+                  ? `Active: ${[smsConfigured && "SMS", waConfigured && "WhatsApp", smtpConfigured && "Email"].filter(Boolean).join(", ")}`
+                  : "SMS, WhatsApp aur Email — koi bhi configured nahi hai."}
+              </p>
+            </div>
+          </div>
+          <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ${anyOtpProviderReady ? "bg-green-200 text-green-800" : "bg-amber-200 text-amber-800"}`}>
+            {anyOtpProviderReady ? "● ACTIVE" : "NOT CONFIGURED"}
+          </span>
+        </div>
+
+        {/* ── OTP Enable / Disable when no provider ── */}
+        <div className={`rounded-xl border p-3 flex items-start justify-between gap-3 ${anyOtpProviderReady ? "border-green-200 bg-white/60" : "border-amber-200 bg-white/60"}`}>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-foreground">OTP Default Mode (when no provider)</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {strictWhenNoProvider
+                ? "🔒 Strict — OTP required; login blocked if no provider configured."
+                : "🔓 Bypass — OTP auto-disabled; users can log in without a code."}
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-1 italic">
+              Jab koi SMS/WhatsApp/Email provider set nahi ho tab kya ho?
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${strictWhenNoProvider ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
+                {strictWhenNoProvider ? "OTP ON (Block)" : "OTP OFF (Bypass)"}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleToggle("otp_require_when_no_provider", !strictWhenNoProvider)}
+                aria-label="Toggle OTP strict mode"
+                className="focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full"
+              >
+                <div className={`w-10 h-5 rounded-full relative transition-colors ${strictWhenNoProvider ? "bg-red-500" : "bg-blue-400"}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full shadow absolute top-0.5 transition-transform ${strictWhenNoProvider ? "translate-x-5" : "translate-x-0.5"}`} />
+                </div>
+              </button>
+            </div>
+            {dirtyKeys.has("otp_require_when_no_provider") && (
+              <span className="text-[9px] font-bold text-amber-600">● Unsaved</span>
+            )}
+          </div>
+        </div>
+
+        {/* Quick-setup shortcuts (only when not configured) */}
+        {!anyOtpProviderReady && (
+          <div className="flex flex-wrap gap-2">
+            <p className="text-[10px] text-amber-700 w-full font-medium">Provider setup karo:</p>
+            {[
+              { tab: "sms" as IntTab,       icon: "📱", label: "Setup SMS"       },
+              { tab: "whatsapp" as IntTab,  icon: "💬", label: "Setup WhatsApp"  },
+              { tab: "email" as IntTab,     icon: "📧", label: "Setup Email"     },
+            ].map(({ tab, icon, label }) => (
+              <button key={tab} type="button" onClick={() => switchTab(tab)}
+                className="text-[10px] font-bold px-3 py-1 rounded-lg bg-amber-200 text-amber-800 hover:bg-amber-300 transition-colors">
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Sub-tab bar — horizontally scrollable on mobile */}
       <div className="overflow-x-auto -mx-1 px-1">
         <div className="flex gap-1.5 bg-muted/50 p-1.5 rounded-xl w-max min-w-full">

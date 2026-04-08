@@ -78,6 +78,15 @@ async function sendTemplate(
   }
 }
 
+/**
+ * Returns true only when WhatsApp integration is enabled AND both required
+ * credentials (phone number ID + access token) are filled in.
+ */
+export function isWhatsAppProviderConfigured(settings: Record<string, string>): boolean {
+  if (settings["integration_whatsapp"] !== "on") return false;
+  return !!(settings["wa_phone_number_id"]?.trim() && settings["wa_access_token"]?.trim());
+}
+
 export async function sendWhatsAppOTP(
   phone: string,
   otp: string,

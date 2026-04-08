@@ -134,6 +134,26 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
   return { sent: false, provider, error: `Unknown provider: ${provider}` };
 }
 
+/**
+ * Returns true only when the SMS integration is enabled AND a real provider
+ * (not "console") has all required credentials filled in.
+ */
+export function isSMSProviderConfigured(settings: Record<string, string>): boolean {
+  if (settings["integration_sms"] !== "on") return false;
+  const provider = settings["sms_provider"] ?? "console";
+  if (provider === "console") return false;
+  if (provider === "twilio") {
+    return !!(
+      settings["sms_account_sid"]?.trim() &&
+      settings["sms_api_key"]?.trim() &&
+      settings["sms_sender_id"]?.trim()
+    );
+  }
+  if (provider === "msg91") return !!(settings["sms_msg91_key"]?.trim());
+  if (provider === "zong")   return !!(settings["sms_api_key"]?.trim());
+  return false;
+}
+
 export async function sendOtpSMS(
   phone: string,
   otp: string,

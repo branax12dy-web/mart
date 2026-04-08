@@ -34,12 +34,12 @@ import {
   verifyCaptcha,
   checkAvailableRateLimit,
 } from "../middleware/security.js";
-import { sendOtpSMS } from "../services/sms.js";
-import { sendWhatsAppOTP } from "../services/whatsapp.js";
+import { sendOtpSMS, isSMSProviderConfigured } from "../services/sms.js";
+import { sendWhatsAppOTP, isWhatsAppProviderConfigured } from "../services/whatsapp.js";
 import { randomBytes, createHash, randomInt } from "crypto";
 import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
 import { generateTotpSecret, verifyTotpToken, generateQRCodeDataURL, getTotpUri, encryptTotpSecret, decryptTotpSecret } from "../services/totp.js";
-import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail, alertNewVendor } from "../services/email.js";
+import { sendVerificationEmail, sendPasswordResetEmail, sendMagicLinkEmail, alertNewVendor, isEmailProviderConfigured } from "../services/email.js";
 import { getUserLanguage, getPlatformDefaultLanguage } from "../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
 import { logger } from "../lib/logger.js";
@@ -660,6 +660,48 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     if (!channelOrder.includes("whatsapp") && whatsappEnabled) channelOrder.push("whatsapp");
     if (!channelOrder.includes("sms") && smsEnabled) channelOrder.push("sms");
     if (!channelOrder.includes("email") && emailEnabled && userEmail) channelOrder.push("email");
+  }
+
+  /* ── Auto-bypass: no real delivery provider is configured ─────────────────
+   * If none of SMS / WhatsApp / Email has working credentials, requiring OTP
+   * would lock everyone out. We auto-bypass and log a warning so the admin
+   * knows to configure a provider.
+   * ----------------------------------------------------------------------- */
+  const smsReady      = isSMSProviderConfigured(settings);
+  const whatsappReady = isWhatsAppProviderConfigured(settings);
+  const emailReady    = isEmailProviderConfigured(settings) && !!userEmail;
+
+  if (!smsReady && !whatsappReady && !emailReady) {
+    /* otp_require_when_no_provider = "on"  → block login (admin chose strict mode)
+     * otp_require_when_no_provider = "off" (default) → auto-bypass               */
+    const strictMode = settings["otp_require_when_no_provider"] === "on";
+    if (strictMode) {
+      req.log.error({ phone }, "[OTP] No provider configured & strict mode ON — blocking login");
+      writeAuthAuditLog("otp_send_no_provider", {
+        ip,
+        userAgent: req.headers["user-agent"] ?? undefined,
+        metadata: { phone, reason: "no_provider_strict_block" },
+      });
+      res.status(503).json({
+        error: "OTP delivery is not configured. Please contact support.",
+        noProviderConfigured: true,
+      });
+      return;
+    }
+    req.log.warn({ phone }, "[OTP] No delivery provider configured — auto-bypassing OTP (bypass mode)");
+    writeAuthAuditLog("otp_send_no_provider", {
+      ip,
+      userAgent: req.headers["user-agent"] ?? undefined,
+      metadata: { phone, reason: "no_delivery_provider_bypass" },
+    });
+    res.json({
+      otpRequired: false,
+      message: "OTP sent successfully",
+      channel: "auto_bypass",
+      fallbackChannels: [],
+      noProviderConfigured: true,
+    });
+    return;
   }
 
   for (const channel of channelOrder) {
