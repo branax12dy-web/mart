@@ -300,6 +300,11 @@ export const api = {
   getDeliveryAccessStatus: () => apiFetch("/vendor/delivery-access/status"),
   requestDeliveryAccess:   (data: { serviceType?: string; reason?: string }) => apiFetch("/vendor/delivery-access/request", { method: "POST", body: JSON.stringify(data) }),
 
+  /* Weekly Schedule */
+  getSchedule:     () => apiFetch("/vendor/schedule"),
+  updateSchedule:  (schedule: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isEnabled: boolean }>) =>
+    apiFetch("/vendor/schedule", { method: "PUT", body: JSON.stringify({ schedule }) }),
+
   /* Notifications */
   getNotifications:  () => apiFetch("/vendor/notifications"),
   markAllRead:       () => apiFetch("/vendor/notifications/read-all", { method: "PATCH", body: "{}" }),

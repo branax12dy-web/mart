@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Database, Download, Upload, Trash2, HardDrive, RefreshCcw,
   FlaskConical, RotateCcw, Clock, AlertTriangle, Settings,
   Loader2, X, RefreshCw, Plus, UserPlus,
   ShoppingCart, Tag, Zap, ChevronDown, ChevronUp,
+  Wrench, Shield, FileSpreadsheet, Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -484,6 +485,15 @@ export function SystemSection() {
         </div>
       )}
 
+      {/* ═══ Scheduled Maintenance Window ═══ */}
+      <MaintenanceScheduleSection apiFetch={apiFetch} toast={toast} />
+
+      {/* ═══ Data Retention Policies ═══ */}
+      <DataRetentionSection apiFetch={apiFetch} toast={toast} />
+
+      {/* ═══ CSV / Report Export ═══ */}
+      <CSVExportSection adminSecret={adminSecret} toast={toast} />
+
       <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-gradient-to-br from-slate-50 to-white p-5">
         <div className="flex items-center gap-2 mb-4">
           <Database size={16} className="text-slate-600" />
@@ -747,6 +757,256 @@ export function SystemSection() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════ Maintenance Schedule Section ═══════════ */
+function MaintenanceScheduleSection({ apiFetch, toast }: { apiFetch: (path: string, opts?: RequestInit) => Promise<any>; toast: any }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    apiFetch("/maintenance-schedule").then(d => {
+      const data = d.data ?? d;
+      setStart(data.scheduledStart || "");
+      setEnd(data.scheduledEnd || "");
+      setMsg(data.scheduledMsg || "");
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("/maintenance-schedule", { method: "PUT", body: JSON.stringify({ scheduledStart: start || null, scheduledEnd: end || null, scheduledMsg: msg }) });
+      toast({ title: "Maintenance schedule saved" });
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const clear = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("/maintenance-schedule", { method: "PUT", body: JSON.stringify({ scheduledStart: null, scheduledEnd: null }) });
+      setStart(""); setEnd("");
+      toast({ title: "Maintenance schedule cleared" });
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const isActive = start && end && new Date(start).getTime() <= Date.now() && new Date(end).getTime() >= Date.now();
+  const isUpcoming = start && new Date(start).getTime() > Date.now();
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Wrench size={16} className="text-amber-600" />
+        <p className="font-bold text-base text-slate-800">Scheduled Maintenance Window</p>
+        {isActive && <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">ACTIVE NOW</span>}
+        {isUpcoming && <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">UPCOMING</span>}
+      </div>
+      {loading ? <div className="py-4 text-center text-slate-400"><Loader2 size={16} className="animate-spin inline" /> Loading...</div> : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">Start (ISO 8601)</label>
+              <input type="datetime-local" value={start ? start.slice(0, 16) : ""} onChange={e => setStart(e.target.value ? new Date(e.target.value).toISOString() : "")}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">End (ISO 8601)</label>
+              <input type="datetime-local" value={end ? end.slice(0, 16) : ""} onChange={e => setEnd(e.target.value ? new Date(e.target.value).toISOString() : "")}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 block mb-1">Maintenance Message</label>
+            <input type="text" value={msg} onChange={e => setMsg(e.target.value)} placeholder="We're performing scheduled maintenance..."
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={save} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-50 flex items-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />}
+              {saving ? "Saving..." : "Save Schedule"}
+            </button>
+            {(start || end) && (
+              <button onClick={clear} disabled={saving} className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════ Data Retention Section ═══════════ */
+function DataRetentionSection({ apiFetch, toast }: { apiFetch: (path: string, opts?: RequestInit) => Promise<any>; toast: any }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [policies, setPolicies] = useState({ locationDays: 90, chatDays: 180, auditDays: 365, notificationsDays: 30, lastCleanup: null as string | null });
+  const [cleanupResult, setCleanupResult] = useState<{ totalDeleted: number; deleted: Record<string, number> } | null>(null);
+
+  useEffect(() => {
+    apiFetch("/retention-policies").then(d => {
+      const data = d.data ?? d;
+      setPolicies({ locationDays: data.locationDays, chatDays: data.chatDays, auditDays: data.auditDays, notificationsDays: data.notificationsDays, lastCleanup: data.lastCleanup });
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const d = await apiFetch("/retention-policies", { method: "PUT", body: JSON.stringify(policies) });
+      const data = d.data ?? d;
+      setPolicies({ locationDays: data.locationDays, chatDays: data.chatDays, auditDays: data.auditDays, notificationsDays: data.notificationsDays, lastCleanup: data.lastCleanup });
+      toast({ title: "Retention policies saved" });
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const runCleanup = async () => {
+    setCleaning(true);
+    setCleanupResult(null);
+    try {
+      const d = await apiFetch("/retention-cleanup", { method: "POST" });
+      const data = d.data ?? d;
+      setCleanupResult({ totalDeleted: data.totalDeleted, deleted: data.deleted });
+      setPolicies(p => ({ ...p, lastCleanup: data.lastCleanup }));
+      toast({ title: `Cleanup complete: ${data.totalDeleted} records purged` });
+    } catch (e: any) {
+      toast({ title: "Cleanup failed", description: e.message, variant: "destructive" });
+    }
+    setCleaning(false);
+  };
+
+  const field = (label: string, key: keyof typeof policies, hint: string) => (
+    <div>
+      <label className="text-xs font-semibold text-slate-500 block mb-1">{label}</label>
+      <div className="flex items-center gap-2">
+        <input type="number" min={1} value={policies[key] as number} onChange={e => setPolicies(p => ({ ...p, [key]: parseInt(e.target.value) || 1 }))}
+          className="w-24 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
+        <span className="text-xs text-slate-400">{hint}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-white p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Shield size={16} className="text-purple-600" />
+        <p className="font-bold text-base text-slate-800">Data Retention Policies</p>
+        {policies.lastCleanup && (
+          <span className="text-[10px] text-slate-400 ml-auto">Last cleanup: {new Date(policies.lastCleanup).toLocaleDateString()}</span>
+        )}
+      </div>
+      {loading ? <div className="py-4 text-center text-slate-400"><Loader2 size={16} className="animate-spin inline" /> Loading...</div> : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {field("Location History", "locationDays", "days")}
+            {field("Chat / Support Messages", "chatDays", "days")}
+            {field("Auth Audit Logs", "auditDays", "days")}
+            {field("Notifications", "notificationsDays", "days")}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={save} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50 flex items-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+              {saving ? "Saving..." : "Save Policies"}
+            </button>
+            <button onClick={runCleanup} disabled={cleaning} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 flex items-center gap-2">
+              {cleaning ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {cleaning ? "Cleaning..." : "Run Cleanup Now"}
+            </button>
+          </div>
+          {cleanupResult && (
+            <div className="bg-white border border-purple-200 rounded-xl p-3 text-xs space-y-1">
+              <p className="font-bold text-slate-700">Cleanup Result: {cleanupResult.totalDeleted} records deleted</p>
+              {Object.entries(cleanupResult.deleted).map(([k, v]) => (
+                <p key={k} className="text-slate-500">{k}: <span className="font-mono font-bold text-slate-700">{v}</span></p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════ CSV Export Section ═══════════ */
+function CSVExportSection({ adminSecret, toast }: { adminSecret: string; toast: any }) {
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  const downloadCSV = async (endpoint: string, filename: string, params?: Record<string, string>) => {
+    setDownloading(endpoint);
+    try {
+      const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+      const res = await fetch(`/api/admin/system/export/${endpoint}${qs}`, { headers: { "x-admin-token": adminSecret } });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Export failed" }));
+        throw new Error(err.error || "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: `Exported ${endpoint}`, description: `Downloaded ${filename}` });
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    }
+    setDownloading(null);
+  };
+
+  const exports = [
+    { key: "orders", label: "Orders", icon: "📦", desc: "All orders with status, totals, dates" },
+    { key: "users", label: "Users", icon: "👥", desc: "All users with roles, balances, dates" },
+    { key: "riders", label: "Riders", icon: "🏍️", desc: "Rider details, status, earnings" },
+    { key: "vendors", label: "Vendors", icon: "🏪", desc: "Vendor details, stores, balances" },
+    { key: "rides", label: "Rides", icon: "🚗", desc: "Ride history with fares, distances" },
+    { key: "financial", label: "Financial", icon: "💰", desc: "Wallet transactions, all types" },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-green-200 bg-gradient-to-br from-green-50 to-white p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <FileSpreadsheet size={16} className="text-green-600" />
+        <p className="font-bold text-base text-slate-800">CSV / Report Export</p>
+        <span className="text-[10px] text-slate-400 ml-auto">Max 5,000-10,000 rows per export</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {exports.map(exp => (
+          <button
+            key={exp.key}
+            onClick={() => downloadCSV(exp.key, `${exp.key}-${new Date().toISOString().slice(0, 10)}.csv`)}
+            disabled={!!downloading}
+            className="group flex flex-col items-center gap-1.5 p-4 rounded-xl border border-green-200 bg-white hover:bg-green-50 hover:border-green-300 transition-all disabled:opacity-50"
+          >
+            {downloading === exp.key ? (
+              <Loader2 size={20} className="animate-spin text-green-600" />
+            ) : (
+              <span className="text-2xl">{exp.icon}</span>
+            )}
+            <p className="font-bold text-sm text-slate-800">{exp.label}</p>
+            <p className="text-[10px] text-slate-500 text-center leading-tight">{exp.desc}</p>
+            <div className="flex items-center gap-1 text-green-600 text-xs font-semibold mt-1">
+              <Download size={12} /> CSV
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

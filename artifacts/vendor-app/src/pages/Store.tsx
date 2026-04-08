@@ -78,7 +78,7 @@ export default function Store() {
   const T = (key: TranslationKey) => tDual(key, language);
   const promoEnabled = config.vendor?.promoEnabled !== false;
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"info"|"hours"|"promos"|"location">("info");
+  const [tab, setTab] = useState<"info"|"hours"|"schedule"|"promos"|"location">("info");
   const [toast, setToast] = useState("");
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
 
@@ -213,10 +213,37 @@ export default function Store() {
     onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
 
-  type TabKey = "info" | "hours" | "promos" | "location";
+  /* ── Weekly Schedule (backed by vendor_schedules table) ── */
+  const SCHED_DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const { data: schedData, isLoading: schedLoading } = useQuery({
+    queryKey: ["vendor-schedule"],
+    queryFn: () => api.getSchedule(),
+    enabled: tab === "schedule",
+  });
+  const [localSched, setLocalSched] = useState<Array<{ dayOfWeek: number; dayName: string; openTime: string; closeTime: string; isEnabled: boolean }>>([]);
+  const [schedInited, setSchedInited] = useState(false);
+  useEffect(() => {
+    if (schedData?.schedule && !schedInited) {
+      setLocalSched(schedData.schedule.map((s: any) => ({ dayOfWeek: s.dayOfWeek, dayName: s.dayName, openTime: s.openTime, closeTime: s.closeTime, isEnabled: s.isEnabled })));
+      setSchedInited(true);
+    }
+  }, [schedData, schedInited]);
+  const schedMut = useMutation({
+    mutationFn: () => api.updateSchedule(localSched.map(s => ({ dayOfWeek: s.dayOfWeek, openTime: s.openTime, closeTime: s.closeTime, isEnabled: s.isEnabled }))),
+    onSuccess: (d: any) => {
+      if (d?.schedule) setLocalSched(d.schedule.map((s: any) => ({ dayOfWeek: s.dayOfWeek, dayName: s.dayName, openTime: s.openTime, closeTime: s.closeTime, isEnabled: s.isEnabled })));
+      showToast("Schedule saved!");
+    },
+    onError: (e: Error) => showToast(errMsg(e)),
+  });
+  const updateSchedDay = (i: number, patch: Partial<{ openTime: string; closeTime: string; isEnabled: boolean }>) =>
+    setLocalSched(prev => prev.map((d, idx) => idx === i ? { ...d, ...patch } : d));
+
+  type TabKey = "info" | "hours" | "schedule" | "promos" | "location";
   const TABS: { key: TabKey; label: string; icon: string }[] = [
     { key:"info",     label: T("storeInfo"),   icon:"🏪" },
     { key:"hours",    label: T("hoursLabel"),  icon:"🕐" },
+    { key:"schedule", label: "Schedule",        icon:"📅" },
     { key:"promos",   label: T("promosLabel"), icon:"🎟️" },
     { key:"location", label: "Location",       icon:"📍" },
   ];
@@ -400,6 +427,59 @@ export default function Store() {
                 {hoursMut.isPending ? T("saving") : `💾 ${T("save")} ${T("hoursLabel")}`}
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ── WEEKLY SCHEDULE ── */}
+        {tab === "schedule" && (
+          <div className="space-y-4">
+            <div className={`${CARD} p-4`}>
+              <p className="font-bold text-gray-800 text-base mb-1">Weekly Auto-Schedule</p>
+              <p className="text-xs text-gray-500 mb-4">Set your regular operating hours for each day. Enabled days will automatically toggle your store open/closed.</p>
+              {schedLoading ? (
+                <div className="py-8 text-center text-gray-400">Loading schedule...</div>
+              ) : localSched.length === 0 ? (
+                <div className="py-8 text-center text-gray-400">
+                  <p>No schedule data found.</p>
+                  <button onClick={() => {
+                    setLocalSched(SCHED_DAYS.map((name, i) => ({ dayOfWeek: i, dayName: name, openTime: "09:00", closeTime: "21:00", isEnabled: false })));
+                  }} className="mt-2 text-orange-500 font-bold text-sm underline">Initialize Schedule</button>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {localSched.map((day, i) => (
+                    <div key={day.dayOfWeek} className="py-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-bold text-sm text-gray-800">{day.dayName}</p>
+                        <button
+                          onClick={() => updateSchedDay(i, { isEnabled: !day.isEnabled })}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-full ${day.isEnabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"}`}>
+                          {day.isEnabled ? "Enabled" : "Disabled"}
+                        </button>
+                      </div>
+                      {day.isEnabled && (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-400 font-bold mb-1">OPEN</p>
+                            <input type="time" value={day.openTime} onChange={e => updateSchedDay(i, { openTime: e.target.value })}
+                              className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm" />
+                          </div>
+                          <span className="text-gray-300 font-bold mt-4">-</span>
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-400 font-bold mb-1">CLOSE</p>
+                            <input type="time" value={day.closeTime} onChange={e => updateSchedDay(i, { closeTime: e.target.value })}
+                              className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-orange-400 text-sm" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => schedMut.mutate()} disabled={schedMut.isPending || localSched.length === 0} className={BTN_PRIMARY}>
+              {schedMut.isPending ? T("saving") : "Save Schedule"}
+            </button>
           </div>
         )}
 

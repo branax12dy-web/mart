@@ -352,6 +352,22 @@ router.get("/", async (req, res) => {
       jsonBodyLimit:    s["system_json_body_limit"]             ?? "256kb",
       uploadSizeLimit:  s["system_upload_size_limit"]           ?? "10mb",
     },
+    maintenance: (() => {
+      const start = s["maintenance_scheduled_start"] ?? "";
+      const end = s["maintenance_scheduled_end"] ?? "";
+      const msg = s["maintenance_scheduled_msg"] ?? "We're performing scheduled maintenance. We'll be back shortly!";
+      if (!start || !end) return { active: false, scheduledStart: null, scheduledEnd: null, message: msg };
+      const now = Date.now();
+      const startMs = new Date(start).getTime();
+      const endMs = new Date(end).getTime();
+      return {
+        active: now >= startMs && now <= endMs,
+        upcoming: now < startMs,
+        scheduledStart: start,
+        scheduledEnd: end,
+        message: msg,
+      };
+    })(),
     regional: {
       phoneFormat:     s["regional_phone_format"]      ?? "^0?3\\d{9}$",
       phoneHint:       s["regional_phone_hint"]        ?? "03XXXXXXXXX",

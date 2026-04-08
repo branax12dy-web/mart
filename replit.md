@@ -1,5 +1,33 @@
 # AJKMart Super App — Workspace
 
+### Professional Features Part 1
+
+#### Vendor Weekly Schedule (`vendor_schedules` table)
+- DB table: `vendor_schedules` with columns (id, vendor_id, day_of_week 0-6, open_time, close_time, is_enabled, timestamps)
+- Unique index on (vendor_id, day_of_week) prevents duplicate entries
+- Vendor API: `GET/PUT /vendor/schedule` for vendors to manage their weekly hours
+- Admin API: `GET/PUT /admin/system/vendor-schedules/:vendorId` for admin override
+- Vendor App: "Schedule" tab in Store page with per-day toggle and time pickers
+
+#### Scheduled Maintenance Window
+- Platform settings: `maintenance_scheduled_start`, `maintenance_scheduled_end`, `maintenance_scheduled_msg`
+- Admin API: `GET/PUT /admin/system/maintenance-schedule` (auth-protected write)
+- Public: `GET /platform-config` returns `maintenance` object with `active`, `upcoming`, `scheduledStart/End`, `message`
+- Admin UI: Maintenance Schedule section in System Settings with datetime pickers and clear button
+
+#### Data Retention Policies
+- Platform settings: `retention_location_days` (90), `retention_chat_days` (180), `retention_audit_days` (365), `retention_notifications_days` (30), `retention_last_cleanup`
+- Admin API: `GET/PUT /admin/system/retention-policies`, `POST /admin/system/retention-cleanup` (auth-protected)
+- Cleanup deletes old records from: location_history, support_messages, auth_audit_log, notifications, location_logs
+- Admin UI: Data Retention section with configurable days per category and "Run Cleanup Now" button
+
+#### CSV / Report Export
+- Admin API endpoints (all auth-protected): `/admin/system/export/{orders,users,riders,vendors,rides,financial}`
+- Supports query params for filtering (status, type, dateFrom, dateTo, role)
+- Proper CSV escaping (formula injection protection), Content-Type/Content-Disposition headers
+- Admin UI: Export section with download buttons for each report type
+- All exports capped at 5,000-10,000 rows and audited
+
 ### Smart Loading & Performance System (Customer App)
 
 #### Network Quality Detection (`hooks/useNetworkQuality.ts`)

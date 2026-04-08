@@ -10,8 +10,12 @@ import {
   notificationsTable,
   ordersTable, ridesTable, pharmacyOrdersTable, parcelBookingsTable, productsTable, platformSettingsTable, adminAccountsTable, authAuditLogTable, refreshTokensTable, rideRatingsTable, riderPenaltiesTable, reviewsTable,
   vendorProfilesTable,
+  vendorSchedulesTable,
+  locationHistoryTable,
+  supportMessagesTable,
+  locationLogsTable,
 } from "@workspace/db/schema";
-import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne, type SQL } from "drizzle-orm";
+import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne, lt, type SQL } from "drizzle-orm";
 import {
   stripUser, generateId, getUserLanguage, t,
   getPlatformSettings, invalidatePlatformSettingsCache, adminAuth, getAdminSecret,
@@ -1729,6 +1733,406 @@ router.patch("/wallet/freeze-p2p/:userId", adminAuth, async (req, res) => {
   } catch (e) {
     logger.error({ err: e }, "[admin] wallet/freeze-p2p error");
     sendError(res, "Failed to toggle P2P freeze", 500);
+  }
+});
+
+/* ═══════════════════  Scheduled Maintenance Window  ═══════════════════ */
+router.get("/maintenance-schedule", async (_req, res) => {
+  const settings = await getPlatformSettings();
+  sendSuccess(res, {
+    scheduledStart: settings["maintenance_scheduled_start"] || null,
+    scheduledEnd: settings["maintenance_scheduled_end"] || null,
+    scheduledMsg: settings["maintenance_scheduled_msg"] || "We're performing scheduled maintenance. We'll be back shortly!",
+  });
+});
+
+router.put("/maintenance-schedule", adminAuth, async (req, res) => {
+  const { scheduledStart, scheduledEnd, scheduledMsg } = req.body as {
+    scheduledStart?: string | null;
+    scheduledEnd?: string | null;
+    scheduledMsg?: string;
+  };
+
+  if (scheduledStart && scheduledEnd) {
+    const start = new Date(scheduledStart);
+    const end = new Date(scheduledEnd);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      sendValidationError(res, "Invalid date format. Use ISO 8601.");
+      return;
+    }
+    if (end <= start) {
+      sendValidationError(res, "End time must be after start time.");
+      return;
+    }
+  }
+
+  const updates = [
+    { key: "maintenance_scheduled_start", value: scheduledStart || "" },
+    { key: "maintenance_scheduled_end", value: scheduledEnd || "" },
+  ];
+  if (scheduledMsg !== undefined) {
+    updates.push({ key: "maintenance_scheduled_msg", value: scheduledMsg });
+  }
+
+  for (const { key, value } of updates) {
+    await db.insert(platformSettingsTable)
+      .values({ key, value, label: key, category: "maintenance", updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  }
+
+  invalidateSettingsCache();
+  invalidatePlatformSettingsCache();
+  addAuditEntry({
+    action: "maintenance_schedule",
+    ip: getClientIp(req),
+    adminId: (req as AdminRequest).adminId,
+    details: scheduledStart ? `Scheduled maintenance: ${scheduledStart} to ${scheduledEnd}` : "Cleared maintenance schedule",
+    result: "success",
+  });
+
+  sendSuccess(res, {
+    scheduledStart: scheduledStart || null,
+    scheduledEnd: scheduledEnd || null,
+    scheduledMsg: scheduledMsg || "We're performing scheduled maintenance. We'll be back shortly!",
+  });
+});
+
+/* ═══════════════════  Data Retention Policies  ═══════════════════ */
+router.get("/retention-policies", async (_req, res) => {
+  const settings = await getPlatformSettings();
+  sendSuccess(res, {
+    locationDays: parseInt(settings["retention_location_days"] ?? "90"),
+    chatDays: parseInt(settings["retention_chat_days"] ?? "180"),
+    auditDays: parseInt(settings["retention_audit_days"] ?? "365"),
+    notificationsDays: parseInt(settings["retention_notifications_days"] ?? "30"),
+    lastCleanup: settings["retention_last_cleanup"] || null,
+  });
+});
+
+router.put("/retention-policies", adminAuth, async (req, res) => {
+  const { locationDays, chatDays, auditDays, notificationsDays } = req.body as {
+    locationDays?: number;
+    chatDays?: number;
+    auditDays?: number;
+    notificationsDays?: number;
+  };
+
+  const updates: { key: string; value: string }[] = [];
+  if (locationDays !== undefined) updates.push({ key: "retention_location_days", value: String(Math.max(1, locationDays)) });
+  if (chatDays !== undefined) updates.push({ key: "retention_chat_days", value: String(Math.max(1, chatDays)) });
+  if (auditDays !== undefined) updates.push({ key: "retention_audit_days", value: String(Math.max(1, auditDays)) });
+  if (notificationsDays !== undefined) updates.push({ key: "retention_notifications_days", value: String(Math.max(1, notificationsDays)) });
+
+  for (const { key, value } of updates) {
+    await db.insert(platformSettingsTable)
+      .values({ key, value, label: key, category: "retention", updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  }
+
+  invalidateSettingsCache();
+  invalidatePlatformSettingsCache();
+  addAuditEntry({
+    action: "retention_policy_update",
+    ip: getClientIp(req),
+    adminId: (req as AdminRequest).adminId,
+    details: `Updated retention policies: ${updates.map(u => `${u.key}=${u.value}`).join(", ")}`,
+    result: "success",
+  });
+
+  const settings = await getPlatformSettings();
+  sendSuccess(res, {
+    locationDays: parseInt(settings["retention_location_days"] ?? "90"),
+    chatDays: parseInt(settings["retention_chat_days"] ?? "180"),
+    auditDays: parseInt(settings["retention_audit_days"] ?? "365"),
+    notificationsDays: parseInt(settings["retention_notifications_days"] ?? "30"),
+    lastCleanup: settings["retention_last_cleanup"] || null,
+  });
+});
+
+router.post("/retention-cleanup", adminAuth, async (req, res) => {
+  try {
+    const settings = await getPlatformSettings();
+    const locationDays = parseInt(settings["retention_location_days"] ?? "90");
+    const chatDays = parseInt(settings["retention_chat_days"] ?? "180");
+    const auditDays = parseInt(settings["retention_audit_days"] ?? "365");
+    const notifDays = parseInt(settings["retention_notifications_days"] ?? "30");
+    const now = new Date();
+
+    const locationCutoff = new Date(now.getTime() - locationDays * 86400000);
+    const chatCutoff = new Date(now.getTime() - chatDays * 86400000);
+    const auditCutoff = new Date(now.getTime() - auditDays * 86400000);
+    const notifCutoff = new Date(now.getTime() - notifDays * 86400000);
+
+    const results: Record<string, number> = {};
+
+    try {
+      const locDeleted = await db.delete(locationHistoryTable).where(lt(locationHistoryTable.createdAt, locationCutoff)).returning({ id: locationHistoryTable.id });
+      results.locationHistory = locDeleted.length;
+    } catch { results.locationHistory = 0; }
+
+    try {
+      const chatDeleted = await db.delete(supportMessagesTable).where(lt(supportMessagesTable.createdAt, chatCutoff)).returning({ id: supportMessagesTable.id });
+      results.chatMessages = chatDeleted.length;
+    } catch { results.chatMessages = 0; }
+
+    try {
+      const auditDeleted = await db.delete(authAuditLogTable).where(lt(authAuditLogTable.createdAt, auditCutoff)).returning({ id: authAuditLogTable.id });
+      results.auditLogs = auditDeleted.length;
+    } catch { results.auditLogs = 0; }
+
+    try {
+      const notifDeleted = await db.delete(notificationsTable).where(lt(notificationsTable.createdAt, notifCutoff)).returning({ id: notificationsTable.id });
+      results.notifications = notifDeleted.length;
+    } catch { results.notifications = 0; }
+
+    try {
+      const locLogDeleted = await db.delete(locationLogsTable).where(lt(locationLogsTable.createdAt, locationCutoff)).returning({ id: locationLogsTable.id });
+      results.locationLogs = locLogDeleted.length;
+    } catch { results.locationLogs = 0; }
+
+    const cleanupTimestamp = now.toISOString();
+    await db.insert(platformSettingsTable)
+      .values({ key: "retention_last_cleanup", value: cleanupTimestamp, label: "Last Cleanup Timestamp", category: "retention", updatedAt: now })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: cleanupTimestamp, updatedAt: now } });
+
+    invalidateSettingsCache();
+    invalidatePlatformSettingsCache();
+
+    const totalDeleted = Object.values(results).reduce((a, b) => a + b, 0);
+    addAuditEntry({
+      action: "retention_cleanup",
+      ip: getClientIp(req),
+      adminId: (req as AdminRequest).adminId,
+      details: `Retention cleanup: ${totalDeleted} records purged. Location: ${results.locationHistory}, Chat: ${results.chatMessages}, Audit: ${results.auditLogs}, Notifications: ${results.notifications}, LocationLogs: ${results.locationLogs}`,
+      result: "success",
+    });
+
+    sendSuccess(res, { deleted: results, totalDeleted, lastCleanup: cleanupTimestamp });
+  } catch (e: any) {
+    logger.error({ err: e }, "[admin] retention-cleanup error");
+    sendError(res, e.message || "Cleanup failed", 500);
+  }
+});
+
+/* ═══════════════════  Vendor Schedule Admin  ═══════════════════ */
+router.get("/vendor-schedules/:vendorId", async (req, res) => {
+  const vendorId = req.params["vendorId"]!;
+  const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const rows = await db.select().from(vendorSchedulesTable).where(eq(vendorSchedulesTable.vendorId, vendorId));
+  const schedule = DAY_NAMES.map((name, i) => {
+    const existing = rows.find(r => r.dayOfWeek === i);
+    return existing
+      ? { ...existing, dayName: name, createdAt: existing.createdAt.toISOString(), updatedAt: existing.updatedAt.toISOString() }
+      : { id: null, vendorId, dayOfWeek: i, dayName: name, openTime: "09:00", closeTime: "21:00", isEnabled: false };
+  });
+  sendSuccess(res, { schedule });
+});
+
+router.put("/vendor-schedules/:vendorId", adminAuth, async (req, res) => {
+  const vendorId = req.params["vendorId"]!;
+  const { schedule } = req.body as { schedule: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isEnabled: boolean }> };
+  if (!Array.isArray(schedule)) { sendValidationError(res, "schedule array required"); return; }
+
+  const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+  for (const item of schedule) {
+    if (item.dayOfWeek < 0 || item.dayOfWeek > 6) continue;
+    const existing = await db.select().from(vendorSchedulesTable)
+      .where(and(eq(vendorSchedulesTable.vendorId, vendorId), eq(vendorSchedulesTable.dayOfWeek, item.dayOfWeek)));
+
+    if (existing.length > 0) {
+      await db.update(vendorSchedulesTable)
+        .set({ openTime: item.openTime, closeTime: item.closeTime, isEnabled: item.isEnabled, updatedAt: new Date() })
+        .where(eq(vendorSchedulesTable.id, existing[0]!.id));
+    } else {
+      await db.insert(vendorSchedulesTable).values({
+        id: generateId(),
+        vendorId,
+        dayOfWeek: item.dayOfWeek,
+        openTime: item.openTime,
+        closeTime: item.closeTime,
+        isEnabled: item.isEnabled,
+      });
+    }
+  }
+
+  addAuditEntry({
+    action: "vendor_schedule_override",
+    ip: getClientIp(req),
+    adminId: (req as AdminRequest).adminId,
+    details: `Admin updated schedule for vendor ${vendorId}`,
+    result: "success",
+  });
+
+  const rows = await db.select().from(vendorSchedulesTable).where(eq(vendorSchedulesTable.vendorId, vendorId));
+  const result = DAY_NAMES.map((name, i) => {
+    const r = rows.find(r => r.dayOfWeek === i);
+    return r
+      ? { ...r, dayName: name, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() }
+      : { id: null, vendorId, dayOfWeek: i, dayName: name, openTime: "09:00", closeTime: "21:00", isEnabled: false };
+  });
+  sendSuccess(res, { schedule: result });
+});
+
+/* ═══════════════════  CSV / Report Export  ═══════════════════ */
+function escapeCSV(val: string): string {
+  let safe = val;
+  if (/^[=+\-@\t\r]/.test(safe)) safe = "'" + safe;
+  if (safe.includes(",") || safe.includes('"') || safe.includes("\n")) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
+}
+
+function csvResponse(res: any, filename: string, header: string, rows: string[]) {
+  const csv = [header, ...rows].join("\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(csv);
+}
+
+router.get("/export/orders", adminAuth, async (req, res) => {
+  try {
+    const { status, type, dateFrom, dateTo } = req.query;
+    const conditions: SQL[] = [];
+    if (status && status !== "all") conditions.push(eq(ordersTable.status, String(status)));
+    if (type && type !== "all") conditions.push(eq(ordersTable.type, String(type)));
+    if (dateFrom) conditions.push(gte(ordersTable.createdAt, new Date(String(dateFrom))));
+    if (dateTo) conditions.push(lte(ordersTable.createdAt, new Date(String(dateTo) + "T23:59:59")));
+
+    const orders = conditions.length > 0
+      ? await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(5000)
+      : await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(5000);
+
+    const header = "ID,Type,Status,Total,Payment Method,User ID,Vendor ID,Rider ID,Delivery Address,Created At";
+    const rows = orders.map(o => [
+      escapeCSV(o.id), escapeCSV(o.type || ""), escapeCSV(o.status), String(o.total),
+      escapeCSV(o.paymentMethod || ""), escapeCSV(o.userId), escapeCSV(o.vendorId || ""),
+      escapeCSV(o.riderId || ""), escapeCSV(o.deliveryAddress || ""),
+      escapeCSV(o.createdAt.toISOString().slice(0, 19)),
+    ].join(","));
+
+    addAuditEntry({ action: "csv_export", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Exported ${orders.length} orders as CSV`, result: "success" });
+    csvResponse(res, `orders-${new Date().toISOString().slice(0, 10)}.csv`, header, rows);
+  } catch (e: any) {
+    sendError(res, e.message || "Export failed", 500);
+  }
+});
+
+router.get("/export/users", adminAuth, async (req, res) => {
+  try {
+    const { role } = req.query;
+    const conditions: SQL[] = [];
+    if (role && role !== "all") conditions.push(sql`${usersTable.roles} LIKE ${"%" + String(role) + "%"}`);
+
+    const users = conditions.length > 0
+      ? await db.select().from(usersTable).where(and(...conditions)).orderBy(desc(usersTable.createdAt)).limit(10000)
+      : await db.select().from(usersTable).orderBy(desc(usersTable.createdAt)).limit(10000);
+
+    const header = "ID,Name,Phone,Email,Roles,City,Active,Banned,Wallet Balance,Created At";
+    const rows = users.map(u => [
+      escapeCSV(u.id), escapeCSV(u.name || ""), escapeCSV(u.phone || ""), escapeCSV(u.email || ""),
+      escapeCSV(u.roles), escapeCSV(u.city || ""),
+      u.isActive ? "Yes" : "No", u.isBanned ? "Yes" : "No",
+      String(u.walletBalance), escapeCSV(u.createdAt.toISOString().slice(0, 19)),
+    ].join(","));
+
+    addAuditEntry({ action: "csv_export", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Exported ${users.length} users as CSV`, result: "success" });
+    csvResponse(res, `users-${new Date().toISOString().slice(0, 10)}.csv`, header, rows);
+  } catch (e: any) {
+    sendError(res, e.message || "Export failed", 500);
+  }
+});
+
+router.get("/export/riders", adminAuth, async (req, res) => {
+  try {
+    const riders = await db.select().from(usersTable)
+      .where(sql`${usersTable.roles} LIKE '%rider%'`)
+      .orderBy(desc(usersTable.createdAt)).limit(5000);
+
+    const header = "ID,Name,Phone,Email,City,Online,Active,Banned,Wallet Balance,Cancel Count,Rating,Created At";
+    const rows = riders.map(r => [
+      escapeCSV(r.id), escapeCSV(r.name || ""), escapeCSV(r.phone || ""), escapeCSV(r.email || ""),
+      escapeCSV(r.city || ""), r.isOnline ? "Yes" : "No", r.isActive ? "Yes" : "No", r.isBanned ? "Yes" : "No",
+      String(r.walletBalance), String(r.cancelCount), "",
+      escapeCSV(r.createdAt.toISOString().slice(0, 19)),
+    ].join(","));
+
+    addAuditEntry({ action: "csv_export", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Exported ${riders.length} riders as CSV`, result: "success" });
+    csvResponse(res, `riders-${new Date().toISOString().slice(0, 10)}.csv`, header, rows);
+  } catch (e: any) {
+    sendError(res, e.message || "Export failed", 500);
+  }
+});
+
+router.get("/export/vendors", adminAuth, async (req, res) => {
+  try {
+    const vendors = await db.select().from(usersTable)
+      .where(sql`${usersTable.roles} LIKE '%vendor%'`)
+      .orderBy(desc(usersTable.createdAt)).limit(5000);
+
+    const header = "ID,Name,Phone,Email,Store Name,City,Active,Banned,Wallet Balance,Created At";
+    const rows = vendors.map(v => [
+      escapeCSV(v.id), escapeCSV(v.name || ""), escapeCSV(v.phone || ""), escapeCSV(v.email || ""),
+      escapeCSV((v as any).storeName || ""), escapeCSV(v.city || ""),
+      v.isActive ? "Yes" : "No", v.isBanned ? "Yes" : "No",
+      String(v.walletBalance), escapeCSV(v.createdAt.toISOString().slice(0, 19)),
+    ].join(","));
+
+    addAuditEntry({ action: "csv_export", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Exported ${vendors.length} vendors as CSV`, result: "success" });
+    csvResponse(res, `vendors-${new Date().toISOString().slice(0, 10)}.csv`, header, rows);
+  } catch (e: any) {
+    sendError(res, e.message || "Export failed", 500);
+  }
+});
+
+router.get("/export/rides", adminAuth, async (req, res) => {
+  try {
+    const { status, dateFrom, dateTo } = req.query;
+    const conditions: SQL[] = [];
+    if (status && status !== "all") conditions.push(eq(ridesTable.status, String(status)));
+    if (dateFrom) conditions.push(gte(ridesTable.createdAt, new Date(String(dateFrom))));
+    if (dateTo) conditions.push(lte(ridesTable.createdAt, new Date(String(dateTo) + "T23:59:59")));
+
+    const rides = conditions.length > 0
+      ? await db.select().from(ridesTable).where(and(...conditions)).orderBy(desc(ridesTable.createdAt)).limit(5000)
+      : await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(5000);
+
+    const header = "ID,Type,Status,Fare,Distance KM,User ID,Rider ID,Pickup,Dropoff,Created At";
+    const rows = rides.map(r => [
+      escapeCSV(r.id), escapeCSV(r.type || ""), escapeCSV(r.status), String(r.fare),
+      String(r.distance), escapeCSV(r.userId), escapeCSV(r.riderId || ""),
+      escapeCSV(r.pickupAddress || ""), escapeCSV(r.dropAddress || ""),
+      escapeCSV(r.createdAt.toISOString().slice(0, 19)),
+    ].join(","));
+
+    addAuditEntry({ action: "csv_export", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Exported ${rides.length} rides as CSV`, result: "success" });
+    csvResponse(res, `rides-${new Date().toISOString().slice(0, 10)}.csv`, header, rows);
+  } catch (e: any) {
+    sendError(res, e.message || "Export failed", 500);
+  }
+});
+
+router.get("/export/financial", adminAuth, async (req, res) => {
+  try {
+    const { dateFrom, dateTo } = req.query;
+    const conditions: SQL[] = [];
+    if (dateFrom) conditions.push(gte(walletTransactionsTable.createdAt, new Date(String(dateFrom))));
+    if (dateTo) conditions.push(lte(walletTransactionsTable.createdAt, new Date(String(dateTo) + "T23:59:59")));
+
+    const txns = conditions.length > 0
+      ? await db.select().from(walletTransactionsTable).where(and(...conditions)).orderBy(desc(walletTransactionsTable.createdAt)).limit(10000)
+      : await db.select().from(walletTransactionsTable).orderBy(desc(walletTransactionsTable.createdAt)).limit(10000);
+
+    const header = "ID,User ID,Type,Amount,Description,Reference,Created At";
+    const rows = txns.map(t => [
+      escapeCSV(t.id), escapeCSV(t.userId), escapeCSV(t.type), String(t.amount),
+      escapeCSV(t.description || ""), escapeCSV(t.reference || ""),
+      escapeCSV(t.createdAt.toISOString().slice(0, 19)),
+    ].join(","));
+
+    addAuditEntry({ action: "csv_export", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Exported ${txns.length} financial transactions as CSV`, result: "success" });
+    csvResponse(res, `financial-${new Date().toISOString().slice(0, 10)}.csv`, header, rows);
+  } catch (e: any) {
+    sendError(res, e.message || "Export failed", 500);
   }
 });
 

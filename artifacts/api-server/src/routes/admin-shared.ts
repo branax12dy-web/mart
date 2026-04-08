@@ -638,6 +638,16 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "comm_mask_format_phone",       value: "",                              label: "Phone Mask Format (empty = default)",           category: "moderation" },
   { key: "comm_mask_format_email",       value: "",                              label: "Email Mask Format (empty = default)",           category: "moderation" },
   { key: "comm_mask_format_cnic",        value: "",                              label: "CNIC Mask Format (empty = default)",            category: "moderation" },
+  /* ═══════════════════  Scheduled Maintenance  ═══════════════════ */
+  { key: "maintenance_scheduled_start", value: "",     label: "Scheduled Maintenance Start (ISO)",  category: "maintenance" },
+  { key: "maintenance_scheduled_end",   value: "",     label: "Scheduled Maintenance End (ISO)",    category: "maintenance" },
+  { key: "maintenance_scheduled_msg",   value: "We're performing scheduled maintenance. We'll be back shortly!", label: "Maintenance Message", category: "maintenance" },
+  /* ═══════════════════  Data Retention Policies  ═══════════════════ */
+  { key: "retention_location_days",      value: "90",   label: "Location History Retention (days)",    category: "retention" },
+  { key: "retention_chat_days",          value: "180",  label: "Chat / Message Log Retention (days)",  category: "retention" },
+  { key: "retention_audit_days",         value: "365",  label: "Audit Log Retention (days)",           category: "retention" },
+  { key: "retention_notifications_days", value: "30",   label: "Notification History Retention (days)", category: "retention" },
+  { key: "retention_last_cleanup",       value: "",     label: "Last Cleanup Timestamp",               category: "retention" },
 ];
 
 let _authMethodColumnMigrated = false;

@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable, riderProfilesTable, vendorProfilesTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable, riderProfilesTable, vendorProfilesTable, vendorSchedulesTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull, avg } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -920,6 +920,65 @@ router.post("/delivery-access/request", async (req, res) => {
   } catch (e: any) {
     sendError(res, e.message || "Failed to submit request", 500);
   }
+});
+
+/* ═══════════════════  Vendor Weekly Schedule  ═══════════════════ */
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+router.get("/schedule", async (req, res) => {
+  const vendorId = req.vendorUser!.id;
+  const rows = await db.select().from(vendorSchedulesTable).where(eq(vendorSchedulesTable.vendorId, vendorId));
+  const schedule = DAY_NAMES.map((name, i) => {
+    const existing = rows.find(r => r.dayOfWeek === i);
+    return existing
+      ? { ...existing, dayName: name, createdAt: existing.createdAt.toISOString(), updatedAt: existing.updatedAt.toISOString() }
+      : { id: null, vendorId, dayOfWeek: i, dayName: name, openTime: "09:00", closeTime: "21:00", isEnabled: false };
+  });
+  sendSuccess(res, { schedule });
+});
+
+const scheduleItemSchema = z.object({
+  dayOfWeek: z.number().min(0).max(6),
+  openTime: z.string().regex(/^\d{2}:\d{2}$/),
+  closeTime: z.string().regex(/^\d{2}:\d{2}$/),
+  isEnabled: z.boolean(),
+});
+const putScheduleSchema = z.object({
+  schedule: z.array(scheduleItemSchema).min(1).max(7),
+});
+
+router.put("/schedule", validateBody(putScheduleSchema), async (req, res) => {
+  const vendorId = req.vendorUser!.id;
+  const { schedule } = req.body as { schedule: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isEnabled: boolean }> };
+
+  for (const item of schedule) {
+    const existing = await db.select().from(vendorSchedulesTable)
+      .where(and(eq(vendorSchedulesTable.vendorId, vendorId), eq(vendorSchedulesTable.dayOfWeek, item.dayOfWeek)));
+
+    if (existing.length > 0) {
+      await db.update(vendorSchedulesTable)
+        .set({ openTime: item.openTime, closeTime: item.closeTime, isEnabled: item.isEnabled, updatedAt: new Date() })
+        .where(eq(vendorSchedulesTable.id, existing[0]!.id));
+    } else {
+      await db.insert(vendorSchedulesTable).values({
+        id: generateId(),
+        vendorId,
+        dayOfWeek: item.dayOfWeek,
+        openTime: item.openTime,
+        closeTime: item.closeTime,
+        isEnabled: item.isEnabled,
+      });
+    }
+  }
+
+  const rows = await db.select().from(vendorSchedulesTable).where(eq(vendorSchedulesTable.vendorId, vendorId));
+  const result = DAY_NAMES.map((name, i) => {
+    const r = rows.find(r => r.dayOfWeek === i);
+    return r
+      ? { ...r, dayName: name, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() }
+      : { id: null, vendorId, dayOfWeek: i, dayName: name, openTime: "09:00", closeTime: "21:00", isEnabled: false };
+  });
+  sendSuccess(res, { schedule: result });
 });
 
 export default router;
