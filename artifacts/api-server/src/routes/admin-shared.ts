@@ -739,7 +739,7 @@ export async function ensureRideBidsMigration() {
        schema failure; log as error and do NOT mark migrated so the next request
        will retry rather than silently operating on a partially migrated schema. */
     const msg = e instanceof Error ? e.message : String(e);
-    const isIdempotent = /already exists|duplicate column|42701|42P07/i.test(msg);
+    const isIdempotent = /already exists|duplicate column|42701|42P07|pg_class_relname_nsp_index/i.test(msg);
     if (isIdempotent) {
       logger.debug({ err: e }, "[migration] ride_bids expiry migration skipped (schema already in target state)");
     } else {
