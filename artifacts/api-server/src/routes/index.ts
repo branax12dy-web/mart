@@ -42,6 +42,7 @@ import statsRouter from "./stats.js";
 import errorReportsRouter from "./error-reports.js";
 import communicationRouter from "./communication.js";
 import weatherConfigRouter from "./weather-config.js";
+import deepLinksPublicRouter from "./deep-links-public.js";
 
 const router: IRouter = Router();
 
@@ -94,5 +95,6 @@ router.use("/error-reports", errorReportsRouter);
 router.use("/admin/error-reports", errorReportsRouter);
 router.use("/communication", communicationRouter);
 router.use("/weather-config", weatherConfigRouter);
+router.use("/dl", deepLinksPublicRouter);
 
 export default router;

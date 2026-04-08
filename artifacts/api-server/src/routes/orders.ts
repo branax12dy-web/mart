@@ -11,6 +11,7 @@ import { calcDeliveryFee, calcGst, calcCodFee } from "../lib/fees.js";
 import { isInServiceZone } from "../lib/geofence.js";
 import { checkDeliveryEligibility } from "../lib/delivery-access.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError, sendErrorWithData } from "../lib/response.js";
+import { emitWebhookEvent } from "../lib/webhook-emitter.js";
 
 const router: IRouter = Router();
 
@@ -1310,6 +1311,7 @@ router.post("/", customerAuth, async (req, res) => {
     if (io) io.to(`user:${userId}`).emit("order:ack", { orderId: order!.id, status: "pending", createdAt: order!.createdAt.toISOString() });
 
     sendCreated(res, mapped);
+    emitWebhookEvent("order_placed", { orderId: order!.id, userId, type: type || "mart", total: total.toFixed(2), paymentMethod, status: "pending" }).catch(() => {});
     notifyOnlineRidersOfOrder(order!.id, type || "mart").catch((e: Error) => logger.warn({ orderId: order!.id, err: e.message }, "[orders/create] cash notifyOnlineRiders failed"));
   } catch (e: unknown) {
     const errMsg = (e as Error).message ?? "";

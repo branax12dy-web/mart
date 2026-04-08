@@ -55,6 +55,9 @@ import WalletTransfers from "@/pages/wallet-transfers";
 import ChatMonitor from "@/pages/chat-monitor";
 import WishlistInsights from "@/pages/wishlist-insights";
 import QrCodes from "@/pages/qr-codes";
+import Experiments from "@/pages/experiments";
+import WebhookManager from "@/pages/webhook-manager";
+import DeepLinks from "@/pages/deep-links";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -164,6 +167,9 @@ function Router() {
       <Route path="/chat-monitor"><ProtectedRoute component={ChatMonitor} /></Route>
       <Route path="/wishlist-insights"><ProtectedRoute component={WishlistInsights} /></Route>
       <Route path="/qr-codes"><ProtectedRoute component={QrCodes} /></Route>
+      <Route path="/experiments"><ProtectedRoute component={Experiments} /></Route>
+      <Route path="/webhooks"><ProtectedRoute component={WebhookManager} /></Route>
+      <Route path="/deep-links"><ProtectedRoute component={DeepLinks} /></Route>
 
       <Route component={NotFound} />
     </Switch>

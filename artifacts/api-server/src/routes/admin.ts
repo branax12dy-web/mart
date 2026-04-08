@@ -20,6 +20,9 @@ import wishlistAnalyticsRoutes from "./admin/wishlist-analytics.js";
 import qrCodesRoutes from "./admin/qr-codes.js";
 import weatherConfigRoutes from "./admin/weather-config.js";
 import userAddressesRoutes from "./admin/user-addresses.js";
+import experimentsRoutes from "./admin/experiments.js";
+import webhookRegistrationsRoutes from "./admin/webhook-registrations.js";
+import deepLinksRoutes from "./admin/deep-links.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -67,5 +70,8 @@ router.use(wishlistAnalyticsRoutes);
 router.use("/qr-codes", qrCodesRoutes);
 router.use("/weather-config", weatherConfigRoutes);
 router.use(userAddressesRoutes);
+router.use(experimentsRoutes);
+router.use(webhookRegistrationsRoutes);
+router.use(deepLinksRoutes);
 
 export default router;

@@ -7,6 +7,7 @@ import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensT
 import { eq, and, sql, lt, or, desc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
+import { emitWebhookEvent } from "../lib/webhook-emitter.js";
 import {
   checkLockout,
   recordFailedAttempt,
@@ -799,6 +800,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       id: generateId(), userId: newUserId, tokenHash: refreshHash,
       authMethod: "phone_otp", expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
     });
+
+    emitWebhookEvent("user_registered", { userId: newUserId, phone, role: "customer", method: "phone_otp" }).catch(() => {});
 
     res.json({
       token: accessToken,
@@ -2217,6 +2220,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   }
 
   writeAuthAuditLog("register", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone: normalizedPhone, role: userRole } });
+  emitWebhookEvent("user_registered", { userId, phone: normalizedPhone, role: userRole, method: "username_password" }).catch(() => {});
 
   const isDev = process.env.NODE_ENV !== "production";
   res.status(201).json({
@@ -2633,6 +2637,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
   const emailResult = await sendVerificationEmail(normalizedEmail, verificationLink, name, verifyLang);
 
   writeAuthAuditLog("email_register", { userId, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { email: normalizedEmail, role: userRole, emailSent: emailResult.sent } });
+  emitWebhookEvent("user_registered", { userId, email: normalizedEmail, role: userRole, method: "email" }).catch(() => {});
 
   const isDev = process.env.NODE_ENV !== "production";
   if (isDev) {
@@ -2891,6 +2896,7 @@ router.post("/social/google", async (req, res) => {
       emailVerified: !!email,
       isActive: !requireApproval, approvalStatus: requireApproval ? "pending" : "approved",
     }).returning();
+    emitWebhookEvent("user_registered", { userId: id, email, role: "customer", method: "social_google" }).catch(() => {});
   }
 
   if (user!.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
@@ -2988,6 +2994,7 @@ router.post("/social/facebook", async (req, res) => {
       emailVerified: !!email,
       isActive: !requireApproval, approvalStatus: requireApproval ? "pending" : "approved",
     }).returning();
+    emitWebhookEvent("user_registered", { userId: id, email, role: "customer", method: "social_facebook" }).catch(() => {});
   }
 
   if (user!.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }

@@ -1445,3 +1445,32 @@ All 30+ empty `.catch(() => {})` blocks in the API server now log meaningful mes
 
 #### Bundle Size Reduction
 - **`artifacts/api-server/src/routes/reviews.ts`**: OpenAI SDK import changed from static top-level `import OpenAI from "openai"` to lazy dynamic `import("openai")` — the `getAIClient()` function is now async and only loads the OpenAI module on the first moderation request. This removes the OpenAI SDK from the startup critical path.
+
+### Professional Features Part 2 — A/B Testing, Webhooks, Deep Links
+
+#### A/B Testing Framework
+- **Schema**: `ab_experiments` table (id, name, description, status, variants JSONB, trafficPct) and `ab_assignments` table (experimentId, userId, variant, converted) with unique constraint on (experimentId, userId).
+- **Admin API**: CRUD endpoints at `/admin/experiments` — create, list, update status (active/paused/completed), view results with per-variant distribution and conversion counts, delete.
+- **Platform Config**: `/platform-config/experiments?userId=X` returns deterministic variant assignments via MD5 hash-based bucketing (per-experiment independent traffic sampling).
+- **Admin Page**: `experiments.tsx` — create form (name, description, traffic %, variants with weights), active experiments table with pause/resume/complete controls, results dialog with conversion bars.
+- **Validation**: Variant names must be unique and non-empty, weights must be non-negative numbers.
+
+#### Webhook/Integration Events
+- **Schema**: `webhook_registrations` table (url, events JSONB, secret, isActive, description) and `webhook_logs` table (webhookId, event, url, status, requestBody, responseBody, success, error, durationMs).
+- **Admin API**: CRUD at `/admin/webhooks` — register (URL+events), toggle active, test ping, view delivery logs, delete. Secrets are never exposed in list responses.
+- **Security**: Webhook URLs must be HTTPS, localhost/private-network/metadata IPs are rejected (SSRF protection).
+- **Webhook Emitter**: `lib/webhook-emitter.ts` utility dispatches async POST requests to matching registered webhooks with retry-once on failure. Headers include `X-Webhook-Secret` and `X-Webhook-Event`.
+- **Supported Events**: order_placed, order_delivered, ride_completed, user_registered, payment_received.
+- **Admin Page**: `webhook-manager.tsx` — registration form with event checkboxes, webhook list with active toggle, test ping button, delivery log viewer.
+
+#### Dynamic Deep Links
+- **Schema**: `deep_links` table (shortCode unique, targetScreen, params JSONB, label, clickCount).
+- **Admin API**: CRUD at `/admin/deep-links` — create (targetScreen + params + label), list, delete. Product/vendor screens require productId/vendorId params.
+- **Public Redirect**: `/api/dl/:code` increments click count and serves an HTML page that redirects to `ajkmart://` app scheme with query params.
+- **Target Screens**: product, vendor, category, promo, ride, food, mart, pharmacy, parcel, van.
+- **Admin Page**: `deep-links.tsx` — builder form (select target, add params, generate link), link list with click counts, copy/delete actions.
+- **Mobile Handling**: `DeepLinkHandler` in `_layout.tsx` listens for `ajkmart://` URLs and navigates to matching app screens via expo-router.
+
+#### Admin Navigation
+- Experiments page added under Analytics & Tools group.
+- New "Integrations" nav group (green) with Webhooks and Deep Links pages.

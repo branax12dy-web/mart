@@ -13,6 +13,7 @@ import { z } from "zod";
 import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { sendSuccess, sendCreated, sendError, sendErrorWithData, sendNotFound, sendForbidden, sendUnauthorized, sendValidationError, sendTooManyRequests } from "../lib/response.js";
+import { emitWebhookEvent } from "../lib/webhook-emitter.js";
 import { isInServiceZone } from "../lib/geofence.js";
 import rateLimit from "express-rate-limit";
 
@@ -1162,6 +1163,11 @@ router.patch("/orders/:id/status", async (req, res) => {
     updated = row;
   }
 
+  if (status === "delivered") {
+    emitWebhookEvent("order_delivered", { orderId: updated.id, riderId, userId: updated.userId, total: safeNum(updated.total).toFixed(2) }).catch(() => {});
+    emitWebhookEvent("payment_received", { orderId: updated.id, userId: updated.userId, amount: safeNum(updated.total).toFixed(2), method: updated.paymentMethod ?? "unknown" }).catch(() => {});
+  }
+
   sendSuccess(res, { ...updated, total: safeNum(updated.total) });
 });
 
@@ -1523,6 +1529,7 @@ router.patch("/rides/:id/status", rideStatusLimiter, async (req, res) => {
       tag: "ride-completed-rider",
       data: { rideId: ride.id },
     }).catch((e: Error) => { logger.warn({ rideId: ride.id, riderId, err: e.message }, "[rider] trip-completed push to rider failed"); });
+    emitWebhookEvent("ride_completed", { rideId: ride.id, riderId, userId: ride.userId, fare: safeNum(ride.fare).toFixed(2) }).catch(() => {});
   } else {
     const now = new Date();
     const timestampFields =

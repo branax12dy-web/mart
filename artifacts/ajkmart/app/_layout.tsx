@@ -242,6 +242,78 @@ function MagicLinkHandler() {
   return null;
 }
 
+function DeepLinkHandler() {
+  useEffect(() => {
+    const handleDeepLink = (url: string) => {
+      try {
+        const parsed = new URL(url);
+        const path = parsed.hostname || parsed.pathname.replace(/^\//, "");
+
+        if (path === "magic-link" || path === "auth") return;
+
+        const params = Object.fromEntries(parsed.searchParams.entries());
+
+        const routeMap: Record<string, string> = {
+          product: "/product/{id}",
+          vendor: "/vendor/{id}",
+          category: "/categories",
+          promo: "/offers",
+          ride: "/ride",
+          food: "/food",
+          mart: "/mart",
+          pharmacy: "/pharmacy",
+          parcel: "/parcel",
+          van: "/van",
+        };
+
+        const route = routeMap[path];
+        if (!route) return;
+
+        let targetPath = route;
+        if (route.includes("{id}")) {
+          const id = params.productId || params.vendorId || params.id || "";
+          if (!id) return;
+          targetPath = route.replace("{id}", id);
+        }
+
+        if (path === "ride" && (params.pickup || params.dropoff)) {
+          const queryParts: string[] = [];
+          if (params.pickup) queryParts.push(`pickup=${encodeURIComponent(params.pickup)}`);
+          if (params.dropoff) queryParts.push(`dropoff=${encodeURIComponent(params.dropoff)}`);
+          if (params.pickupLat) queryParts.push(`pickupLat=${encodeURIComponent(params.pickupLat)}`);
+          if (params.pickupLng) queryParts.push(`pickupLng=${encodeURIComponent(params.pickupLng)}`);
+          if (params.dropoffLat) queryParts.push(`dropoffLat=${encodeURIComponent(params.dropoffLat)}`);
+          if (params.dropoffLng) queryParts.push(`dropoffLng=${encodeURIComponent(params.dropoffLng)}`);
+          if (queryParts.length) targetPath += `?${queryParts.join("&")}`;
+        }
+
+        if (path === "category" && params.categoryId) {
+          targetPath = `/categories?id=${encodeURIComponent(params.categoryId)}`;
+        }
+
+        if (path === "promo" && params.code) {
+          targetPath = `/offers?code=${encodeURIComponent(params.code)}`;
+        }
+
+        setTimeout(() => {
+          try {
+            router.push(targetPath as any);
+          } catch {
+            if (__DEV__) console.warn("[DeepLink] Could not navigate to:", targetPath);
+          }
+        }, 500);
+      } catch {
+      }
+    };
+
+    const sub = Linking.addEventListener("url", (event) => handleDeepLink(event.url));
+    Linking.getInitialURL().then(url => { if (url) handleDeepLink(url); });
+    return () => sub.remove();
+  }, []);
+
+  return null;
+}
+
 function MisconfigScreen() {
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: "#0f172a" }}>
@@ -323,6 +395,7 @@ function RootLayoutNav() {
     <>
       <AuthGuard />
       <MagicLinkHandler />
+      <DeepLinkHandler />
       {_domain && <PopupEngine apiBase={`https://${_domain}/api`} triggerKey={segments.join("/")} />}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index"          options={{ headerShown: false }} />

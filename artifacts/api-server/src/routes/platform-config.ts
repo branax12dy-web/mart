@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import { getPlatformSettings } from "./admin.js";
-import { sendSuccess } from "../lib/response.js";
+import { sendSuccess, sendValidationError, sendNotFound } from "../lib/response.js";
 import { db } from "@workspace/db";
-import { faqsTable } from "@workspace/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { faqsTable, abExperimentsTable, abAssignmentsTable } from "@workspace/db/schema";
+import { eq, asc, and } from "drizzle-orm";
+import crypto from "crypto";
 
 const router: IRouter = Router();
 
@@ -389,7 +390,122 @@ router.get("/", async (req, res) => {
       jazzcashProofRequired:   (s["jazzcash_proof_required"]   ?? "off") === "on",
       paymentReceiptRequired:  (s["payment_receipt_required"]  ?? "off") === "on",
     },
+    experiments: await (async () => {
+      const userId = (req.query["userId"] as string) || "";
+      if (!userId) return [];
+      try {
+        const activeExperiments = await db.select().from(abExperimentsTable)
+          .where(eq(abExperimentsTable.status, "active"));
+        const assignments: { experimentId: string; experimentName: string; variant: string }[] = [];
+        for (const exp of activeExperiments) {
+          const variants = (exp.variants as any[]) || [];
+          if (variants.length < 2) continue;
+          const trafficHash = crypto.createHash("md5").update(`${userId}:${exp.id}:traffic`).digest("hex");
+          const trafficBucket = parseInt(trafficHash.slice(0, 8), 16) % 100;
+          if (trafficBucket >= exp.trafficPct) continue;
+          const variant = assignVariant(userId, exp.id, variants);
+          const [existing] = await db.select().from(abAssignmentsTable)
+            .where(and(eq(abAssignmentsTable.experimentId, exp.id), eq(abAssignmentsTable.userId, userId)))
+            .limit(1);
+          if (!existing) {
+            const id = crypto.randomBytes(10).toString("hex");
+            try { await db.insert(abAssignmentsTable).values({ id, experimentId: exp.id, userId, variant }); } catch {}
+          }
+          assignments.push({ experimentId: exp.id, experimentName: exp.name, variant: existing?.variant ?? variant });
+        }
+        return assignments;
+      } catch { return []; }
+    })(),
   });
+});
+
+function assignVariant(userId: string, experimentId: string, variants: any[]): string {
+  const hash = crypto.createHash("md5").update(`${userId}:${experimentId}`).digest("hex");
+  const bucket = parseInt(hash.slice(0, 8), 16) % 100;
+  let cumulative = 0;
+  for (const v of variants) {
+    cumulative += (v.weight ?? Math.floor(100 / variants.length));
+    if (bucket < cumulative) return v.name;
+  }
+  return variants[variants.length - 1]?.name ?? "control";
+}
+
+router.get("/experiments", async (req, res) => {
+  const userId = (req.query["userId"] as string) || "";
+  if (!userId) {
+    sendSuccess(res, { experiments: [] });
+    return;
+  }
+
+  try {
+    const activeExperiments = await db.select().from(abExperimentsTable)
+      .where(eq(abExperimentsTable.status, "active"));
+
+    const assignments: { experimentId: string; experimentName: string; variant: string }[] = [];
+
+    for (const exp of activeExperiments) {
+      const variants = (exp.variants as any[]) || [];
+      if (variants.length < 2) continue;
+
+      const trafficHash = crypto.createHash("md5").update(`${userId}:${exp.id}:traffic`).digest("hex");
+      const trafficBucket = parseInt(trafficHash.slice(0, 8), 16) % 100;
+      if (trafficBucket >= exp.trafficPct) continue;
+
+      const variant = assignVariant(userId, exp.id, variants);
+
+      const [existing] = await db.select().from(abAssignmentsTable)
+        .where(and(
+          eq(abAssignmentsTable.experimentId, exp.id),
+          eq(abAssignmentsTable.userId, userId),
+        ))
+        .limit(1);
+
+      if (!existing) {
+        const id = crypto.randomBytes(10).toString("hex");
+        try {
+          await db.insert(abAssignmentsTable).values({
+            id,
+            experimentId: exp.id,
+            userId,
+            variant,
+          });
+        } catch {
+        }
+      }
+
+      assignments.push({
+        experimentId: exp.id,
+        experimentName: exp.name,
+        variant: existing?.variant ?? variant,
+      });
+    }
+
+    sendSuccess(res, { experiments: assignments });
+  } catch {
+    sendSuccess(res, { experiments: [] });
+  }
+});
+
+router.post("/experiments/convert", async (req, res) => {
+  const { experimentId, userId } = req.body as { experimentId?: string; userId?: string };
+  if (!experimentId || !userId) { sendValidationError(res, "experimentId and userId are required"); return; }
+
+  try {
+    const [assignment] = await db.select().from(abAssignmentsTable)
+      .where(and(eq(abAssignmentsTable.experimentId, experimentId), eq(abAssignmentsTable.userId, userId)))
+      .limit(1);
+
+    if (!assignment) { sendNotFound(res, "No assignment found"); return; }
+    if (assignment.converted) { sendSuccess(res, { alreadyConverted: true }); return; }
+
+    await db.update(abAssignmentsTable)
+      .set({ converted: true })
+      .where(eq(abAssignmentsTable.id, assignment.id));
+
+    sendSuccess(res, { converted: true, variant: assignment.variant });
+  } catch {
+    sendSuccess(res, { converted: false });
+  }
 });
 
 const FALLBACK_FAQS = [

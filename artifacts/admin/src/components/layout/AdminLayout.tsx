@@ -45,6 +45,9 @@ import {
   Heart,
   QrCode,
   CloudSun,
+  FlaskConical,
+  Webhook,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -137,6 +140,15 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { nameKey: "navWishlistInsights" as TranslationKey, href: "/wishlist-insights", icon: Heart },
       { nameKey: "navQrCodes" as TranslationKey,          href: "/qr-codes",          icon: QrCode },
+      { nameKey: "navExperiments" as TranslationKey,       href: "/experiments",       icon: FlaskConical },
+    ],
+  },
+  {
+    labelKey: "navIntegrations" as TranslationKey,
+    color: "#10B981",
+    items: [
+      { nameKey: "navWebhooks" as TranslationKey,   href: "/webhooks",    icon: Webhook },
+      { nameKey: "navDeepLinks" as TranslationKey,   href: "/deep-links",  icon: Link2 },
     ],
   },
   {
