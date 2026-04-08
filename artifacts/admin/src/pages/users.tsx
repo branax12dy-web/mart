@@ -238,18 +238,22 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const { toast } = useToast();
   const createUser = useCreateUser();
 
-  const [name,  setName]  = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [role,  setRole]  = useState<NonNullable<CreateUserInput["role"]>>("customer");
-  const [city,  setCity]  = useState("");
-  const [area,  setArea]  = useState("");
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [name,         setName]         = useState("");
+  const [phone,        setPhone]        = useState("");
+  const [email,        setEmail]        = useState("");
+  const [username,     setUsername]     = useState("");
+  const [tempPassword, setTempPassword] = useState("");
+  const [role,         setRole]         = useState<NonNullable<CreateUserInput["role"]>>("customer");
+  const [city,         setCity]         = useState("");
+  const [area,         setArea]         = useState("");
+  const [errors,       setErrors]       = useState<Record<string, string>>({});
+  const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(null);
 
   const reset = () => {
     setName(""); setPhone(""); setEmail("");
+    setUsername(""); setTempPassword("");
     setRole("customer"); setCity(""); setArea("");
-    setErrors({});
+    setErrors({}); setCreatedTempPassword(null);
   };
 
   const validate = (): boolean => {
@@ -257,8 +261,24 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
     if (!name.trim() && !phone.trim()) {
       errs.general = "Name ya phone mein se koi ek zaroor dein";
     }
-    if (phone.trim() && !/^\+?\d{7,15}$/.test(phone.trim())) {
-      errs.phone = "Phone 7-15 digits hona chahiye (+ optional)";
+    if (phone.trim() && !/^(\+?92|0)?3\d{9}$/.test(phone.trim().replace(/[\s\-()+]/g, ""))) {
+      errs.phone = "Valid Pakistani mobile number enter karein (e.g. 03001234567)";
+    }
+    if (email.trim() && !email.trim().includes("@")) {
+      errs.email = "Valid email address darj karein";
+    }
+    if (username.trim() && username.trim().replace(/[^a-z0-9_]/gi, "").length < 3) {
+      errs.username = "Username kam az kam 3 characters ka hona chahiye";
+    }
+    if (tempPassword.trim()) {
+      const pw = tempPassword.trim();
+      if (pw.length < 8) {
+        errs.tempPassword = "Password kam az kam 8 characters ka hona chahiye";
+      } else if (!/[A-Z]/.test(pw)) {
+        errs.tempPassword = "Password mein kam az kam ek capital letter hona chahiye";
+      } else if (!/[0-9]/.test(pw)) {
+        errs.tempPassword = "Password mein kam az kam ek number hona chahiye";
+      }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -267,20 +287,27 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const handleSubmit = () => {
     if (!validate()) return;
     const payload: CreateUserInput = { role };
-    if (name.trim())  payload.name  = name.trim();
-    if (phone.trim()) payload.phone = phone.trim();
-    if (email.trim()) payload.email = email.trim();
-    if (city.trim())  payload.city  = city.trim();
-    if (area.trim())  payload.area  = area.trim();
+    if (name.trim())         payload.name         = name.trim();
+    if (phone.trim())        payload.phone        = phone.trim();
+    if (email.trim())        payload.email        = email.trim();
+    if (username.trim())     payload.username     = username.trim();
+    if (tempPassword.trim()) payload.tempPassword = tempPassword.trim();
+    if (city.trim())         payload.city         = city.trim();
+    if (area.trim())         payload.area         = area.trim();
     createUser.mutate(payload, {
       onSuccess: () => {
-        toast({ title: "User created", description: name.trim() || phone.trim() || "New user added successfully." });
-        reset();
-        onClose();
+        if (tempPassword.trim()) {
+          setCreatedTempPassword(tempPassword.trim());
+        } else {
+          toast({ title: "User created", description: name.trim() || phone.trim() || "New user added successfully." });
+          reset();
+          onClose();
+        }
       },
       onError: (e: Error) => {
-        if (e.message?.includes("409") || e.message?.toLowerCase().includes("already exists") || e.message?.toLowerCase().includes("duplicate")) {
-          setErrors({ general: "Yeh phone ya email already registered hai" });
+        const msg = e.message?.toLowerCase() ?? "";
+        if (msg.includes("409") || msg.includes("already exists") || msg.includes("duplicate") || msg.includes("already taken")) {
+          setErrors({ general: e.message || "Yeh phone, email, ya username already registered hai" });
         } else {
           toast({ title: "Failed to create user", description: e.message, variant: "destructive" });
         }
@@ -290,9 +317,38 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
   const handleClose = () => { reset(); onClose(); };
 
+  if (createdTempPassword) {
+    return (
+      <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle2 className="w-5 h-5" /> User Created Successfully
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-1">
+            <p className="text-sm text-muted-foreground">User account has been created. Share the temporary password below with the user — they will be prompted to change it on first login.</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Temporary Password</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-base font-bold text-amber-900 bg-amber-100 px-3 py-2 rounded-lg select-all">{createdTempPassword}</code>
+                <Button size="sm" variant="outline" className="rounded-lg" onClick={() => { navigator.clipboard?.writeText(createdTempPassword); toast({ title: "Copied!" }); }}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <Button className="w-full rounded-xl bg-[#1A56DB] hover:bg-[#1A56DB]/90 text-white" onClick={handleClose}>
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-md rounded-2xl">
+      <DialogContent className="max-w-md rounded-2xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-[#1A56DB]">
             <UserPlus className="w-5 h-5" /> Create User
@@ -318,13 +374,13 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone <span className="text-muted-foreground font-normal normal-case">(optional, 7-15 digits)</span></label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone <span className="text-muted-foreground font-normal normal-case">(optional)</span></label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 value={phone}
                 onChange={e => { setPhone(e.target.value); setErrors(prev => ({ ...prev, phone: "" })); }}
-                placeholder="e.g. 03001234567"
+                placeholder="e.g. 03001234567 or +923001234567"
                 className={`pl-9 h-10 rounded-xl ${errors.phone ? "border-red-400 focus:ring-red-300" : ""}`}
               />
             </div>
@@ -336,12 +392,43 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => { setEmail(e.target.value); setErrors(prev => ({ ...prev, email: "" })); }}
                 placeholder="e.g. ali@example.com"
                 type="email"
-                className="pl-9 h-10 rounded-xl"
+                className={`pl-9 h-10 rounded-xl ${errors.email ? "border-red-400 focus:ring-red-300" : ""}`}
               />
             </div>
+            {errors.email && <p className="text-xs text-red-600">{errors.email}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Username <span className="text-muted-foreground font-normal normal-case">(optional, for password login)</span></label>
+            <div className="relative">
+              <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={username}
+                onChange={e => { setUsername(e.target.value); setErrors(prev => ({ ...prev, username: "" })); }}
+                placeholder="e.g. ali_khan"
+                className={`pl-9 h-10 rounded-xl ${errors.username ? "border-red-400 focus:ring-red-300" : ""}`}
+              />
+            </div>
+            {errors.username && <p className="text-xs text-red-600">{errors.username}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Temporary Password <span className="text-muted-foreground font-normal normal-case">(optional)</span></label>
+            <div className="relative">
+              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={tempPassword}
+                onChange={e => { setTempPassword(e.target.value); setErrors(prev => ({ ...prev, tempPassword: "" })); }}
+                placeholder="Set a temporary password for this user"
+                type="text"
+                className={`pl-9 h-10 rounded-xl font-mono ${errors.tempPassword ? "border-red-400 focus:ring-red-300" : ""}`}
+              />
+            </div>
+            {errors.tempPassword
+              ? <p className="text-xs text-red-600">{errors.tempPassword}</p>
+              : <p className="text-[11px] text-muted-foreground">Min 8 chars, 1 uppercase letter, 1 number. User must change on first login.</p>
+            }
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role</label>

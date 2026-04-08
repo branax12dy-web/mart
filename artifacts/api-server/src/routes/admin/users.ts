@@ -22,32 +22,84 @@ import {
   type AdminRequest, revokeAllUserSessions,
 } from "../admin-shared.js";
 import { writeAuthAuditLog } from "../../middleware/security.js";
-import { hashPassword } from "../../services/password.js";
+import { hashPassword, validatePasswordStrength } from "../../services/password.js";
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../lib/response.js";
 import { reconcileUserFlags } from "./conditions.js";
+import { canonicalizePhone } from "@workspace/phone-utils";
 
 const router = Router();
 
 router.post("/users", async (req, res) => {
-  const { phone, name, role, city, area, email } = req.body;
-  const trimPhone = typeof phone === "string" ? phone.trim() : "";
-  const trimName = typeof name === "string" ? name.trim() : "";
+  const { phone, name, role, city, area, email, username, tempPassword } = req.body;
+  const trimPhone    = typeof phone    === "string" ? phone.trim()    : "";
+  const trimName     = typeof name     === "string" ? name.trim()     : "";
+  const trimEmail    = typeof email    === "string" ? email.trim().toLowerCase() : "";
+  const trimUsername = typeof username === "string" ? username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "") : "";
+
   if (!trimPhone && !trimName) {
     sendValidationError(res, "At least phone or name is required");
     return;
   }
-  if (trimPhone && !/^\+?\d{7,15}$/.test(trimPhone)) {
-    sendValidationError(res, "Phone must be 7-15 digits, optionally prefixed with +");
+
+  /* Canonicalize phone using the same utility as the auth flow */
+  let canonPhone: string | null = null;
+  if (trimPhone) {
+    canonPhone = canonicalizePhone(trimPhone);
+    if (!/^3\d{9}$/.test(canonPhone)) {
+      sendValidationError(res, "Phone must be a valid Pakistani mobile number (e.g. 03001234567 or +923001234567)");
+      return;
+    }
+  }
+
+  if (trimEmail && !trimEmail.includes("@")) {
+    sendValidationError(res, "Invalid email format");
     return;
   }
+
+  if (trimUsername && trimUsername.length < 3) {
+    sendValidationError(res, "Username must be at least 3 characters");
+    return;
+  }
+
   const validRoles = ["customer", "rider", "vendor"];
   const userRole = validRoles.includes(role) ? role : "customer";
+
+  /* Uniqueness checks before insert */
+  if (canonPhone) {
+    const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, canonPhone)).limit(1);
+    if (existing) { sendError(res, "A user with this phone number already exists", 409); return; }
+  }
+  if (trimEmail) {
+    const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.email}) = ${trimEmail}`).limit(1);
+    if (existing) { sendError(res, "A user with this email already exists", 409); return; }
+  }
+  if (trimUsername) {
+    const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${trimUsername}`).limit(1);
+    if (existing) { sendError(res, "This username is already taken", 409); return; }
+  }
+
+  /* Hash temp password if provided — enforce minimum strength requirements */
+  let passwordHashValue: string | null = null;
+  let requirePasswordChange = false;
+  if (typeof tempPassword === "string" && tempPassword.trim()) {
+    const pwCheck = validatePasswordStrength(tempPassword.trim());
+    if (!pwCheck.ok) {
+      sendValidationError(res, `Temporary password is too weak: ${pwCheck.message}`);
+      return;
+    }
+    passwordHashValue = await hashPassword(tempPassword.trim());
+    requirePasswordChange = true;
+  }
+
   try {
     const [user] = await db.insert(usersTable).values({
       id: generateId(),
-      phone: trimPhone || null,
+      phone: canonPhone || null,
       name: trimName || null,
-      email: typeof email === "string" && email.trim() ? email.trim() : null,
+      email: trimEmail || null,
+      username: trimUsername || null,
+      passwordHash: passwordHashValue,
+      requirePasswordChange,
       role: userRole,
       roles: userRole,
       city: typeof city === "string" && city.trim() ? city.trim() : null,
@@ -60,7 +112,7 @@ router.post("/users", async (req, res) => {
     sendSuccess(res, { user: stripUser(user!) });
   } catch (e: any) {
     if (e.message?.includes("duplicate")) {
-      sendError(res, "A user with this phone or email already exists", 409);
+      sendError(res, "A user with this phone, email, or username already exists", 409);
     } else {
       sendError(res, e.message, 500);
     }

@@ -243,6 +243,8 @@ export interface CreateUserInput {
   name?: string;
   phone?: string;
   email?: string;
+  username?: string;
+  tempPassword?: string;
   role?: "customer" | "rider" | "vendor";
   city?: string;
   area?: string;

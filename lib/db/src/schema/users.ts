@@ -21,6 +21,7 @@ export const usersTable = pgTable("users", {
   /* ── Username + password login ── */
   username:        text("username").unique(),
   passwordHash:    text("password_hash"),
+  requirePasswordChange: boolean("require_password_change").notNull().default(false),
   /* ── Verification status ── */
   phoneVerified:   boolean("phone_verified").notNull().default(false),
   emailVerified:   boolean("email_verified").notNull().default(false),

@@ -217,7 +217,7 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
     const rows = await db.select().from(usersTable).where(eq(usersTable.email, identifier.trim().toLowerCase())).limit(1);
     user = rows[0];
   } else {
-    const rows = await db.select().from(usersTable).where(eq(usersTable.username, identifier.trim())).limit(1);
+    const rows = await db.select().from(usersTable).where(sql`lower(${usersTable.username}) = ${identifier.trim().toLowerCase()}`).limit(1);
     user = rows[0];
   }
 
@@ -1853,6 +1853,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     sessionDays:  getRefreshTokenTtlDays(),
     pendingApproval: false,
     identifierType: idType,
+    requirePasswordChange: user.requirePasswordChange ?? false,
     user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false },
   });
 }
@@ -2038,8 +2039,11 @@ router.post("/set-password", async (req, res) => {
   if (user.isBanned) { res.status(403).json({ error: "Account suspended. Contact support." }); return; }
   if (!user.isActive){ res.status(403).json({ error: "Account inactive. Contact support." }); return; }
 
-  /* If user already has a password, ALWAYS require the current password — no bypass */
-  if (user.passwordHash) {
+  /* If user has a non-temporary password, ALWAYS require the current password — no bypass.
+     If requirePasswordChange is true (admin set a temp password), skip current-password
+     check to allow the user to change it on first login without knowing the old hash. */
+  const isTempPasswordChange = user.requirePasswordChange === true;
+  if (user.passwordHash && !isTempPasswordChange) {
     if (!currentPassword) {
       res.status(400).json({ error: "Current password required to change password" }); return;
     }
@@ -2051,14 +2055,16 @@ router.post("/set-password", async (req, res) => {
   const check = validatePasswordStrength(password);
   if (!check.ok) { res.status(400).json({ error: check.message }); return; }
 
-  /* Bump tokenVersion to invalidate all outstanding JWTs on password change */
+  /* Bump tokenVersion to invalidate all outstanding JWTs on password change;
+     also clear requirePasswordChange now that the user has set their own password. */
   await db.update(usersTable).set({
     passwordHash: hashPassword(password),
+    requirePasswordChange: false,
     tokenVersion: sql`token_version + 1`,
     updatedAt: new Date(),
   }).where(eq(usersTable.id, userId));
   writeAuthAuditLog("password_changed", { userId, ip: getClientIp(req), userAgent: req.headers["user-agent"] ?? undefined });
-  res.json({ success: true, message: "Password set ho gaya" });
+  res.json({ success: true, message: "Password set ho gaya", requirePasswordChange: false });
 });
 
 function isAuthMethodEnabled(settings: Record<string, string>, key: string, role?: string): boolean {
@@ -2605,6 +2611,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
 
   await db.update(usersTable).set({
     passwordHash: hashPassword(newPassword),
+    requirePasswordChange: false,
     otpCode: null,
     otpExpiry: null,
     otpUsed: true,
