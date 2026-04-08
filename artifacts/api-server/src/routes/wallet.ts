@@ -1248,10 +1248,6 @@ router.post("/pin/forgot", customerAuth, async (req, res) => {
       cooldownApplies: !(user.totpEnabled && user.totpSecret),
     };
 
-    if (user.devOtpEnabled) {
-      responseData["_dev_otp"] = otp;
-    }
-
     sendSuccess(res, responseData);
   } catch (e: unknown) {
     logger.error("[wallet /pin/forgot] error:", e);

@@ -680,13 +680,6 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     fallbackChannels,
   };
 
-  /* Dev OTP: expose OTP in response when in non-production mode AND delivery
-     channel is "dev" (all real channels failed) or console SMS provider is used */
-  if (isDev && (deliveryChannel === "dev" || isConsoleDelivery)) {
-    response.otp = otp;
-    response.devMode = true;
-  }
-
   res.json(response);
 });
 
