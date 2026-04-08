@@ -102,7 +102,13 @@ async function migrateLegacyInsecureTokens(): Promise<boolean> {
     const alreadyMigrated = await SecureStore.getItemAsync(MIGRATED_KEY).catch(() => null);
     if (alreadyMigrated === "1") return false;
 
-    const [[, legacyToken], [, legacyRefresh]] = await AsyncStorage.multiGet([LEGACY_TOKEN_KEY, LEGACY_REFRESH_KEY]);
+    const legacyEntries = await AsyncStorage.multiGet([LEGACY_TOKEN_KEY, LEGACY_REFRESH_KEY]);
+    const legacyToken = (legacyEntries.length >= 1 && Array.isArray(legacyEntries[0]) && legacyEntries[0].length >= 2)
+      ? legacyEntries[0][1]
+      : null;
+    const legacyRefresh = (legacyEntries.length >= 2 && Array.isArray(legacyEntries[1]) && legacyEntries[1].length >= 2)
+      ? legacyEntries[1][1]
+      : null;
     const hadLegacy = !!(legacyToken || legacyRefresh);
 
     if (hadLegacy) {

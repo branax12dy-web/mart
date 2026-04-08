@@ -133,6 +133,7 @@ function ParcelScreenInner() {
   const [payMethods, setPayMethods] = useState<Array<{ id: string; label: string; logo: string; description: string }>>([
     { id: "cash", label: "Cash on Pickup", logo: "💵", description: "" },
   ]);
+  const [payMethodsError, setPayMethodsError] = useState(false);
 
   const [estimatedFare, setEstimatedFare] = useState<number | null>(null);
   const [fareError, setFareError] = useState(false);
@@ -241,11 +242,15 @@ function ParcelScreenInner() {
         const methods: Array<{ id: string; label: string; logo?: string; description?: string }> =
           json?.data?.methods ?? json?.methods ?? [];
         if (methods.length) {
+          setPayMethodsError(false);
           setPayMethods(methods.map(m => ({ id: m.id, label: m.label, logo: m.logo ?? "", description: m.description ?? "" })));
           setPayMethod(methods[0]?.id ?? "cash");
         }
       })
-      .catch((err) => { if (__DEV__) console.warn("[Parcel] Payment methods fetch failed:", err instanceof Error ? err.message : String(err)); });
+      .catch((err) => {
+        if (__DEV__) console.warn("[Parcel] Payment methods fetch failed:", err instanceof Error ? err.message : String(err));
+        setPayMethodsError(true);
+      });
   }, []);
 
   const retryFareEstimate = () => {
@@ -694,6 +699,13 @@ function ParcelScreenInner() {
           <View>
             <View style={ss.card}>
               <Text style={ss.cardTitle}>💳 {T("paymentMethods")}</Text>
+              {payMethodsError && (
+                <View style={{ backgroundColor: C.redSoft, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                  <Text style={{ color: C.danger, fontFamily: Font.medium, fontSize: 13 }}>
+                    Could not load payment methods. Please check your connection and try again.
+                  </Text>
+                </View>
+              )}
               {payMethods.map(pm => {
                 const active = payMethod === pm.id;
                 const isWallet = pm.id === "wallet";

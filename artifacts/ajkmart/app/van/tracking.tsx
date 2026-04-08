@@ -47,7 +47,9 @@ if(bounds.isValid())map.fitBounds(bounds,{padding:[40,40]});
 function handleMsg(e){
   try{
     var d=JSON.parse(typeof e==='string'?e:e.data);
+    if(!d||typeof d!=='object'||Array.isArray(d))return;
     if(d.type==='vanPos'){
+      if(typeof d.lat!=='number'||typeof d.lng!=='number')return;
       vanMarker.setLatLng([d.lat,d.lng]);
       vanCircle.setLatLng([d.lat,d.lng]);
       map.panTo([d.lat,d.lng]);

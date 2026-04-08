@@ -960,7 +960,19 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
     AsyncStorage.getItem(SUBMITTED_TX_KEY)
       .then(raw => {
         if (raw) {
-          const ids: string[] = JSON.parse(raw);
+          let ids: string[];
+          try {
+            const parsed: unknown = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.every(v => typeof v === "string")) {
+              ids = parsed;
+            } else {
+              AsyncStorage.removeItem(SUBMITTED_TX_KEY).catch(() => {});
+              ids = [];
+            }
+          } catch {
+            AsyncStorage.removeItem(SUBMITTED_TX_KEY).catch(() => {});
+            ids = [];
+          }
           const merged = new Set([...inMemorySubmittedTxIds, ...ids]);
           setSubmittedTxIds(merged);
           inMemorySubmittedTxIds = merged;

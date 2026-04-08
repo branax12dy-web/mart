@@ -167,7 +167,9 @@ export function useRideStatus(rideId: string): RideStatusHookResult {
               stopPolling();
               return;
             }
-          } catch {}
+          } catch (parseErr) {
+            console.warn("[useRideStatus] Skipping malformed SSE message:", line, parseErr);
+          }
         }
       }
 
