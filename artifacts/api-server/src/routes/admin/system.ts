@@ -730,13 +730,19 @@ router.post("/invalidate-cache", adminAuth, (_req, res) => {
 
 /* GET /admin/me/language — get current admin's saved language */
 router.get("/search", async (req, res) => {
-  const q = String(req.query["q"] ?? "").trim();
+  const q        = String(req.query["q"]        ?? "").trim();
+  const category = String(req.query["category"] ?? "").trim().toLowerCase(); // users | rides | orders
+  const statusParam = String(req.query["status"] ?? "").trim(); // comma-separated DB status values
+
   if (!q || q.length < 2) {
     sendSuccess(res, { users: [], rides: [], orders: [], pharmacy: [], query: q });
     return;
   }
 
   const pattern = `%${q}%`;
+
+  /* Build status IN-clause values from comma-separated param */
+  const statusValues = statusParam ? statusParam.split(",").map(s => s.trim()).filter(Boolean) : [];
 
   type UserResult = { id: string; name: string | null; phone: string | null; email: string | null; roles: string; createdAt: Date };
   type RideResult = { id: string; type: string; status: string; pickupAddress: string; dropAddress: string; fare: string | null; offeredFare: string | null; riderName: string | null; createdAt: Date };
@@ -756,88 +762,315 @@ router.get("/search", async (req, res) => {
     }
   }
 
+  /* Determine which entity types to query based on category filter */
+  const queryUsers   = !category || category === "users";
+  const queryRides   = !category || category === "rides";
+  const queryOrders  = !category || category === "orders";
+
+  /* Build status IN-clause conditions (undefined → no filter) */
+  function buildStatusCond(col: any, vals: string[]): SQL | undefined {
+    if (vals.length === 0) return undefined;
+    if (vals.length === 1) return eq(col, vals[0]!);
+    return or(...vals.map(v => eq(col, v)));
+  }
+
+  const ridesStatusCond  = buildStatusCond(ridesTable.status, statusValues);
+  const ordersStatusCond = buildStatusCond(ordersTable.status, statusValues);
+  const pharmStatusCond  = buildStatusCond(pharmacyOrdersTable.status, statusValues);
+
   const [users, rides, orders, pharmacy] = await Promise.all([
-    safeSearchQuery<UserResult>("users", async () =>
-      db.select({
-        id:    usersTable.id,
-        name:  usersTable.name,
-        phone: usersTable.phone,
-        email: usersTable.email,
-        roles: usersTable.roles,
-        createdAt: usersTable.createdAt,
-      })
-      .from(usersTable)
-      .where(or(ilike(usersTable.name, pattern), ilike(usersTable.phone, pattern), ilike(usersTable.email, pattern)))
-      .orderBy(desc(usersTable.createdAt))
-      .limit(5)
-    ),
+    queryUsers
+      ? safeSearchQuery<UserResult>("users", async () =>
+          db.select({
+            id:    usersTable.id,
+            name:  usersTable.name,
+            phone: usersTable.phone,
+            email: usersTable.email,
+            roles: usersTable.roles,
+            createdAt: usersTable.createdAt,
+          })
+          .from(usersTable)
+          .where(or(ilike(usersTable.name, pattern), ilike(usersTable.phone, pattern), ilike(usersTable.email, pattern)))
+          .orderBy(desc(usersTable.createdAt))
+          .limit(5)
+        )
+      : Promise.resolve([] as UserResult[]),
 
-    safeSearchQuery<RideResult>("rides", () =>
-      db.select({
-        id:            ridesTable.id,
-        type:          ridesTable.type,
-        status:        ridesTable.status,
-        pickupAddress: ridesTable.pickupAddress,
-        dropAddress:   ridesTable.dropAddress,
-        fare:          ridesTable.fare,
-        offeredFare:   ridesTable.offeredFare,
-        riderName:     ridesTable.riderName,
-        createdAt:     ridesTable.createdAt,
-      })
-      .from(ridesTable)
-      .where(or(
-        ilike(ridesTable.id, pattern),
-        ilike(ridesTable.pickupAddress, pattern),
-        ilike(ridesTable.dropAddress, pattern),
-        ilike(ridesTable.riderName, pattern),
-        ilike(ridesTable.status, pattern),
-      ))
-      .orderBy(desc(ridesTable.createdAt))
-      .limit(5)
-    ),
+    queryRides
+      ? safeSearchQuery<RideResult>("rides", () =>
+          db.select({
+            id:            ridesTable.id,
+            type:          ridesTable.type,
+            status:        ridesTable.status,
+            pickupAddress: ridesTable.pickupAddress,
+            dropAddress:   ridesTable.dropAddress,
+            fare:          ridesTable.fare,
+            offeredFare:   ridesTable.offeredFare,
+            riderName:     ridesTable.riderName,
+            createdAt:     ridesTable.createdAt,
+          })
+          .from(ridesTable)
+          .where(and(
+            or(
+              ilike(ridesTable.id, pattern),
+              ilike(ridesTable.pickupAddress, pattern),
+              ilike(ridesTable.dropAddress, pattern),
+              ilike(ridesTable.riderName, pattern),
+              ilike(ridesTable.status, pattern),
+            ),
+            ridesStatusCond,
+          ))
+          .orderBy(desc(ridesTable.createdAt))
+          .limit(8)
+        )
+      : Promise.resolve([] as RideResult[]),
 
-    safeSearchQuery<OrderResult>("orders", async () =>
-      db.select({
-        id:              ordersTable.id,
-        status:          ordersTable.status,
-        type:            ordersTable.type,
-        total:           ordersTable.total,
-        deliveryAddress: ordersTable.deliveryAddress,
-        createdAt:       ordersTable.createdAt,
-      })
-      .from(ordersTable)
-      .where(or(
-        ilike(ordersTable.id, pattern),
-        ilike(ordersTable.deliveryAddress, pattern),
-        ilike(ordersTable.status, pattern),
-      ))
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(5)
-    ),
+    queryOrders
+      ? safeSearchQuery<OrderResult>("orders", async () =>
+          db.select({
+            id:              ordersTable.id,
+            status:          ordersTable.status,
+            type:            ordersTable.type,
+            total:           ordersTable.total,
+            deliveryAddress: ordersTable.deliveryAddress,
+            createdAt:       ordersTable.createdAt,
+          })
+          .from(ordersTable)
+          .where(and(
+            or(
+              ilike(ordersTable.id, pattern),
+              ilike(ordersTable.deliveryAddress, pattern),
+              ilike(ordersTable.status, pattern),
+            ),
+            ordersStatusCond,
+          ))
+          .orderBy(desc(ordersTable.createdAt))
+          .limit(8)
+        )
+      : Promise.resolve([] as OrderResult[]),
 
-    safeSearchQuery<PharmacyResult>("pharmacy", () =>
-      db.select({
-        id:              pharmacyOrdersTable.id,
-        status:          pharmacyOrdersTable.status,
-        total:           pharmacyOrdersTable.total,
-        deliveryAddress: pharmacyOrdersTable.deliveryAddress,
-        createdAt:       pharmacyOrdersTable.createdAt,
-      })
-      .from(pharmacyOrdersTable)
-      .where(or(
-        ilike(pharmacyOrdersTable.id, pattern),
-        ilike(pharmacyOrdersTable.deliveryAddress, pattern),
-        ilike(pharmacyOrdersTable.status, pattern),
-      ))
-      .orderBy(desc(pharmacyOrdersTable.createdAt))
-      .limit(5)
-    ),
+    queryOrders
+      ? safeSearchQuery<PharmacyResult>("pharmacy", () =>
+          db.select({
+            id:              pharmacyOrdersTable.id,
+            status:          pharmacyOrdersTable.status,
+            total:           pharmacyOrdersTable.total,
+            deliveryAddress: pharmacyOrdersTable.deliveryAddress,
+            createdAt:       pharmacyOrdersTable.createdAt,
+          })
+          .from(pharmacyOrdersTable)
+          .where(and(
+            or(
+              ilike(pharmacyOrdersTable.id, pattern),
+              ilike(pharmacyOrdersTable.deliveryAddress, pattern),
+              ilike(pharmacyOrdersTable.status, pattern),
+            ),
+            pharmStatusCond,
+          ))
+          .orderBy(desc(pharmacyOrdersTable.createdAt))
+          .limit(5)
+        )
+      : Promise.resolve([] as PharmacyResult[]),
   ]);
 
   sendSuccess(res, {
     users, rides, orders, pharmacy, query: q,
     ...(errors.length > 0 ? { errors, partial: true } : {}),
   });
+});
+
+/* ── AI Search endpoint ──────────────────────────────────────────────────── */
+router.post("/search/ai", async (req, res) => {
+  try {
+    const { query, locale } = req.body as { query?: string; locale?: string };
+    if (!query || query.trim().length < 2) {
+      sendValidationError(res, "query is required (min 2 chars)"); return;
+    }
+    const q = query.trim();
+
+    /* Admin structure context for the AI */
+    const adminStructure = `
+AJKMart Admin Panel pages and sections:
+Operations:
+- Dashboard (page-dashboard): overview, stats, revenue, recent orders/rides
+- Orders (page-orders): customer orders, delivery status (pending/accepted/preparing/picked/delivered/cancelled)
+- Rides (page-rides): taxi/bike/rickshaw bookings (searching/bargaining/accepted/arrived/in_transit/completed/cancelled)
+- Van Service (page-van): van and minibus ride bookings
+- Pharmacy (page-pharmacy): medicine orders
+- Parcels (page-parcels): courier/parcel bookings
+- Live Riders Map (page-live-map): real-time GPS tracking of all riders
+
+Marketplace:
+- Users (page-users): registered customers, profiles, banning
+- Vendors (page-vendors): restaurant/shop management
+- Riders (page-riders): delivery rider management
+- Products (page-products): product catalog, inventory
+- Categories (page-categories): product and service categories
+- Promotions Hub (page-promotions): all promotions management
+- Banners (page-banners): promotional images/ads
+- Popup Campaigns (page-popups): in-app popup campaigns
+- Flash Deals (page-flash-deals): time-limited discounts
+- Promo Codes (page-promo-codes): discount coupons
+
+Finance:
+- Transactions (page-transactions): financial transactions, wallet history
+- Withdrawals (page-withdrawals): rider/vendor payout requests
+- Deposit Requests (page-deposits): user wallet top-ups
+- Loyalty Points (page-loyalty): customer rewards program
+- KYC (page-kyc): identity verification (CNIC, documents) — statuses: pending/approved/rejected
+- Wallet Transfers (page-wallet-transfers): peer-to-peer transfers
+- Reviews (page-reviews): ratings and feedback
+
+Security & Monitoring:
+- SOS Alerts (page-sos): emergency alerts from users
+- Error Monitor (page-error-monitor): client error reports and crash logs
+- Security / Audit Logs (page-security): OTP settings, MFA, sessions, IP blocking, audit log
+
+Rules & Compliance:
+- Account Conditions (page-account-conditions): account condition rules
+- Condition Rules (page-condition-rules): dynamic business rules
+
+Analytics & Communication:
+- Support Chat (page-support-chat): customer support conversations
+- FAQ Management (page-faq): help articles and FAQs
+- Search Analytics (page-search-analytics): what users search in the app
+- Communication (page-communication): broadcast templates
+- Chat Monitor (page-chat-monitor): monitor support conversations
+- Broadcast (page-broadcast): send mass push notifications
+- Notifications (page-notifications): push notification history
+
+Growth & Experiments:
+- Wishlist Insights (page-wishlist-insights): user wishlist analytics
+- QR Codes (page-qr-codes): generate and manage QR codes
+- Experiments (page-experiments): A/B testing and feature experiments
+
+Developer / Integrations:
+- Webhooks (page-webhooks): webhook management
+- Deep Links (page-deep-links): app deep link management
+
+System:
+- Settings (page-settings): platform configuration
+- App Management / Feature Toggles (page-app-management): version, maintenance, feature flags
+- Delivery Access (page-delivery-access): delivery zone and access control
+- Settings > General (settings-general): app name, logo, tagline, maintenance
+- Settings > Ride Pricing (settings-ride-pricing): base fares, per-km rates, surge, bargaining
+- Settings > Payment (settings-payment): JazzCash, EasyPaisa, COD, wallet toggles
+- Settings > Orders (settings-orders): delivery radius, cart limits
+- Settings > Finance (settings-finance): commission rates, GST, payouts
+- Settings > Security (settings-security): OTP, MFA, session expiry, IP whitelist
+- Settings > Features (settings-features): enable/disable rides/wallet/mart/food/parcel/pharmacy
+- Settings > Notifications (settings-notifications): FCM, SMS gateway, WhatsApp OTP
+- Settings > Maps (settings-maps): Google Maps, Mapbox, LocationIQ config
+- Settings > Integrations (settings-integrations): SMTP, SMS, WhatsApp, Firebase config
+
+Quick Actions (pre-filtered views):
+- Pending Orders (action-pending-orders): /orders?status=pending
+- Cancelled Orders (action-cancelled-orders): /orders?status=cancelled
+- Searching Rides (action-searching-rides): /rides?status=searching
+- Bargaining Rides (action-bargaining-rides): /rides?status=bargaining
+- Cancelled Rides (action-cancelled-rides): /rides?status=cancelled
+- Pending KYC (action-pending-kyc): /kyc?status=pending
+- Pending Withdrawals (action-pending-withdrawals): /withdrawals?status=pending
+- Banned Users (action-banned-users): /users?filter=banned
+- Send Broadcast (action-send-broadcast): navigate to broadcast page
+- Add Promo Code (action-add-promo): navigate to promo codes
+- Add Flash Deal (action-add-flash-deal): navigate to flash deals
+
+Supported languages: English, Urdu (اردو), Roman Urdu (phonetic Urdu in Latin script).
+`;
+
+    const baseUrl = process.env["AI_INTEGRATIONS_GEMINI_BASE_URL"];
+    const apiKey  = process.env["AI_INTEGRATIONS_GEMINI_API_KEY"];
+
+    if (!baseUrl || !apiKey) {
+      sendError(res, "AI search is not configured", 503); return;
+    }
+
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+    /* Valid IDs are derived from the SEARCH_INDEX defined in the admin frontend.
+       Keep this list in sync with artifacts/admin/src/lib/searchIndex.ts */
+    const VALID_IDS = [
+      "page-dashboard","page-orders","page-rides","page-van","page-pharmacy","page-parcels",
+      "page-live-map","page-users","page-vendors","page-riders","page-products","page-categories",
+      "page-promotions","page-banners","page-popups","page-flash-deals","page-promo-codes",
+      "page-transactions","page-withdrawals","page-deposits","page-loyalty","page-kyc",
+      "page-wallet-transfers","page-reviews","page-notifications","page-broadcast",
+      "page-sos","page-error-monitor","page-security","page-account-conditions",
+      "page-condition-rules","page-support-chat","page-faq","page-search-analytics",
+      "page-communication","page-chat-monitor","page-wishlist-insights","page-qr-codes",
+      "page-experiments","page-webhooks","page-deep-links","page-settings","page-app-management",
+      "page-delivery-access",
+      "settings-general","settings-ride-pricing","settings-payment","settings-orders",
+      "settings-finance","settings-security","settings-features","settings-notifications",
+      "settings-maps","settings-integrations",
+      "action-live-rides","action-send-broadcast","action-add-promo","action-add-flash-deal",
+      "action-pending-orders","action-cancelled-orders","action-searching-rides",
+      "action-bargaining-rides","action-cancelled-rides","action-pending-kyc",
+      "action-pending-withdrawals","action-search-users","action-banned-users",
+    ];
+
+    const systemPrompt = `You are a search assistant for the AJKMart Admin Panel. The user typed a search query. Your job is to interpret their intent — even if the query is in Urdu, Roman Urdu, or English — and return the most relevant admin panel pages/sections.
+
+${adminStructure}
+
+Return a JSON object with this structure (no markdown, no code fences):
+{
+  "results": [
+    { "id": "page-orders", "title": "Orders", "path": "/orders", "reason": "brief reason" },
+    ...
+  ],
+  "suggestedFilters": ["pending", "cancelled"]
+}
+
+You MUST only use IDs from this exact list (do NOT invent new IDs):
+${VALID_IDS.join(", ")}
+
+Return max 5 results. Only include results that are genuinely relevant. If unsure, still return at most 3 plausible results.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: "user", parts: [{ text: `Search query: "${q}"\nLocale: ${locale ?? "auto"}` }] }],
+      config: {
+        systemInstruction: systemPrompt,
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const text = response.text ?? "{}";
+    let parsed: { results?: unknown[]; suggestedFilters?: string[] };
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { results: [], suggestedFilters: [] };
+    }
+
+    const VALID_IDS_SET = new Set(VALID_IDS);
+
+    /* Validate each result: must have a known id (string) and a string title */
+    interface AiResult { id: string; title: string; path?: string; reason?: string }
+    const validResults: AiResult[] = Array.isArray(parsed.results)
+      ? parsed.results.filter((r): r is AiResult =>
+          typeof r === "object" && r !== null &&
+          typeof (r as AiResult).id === "string" &&
+          VALID_IDS_SET.has((r as AiResult).id) &&
+          typeof (r as AiResult).title === "string"
+        )
+      : [];
+
+    sendSuccess(res, {
+      results: validResults,
+      suggestedFilters: Array.isArray(parsed.suggestedFilters)
+        ? parsed.suggestedFilters.filter(f => typeof f === "string")
+        : [],
+      query: q,
+    });
+  } catch (err: any) {
+    logger.error({ err }, "AI search error");
+    sendError(res, "AI search failed, falling back to keyword search", 503);
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
