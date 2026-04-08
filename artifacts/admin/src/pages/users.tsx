@@ -791,7 +791,17 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
                 <div className="bg-red-50 rounded p-1.5 overflow-x-auto">
                   <code className="text-[9px] text-red-800 break-all font-mono leading-tight">{impersonateData.token}</code>
                 </div>
-                <p className="text-[10px] text-red-600">⚠ Use in app: Settings → paste as bearer token. Treat as highly sensitive.</p>
+                <Button
+                  size="sm"
+                  className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs mt-1"
+                  onClick={() => {
+                    const appUrl = `${window.location.origin}/?impersonateToken=${encodeURIComponent(impersonateData.token)}`;
+                    window.open(appUrl, "_blank");
+                  }}
+                >
+                  Open as User
+                </Button>
+                <p className="text-[10px] text-red-600">⚠ Opens the customer app and logs in as this user. Treat as highly sensitive.</p>
               </div>
             )}
           </div>

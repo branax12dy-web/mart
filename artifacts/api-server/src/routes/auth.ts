@@ -568,6 +568,13 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     return;
   }
 
+  /* ── Global OTP bypass: when enabled in Danger Zone, skip OTP for all users ── */
+  if (settings["security_otp_bypass"] === "on") {
+    writeAuthAuditLog("otp_send_global_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+    res.json({ otpRequired: false, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
+    return;
+  }
+
   /* ── Admin OTP bypass: skip all delivery if bypass is active ──
      When an admin has set a bypass window for an existing user, the next
      verify-otp call will succeed regardless of OTP code. We must NOT send
@@ -578,7 +585,7 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
   if (existingBypass) {
     // no user notification — bypass is silent by admin design
     writeAuthAuditLog("otp_send_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
-    res.json({ otpRequired: true, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
+    res.json({ otpRequired: false, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
     return;
   }
 
@@ -759,8 +766,9 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       return;
     }
 
-    /* Verify OTP from pending_otps */
-    const otpValid = pending.otpHash === hashOtp(otp) && new Date() < pending.otpExpiry;
+    /* Verify OTP from pending_otps — skip validation if global bypass is enabled */
+    const globalBypassForNew = settings["security_otp_bypass"] === "on";
+    const otpValid = globalBypassForNew || (pending.otpHash === hashOtp(otp) && new Date() < pending.otpExpiry);
     if (!otpValid) {
       /* Increment failed attempts */
       const newAttempts = (pending.attempts ?? 0) + 1;
@@ -890,6 +898,9 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
      no user notification — bypass is silent by admin design. ── */
   const otpBypassActive = !!(user.otpBypassUntil && user.otpBypassUntil > new Date());
 
+  /* ── Global OTP bypass: when enabled in Danger Zone, accept any code for all users ── */
+  const globalOtpBypass = settings["security_otp_bypass"] === "on";
+
   /* ── Atomic OTP consumption via a single conditional UPDATE ──
      The WHERE clause combines: correct code + not-yet-used + not-expired.
      Concurrency-safe: only the first concurrent caller gets rows back. ── */
@@ -900,7 +911,18 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
 
   {
     const consumed = await db.transaction(async (tx) => {
-      /* ── Bypass path: skip OTP code check, clear bypass flag (single-use) ── */
+      /* ── Global bypass path: accept any OTP code when global bypass is enabled ── */
+      if (globalOtpBypass) {
+        // no user notification — global bypass is silent by admin design
+        await tx.update(usersTable)
+          .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now })
+          .where(eq(usersTable.phone, phone));
+        addAuditEntry({ action: "user_login_global_otp_bypass", ip, details: `Global OTP bypass login for ${phone}`, result: "success" });
+        writeAuthAuditLog("login_global_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+        return { id: user.id, lastLoginAt: now };
+      }
+
+      /* ── Per-user bypass path: skip OTP code check, clear bypass flag (single-use) ── */
       if (otpBypassActive) {
         // no user notification — bypass is silent by admin design
         // clear bypass immediately after use so it cannot be reused

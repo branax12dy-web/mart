@@ -196,6 +196,49 @@ function MaintenanceScreen() {
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
 
+function ImpersonationHandler() {
+  const { login } = useAuth();
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const impersonateToken = params.get("impersonateToken");
+    if (!impersonateToken) return;
+
+    /* Clear the token from the URL immediately so it's not visible or shared */
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("impersonateToken");
+      window.history.replaceState({}, "", url.pathname + (url.search || "") + (url.hash || ""));
+    } catch {}
+
+    const doImpersonate = async () => {
+      try {
+        const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+        const profileRes = await fetch(`${base}/api/users/profile`, {
+          headers: { Authorization: `Bearer ${impersonateToken}` },
+        });
+        if (!profileRes.ok) {
+          if (__DEV__) console.warn("[ImpersonationHandler] Profile fetch failed:", profileRes.status);
+          return;
+        }
+        const profileData = await profileRes.json();
+        const userData = profileData.data || profileData.user || profileData;
+        if (userData && userData.id) {
+          await login(userData, impersonateToken);
+          router.replace("/(tabs)");
+        }
+      } catch (err: any) {
+        if (__DEV__) console.warn("[ImpersonationHandler] Error:", err?.message || err);
+      }
+    };
+
+    doImpersonate();
+  }, []);
+
+  return null;
+}
+
 function MagicLinkHandler() {
   const { login, setTwoFactorPending } = useAuth();
 
@@ -634,6 +677,7 @@ function RootLayoutNav() {
   return (
     <>
       <AuthGuard />
+      <ImpersonationHandler />
       <MagicLinkHandler />
       <DeepLinkHandler />
       {_domain && <PopupEngine apiBase={`https://${_domain}/api`} triggerKey={segments.join("/")} />}

@@ -305,8 +305,19 @@ export default function AuthScreen() {
           return null;
         });
         if (r) {
-          if (r.otpRequired === false && r.token) {
-            await handleLoginResult(r);
+          if (r.otpRequired === false) {
+            if (r.token) {
+              await handleLoginResult(r);
+              setLoading(false);
+              return;
+            }
+            /* OTP bypass — silently complete login via verify-otp with a dummy code */
+            try {
+              const verifyRes = await authPost("/auth/verify-otp", { phone: normalizePhone(normalized), otp: "000000" });
+              await handleLoginResult(verifyRes);
+            } catch (e: any) {
+              setError(e.message || "Auto-login failed. Please try again.");
+            }
             setLoading(false);
             return;
           }
@@ -374,8 +385,15 @@ export default function AuthScreen() {
       const body: any = { phone: normalizedPhone };
       if (preferredChannel) body.preferredChannel = preferredChannel;
       const res = await authPost("/auth/send-otp", body);
-      if (res.otpRequired === false && res.token) {
-        await handleLoginResult(res);
+      if (res.otpRequired === false) {
+        if (res.token) {
+          await handleLoginResult(res);
+          setLoading(false);
+          return;
+        }
+        /* OTP bypass — silently complete login via verify-otp with a dummy code */
+        const verifyRes = await authPost("/auth/verify-otp", { phone: normalizedPhone, otp: "000000" });
+        await handleLoginResult(verifyRes);
         setLoading(false);
         return;
       }

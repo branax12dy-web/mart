@@ -118,8 +118,7 @@ setOnAutoResolveSettingsChanged(() => {
 async function assertSecureSettings() {
   const settings = await getPlatformSettings();
   if (settings["security_otp_bypass"] === "on") {
-    logger.fatal("SECURITY: security_otp_bypass is enabled. OTP bypass has been removed; this setting no longer has any effect but must be disabled. Refusing to start.");
-    process.exit(1);
+    logger.warn("SECURITY: Global OTP bypass is enabled. All OTP verifications will auto-pass. For development/support use only.");
   }
 }
 
