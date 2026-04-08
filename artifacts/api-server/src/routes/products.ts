@@ -1,12 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { productsTable, productVariantsTable, flashDealsTable, reviewsTable } from "@workspace/db/schema";
+import { productsTable, productVariantsTable, flashDealsTable, reviewsTable, stockSubscriptionsTable } from "@workspace/db/schema";
 import { eq, ilike, and, SQL, gte, lte, gt, desc, asc, sql, isNotNull, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendCreated, sendNotFound, sendError, sendInternalError } from "../lib/response.js";
 import { validateBody } from "../middleware/validate.js";
 import { adminAuth, getPlatformSettings } from "./admin.js";
+import { customerAuth } from "../middleware/security.js";
 
 const router: IRouter = Router();
 
@@ -415,6 +416,56 @@ router.post("/", adminAuth, validateBody(createProductSchema), async (req, res) 
     ...product!,
     price: parseFloat(product!.price),
   });
+});
+
+/* ── POST /products/:id/notify-me ── Subscribe for back-in-stock alert ── */
+router.post("/:id/notify-me", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const productId = req.params["id"]!;
+
+  const [product] = await db.select({ id: productsTable.id, inStock: productsTable.inStock })
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+  if (!product) { sendNotFound(res, "Product not found"); return; }
+  if (product.inStock) {
+    sendError(res, "Product is already in stock", 400); return;
+  }
+
+  const [existing] = await db.select({ id: stockSubscriptionsTable.id })
+    .from(stockSubscriptionsTable)
+    .where(and(eq(stockSubscriptionsTable.userId, userId), eq(stockSubscriptionsTable.productId, productId)))
+    .limit(1);
+  if (existing) {
+    sendSuccess(res, { subscribed: true, message: "Already subscribed" }); return;
+  }
+
+  await db.insert(stockSubscriptionsTable).values({
+    id: generateId(),
+    userId,
+    productId,
+  });
+  sendCreated(res, { subscribed: true });
+});
+
+/* ── DELETE /products/:id/notify-me ── Unsubscribe ── */
+router.delete("/:id/notify-me", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const productId = req.params["id"]!;
+  await db.delete(stockSubscriptionsTable)
+    .where(and(eq(stockSubscriptionsTable.userId, userId), eq(stockSubscriptionsTable.productId, productId)));
+  sendSuccess(res, { subscribed: false });
+});
+
+/* ── GET /products/:id/notify-me ── Check subscription status ── */
+router.get("/:id/notify-me", customerAuth, async (req, res) => {
+  const userId = req.customerId!;
+  const productId = req.params["id"]!;
+  const [existing] = await db.select({ id: stockSubscriptionsTable.id })
+    .from(stockSubscriptionsTable)
+    .where(and(eq(stockSubscriptionsTable.userId, userId), eq(stockSubscriptionsTable.productId, productId)))
+    .limit(1);
+  sendSuccess(res, { subscribed: !!existing });
 });
 
 export default router;

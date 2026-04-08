@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
-import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable, idempotencyKeysTable, parcelBookingsTable, ridesTable, pharmacyOrdersTable } from "@workspace/db/schema";
+import { ordersTable, usersTable, walletTransactionsTable, promoCodesTable, productsTable, productVariantsTable, liveLocationsTable, notificationsTable, offersTable, offerRedemptionsTable, idempotencyKeysTable, parcelBookingsTable, ridesTable, pharmacyOrdersTable } from "@workspace/db/schema";
 import { eq, and, gte, count, sum, desc, SQL, sql, inArray, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -16,6 +16,32 @@ import { emitWebhookEvent } from "../lib/webhook-emitter.js";
 const router: IRouter = Router();
 
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
+/* ── Decrement stock for all items in an order (inside a transaction) ── */
+async function decrementStock(
+  tx: Parameters<Parameters<(typeof db)["transaction"]>[0]>[0],
+  items: Array<{ productId?: string; variantId?: string; quantity: number }>,
+): Promise<void> {
+  for (const item of items) {
+    const qty = Number(item.quantity) || 1;
+    if (item.variantId) {
+      await tx.execute(sql`
+        UPDATE product_variants
+        SET stock = GREATEST(stock - ${qty}, 0),
+            in_stock = CASE WHEN GREATEST(stock - ${qty}, 0) <= 0 THEN false ELSE in_stock END
+        WHERE id = ${item.variantId} AND stock IS NOT NULL
+      `);
+    }
+    if (item.productId) {
+      await tx.execute(sql`
+        UPDATE products
+        SET stock = GREATEST(stock - ${qty}, 0),
+            in_stock = CASE WHEN GREATEST(stock - ${qty}, 0) <= 0 THEN false ELSE in_stock END
+        WHERE id = ${item.productId} AND stock IS NOT NULL
+      `);
+    }
+  }
+}
 
 const IDEMPOTENCY_TTL_MS = 30 * 60_000;
 const MAX_ITEM_QUANTITY = 99;
@@ -1217,6 +1243,8 @@ router.post("/", customerAuth, async (req, res) => {
             discount: promoDiscount.toFixed(2),
           });
         }
+        /* ── Decrement stock for all ordered items ── */
+        await decrementStock(tx, items as Array<{ productId?: string; variantId?: string; quantity: number }>);
         return newOrder!;
       });
       const mapped = { ...mapOrder(order, effectiveDeliveryFee, gstAmount, codFee), promoDiscount };
@@ -1292,6 +1320,8 @@ router.post("/", customerAuth, async (req, res) => {
           discount: promoDiscount.toFixed(2),
         });
       }
+      /* ── Decrement stock for all ordered items ── */
+      await decrementStock(tx, items as Array<{ productId?: string; variantId?: string; quantity: number }>);
       return [newOrder];
     });
     const mapped = { ...mapOrder(order!, effectiveDeliveryFee, gstAmount, codFee), promoDiscount };

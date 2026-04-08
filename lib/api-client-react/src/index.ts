@@ -37,6 +37,9 @@ export {
   submitProductReview,
   uploadImage,
   getHierarchicalCategories,
+  subscribeStockNotify,
+  unsubscribeStockNotify,
+  checkStockNotifySubscription,
 } from "./discovery";
 export type {
   Banner,

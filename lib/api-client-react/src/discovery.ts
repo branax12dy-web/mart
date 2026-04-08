@@ -328,3 +328,35 @@ export const uploadImage = async (
     body: JSON.stringify({ file, mimeType: mimeType || "image/jpeg" }),
   });
 };
+
+export const subscribeStockNotify = async (
+  productId: string,
+  options?: RequestInit,
+): Promise<{ subscribed: boolean }> => {
+  return customFetch(`/products/${productId}/notify-me`, {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+  });
+};
+
+export const unsubscribeStockNotify = async (
+  productId: string,
+  options?: RequestInit,
+): Promise<{ subscribed: boolean }> => {
+  return customFetch(`/products/${productId}/notify-me`, {
+    ...options,
+    method: 'DELETE',
+    headers: { ...options?.headers },
+  });
+};
+
+export const checkStockNotifySubscription = async (
+  productId: string,
+  options?: RequestInit,
+): Promise<{ subscribed: boolean }> => {
+  return customFetch(`/products/${productId}/notify-me`, {
+    ...options,
+    method: 'GET',
+  });
+};

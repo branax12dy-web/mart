@@ -25,6 +25,7 @@ export default function Products() {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const maxItems = config.vendor?.maxItems ?? 100;
+  const lowStockThreshold = config.vendor?.lowStockThreshold ?? 10;
   const [view, setView]           = useState<"list"|"bulk">("list");
   const [search, setSearch]       = useState("");
   const [filterCat, setFilterCat] = useState("all");
@@ -92,7 +93,7 @@ export default function Products() {
     return ["all", ...Array.from(s)];
   }, [products]);
 
-  const lowStock = products.filter(p => p.stock !== null && p.stock !== undefined && p.stock < 10 && p.stock >= 0);
+  const lowStock = products.filter(p => p.stock !== null && p.stock !== undefined && p.stock < lowStockThreshold && p.stock >= 0);
 
   const createMut = useMutation({
     mutationFn: () => {

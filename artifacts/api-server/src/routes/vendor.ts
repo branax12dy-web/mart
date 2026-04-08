@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
-import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable, riderProfilesTable, vendorProfilesTable, vendorSchedulesTable } from "@workspace/db/schema";
+import { usersTable, ordersTable, productsTable, promoCodesTable, walletTransactionsTable, notificationsTable, reviewsTable, liveLocationsTable, deliveryWhitelistTable, deliveryAccessRequestsTable, riderProfilesTable, vendorProfilesTable, vendorSchedulesTable, stockSubscriptionsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, count, sum, gte, or, ilike, isNull, avg } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -12,6 +12,7 @@ import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError } from "../lib/response.js";
+import { sendPushToUsers } from "../lib/webpush.js";
 
 const router: IRouter = Router();
 
@@ -151,7 +152,10 @@ router.get("/stats", async (req, res) => {
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, weekAgo))),
     db.select({ c: count(), s: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), gte(ordersTable.createdAt, monthAgo))),
     db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.vendorId, vendorId), eq(ordersTable.status, "pending"))),
-    db.select({ c: count() }).from(productsTable).where(and(eq(productsTable.vendorId, vendorId), sql`stock IS NOT NULL AND stock < 10 AND stock > 0`)),
+    getPlatformSettings().then(cfg => {
+      const threshold = parseInt(cfg["low_stock_threshold"] ?? "10", 10) || 10;
+      return db.select({ c: count() }).from(productsTable).where(and(eq(productsTable.vendorId, vendorId), sql`stock IS NOT NULL AND stock < ${threshold} AND stock > 0`));
+    }),
   ]);
   sendSuccess(res, {
     today:    { orders: tData[0]?.c??0, revenue: parseFloat((safeNum(tData[0]?.s)*vendorShare).toFixed(2)) },
@@ -365,6 +369,14 @@ router.post("/products/bulk", async (req, res) => {
 router.patch("/products/:id", async (req, res) => {
   const vendorId = req.vendorId!;
   const body = req.body;
+
+  /* Snapshot previous inStock state for back-in-stock detection */
+  const [prevProduct] = await db.select({ inStock: productsTable.inStock, stock: productsTable.stock, name: productsTable.name })
+    .from(productsTable)
+    .where(and(eq(productsTable.id, req.params["id"]!), eq(productsTable.vendorId, vendorId)))
+    .limit(1);
+  if (!prevProduct) { sendNotFound(res, "Product not found"); return; }
+
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   const fields = ["name","description","category","type","unit","deliveryTime"];
   for (const f of fields) if (body[f] !== undefined) updates[f] = body[f];
@@ -381,6 +393,31 @@ router.patch("/products/:id", async (req, res) => {
   if (body.videoUrl    !== undefined) updates.videoUrl     = body.videoUrl || null;
   const [product] = await db.update(productsTable).set(updates).where(and(eq(productsTable.id, req.params["id"]!), eq(productsTable.vendorId, vendorId))).returning();
   if (!product) { sendNotFound(res, "Product not found"); return; }
+
+  /* ── Back-in-stock: notify subscribers if product just became available ── */
+  /* Trigger when: (a) inStock flipped to true, OR (b) stock transitioned from <=0 to >0 */
+  const wasOutOfStock = !prevProduct.inStock || (prevProduct.stock !== null && prevProduct.stock <= 0);
+  const isNowAvailable = product.inStock || (product.stock !== null && product.stock > 0);
+  if (wasOutOfStock && isNowAvailable) {
+    try {
+      const subs = await db.select({ userId: stockSubscriptionsTable.userId })
+        .from(stockSubscriptionsTable)
+        .where(eq(stockSubscriptionsTable.productId, product.id));
+      if (subs.length > 0) {
+        const userIds = subs.map(s => s.userId);
+        await sendPushToUsers(userIds, {
+          title: "Back in Stock!",
+          body: `${product.name} is available again. Order now before it sells out!`,
+          tag: `back-in-stock-${product.id}`,
+          data: { productId: product.id, type: "back_in_stock" },
+        });
+        await db.delete(stockSubscriptionsTable).where(eq(stockSubscriptionsTable.productId, product.id));
+      }
+    } catch (e) {
+      logger.warn({ productId: product.id, err: (e as Error).message }, "[vendor] back-in-stock notification failed");
+    }
+  }
+
   sendSuccess(res, { ...product, price: safeNum(product.price) });
 });
 

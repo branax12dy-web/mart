@@ -1304,24 +1304,28 @@ export function renderSection(
     const AMOUNT_KEYS  = new Set(["min_order_amount","order_max_cart_value"]);
     const TIMING_KEYS  = new Set(["order_cancel_window_min","order_auto_cancel_min","order_refund_days","order_preptime_min","order_rating_window_hours"]);
     const SCHED_KEYS   = new Set(["order_schedule_enabled"]);
+    const ITEM_KEYS    = new Set(["order_max_item_quantity"]);
 
     const amountFields  = catSettings.filter(s => AMOUNT_KEYS.has(s.key));
     const timingFields  = catSettings.filter(s => TIMING_KEYS.has(s.key));
     const schedFields   = catSettings.filter(s => SCHED_KEYS.has(s.key));
+    const itemFields    = catSettings.filter(s => ITEM_KEYS.has(s.key));
 
     const SUFFIX: Record<string,string> = {
       min_order_amount: "Rs.", order_max_cart_value: "Rs.",
       order_cancel_window_min: "min", order_auto_cancel_min: "min",
       order_refund_days: "days", order_preptime_min: "min", order_rating_window_hours: "hrs",
+      order_max_item_quantity: "qty",
     };
     const HINT: Record<string,string> = {
-      min_order_amount:        "Customer cannot checkout below this amount",
-      order_max_cart_value:    "Hard cap — checkout blocked if cart exceeds this",
-      order_cancel_window_min: "Customer can cancel a pending order within this window",
-      order_auto_cancel_min:   "Pending order auto-cancels if vendor does not accept in time",
-      order_refund_days:       "Shown to customer on cancelled non-COD orders",
-      order_preptime_min:      "Estimated prep time shown on tracking screen",
+      min_order_amount:          "Customer cannot checkout below this amount",
+      order_max_cart_value:      "Hard cap — checkout blocked if cart exceeds this",
+      order_cancel_window_min:   "Customer can cancel a pending order within this window",
+      order_auto_cancel_min:     "Pending order auto-cancels if vendor does not accept in time",
+      order_refund_days:         "Shown to customer on cancelled non-COD orders",
+      order_preptime_min:        "Estimated prep time shown on tracking screen",
       order_rating_window_hours: "Rate button disappears after this many hours post-delivery",
+      order_max_item_quantity:   "Maximum units of a single product per order line item",
     };
 
     const OrderNumField = ({ s }: { s: Setting }) => {
@@ -1370,7 +1374,18 @@ export function renderSection(
           </div>
         )}
 
-        {/* Group 3: Scheduling */}
+        {/* Group 3: Item Quantity Limits */}
+        {itemFields.length > 0 && (
+          <div className="space-y-3 border-t border-border/40 pt-5">
+            <SLabel icon={Package}>Item Quantity Limits</SLabel>
+            <p className="text-xs text-muted-foreground -mt-1">Control how many units a customer can order per line item</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {itemFields.map(s => <OrderNumField key={s.key} s={s} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Group 4: Scheduling */}
         {schedFields.length > 0 && (
           <div className="space-y-3 border-t border-border/40 pt-5">
             <SLabel icon={Settings}>Scheduling</SLabel>
@@ -1972,9 +1987,10 @@ export function renderSection(
         <div className="space-y-3 border-t border-border/40 pt-5">
           <SLabel icon={ShoppingCart}>Store Rules</SLabel>
           <p className="text-xs text-muted-foreground -mt-1">Platform-wide limits applied to all vendor stores</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <VField k="vendor_min_order" label="Default Minimum Order (Rs.)" suffix="Rs." hint="Vendors set their own min order — this is the platform floor" />
             <VField k="vendor_max_items" label="Max Menu Items Per Vendor" suffix="items" hint="Product/menu listing cap enforced at API level" />
+            <VField k="low_stock_threshold" label="Low Stock Alert Threshold" suffix="units" hint="Vendor dashboard shows a warning when stock falls below this number" />
           </div>
           <div className="bg-gray-50 rounded-xl p-3 flex items-start gap-2">
             <Package className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />

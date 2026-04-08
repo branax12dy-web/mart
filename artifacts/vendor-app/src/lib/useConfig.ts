@@ -12,6 +12,7 @@ export interface PlatformConfig {
     autoApprove: boolean;
     promoEnabled: boolean;
     withdrawalEnabled: boolean;
+    lowStockThreshold: number;
   };
   platform: {
     appName: string;
@@ -135,7 +136,7 @@ export interface PlatformConfig {
 }
 
 const DEFAULT_CONFIG: PlatformConfig = {
-  vendor: { commissionPct: 15, settleDays: 7, minPayout: 500, maxPayout: 50000, minOrder: 100, maxItems: 100, autoApprove: false, promoEnabled: true, withdrawalEnabled: true },
+  vendor: { commissionPct: 15, settleDays: 7, minPayout: 500, maxPayout: 50000, minOrder: 100, maxItems: 100, autoApprove: false, promoEnabled: true, withdrawalEnabled: true, lowStockThreshold: 10 },
   platform: {
     appName: "AJKMart",
     appTagline: "Your super app for everything",

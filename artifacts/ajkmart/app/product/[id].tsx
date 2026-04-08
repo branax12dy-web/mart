@@ -38,6 +38,7 @@ import {
   useGetProduct, useGetProducts, getProductVariants, trackInteraction,
   addToWishlist, removeFromWishlist, checkWishlist,
   getProductReviews, checkCanReviewProduct, submitProductReview, uploadImage,
+  subscribeStockNotify, unsubscribeStockNotify, checkStockNotifySubscription,
   type Product, type ProductReview,
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -468,17 +469,21 @@ function ProductDetailScreenInner() {
 
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [notifyLoading, setNotifyLoading] = useState(false);
 
   useEffect(() => {
     setActiveImageIndex(0);
     setDescExpanded(false);
     setDescNeedsTruncation(false);
     setAdded(false);
+    setIsSubscribed(false);
   }, [id]);
 
   useEffect(() => {
     if (isLoggedIn && id) {
       checkWishlist(id).then(setIsInWishlist).catch(() => {});
+      checkStockNotifySubscription(id).then(r => setIsSubscribed(r.subscribed)).catch(() => {});
     }
   }, [isLoggedIn, id]);
 
@@ -528,6 +533,30 @@ function ProductDetailScreenInner() {
       })
       .catch(() => {});
   }, [product?.id]);
+
+  const handleNotifyMe = useCallback(async () => {
+    if (!isLoggedIn) {
+      requireAuth(() => {}, { message: "Sign in to get notified when this product is back in stock" });
+      return;
+    }
+    if (!id || notifyLoading) return;
+    setNotifyLoading(true);
+    try {
+      if (isSubscribed) {
+        await unsubscribeStockNotify(id);
+        setIsSubscribed(false);
+        Alert.alert("Unsubscribed", "You will no longer receive notifications for this product.");
+      } else {
+        await subscribeStockNotify(id);
+        setIsSubscribed(true);
+        Alert.alert("You're on the list!", "We'll notify you as soon as this product is back in stock.");
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Something went wrong";
+      Alert.alert("Error", msg);
+    }
+    setNotifyLoading(false);
+  }, [isLoggedIn, id, isSubscribed, notifyLoading, requireAuth]);
 
   const handleShare = useCallback(async () => {
     if (!product) return;
@@ -1211,18 +1240,31 @@ function ProductDetailScreenInner() {
           <Text style={styles.footerPriceLabel}>Total Price</Text>
           <Text style={styles.footerPrice}>Rs. {price.toLocaleString()}</Text>
         </View>
-        <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
+        {product.inStock ? (
+          <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
+            <TouchableOpacity activeOpacity={0.7}
+              onPress={handleAdd}
+              disabled={added}
+              style={[styles.addToCartBtn, added && styles.addToCartBtnDone]}
+            >
+              <Ionicons name={added ? "checkmark-circle" : "bag-add-outline"} size={20} color={C.textInverse} />
+              <Text style={styles.addToCartTxt}>
+                {added ? "Added to Cart!" : "Add to Cart"}
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        ) : (
           <TouchableOpacity activeOpacity={0.7}
-            onPress={handleAdd}
-            disabled={!product.inStock || added}
-            style={[styles.addToCartBtn, added && styles.addToCartBtnDone, !product.inStock && styles.addToCartBtnDisabled]}
+            onPress={handleNotifyMe}
+            disabled={notifyLoading}
+            style={[styles.addToCartBtn, { flex: 1 }, isSubscribed ? styles.notifyBtnActive : styles.notifyBtn]}
           >
-            <Ionicons name={added ? "checkmark-circle" : "bag-add-outline"} size={20} color={C.textInverse} />
-            <Text style={styles.addToCartTxt}>
-              {!product.inStock ? "Out of Stock" : added ? "Added to Cart!" : "Add to Cart"}
+            <Ionicons name={isSubscribed ? "notifications" : "notifications-outline"} size={20} color={isSubscribed ? C.primary : C.textInverse} />
+            <Text style={[styles.addToCartTxt, isSubscribed && { color: C.primary }]}>
+              {notifyLoading ? "..." : isSubscribed ? "Subscribed" : "Notify Me"}
             </Text>
           </TouchableOpacity>
-        </Animated.View>
+        )}
       </View>
     </View>
   );
@@ -1439,6 +1481,8 @@ const styles = StyleSheet.create({
   addToCartBtnDone: { backgroundColor: C.success },
   addToCartBtnDisabled: { backgroundColor: C.textMuted, shadowOpacity: 0 },
   addToCartTxt: { ...Typ.h3, fontSize: 16, color: C.textInverse },
+  notifyBtn: { backgroundColor: C.textSecondary, shadowOpacity: 0.2 },
+  notifyBtnActive: { backgroundColor: C.primarySoft, shadowOpacity: 0, borderWidth: 1.5, borderColor: C.primary },
 
   errorCenter: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   errorIconWrap: { width: 80, height: 80, borderRadius: 24, backgroundColor: C.surfaceSecondary, alignItems: "center", justifyContent: "center", marginBottom: 4 },

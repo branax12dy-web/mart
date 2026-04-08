@@ -7,8 +7,10 @@ import {
   walletTransactionsTable,
   notificationsTable,
   ordersTable, productsTable, flashDealsTable, promoCodesTable, categoriesTable, bannersTable,
+  stockSubscriptionsTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
+import { sendPushToUsers } from "../../lib/webpush.js";
 import {
   stripUser, generateId, getUserLanguage, t,
   getPlatformSettings, adminAuth, getAdminSecret,
@@ -58,6 +60,8 @@ router.get("/products/pending", async (_req, res) => {
 
 router.patch("/products/:id/approve", async (req, res) => {
   const { note } = req.body;
+  /* Fetch previous state before approve to detect back-in-stock transition */
+  const [prevProduct] = await db.select().from(productsTable).where(eq(productsTable.id, req.params["id"]!)).limit(1);
   const [product] = await db
     .update(productsTable)
     .set({ approvalStatus: "approved", inStock: true, updatedAt: new Date() })
@@ -80,6 +84,23 @@ router.patch("/products/:id/approve", async (req, res) => {
         icon: "checkmark-circle-outline",
       }).catch(() => {});
     }
+  }
+  /* Back-in-stock: notify subscribers when previously out-of-stock product is approved */
+  if (prevProduct && (!prevProduct.inStock || (prevProduct.stock !== null && prevProduct.stock <= 0))) {
+    try {
+      const subs = await db.select({ userId: stockSubscriptionsTable.userId })
+        .from(stockSubscriptionsTable)
+        .where(eq(stockSubscriptionsTable.productId, product.id));
+      if (subs.length > 0) {
+        const userIds = subs.map(s => s.userId);
+        await sendPushToUsers(userIds, {
+          title: "Back in Stock!",
+          body: `${product.name} is now available. Order before it sells out!`,
+          data: { productId: product.id },
+        });
+        await db.delete(stockSubscriptionsTable).where(eq(stockSubscriptionsTable.productId, product.id));
+      }
+    } catch (e) { logger.warn({ err: e }, "[back-in-stock] approve notify failed"); }
   }
   sendSuccess(res, { ...product, price: parseFloat(product.price) });
 });
@@ -159,7 +180,7 @@ router.post("/products", async (req, res) => {
 });
 
 router.patch("/products/:id", async (req, res) => {
-  const { name, description, price, originalPrice, category, unit, inStock, vendorName, deliveryTime, image } = req.body;
+  const { name, description, price, originalPrice, category, unit, inStock, stock, vendorName, deliveryTime, image } = req.body;
   const updates: Partial<typeof productsTable.$inferInsert> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
@@ -168,9 +189,13 @@ router.patch("/products/:id", async (req, res) => {
   if (category !== undefined) updates.category = category;
   if (unit !== undefined) updates.unit = unit;
   if (inStock !== undefined) updates.inStock = inStock;
+  if (stock !== undefined) updates.stock = stock;
   if (vendorName !== undefined) updates.vendorName = vendorName;
   if (deliveryTime !== undefined) updates.deliveryTime = deliveryTime;
   if (image !== undefined) updates.image = image;
+
+  /* Fetch previous state to detect back-in-stock transition */
+  const [prevProduct] = await db.select().from(productsTable).where(eq(productsTable.id, req.params["id"]!)).limit(1);
 
   const [product] = await db
     .update(productsTable)
@@ -178,6 +203,29 @@ router.patch("/products/:id", async (req, res) => {
     .where(eq(productsTable.id, req.params["id"]!))
     .returning();
   if (!product) { sendNotFound(res, "Product not found"); return; }
+
+  /* Back-in-stock: notify subscribers when product becomes available again */
+  if (prevProduct) {
+    const wasOutOfStock = !prevProduct.inStock || (prevProduct.stock !== null && prevProduct.stock <= 0);
+    const isNowAvailable = product.inStock || (product.stock !== null && product.stock > 0);
+    if (wasOutOfStock && isNowAvailable) {
+      try {
+        const subs = await db.select({ userId: stockSubscriptionsTable.userId })
+          .from(stockSubscriptionsTable)
+          .where(eq(stockSubscriptionsTable.productId, product.id));
+        if (subs.length > 0) {
+          const userIds = subs.map(s => s.userId);
+          await sendPushToUsers(userIds, {
+            title: "Back in Stock!",
+            body: `${product.name} is now available. Order before it sells out!`,
+            data: { productId: product.id },
+          });
+          await db.delete(stockSubscriptionsTable).where(eq(stockSubscriptionsTable.productId, product.id));
+        }
+      } catch (e) { logger.warn({ err: e }, "[back-in-stock] admin notify failed"); }
+    }
+  }
+
   sendSuccess(res, { ...product, price: parseFloat(product.price) });
 });
 

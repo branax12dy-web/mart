@@ -100,6 +100,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "order_preptime_min",        value: "15",    label: "Default Prep Time Shown (minutes)",       category: "orders" },
   { key: "order_rating_window_hours", value: "48",    label: "Rating Window After Delivery (hours)",    category: "orders" },
   { key: "order_schedule_enabled",    value: "off",   label: "Allow Advance Order Scheduling",          category: "orders" },
+  { key: "order_max_item_quantity",   value: "99",    label: "Max Quantity Per Line Item",               category: "orders" },
   /* Language */
   { key: "default_language",    value: "en",       label: "Default Language",             category: "general" },
   { key: "enabled_languages",   value: '["en"]',   label: "Enabled Language Modes (JSON array)", category: "general" },
@@ -141,6 +142,7 @@ export const DEFAULT_PLATFORM_SETTINGS = [
   { key: "vendor_commission_pct",      value: "15",     label: "Vendor Platform Commission (%)",         category: "vendor" },
   { key: "vendor_min_order",           value: "100",    label: "Platform Default Min Order (Rs.)",       category: "vendor" },
   { key: "vendor_max_items",           value: "100",    label: "Max Menu Items Per Vendor",              category: "vendor" },
+  { key: "low_stock_threshold",        value: "10",     label: "Low Stock Alert Threshold (units)",      category: "vendor" },
   { key: "vendor_settlement_days",     value: "7",      label: "Payout Settlement Days",                 category: "vendor" },
   { key: "vendor_min_payout",          value: "500",    label: "Minimum Payout Request (Rs.)",           category: "vendor" },
   { key: "vendor_max_payout",          value: "50000",  label: "Maximum Single Payout Request (Rs.)",    category: "vendor" },
