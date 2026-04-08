@@ -351,6 +351,36 @@ router.get("/", async (req, res) => {
       mapCenterLng:    parseFloat(s["brand_map_center_lng"]   ?? "73.47"),
       mapCenterLabel:  s["brand_map_center_label"] ?? "Muzaffarabad",
     },
+    uploads: {
+      maxImageMb:           parseInt(s["upload_max_image_mb"]            ?? "5"),
+      maxVideoMb:           parseInt(s["upload_max_video_mb"]            ?? "50"),
+      maxVideoDurationSec:  parseInt(s["upload_max_video_duration_sec"]  ?? "60"),
+      allowedImageFormats:  (s["upload_allowed_image_formats"] ?? "jpeg,png,webp").split(",").map((f: string) => f.trim()).filter(Boolean),
+      allowedVideoFormats:  (s["upload_allowed_video_formats"] ?? "mp4,quicktime,webm").split(",").map((f: string) => f.trim()).filter(Boolean),
+    },
+    pagination: {
+      productsDefault:   parseInt(s["pagination_products_default"]   ?? "20"),
+      productsMax:       parseInt(s["pagination_products_max"]        ?? "50"),
+      trendingLimit:     parseInt(s["pagination_trending_limit"]      ?? "12"),
+      flashDealsLimit:   parseInt(s["pagination_flash_deals"]         ?? "20"),
+    },
+    onboarding: (() => {
+      try {
+        const slides = JSON.parse(s["onboarding_slides"] ?? "[]");
+        return { slides: Array.isArray(slides) ? slides : [] };
+      } catch {
+        return { slides: [] };
+      }
+    })(),
+    supportHoursSchedule: (() => {
+      try {
+        const raw = s["support_hours_schedule"] ?? "";
+        if (raw) return JSON.parse(raw);
+        return null;
+      } catch {
+        return null;
+      }
+    })(),
     system: {
       logRetentionDays: parseInt(s["system_log_retention_days"] ?? "30", 10),
       cacheTtlSec:      parseInt(s["system_cache_ttl_sec"]     ?? "300", 10),

@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell, MapPin, Circle, Bike, User, Landmark, Home, Wallet,
-  ClipboardList, BarChart2, Pencil, Star, Camera,
+  ClipboardList, BarChart2, Pencil, Star, Camera, Truck,
   Shield, Clock, CheckCircle, AlertTriangle, X,
   CreditCard, Phone, Mail, Facebook, Instagram, MessageCircle,
   FileText, Lock, HelpCircle, Info, LogOut, RefreshCcw,
@@ -175,7 +175,11 @@ export default function Profile() {
     toastTimerRef.current = setTimeout(() => setToast(""), 3500);
   };
 
-  const ALLOWED_IMAGE_MIME = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
+  const maxImageMb = config.uploads?.maxImageMb ?? 5;
+  const allowedImageFormats = (config.uploads?.allowedImageFormats ?? []).length > 0
+    ? config.uploads!.allowedImageFormats!.flatMap(f => [`image/${f}`, f === "jpeg" ? "image/jpg" : null].filter(Boolean) as string[])
+    : ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
+  const ALLOWED_IMAGE_MIME = allowedImageFormats;
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -185,7 +189,7 @@ export default function Profile() {
       if (avatarInputRef.current) avatarInputRef.current.value = "";
       return;
     }
-    if (file.size > 5 * 1024 * 1024) { showToast("Image too large (max 5MB)"); return; }
+    if (file.size > maxImageMb * 1024 * 1024) { showToast(`Image too large (max ${maxImageMb}MB)`); return; }
     setAvatarUploading(true);
     try {
       const reader = new FileReader();
@@ -216,7 +220,7 @@ export default function Profile() {
       showToast("Invalid file type. Please upload a JPEG, PNG, or WebP image.");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) { showToast("Document image too large (max 5MB)"); return; }
+    if (file.size > maxImageMb * 1024 * 1024) { showToast(`Document image too large (max ${maxImageMb}MB)`); return; }
     setDocUploading(kind);
     try {
       const reader = new FileReader();
@@ -541,6 +545,11 @@ export default function Profile() {
               <p className="text-[9px] text-gray-500 mt-0.5 font-semibold truncate">{s.label}</p>
             </div>
           ))}
+        </div>
+
+        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-2.5 animate-[slideUp_0.55s_ease-out]">
+          <Truck size={14} className="text-indigo-500 flex-shrink-0"/>
+          <p className="text-xs text-indigo-700 font-semibold">Max simultaneous deliveries: <span className="font-extrabold">{config.rider?.maxDeliveries ?? 3}</span></p>
         </div>
 
         {completionPct < 100 && (

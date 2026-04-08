@@ -226,6 +226,30 @@ export interface PlatformConfig {
     notes:       string[];
     sortOrder:   number;
   }>;
+  uploads?: {
+    maxImageMb?: number;
+    maxVideoMb?: number;
+    maxVideoDurationSec?: number;
+    allowedImageFormats?: string[];
+    allowedVideoFormats?: string[];
+  };
+  pagination?: {
+    productsDefault?: number;
+    trendingLimit?: number;
+    flashDealsLimit?: number;
+  };
+  onboarding?: {
+    slides?: Array<{
+      id: string;
+      title: string;
+      subtitle?: string;
+      image?: string;
+      backgroundColor?: string;
+    }>;
+  };
+  supportHoursSchedule?: {
+    [day: string]: { open: string; close: string; closed?: boolean };
+  } | null;
 }
 
 const DEFAULT: PlatformConfig = {
@@ -405,7 +429,7 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
         clearTimeout(timeoutId);
       }
       if (!res.ok) throw new Error("config fetch failed");
-      const raw = unwrapApiResponse(await res.json());
+      const raw = unwrapApiResponse(await res.json()) as Record<string, any>;
       const parsed: PlatformConfig = {
         appStatus: raw.platform?.appStatus === "maintenance" ? "maintenance" : "active",
         features: {
@@ -626,6 +650,24 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           playStoreUrl:  raw.compliance?.playStoreUrl  ?? "",
         },
         releaseNotes: Array.isArray(raw.releaseNotes) ? raw.releaseNotes : [],
+        uploads: raw.uploads ? {
+          maxImageMb:           raw.uploads.maxImageMb           ?? undefined,
+          maxVideoMb:           raw.uploads.maxVideoMb           ?? undefined,
+          maxVideoDurationSec:  raw.uploads.maxVideoDurationSec  ?? undefined,
+          allowedImageFormats:  Array.isArray(raw.uploads.allowedImageFormats) ? raw.uploads.allowedImageFormats : undefined,
+          allowedVideoFormats:  Array.isArray(raw.uploads.allowedVideoFormats) ? raw.uploads.allowedVideoFormats : undefined,
+        } : undefined,
+        pagination: raw.pagination ? {
+          productsDefault: raw.pagination.productsDefault ?? undefined,
+          trendingLimit:   raw.pagination.trendingLimit   ?? undefined,
+          flashDealsLimit: raw.pagination.flashDealsLimit ?? undefined,
+        } : undefined,
+        onboarding: raw.onboarding ? {
+          slides: Array.isArray(raw.onboarding.slides) ? raw.onboarding.slides : undefined,
+        } : undefined,
+        supportHoursSchedule: raw.supportHoursSchedule && typeof raw.supportHoursSchedule === "object"
+          ? raw.supportHoursSchedule
+          : null,
       };
       _cached = parsed;
       _cachedAt = Date.now();

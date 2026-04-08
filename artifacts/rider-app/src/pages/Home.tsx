@@ -870,6 +870,7 @@ export default function Home() {
             weekEarnings={earningsData?.week?.earnings || 0}
             totalDeliveries={user?.stats?.totalDeliveries || 0}
             currency={currency}
+            maxDeliveries={config.rider?.maxDeliveries ?? 3}
           />
         </div>
       </header>

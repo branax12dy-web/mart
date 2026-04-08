@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { api } from "../lib/api";
+import { usePlatformConfig } from "../lib/useConfig";
 import { INPUT, LABEL } from "../lib/ui";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
+
+const DEFAULT_MAX_IMAGE_MB = 5;
+const DEFAULT_ALLOWED_IMAGE_FORMATS = ["image/jpeg", "image/png", "image/webp"];
 
 interface ImageUploaderProps {
   value: string;
@@ -21,6 +25,14 @@ export function ImageUploader({
 }: ImageUploaderProps) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const { config } = usePlatformConfig();
+
+  const maxImageMb = config.uploads?.maxImageMb ?? DEFAULT_MAX_IMAGE_MB;
+  const allowedFormats = (config.uploads?.allowedImageFormats ?? []).length > 0
+    ? (config.uploads!.allowedImageFormats!).map(f => `image/${f}`)
+    : DEFAULT_ALLOWED_IMAGE_FORMATS;
+  const allowedFormatLabels = (config.uploads?.allowedImageFormats ?? ["jpeg", "png", "webp"])
+    .map(f => f.toUpperCase()).join(", ");
 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -34,11 +46,11 @@ export function ImageUploader({
 
   const handleFile = async (file: File) => {
     if (uploading) return;
-    if (!file.type.startsWith("image/")) {
+    if (!allowedFormats.some(fmt => file.type === fmt || file.type.startsWith(fmt))) {
       setError(T("invalidFileType"));
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > maxImageMb * 1024 * 1024) {
       setError(T("fileTooLarge"));
       return;
     }
@@ -106,7 +118,7 @@ export function ImageUploader({
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept={allowedFormats.join(",")}
             className="hidden"
             onChange={e => {
               const file = e.target.files?.[0];
@@ -128,7 +140,7 @@ export function ImageUploader({
             <>
               <span className="text-2xl mb-1">📷</span>
               <p className="text-xs font-bold text-gray-500">{T("imageUrlLabel")}</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">JPEG, PNG, WebP · Max 5MB</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{allowedFormatLabels} · Max {maxImageMb}MB</p>
             </>
           )}
         </div>

@@ -93,6 +93,13 @@ export interface PlatformConfig {
     vendorSettleDays: number;
     referralBonus: number;
   };
+  uploads?: {
+    maxImageMb?: number;
+    maxVideoMb?: number;
+    maxVideoDurationSec?: number;
+    allowedImageFormats?: string[];
+    allowedVideoFormats?: string[];
+  };
   auth?: {
     phoneOtpEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };
     emailOtpEnabled?: boolean | { customer?: boolean; rider?: boolean; vendor?: boolean };

@@ -24,6 +24,7 @@ import { initAnalytics, trackScreen, identifyUser } from "@/utils/analytics";
 import { initErrorReporter } from "@/utils/error-reporter";
 import { registerPush } from "@/utils/push";
 import { AuthProvider, useAuth, hasRole } from "@/context/AuthContext";
+import { hasSeenOnboarding } from "./onboarding";
 import { CartProvider } from "@/context/CartContext";
 import { LanguageProvider, useLanguage } from "@/context/LanguageContext";
 import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformConfigContext";
@@ -124,12 +125,21 @@ function AuthGuard() {
     const inTabsGroup = segments[0] === "(tabs)";
     const inRootIndex = (segments as string[]).length === 0;
     const isBrowsable = GUEST_BROWSABLE.has(segments[0] as string);
+    const inOnboarding = segments[0] === "onboarding";
 
-    const isPublicRoute = inAuthGroup || inTabsGroup || inRootIndex || isBrowsable;
+    const isPublicRoute = inAuthGroup || inTabsGroup || inRootIndex || isBrowsable || inOnboarding;
     const onWrongAppScreen = segments[0] === "auth" && segments[1] === "wrong-app";
 
     if (!user && !isPublicRoute) {
-      router.replace("/auth");
+      hasSeenOnboarding().then(seen => {
+        if (!seen) router.replace("/onboarding");
+        else router.replace("/auth");
+      });
+    } else if (!user && inRootIndex) {
+      hasSeenOnboarding().then(seen => {
+        if (!seen) router.replace("/onboarding");
+        else router.replace("/auth");
+      });
     } else if (user && !hasRole(user, "customer") && !onWrongAppScreen) {
       router.replace("/auth/wrong-app");
     } else if (user && hasRole(user, "customer") && (inAuthGroup || inRootIndex)) {
@@ -642,6 +652,7 @@ function RootLayoutNav() {
       />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index"          options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding"     options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="(tabs)"         options={{ headerShown: false }} />
         <Stack.Screen name="auth"           options={{ headerShown: false }} />
         <Stack.Screen name="mart/index"     options={{ headerShown: false }} />

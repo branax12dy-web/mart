@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "../lib/auth";
+import type { StoreHours } from "../lib/auth";
 import { api } from "../lib/api";
 import { usePlatformConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
@@ -10,6 +11,129 @@ import { PageHeader } from "../components/PageHeader";
 import { PullToRefresh } from "../components/PullToRefresh";
 import { fc, CARD, STAT_VAL, STAT_LBL, DEFAULT_COMMISSION_PCT, errMsg } from "../lib/ui";
 import { Truck } from "lucide-react";
+
+const DAYS: { key: string; label: string }[] = [
+  { key: "mon", label: "Monday" },
+  { key: "tue", label: "Tuesday" },
+  { key: "wed", label: "Wednesday" },
+  { key: "thu", label: "Thursday" },
+  { key: "fri", label: "Friday" },
+  { key: "sat", label: "Saturday" },
+  { key: "sun", label: "Sunday" },
+];
+
+const DEFAULT_STORE_HOURS: StoreHours = {
+  mon: { open: "08:00", close: "22:00" },
+  tue: { open: "08:00", close: "22:00" },
+  wed: { open: "08:00", close: "22:00" },
+  thu: { open: "08:00", close: "22:00" },
+  fri: { open: "08:00", close: "22:00" },
+  sat: { open: "08:00", close: "22:00" },
+  sun: { open: "10:00", close: "20:00" },
+};
+
+function ScheduleEditor({ storeHours, onSave, saving }: {
+  storeHours: StoreHours | null | undefined;
+  onSave: (hours: StoreHours) => Promise<void>;
+  saving: boolean;
+}) {
+  const initHours: StoreHours = storeHours && Object.keys(storeHours).length > 0 ? storeHours : DEFAULT_STORE_HOURS;
+  const [hours, setHours] = useState<StoreHours>(initHours);
+  const [dirty, setDirty] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const update = (day: string, field: "open" | "close" | "closed", val: string | boolean) => {
+    setHours(prev => ({
+      ...prev,
+      [day]: { ...prev[day], [field]: val },
+    }));
+    setDirty(true);
+  };
+
+  if (!expanded) {
+    return (
+      <div className={`${CARD} p-4`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-gray-800 text-sm">Weekly Schedule</p>
+            <p className="text-xs text-gray-500 mt-0.5">Set your open/close hours per day</p>
+          </div>
+          <button
+            onClick={() => setExpanded(true)}
+            className="h-9 px-4 bg-orange-50 text-orange-600 font-bold rounded-xl text-sm"
+          >
+            Edit Schedule
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${CARD} p-4`}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="font-bold text-gray-800 text-sm">Weekly Schedule</p>
+        <button onClick={() => setExpanded(false)} className="text-gray-400 text-lg leading-none">×</button>
+      </div>
+      <div className="space-y-2">
+        {DAYS.map(({ key, label }) => {
+          const day = hours[key] ?? { open: "08:00", close: "22:00" };
+          const isClosed = day.closed === true;
+          return (
+            <div key={key} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+              <div className="w-20 flex-shrink-0">
+                <p className="text-xs font-semibold text-gray-700">{label.slice(0, 3)}</p>
+              </div>
+              <label className="flex items-center gap-1.5 cursor-pointer flex-shrink-0">
+                <div
+                  onClick={() => update(key, "closed", !isClosed)}
+                  className={`w-10 h-5 rounded-full relative transition-colors cursor-pointer ${isClosed ? "bg-gray-300" : "bg-green-400"}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 shadow transition-all ${isClosed ? "left-0.5" : "left-5"}`} />
+                </div>
+                <span className={`text-[10px] font-bold ${isClosed ? "text-gray-400" : "text-green-600"}`}>
+                  {isClosed ? "Closed" : "Open"}
+                </span>
+              </label>
+              {!isClosed && (
+                <div className="flex items-center gap-1 flex-1">
+                  <input
+                    type="time"
+                    value={day.open || "08:00"}
+                    onChange={e => update(key, "open", e.target.value)}
+                    className="flex-1 h-8 px-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-orange-400"
+                  />
+                  <span className="text-gray-400 text-xs">–</span>
+                  <input
+                    type="time"
+                    value={day.close || "22:00"}
+                    onChange={e => update(key, "close", e.target.value)}
+                    className="flex-1 h-8 px-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-orange-400"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => { setHours(initHours); setDirty(false); setExpanded(false); }}
+          className="flex-1 h-9 border border-gray-200 text-gray-600 font-bold rounded-xl text-sm"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={async () => { await onSave(hours); setDirty(false); setExpanded(false); }}
+          disabled={!dirty || saving}
+          className="flex-1 h-9 bg-orange-500 text-white font-bold rounded-xl text-sm disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save Schedule"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function VendorNoticeBanner({ message }: { message: string }) {
   const key = `vendor_notice_dismissed_${message.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)}`;
@@ -67,6 +191,20 @@ export default function Dashboard() {
     onSuccess: () => { refreshUser(); qc.invalidateQueries({ queryKey: ["vendor-stats"] }); },
     onError: (e: Error) => showToast("❌ " + errMsg(e)),
   });
+
+  const [schedSaving, setSchedSaving] = useState(false);
+  const saveSchedule = async (hours: StoreHours) => {
+    setSchedSaving(true);
+    try {
+      await api.updateStore({ storeHours: hours });
+      await refreshUser();
+      showToast("✅ Schedule saved");
+    } catch (e: any) {
+      showToast("❌ " + errMsg(e));
+    } finally {
+      setSchedSaving(false);
+    }
+  };
 
   const orderActionMut = useMutation({
     mutationFn: ({ orderId, status, reason }: { orderId: string; status: string; reason?: string }) => {
@@ -259,6 +397,13 @@ export default function Dashboard() {
             </div>
           );
         })()}
+
+        {/* Weekly Store Schedule Editor */}
+        <ScheduleEditor
+          storeHours={(user as any)?.storeHours}
+          onSave={saveSchedule}
+          saving={schedSaving}
+        />
 
         {/* ── Desktop: 2-column layout for orders ── */}
         <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">

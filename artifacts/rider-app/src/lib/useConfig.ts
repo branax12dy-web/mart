@@ -146,6 +146,13 @@ export interface PlatformConfig {
     sessionDays: number;
     riderTokenDays: number;
   };
+  uploads?: {
+    maxImageMb?: number;
+    maxVideoMb?: number;
+    maxVideoDurationSec?: number;
+    allowedImageFormats?: string[];
+    allowedVideoFormats?: string[];
+  };
   auth?: {
     phoneOtp?: boolean;
     emailOtp?: boolean;
@@ -219,6 +226,26 @@ const DEFAULT_CONFIG: PlatformConfig = {
   finance: { gstEnabled: false, gstPct: 17, cashbackEnabled: false, cashbackPct: 2, cashbackMaxRs: 100, invoiceEnabled: false, platformCommissionPct: 10, vendorCommissionPct: 15, riderEarningPct: 80, minVendorPayout: 500, minRiderPayout: 500, vendorSettleDays: 7, referralBonus: 100 },
   auth: { phoneOtp: false, emailOtp: false, usernamePassword: false, google: false, facebook: false, magicLink: false, captchaEnabled: false, lockoutEnabled: true, lockoutMaxAttempts: 5, lockoutDurationSec: 300 },
   security: { gpsTracking: true, gpsInterval: 30, sessionDays: 30, riderTokenDays: 7 },
+  rider: {
+    keepPct: 80,
+    bonusPerTrip: 0,
+    minPayout: 500,
+    maxPayout: 10000,
+    maxDeliveries: 3,
+    cashAllowed: true,
+    withdrawalEnabled: true,
+    autoApprove: false,
+    minBalance: 0,
+    depositEnabled: false,
+    dailyGoal: 10,
+  },
+  uploads: {
+    maxImageMb: 5,
+    maxVideoMb: 50,
+    maxVideoDurationSec: 60,
+    allowedImageFormats: [],
+    allowedVideoFormats: [],
+  },
 };
 
 export interface RiderAuthConfig {

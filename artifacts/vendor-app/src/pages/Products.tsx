@@ -38,13 +38,18 @@ export default function Products() {
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
   const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
 
+  const maxVideoMb = config.uploads?.maxVideoMb ?? 50;
+  const maxVideoDurationSec = config.uploads?.maxVideoDurationSec ?? 60;
+  const allowedVideoFormats = (config.uploads?.allowedVideoFormats ?? []).length > 0
+    ? config.uploads!.allowedVideoFormats!.map(f => `video/${f}`)
+    : ["video/mp4", "video/quicktime", "video/webm"];
+
   const handleVideoUpload = async (file: File) => {
-    if (file.size > 50 * 1024 * 1024) { showToast("❌ Video must be under 50MB"); return; }
-    const allowed = ["video/mp4", "video/quicktime", "video/webm"];
-    if (!allowed.includes(file.type)) { showToast("❌ Only MP4, MOV, or WebM videos allowed"); return; }
+    if (file.size > maxVideoMb * 1024 * 1024) { showToast(`❌ Video must be under ${maxVideoMb}MB`); return; }
+    if (!allowedVideoFormats.includes(file.type)) { showToast(`❌ Only ${(config.uploads?.allowedVideoFormats ?? ["mp4", "mov", "webm"]).join(", ").toUpperCase()} videos allowed`); return; }
     try {
       const duration = await getVideoDuration(file);
-      if (duration > 60) { showToast(`❌ Video must be 60 seconds or less (yours is ${Math.ceil(duration)}s)`); return; }
+      if (duration > maxVideoDurationSec) { showToast(`❌ Video must be ${maxVideoDurationSec} seconds or less (yours is ${Math.ceil(duration)}s)`); return; }
     } catch {
       showToast("❌ Could not read video file — it may be corrupted or unsupported. Please try a different file.");
       return;
@@ -264,7 +269,7 @@ export default function Products() {
               />
             </div>
             <div className={`${CARD} p-4 space-y-3`}>
-              <label className={LABEL}>Upload Video (optional, ≤60s)</label>
+              <label className={LABEL}>Upload Video (optional, ≤{maxVideoDurationSec}s)</label>
               {form.videoUrl ? (
                 <div className="space-y-2">
                   <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
@@ -281,7 +286,7 @@ export default function Products() {
                       <span>🔄 Replace</span>
                       <input
                         type="file"
-                        accept="video/mp4,video/quicktime,video/webm"
+                        accept={allowedVideoFormats.join(",")}
                         className="hidden"
                         onChange={e => { const file = e.target.files?.[0]; if (file) handleVideoUpload(file); e.target.value = ""; }}
                       />
@@ -305,12 +310,12 @@ export default function Products() {
                     <>
                       <span className="text-2xl">🎬</span>
                       <span className="text-sm font-semibold text-gray-600">Tap to upload a product video</span>
-                      <span className="text-xs text-gray-400">MP4, MOV, or WebM · Max 50MB</span>
+                      <span className="text-xs text-gray-400">{(config.uploads?.allowedVideoFormats ?? ["mp4", "mov", "webm"]).map(f => f.toUpperCase()).join(", ")} · Max {maxVideoMb}MB · ≤{maxVideoDurationSec}s</span>
                     </>
                   )}
                   <input
                     type="file"
-                    accept="video/mp4,video/quicktime,video/webm"
+                    accept={allowedVideoFormats.join(",")}
                     className="hidden"
                     disabled={videoUploading}
                     onChange={e => { const file = e.target.files?.[0]; if (file) handleVideoUpload(file); e.target.value = ""; }}

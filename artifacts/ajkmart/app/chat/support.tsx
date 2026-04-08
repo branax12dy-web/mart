@@ -20,8 +20,36 @@ import Colors, { spacing, radii, shadows } from "@/constants/colors";
 import { Font } from "@/constants/typography";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
 import { useSmartBack } from "@/hooks/useSmartBack";
+
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+function isWithinSupportHours(
+  schedule: Record<string, { open: string; close: string; closed?: boolean }> | null | undefined,
+  supportHours: string,
+): { withinHours: boolean; label: string } {
+  if (!schedule || Object.keys(schedule).length === 0) {
+    return { withinHours: true, label: supportHours || "Support Team" };
+  }
+  const now = new Date();
+  const dayKey = DAY_KEYS[now.getDay()];
+  const dayConfig = schedule[dayKey];
+  if (!dayConfig || dayConfig.closed) {
+    return { withinHours: false, label: `Closed today · ${supportHours}` };
+  }
+  const [openH, openM] = (dayConfig.open || "00:00").split(":").map(Number);
+  const [closeH, closeM] = (dayConfig.close || "23:59").split(":").map(Number);
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const openMins = openH * 60 + openM;
+  const closeMins = closeH * 60 + closeM;
+  const withinHours = nowMins >= openMins && nowMins < closeMins;
+  const label = withinHours
+    ? `Open until ${dayConfig.close}`
+    : `Opens at ${dayConfig.open} · ${supportHours}`;
+  return { withinHours, label };
+}
 
 const C = Colors.light;
 const SOCKET_URL = API_BASE.replace("/api", "");
@@ -42,6 +70,12 @@ export default function SupportChatScreen() {
   const { token, user } = useAuth();
   const { showToast } = useToast();
   const { goBack } = useSmartBack();
+  const { config } = usePlatformConfig();
+
+  const { withinHours, label: hoursLabel } = isWithinSupportHours(
+    config.supportHoursSchedule,
+    config.platform.supportHours,
+  );
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -268,8 +302,8 @@ export default function SupportChatScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Support Chat</Text>
           <View style={styles.onlineRow}>
-            <View style={[styles.onlineDot, { backgroundColor: connected ? C.emerald : C.textMuted }]} />
-            <Text style={styles.onlineTxt}>{connected ? "Connected" : "Support Team"}</Text>
+            <View style={[styles.onlineDot, { backgroundColor: connected ? C.emerald : withinHours ? C.emerald : C.textMuted }]} />
+            <Text style={styles.onlineTxt}>{connected ? "Connected" : hoursLabel}</Text>
           </View>
         </View>
         <TouchableOpacity activeOpacity={0.7} onPress={fetchMessages} style={styles.backBtn}>
@@ -277,9 +311,14 @@ export default function SupportChatScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.infoBanner}>
-        <Ionicons name="information-circle-outline" size={14} color={C.info} />
-        <Text style={styles.infoBannerTxt}>Typical reply time: a few hours. Messages are saved across sessions.</Text>
+      <View style={[styles.infoBanner, !withinHours && { backgroundColor: "#FEF3C7", borderBottomColor: "#FDE68A" }]}>
+        <Ionicons name={withinHours ? "information-circle-outline" : "time-outline"} size={14} color={withinHours ? C.info : "#D97706"} />
+        <Text style={[styles.infoBannerTxt, !withinHours && { color: "#92400E" }]}>
+          {withinHours
+            ? "Typical reply time: a few hours. Messages are saved across sessions."
+            : `Support is currently closed. Messages are saved and we'll reply during ${config.platform.supportHours || "business hours"}.`
+          }
+        </Text>
       </View>
 
       {loading && messages.length === 0 ? (
@@ -360,7 +399,7 @@ const styles = StyleSheet.create({
   infoBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: C.infoSoft, paddingHorizontal: spacing.lg, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: C.infoBorder ?? C.borderLight,
+    borderBottomWidth: 1, borderBottomColor: C.borderLight,
   },
   infoBannerTxt: { fontFamily: Font.regular, fontSize: 11, color: C.info, flex: 1, lineHeight: 16 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: 12 },

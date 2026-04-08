@@ -76,10 +76,10 @@ const fct = StyleSheet.create({
   sep: { fontFamily: Font.bold, fontSize: 12, color: "#1F2937", marginTop: -4 },
 });
 
-export function FlashDealsSection({ T }: { T: (key: Parameters<typeof tDual>[0]) => string }) {
+export function FlashDealsSection({ T, limit = 10 }: { T: (key: Parameters<typeof tDual>[0]) => string; limit?: number }) {
   const { data: deals, isLoading, isError, refetch } = useQuery({
-    queryKey: ["flash-deals"],
-    queryFn: () => getFlashDeals({ limit: 10 }),
+    queryKey: ["flash-deals", limit],
+    queryFn: () => getFlashDeals({ limit }),
     staleTime: 3 * 60 * 1000,
   });
 

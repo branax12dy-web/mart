@@ -115,17 +115,20 @@ export default function UniversalSearchScreen() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const trendingSearchLimit = config.pagination?.trendingLimit ?? 12;
+  const searchPerPage = config.pagination?.productsDefault ?? 20;
+
   useEffect(() => {
     AsyncStorage.getItem(HISTORY_KEY).then(raw => {
       if (raw) {
         try { setSearchHistory(JSON.parse(raw)); } catch {}
       }
     });
-    getTrendingSearches({ limit: 12 })
+    getTrendingSearches({ limit: trendingSearchLimit })
       .then(terms => { if (terms.length > 0) setTrendingTerms(terms); })
       .catch(() => {});
     Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-  }, []);
+  }, [trendingSearchLimit]);
 
   useEffect(() => {
     setActiveCategory(params.category ?? "");
@@ -185,7 +188,7 @@ export default function UniversalSearchScreen() {
             maxPrice: maxPrice || undefined,
             minRating: minRating || undefined,
             page,
-            perPage: 20,
+            perPage: searchPerPage,
           }).then((data) => ({
             products: data.products.map((p) => ({
               id: p.id,

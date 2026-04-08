@@ -632,7 +632,7 @@ export default function HomeScreen() {
             )}
 
             <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
-              <LazyFlashDeals T={T} />
+              <LazyFlashDeals T={T} limit={platformConfig.pagination?.flashDealsLimit ?? 10} />
             </Suspense>
 
             <OffersStrip />
@@ -640,7 +640,7 @@ export default function HomeScreen() {
             <RecentlyViewedSection />
 
             <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
-              <LazyTrending />
+              <LazyTrending limit={platformConfig.pagination?.trendingLimit ?? 8} />
             </Suspense>
 
             <View style={{ height: 12 }} />

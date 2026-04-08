@@ -13,10 +13,10 @@ import { getTrending } from "@workspace/api-client-react";
 const C = Colors.light;
 const H_PAD = spacing.lg;
 
-export function TrendingSection() {
+export function TrendingSection({ limit = 8 }: { limit?: number }) {
   const { data: trending, isError, refetch } = useQuery({
-    queryKey: ["trending-products"],
-    queryFn: () => getTrending({ limit: 8 }),
+    queryKey: ["trending-products", limit],
+    queryFn: () => getTrending({ limit }),
     staleTime: 5 * 60 * 1000,
   });
 

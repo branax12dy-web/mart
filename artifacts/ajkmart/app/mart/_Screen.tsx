@@ -370,9 +370,10 @@ function MartScreenInner() {
 
   const { data: catData } = useGetCategories({ type: "mart" });
   const { data, isLoading, isError, refetch, isRefetching } = useGetProducts({ type: "mart", search: debouncedSearch || undefined, category: selectedCat, ...(sortBy !== "default" ? { sort: sortBy } : {}) });
+  const flashDealsLimit = platformConfig.pagination?.flashDealsLimit ?? 20;
   const { data: flashDealsData, refetch: refetchFlashDeals } = useQuery({
-    queryKey: ["flash-deals"],
-    queryFn: () => getFlashDeals({ limit: 20 }),
+    queryKey: ["flash-deals", flashDealsLimit],
+    queryFn: () => getFlashDeals({ limit: flashDealsLimit }),
     staleTime: 2 * 60 * 1000,
     enabled: !debouncedSearch && !selectedCat,
   });
