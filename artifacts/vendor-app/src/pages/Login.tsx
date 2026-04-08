@@ -41,6 +41,16 @@ export default function Login() {
   const businessAddress   = config.platform.businessAddress;
   const vendorEarningsPct = Math.round(100 - (config.platform.vendorCommissionPct ?? 15));
   const vendorAuth        = getVendorAuthConfig(config);
+  const phoneHint    = config.regional?.phoneHint ?? "03XXXXXXXXX";
+  const isValidPhone = (() => {
+    try {
+      if (config.regional?.phoneFormat) {
+        const re = new RegExp(config.regional.phoneFormat);
+        return (ph: string) => re.test(ph);
+      }
+    } catch { /* invalid regex — fall through to hardcoded regex */ }
+    return (ph: string) => /^0?3\d{9}$/.test(ph.replace(/[\s\-()+]/g, ""));
+  })();
   const googleClientId    = config.auth?.googleClientId;
   const facebookAppId     = config.auth?.facebookAppId;
   const hasSocial         = vendorAuth.google || vendorAuth.facebook;
@@ -447,7 +457,7 @@ export default function Login() {
   };
 
   const sendPhoneOtp = async (channel?: string) => {
-    if (!phone || phone.length < 10) { setError(T("enterPhoneNumber")); return; }
+    if (!phone || !isValidPhone(phone)) { setError(T("enterPhoneNumber")); return; }
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(phone, channel);
@@ -533,7 +543,7 @@ export default function Login() {
   };
 
   const sendRegOtp = async () => {
-    if (!regPhone || regPhone.length < 10) { setError("Enter a valid phone number"); return; }
+    if (!regPhone || !isValidPhone(regPhone)) { setError(`Enter a valid phone number (${phoneHint})`); return; }
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(regPhone);
@@ -1033,7 +1043,7 @@ export default function Login() {
                   <label className="text-xs font-extrabold text-gray-400 mb-1.5 block uppercase tracking-wider">{T("phoneNumberLabel")}</label>
                   <div className="flex gap-2">
                     <div className="h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-sm font-bold text-gray-600 flex-shrink-0">+92</div>
-                    <input type="tel" placeholder="3XX XXXXXXX" value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
+                    <input type="tel" placeholder={phoneHint} value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                       className="flex-1 h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all" autoFocus inputMode="tel" />
                   </div>
                 </div>

@@ -37,7 +37,7 @@ import type { GetProductsType } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
-import { isValidPakistaniPhone } from "@/utils/phone";
+import { isValidPakistaniPhone, buildPhoneValidator } from "@/utils/phone";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { AuthGateSheet, useAuthGate, useRoleGate, RoleBlockSheet } from "@/components/AuthGateSheet";
 
@@ -118,6 +118,7 @@ function PharmacyScreenInner() {
   const { config } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const validatePhone = buildPhoneValidator(config.regional?.phoneFormat);
 
   const inMaintenance = config.appStatus === "maintenance";
   const pharmacyEnabled = config.features.pharmacy;
@@ -367,8 +368,8 @@ function PharmacyScreenInner() {
       showToast(T("deliveryAddress"), "error");
       return;
     }
-    if (!isValidPakistaniPhone(phone.trim())) {
-      showToast("Please enter a valid Pakistani phone number (e.g. 03001234567)", "error");
+    if (!validatePhone(phone.trim())) {
+      showToast(`Please enter a valid phone number (e.g. ${config.regional?.phoneHint ?? "03XXXXXXXXX"})`, "error");
       return;
     }
     if (cartItems.length === 0) {

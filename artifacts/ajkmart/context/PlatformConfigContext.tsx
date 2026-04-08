@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { unwrapApiResponse } from "../utils/api";
+import { setDefaultMapCenter } from "../hooks/useMaps";
 
 const API_DOMAIN = process.env.EXPO_PUBLIC_DOMAIN ?? "";
 const CACHE_MS = 30_000;
@@ -185,6 +186,32 @@ export interface PlatformConfig {
     retryBackoffBaseMs: number;
     riderGpsQueueMax: number;
     riderDismissedRequestTtlSec: number;
+  };
+  branding?: {
+    colorMart?: string;
+    colorFood?: string;
+    colorRides?: string;
+    colorPharmacy?: string;
+    colorParcel?: string;
+    colorVan?: string;
+    mapCenterLat?: number;
+    mapCenterLng?: number;
+    mapCenterLabel?: string;
+  };
+  regional?: {
+    phoneFormat?: string;
+    phoneHint?: string;
+    timezone?: string;
+    currencySymbol?: string;
+    countryCode?: string;
+  };
+  serviceContent?: {
+    mart?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
+    food?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
+    rides?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
+    pharmacy?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
+    parcel?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
+    van?: { label?: string; description?: string; heroTitle?: string; heroSubtitle?: string; cta?: string };
   };
 }
 
@@ -546,10 +573,39 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           riderGpsQueueMax:          raw.network?.riderGpsQueueMax          ?? DEFAULT.network.riderGpsQueueMax,
           riderDismissedRequestTtlSec: raw.network?.riderDismissedRequestTtlSec ?? DEFAULT.network.riderDismissedRequestTtlSec,
         },
+        branding: raw.branding ? {
+          colorMart:      raw.branding.colorMart,
+          colorFood:      raw.branding.colorFood,
+          colorRides:     raw.branding.colorRides,
+          colorPharmacy:  raw.branding.colorPharmacy,
+          colorParcel:    raw.branding.colorParcel,
+          colorVan:       raw.branding.colorVan,
+          mapCenterLat:   typeof raw.branding.mapCenterLat === "number" ? raw.branding.mapCenterLat : undefined,
+          mapCenterLng:   typeof raw.branding.mapCenterLng === "number" ? raw.branding.mapCenterLng : undefined,
+          mapCenterLabel: raw.branding.mapCenterLabel,
+        } : undefined,
+        regional: raw.regional ? {
+          phoneFormat:    raw.regional.phoneFormat,
+          phoneHint:      raw.regional.phoneHint,
+          timezone:       raw.regional.timezone,
+          currencySymbol: raw.regional.currencySymbol,
+          countryCode:    raw.regional.countryCode,
+        } : undefined,
+        serviceContent: raw.serviceContent ? {
+          mart:     raw.serviceContent.mart     ?? undefined,
+          food:     raw.serviceContent.food     ?? undefined,
+          rides:    raw.serviceContent.rides    ?? undefined,
+          pharmacy: raw.serviceContent.pharmacy ?? undefined,
+          parcel:   raw.serviceContent.parcel   ?? undefined,
+          van:      raw.serviceContent.van      ?? undefined,
+        } : undefined,
       };
       _cached = parsed;
       _cachedAt = Date.now();
       setConfig(parsed);
+      if (parsed.branding?.mapCenterLat != null && parsed.branding?.mapCenterLng != null) {
+        setDefaultMapCenter(parsed.branding.mapCenterLat, parsed.branding.mapCenterLng);
+      }
     } catch {
       if (_cached) setConfig(_cached);
     } finally {

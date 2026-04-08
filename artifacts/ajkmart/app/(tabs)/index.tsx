@@ -476,7 +476,7 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const activeServices = getActiveServices(features);
+  const activeServices = getActiveServices(features, platformConfig.branding, platformConfig.serviceContent);
   const noServicesActive = activeServices.length === 0;
 
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);

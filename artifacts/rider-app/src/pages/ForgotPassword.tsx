@@ -33,6 +33,16 @@ export default function ForgotPassword() {
   const T = (key: TranslationKey) => tDual(key, language);
   const auth = getRiderAuthConfig(config);
   const captchaSiteKey = config.auth?.captchaSiteKey;
+  const phoneHint = config.regional?.phoneHint ?? "03XXXXXXXXX";
+  const isValidPhone = (() => {
+    try {
+      if (config.regional?.phoneFormat) {
+        const re = new RegExp(config.regional.phoneFormat);
+        return (p: string) => re.test(p);
+      }
+    } catch { /* invalid regex — fall through to hardcoded regex */ }
+    return (p: string) => /^0?3\d{9}$/.test(p.replace(/[\s\-()+]/g, ""));
+  })();
 
   const [step, setStep] = useState<ForgotStep>("choose-method");
   const [method, setMethod] = useState<"phone" | "email">("phone");
@@ -58,7 +68,7 @@ export default function ForgotPassword() {
 
   const sendOtp = async () => {
     clearError();
-    if (method === "phone" && (!phone || phone.length < 10)) { setError(T("enterValidPhone")); return; }
+    if (method === "phone" && (!phone || !isValidPhone(phone))) { setError(`${T("enterValidPhone")} (e.g. ${phoneHint})`); return; }
     if (method === "email" && (!email || !email.includes("@"))) { setError(T("enterValidEmail")); return; }
     setLoading(true);
     try {
@@ -238,7 +248,7 @@ export default function ForgotPassword() {
                   <h3 className="text-lg font-bold text-gray-800 mb-1">{T("resetViaPhone")}</h3>
                   <div className="flex gap-2">
                     <div className="h-12 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-sm font-medium text-gray-600">+92</div>
-                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3XX XXXXXXX"
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder={phoneHint}
                       onKeyDown={e => e.key === "Enter" && sendOtp()}
                       className={`flex-1 ${INPUT}`} autoFocus />
                   </div>

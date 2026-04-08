@@ -386,14 +386,127 @@ export const GLOBAL_QUICK_ACTIONS: Array<{
   { icon: "bus-outline", label: "Van Service", color: "#6366F1", bg: "#EEF2FF", route: APP_ROUTES.van, service: null },
 ];
 
-export function getActiveServices(
-  features: Record<string, boolean>,
-): ServiceDefinition[] {
-  return SERVICE_KEYS.filter((k) => features[k]).map((k) => SERVICE_REGISTRY[k]);
+export interface BrandingOverrides {
+  colorMart?: string;
+  colorFood?: string;
+  colorRides?: string;
+  colorPharmacy?: string;
+  colorParcel?: string;
+  colorVan?: string;
 }
 
-export function getActiveBanners(features: Record<string, boolean>) {
-  const active = getActiveServices(features);
+export interface ServiceTextOverride {
+  label?: string;
+  description?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  cta?: string;
+}
+
+export type ContentOverrides = Partial<Record<ServiceKey, ServiceTextOverride>>;
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return null;
+  return [parseInt(m[1]!, 16), parseInt(m[2]!, 16), parseInt(m[3]!, 16)];
+}
+
+function lighten(hex: string, amount = 0.85): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb;
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
+}
+
+function darken(hex: string, amount = 0.4): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb;
+  const dr = Math.round(r * (1 - amount));
+  const dg = Math.round(g * (1 - amount));
+  const db = Math.round(b * (1 - amount));
+  return `#${dr.toString(16).padStart(2, "0")}${dg.toString(16).padStart(2, "0")}${db.toString(16).padStart(2, "0")}`;
+}
+
+function buildColorTheme(
+  primary: string,
+): Pick<ServiceDefinition, "color" | "colorLight" | "gradient" | "cardGradient" | "iconGradient" | "textColor" | "tagColor" | "tagBg"> {
+  const light = lighten(primary, 0.87);
+  const dark = darken(primary, 0.3);
+  const lighter = lighten(primary, 0.93);
+  return {
+    color: primary,
+    colorLight: light,
+    gradient: [light, lighter],
+    cardGradient: [light, lighter],
+    iconGradient: [primary, lighten(primary, 0.3)],
+    textColor: dark,
+    tagColor: dark,
+    tagBg: lighten(primary, 0.75),
+  };
+}
+
+export function applyBrandingToRegistry(
+  branding: BrandingOverrides | undefined,
+): Record<ServiceKey, ServiceDefinition> {
+  if (!branding) return SERVICE_REGISTRY;
+  const colorMap: Partial<Record<ServiceKey, string>> = {
+    ...(branding.colorMart     ? { mart:     branding.colorMart }     : {}),
+    ...(branding.colorFood     ? { food:     branding.colorFood }     : {}),
+    ...(branding.colorRides    ? { rides:    branding.colorRides }    : {}),
+    ...(branding.colorPharmacy ? { pharmacy: branding.colorPharmacy } : {}),
+    ...(branding.colorParcel   ? { parcel:   branding.colorParcel }   : {}),
+    ...(branding.colorVan      ? { van:      branding.colorVan }      : {}),
+  };
+  const result = { ...SERVICE_REGISTRY } as Record<ServiceKey, ServiceDefinition>;
+  for (const key of SERVICE_KEYS as ServiceKey[]) {
+    const primary = colorMap[key];
+    if (primary) {
+      result[key] = { ...result[key], ...buildColorTheme(primary) };
+    }
+  }
+  return result;
+}
+
+function applyContentOverrides(
+  svc: ServiceDefinition,
+  overrides?: ContentOverrides,
+): ServiceDefinition {
+  const o = overrides?.[svc.key];
+  if (!o) return svc;
+  return {
+    ...svc,
+    ...(o.label       ? { label: o.label }             : {}),
+    ...(o.description ? { description: o.description } : {}),
+    heroConfig: {
+      ...svc.heroConfig,
+      ...(o.heroTitle    ? { title: o.heroTitle }       : {}),
+      ...(o.heroSubtitle ? { subtitle: o.heroSubtitle } : {}),
+      ...(o.cta          ? { cta: o.cta }               : {}),
+    },
+  };
+}
+
+export function getActiveServices(
+  features: Record<string, boolean>,
+  branding?: BrandingOverrides,
+  content?: ContentOverrides,
+): ServiceDefinition[] {
+  const registry = applyBrandingToRegistry(branding);
+  return SERVICE_KEYS
+    .filter((k) => features[k])
+    .map((k) => applyContentOverrides(registry[k], content));
+}
+
+export function getActiveBanners(
+  features: Record<string, boolean>,
+  branding?: BrandingOverrides,
+  content?: ContentOverrides,
+) {
+  const active = getActiveServices(features, branding, content);
   return active.flatMap((svc) =>
     svc.banners.map((b) => ({
       ...b,
@@ -403,8 +516,12 @@ export function getActiveBanners(features: Record<string, boolean>) {
   );
 }
 
-export function getActiveQuickActions(features: Record<string, boolean>) {
-  const active = getActiveServices(features);
+export function getActiveQuickActions(
+  features: Record<string, boolean>,
+  branding?: BrandingOverrides,
+  content?: ContentOverrides,
+) {
+  const active = getActiveServices(features, branding, content);
   const serviceActions = active.flatMap((svc) =>
     svc.quickActions.map((qa) => ({ ...qa, service: svc.key as ServiceKey | null })),
   );

@@ -66,12 +66,14 @@ export function RideRequestCard({
   const [showCounterForm, setShowCounterForm] = useState(false);
   const [counterError, setCounterError] = useState("");
 
+  const acceptTimeoutSec = config.rides.acceptTimeoutSec ?? config.dispatch?.broadcastTimeoutSec ?? ACCEPT_TIMEOUT_SEC;
+
   const isBargain = r.status === "bargaining" && r.offeredFare != null;
   const isDispatched = r.dispatchedRiderId === userId;
   const offeredFare = r.offeredFare ?? r.fare;
   const effectiveFare = isBargain ? offeredFare : r.fare;
   const rideExpired =
-    (Date.now() - new Date(r.createdAt).getTime()) / 1000 >= ACCEPT_TIMEOUT_SEC;
+    (Date.now() - new Date(r.createdAt).getTime()) / 1000 >= acceptTimeoutSec;
 
   const riderEarningPct = config.finance.riderEarningPct ?? PRICING_DEFAULTS.defaultRiderEarningPct;
   const earnings = effectiveFare != null ? effectiveFare * (riderEarningPct / 100) : null;
@@ -139,7 +141,7 @@ export function RideRequestCard({
       } transition-colors`}
     >
       <div className="flex items-start gap-3">
-        <AcceptCountdown createdAt={r.createdAt} serverTime={serverTime} onExpired={() => onDismiss(r.id)} />
+        <AcceptCountdown createdAt={r.createdAt} serverTime={serverTime} onExpired={() => onDismiss(r.id)} timeoutSec={acceptTimeoutSec} />
         <div
           className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm border ${
             isDispatched

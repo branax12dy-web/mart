@@ -21,7 +21,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { useToast } from "@/context/ToastContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
+import { normalizePhone, isValidPakistaniPhone, buildPhoneValidator } from "@/utils/phone";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
@@ -67,6 +67,8 @@ export default function AuthScreen() {
   const authCfg = platformCfg.auth;
   const appName = platformCfg.platform.appName;
   const appTagline = platformCfg.platform.appTagline;
+  const phoneHint = platformCfg.regional?.phoneHint ?? "03XXXXXXXXX";
+  const validatePhone = buildPhoneValidator(platformCfg.regional?.phoneFormat);
   const topPad = Math.max(insets.top, 12);
 
   const [method, setMethod] = useState<LoginMethod>("phone");
@@ -289,7 +291,7 @@ export default function AuthScreen() {
       }
       if (res.action === "send_phone_otp") {
         const normalized = normalizePhone(id);
-        if (!isValidPakistaniPhone(normalized)) {
+        if (!validatePhone(normalized)) {
           setMethod("phone");
           setLoading(false);
           animateTransition(() => setStep("method"));
@@ -364,7 +366,7 @@ export default function AuthScreen() {
 
   const handleSendPhoneOtp = async (preferredChannel?: string) => {
     clearError();
-    if (!isValidPakistaniPhone(phone)) { setError("Please enter a valid Pakistani phone number"); return; }
+    if (!validatePhone(phone)) { setError(`Please enter a valid phone number (e.g. ${phoneHint})`); return; }
     const normalizedPhone = normalizePhone(phone);
     if (resendCooldown > 0) { setError(`Please wait ${resendCooldown}s before resending.`); return; }
     setLoading(true);

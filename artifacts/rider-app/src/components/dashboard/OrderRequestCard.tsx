@@ -4,11 +4,13 @@ import { RequestAge } from "./RequestAge";
 import { OrderTypeIcon } from "./Icons";
 import { MiniMap } from "./MiniMap";
 import { formatCurrency, buildMapsDeepLink, ACCEPT_TIMEOUT_SEC, PRICING_DEFAULTS } from "./helpers";
+import type { PlatformConfig } from "../../lib/useConfig";
 
 interface OrderRequestCardProps {
   order: any;
   earnings: number;
   currency: string;
+  config?: PlatformConfig;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onDismiss: (id: string) => void;
@@ -24,6 +26,7 @@ export function OrderRequestCard({
   order: o,
   earnings,
   currency,
+  config,
   onAccept,
   onReject,
   onDismiss,
@@ -33,8 +36,10 @@ export function OrderRequestCard({
   serverTime,
   T,
 }: OrderRequestCardProps) {
+  const acceptTimeoutSec = config?.rides?.acceptTimeoutSec ?? config?.dispatch?.broadcastTimeoutSec ?? ACCEPT_TIMEOUT_SEC;
+
   const isExpired =
-    (Date.now() - new Date(o.createdAt).getTime()) / 1000 >= ACCEPT_TIMEOUT_SEC;
+    (Date.now() - new Date(o.createdAt).getTime()) / 1000 >= acceptTimeoutSec;
 
   const orderType = o.type ?? "delivery";
   const orderTotal = typeof o.total === "number" ? o.total : typeof o.total === "string" ? parseFloat(o.total) : null;
@@ -42,9 +47,16 @@ export function OrderRequestCard({
   const distanceKm = o.distanceKm ?? o.distance_km ?? null;
   const deliveryAddress = o.deliveryAddress ?? o.delivery_address ?? null;
   const vendorStoreName = o.vendorStoreName ?? o.vendor_store_name ?? null;
+  const configDeliveryFee = (() => {
+    if (!config?.deliveryFee) return PRICING_DEFAULTS.defaultDeliveryFee;
+    if (orderType === "food")     return config.deliveryFee.food     ?? PRICING_DEFAULTS.defaultDeliveryFee;
+    if (orderType === "pharmacy") return config.deliveryFee.pharmacy ?? PRICING_DEFAULTS.defaultDeliveryFee;
+    if (orderType === "parcel")   return config.deliveryFee.parcel   ?? PRICING_DEFAULTS.defaultDeliveryFee;
+    return config.deliveryFee.mart ?? PRICING_DEFAULTS.defaultDeliveryFee;
+  })();
   const deliveryFee = typeof earnings === "number" && Number.isFinite(earnings)
     ? earnings
-    : PRICING_DEFAULTS.defaultDeliveryFee;
+    : configDeliveryFee;
 
   /* Coordinates — parse safely */
   const vendorLat = o.vendorLat != null ? parseFloat(o.vendorLat) : null;
@@ -58,7 +70,7 @@ export function OrderRequestCard({
   return (
     <div className="p-4 animate-[slideUp_0.3s_ease-out] border-b border-gray-50 last:border-0">
       <div className="flex items-start gap-3">
-        <AcceptCountdown createdAt={o.createdAt} serverTime={serverTime} onExpired={() => onDismiss(o.id)} />
+        <AcceptCountdown createdAt={o.createdAt} serverTime={serverTime} onExpired={() => onDismiss(o.id)} timeoutSec={acceptTimeoutSec} />
         <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-center flex-shrink-0 shadow-sm">
           <OrderTypeIcon type={orderType} />
         </div>

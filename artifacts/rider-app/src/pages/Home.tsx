@@ -743,6 +743,7 @@ export default function Home() {
             order={o}
             earnings={getDeliveryEarn(o.type)}
             currency={currency}
+            config={config}
             onAccept={(id) => acceptOrderMut.mutate(id)}
             onReject={(id) => rejectOrderMut.mutate(id)}
             onDismiss={dismiss}

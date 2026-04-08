@@ -54,6 +54,16 @@ export default function Login() {
   const captchaSiteKey = config.auth?.captchaSiteKey;
   const googleClientId = config.auth?.googleClientId;
   const facebookAppId = config.auth?.facebookAppId;
+  const phoneHint = config.regional?.phoneHint ?? "03XXXXXXXXX";
+  const isValidPhone = (() => {
+    try {
+      if (config.regional?.phoneFormat) {
+        const re = new RegExp(config.regional.phoneFormat);
+        return (p: string) => re.test(p);
+      }
+    } catch { /* invalid regex — fall through to hardcoded regex */ }
+    return (p: string) => /^0?3\d{9}$/.test(p.replace(/[\s\-()+]/g, ""));
+  })();
   const [, navigate] = useLocation();
 
   const enabledMethods: LoginMethod[] = [];
@@ -352,7 +362,7 @@ export default function Login() {
   const [showEmailFallback, setShowEmailFallback] = useState(false);
 
   const sendPhoneOtp = async (channel?: string) => {
-    if (!phone || phone.length < 10) { setError(T("enterValidPhone")); return; }
+    if (!phone || !isValidPhone(phone)) { setError(`${T("enterValidPhone")} (e.g. ${phoneHint})`); return; }
     setLoading(true); clearError(); setShowEmailFallback(false);
     try {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
@@ -751,7 +761,7 @@ export default function Login() {
               <p className="text-sm text-gray-500 mb-4">{T("enterRegisteredPhone")}</p>
               <div className="flex gap-2 mb-1">
                 <div className="h-12 px-3 bg-gray-100 border border-gray-200 rounded-xl flex items-center text-sm font-bold text-gray-700 select-none gap-1" title="Pakistan only">🇵🇰 +92</div>
-                <input type="tel" placeholder="3XX XXXXXXX" value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
+                <input type="tel" placeholder={phoneHint} value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()}
                   className="flex-1 h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" autoFocus inputMode="numeric" />
               </div>
               <p className="text-[10px] text-gray-400 mb-3">Pakistan only (+92)</p>

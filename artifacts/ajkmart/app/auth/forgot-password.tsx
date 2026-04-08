@@ -17,7 +17,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { usePlatformConfig, isMethodEnabled } from "@/context/PlatformConfigContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { API_BASE as API } from "@/utils/api";
-import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
+import { normalizePhone, isValidPakistaniPhone, buildPhoneValidator } from "@/utils/phone";
 
 import {
   OtpDigitInput,
@@ -40,6 +40,8 @@ export default function ForgotPasswordScreen() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { config } = usePlatformConfig();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const validatePhone = buildPhoneValidator(config.regional?.phoneFormat);
+  const phoneHint = config.regional?.phoneHint ?? "03XXXXXXXXX";
 
   const phoneEnabled = isMethodEnabled(config.auth.phoneOtpEnabled);
   const emailEnabled = isMethodEnabled(config.auth.emailOtpEnabled);
@@ -73,8 +75,8 @@ export default function ForgotPasswordScreen() {
 
   const handleSendResetCode = async () => {
     clearError();
-    if (method === "phone" && !isValidPakistaniPhone(phone)) {
-      setError("Please enter a valid Pakistani phone number");
+    if (method === "phone" && !validatePhone(phone)) {
+      setError(`Please enter a valid phone number (e.g. ${phoneHint})`);
       return;
     }
     /* FIX 15: Proper email regex validation */

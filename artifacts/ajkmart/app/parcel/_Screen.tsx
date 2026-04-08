@@ -29,7 +29,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { estimateParcel, createParcelBooking } from "@workspace/api-client-react";
 import type { CreateParcelBookingRequest } from "@workspace/api-client-react";
-import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
+import { normalizePhone, isValidPakistaniPhone, buildPhoneValidator } from "@/utils/phone";
 import { AuthGateSheet, useAuthGate } from "@/components/AuthGateSheet";
 
 
@@ -89,6 +89,7 @@ function ParcelScreenInner() {
   const { config: platformConfig } = usePlatformConfig();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
+  const validatePhone = buildPhoneValidator(platformConfig.regional?.phoneFormat);
   const appName = platformConfig.platform.appName;
   const inMaintenance = platformConfig.appStatus === "maintenance";
   const parcelEnabled = platformConfig.features.parcel;
@@ -283,13 +284,13 @@ function ParcelScreenInner() {
     if (s === 0) {
       if (!senderName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!senderPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
-      if (!isValidPakistaniPhone(senderPhone)) { showToast(T("invalidPhoneNumber"), "error"); return false; }
+      if (!validatePhone(senderPhone)) { showToast(T("invalidPhoneNumber"), "error"); return false; }
       if (!pickupAddress.trim()) { showToast(T("pickupAddress"), "error"); return false; }
     }
     if (s === 1) {
       if (!receiverName.trim()) { showToast(T("enterFullName"), "error"); return false; }
       if (!receiverPhone.trim()) { showToast(T("enterPhoneNumber"), "error"); return false; }
-      if (!isValidPakistaniPhone(receiverPhone)) { showToast(T("invalidPhoneNumber"), "error"); return false; }
+      if (!validatePhone(receiverPhone)) { showToast(T("invalidPhoneNumber"), "error"); return false; }
       if (!dropAddress.trim()) { showToast(T("dropAddress"), "error"); return false; }
     }
     if (s === 2) {

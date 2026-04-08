@@ -5,11 +5,15 @@ export function AcceptCountdown({
   createdAt,
   serverTime,
   onExpired,
+  timeoutSec,
 }: {
   createdAt: string;
   serverTime?: string | null;
   onExpired?: () => void;
+  timeoutSec?: number;
 }) {
+  const timeout = timeoutSec ?? ACCEPT_TIMEOUT_SEC;
+
   /* client–server clock offset: positive means client clock is ahead of server */
   const offsetMs = useRef<number>(serverTime ? Date.now() - new Date(serverTime).getTime() : 0);
 
@@ -23,7 +27,7 @@ export function AcceptCountdown({
   const calcRemaining = () => {
     const adjustedNow = Date.now() - offsetMs.current;
     const elapsed = Math.floor((adjustedNow - new Date(createdAt).getTime()) / 1000);
-    return Math.max(0, ACCEPT_TIMEOUT_SEC - elapsed);
+    return Math.max(0, timeout - elapsed);
   };
 
   /* Initialize with offset already applied — no transient mismatch on first render */
@@ -43,9 +47,9 @@ export function AcceptCountdown({
       }
     }, 1000);
     return () => clearInterval(id);
-  }, [createdAt, onExpired]);
+  }, [createdAt, onExpired, timeout]);
 
-  const pct = secs / ACCEPT_TIMEOUT_SEC;
+  const pct = secs / timeout;
   const r = 14, stroke = 3;
   const circ = 2 * Math.PI * r;
   const dashOffset = circ * (1 - pct);

@@ -141,13 +141,26 @@ export async function getDirections(
   }
 }
 
+const DEFAULT_MAP_CENTER = { lat: 34.37, lng: 73.47 };
+
+/** Default center to use when no markers are provided. Can be overridden by platform config. */
+export let defaultMapCenter = { ...DEFAULT_MAP_CENTER };
+
+/** Update the module-level default map center from platform config at runtime. */
+export function setDefaultMapCenter(lat: number, lng: number): void {
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    defaultMapCenter = { lat, lng };
+  }
+}
+
 /* ─── Google Static Map URL (only works when key is configured) ─── */
 export function staticMapUrl(
   markers: Array<{ lat: number; lng: number; color?: string }>,
-  opts: { width?: number; height?: number; zoom?: number } = {},
+  opts: { width?: number; height?: number; zoom?: number; defaultCenter?: { lat: number; lng: number } } = {},
 ): string {
-  const { width = 600, height = 280, zoom = 11 } = opts;
-  const center = markers[0] ? `${markers[0].lat},${markers[0].lng}` : "34.37,73.47";
+  const { width = 600, height = 280, zoom = 11, defaultCenter } = opts;
+  const fallback = defaultCenter ?? defaultMapCenter;
+  const center = markers[0] ? `${markers[0].lat},${markers[0].lng}` : `${fallback.lat},${fallback.lng}`;
   const markerParams = markers.map((m, i) => {
     const color = m.color ?? (i === 0 ? "green" : "red");
     return `markers=color:${color}%7C${m.lat},${m.lng}`;

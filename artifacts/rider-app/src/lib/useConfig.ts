@@ -104,6 +104,17 @@ export interface PlatformConfig {
     counterMaxMultiplier?: number;
     rickshawMinFare?: number;
     dabaMinFare?: number;
+    acceptTimeoutSec?: number;
+  };
+  regional?: {
+    phoneFormat?: string;
+    phoneHint?: string;
+    timezone?: string;
+    currencySymbol?: string;
+    countryCode?: string;
+  };
+  dispatch?: {
+    broadcastTimeoutSec?: number;
   };
   finance: {
     gstEnabled: boolean;

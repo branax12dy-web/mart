@@ -133,6 +133,13 @@ export interface PlatformConfig {
     riderGpsQueueMax: number;
     riderDismissedRequestTtlSec: number;
   };
+  regional?: {
+    phoneFormat?: string;
+    phoneHint?: string;
+    timezone?: string;
+    currencySymbol?: string;
+    countryCode?: string;
+  };
 }
 
 const DEFAULT_CONFIG: PlatformConfig = {

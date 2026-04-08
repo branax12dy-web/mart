@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, radii, shadows, typography } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
-import { normalizePhone, isValidPakistaniPhone } from "@/utils/phone";
+import { normalizePhone, isValidPakistaniPhone, buildPhoneValidator } from "@/utils/phone";
 
 import {
   OtpDigitInput,
@@ -61,6 +61,8 @@ export default function RegisterScreen() {
   const { login } = useAuth();
   const { config } = usePlatformConfig();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const validatePhone = buildPhoneValidator(config.regional?.phoneFormat);
+  const phoneHint = config.regional?.phoneHint ?? "03XXXXXXXXX";
 
   const [step, setStep] = useState<RegStep>(1);
   const [loading, setLoading] = useState(false);
@@ -202,7 +204,7 @@ export default function RegisterScreen() {
 
   const handleSendOtp = async () => {
     clearError();
-    if (!isValidPakistaniPhone(phone)) { setError("Please enter a valid Pakistani phone number (e.g. 03XX-XXXXXXX)"); return; }
+    if (!validatePhone(phone)) { setError(`Please enter a valid phone number (e.g. ${phoneHint})`); return; }
     if (resendCooldown > 0) return;
     setLoading(true);
     try {
