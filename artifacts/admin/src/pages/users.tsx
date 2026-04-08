@@ -6,13 +6,13 @@ import {
   Ban, KeyRound, Save, AlertTriangle, MapPin, CreditCard, Truck, Building2,
   Download, FileText, CalendarDays, Eye, AlertCircle, MessageSquare,
   Users as UsersIcon, Loader2, AtSign, Phone, Mail, User as UserIcon,
-  Gavel, Lock, Copy, LogIn,
+  Gavel, Lock, Copy, LogIn, UserPlus,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PullToRefresh } from "@/components/PullToRefresh";
-import { useUsers, useUpdateUser, useWalletTopup, useDeleteUser, useUserActivity, usePendingUsers, useApproveUser, useRejectUser, useRequestUserCorrection, useBulkBanUsers } from "@/hooks/use-admin";
+import { useUsers, useUpdateUser, useWalletTopup, useDeleteUser, useUserActivity, usePendingUsers, useApproveUser, useRejectUser, useRequestUserCorrection, useBulkBanUsers, useCreateUser, type CreateUserInput } from "@/hooks/use-admin";
 import { fetcher } from "@/lib/api";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -231,6 +231,159 @@ function UserActivityModal({ userId, userName, user: userData, onClose }: { user
           </div>
         )}
     </MobileDrawer>
+  );
+}
+
+function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const createUser = useCreateUser();
+
+  const [name,  setName]  = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [role,  setRole]  = useState<NonNullable<CreateUserInput["role"]>>("customer");
+  const [city,  setCity]  = useState("");
+  const [area,  setArea]  = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const reset = () => {
+    setName(""); setPhone(""); setEmail("");
+    setRole("customer"); setCity(""); setArea("");
+    setErrors({});
+  };
+
+  const validate = (): boolean => {
+    const errs: Record<string, string> = {};
+    if (!name.trim() && !phone.trim()) {
+      errs.general = "Name ya phone mein se koi ek zaroor dein";
+    }
+    if (phone.trim() && !/^\+?\d{7,15}$/.test(phone.trim())) {
+      errs.phone = "Phone 7-15 digits hona chahiye (+ optional)";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSubmit = () => {
+    if (!validate()) return;
+    const payload: CreateUserInput = { role };
+    if (name.trim())  payload.name  = name.trim();
+    if (phone.trim()) payload.phone = phone.trim();
+    if (email.trim()) payload.email = email.trim();
+    if (city.trim())  payload.city  = city.trim();
+    if (area.trim())  payload.area  = area.trim();
+    createUser.mutate(payload, {
+      onSuccess: () => {
+        toast({ title: "User created", description: name.trim() || phone.trim() || "New user added successfully." });
+        reset();
+        onClose();
+      },
+      onError: (e: Error) => {
+        if (e.message?.includes("409") || e.message?.toLowerCase().includes("already exists") || e.message?.toLowerCase().includes("duplicate")) {
+          setErrors({ general: "Yeh phone ya email already registered hai" });
+        } else {
+          toast({ title: "Failed to create user", description: e.message, variant: "destructive" });
+        }
+      },
+    });
+  };
+
+  const handleClose = () => { reset(); onClose(); };
+
+  return (
+    <Dialog open={open} onOpenChange={open => { if (!open) handleClose(); }}>
+      <DialogContent className="max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-[#1A56DB]">
+            <UserPlus className="w-5 h-5" /> Create User
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-1">
+          {errors.general && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+              <p className="text-sm text-red-700">{errors.general}</p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Name <span className="text-muted-foreground font-normal normal-case">(required if no phone)</span></label>
+            <div className="relative">
+              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Ali Khan"
+                className="pl-9 h-10 rounded-xl"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone <span className="text-muted-foreground font-normal normal-case">(optional, 7-15 digits)</span></label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={phone}
+                onChange={e => { setPhone(e.target.value); setErrors(prev => ({ ...prev, phone: "" })); }}
+                placeholder="e.g. 03001234567"
+                className={`pl-9 h-10 rounded-xl ${errors.phone ? "border-red-400 focus:ring-red-300" : ""}`}
+              />
+            </div>
+            {errors.phone && <p className="text-xs text-red-600">{errors.phone}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email <span className="text-muted-foreground font-normal normal-case">(optional)</span></label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="e.g. ali@example.com"
+                type="email"
+                className="pl-9 h-10 rounded-xl"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role</label>
+            <Select value={role} onValueChange={v => setRole(v as NonNullable<CreateUserInput["role"]>)}>
+              <SelectTrigger className="h-10 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="customer">Customer</SelectItem>
+                <SelectItem value="rider">Rider</SelectItem>
+                <SelectItem value="vendor">Vendor</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">City <span className="text-muted-foreground font-normal normal-case">(optional)</span></label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Lahore" className="pl-9 h-10 rounded-xl" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Area <span className="text-muted-foreground font-normal normal-case">(optional)</span></label>
+              <Input value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Gulberg" className="h-10 rounded-xl" />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={handleClose} disabled={createUser.isPending}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 rounded-xl bg-[#1A56DB] hover:bg-[#1A56DB]/90 text-white gap-2"
+              onClick={handleSubmit}
+              disabled={createUser.isPending}
+            >
+              {createUser.isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : <><UserPlus className="w-4 h-4" /> Create User</>}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1210,6 +1363,7 @@ export default function Users() {
   const [kycUser, setKycUser]           = useState<any>(null);
   const [addressUser, setAddressUser]   = useState<any>(null);
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
+  const [createUserOpen, setCreateUserOpen] = useState(false);
 
   const pendingUsers = pendingData?.users || [];
 
@@ -1464,6 +1618,13 @@ export default function Users() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Search by name, phone, or email..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-11 rounded-xl bg-muted/30 border-border/50 focus:ring-[#1A56DB]/30" />
           </div>
+          <Button
+            size="sm"
+            onClick={() => setCreateUserOpen(true)}
+            className="h-11 rounded-xl gap-2 bg-[#1A56DB] hover:bg-[#1A56DB]/90 text-white font-semibold px-4"
+          >
+            <UserPlus className="w-4 h-4" /> Create User
+          </Button>
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger className="h-11 rounded-xl bg-muted/30 border-border/50 w-full sm:w-40">
               <SelectValue placeholder="All Roles" />
@@ -1842,6 +2003,8 @@ export default function Users() {
       {kycUser && <KycDocModal user={kycUser} onClose={() => setKycUser(null)} />}
 
       {addressUser && <AddressBookModal user={addressUser} onClose={() => setAddressUser(null)} />}
+
+      <CreateUserDialog open={createUserOpen} onClose={() => setCreateUserOpen(false)} />
     </PullToRefresh>
   );
 }

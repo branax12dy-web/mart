@@ -239,6 +239,31 @@ export const useUpdateParcelBooking = () => {
   });
 };
 
+export interface CreateUserInput {
+  name?: string;
+  phone?: string;
+  email?: string;
+  role?: "customer" | "rider" | "vendor";
+  city?: string;
+  area?: string;
+}
+
+// Create User
+export const useCreateUser = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateUserInput) =>
+      fetcher("/users", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
+  });
+};
+
 // Delete User
 export const useDeleteUser = () => {
   const queryClient = useQueryClient();
