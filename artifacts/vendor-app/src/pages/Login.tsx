@@ -314,8 +314,10 @@ export default function Login() {
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(ph, channel);
-      if (res.otpRequired === false && res.token) {
-        await doLogin(res as AuthResponse);
+      if (res.otpRequired === false) {
+        if (res.token) { await doLogin(res as AuthResponse); setLoading(false); return; }
+        const bypass = await api.verifyOtp(ph, "000000", getDeviceFingerprint(), "vendor");
+        await doLogin(bypass);
         setLoading(false); return;
       }
       setDevOtp(res.otp || "");
@@ -462,6 +464,12 @@ export default function Login() {
     setLoading(true); clearError();
     try {
       const res = await api.sendOtp(phone, channel);
+      if (res.otpRequired === false) {
+        if (res.token) { await doLogin(res as AuthResponse); setLoading(false); return; }
+        const bypass = await api.verifyOtp(phone, "000000", getDeviceFingerprint(), "vendor");
+        await doLogin(bypass);
+        setLoading(false); return;
+      }
       setDevOtp(res.otp || "");
       setOtpChannel(res.channel || "sms");
       setFallbackChannels(res.fallbackChannels || []);

@@ -1715,13 +1715,24 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const emailIsPending = user.approvalStatus === "pending";
   if (!user.isActive && !emailIsPending) { res.status(403).json({ error: "Account inactive. Contact support." }); return; }
 
-  /* Check expiry FIRST — prevents timing oracle (attacker learning that an
-     expired OTP was correct by observing which error branch fires). */
-  if (user.emailOtpExpiry && new Date() > user.emailOtpExpiry) {
-    res.status(401).json({ error: "OTP expired. Please request a new one." }); return;
+  /* ── Per-user OTP bypass (HIGHEST PRIORITY) ── */
+  const emailPerUserBypass = !!(user.otpBypassUntil && user.otpBypassUntil > new Date());
+
+  /* ── Global OTP bypass: danger-zone toggle OR timed suspension ── */
+  const emailGlobalDisabledUntilStr = settings["otp_global_disabled_until"];
+  const emailTimedSuspension = !!(emailGlobalDisabledUntilStr && new Date(emailGlobalDisabledUntilStr) > new Date());
+  const emailGlobalBypass = settings["security_otp_bypass"] === "on" || emailTimedSuspension;
+
+  const emailOtpBypassed = emailPerUserBypass || emailGlobalBypass;
+
+  if (!emailOtpBypassed) {
+    /* Check expiry FIRST — prevents timing oracle */
+    if (user.emailOtpExpiry && new Date() > user.emailOtpExpiry) {
+      res.status(401).json({ error: "OTP expired. Please request a new one." }); return;
+    }
   }
 
-  if (user.emailOtpCode !== hashOtp(otp)) {
+  if (!emailOtpBypassed && user.emailOtpCode !== hashOtp(otp)) {
     const updated = await recordFailedAttempt(normalized, maxAttempts, lockoutMinutes);
     const remaining = maxAttempts - updated.attempts;
     addAuditEntry({ action: "email_otp_failed", ip, details: `Wrong email OTP for: ${normalized}`, result: "fail" });

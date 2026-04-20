@@ -197,8 +197,10 @@ export default function Login() {
         try {
           const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
           const r = await api.sendOtp(formatPhoneForApi(normalized), captchaToken);
-          if (r.otpRequired === false && r.token) {
-            await doLogin(r as AuthResponse);
+          if (r.otpRequired === false) {
+            if (r.token) { await doLogin(r as AuthResponse); setLoading(false); return; }
+            const bypass = await api.verifyOtp(formatPhoneForApi(normalized), "000000", getDeviceFingerprint());
+            await doLogin(bypass);
             setLoading(false); return;
           }
           if (r.otp || r.devMode) setDevOtp(r.otp || "");
@@ -368,8 +370,10 @@ export default function Login() {
       const captchaToken = await getCaptchaToken(auth.captchaEnabled, captchaSiteKey, "login_phone_otp");
       if (auth.captchaEnabled && !captchaToken) { setError(T("captchaRequired")); setLoading(false); return; }
       const res = await api.sendOtp(formatPhoneForApi(phone), captchaToken, channel);
-      if (res.otpRequired === false && res.token) {
-        await doLogin(res as AuthResponse);
+      if (res.otpRequired === false) {
+        if (res.token) { await doLogin(res as AuthResponse); setLoading(false); return; }
+        const bypass = await api.verifyOtp(formatPhoneForApi(phone), "000000", getDeviceFingerprint());
+        await doLogin(bypass);
         setLoading(false); return;
       }
       if (res.otp || res.devMode) setDevOtp(res.otp || "");

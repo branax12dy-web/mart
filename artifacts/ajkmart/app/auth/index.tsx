@@ -339,6 +339,16 @@ export default function AuthScreen() {
           return null;
         });
         if (r) {
+          if (r.otpRequired === false) {
+            if (r.token) { await handleLoginResult(r); setLoading(false); return; }
+            try {
+              const fingerprint = await getDeviceFingerprint();
+              const verifyRes = await authPost("/auth/verify-email-otp", { email: id, otp: "000000", deviceFingerprint: fingerprint }, { "X-App-Id": "customer" });
+              await handleLoginResult(verifyRes);
+            } catch (e: any) { setError(e.message || "Auto-login failed. Please try again."); }
+            setLoading(false);
+            return;
+          }
           if (r.otp) setEmailDevOtp(r.otp);
           setOtpChannel("email");
           setFallbackChannels([]);
@@ -436,6 +446,13 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const res = await authPost("/auth/send-email-otp", { email });
+      if (res.otpRequired === false) {
+        if (res.token) { await handleLoginResult(res); setLoading(false); return; }
+        const fingerprint = await getDeviceFingerprint();
+        const verifyRes = await authPost("/auth/verify-email-otp", { email, otp: "000000", deviceFingerprint: fingerprint }, { "X-App-Id": "customer" });
+        await handleLoginResult(verifyRes);
+        setLoading(false); return;
+      }
       if (res.otp) setEmailDevOtp(res.otp);
       setOtpChannel("email");
       setFallbackChannels([]);
