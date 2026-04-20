@@ -1,5 +1,11 @@
 # AJKMart Super App — Workspace
 
+### Database Connection Priority
+- The shared database package resolves the connection string in this order: `NEON_DATABASE_URL`, then `APP_DATABASE_URL`, then Replit's built-in `DATABASE_URL`.
+- Runtime DB access is centralized in `lib/db/src/connection-url.ts`, used by `lib/db/src/index.ts` and `lib/db/drizzle.config.ts`.
+- `scripts/post-merge.sh` uses the same priority for SQL migrations.
+- This allows Neon or another external PostgreSQL database to be used as the default without hard-coding credentials in source files.
+
 ### Professional Features Part 1
 
 #### Vendor Weekly Schedule (`vendor_schedules` table)
