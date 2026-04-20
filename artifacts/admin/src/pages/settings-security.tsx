@@ -213,9 +213,11 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
           <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5 space-y-3">
             <div className="flex items-center gap-2 text-red-700 mb-1">
               <AlertTriangle className="w-4 h-4" />
-              <span className="text-sm font-bold">DANGER ZONE — Development Only</span>
+              <span className="text-sm font-bold">DANGER ZONE</span>
             </div>
-            <T k="security_otp_bypass" label="OTP Bypass Mode" sub="All OTPs auto-accept (NEVER enable in production)" danger />
+            <p className="text-xs text-red-700">
+              OTP suspension and per-user bypass are managed exclusively in <strong>OTP Control</strong> (sidebar). No duplicate OTP toggles exist here.
+            </p>
           </div>
 
           <SecPanel title="Multi-Factor Authentication" icon={Shield} color="text-indigo-700">

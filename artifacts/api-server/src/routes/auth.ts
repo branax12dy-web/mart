@@ -568,6 +568,20 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     return;
   }
 
+  /* ── Per-user bypass (HIGHEST PRIORITY): skip all delivery if bypass is active ──
+     When an admin has set a bypass window for an existing user, the next
+     verify-otp call will succeed regardless of OTP code. We must NOT send
+     any notification (SMS/WhatsApp/email) — return a generic success response.
+     This path is non-enumerating: we only short-circuit for existing users
+     with a valid bypass, and the response shape is identical to normal flow. ── */
+  const existingBypass = !isNewUser && existingUser[0]?.otpBypassUntil && existingUser[0].otpBypassUntil > new Date();
+  if (existingBypass) {
+    // no user notification — bypass is silent by admin design
+    writeAuthAuditLog("otp_send_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+    res.json({ otpRequired: false, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
+    return;
+  }
+
   /* ── Global OTP bypass: when enabled in Danger Zone, skip OTP for all users ── */
   if (settings["security_otp_bypass"] === "on") {
     writeAuthAuditLog("otp_send_global_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
@@ -584,20 +598,6 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
       res.json({ otpRequired: false, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
       return;
     }
-  }
-
-  /* ── Admin OTP bypass: skip all delivery if bypass is active ──
-     When an admin has set a bypass window for an existing user, the next
-     verify-otp call will succeed regardless of OTP code. We must NOT send
-     any notification (SMS/WhatsApp/email) — return a generic success response.
-     This path is non-enumerating: we only short-circuit for existing users
-     with a valid bypass, and the response shape is identical to normal flow. ── */
-  const existingBypass = !isNewUser && existingUser[0]?.otpBypassUntil && existingUser[0].otpBypassUntil > new Date();
-  if (existingBypass) {
-    // no user notification — bypass is silent by admin design
-    writeAuthAuditLog("otp_send_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
-    res.json({ otpRequired: false, message: "OTP sent successfully", channel: "sms", fallbackChannels: [] });
-    return;
   }
 
   const otp       = generateSecureOtp();
@@ -983,6 +983,18 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
 
   {
     const consumed = await db.transaction(async (tx) => {
+      /* ── Per-user bypass path (HIGHEST PRIORITY): skip OTP code check, clear bypass flag (single-use) ── */
+      if (otpBypassActive) {
+        // no user notification — bypass is silent by admin design
+        // clear bypass immediately after use so it cannot be reused
+        await tx.update(usersTable)
+          .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now, otpBypassUntil: null })
+          .where(eq(usersTable.phone, phone));
+        addAuditEntry({ action: "user_login_otp_bypass", ip, details: `OTP bypass login for ${phone} (bypass until ${user.otpBypassUntil!.toISOString()})`, result: "success" });
+        writeAuthAuditLog("login_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+        return { id: user.id, lastLoginAt: now };
+      }
+
       /* ── Global bypass path: accept any OTP code when global bypass is enabled ── */
       if (globalOtpBypass) {
         // no user notification — global bypass is silent by admin design
@@ -994,18 +1006,6 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
         if (!isTimedGlobalDisableActive) {
           writeAuthAuditLog("login_global_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
         }
-        return { id: user.id, lastLoginAt: now };
-      }
-
-      /* ── Per-user bypass path: skip OTP code check, clear bypass flag (single-use) ── */
-      if (otpBypassActive) {
-        // no user notification — bypass is silent by admin design
-        // clear bypass immediately after use so it cannot be reused
-        await tx.update(usersTable)
-          .set({ phoneVerified: true, lastLoginAt: now, updatedAt: now, otpBypassUntil: null })
-          .where(eq(usersTable.phone, phone));
-        addAuditEntry({ action: "user_login_otp_bypass", ip, details: `OTP bypass login for ${phone} (bypass until ${user.otpBypassUntil!.toISOString()})`, result: "success" });
-        writeAuthAuditLog("login_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
         return { id: user.id, lastLoginAt: now };
       }
 
@@ -1907,8 +1907,42 @@ async function handleUnifiedLogin(req: Request, res: any) {
   }
 
   await resetAttempts(lockoutKey);
-  await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
   addAuditEntry({ action: "unified_login", ip, details: `Login via ${idType}: ${lookupKey}`, result: "success" });
+
+  /* ── OTP step after password verification ────────────────────────────────
+     Priority: per-user bypass (skip OTP) → global suspension (skip OTP) → require OTP.
+     OTP is sent to console for demo; in production this would go via SMS/email. ── */
+  const pwPerUserBypass = !!(user.otpBypassUntil && user.otpBypassUntil > new Date());
+  const pwGlobalDisabledUntilStr = settings["otp_global_disabled_until"];
+  const pwGlobalDisabledUntil = pwGlobalDisabledUntilStr ? new Date(pwGlobalDisabledUntilStr) : null;
+  const pwGlobalSuspended = !!(pwGlobalDisabledUntil && pwGlobalDisabledUntil > new Date());
+  const pwDangerBypass = settings["security_otp_bypass"] === "on";
+  const skipLoginOtp = pwPerUserBypass || pwGlobalSuspended || pwDangerBypass;
+
+  if (!skipLoginOtp) {
+    const loginOtp = generateSecureOtp();
+    const loginOtpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+    await db.update(usersTable)
+      .set({ otpCode: hashOtp(loginOtp), otpExpiry: loginOtpExpiry, otpUsed: false, updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+    console.log(`\n[AUTH:OTP] ====== LOGIN OTP ======`);
+    console.log(`[AUTH:OTP] User: ${lookupKey}`);
+    console.log(`[AUTH:OTP] OTP Code: ${loginOtp}`);
+    console.log(`[AUTH:OTP] Expires: ${loginOtpExpiry.toISOString()}`);
+    console.log(`[AUTH:OTP] =======================\n`);
+    writeAuthAuditLog("otp_sent", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login", channel: "console" } });
+    const tempToken = sign2faChallengeToken(user.id, user.phone ?? user.email ?? "", user.role ?? "customer", user.roles ?? "customer", "password_otp");
+    res.json({ requiresOtp: true, tempToken, userId: user.id, message: "OTP sent — check server console" });
+    return;
+  }
+
+  if (pwPerUserBypass) {
+    writeAuthAuditLog("login_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password", reason: "per_user_bypass" } });
+  } else if (pwGlobalSuspended || pwDangerBypass) {
+    writeAuthAuditLog("login_global_otp_bypass", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password", reason: pwGlobalSuspended ? "global_suspension" : "danger_zone" } });
+  }
+
+  await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
 
   if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
     const deviceFingerprint = req.body.deviceFingerprint ?? "";
@@ -1952,6 +1986,93 @@ async function handleUnifiedLogin(req: Request, res: any) {
 
 router.post("/login/username", verifyCaptcha, handleUnifiedLogin);
 router.post("/login", verifyCaptcha, handleUnifiedLogin);
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/login/verify-otp
+   Verify the OTP sent after email/password login.
+   Body: { tempToken: string, otp: string }
+   Returns JWT token on success.
+══════════════════════════════════════════════════════════════ */
+router.post("/login/verify-otp", async (req, res) => {
+  const { tempToken, otp } = req.body ?? {};
+  if (!tempToken || !otp) {
+    res.status(400).json({ error: "tempToken and otp are required" }); return;
+  }
+
+  const payload = verify2faChallengeToken(tempToken);
+  if (!payload || payload.authMethod !== "password_otp") {
+    res.status(401).json({ error: "Invalid or expired OTP challenge token. Please log in again." }); return;
+  }
+
+  const ip = getClientIp(req);
+  const settings = await getCachedSettings();
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  if (user.isBanned) { res.status(403).json({ error: "Account suspended. Contact support." }); return; }
+
+  const maxAttempts    = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
+  const lockoutMinutes = parseInt(settings["security_lockout_minutes"]    ?? "30", 10);
+  const lockoutKey     = `uid:${user.id}`;
+  const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
+  if (lockout.locked) {
+    res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+  }
+
+  const now = new Date();
+  const rows = await db
+    .update(usersTable)
+    .set({ otpCode: null, otpExpiry: null, otpUsed: true, lastLoginAt: now, updatedAt: now })
+    .where(and(
+      eq(usersTable.id, user.id),
+      eq(usersTable.otpCode, hashOtp(otp)),
+      eq(usersTable.otpUsed, false),
+      sql`otp_expiry > now()`,
+    ))
+    .returning({ id: usersTable.id });
+
+  if (rows.length === 0) {
+    const updated = await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
+    const remaining = Math.max(0, maxAttempts - updated.attempts);
+    writeAuthAuditLog("otp_failed", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login_otp" } });
+    if (updated.lockedUntil) {
+      res.status(429).json({ error: `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.` });
+    } else {
+      res.status(401).json({ error: `Invalid or expired OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
+    }
+    return;
+  }
+
+  await resetAttempts(lockoutKey);
+  writeAuthAuditLog("otp_verified", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login_otp" } });
+
+  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+    const deviceFingerprint = req.body.deviceFingerprint ?? "";
+    const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
+    if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
+      const totpToken = sign2faChallengeToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", "password");
+      res.json({ requires2FA: true, tempToken: totpToken, userId: user.id }); return;
+    }
+  }
+
+  const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
+  const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
+  await db.insert(refreshTokensTable).values({
+    id: generateId(), userId: user.id, tokenHash: refreshHash, authMethod: "password_otp",
+    expiresAt: new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000),
+  });
+
+  writeAuthAuditLog("login_success", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_otp_verified" } });
+
+  res.json({
+    token: accessToken,
+    refreshToken: refreshRaw,
+    expiresAt,
+    sessionDays: getRefreshTokenTtlDays(),
+    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, walletBalance: parseFloat(user.walletBalance ?? "0") },
+  });
+});
 
 /* ══════════════════════════════════════════════════════════════
    POST /auth/complete-profile

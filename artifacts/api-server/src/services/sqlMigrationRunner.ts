@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
@@ -35,15 +35,24 @@ export async function runSqlMigrations(): Promise<void> {
     const sqlContent = fs.readFileSync(filePath, "utf-8").trim();
     if (!sqlContent) continue;
 
+    const client = await pool.connect();
     try {
-      await db.execute(sql.raw(sqlContent));
-      await db.execute(sql`INSERT INTO _schema_migrations (filename) VALUES (${file}) ON CONFLICT DO NOTHING`);
+      await client.query("BEGIN");
+      await client.query(sqlContent);
+      await client.query(
+        "INSERT INTO _schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING",
+        [file]
+      );
+      await client.query("COMMIT");
       logger.info({ file }, "[migrations] Applied");
       count++;
     } catch (e: unknown) {
+      await client.query("ROLLBACK");
       const msg = e instanceof Error ? e.message : String(e);
       logger.error({ file, err: msg }, "[migrations] Failed to apply migration");
       throw new Error(`Migration ${file} failed: ${msg}`);
+    } finally {
+      client.release();
     }
   }
 

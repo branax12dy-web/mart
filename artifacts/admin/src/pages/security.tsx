@@ -413,13 +413,12 @@ export default function SecurityPage() {
       {/* ─── Auth & Sessions ─── */}
       {secTab === "auth" && (
         <div className="space-y-4">
-          {/* DANGER ZONE */}
-          <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5 space-y-3">
-            <div className="flex items-center gap-2 text-red-700 mb-1">
-              <AlertTriangle className="w-4 h-4" />
-              <span className="text-sm font-bold">DANGER ZONE — Development Only</span>
-            </div>
-            <T k="security_otp_bypass" label="OTP Bypass Mode" sub="All OTPs auto-accept (NEVER enable in production)" danger />
+          {/* OTP pointer — managed in OTP Control page */}
+          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-violet-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-violet-800">
+              OTP suspension and per-user bypass are managed exclusively in <strong>OTP Global Control</strong> (sidebar). No duplicate OTP toggles exist here.
+            </p>
           </div>
 
           <SecPanel title="Multi-Factor Authentication (Policy)" icon={Shield} color="text-indigo-700">

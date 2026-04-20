@@ -1,6 +1,9 @@
-CREATE TYPE "customer_report_status" AS ENUM ('new', 'reviewed', 'closed');
+DO $$ BEGIN
+  CREATE TYPE "customer_report_status" AS ENUM ('new', 'reviewed', 'closed');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE "customer_error_reports" (
+CREATE TABLE IF NOT EXISTS "customer_error_reports" (
   "id" text PRIMARY KEY,
   "timestamp" timestamp DEFAULT now() NOT NULL,
   "customer_name" text NOT NULL,

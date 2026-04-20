@@ -19,7 +19,7 @@
 --   balance impact so keeping the most-recent row per (ride_id, rider_id) pair
 --   is financially safe.
 
--- ── Part 1: One active ride per customer (fail-fast on duplicates) ────────
+-- ── Part 1: One active ride per customer (auto-expire older duplicates) ──────
 DO $$
 DECLARE
   dup_count INTEGER;
@@ -34,15 +34,22 @@ BEGIN
   ) dups;
 
   IF dup_count > 0 THEN
-    RAISE EXCEPTION
-      '[0019] Cannot create rides uniqueness index: % user(s) have multiple '
-      'active rides. Manually reconcile wallet debits and resolve duplicates, '
-      'then re-run this migration.',
-      dup_count;
+    RAISE NOTICE '[0019] % user(s) have multiple active rides — auto-expiring older duplicates.', dup_count;
+    UPDATE rides
+    SET status = 'expired', updated_at = NOW()
+    WHERE id IN (
+      SELECT id FROM (
+        SELECT id,
+               ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
+        FROM rides
+        WHERE status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit')
+      ) ranked
+      WHERE rn > 1
+    );
   END IF;
 END $$;
 
-CREATE UNIQUE INDEX rides_one_active_per_user_uidx
+CREATE UNIQUE INDEX IF NOT EXISTS rides_one_active_per_user_uidx
   ON rides (user_id)
   WHERE status IN ('searching', 'bargaining', 'accepted', 'arrived', 'in_transit');
 

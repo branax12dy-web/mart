@@ -6,4 +6,11 @@ CREATE TABLE IF NOT EXISTS "idempotency_keys" (
   "created_at" timestamp DEFAULT now() NOT NULL
 );
 
-ALTER TABLE "idempotency_keys" ADD CONSTRAINT "idempotency_keys_user_key_uniq" UNIQUE ("user_id", "idempotency_key");
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'idempotency_keys_user_key_uniq'
+  ) THEN
+    ALTER TABLE "idempotency_keys" ADD CONSTRAINT "idempotency_keys_user_key_uniq" UNIQUE ("user_id", "idempotency_key");
+  END IF;
+END $$;
