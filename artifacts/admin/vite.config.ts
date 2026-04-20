@@ -19,6 +19,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const basePath = process.env.BASE_PATH;
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8080";
 
 if (!basePath) {
   throw new Error(
@@ -66,6 +67,13 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
     hmr: { clientPort: 443, protocol: "wss" },
+    proxy: {
+      "/api": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],

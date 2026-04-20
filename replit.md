@@ -6,6 +6,17 @@
 - `scripts/post-merge.sh` uses the same priority for SQL migrations.
 - This allows Neon or another external PostgreSQL database to be used as the default without hard-coding credentials in source files.
 
+### Portable Deployment Configuration
+- Added portable run/deploy files for GitHub, Codespaces, local servers, and VPS environments:
+  - `scripts/run-dev-all.mjs`: starts API, admin, vendor, rider, and customer web dev servers with fixed ports.
+  - `scripts/build-production.mjs`: builds API, admin, vendor, rider, and customer web outputs with production base paths.
+  - `scripts/server-up.sh`: one-command VPS/server setup runner that installs packages, syncs DB schema, builds, and starts PM2.
+  - `ecosystem.config.cjs`: PM2 config for API and customer web production servers.
+  - `deploy/Caddyfile`: Caddy reverse proxy config for `/api`, `/admin`, `/vendor`, `/rider`, and `/`.
+  - `deploy/nginx.conf`: Nginx reverse proxy config with Socket.IO upgrade support.
+  - `deploy/env.example`: environment variable template for non-Replit hosting.
+- Vite dev servers now proxy API requests to `VITE_API_PROXY_TARGET` (default `http://127.0.0.1:8080`) so local/Codespaces frontends can call the backend without Replit path routing.
+
 ### Professional Features Part 1
 
 #### Vendor Weekly Schedule (`vendor_schedules` table)
