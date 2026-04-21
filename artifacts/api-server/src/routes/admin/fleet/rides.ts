@@ -19,13 +19,13 @@ import {
   ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
   ensureDefaultRideServices, formatSvc,
   type AdminRequest, auditLog,
-} from "../admin-shared.js";
-import { AuditService } from "../../services/admin-audit.service.js";
-import { FleetService } from "../../services/admin-fleet.service.js";
-import { emitRideDispatchUpdate, getIO } from "../../lib/socketio.js";
-import { emitRideUpdate } from "../../lib/rideEvents.js";
+} from "../../admin-shared.ts";
+import { AuditService } from "../../../services/admin-audit.service.ts";
+import { FleetService } from "../../../services/admin-fleet.service.ts";
+import { emitRideDispatchUpdate, getIO } from "../../../lib/socketio.ts";
+import { emitRideUpdate } from "../../../lib/rideEvents.ts";
 import { RIDE_VALID_STATUSES, getSocketRoom } from "@workspace/service-constants";
-import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../lib/response.js";
+import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../../lib/response.ts";
 
 const router = Router();
 router.get("/rides", async (_req, res) => {
@@ -736,7 +736,7 @@ router.get("/dashboard-export", async (_req, res) => {
     rideRevenue:  parseFloat(rideRev?.total ?? "0"),
     trend,
   };
-  res.setHeader("Content-Disposition", `attachment; filename="dashboard-${now.toISOString().slice(0, 10)}.json"`);
+  res.setHeader("Content-Disposition", `attachment; filename="dashboard-${now.toISOString().slice(0, 10)}.tson"`);
   sendSuccess(res, snapshot);
 });
 

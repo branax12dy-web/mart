@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getIO } from "../../lib/socketio.js";
+import { getIO } from "../../../lib/socketio.ts";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -22,15 +22,15 @@ import {
   ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
   ensureDefaultRideServices, ensureDefaultLocations, formatSvc,
   type AdminRequest, revokeAllUserSessions,
-} from "../admin-shared.js";
-import { writeAuthAuditLog } from "../../middleware/security.js";
-import { hashPassword, validatePasswordStrength } from "../../services/password.js";
-import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../lib/response.js";
-import { reconcileUserFlags } from "./conditions.js";
+} from "../../admin-shared.ts";
+import { writeAuthAuditLog } from "../../../middleware/security.ts";
+import { hashPassword, validatePasswordStrength } from "../../../services/password.ts";
+import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../../lib/response.ts";
+import { reconcileUserFlags } from "./conditions.ts";
 import { canonicalizePhone } from "@workspace/phone-utils";
-import { UserService } from "../../services/admin-user.service.js";
-import { FinanceService } from "../../services/admin-finance.service.js";
-import { AuditService } from "../../services/admin-audit.service.js";
+import { UserService } from "../../../services/admin-user.service.ts";
+import { FinanceService } from "../../../services/admin-finance.service.ts";
+import { AuditService } from "../../../services/admin-audit.service.ts";
 
 const router = Router();
 

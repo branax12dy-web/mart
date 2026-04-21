@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
-import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../lib/response.js";
-import { invalidateZoneCache } from "../../lib/geofence.js";
-import { getCachedSettings } from "../../middleware/security.js";
-import type { AdminRequest } from "../admin.js";
-import { AuditService } from "../../services/admin-audit.service.js";
-import { FleetService } from "../../services/admin-fleet.service.js";
-import { getClientIp } from "../admin-shared.js";
+import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../../lib/response.ts";
+import { invalidateZoneCache } from "../../../lib/geofence.ts";
+import { getCachedSettings } from "../../../middleware/security.ts";
+import type { AdminRequest } from "../admin.ts";
+import { AuditService } from "../../services/admin-audit.service.ts";
+import { FleetService } from "../../services/admin-fleet.service.ts";
+import { getClientIp } from "../admin-shared.ts";
 
 const router: IRouter = Router();
 

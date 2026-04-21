@@ -18,13 +18,13 @@ import {
   ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
   ensureDefaultRideServices, ensureDefaultLocations, formatSvc,
   type AdminRequest, adminLoginAttempts, ADMIN_MAX_ATTEMPTS,
-} from "../admin-shared.js";
-import { hashAdminSecret } from "../../services/password.js";
-import { generateTotpSecret, verifyTotpToken as verifyTotp, generateQRCodeDataURL, getTotpUri } from "../../services/totp.js";
-import { writeAuthAuditLog } from "../../middleware/security.js";
-import { sendSuccess, sendError, sendNotFound, sendForbidden, sendUnauthorized, sendValidationError } from "../../lib/response.js";
-import { UserService } from "../../services/admin-user.service.js";
-import { AuditService } from "../../services/admin-audit.service.js";
+} from "../../admin-shared.ts";
+import { hashAdminSecret } from "../../../services/password.ts";
+import { generateTotpSecret, verifyTotpToken as verifyTotp, generateQRCodeDataURL, getTotpUri } from "../../../services/totp.ts";
+import { writeAuthAuditLog } from "../../../middleware/security.ts";
+import { sendSuccess, sendError, sendNotFound, sendForbidden, sendUnauthorized, sendValidationError } from "../../../lib/response.ts";
+import { UserService } from "../../../services/admin-user.service.ts";
+import { AuditService } from "../../../services/admin-audit.service.ts";
 
 const router = Router();
 router.post("/auth", async (req, res) => {
@@ -35,7 +35,7 @@ router.post("/auth", async (req, res) => {
   const lockout = checkAdminLoginLockout(ip);
   if (lockout.locked) {
     addSecurityEvent({ type: "admin_login_locked", ip, details: `Locked admin login attempt from ${ip}`, severity: "high" });
-    res.status(429).json({ error: `Too many failed attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    res.status(429).tson({ error: `Too many failed attempts. Try again in ${lockout.minutesLeft} minute(s).` });
     return;
   }
 
@@ -45,7 +45,7 @@ router.post("/auth", async (req, res) => {
     const adminToken = signAdminJwt(null, "super", "Super Admin", ADMIN_TOKEN_TTL_HRS);
     addAuditEntry({ action: "admin_login_success", ip, details: "Master admin login — JWT issued", result: "success" });
     writeAuthAuditLog("admin_login", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { role: "super" } });
-    res.json({ success: true, token: adminToken, expiresIn: `${ADMIN_TOKEN_TTL_HRS}h` });
+    res.tson({ success: true, token: adminToken, expiresIn: `${ADMIN_TOKEN_TTL_HRS}h` });
     return;
   }
 
@@ -60,7 +60,7 @@ router.post("/auth", async (req, res) => {
     await db.update(adminAccountsTable).set({ lastLoginAt: new Date() }).where(eq(adminAccountsTable.id, sub.id));
     addAuditEntry({ action: "admin_login_success", ip, adminId: sub.id, details: `Sub-admin ${sub.name} login — JWT issued`, result: "success" });
     writeAuthAuditLog("admin_login", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { adminId: sub.id, role: sub.role } });
-    res.json({ success: true, token: adminToken, expiresIn: `${ADMIN_TOKEN_TTL_HRS}h` });
+    res.tson({ success: true, token: adminToken, expiresIn: `${ADMIN_TOKEN_TTL_HRS}h` });
     return;
   }
 
@@ -70,9 +70,9 @@ router.post("/auth", async (req, res) => {
   addAuditEntry({ action: "admin_login_failed", ip, details: "Wrong admin secret", result: "fail" });
   addSecurityEvent({ type: "admin_login_failed", ip, details: `Failed admin login attempt from ${ip}`, severity: "high" });
   if (remaining === 0) {
-    res.status(429).json({ error: `Too many failed attempts. Account locked for 15 minutes.` });
+    res.status(429).tson({ error: `Too many failed attempts. Account locked for 15 minutes.` });
   } else {
-    res.status(401).json({ error: `Invalid admin password. ${remaining} attempt(s) remaining.` });
+    res.status(401).tson({ error: `Invalid admin password. ${remaining} attempt(s) remaining.` });
   }
 });
 
@@ -87,7 +87,7 @@ router.get("/admin-accounts", async (_req, res) => {
     lastLoginAt: adminAccountsTable.lastLoginAt,
     createdAt: adminAccountsTable.createdAt,
   }).from(adminAccountsTable).orderBy(desc(adminAccountsTable.createdAt));
-  res.json({
+  res.tson({
     accounts: accounts.map(a => ({
       ...a,
       lastLoginAt: a.lastLoginAt ? a.lastLoginAt.toISOString() : null,
@@ -146,24 +146,24 @@ router.patch("/admin-accounts/:id", async (req, res) => {
   if (body.permissions !== undefined) updates.permissions = body.permissions;
   if (body.isActive    !== undefined) updates.isActive    = body.isActive;
   if (body.secret      !== undefined) {
-    if (body.secret === getAdminSecret()) { res.status(400).json({ error: "Cannot use the master secret" }); return; }
+    if (body.secret === getAdminSecret()) { res.status(400).tson({ error: "Cannot use the master secret" }); return; }
     updates.secret = hashAdminSecret(body.secret as string);
   }
   const [account] = await db.update(adminAccountsTable).set(updates).where(eq(adminAccountsTable.id, req.params["id"]!)).returning();
-  if (!account) { res.status(404).json({ error: "Admin account not found" }); return; }
-  res.json({ ...account, secret: "••••••", createdAt: account.createdAt.toISOString() });
+  if (!account) { res.status(404).tson({ error: "Admin account not found" }); return; }
+  res.tson({ ...account, secret: "••••••", createdAt: account.createdAt.toISOString() });
 });
 
 router.delete("/admin-accounts/:id", async (req, res) => {
   await db.delete(adminAccountsTable).where(eq(adminAccountsTable.id, req.params["id"]!));
-  res.json({ success: true });
+  res.tson({ success: true });
 });
 
 /* ── App Management ── */
 router.post("/rotate-secret", adminAuth, (req, res) => {
   const adminRole = (req as AdminRequest).adminRole;
   if (adminRole !== "super") {
-    res.status(403).json({ error: "Only super admin can rotate the master secret." });
+    res.status(403).tson({ error: "Only super admin can rotate the master secret." });
     return;
   }
 
@@ -172,7 +172,7 @@ router.post("/rotate-secret", adminAuth, (req, res) => {
      endpoint validates the new secret and returns guidance. */
   const { newSecret } = req.body;
   if (!newSecret || newSecret.length < 32) {
-    res.status(400).json({ error: "New secret must be at least 32 characters." });
+    res.status(400).tson({ error: "New secret must be at least 32 characters." });
     return;
   }
 
@@ -180,7 +180,7 @@ router.post("/rotate-secret", adminAuth, (req, res) => {
   addAuditEntry({ action: "admin_secret_rotation_requested", ip, details: "Admin requested secret rotation", result: "success" });
   writeAuthAuditLog("admin_secret_rotation", { ip, metadata: { note: "Secret rotation requested — update ADMIN_SECRET env var" } });
 
-  res.json({
+  res.tson({
     success: true,
     message: "Set the new secret as the ADMIN_SECRET environment variable and restart the server to apply the rotation.",
     instructions: "New secret validated — it meets the minimum length requirement (32+ chars).",
@@ -190,38 +190,38 @@ router.post("/rotate-secret", adminAuth, (req, res) => {
 router.get("/me/language", adminAuth, async (req, res) => {
   const adminId = req.adminId;
   if (!adminId) {
-    res.json({ language: null });
+    res.tson({ language: null });
     return;
   }
   const [admin] = await db.select({ language: adminAccountsTable.language }).from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
-  res.json({ language: admin?.language ?? null });
+  res.tson({ language: admin?.language ?? null });
 });
 
 /* PUT /admin/me/language — save current admin's language preference */
 router.put("/me/language", adminAuth, async (req, res) => {
   const adminId = req.adminId;
   if (!adminId) {
-    res.json({ success: false, note: "Super admin language is managed locally" });
+    res.tson({ success: false, note: "Super admin language is managed locally" });
     return;
   }
   const { language } = req.body as { language?: string };
-  if (!language) { res.status(400).json({ error: "language required" }); return; }
+  if (!language) { res.status(400).tson({ error: "language required" }); return; }
   const VALID = new Set(["en", "ur", "roman", "en_roman", "en_ur"]);
-  if (!VALID.has(language)) { res.status(400).json({ error: "Invalid language" }); return; }
+  if (!VALID.has(language)) { res.status(400).tson({ error: "Invalid language" }); return; }
   await db.update(adminAccountsTable).set({ language }).where(eq(adminAccountsTable.id, adminId));
-  res.json({ success: true, language });
+  res.tson({ success: true, language });
 });
 
 /* GET /admin/mfa/status — check if MFA is set up for the current sub-admin */
 router.get("/mfa/status", adminAuth, async (req, res) => {
   const adminId = req.adminId!;
   if (!adminId) {
-    res.json({ mfaEnabled: false, note: "Super admin does not use TOTP." });
+    res.tson({ mfaEnabled: false, note: "Super admin does not use TOTP." });
     return;
   }
   const [admin] = await db.select().from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
-  if (!admin) { res.status(404).json({ error: "Admin account not found" }); return; }
-  res.json({
+  if (!admin) { res.status(404).tson({ error: "Admin account not found" }); return; }
+  res.tson({
     mfaEnabled: admin.totpEnabled,
     totpConfigured: !!admin.totpSecret,
   });
@@ -232,7 +232,7 @@ router.post("/mfa/setup", adminAuth, async (req, res) => {
   const adminId   = req.adminId!;
   const adminName = req.adminName! ?? "Admin";
   if (!adminId) {
-    res.status(400).json({ error: "Super admin does not need TOTP setup." });
+    res.status(400).tson({ error: "Super admin does not need TOTP setup." });
     return;
   }
 
@@ -247,7 +247,7 @@ router.post("/mfa/setup", adminAuth, async (req, res) => {
 
   addAuditEntry({ action: "mfa_setup_initiated", ip: req.adminIp!, adminId, details: `MFA setup started for ${adminName}`, result: "success" });
 
-  res.json({
+  res.tson({
     secret,
     otpUri,
     qrCodeDataUrl: qrCodeUrl,
@@ -260,31 +260,31 @@ router.post("/mfa/verify", adminAuth, async (req, res) => {
   const adminId   = req.adminId!;
   const adminName = req.adminName! ?? "Admin";
   if (!adminId) {
-    res.status(400).json({ error: "Super admin does not use TOTP." });
+    res.status(400).tson({ error: "Super admin does not use TOTP." });
     return;
   }
 
   const { token } = req.body as { token: string };
   if (!token) {
-    res.status(400).json({ error: "token is required" });
+    res.status(400).tson({ error: "token is required" });
     return;
   }
 
   const [admin] = await db.select().from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
   if (!admin || !admin.totpSecret) {
-    res.status(400).json({ error: "TOTP not set up yet. Call POST /admin/mfa/setup first." });
+    res.status(400).tson({ error: "TOTP not set up yet. Call POST /admin/mfa/setup first." });
     return;
   }
 
   if (admin.totpEnabled) {
-    res.json({ success: true, message: "MFA is already active." });
+    res.tson({ success: true, message: "MFA is already active." });
     return;
   }
 
   const valid = verifyTotpToken(token, admin.totpSecret);
   if (!valid) {
     addAuditEntry({ action: "mfa_verify_failed", ip: req.adminIp!, adminId, details: `MFA verify failed for ${adminName}`, result: "fail" });
-    res.status(401).json({ error: "Invalid TOTP token. Please try again." });
+    res.status(401).tson({ error: "Invalid TOTP token. Please try again." });
     return;
   }
 
@@ -294,7 +294,7 @@ router.post("/mfa/verify", adminAuth, async (req, res) => {
 
   addAuditEntry({ action: "mfa_activated", ip: req.adminIp!, adminId, details: `MFA activated for ${adminName}`, result: "success" });
 
-  res.json({ success: true, message: "MFA successfully activated. You must now provide x-admin-totp with every request when global MFA is enabled." });
+  res.tson({ success: true, message: "MFA successfully activated. You must now provide x-admin-totp with every request when global MFA is enabled." });
 });
 
 /* DELETE /admin/mfa/disable — disable MFA (requires current valid TOTP or super admin) */
@@ -302,17 +302,17 @@ router.delete("/mfa/disable", adminAuth, async (req, res) => {
   const adminId   = req.adminId!;
   const adminName = req.adminName! ?? "Admin";
   if (!adminId) {
-    res.status(400).json({ error: "Super admin does not use TOTP." });
+    res.status(400).tson({ error: "Super admin does not use TOTP." });
     return;
   }
 
   const { token } = req.body as { token?: string };
   const [admin]   = await db.select().from(adminAccountsTable).where(eq(adminAccountsTable.id, adminId)).limit(1);
-  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+  if (!admin) { res.status(404).tson({ error: "Admin not found" }); return; }
 
   if (admin.totpEnabled && admin.totpSecret) {
     if (!token || !verifyTotpToken(token, admin.totpSecret)) {
-      res.status(401).json({ error: "Valid TOTP token required to disable MFA." });
+      res.status(401).tson({ error: "Valid TOTP token required to disable MFA." });
       return;
     }
   }
@@ -323,7 +323,7 @@ router.delete("/mfa/disable", adminAuth, async (req, res) => {
 
   addAuditEntry({ action: "mfa_disabled", ip: req.adminIp!, adminId, details: `MFA disabled for ${adminName}`, result: "warn" });
 
-  res.json({ success: true, message: "MFA has been disabled for your account." });
+  res.tson({ success: true, message: "MFA has been disabled for your account." });
 });
 
 
