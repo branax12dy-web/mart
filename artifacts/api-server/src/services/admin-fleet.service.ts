@@ -14,23 +14,21 @@ import { db } from "@workspace/db";
 import {
   usersTable,
   ridesTable,
-  ridersTable,
   rideRatingsTable,
   riderPenaltiesTable,
   locationLogsTable,
   serviceZonesTable,
-  sosAlertsTable,
   rideBidsTable,
   rideServiceTypesTable,
   popularLocationsTable,
   schoolRoutesTable,
-  schoolSubscriptionsTable,
   liveLocationsTable,
   rideEventLogsTable,
   rideNotifiedRidersTable,
   locationHistoryTable,
   walletTransactionsTable,
   ordersTable,
+  riderProfilesTable,
 } from "@workspace/db/schema";
 import { eq, desc, and, count, sum, gte, lte, sql, or, ilike, asc, isNull, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";

@@ -71,7 +71,9 @@ interface OrderShape {
   createdAt?: string;
   updatedAt?: string;
   refundStatus?: string;
+  prescriptionNote?: string;
   _reviewed?: boolean;
+  _type?: string;
 }
 
 interface RideShape {
@@ -86,7 +88,11 @@ interface RideShape {
   riderPhone?: string;
   createdAt?: string;
   updatedAt?: string;
+  paymentMethod?: string;
+  estimatedTime?: string;
+  fareBreakdown?: { baseFare?: number; gstAmount?: number; [key: string]: any };
   _reviewed?: boolean;
+  _type?: string;
 }
 
 /* Single source of truth: all status maps imported from @/lib/orderUtils */
@@ -295,7 +301,7 @@ function RideCard({ ride, liveTracking, reviews, ratingWindowHours, serverNow, o
   reviews: boolean;
   ratingWindowHours: number;
   serverNow?: number;
-  onRate: (o: RideShape) => void;
+  onRate: (o: OrderShape | RideShape | ParcelShape) => void;
   onCancel: (o: RideShape) => void;
   onCardPress?: () => void;
 }) {
@@ -635,8 +641,15 @@ interface ParcelShape {
   pickupAddress?: string;
   dropAddress?: string;
   fare?: number;
+  estimatedFare?: number;
+  estimatedTime?: string;
+  receiverName?: string;
+  receiverPhone?: string;
+  paymentMethod?: string;
   createdAt?: string;
   updatedAt?: string;
+  _reviewed?: boolean;
+  _type?: string;
 }
 
 function ParcelCard({ booking, onCardPress }: { booking: ParcelShape; onCardPress?: () => void }) {
@@ -1095,7 +1108,7 @@ function OrdersScreenInner() {
   const T = (key: Parameters<typeof tDual>[0]) => tDual(key, language);
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [reviewTarget, setReviewTarget] = useState<OrderShape | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<OrderShape | RideShape | ParcelShape | null>(null);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
   const [selectedOrder, setSelectedOrder] = useState<{ id: string; type: string } | null>(null);

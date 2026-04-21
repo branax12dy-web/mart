@@ -148,12 +148,12 @@ const OFFER_STRIP_CONFIGS = [
 ];
 
 function OffersStrip() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<{ offers?: unknown[] } | null>({
     queryKey: ["public-offers-home"],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/promotions/public`);
       if (!r.ok) return null;
-      return r.json().then((j: { data?: unknown }) => j?.data ?? j);
+      return r.json().then((j: { data?: unknown }) => j?.data ?? j) as Promise<{ offers?: unknown[] } | null>;
     },
     staleTime: 120000,
   });
@@ -594,14 +594,14 @@ export default function HomeScreen() {
           />
         ) : (
           <>
-            <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 16 }} />}>
+            <Suspense fallback={<SkeletonBlock w="100%" h={120} r={16} style={{ marginHorizontal: H_PAD }} />}>
               <LazyServiceSection
                 services={activeServices}
                 isGuest={isGuest}
               />
             </Suspense>
 
-            <Suspense fallback={<SkeletonBlock style={{ height: 56, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
+            <Suspense fallback={<SkeletonBlock w="100%" h={56} r={12} style={{ marginHorizontal: H_PAD }} />}>
               <LazyServiceStatsStrip rideCfg={platformConfig.rides} features={features} />
             </Suspense>
 
@@ -626,12 +626,12 @@ export default function HomeScreen() {
             )}
 
             {platformConfig.content.showBanner && (
-              <Suspense fallback={<SkeletonBlock style={{ height: 140, marginHorizontal: H_PAD, borderRadius: 16 }} />}>
+              <Suspense fallback={<SkeletonBlock w="100%" h={140} r={16} style={{ marginHorizontal: H_PAD }} />}>
                 <LazyBannerCarousel />
               </Suspense>
             )}
 
-            <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
+            <Suspense fallback={<SkeletonBlock w="100%" h={120} r={12} style={{ marginHorizontal: H_PAD }} />}>
               <LazyFlashDeals T={T} limit={platformConfig.pagination?.flashDealsLimit ?? 10} />
             </Suspense>
 
@@ -639,7 +639,7 @@ export default function HomeScreen() {
 
             <RecentlyViewedSection />
 
-            <Suspense fallback={<SkeletonBlock style={{ height: 120, marginHorizontal: H_PAD, borderRadius: 12 }} />}>
+            <Suspense fallback={<SkeletonBlock w="100%" h={120} r={12} style={{ marginHorizontal: H_PAD }} />}>
               <LazyTrending limit={platformConfig.pagination?.trendingLimit ?? 8} />
             </Suspense>
 
@@ -744,10 +744,10 @@ interface HeaderContentProps {
   platformConfig: { platform: { businessAddress?: string } };
   itemCount: number;
   handleLocationPress: () => void;
-  searchOpacity: Animated.Value;
-  searchTranslateY: Animated.Value;
-  searchMaxHeight: Animated.Value;
-  T: (key: string) => string;
+  searchOpacity: Animated.Value | Animated.Interpolation<number | string>;
+  searchTranslateY: Animated.Value | Animated.Interpolation<number | string>;
+  searchMaxHeight: Animated.Value | Animated.Interpolation<number | string>;
+  T: (key: Parameters<typeof tDual>[0]) => string;
   topPad?: number;
   announcement?: string;
   announceDismissed?: boolean;

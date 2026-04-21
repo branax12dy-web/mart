@@ -52,7 +52,7 @@ export class FinanceService {
    */
   static async getUserBalance(userId: string): Promise<number> {
     const [user] = await db
-      .select({ wallet: usersTable.wallet })
+      .select({ walletBalance: usersTable.walletBalance })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
@@ -62,7 +62,7 @@ export class FinanceService {
     }
 
     // Ensure 2 decimal places
-    return parseFloat(user.wallet || "0");
+    return parseFloat(user.walletBalance || "0");
   }
 
   /**
@@ -83,7 +83,7 @@ export class FinanceService {
       throw new Error("User not found");
     }
 
-    const currentBalance = parseFloat(user.wallet || "0");
+    const currentBalance = parseFloat(user.walletBalance || "0");
     const newBalance = currentBalance + input.amount;
 
     const transactionId = generateId();
@@ -95,19 +95,15 @@ export class FinanceService {
       userId: input.userId,
       amount: input.amount.toString(),
       type: "credit",
-      reason: `Topup via ${input.paymentMethod}`,
+      description: `Topup via ${input.paymentMethod}`,
       reference: input.reference || null,
-      relatedOrderId: null,
-      relatedRideId: null,
-      createdAt: now,
-      updatedAt: now,
-      status: "completed",
+      paymentMethod: input.paymentMethod,
     });
 
     // Update user wallet
     await db
       .update(usersTable)
-      .set({ wallet: newBalance.toString(), updatedAt: now })
+      .set({ walletBalance: newBalance.toString(), updatedAt: now })
       .where(eq(usersTable.id, input.userId));
 
     logger.info(
@@ -140,7 +136,7 @@ export class FinanceService {
       throw new Error("User not found");
     }
 
-    const currentBalance = parseFloat(user.wallet || "0");
+    const currentBalance = parseFloat(user.walletBalance || "0");
 
     if (input.type === "debit" && currentBalance < input.amount) {
       throw new Error("Insufficient wallet balance");
@@ -160,19 +156,14 @@ export class FinanceService {
       userId: input.userId,
       amount: input.amount.toString(),
       type: input.type,
-      reason: input.reason,
+      description: input.reason,
       reference: input.reference || null,
-      relatedOrderId: input.relatedOrderId || null,
-      relatedRideId: input.relatedRideId || null,
-      createdAt: now,
-      updatedAt: now,
-      status: "completed",
     });
 
     // Update user wallet
     await db
       .update(usersTable)
-      .set({ wallet: newBalance.toString(), updatedAt: now })
+      .set({ walletBalance: newBalance.toString(), updatedAt: now })
       .where(eq(usersTable.id, input.userId));
 
     logger.info(
@@ -230,7 +221,7 @@ export class FinanceService {
       }
     }
 
-    const currentBalance = parseFloat(user.wallet || "0");
+    const currentBalance = parseFloat(user.walletBalance || "0");
     const newBalance = currentBalance + input.amount;
 
     const transactionId = generateId();
@@ -242,19 +233,14 @@ export class FinanceService {
       userId: input.userId,
       amount: input.amount.toString(),
       type: "credit",
-      reason: `Refund: ${input.reason}`,
-      reference: null,
-      relatedOrderId: input.orderId || null,
-      relatedRideId: input.rideId || null,
-      createdAt: now,
-      updatedAt: now,
-      status: "completed",
+      description: `Refund: ${input.reason}`,
+      reference: input.orderId || input.rideId || null,
     });
 
     // Update user wallet
     await db
       .update(usersTable)
-      .set({ wallet: newBalance.toString(), updatedAt: now })
+      .set({ walletBalance: newBalance.toString(), updatedAt: now })
       .where(eq(usersTable.id, input.userId));
 
     logger.info(
@@ -284,10 +270,14 @@ export class FinanceService {
       .limit(Math.min(limit, 500));
 
     return transactions.map((t) => ({
-      ...t,
+      id: t.id,
+      userId: t.userId,
       amount: parseFloat(t.amount),
+      type: t.type,
+      description: t.description,
+      reference: t.reference,
+      paymentMethod: t.paymentMethod,
       createdAt: t.createdAt.toISOString(),
-      updatedAt: t.updatedAt.toISOString(),
     }));
   }
 
@@ -305,7 +295,7 @@ export class FinanceService {
       throw new Error("User not found");
     }
 
-    const balance = parseFloat(user.wallet || "0");
+    const balance = parseFloat(user.walletBalance || "0");
 
     // Calculate credit/debit totals
     const [credits] = await db
@@ -347,7 +337,7 @@ export class FinanceService {
         userId: walletTransactionsTable.userId,
         amount: walletTransactionsTable.amount,
         type: walletTransactionsTable.type,
-        reason: walletTransactionsTable.reason,
+        description: walletTransactionsTable.description,
         createdAt: walletTransactionsTable.createdAt,
       })
       .from(walletTransactionsTable)

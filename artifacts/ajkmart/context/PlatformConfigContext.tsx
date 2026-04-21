@@ -153,9 +153,6 @@ export interface PlatformConfig {
     orderGpsCaptureEnabled: boolean;
     gpsMismatchThresholdM: number;
   };
-  regional: {
-    currencySymbol: string;
-  };
   payment: {
     jazzcashProofRequired: boolean;
     paymentReceiptRequired: boolean;
@@ -205,10 +202,10 @@ export interface PlatformConfig {
     mapCenterLabel?: string;
   };
   regional?: {
+    currencySymbol?: string;
     phoneFormat?: string;
     phoneHint?: string;
     timezone?: string;
-    currencySymbol?: string;
     countryCode?: string;
   };
   serviceContent?: {
