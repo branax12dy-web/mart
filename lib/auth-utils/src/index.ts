@@ -15,3 +15,5 @@ export { TwoFactorSetup, TwoFactorVerify } from "./two-factor/index";
 export type { TwoFactorSetupProps, TwoFactorVerifyProps } from "./two-factor/types";
 export { MagicLinkSender } from "./magic-link/index";
 export type { MagicLinkSenderProps } from "./magic-link/types";
+export { useAuthConfig, invalidateAuthConfigCache } from "./useAuthConfig";
+export type { AuthConfig } from "./useAuthConfig";

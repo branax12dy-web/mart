@@ -35,6 +35,7 @@ import {
   checkAvailableRateLimit,
 } from "../middleware/security.js";
 import { sendOtpSMS, isSMSProviderConfigured, isSMSConsoleActive } from "../services/sms.js";
+import { sendOtpWithFailover, getWhitelistBypass } from "../services/smsGateway.js";
 import { sendWhatsAppOTP, isWhatsAppProviderConfigured } from "../services/whatsapp.js";
 import { randomBytes, createHash, randomInt } from "crypto";
 import { hashPassword, verifyPassword, validatePasswordStrength, generateSecureOtp } from "../services/password.js";
@@ -175,6 +176,27 @@ async function isValidCanonicalPhone(phone: string): Promise<boolean> {
 }
 
 const router: IRouter = Router();
+
+/* ══════════════════════════════════════════════════════════════
+   GET /auth/config
+   Public endpoint — returns auth mode + enabled method flags so
+   frontend apps can show/hide login UI panels without hardcoding.
+══════════════════════════════════════════════════════════════ */
+router.get("/config", async (_req, res) => {
+  try {
+    const settings = await getCachedSettings();
+    res.json({
+      auth_mode:             settings["auth_mode"]             ?? "OTP",
+      firebase_enabled:      settings["firebase_enabled"]      ?? "off",
+      auth_otp_enabled:      settings["auth_otp_enabled"]      ?? "on",
+      auth_email_enabled:    settings["auth_email_enabled"]    ?? "on",
+      auth_google_enabled:   settings["auth_google_enabled"]   ?? "on",
+      auth_facebook_enabled: settings["auth_facebook_enabled"] ?? "off",
+    });
+  } catch {
+    res.json({ auth_mode: "OTP", firebase_enabled: "off", auth_otp_enabled: "on", auth_email_enabled: "on", auth_google_enabled: "on", auth_facebook_enabled: "off" });
+  }
+});
 
 /* ══════════════════════════════════════════════════════════════
    POST /auth/check-identifier
@@ -600,7 +622,9 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     }
   }
 
-  const otp       = generateSecureOtp();
+  /* ── OTP Whitelist bypass — use bypass code and skip real SMS delivery ── */
+  const whitelistBypass = await getWhitelistBypass(phone);
+  const otp       = whitelistBypass ?? generateSecureOtp();
   const otpExpiry = new Date(Date.now() + AUTH_OTP_TTL_MS);
 
   if (isNewUser) {
@@ -619,6 +643,13 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
       .update(usersTable)
       .set({ otpCode: hashOtp(otp), otpExpiry, otpUsed: false, updatedAt: new Date() })
       .where(eq(usersTable.phone, phone));
+  }
+
+  /* If whitelisted, skip SMS entirely and return early */
+  if (whitelistBypass) {
+    writeAuthAuditLog("otp_send_whitelist_bypass", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
+    res.json({ otpRequired: true, message: "OTP sent successfully", channel: "whitelist", fallbackChannels: [] });
+    return;
   }
 
   if (process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1") {
@@ -3896,6 +3927,271 @@ router.get("/login-history", async (req, res) => {
       createdAt: h.createdAt.toISOString(),
     })),
   });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   GET /auth/sessions
+   List active sessions for the authenticated user.
+══════════════════════════════════════════════════════════════ */
+router.get("/sessions", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const sessions = await db
+    .select()
+    .from(userSessionsTable)
+    .where(and(eq(userSessionsTable.userId, auth.userId), sql`revoked_at IS NULL`))
+    .orderBy(desc(userSessionsTable.lastActiveAt));
+
+  res.json({
+    sessions: sessions.map(s => ({
+      id: s.id,
+      deviceName: s.deviceName,
+      browser: s.browser,
+      os: s.os,
+      ip: s.ip,
+      location: s.location,
+      lastActiveAt: s.lastActiveAt.toISOString(),
+      createdAt: s.createdAt.toISOString(),
+    })),
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   DELETE /auth/sessions/:id
+   Revoke a single session (remote logout from one device).
+══════════════════════════════════════════════════════════════ */
+router.delete("/sessions/:id", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const { id } = req.params;
+  const [session] = await db
+    .select()
+    .from(userSessionsTable)
+    .where(and(eq(userSessionsTable.id, id!), eq(userSessionsTable.userId, auth.userId)))
+    .limit(1);
+
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+  await db
+    .update(userSessionsTable)
+    .set({ revokedAt: new Date() })
+    .where(eq(userSessionsTable.id, id!));
+
+  /* Also revoke the linked refresh token if present */
+  if (session.refreshTokenId) {
+    await db
+      .update(refreshTokensTable)
+      .set({ revokedAt: new Date() })
+      .where(eq(refreshTokensTable.id, session.refreshTokenId));
+  }
+
+  writeAuthAuditLog("session_revoked", { userId: auth.userId, ip: getClientIp(req), metadata: { sessionId: id } });
+  res.json({ success: true, message: "Session revoked" });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   DELETE /auth/sessions — revoke ALL sessions (remote logout everywhere)
+══════════════════════════════════════════════════════════════ */
+router.delete("/sessions", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  await db
+    .update(userSessionsTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(userSessionsTable.userId, auth.userId), sql`revoked_at IS NULL`));
+
+  await revokeAllUserRefreshTokens(auth.userId);
+
+  /* Bump tokenVersion so all outstanding access JWTs are immediately invalid */
+  await db
+    .update(usersTable)
+    .set({ tokenVersion: sql`token_version + 1`, updatedAt: new Date() })
+    .where(eq(usersTable.id, auth.userId));
+
+  writeAuthAuditLog("all_sessions_revoked", { userId: auth.userId, ip: getClientIp(req) });
+  res.json({ success: true, message: "All sessions revoked" });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/link-google
+   Link a Google account to the currently authenticated user.
+   Body: { idToken: string }   (Google idToken from client)
+══════════════════════════════════════════════════════════════ */
+router.post("/link-google", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const { idToken } = req.body;
+  if (!idToken) { res.status(400).json({ error: "idToken is required" }); return; }
+
+  const ip = getClientIp(req);
+
+  try {
+    /* Decode Google JWT to get sub (Google UID) and email */
+    const parts = idToken.split(".");
+    if (parts.length !== 3) throw new Error("Invalid JWT format");
+    const payload = JSON.parse(Buffer.from(parts[1]!, "base64url").toString());
+    const googleId = payload.sub as string;
+    const email = payload.email as string | undefined;
+
+    if (!googleId) { res.status(400).json({ error: "Could not extract Google ID from token" }); return; }
+
+    /* Check if another user already has this googleId */
+    const [conflict] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.googleId, googleId), sql`id != ${auth.userId}`))
+      .limit(1);
+
+    if (conflict) {
+      res.status(409).json({ error: "This Google account is already linked to another user" });
+      return;
+    }
+
+    const updates: Record<string, any> = { googleId, updatedAt: new Date() };
+    if (email) updates["email"] = email;
+
+    await db.update(usersTable).set(updates).where(eq(usersTable.id, auth.userId));
+
+    addAuditEntry({ action: "google_account_linked", ip, details: `Google account linked: ${email ?? googleId}`, result: "success" });
+    res.json({ success: true, message: "Google account linked successfully" });
+  } catch (err: any) {
+    res.status(400).json({ error: "Invalid Google token", detail: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/link-facebook
+   Link a Facebook account to the currently authenticated user.
+   Body: { accessToken: string }
+══════════════════════════════════════════════════════════════ */
+router.post("/link-facebook", async (req, res) => {
+  const auth = extractAuthUser(req);
+  if (!auth) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const { accessToken } = req.body;
+  if (!accessToken) { res.status(400).json({ error: "accessToken is required" }); return; }
+
+  const ip = getClientIp(req);
+
+  try {
+    /* Fetch Facebook user info */
+    const fbRes = await fetch(`https://graph.facebook.com/me?fields=id,email,name&access_token=${accessToken}`);
+    if (!fbRes.ok) { res.status(400).json({ error: "Invalid Facebook access token" }); return; }
+
+    const fbPayload = await fbRes.json() as { id: string; email?: string; name?: string };
+    const facebookId = fbPayload.id;
+
+    if (!facebookId) { res.status(400).json({ error: "Could not extract Facebook ID" }); return; }
+
+    /* Check conflict */
+    const [conflict] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.facebookId, facebookId), sql`id != ${auth.userId}`))
+      .limit(1);
+
+    if (conflict) {
+      res.status(409).json({ error: "This Facebook account is already linked to another user" });
+      return;
+    }
+
+    const updates: Record<string, any> = { facebookId, updatedAt: new Date() };
+    if (fbPayload.email) updates["email"] = fbPayload.email;
+
+    await db.update(usersTable).set(updates).where(eq(usersTable.id, auth.userId));
+
+    addAuditEntry({ action: "facebook_account_linked", ip, details: `Facebook account linked: ${facebookId}`, result: "success" });
+    res.json({ success: true, message: "Facebook account linked successfully" });
+  } catch (err: any) {
+    res.status(400).json({ error: "Failed to link Facebook account", detail: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /auth/firebase-verify
+   Verify a Firebase idToken and return a platform JWT.
+   Enables Firebase Phone Auth / Google Sign-In as an alternative
+   entry point that returns the same token format as OTP login.
+   Body: { idToken: string, role?: string }
+══════════════════════════════════════════════════════════════ */
+router.post("/firebase-verify", async (req, res) => {
+  const { idToken, role: requestedRole } = req.body;
+  if (!idToken) { res.status(400).json({ error: "idToken is required" }); return; }
+
+  const ip = getClientIp(req);
+
+  /* Dynamic import — only works if FIREBASE_SERVICE_ACCOUNT_JSON is set */
+  const { verifyFirebaseToken, setFirebaseCustomClaims } = await import("../services/firebase.js");
+  const decoded = await verifyFirebaseToken(idToken);
+
+  if (!decoded) {
+    res.status(401).json({ error: "Invalid or expired Firebase token. Ensure Firebase is configured on the server." });
+    return;
+  }
+
+  /* Find user by firebaseUid, then by phone, then by email */
+  let user: any = null;
+
+  const [byUid] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.firebaseUid, decoded.uid))
+    .limit(1);
+  user = byUid;
+
+  if (!user && decoded.phone) {
+    const normalized = decoded.phone.replace(/\D/g, "").replace(/^92/, "0");
+    const [byPhone] = await db.select().from(usersTable).where(eq(usersTable.phone, `0${normalized.slice(-10)}`)).limit(1);
+    user = byPhone;
+  }
+
+  if (!user && decoded.email) {
+    const [byEmail] = await db.select().from(usersTable).where(eq(usersTable.email, decoded.email)).limit(1);
+    user = byEmail;
+  }
+
+  /* Auto-create if not found */
+  if (!user) {
+    const newId = generateId();
+    const role = (requestedRole ?? "customer") as string;
+    await db.insert(usersTable).values({
+      id: newId,
+      firebaseUid: decoded.uid,
+      email: decoded.email ?? null,
+      phone: decoded.phone ?? null,
+      name: decoded.name ?? null,
+      roles: role,
+      emailVerified: decoded.email_verified ?? false,
+      phoneVerified: !!decoded.phone,
+    });
+    const [created] = await db.select().from(usersTable).where(eq(usersTable.id, newId)).limit(1);
+    user = created;
+  } else if (!user.firebaseUid) {
+    /* Link firebaseUid to existing account */
+    await db.update(usersTable).set({ firebaseUid: decoded.uid, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    user.firebaseUid = decoded.uid;
+  }
+
+  if (!user.isActive || user.isBanned) {
+    res.status(403).json({ error: "Account suspended", reason: user.banReason ?? "Contact support" });
+    return;
+  }
+
+  /* Set Firebase Custom Claims so next Firebase idToken refresh carries the role */
+  setFirebaseCustomClaims(decoded.uid, { role: user.role ?? user.roles ?? "customer", roles: user.roles ?? "customer", userId: user.id }).catch(() => {});
+
+  /* Issue platform tokens */
+  const userAgent = req.headers["user-agent"] as string | undefined;
+  const tokenData = await issueTokensForUser(user, ip, "firebase", userAgent);
+
+  writeAuthAuditLog("firebase_login", { userId: user.id, ip, userAgent, metadata: { uid: decoded.uid } });
+
+  const { passwordHash: _ph, otpCode: _otp, otpExpiry: _exp, emailOtpCode: _eotp, emailOtpExpiry: _eexp, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
+  res.json({ ...tokenData, user: safeUser });
 });
 
 export default router;

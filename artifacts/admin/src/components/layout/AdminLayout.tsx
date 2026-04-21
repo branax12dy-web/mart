@@ -50,6 +50,7 @@ import {
   Link2,
   Rocket,
   KeyRound,
+  Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -107,6 +108,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navErrorMonitor",    href: "/error-monitor", icon: Bug, errorBadge: true },
       { nameKey: "navAuditLogs",       href: "/security",      icon: FileText },
       { nameKey: "navOtpControl" as TranslationKey, href: "/otp-control", icon: KeyRound },
+      { nameKey: "navSmsGateways" as TranslationKey, href: "/sms-gateways", icon: Server },
       { nameKey: "navUserPermissions", href: "/users",         icon: Lock },
     ],
   },

@@ -1437,3 +1437,102 @@ export const useEvaluateRules = () => {
     },
   });
 };
+
+// ══════════════════════════════════════════════════════
+// SMS GATEWAYS (Hybrid Firebase / Dynamic Failover)
+// ══════════════════════════════════════════════════════
+
+export const useSmsGateways = () =>
+  useQuery({ queryKey: ["admin-sms-gateways"], queryFn: () => fetcher("/sms-gateways"), refetchInterval: 60_000 });
+
+export const useCreateSmsGateway = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => fetcher("/sms-gateways", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sms-gateways"] }),
+  });
+};
+
+export const useUpdateSmsGateway = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: any) => fetcher(`/sms-gateways/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sms-gateways"] }),
+  });
+};
+
+export const useDeleteSmsGateway = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/sms-gateways/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sms-gateways"] }),
+  });
+};
+
+export const useToggleSmsGateway = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/sms-gateways/${id}/toggle`, { method: "PATCH" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sms-gateways"] }),
+  });
+};
+
+// ══════════════════════════════════════════════════════
+// OTP WHITELIST (Per-identity bypass for testers)
+// ══════════════════════════════════════════════════════
+
+export const useOtpWhitelist = () =>
+  useQuery({ queryKey: ["admin-otp-whitelist"], queryFn: () => fetcher("/whitelist"), refetchInterval: 30_000 });
+
+export const useAddOtpWhitelist = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { identifier: string; label?: string; bypassCode?: string; expiresAt?: string }) =>
+      fetcher("/whitelist", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-otp-whitelist"] }),
+  });
+};
+
+export const useUpdateOtpWhitelist = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: any) => fetcher(`/whitelist/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-otp-whitelist"] }),
+  });
+};
+
+export const useDeleteOtpWhitelist = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetcher(`/whitelist/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-otp-whitelist"] }),
+  });
+};
+
+// ══════════════════════════════════════════════════════
+// USER SESSIONS (Remote logout / session revocation)
+// ══════════════════════════════════════════════════════
+
+export const useAdminUserSessions = (userId: string | null) =>
+  useQuery({
+    queryKey: ["admin-user-sessions", userId],
+    queryFn: () => fetcher(`/users/${userId}/sessions`),
+    enabled: !!userId,
+  });
+
+export const useRevokeUserSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, sessionId }: { userId: string; sessionId: string }) =>
+      fetcher(`/users/${userId}/sessions/${sessionId}`, { method: "DELETE" }),
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ["admin-user-sessions", vars.userId] }),
+  });
+};
+
+export const useRevokeAllUserSessions = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => fetcher(`/users/${userId}/sessions`, { method: "DELETE" }),
+    onSuccess: (_data, userId) => qc.invalidateQueries({ queryKey: ["admin-user-sessions", userId] }),
+  });
+};

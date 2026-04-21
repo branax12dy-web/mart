@@ -6,13 +6,13 @@ import {
   Ban, KeyRound, Save, AlertTriangle, MapPin, CreditCard, Truck, Building2,
   Download, FileText, CalendarDays, Eye, AlertCircle, MessageSquare,
   Users as UsersIcon, Loader2, AtSign, Phone, Mail, User as UserIcon,
-  Gavel, Lock, Copy, UserPlus,
+  Gavel, Lock, Copy, UserPlus, Monitor, ChevronDown,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PullToRefresh } from "@/components/PullToRefresh";
-import { useUsers, useUpdateUser, useWalletTopup, useDeleteUser, useUserActivity, usePendingUsers, useApproveUser, useRejectUser, useRequestUserCorrection, useBulkBanUsers, useCreateUser, type CreateUserInput } from "@/hooks/use-admin";
+import { useUsers, useUpdateUser, useWalletTopup, useDeleteUser, useUserActivity, usePendingUsers, useApproveUser, useRejectUser, useRequestUserCorrection, useBulkBanUsers, useCreateUser, useAdminUserSessions, useRevokeUserSession, useRevokeAllUserSessions, type CreateUserInput } from "@/hooks/use-admin";
 import { fetcher } from "@/lib/api";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -587,6 +587,12 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  /* ── Sessions ── */
+  const [showSessions, setShowSessions] = useState(false);
+  const { data: sessionsData, isLoading: sessionsLoading } = useAdminUserSessions(showSessions ? user.id : null);
+  const revokeSession = useRevokeUserSession();
+  const revokeAll = useRevokeAllUserSessions();
+
   const identityMutation = useMutation({
     mutationFn: (body: any) => fetcher(`/users/${user.id}/identity`, { method: "PATCH", body: JSON.stringify(body) }),
     onSuccess: () => {
@@ -970,6 +976,60 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
               </div>
             </div>
           )}
+
+          {/* ── Active Sessions ── */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowSessions(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 transition-colors"
+            >
+              <span className="flex items-center gap-2"><Monitor className="w-4 h-4 text-slate-500" /> Active Sessions</span>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showSessions ? "rotate-180" : ""}`} />
+            </button>
+            {showSessions && (
+              <div className="p-3 space-y-2">
+                {sessionsLoading && <p className="text-xs text-muted-foreground text-center py-2">Loading sessions…</p>}
+                {!sessionsLoading && (!sessionsData?.sessions || sessionsData.sessions.length === 0) && (
+                  <p className="text-xs text-muted-foreground text-center py-2">No active sessions</p>
+                )}
+                {!sessionsLoading && sessionsData?.sessions?.map((s: any) => (
+                  <div key={s.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-slate-700 truncate">{s.deviceInfo ?? s.userAgent ?? "Unknown device"}</p>
+                      <p className="text-[10px] text-muted-foreground">{s.ipAddress} · {new Date(s.createdAt).toLocaleString()}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 text-xs px-2 h-7 shrink-0"
+                      disabled={revokeSession.isPending}
+                      onClick={() => revokeSession.mutate({ userId: user.id, sessionId: s.id }, {
+                        onSuccess: () => toast({ title: "Session revoked" }),
+                        onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+                      })}
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                ))}
+                {sessionsData?.sessions?.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full text-xs text-red-600 border-red-200 hover:bg-red-50 rounded-lg"
+                    disabled={revokeAll.isPending}
+                    onClick={() => revokeAll.mutate(user.id, {
+                      onSuccess: () => toast({ title: "All sessions revoked", description: "User will be logged out on all devices." }),
+                      onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+                    })}
+                  >
+                    {revokeAll.isPending ? <><Loader2 className="w-3 h-3 animate-spin mr-1"/>Revoking…</> : "Revoke All Sessions"}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
 
           {isBanned && !user.isBanned && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2">

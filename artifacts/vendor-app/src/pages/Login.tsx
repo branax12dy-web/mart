@@ -5,7 +5,7 @@ import { api, apiFetch } from "../lib/api";
 import { usePlatformConfig, getVendorAuthConfig } from "../lib/useConfig";
 import { useLanguage } from "../lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { loadGoogleGSIToken, loadFacebookAccessToken, MagicLinkSender, canonicalizePhone } from "@workspace/auth-utils";
+import { loadGoogleGSIToken, loadFacebookAccessToken, MagicLinkSender, canonicalizePhone, useAuthConfig } from "@workspace/auth-utils";
 
 type LoginMethod = "phone" | "email" | "username" | "google" | "facebook";
 type Step = "continue" | "input" | "otp" | "pending" | "2fa" | "register" | "register-otp" | "register-info" | "register-submitted" | "forgot" | "forgot-otp" | "forgot-reset" | "forgot-done";
@@ -41,6 +41,7 @@ export default function Login() {
   const businessAddress   = config.platform.businessAddress;
   const vendorEarningsPct = Math.round(100 - (config.platform.vendorCommissionPct ?? 15));
   const vendorAuth        = getVendorAuthConfig(config);
+  const firebaseCfg = useAuthConfig("/api");
   const phoneHint    = config.regional?.phoneHint ?? "03XXXXXXXXX";
   const isValidPhone = (() => {
     try {
@@ -56,8 +57,9 @@ export default function Login() {
   const hasSocial         = vendorAuth.google || vendorAuth.facebook;
   const hasMagicLink      = vendorAuth.magicLink;
 
+  /* authMode from platform_settings — in EMAIL-only mode, hide phone OTP */
   const availableMethods: LoginMethod[] = (["phone", "email", "username"] as const).filter(m => {
-    if (m === "phone") return vendorAuth.phoneOtp;
+    if (m === "phone") return vendorAuth.phoneOtp && firebaseCfg.authMode !== "EMAIL";
     if (m === "email") return vendorAuth.emailOtp;
     if (m === "username") return vendorAuth.usernamePassword;
     return false;

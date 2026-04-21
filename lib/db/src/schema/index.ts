@@ -73,3 +73,5 @@ export * from "./consent_log";
 export * from "./release_notes";
 export * from "./vendor_plans";
 export * from "./admin_role_presets";
+export * from "./sms_gateways";
+export * from "./whitelist_users";

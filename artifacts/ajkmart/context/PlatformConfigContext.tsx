@@ -178,6 +178,8 @@ export interface PlatformConfig {
     captchaSiteKey: string;
     googleClientId: string;
     facebookAppId: string;
+    authMode: "OTP" | "EMAIL" | "FIREBASE" | "HYBRID";
+    firebaseEnabled: boolean;
   };
   language: {
     defaultLanguage: string;
@@ -359,6 +361,8 @@ const DEFAULT: PlatformConfig = {
     captchaSiteKey: "",
     googleClientId: "",
     facebookAppId: "",
+    authMode: "OTP" as const,
+    firebaseEnabled: false,
   },
   language: {
     defaultLanguage: "en",
@@ -612,6 +616,8 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           captchaSiteKey:         raw.auth?.captchaSiteKey         ?? DEFAULT.auth.captchaSiteKey,
           googleClientId:         raw.auth?.googleClientId         ?? DEFAULT.auth.googleClientId,
           facebookAppId:          raw.auth?.facebookAppId          ?? DEFAULT.auth.facebookAppId,
+          authMode:               raw.auth?.authMode               ?? DEFAULT.auth.authMode,
+          firebaseEnabled:        raw.auth?.firebaseEnabled        ?? DEFAULT.auth.firebaseEnabled,
         },
         language: {
           defaultLanguage:  raw.language?.defaultLanguage  ?? DEFAULT.language.defaultLanguage,

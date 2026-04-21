@@ -66,6 +66,8 @@ export const usersTable = pgTable("users", {
   totpEnabled:       boolean("totp_enabled").notNull().default(false),
   backupCodes:       text("backup_codes"),
   trustedDevices:    text("trusted_devices"),
+  /* ── Firebase Auth ── */
+  firebaseUid:       text("firebase_uid").unique(),
   /* ── Social login fields ── */
   googleId:          text("google_id").unique(),
   facebookId:        text("facebook_id").unique(),

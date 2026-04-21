@@ -26,6 +26,8 @@ import deepLinksRoutes from "./admin/deep-links.js";
 import releaseNotesRoutes from "./admin/release-notes.js";
 import launchRoutes, { ensureLaunchData } from "./admin/launch.js";
 import otpRoutes from "./admin/otp.js";
+import smsGatewaysRoutes from "./admin/sms-gateways.js";
+import whitelistRoutes from "./admin/whitelist.js";
 
 export {
   DEFAULT_PLATFORM_SETTINGS,
@@ -82,5 +84,7 @@ router.use(deepLinksRoutes);
 router.use(releaseNotesRoutes);
 router.use("/launch", launchRoutes);
 router.use(otpRoutes);
+router.use("/sms-gateways", smsGatewaysRoutes);
+router.use("/whitelist", whitelistRoutes);
 
 export default router;

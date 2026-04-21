@@ -311,6 +311,8 @@ router.get("/", async (req, res) => {
         lockoutDurationSec:     parseInt(s["security_lockout_minutes"] ?? "30", 10) * 60,
         googleClientId:         s["google_client_id"] ?? "",
         facebookAppId:          s["facebook_app_id"] ?? "",
+        authMode:               (s["auth_mode"] as "OTP" | "EMAIL" | "FIREBASE" | "HYBRID") ?? "OTP",
+        firebaseEnabled:        (s["firebase_enabled"] ?? "off") === "on",
       };
     })(),
     cities: (() => {

@@ -374,8 +374,9 @@ export default function AuthScreen() {
     setLoading(false);
   };
 
+  /* authMode from platform_settings — in EMAIL-only mode, hide phone OTP */
   const enabledMethods: { key: LoginMethod; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [];
-  if (isMethodEnabled(authCfg.phoneOtpEnabled)) enabledMethods.push({ key: "phone", icon: "call-outline", label: T("phone") });
+  if (isMethodEnabled(authCfg.phoneOtpEnabled) && authCfg.authMode !== "EMAIL") enabledMethods.push({ key: "phone", icon: "call-outline", label: T("phone") });
   if (isMethodEnabled(authCfg.emailOtpEnabled)) enabledMethods.push({ key: "email", icon: "mail-outline", label: T("email") });
   if (isMethodEnabled(authCfg.usernamePasswordEnabled)) enabledMethods.push({ key: "username", icon: "person-outline", label: T("username") });
 

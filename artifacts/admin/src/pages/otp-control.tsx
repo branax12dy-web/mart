@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Shield, RefreshCw, CheckCircle2, XCircle, Loader2,
   Search, Clock, AlertTriangle, Users, ChevronRight,
-  UserCheck, UserX, Info,
+  UserCheck, UserX, Info, ListChecks, Plus, Trash2, CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher, getApiBase, getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useOtpWhitelist, useAddOtpWhitelist, useUpdateOtpWhitelist, useDeleteOtpWhitelist } from "@/hooks/use-admin";
 
 async function api(method: string, path: string, body?: unknown) {
   const token = getToken() ?? "";
@@ -392,6 +393,110 @@ export default function OtpControl() {
           <RefreshCw className={`w-3 h-3 mr-1 ${auditLoading ? "animate-spin" : ""}`} /> Refresh Log
         </Button>
       </Card>
+
+      {/* ── 4. WHITELIST — Per-identity OTP bypass ── */}
+      <WhitelistSection />
     </div>
+  );
+}
+
+function WhitelistSection() {
+  const { toast } = useToast();
+  const { data, isLoading, refetch } = useOtpWhitelist();
+  const addEntry = useAddOtpWhitelist();
+  const updateEntry = useUpdateOtpWhitelist();
+  const deleteEntry = useDeleteOtpWhitelist();
+
+  const [identifier, setIdentifier] = useState("");
+  const [label, setLabel] = useState("");
+  const [bypassCode, setBypassCode] = useState("000000");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const entries: any[] = data?.entries ?? [];
+
+  async function handleAdd() {
+    if (!identifier.trim()) { toast({ title: "Identifier required", variant: "destructive" }); return; }
+    setAdding(true);
+    try {
+      await addEntry.mutateAsync({ identifier: identifier.trim(), label: label.trim() || undefined, bypassCode: bypassCode || "000000", expiresAt: expiresAt || undefined });
+      toast({ title: "Added to whitelist" });
+      setIdentifier(""); setLabel(""); setBypassCode("000000"); setExpiresAt("");
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally { setAdding(false); }
+  }
+
+  async function handleToggle(entry: any) {
+    try { await updateEntry.mutateAsync({ id: entry.id, isActive: !entry.isActive }); }
+    catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+  }
+
+  async function handleDelete(id: string, identifier: string) {
+    if (!confirm(`Remove "${identifier}" from whitelist?`)) return;
+    try { await deleteEntry.mutateAsync(id); toast({ title: "Removed from whitelist" }); }
+    catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+  }
+
+  return (
+    <Card>
+      <SectionTitle icon={ListChecks} label="OTP Whitelist — Per-Identity Bypass" color="text-indigo-700" />
+      <p className="text-xs text-muted-foreground mb-4">
+        Phones or emails added here bypass real SMS. They accept the configured bypass code (default: <code className="bg-muted px-1 rounded">000000</code>) without sending a real OTP. Perfect for App Store reviewers and testers.
+      </p>
+
+      {/* Add form */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 p-3 rounded-xl bg-muted/30 border">
+        <Input className="rounded-xl h-9 text-sm" placeholder="Phone or email (identifier)" value={identifier} onChange={e => setIdentifier(e.target.value)} />
+        <Input className="rounded-xl h-9 text-sm" placeholder="Label (e.g. Apple Reviewer)" value={label} onChange={e => setLabel(e.target.value)} />
+        <Input className="rounded-xl h-9 text-sm" placeholder="Bypass code (default: 000000)" value={bypassCode} onChange={e => setBypassCode(e.target.value)} />
+        <Input className="rounded-xl h-9 text-sm" type="datetime-local" placeholder="Expires (optional)" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} />
+        <div className="md:col-span-2">
+          <Button size="sm" className="rounded-xl gap-1.5 w-full" onClick={handleAdd} disabled={adding}>
+            {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add to Whitelist
+          </Button>
+        </div>
+      </div>
+
+      {/* List */}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+      ) : entries.length === 0 ? (
+        <div className="text-center py-6 text-sm text-muted-foreground">No whitelist entries yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((entry: any) => (
+            <div key={entry.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm ${entry.isActive ? "bg-indigo-50/50 border-indigo-200" : "bg-muted/20 border-border opacity-60"}`}>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold truncate">{entry.identifier}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {entry.label && <span className="text-xs text-muted-foreground">{entry.label}</span>}
+                  <Badge variant="outline" className="text-[10px] font-mono">{entry.bypassCode}</Badge>
+                  {entry.expiresAt && (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                      <CalendarDays className="w-3 h-3" />
+                      {new Date(entry.expiresAt) < new Date() ? "Expired" : `Expires ${new Date(entry.expiresAt).toLocaleDateString()}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {entry.isActive ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-gray-400" />}
+                <Button variant="ghost" size="sm" className="h-7 text-xs rounded-lg" onClick={() => handleToggle(entry)}>
+                  {entry.isActive ? "Disable" : "Enable"}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 rounded-lg text-red-500 hover:bg-red-50" onClick={() => handleDelete(entry.id, entry.identifier)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button size="sm" variant="ghost" className="mt-3 text-xs" onClick={() => refetch()}>
+        <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+      </Button>
+    </Card>
   );
 }

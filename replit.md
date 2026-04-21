@@ -1510,3 +1510,64 @@ All 30+ empty `.catch(() => {})` blocks in the API server now log meaningful mes
 - In production (`NODE_ENV=production`), OTPs are delivered only via WhatsApp or SMS — never in the API response.
 - If SMS/WhatsApp is not configured, users will not receive OTPs. In development mode (`NODE_ENV=development`), the OTP is returned in the API response when all delivery channels fail.
 - Production DB currently has 0 users; 1 pending_otp entry (unverified registration attempt).
+
+### Hybrid Firebase + Neon/PostgreSQL Auth Upgrade
+
+#### Database Schema (`lib/db/src/schema/`)
+- **`firebase_uid`** (nullable text) added to `users` table — stored when user authenticates via Firebase.
+- **`sms_gateways`** table: id, name, provider (twilio/msg91/zong/console), priority, isActive, credentials (accountSid, authToken, fromNumber, msg91Key, senderId, apiKey, apiUrl).
+- **`whitelist_users`** table: id, identifier (phone/email), bypassCode, isActive, expiresAt — phones on the whitelist skip real SMS delivery and use the bypass code.
+- **Platform settings seeds**: `auth_mode` (OTP/EMAIL/FIREBASE/HYBRID), `firebase_enabled` (on/off), `sms_failover_enabled` (on/off).
+- Migration: `lib/db/migrations/0039_firebase_sms_whitelist.sql`
+
+#### Backend Services (`artifacts/api-server/src/services/`)
+- **`firebase.ts`**: Graceful Firebase Admin SDK initialization — only activates when `FIREBASE_SERVICE_ACCOUNT_JSON` env var is set. Provides `verifyFirebaseToken()` and `setFirebaseCustomClaims()`.
+- **`smsGateway.ts`**: Dynamic SMS failover service — reads active gateways from DB ordered by priority, tries each in sequence (Twilio → MSG91 → Zong → console). Falls back to legacy `sms.ts` if no gateways configured. `getWhitelistBypass()` returns bypass code for whitelisted identifiers.
+
+#### Middleware (`artifacts/api-server/src/middleware/requireRole.ts`)
+- Standardized `requireRole(...roles)` middleware for customer/rider/vendor/admin JWT validation.
+- Checks `Authorization: Bearer <token>`, validates JWT, and asserts role membership.
+
+#### New API Endpoints (`artifacts/api-server/src/routes/auth.ts`)
+- `GET /auth/config` — public endpoint returning auth_mode, firebase_enabled, enabled method flags.
+- `POST /auth/firebase-verify` — verifies Firebase idToken, embeds role as Custom Claim, returns platform JWT.
+- `POST /auth/link-google` / `POST /auth/link-facebook` — OAuth account linking by email match.
+- `GET /auth/sessions` — list current user's active sessions.
+- `DELETE /auth/sessions` — revoke all sessions (remote logout).
+- `DELETE /auth/sessions/:id` — revoke a single session.
+
+#### Admin API (`artifacts/api-server/src/routes/admin/`)
+- **`sms-gateways.ts`**: CRUD + enable/disable at `/admin/sms-gateways`.
+- **`whitelist.ts`**: CRUD at `/admin/whitelist`.
+- **`users.ts`** (extended): `GET/DELETE /admin/users/:id/sessions`, `DELETE /admin/users/:id/sessions/:sessionId`.
+
+#### Whitelist OTP Bypass Flow
+- On `POST /send-otp`, the phone is checked against `whitelist_users`.
+- If whitelisted, the bypass code is stored as the OTP (hashed) in the DB and no real SMS is sent.
+- On `POST /verify-otp`, the user submits the bypass code — it matches the stored hash normally.
+- This works transparently with the existing OTP verification flow without any special-casing at verify time.
+
+#### Admin UI (`artifacts/admin/src/`)
+- **`pages/sms-gateways.tsx`**: Full CRUD page for managing SMS gateway providers with priority ordering and enable/disable toggle.
+- **`pages/otp-control.tsx`** (extended): Whitelist section with add/remove/edit entries.
+- **`pages/users.tsx`** (extended): "Active Sessions" collapsible panel in Security Modal — lists all sessions with individual Revoke buttons and "Revoke All" bulk action.
+- **`components/layout/AdminLayout.tsx`**: "SMS Gateways" nav item added under Security group.
+- **`hooks/use-admin.ts`**: `useAdminUserSessions`, `useRevokeUserSession`, `useRevokeAllUserSessions` hooks.
+
+#### Frontend Config-Driven Auth
+- **`lib/auth-utils/src/useAuthConfig.ts`**: Shared hook that fetches `/auth/config` and returns `authMode`, `firebaseEnabled`, `otpEnabled`, etc. Exported from `@workspace/auth-utils`.
+- **Rider App (`artifacts/rider-app/src/pages/Login.tsx`)**: Uses `useAuthConfig` — hides phone OTP when `authMode === "EMAIL"`.
+- **Vendor App (`artifacts/vendor-app/src/pages/Login.tsx`)**: Uses `useAuthConfig` — same EMAIL-mode filtering.
+- **AJKMart (`artifacts/ajkmart/context/PlatformConfigContext.tsx`)**: `authMode` and `firebaseEnabled` added to the `auth` section; `PlatformConfig` interface updated.
+- **AJKMart auth screen**: Phone OTP hidden when `authMode === "EMAIL"`.
+- **`/api/platform-config`** (platform-config.ts): Returns `authMode` and `firebaseEnabled` in the `auth` object so mobile config-driven UI works.
+
+#### Firebase Client SDK
+- `firebase` package installed in `@workspace/rider-app`, `@workspace/vendor-app`, `@workspace/ajkmart`.
+- Firebase client initialization files created: `artifacts/rider-app/src/lib/firebase.ts`, `artifacts/vendor-app/src/lib/firebase.ts`, `artifacts/ajkmart/lib/firebase.ts`.
+- All gracefully no-op when `VITE_FIREBASE_API_KEY` / `EXPO_PUBLIC_FIREBASE_API_KEY` is not set.
+
+#### Environment Variables Required (Optional — Firebase is gracefully disabled if absent)
+- `FIREBASE_SERVICE_ACCOUNT_JSON` — JSON string of Firebase service account (backend)
+- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID` — web apps
+- `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, etc. — Expo mobile app

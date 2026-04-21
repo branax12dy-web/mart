@@ -7,6 +7,8 @@ import {
   notificationsTable,
   ordersTable, ridesTable, pharmacyOrdersTable, parcelBookingsTable,
   accountConditionsTable,
+  userSessionsTable,
+  refreshTokensTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
 import {
@@ -713,6 +715,69 @@ router.patch("/users/bulk-ban", async (req, res) => {
   sendSuccess(res, { success: true, affected: ids.length, action });
 });
 
-/* ── PATCH /admin/orders/:id/assign-rider — manually assign a rider to an order ── */
+/* ── GET /admin/users/:id/sessions — list user's active sessions ── */
+router.get("/users/:id/sessions", async (req, res) => {
+  const { id } = req.params;
+  const sessions = await db
+    .select()
+    .from(userSessionsTable)
+    .where(and(eq(userSessionsTable.userId, id!), isNull(userSessionsTable.revokedAt)))
+    .orderBy(desc(userSessionsTable.lastActiveAt));
+
+  sendSuccess(res, {
+    sessions: sessions.map(s => ({
+      id: s.id,
+      deviceName: s.deviceName,
+      browser: s.browser,
+      os: s.os,
+      ip: s.ip,
+      location: s.location,
+      lastActiveAt: s.lastActiveAt,
+      createdAt: s.createdAt,
+    })),
+  });
+});
+
+/* ── DELETE /admin/users/:id/sessions/:sessionId — revoke one session ── */
+router.delete("/users/:id/sessions/:sessionId", async (req, res) => {
+  const { id, sessionId } = req.params;
+  const [session] = await db
+    .select()
+    .from(userSessionsTable)
+    .where(and(eq(userSessionsTable.id, sessionId!), eq(userSessionsTable.userId, id!)))
+    .limit(1);
+
+  if (!session) { sendNotFound(res, "Session"); return; }
+
+  await db.update(userSessionsTable).set({ revokedAt: new Date() }).where(eq(userSessionsTable.id, sessionId!));
+
+  if (session.refreshTokenId) {
+    await db.update(refreshTokensTable).set({ revokedAt: new Date() }).where(eq(refreshTokensTable.id, session.refreshTokenId));
+  }
+
+  writeAuthAuditLog("admin_session_revoked", { userId: id!, ip: req.ip ?? "", metadata: { sessionId } });
+  sendSuccess(res, { revoked: true });
+});
+
+/* ── DELETE /admin/users/:id/sessions — revoke ALL sessions for user ── */
+router.delete("/users/:id/sessions", async (req, res) => {
+  const { id } = req.params;
+
+  await db.update(userSessionsTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(userSessionsTable.userId, id!), isNull(userSessionsTable.revokedAt)));
+
+  await db.update(refreshTokensTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(refreshTokensTable.userId, id!), isNull(refreshTokensTable.revokedAt)));
+
+  /* Bump tokenVersion so all outstanding access JWTs are immediately invalid */
+  await db.update(usersTable)
+    .set({ tokenVersion: sql`token_version + 1`, updatedAt: new Date() })
+    .where(eq(usersTable.id, id!));
+
+  writeAuthAuditLog("admin_all_sessions_revoked", { userId: id!, ip: req.ip ?? "" });
+  sendSuccess(res, { revoked: true, message: "All sessions revoked for user" });
+});
 
 export default router;
