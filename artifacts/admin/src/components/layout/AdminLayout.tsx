@@ -65,61 +65,60 @@ type NavGroup = {
   items: { nameKey: TranslationKey; href: string; icon: React.ElementType; sosBadge?: boolean; errorBadge?: boolean }[];
 };
 
+// Professional 3-Category Architecture: System | Finance | Fleet
 const NAV_GROUPS: NavGroup[] = [
+  // ===== SYSTEM CONTROL =====
   {
-    labelKey: "navOperations",
+    labelKey: "navSystem" as TranslationKey,
     color: "#6366F1",
     items: [
       { nameKey: "navDashboard",     href: "/dashboard",       icon: LayoutDashboard },
-      { nameKey: "navOrders",        href: "/orders",          icon: ShoppingBag },
-      { nameKey: "navRides",         href: "/rides",           icon: Car },
-      { nameKey: "navVanService",    href: "/van",             icon: Bus },
-      { nameKey: "navPharmacy",      href: "/pharmacy",        icon: Pill },
-      { nameKey: "navLiveRidersMap", href: "/live-riders-map", icon: Navigation },
-    ],
-  },
-  {
-    labelKey: "navInventory",
-    color: "#0EA5E9",
-    items: [
-      { nameKey: "navVendors",         href: "/vendors",     icon: Store },
-      { nameKey: "navProducts",        href: "/products",    icon: PackageSearch },
-      { nameKey: "navCategories",      href: "/categories",  icon: FolderTree },
-      { nameKey: "navPromotionsHub",   href: "/promotions",  icon: Megaphone },
-    ],
-  },
-  {
-    labelKey: "navFinancials",
-    color: "#22C55E",
-    items: [
-      { nameKey: "navTransactions",    href: "/transactions",     icon: Receipt },
-      { nameKey: "navWithdrawals",     href: "/withdrawals",      icon: Wallet },
-      { nameKey: "navDepositRequests", href: "/deposit-requests", icon: CreditCard },
-      { nameKey: "navLoyaltyPoints" as TranslationKey, href: "/loyalty", icon: Star },
-      { nameKey: "navKyc",             href: "/kyc",              icon: BadgeCheck },
-      { nameKey: "navWalletTransfers" as TranslationKey, href: "/wallet-transfers", icon: Wallet },
-    ],
-  },
-  {
-    labelKey: "navSafetyAndSecurity",
-    color: "#EF4444",
-    items: [
-      { nameKey: "navSosAlerts",       href: "/sos-alerts",    icon: AlertTriangle, sosBadge: true },
-      { nameKey: "navErrorMonitor",    href: "/error-monitor", icon: Bug, errorBadge: true },
-      { nameKey: "navAuditLogs",       href: "/security",      icon: FileText },
+      { nameKey: "navUserPermissions", href: "/users",         icon: Lock },
+      { nameKey: "navSettings",        href: "/settings",       icon: Settings2 },
+      { nameKey: "navFeatureToggles",  href: "/app-management", icon: ToggleLeft },
+      { nameKey: "navLaunchControl" as TranslationKey, href: "/launch-control", icon: Rocket },
       { nameKey: "navOtpControl" as TranslationKey, href: "/otp-control", icon: KeyRound },
       { nameKey: "navSmsGateways" as TranslationKey, href: "/sms-gateways", icon: Server },
-      { nameKey: "navUserPermissions", href: "/users",         icon: Lock },
-    ],
-  },
-  {
-    labelKey: "navAccountConditions",
-    color: "#8B5CF6",
-    items: [
       { nameKey: "navConditionsHub",   href: "/account-conditions", icon: Shield },
       { nameKey: "navConditionRules",  href: "/condition-rules",    icon: Settings2 },
     ],
   },
+
+  // ===== FINANCIAL HUB =====
+  {
+    labelKey: "navFinance" as TranslationKey,
+    color: "#22C55E",
+    items: [
+      { nameKey: "navOrders",        href: "/orders",          icon: ShoppingBag },
+      { nameKey: "navTransactions",    href: "/transactions",     icon: Receipt },
+      { nameKey: "navWithdrawals",     href: "/withdrawals",      icon: Wallet },
+      { nameKey: "navDepositRequests", href: "/deposit-requests", icon: CreditCard },
+      { nameKey: "navWalletTransfers" as TranslationKey, href: "/wallet-transfers", icon: Wallet },
+      { nameKey: "navLoyaltyPoints" as TranslationKey, href: "/loyalty", icon: Star },
+      { nameKey: "navKyc",             href: "/kyc",              icon: BadgeCheck },
+      { nameKey: "navVendors",         href: "/vendors",     icon: Store },
+      { nameKey: "navProducts",        href: "/products",    icon: PackageSearch },
+      { nameKey: "navPromotionsHub",   href: "/promotions",  icon: Megaphone },
+    ],
+  },
+
+  // ===== FLEET & LOGISTICS =====
+  {
+    labelKey: "navFleet" as TranslationKey,
+    color: "#EF4444",
+    items: [
+      { nameKey: "navRides",         href: "/rides",           icon: Car },
+      { nameKey: "navVanService",    href: "/van",             icon: Bus },
+      { nameKey: "navPharmacy",      href: "/pharmacy",        icon: Pill },
+      { nameKey: "navLiveRidersMap", href: "/live-riders-map", icon: Navigation },
+      { nameKey: "navSosAlerts",       href: "/sos-alerts",    icon: AlertTriangle, sosBadge: true },
+      { nameKey: "navErrorMonitor",    href: "/error-monitor", icon: Bug, errorBadge: true },
+      { nameKey: "navAuditLogs",       href: "/security",      icon: FileText },
+      { nameKey: "navDeliveryAccess",  href: "/delivery-access", icon: Truck },
+    ],
+  },
+
+  // ===== SUPPORTING SERVICES =====
   {
     labelKey: "navMarketing",
     color: "#EC4899",
@@ -128,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navPopups",   href: "/popups",  icon: Megaphone },
     ],
   },
+
   {
     labelKey: "navCustomerSupport",
     color: "#06B6D4",
@@ -139,6 +139,7 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navChatMonitor" as TranslationKey,   href: "/chat-monitor",  icon: MessageCircle },
     ],
   },
+
   {
     labelKey: "navAnalytics" as TranslationKey,
     color: "#F472B6",
@@ -148,22 +149,13 @@ const NAV_GROUPS: NavGroup[] = [
       { nameKey: "navExperiments" as TranslationKey,       href: "/experiments",       icon: FlaskConical },
     ],
   },
+
   {
     labelKey: "navIntegrations" as TranslationKey,
     color: "#10B981",
     items: [
       { nameKey: "navWebhooks" as TranslationKey,   href: "/webhooks",    icon: Webhook },
       { nameKey: "navDeepLinks" as TranslationKey,   href: "/deep-links",  icon: Link2 },
-    ],
-  },
-  {
-    labelKey: "navConfig",
-    color: "#F59E0B",
-    items: [
-      { nameKey: "navLaunchControl" as TranslationKey, href: "/launch-control", icon: Rocket },
-      { nameKey: "navSettings",        href: "/settings",       icon: Settings2 },
-      { nameKey: "navFeatureToggles",  href: "/app-management", icon: ToggleLeft },
-      { nameKey: "navDeliveryAccess",  href: "/delivery-access", icon: Truck },
     ],
   },
 ];

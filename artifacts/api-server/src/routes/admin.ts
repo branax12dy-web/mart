@@ -1,13 +1,13 @@
 import { Router, type IRouter } from "express";
 import { adminAuth } from "./admin-shared.js";
-import authRoutes from "./admin/auth.js";
-import usersRoutes from "./admin/users.js";
+import authRoutes from "./admin/system/auth.js";
+import usersRoutes from "./admin/system/users.js";
 import ordersRoutes from "./admin/orders.js";
-import ridesRoutes from "./admin/rides.js";
-import financeRoutes from "./admin/finance.js";
+import ridesRoutes from "./admin/fleet/rides.js";
+import financeRoutes from "./admin/finance/wallets.js";
 import contentRoutes from "./admin/content.js";
 import systemRoutes from "./admin/system.js";
-import serviceZonesRoutes from "./admin/service-zones.js";
+import serviceZonesRoutes from "./admin/fleet/zones.js";
 import deliveryAccessRoutes from "./admin/delivery-access.js";
 import conditionsRoutes from "./admin/conditions.js";
 import popupsRoutes from "./admin/popups.js";

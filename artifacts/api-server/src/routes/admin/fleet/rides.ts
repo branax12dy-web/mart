@@ -29,17 +29,12 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError 
 
 const router = Router();
 router.get("/rides", async (_req, res) => {
-  const rides = await db.select().from(ridesTable).orderBy(desc(ridesTable.createdAt)).limit(200);
-  sendSuccess(res, {
-    rides: rides.map(r => ({
-      ...r,
-      fare: parseFloat(r.fare),
-      distance: parseFloat(r.distance),
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-    })),
-    total: rides.length,
-  });
+  try {
+    const rides = await FleetService.getRidesList(200);
+    sendSuccess(res, { rides, total: rides.length });
+  } catch (error: any) {
+    sendError(res, error.message || "Failed to fetch rides", 500);
+  }
 });
 
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {

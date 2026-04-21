@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
-import { serviceZonesTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../lib/response.js";
 import { invalidateZoneCache } from "../../lib/geofence.js";
 import { getCachedSettings } from "../../middleware/security.js";
 import type { AdminRequest } from "../admin.js";
+import { AuditService } from "../../services/admin-audit.service.js";
+import { FleetService } from "../../services/admin-fleet.service.js";
+import { getClientIp } from "../admin-shared.js";
 
 const router: IRouter = Router();
 
