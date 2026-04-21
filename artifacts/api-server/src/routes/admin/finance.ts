@@ -21,6 +21,8 @@ import {
   type AdminRequest, type TranslationKey, revokeAllUserSessions, serializeSosAlert,
 } from "../admin-shared.js";
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../lib/response.js";
+import { FinanceService } from "../../services/admin-finance.service.js";
+import { AuditService } from "../../services/admin-audit.service.js";
 
 const router = Router();
 router.get("/transactions", async (_req, res) => {
@@ -148,51 +150,83 @@ router.patch("/vendors/:id/status", async (req, res) => {
 });
 
 router.post("/vendors/:id/payout", async (req, res) => {
+  const adminReq = req as AdminRequest;
   const { amount, description } = req.body;
+  const vendorId = req.params["id"]!;
+  
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-    sendValidationError(res, "Valid amount required"); return;
+    sendValidationError(res, "Valid amount required");
+    return;
   }
-  const [vendor] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
-  if (!vendor) { sendNotFound(res, "Vendor not found"); return; }
-  const amt = Number(amount);
-  const txResult = await db.transaction(async (tx) => {
-    const [updated] = await tx.update(usersTable)
-      .set({ walletBalance: sql`GREATEST(wallet_balance - ${amt}, 0)`, updatedAt: new Date() })
-      .where(and(eq(usersTable.id, vendor.id), gte(usersTable.walletBalance, String(amt))))
-      .returning();
-    if (!updated) throw new Error("INSUFFICIENT_BALANCE");
-    await tx.insert(walletTransactionsTable).values({
-      id: generateId(), userId: vendor.id, type: "debit", amount: String(amt),
-      description: description || `Admin payout processed: Rs. ${amt}`, reference: "admin_payout",
-    });
-    return { updated, newBal: parseFloat(updated.walletBalance ?? "0") };
-  }).catch((err: Error) => {
-    if (err.message === "INSUFFICIENT_BALANCE") return null;
-    throw err;
-  });
-  if (!txResult) {
-    sendValidationError(res, `Insufficient wallet balance`); return;
+
+  try {
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: adminReq.adminIp || getClientIp(req),
+        action: "vendor_payout",
+        resourceType: "vendor",
+        resource: vendorId,
+        details: `Amount: Rs. ${amount}`,
+      },
+      () => FinanceService.createTransaction({
+        userId: vendorId,
+        amount: Number(amount),
+        type: "debit",
+        reason: description || `Admin payout: Rs. ${amount}`,
+        reference: "admin_payout",
+      })
+    );
+
+    const [vendor] = await db.select().from(usersTable).where(eq(usersTable.id, vendorId)).limit(1);
+    await sendUserNotification(vendorId, "Payout Processed 💰", `Rs. ${amount} has been paid out from your vendor wallet.`, "system", "cash-outline");
+    
+    sendSuccess(res, { amount, newBalance: result.newBalance, vendor: { ...stripUser(vendor!), walletBalance: result.newBalance } });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    sendError(res, message, 400);
   }
-  await sendUserNotification(vendor.id, "Payout Processed 💰", `Rs. ${amt} has been paid out from your vendor wallet.`, "system", "cash-outline");
-  sendSuccess(res, { amount: amt, newBalance: txResult.newBal, vendor: { ...stripUser(txResult.updated), walletBalance: txResult.newBal } });
 });
 
 router.post("/vendors/:id/credit", async (req, res) => {
+  const adminReq = req as AdminRequest;
   const { amount, description } = req.body;
+  const vendorId = req.params["id"]!;
+  
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-    sendValidationError(res, "Valid amount required"); return;
+    sendValidationError(res, "Valid amount required");
+    return;
   }
-  const [vendor] = await db.select().from(usersTable).where(eq(usersTable.id, req.params["id"]!)).limit(1);
-  if (!vendor) { sendNotFound(res, "Vendor not found"); return; }
-  const amt = Number(amount);
-  const newBal = parseFloat(vendor.walletBalance ?? "0") + amt;
-  const [updated] = await db.update(usersTable).set({ walletBalance: String(newBal), updatedAt: new Date() }).where(eq(usersTable.id, vendor.id)).returning();
-  await db.insert(walletTransactionsTable).values({
-    id: generateId(), userId: vendor.id, type: "credit", amount: String(amt),
-    description: description || `Admin credit: Rs. ${amt}`, reference: "admin_credit",
-  });
-  await sendUserNotification(vendor.id, "Wallet Credited 💰", `Rs. ${amt} has been credited to your vendor wallet.`, "system", "wallet-outline");
-  sendSuccess(res, { amount: amt, newBalance: newBal, vendor: { ...stripUser(updated!), walletBalance: newBal } });
+
+  try {
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: adminReq.adminIp || getClientIp(req),
+        action: "vendor_credit",
+        resourceType: "vendor",
+        resource: vendorId,
+        details: `Amount: Rs. ${amount}`,
+      },
+      () => FinanceService.createTransaction({
+        userId: vendorId,
+        amount: Number(amount),
+        type: "credit",
+        reason: description || `Admin credit: Rs. ${amount}`,
+        reference: "admin_credit",
+      })
+    );
+
+    const [vendor] = await db.select().from(usersTable).where(eq(usersTable.id, vendorId)).limit(1);
+    await sendUserNotification(vendorId, "Wallet Credited 💰", `Rs. ${amount} has been credited to your vendor wallet.`, "system", "wallet-outline");
+    
+    sendSuccess(res, { amount, newBalance: result.newBalance, vendor: { ...stripUser(vendor!), walletBalance: result.newBalance } });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    sendError(res, message, 400);
+  }
 });
 
 /* ══════════════════════════════════════

@@ -23,6 +23,8 @@ import { hashAdminSecret } from "../../services/password.js";
 import { generateTotpSecret, verifyTotpToken as verifyTotp, generateQRCodeDataURL, getTotpUri } from "../../services/totp.js";
 import { writeAuthAuditLog } from "../../middleware/security.js";
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendUnauthorized, sendValidationError } from "../../lib/response.js";
+import { UserService } from "../../services/admin-user.service.js";
+import { AuditService } from "../../services/admin-audit.service.js";
 
 const router = Router();
 router.post("/auth", async (req, res) => {
@@ -95,22 +97,44 @@ router.get("/admin-accounts", async (_req, res) => {
 });
 
 router.post("/admin-accounts", async (req, res) => {
+  const adminReq = req as AdminRequest;
   const body = req.body as Record<string, unknown>;
-  if (!body.name || !body.secret) { res.status(400).json({ error: "name and secret required" }); return; }
-  if (body.secret === getAdminSecret()) { res.status(400).json({ error: "Cannot use the master secret" }); return; }
+  
+  if (!body.name || !body.secret) { 
+    sendValidationError(res, "name and secret required"); 
+    return; 
+  }
+  if (body.secret === getAdminSecret()) { 
+    sendError(res, "Cannot use the master secret", 400); 
+    return; 
+  }
+  
   try {
-    const [account] = await db.insert(adminAccountsTable).values({
-      id:          generateId(),
-      name:        body.name as string,
-      secret:      hashAdminSecret(body.secret as string),
-      role:        (body.role as string)        || "manager",
-      permissions: (body.permissions as string) || "",
-      isActive:    body.isActive !== false,
-    }).returning();
-    res.status(201).json({ ...account, secret: "••••••", createdAt: account.createdAt.toISOString() });
-  } catch (e: unknown) {
-    if ((e as { code?: string }).code === "23505") { res.status(409).json({ error: "Secret already in use" }); return; }
-    throw e;
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: adminReq.adminIp || getClientIp(req),
+        action: "admin_account_create",
+        resourceType: "admin_account",
+        resource: body.name as string,
+        details: `Role: ${body.role || "manager"}`,
+      },
+      () => UserService.createAdminAccount({
+        name: body.name as string,
+        secret: body.secret as string,
+        role: (body.role as string) || "manager",
+      })
+    );
+    
+    sendSuccess(res, { success: true, adminName: body.name }, undefined, 201);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("23505") || message.includes("duplicate")) {
+      sendError(res, "Admin name or secret already in use", 409);
+    } else {
+      sendError(res, message, 400);
+    }
   }
 });
 
