@@ -18,13 +18,18 @@ import {
   userSessionsTable,
   refreshTokensTable,
   walletTransactionsTable,
+  platformSettingsTable,
+  authAuditLogTable,
 } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { hashPassword, validatePasswordStrength, verifyAdminSecret } from "./password.js";
 import { verifyTotpToken, generateTotpSecret, generateTotpQr } from "./totp.js";
 import { canonicalizePhone } from "@workspace/phone-utils";
 import { logger } from "../lib/logger.js";
+import { getPlatformSettings, invalidateSettingsCache } from "../routes/admin-shared.js";
+import { generateSecureOtp } from "./password.js";
+import { createHash } from "crypto";
 
 export interface CreateUserInput {
   phone?: string;
@@ -396,5 +401,200 @@ export class UserService {
     logger.info({ userId }, "[UserService] OTP bypass cleared");
 
     return { success: true };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════════
+  // OTP MANAGEMENT OPERATIONS
+  // ════════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Hash OTP for storage
+   */
+  private static hashOtp(otp: string): string {
+    return createHash("sha256").update(otp).digest("hex");
+  }
+
+  /**
+   * Upsert platform setting
+   */
+  private static async upsertSetting(key: string, value: string) {
+    await db
+      .insert(platformSettingsTable)
+      .values({ key, value, label: key, category: "otp" })
+      .onConflictDoUpdate({
+        target: platformSettingsTable.key,
+        set: { value, updatedAt: new Date() },
+      });
+    invalidateSettingsCache();
+  }
+
+  /**
+   * Get OTP status
+   */
+  static async getOtpStatus() {
+    const settings = await getPlatformSettings();
+    const disabledUntilStr = settings["otp_global_disabled_until"];
+    const disabledUntil = disabledUntilStr ? new Date(disabledUntilStr) : null;
+    const isGloballyDisabled = !!(disabledUntil && disabledUntil > new Date());
+
+    const [{ bypassCount }] = await db
+      .select({ bypassCount: sql<number>`COUNT(*)::int` })
+      .from(usersTable)
+      .where(sql`otp_bypass_until > now()`);
+
+    return {
+      isGloballyDisabled,
+      disabledUntil: isGloballyDisabled ? disabledUntil!.toISOString() : null,
+      activeBypassCount: Number(bypassCount ?? 0),
+    };
+  }
+
+  /**
+   * Disable OTP globally
+   */
+  static async disableOtpGlobally(minutes: number) {
+    if (!minutes || minutes <= 0 || minutes > 1440) {
+      throw new Error("minutes must be between 1 and 1440");
+    }
+
+    const disabledUntil = new Date(Date.now() + minutes * 60 * 1000);
+    await this.upsertSetting("otp_global_disabled_until", disabledUntil.toISOString());
+
+    return { disabledUntil: disabledUntil.toISOString(), minutes };
+  }
+
+  /**
+   * Restore OTP globally
+   */
+  static async restoreOtpGlobally() {
+    await this.upsertSetting("otp_global_disabled_until", "");
+    return { success: true };
+  }
+
+  /**
+   * Get OTP audit log
+   */
+  static async getOtpAuditLog(filters?: {
+    userId?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+  }) {
+    const pageNum = Math.max(1, filters?.page ?? 1);
+    const limit = 50;
+    const offset = (pageNum - 1) * limit;
+
+    const otpEvents = [
+      "otp_sent", "otp_verified", "otp_failed", "otp_verified_new_user",
+      "login_otp_bypass", "login_global_otp_bypass", "otp_reuse_attempt",
+      "otp_expired", "otp_send_bypassed", "otp_send_global_bypassed",
+      "admin_otp_bypass_set", "admin_otp_bypass_cancel", "admin_otp_generate",
+      "admin_otp_global_disable", "admin_otp_global_restore",
+    ];
+
+    const conditions: any[] = [sql`${authAuditLogTable.event} IN (${sql.join(otpEvents.map(e => sql`${e}`), sql`, `)})`];
+
+    if (filters?.userId) conditions.push(sql`${authAuditLogTable.userId} = ${filters.userId}`);
+    if (filters?.from) conditions.push(sql`${authAuditLogTable.createdAt} >= ${new Date(filters.from)}`);
+    if (filters?.to) conditions.push(sql`${authAuditLogTable.createdAt} <= ${new Date(filters.to)}`);
+
+    const whereClause = and(...conditions);
+
+    const [rows, [{ total }]] = await Promise.all([
+      db.select().from(authAuditLogTable)
+        .where(whereClause)
+        .orderBy(desc(authAuditLogTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: sql<number>`COUNT(*)::int` }).from(authAuditLogTable).where(whereClause),
+    ]);
+
+    // Batch-fetch user info
+    const userIds = [...new Set(rows.map(r => r.userId).filter((id): id is string => !!id))];
+    const userMap = new Map<string, { phone: string | null; name: string | null }>();
+    if (userIds.length > 0) {
+      const users = await db.select({ id: usersTable.id, phone: usersTable.phone, name: usersTable.name })
+        .from(usersTable).where(inArray(usersTable.id, userIds));
+      for (const u of users) userMap.set(u.id, { phone: u.phone, name: u.name });
+    }
+
+    const FAIL_EVENTS = new Set(["otp_failed", "otp_reuse_attempt", "otp_expired", "otp_rate_limit_exceeded"]);
+
+    const enriched = rows.map((row) => {
+      const userInfo = row.userId ? (userMap.get(row.userId) ?? {}) : {};
+      let metadata: Record<string, unknown> = {};
+      try { metadata = row.metadata ? JSON.parse(row.metadata) : {}; } catch {}
+      const metaResult = metadata?.result as string | null | undefined;
+      const derivedResult = metaResult ?? (FAIL_EVENTS.has(row.event) ? "fail" : "success");
+
+      return {
+        id: row.id,
+        event: row.event,
+        userId: row.userId,
+        phone: (userInfo as any).phone ?? (metadata?.phone as string | null) ?? null,
+        name: (userInfo as any).name ?? null,
+        ip: row.ip,
+        channel: (metadata?.channel as string | null) ?? null,
+        result: derivedResult,
+        adminId: (metadata?.adminId as string | null) ?? null,
+        createdAt: row.createdAt,
+      };
+    });
+
+    return {
+      entries: enriched,
+      total: Number(total ?? 0),
+      page: pageNum,
+      pages: Math.ceil(Number(total ?? 0) / limit),
+    };
+  }
+
+  /**
+   * Get OTP channels priority
+   */
+  static async getOtpChannels() {
+    const settings = await getPlatformSettings();
+    const raw = settings["otp_channel_priority"] ?? "whatsapp,sms,email";
+    const channels = raw.split(",").map(s => s.trim()).filter(Boolean);
+    const allChannels = ["whatsapp", "sms", "email"];
+    const ordered = [...channels, ...allChannels.filter(c => !channels.includes(c))];
+    return { channels: ordered };
+  }
+
+  /**
+   * Update OTP channels priority
+   */
+  static async updateOtpChannels(channels: string[]) {
+    if (!Array.isArray(channels) || channels.length === 0) {
+      throw new Error("channels must be a non-empty array");
+    }
+    const valid = ["whatsapp", "sms", "email"];
+    const seen = new Set<string>();
+    const deduped = (channels as string[]).filter(c => valid.includes(c) && !seen.has(c) && seen.add(c));
+    const canonical = [...deduped, ...valid.filter(c => !seen.has(c))];
+    if (deduped.length === 0) {
+      throw new Error("No valid channels provided");
+    }
+
+    await this.upsertSetting("otp_channel_priority", canonical.join(","));
+    return { channels: canonical };
+  }
+
+  /**
+   * Generate OTP for user
+   */
+  static async generateOtpForUser(userId: string) {
+    const [user] = await db.select({ id: usersTable.id, phone: usersTable.phone, name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!user) throw new Error("User not found");
+
+    const otp = generateSecureOtp();
+    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+
+    await db.update(usersTable)
+      .set({ otpCode: this.hashOtp(otp), otpExpiry, otpUsed: false, updatedAt: new Date() })
+      .where(eq(usersTable.id, userId));
+
+    return { otp, expiresAt: otpExpiry.toISOString(), phone: user.phone };
   }
 }

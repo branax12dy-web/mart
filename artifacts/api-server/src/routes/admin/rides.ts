@@ -20,6 +20,8 @@ import {
   ensureDefaultRideServices, formatSvc,
   type AdminRequest, auditLog,
 } from "../admin-shared.js";
+import { AuditService } from "../../services/admin-audit.service.js";
+import { FleetService } from "../../services/admin-fleet.service.js";
 import { emitRideDispatchUpdate, getIO } from "../../lib/socketio.js";
 import { emitRideUpdate } from "../../lib/rideEvents.js";
 import { RIDE_VALID_STATUSES, getSocketRoom } from "@workspace/service-constants";
@@ -141,186 +143,57 @@ router.get("/rides-enriched", async (req, res) => {
 
 router.patch("/rides/:id/status", async (req, res) => {
   const { status, riderName, riderPhone } = req.body;
+  const adminReq = req as AdminRequest;
 
   if (!status || !(RIDE_VALID_STATUSES as readonly string[]).includes(status)) {
     sendValidationError(res, `Invalid ride status "${status}". Valid statuses: ${RIDE_VALID_STATUSES.join(", ")}`);
     return;
   }
 
-  const [existing] = await db.select({ riderId: ridesTable.riderId, status: ridesTable.status, fare: ridesTable.fare, paymentMethod: ridesTable.paymentMethod })
-    .from(ridesTable).where(eq(ridesTable.id, req.params["id"]!)).limit(1);
-  if (!existing) { sendNotFound(res, "Ride not found"); return; }
-
-  if (existing.status === "completed" || existing.status === "cancelled") {
-    sendValidationError(res, `Cannot change status of a ride that is already ${existing.status}`);
-    return;
-  }
-
-  const allowed = VALID_STATUS_TRANSITIONS[existing.status];
-  if (!allowed || !allowed.includes(status)) {
-    sendValidationError(res, `Invalid transition: ${existing.status} → ${status}. ${allowed ? `Allowed: ${allowed.join(", ")}` : "No transitions allowed from this status."}`);
-    return;
-  }
-
-  if (status === "completed" && !existing.riderId) {
-    sendError(res, "Cannot force-complete a ride with no assigned rider. Assign a rider first.", 400);
-    return;
-  }
-
-  /* Determine wallet side-effects before entering the transaction */
-  const fare = parseFloat(existing.fare ?? "0");
-  const s = await getPlatformSettings();
-  const riderKeepPct = (Number(s["rider_keep_pct"]) || 80) / 100;
-  const commissionPct = 1 - riderKeepPct;
-  let riderBalance = 0;
-
-  if (status === "completed" && existing.riderId && existing.paymentMethod !== "wallet") {
-    const [riderWalletRow] = await db.select({ walletBalance: usersTable.walletBalance })
-      .from(usersTable).where(eq(usersTable.id, existing.riderId)).limit(1);
-    riderBalance = parseFloat(riderWalletRow?.walletBalance ?? "0");
-  }
-
-  /* All mutations (status + wallet) in ONE atomic transaction */
-  let ride: typeof ridesTable.$inferSelect;
   try {
-    ride = await db.transaction(async (tx) => {
-      const now = new Date();
-      const updateData: Record<string, unknown> = { status, updatedAt: now };
-      if (status === "completed") updateData.completedAt = now;
-      if (status === "cancelled") updateData.cancelledAt = now;
-      if (riderName) updateData.riderName = riderName;
-      if (riderPhone) updateData.riderPhone = riderPhone;
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: getClientIp(req),
+        action: "ride_status_update",
+        resourceType: "ride",
+        resource: req.params["id"]!,
+        details: `Status changed to: ${status}`,
+      },
+      () => FleetService.updateRideStatus({
+        rideId: req.params["id"]!,
+        status,
+        riderName,
+        riderPhone,
+        adminId: adminReq.adminId,
+      })
+    );
 
-      const [updated] = await tx
-        .update(ridesTable)
-        .set(updateData)
-        .where(eq(ridesTable.id, req.params["id"]!))
-        .returning();
-      if (!updated) throw new Error("Ride not found");
-
-      /* On completion: credit rider earnings or deduct commission */
-      if (status === "completed" && updated.riderId) {
-        if (updated.paymentMethod === "wallet") {
-          const riderEarning = parseFloat((fare * riderKeepPct).toFixed(2));
-          await tx.update(usersTable)
-            .set({ walletBalance: sql`wallet_balance + ${riderEarning}`, updatedAt: now })
-            .where(eq(usersTable.id, updated.riderId));
-          await tx.insert(walletTransactionsTable).values({
-            id: generateId(), userId: updated.riderId, type: "credit",
-            amount: String(riderEarning),
-            description: `Ride earnings — #${updated.id.slice(-6).toUpperCase()} (${Math.round(riderKeepPct * 100)}%)`,
-          });
-        } else {
-          const commission = parseFloat((fare * commissionPct).toFixed(2));
-          if (commission > 0 && riderBalance - commission >= -500) {
-            await tx.update(usersTable)
-              .set({ walletBalance: sql`wallet_balance - ${commission}`, updatedAt: now })
-              .where(eq(usersTable.id, updated.riderId));
-            await tx.insert(walletTransactionsTable).values({
-              id: generateId(), userId: updated.riderId, type: "debit",
-              amount: String(commission),
-              description: `Platform commission — #${updated.id.slice(-6).toUpperCase()} (${Math.round(commissionPct * 100)}%)`,
-            });
-          } else if (commission > 0) {
-            logger.warn(`Skipping commission deduction for rider ${updated.riderId}: balance ${riderBalance} - commission ${commission} < -500`);
-          }
-        }
-      }
-
-      /* On cancellation: refund wallet rides atomically.
-         Uses WHERE refunded_at IS NULL + .returning() so concurrent status-cancel
-         requests can never both credit the wallet — only the one that claims the
-         row (returns a result) proceeds to write the wallet transaction. */
-      if (status === "cancelled" && updated.paymentMethod === "wallet") {
-        const refundAmt = parseFloat(updated.fare);
-        const refundClaimed = await tx.update(ridesTable)
-          .set({ refundedAt: now })
-          .where(and(eq(ridesTable.id, updated.id), isNull(ridesTable.refundedAt)))
-          .returning({ id: ridesTable.id });
-
-        if (refundClaimed.length > 0) {
-          await tx.update(usersTable)
-            .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: now })
-            .where(eq(usersTable.id, updated.userId));
-          await tx.insert(walletTransactionsTable).values({
-            id: generateId(), userId: updated.userId, type: "credit",
-            amount: refundAmt.toFixed(2),
-            description: `Refund — Ride #${updated.id.slice(-6).toUpperCase()} cancelled by admin`,
-          });
-          updated.refundedAt = now;
-        }
-      }
-
-      /* Admin audit: persist status change to rideEventLogsTable */
-      await tx.insert(rideEventLogsTable).values({
-        id: generateId(),
-        rideId: updated.id,
-        adminId: (req as AdminRequest).adminId,
-        event: `admin_status_${status}`,
-        notes: `Admin forced status to ${status}`,
+    // Audit: record terminal ride status transitions for compliance
+    if (["completed", "cancelled"].includes(status)) {
+      addAuditEntry({
+        action: `ride_status_${status}`,
+        adminId: adminReq.adminId,
+        ip: getClientIp(req),
+        details: `Ride #${result.id.slice(-6).toUpperCase()} marked ${status}`,
+        result: "success",
       });
-
-      return updated;
-    });
-  } catch (txErr: unknown) {
-    const errMsg = (txErr as Error).message;
-    if (errMsg === "Ride not found") { sendNotFound(res, "Ride not found"); return; }
-    logger.error("Status update transaction failed for ride", req.params["id"], errMsg);
-    sendError(res, "Status update failed: could not complete transaction", 500);
-    return;
-  }
-
-  /* Non-fatal notifications after successful transaction */
-  try {
-    const rideNotifKeys = RIDE_NOTIF_KEYS[status];
-    if (rideNotifKeys) {
-      const rideUserLang = await getUserLanguage(ride.userId);
-      await sendUserNotification(ride.userId, t(rideNotifKeys.titleKey, rideUserLang), t(rideNotifKeys.bodyKey, rideUserLang), "ride", rideNotifKeys.icon);
     }
-  } catch (notifErr) {
-    logger.warn("sendUserNotification failed (non-fatal):", (notifErr as Error).message);
-  }
 
-  if (status === "completed" && ride.riderId && ride.paymentMethod === "wallet") {
-    try {
-      const riderEarning = parseFloat((fare * riderKeepPct).toFixed(2));
-      const riderLang = await getUserLanguage(ride.riderId);
-      await sendUserNotification(ride.riderId, t("notifRidePaymentReceived", riderLang), t("notifRidePaymentReceivedBody", riderLang).replace("{amount}", String(riderEarning)), "ride", "wallet-outline");
-    } catch (notifErr) {
-      logger.warn("Rider payment notification failed (non-fatal):", (notifErr as Error).message);
+    sendSuccess(res, { ...result, fare: parseFloat(result.fare), distance: parseFloat(result.distance) });
+  } catch (error: any) {
+    const errMsg = error.message || String(error);
+    logger.error("Ride status update error:", errMsg);
+    
+    if (errMsg.includes("not found")) {
+      sendNotFound(res, "Ride not found");
+    } else if (errMsg.includes("Cannot")) {
+      sendValidationError(res, errMsg);
+    } else {
+      sendError(res, "Status update failed: " + errMsg, 500);
     }
   }
-
-  if (status === "cancelled" && ride.paymentMethod === "wallet") {
-    try {
-      const refundAmt = parseFloat(ride.fare);
-      await sendUserNotification(ride.userId, "Ride Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya.`, "ride", "wallet-outline");
-    } catch (notifErr) {
-      logger.warn("Refund notification failed (non-fatal):", (notifErr as Error).message);
-    }
-  }
-
-  const ioRide = getIO();
-  if (ioRide) {
-    const ridePayload = { id: ride.id, status: ride.status, updatedAt: ride.updatedAt instanceof Date ? ride.updatedAt.toISOString() : ride.updatedAt };
-    ioRide.to(getSocketRoom(ride.id, "ride")).emit("order:update", ridePayload);
-    ioRide.to(`user:${ride.userId}`).emit("order:update", ridePayload);
-  }
-  emitRideUpdate(ride.id);
-  emitRideDispatchUpdate({ rideId: ride.id, action: `status_${status}`, status });
-
-  /* Audit: record terminal ride status transitions for compliance trail */
-  if (["completed", "cancelled"].includes(status)) {
-    addAuditEntry({
-      action: `ride_status_${status}`,
-      adminId: (req as AdminRequest).adminId,
-      ip: getClientIp(req),
-      details: `Ride #${ride.id.slice(-6).toUpperCase()} marked ${status}`,
-      result: "success",
-    });
-  }
-
-  sendSuccess(res, { ...ride, fare: parseFloat(ride.fare), distance: parseFloat(ride.distance) });
 });
 router.get("/ride-services", async (_req, res) => {
   await ensureDefaultRideServices();
@@ -879,229 +752,106 @@ router.get("/dashboard-export", async (_req, res) => {
 router.post("/rides/:id/cancel", async (req, res) => {
   const rideId = req.params["id"]!;
   const { reason } = req.body as { reason?: string };
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-  if (!ride) { sendNotFound(res, "Ride not found"); return; }
-  if (["completed", "cancelled"].includes(ride.status)) {
-    sendValidationError(res, `Cannot cancel a ride that is already ${ride.status}`); return;
-  }
-
-  const isWallet = ride.paymentMethod === "wallet";
-  const refundAmt = parseFloat(ride.fare);
-  let refunded = false;
+  const adminReq = req as AdminRequest;
 
   try {
-    await db.transaction(async (tx) => {
-      await tx.update(ridesTable)
-        .set({ status: "cancelled", cancellationReason: reason || null, updatedAt: new Date() })
-        .where(eq(ridesTable.id, rideId));
-
-      await tx.update(rideBidsTable)
-        .set({ status: "rejected", updatedAt: new Date() })
-        .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
-
-      if (isWallet) {
-        /* Atomic conditional update: only marks refundedAt if it is still NULL.
-           If two concurrent cancel requests pass the pre-flight check above, only
-           the first one will match this WHERE clause — the second will update 0 rows
-           and skip the wallet credit entirely. */
-        const refundResult = await tx.update(ridesTable)
-          .set({ refundedAt: new Date() })
-          .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.refundedAt)))
-          .returning({ id: ridesTable.id });
-
-        if (refundResult.length > 0) {
-          await tx.update(usersTable)
-            .set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() })
-            .where(eq(usersTable.id, ride.userId));
-          await tx.insert(walletTransactionsTable).values({
-            id: generateId(), userId: ride.userId, type: "credit",
-            amount: refundAmt.toFixed(2),
-            description: `Refund — Ride #${rideId.slice(-6).toUpperCase()} cancelled by admin`,
-          });
-          refunded = true;
-        }
-      }
-    });
-  } catch (txErr: unknown) {
-    addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Ride ${rideId} cancel failed — transaction error: ${(txErr as Error).message}`, result: "fail" });
-    sendError(res, "Cancellation failed: could not complete transaction", 500);
-    return;
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: getClientIp(req),
+        action: "ride_cancel",
+        resourceType: "ride",
+        resource: rideId,
+        details: `Cancelled${reason ? ` — ${reason}` : ""}`,
+      },
+      () => FleetService.cancelRide({
+        rideId,
+        reason,
+        adminId: adminReq.adminId,
+      })
+    );
+    sendSuccess(res, result);
+  } catch (error: any) {
+    const errMsg = error.message || String(error);
+    logger.error("Ride cancel error:", errMsg);
+    sendError(res, "Cancellation failed: " + errMsg, errMsg.includes("not found") ? 404 : 400);
   }
-
-  try {
-    if (refunded) {
-      await sendUserNotification(ride.userId, "Ride Cancelled & Refunded 💰", `Rs. ${refundAmt.toFixed(0)} refund ho gaya. ${reason ? `Reason: ${reason}` : ""}`, "ride", "wallet-outline");
-    } else {
-      await sendUserNotification(ride.userId, "Ride Cancelled ❌", `Your ride has been cancelled by admin. ${reason ? `Reason: ${reason}` : ""}`, "ride", "close-circle-outline");
-    }
-    if (ride.riderId) {
-      await sendUserNotification(ride.riderId, "Ride Cancelled ❌", `Ride #${rideId.slice(-6).toUpperCase()} admin ne cancel ki.`, "ride", "close-circle-outline");
-    }
-  } catch (notifErr) {
-    logger.warn("Cancel notifications failed (non-fatal):", (notifErr as Error).message);
-  }
-
-  try {
-    await db.insert(rideEventLogsTable).values({
-      id: generateId(),
-      rideId,
-      adminId: (req as AdminRequest).adminId,
-      event: refunded ? "admin_cancel_refunded" : "admin_cancel",
-      notes: `Admin cancelled ride${reason ? ` — ${reason}` : ""}${refunded ? ` (wallet refunded Rs. ${refundAmt.toFixed(2)})` : ""}`,
-    });
-  } catch (logErr) {
-    logger.warn("rideEventLog insert failed for cancel (non-fatal):", (logErr as Error).message);
-  }
-  addAuditEntry({ action: "ride_cancel", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Admin cancelled ride ${rideId}${reason ? ` — ${reason}` : ""}${refunded ? " (wallet refunded)" : ""}`, result: "success" });
-  emitRideUpdate(rideId);
-  emitRideDispatchUpdate({ rideId, action: "cancel", status: "cancelled" });
-  const ioCan = getIO();
-  if (ioCan) {
-    const cancelPayload = { id: rideId, status: "cancelled", updatedAt: new Date().toISOString() };
-    ioCan.to(getSocketRoom(rideId, "ride")).emit("order:update", cancelPayload);
-    ioCan.to(`user:${ride.userId}`).emit("order:update", cancelPayload);
-  }
-  sendSuccess(res, { rideId, refunded });
 });
 
 router.post("/rides/:id/refund", async (req, res) => {
   const rideId = req.params["id"]!;
   const { amount, reason } = req.body as { amount?: number; reason?: string };
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-  if (!ride) { sendNotFound(res, "Ride not found"); return; }
-
-  /* Only allow refunds on cancelled or completed rides */
-  if (!["cancelled", "completed"].includes(ride.status)) {
-    sendValidationError(res, `Cannot refund a ride in status "${ride.status}". Refunds are only allowed for cancelled or completed rides.`); return;
-  }
-
-  /* Optimistic pre-check for fast rejection; idempotency is enforced atomically below */
-  if (ride.refundedAt) {
-    sendValidationError(res, "This ride has already been refunded. Duplicate refunds are not allowed."); return;
-  }
-
-  const refundAmt = amount ?? parseFloat(ride.fare);
-  if (refundAmt <= 0 || !isFinite(refundAmt)) { sendValidationError(res, "Invalid refund amount"); return; }
+  const adminReq = req as AdminRequest;
 
   try {
-    await db.transaction(async (tx) => {
-      /* Atomic conditional set: only succeeds if refunded_at is still NULL.
-         Uses .returning() so the row count is deterministic regardless of the
-         underlying DB driver — no rowCount/rowsAffected ambiguity.
-         If two requests race past the pre-check, only one gets a row back. */
-      const refundRows = await tx.update(ridesTable)
-        .set({ refundedAt: new Date() })
-        .where(and(eq(ridesTable.id, rideId), isNull(ridesTable.refundedAt)))
-        .returning({ id: ridesTable.id });
-
-      if (refundRows.length === 0) {
-        throw new Error("ALREADY_REFUNDED");
-      }
-
-      await tx.update(usersTable).set({ walletBalance: sql`wallet_balance + ${refundAmt}`, updatedAt: new Date() }).where(eq(usersTable.id, ride.userId));
-      await tx.insert(walletTransactionsTable).values({
-        id: generateId(), userId: ride.userId, type: "credit",
-        amount: refundAmt.toFixed(2),
-        description: `Admin refund — Ride #${rideId.slice(-6).toUpperCase()}${reason ? ` (${reason})` : ""}`,
-      });
-      await tx.insert(rideEventLogsTable).values({
-        id: generateId(),
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: getClientIp(req),
+        action: "ride_refund",
+        resourceType: "ride",
+        resource: rideId,
+        details: `Refund${reason ? ` — ${reason}` : ""}`,
+      },
+      () => FleetService.refundRide({
         rideId,
-        adminId: (req as AdminRequest).adminId,
-        event: "admin_refund",
-        notes: `Admin issued refund Rs. ${refundAmt.toFixed(2)}${reason ? ` — ${reason}` : ""}`,
-      });
-    });
-  } catch (txErr: unknown) {
-    const errMsg = (txErr as Error).message;
-    if (errMsg === "ALREADY_REFUNDED") {
-      sendValidationError(res, "This ride has already been refunded. Duplicate refunds are not allowed."); return;
-    }
-    addAuditEntry({ action: "ride_refund", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Ride ${rideId} refund failed — transaction error: ${errMsg}`, result: "fail" });
-    sendError(res, "Refund failed: could not complete transaction", 500);
-    return;
+        amount,
+        reason,
+        adminId: adminReq.adminId,
+      })
+    );
+    sendSuccess(res, result);
+  } catch (error: any) {
+    const errMsg = error.message || String(error);
+    logger.error("Ride refund error:", errMsg);
+    sendError(res, "Refund failed: " + errMsg, errMsg.includes("not found") ? 404 : 400);
   }
-
-  try {
-    await sendUserNotification(ride.userId, "Ride Refund 💰", `Rs. ${refundAmt.toFixed(0)} aapki wallet mein refund ho gaya.`, "ride", "wallet-outline");
-  } catch (notifErr) {
-    logger.warn("Refund notification failed (non-fatal):", (notifErr as Error).message);
-  }
-  addAuditEntry({ action: "ride_refund", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Admin refunded Rs. ${refundAmt} for ride ${rideId}${reason ? ` — ${reason}` : ""}`, result: "success" });
-  emitRideDispatchUpdate({ rideId, action: "refund", status: ride.status });
-  sendSuccess(res, { rideId, refundedAmount: refundAmt });
 });
 
 router.post("/rides/:id/reassign", async (req, res) => {
   const rideId = req.params["id"]!;
   const { riderId, riderName, riderPhone } = req.body as { riderId?: string; riderName?: string; riderPhone?: string };
-  const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
-  if (!ride) { sendNotFound(res, "Ride not found"); return; }
-  if (["completed", "cancelled"].includes(ride.status)) {
-    sendValidationError(res, `Cannot reassign a ride that is ${ride.status}`); return;
-  }
+  const adminReq = req as AdminRequest;
 
-  if (!riderId) { sendValidationError(res, "riderId is required to reassign"); return; }
-
-  const [riderUser] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, isActive: usersTable.isActive, approvalStatus: usersTable.approvalStatus, isOnline: usersTable.isOnline })
-    .from(usersTable).where(eq(usersTable.id, riderId)).limit(1);
-  if (!riderUser) { sendNotFound(res, "Rider not found"); return; }
-  if (!(riderUser.roles ?? "").includes("rider")) { sendValidationError(res, "Selected user is not a rider"); return; }
-  if (riderUser.isActive === false) { sendValidationError(res, "Cannot assign ride to a deactivated rider account"); return; }
-  if (riderUser.approvalStatus === "rejected") { sendValidationError(res, "Cannot assign ride to a rejected/blocked rider"); return; }
-  if (riderUser.isOnline === false) { sendValidationError(res, "Cannot assign ride to an offline rider. Rider must be online to receive assignments."); return; }
-
-  const oldRiderId = ride.riderId;
-  const resolvedName = riderName || riderUser.name;
-  const resolvedPhone = riderPhone || riderUser.phone;
-  const updateData: Record<string, any> = {
-    riderId,
-    riderName: resolvedName,
-    riderPhone: resolvedPhone,
-    updatedAt: new Date(),
-  };
-  if (!ride.riderId) updateData.status = "accepted";
-
-  /* Cancel all open bids so no competing rider can still accept */
-  await db.update(rideBidsTable)
-    .set({ status: "rejected", updatedAt: new Date() })
-    .where(and(eq(rideBidsTable.rideId, rideId), eq(rideBidsTable.status, "pending")));
-
-  const [updated] = await db.update(ridesTable).set(updateData).where(eq(ridesTable.id, rideId)).returning();
-
-  try {
-    if (oldRiderId && oldRiderId !== riderId) {
-      await sendUserNotification(oldRiderId, "Ride Reassigned", `Ride #${rideId.slice(-6).toUpperCase()} doosre rider ko assign ho gayi.`, "ride", "swap-horizontal-outline");
-    }
-    if (riderId) {
-      await sendUserNotification(riderId, "New Ride Assigned 🚗", `Ride #${rideId.slice(-6).toUpperCase()} aapko assign ho gayi!`, "ride", "car-outline");
-    }
-    await sendUserNotification(ride.userId, "Rider Changed", `Aapki ride ka rider change ho gaya hai${resolvedName ? ` — ${resolvedName}` : ""}.`, "ride", "swap-horizontal-outline");
-  } catch (notifErr) {
-    logger.warn("Reassign notifications failed (non-fatal):", (notifErr as Error).message);
+  if (!riderId) {
+    sendValidationError(res, "riderId is required to reassign");
+    return;
   }
 
   try {
-    await db.insert(rideEventLogsTable).values({
-      id: generateId(),
-      rideId,
-      adminId: (req as AdminRequest).adminId,
-      event: "admin_reassign",
-      notes: `Admin reassigned from ${oldRiderId ?? "none"} to ${riderId} (${resolvedName})`,
-    });
-  } catch (logErr) {
-    logger.warn("rideEventLog insert failed for reassign (non-fatal):", (logErr as Error).message);
+    const result = await AuditService.executeWithAudit(
+      {
+        adminId: adminReq.adminId,
+        adminName: adminReq.adminName,
+        adminIp: getClientIp(req),
+        action: "ride_reassign",
+        resourceType: "ride",
+        resource: rideId,
+        details: `Reassigned to rider ${riderId}`,
+      },
+      () => FleetService.reassignRide({
+        rideId,
+        riderId,
+        riderName,
+        riderPhone,
+        adminId: adminReq.adminId,
+      })
+    );
+    sendSuccess(res, result);
+  } catch (error: any) {
+    const errMsg = error.message || String(error);
+    logger.error("Ride reassign error:", errMsg);
+    
+    if (errMsg.includes("not found")) {
+      sendNotFound(res, errMsg);
+    } else if (errMsg.includes("Cannot") || errMsg.includes("is not a rider") || errMsg.includes("deactivated") || errMsg.includes("offline")) {
+      sendValidationError(res, errMsg);
+    } else {
+      sendError(res, "Reassignment failed: " + errMsg, 400);
+    }
   }
-  addAuditEntry({ action: "ride_reassign", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Admin reassigned ride ${rideId} from ${oldRiderId ?? "none"} to ${riderId} (${resolvedName})`, result: "success" });
-  emitRideUpdate(rideId);
-  emitRideDispatchUpdate({ rideId, action: "reassign", status: updated!.status });
-  const ioReassign = getIO();
-  if (ioReassign) {
-    const reassignPayload = { id: rideId, status: updated!.status, riderId, riderName: resolvedName, updatedAt: updated!.updatedAt instanceof Date ? updated!.updatedAt.toISOString() : updated!.updatedAt };
-    ioReassign.to(getSocketRoom(rideId, "ride")).emit("order:update", reassignPayload);
-    ioReassign.to(`user:${ride.userId}`).emit("order:update", reassignPayload);
-  }
-  sendSuccess(res, { ride: { ...updated, fare: parseFloat(updated!.fare), distance: parseFloat(updated!.distance) } });
 });
 
 router.get("/rides/:id/audit-trail", async (req, res) => {
