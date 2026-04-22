@@ -5,6 +5,7 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
+import type { RideBid } from "./rideBid";
 import type { RidePaymentMethod } from "./ridePaymentMethod";
 import type { RideStatus } from "./rideStatus";
 import type { RideType } from "./rideType";
@@ -29,4 +30,14 @@ export interface Ride {
   tripOtp?: string | null;
   otpVerified?: boolean;
   createdAt: string;
+  /** Live latitude of the assigned rider (active statuses only) */
+  riderLat?: number | null;
+  /** Live longitude of the assigned rider (active statuses only) */
+  riderLng?: number | null;
+  /** Seconds since the rider's live location was last updated */
+  riderLocAge?: number | null;
+  /** Average star rating of the assigned rider */
+  riderAvgRating?: number | null;
+  /** Pending bids on this ride (only populated while bargaining) */
+  bids?: RideBid[];
 }

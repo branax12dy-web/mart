@@ -1213,9 +1213,75 @@ components:
         paymentMethod:
           type: string
           enum: [cash, wallet]
+        tripOtp:
+          type: string
+          nullable: true
+        otpVerified:
+          type: boolean
         createdAt:
           type: string
+        riderLat:
+          type: number
+          nullable: true
+          description: Live latitude of the assigned rider (active statuses only)
+        riderLng:
+          type: number
+          nullable: true
+          description: Live longitude of the assigned rider (active statuses only)
+        riderLocAge:
+          type: number
+          nullable: true
+          description: Seconds since the rider's live location was last updated
+        riderAvgRating:
+          type: number
+          nullable: true
+          description: Average star rating of the assigned rider
+        bids:
+          type: array
+          description: Pending bids on this ride (only populated while bargaining)
+          items:
+            $ref: "#/components/schemas/RideBid"
       required: [id, userId, type, status, fare, distance, paymentMethod, createdAt]
+
+    RideBid:
+      type: object
+      properties:
+        id:
+          type: string
+        rideId:
+          type: string
+        riderId:
+          type: string
+        riderName:
+          type: string
+        riderPhone:
+          type: string
+          nullable: true
+        fare:
+          type: number
+        note:
+          type: string
+          nullable: true
+        status:
+          type: string
+        vehiclePlate:
+          type: string
+          nullable: true
+        vehicleType:
+          type: string
+          nullable: true
+        ratingAvg:
+          type: number
+          nullable: true
+        totalRides:
+          type: number
+        expiresAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, rideId, riderId, riderName, fare, status, totalRides, expiresAt, createdAt, updatedAt]
 
     BookRideRequest:
       type: object

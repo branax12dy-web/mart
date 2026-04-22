@@ -72,7 +72,6 @@ export interface Product {
   category: string;
   type: ProductType;
   image?: string;
-  videoUrl?: string | null;
   vendorId?: string;
   vendorName?: string;
   rating?: number;
@@ -272,7 +271,6 @@ export type CreateParcelBookingRequestPaymentMethod =
 export const CreateParcelBookingRequestPaymentMethod = {
   cash: "cash",
   wallet: "wallet",
-  cod: "cod",
 } as const;
 
 export interface CreateParcelBookingRequest {
@@ -286,10 +284,6 @@ export interface CreateParcelBookingRequest {
   weight?: number;
   description?: string;
   paymentMethod: CreateParcelBookingRequestPaymentMethod;
-  pickupLat?: number;
-  pickupLng?: number;
-  dropLat?: number;
-  dropLng?: number;
 }
 
 export interface PaymentMethod {
@@ -376,6 +370,24 @@ export const RidePaymentMethod = {
   wallet: "wallet",
 } as const;
 
+export interface RideBid {
+  id: string;
+  rideId: string;
+  riderId: string;
+  riderName: string;
+  riderPhone?: string | null;
+  fare: number;
+  note?: string | null;
+  status: string;
+  vehiclePlate?: string | null;
+  vehicleType?: string | null;
+  ratingAvg?: number | null;
+  totalRides: number;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Ride {
   id: string;
   userId: string;
@@ -396,6 +408,16 @@ export interface Ride {
   tripOtp?: string | null;
   otpVerified?: boolean;
   createdAt: string;
+  /** Live latitude of the assigned rider (active statuses only) */
+  riderLat?: number | null;
+  /** Live longitude of the assigned rider (active statuses only) */
+  riderLng?: number | null;
+  /** Seconds since the rider's live location was last updated */
+  riderLocAge?: number | null;
+  /** Average star rating of the assigned rider */
+  riderAvgRating?: number | null;
+  /** Pending bids on this ride (only populated while bargaining) */
+  bids?: RideBid[];
 }
 
 export type BookRideRequestType =
@@ -578,7 +600,6 @@ export type GetProductsParams = {
   category?: string;
   search?: string;
   type?: GetProductsType;
-  sort?: string;
 };
 
 export type GetProductsType =

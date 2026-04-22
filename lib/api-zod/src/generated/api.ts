@@ -392,7 +392,47 @@ export const GetRideResponse = zod.object({
   riderName: zod.string().optional(),
   riderPhone: zod.string().optional(),
   paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
   createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
 });
 
 /**
@@ -485,7 +525,47 @@ export const CancelRideResponse = zod.object({
   riderName: zod.string().optional(),
   riderPhone: zod.string().optional(),
   paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
   createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
 });
 
 /**
@@ -522,7 +602,47 @@ export const AcceptRideBidResponse = zod.object({
   riderName: zod.string().optional(),
   riderPhone: zod.string().optional(),
   paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
   createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
 });
 
 /**
@@ -559,7 +679,47 @@ export const CustomerCounterOfferResponse = zod.object({
   riderName: zod.string().optional(),
   riderPhone: zod.string().optional(),
   paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
   createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
 });
 
 /**
@@ -590,7 +750,51 @@ export const GetRideHistoryResponse = zod.object({
       riderName: zod.string().optional(),
       riderPhone: zod.string().optional(),
       paymentMethod: zod.enum(["cash", "wallet"]),
+      tripOtp: zod.string().nullish(),
+      otpVerified: zod.boolean().optional(),
       createdAt: zod.string(),
+      riderLat: zod
+        .number()
+        .nullish()
+        .describe("Live latitude of the assigned rider (active statuses only)"),
+      riderLng: zod
+        .number()
+        .nullish()
+        .describe(
+          "Live longitude of the assigned rider (active statuses only)",
+        ),
+      riderLocAge: zod
+        .number()
+        .nullish()
+        .describe("Seconds since the rider's live location was last updated"),
+      riderAvgRating: zod
+        .number()
+        .nullish()
+        .describe("Average star rating of the assigned rider"),
+      bids: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            rideId: zod.string(),
+            riderId: zod.string(),
+            riderName: zod.string(),
+            riderPhone: zod.string().nullish(),
+            fare: zod.number(),
+            note: zod.string().nullish(),
+            status: zod.string(),
+            vehiclePlate: zod.string().nullish(),
+            vehicleType: zod.string().nullish(),
+            ratingAvg: zod.number().nullish(),
+            totalRides: zod.number(),
+            expiresAt: zod.string(),
+            createdAt: zod.string(),
+            updatedAt: zod.string(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Pending bids on this ride (only populated while bargaining)",
+        ),
     }),
   ),
 });

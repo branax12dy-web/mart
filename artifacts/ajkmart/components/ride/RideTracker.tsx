@@ -36,6 +36,7 @@ import {
   retryRideDispatch,
   rateRide,
   type Ride,
+  type RideBid,
 } from "@workspace/api-client-react";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -44,19 +45,13 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 type LiveRide = Omit<Ride, "status" | "paymentMethod"> & {
   status?: string;
   paymentMethod?: string;
-  tripOtp?: string;
-  otpVerified?: boolean;
   updatedAt?: string;
   estimatedFare?: number;
   minOffer?: number;
   estimatedTime?: string;
   broadcastTimeoutSec?: number;
   fareBreakdown?: { baseFare?: number; gstAmount?: number };
-  riderLat?: number;
-  riderLng?: number;
-  riderLocAge?: number;
-  riderAvgRating?: number;
-  bids?: Array<{ id?: string; riderId?: string; riderName?: string; offer?: number; rating?: number;[key: string]: unknown }>;
+  bids?: RideBid[];
 };
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {

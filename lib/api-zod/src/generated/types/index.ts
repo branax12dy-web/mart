@@ -61,6 +61,7 @@ export * from "./reverseGeocodeCoordinatesParams";
 export * from "./reverseGeocodeResponse";
 export * from "./reverseGeocodeResponseSource";
 export * from "./ride";
+export * from "./rideBid";
 export * from "./rideHistoryResponse";
 export * from "./ridePaymentMethod";
 export * from "./rideService";
