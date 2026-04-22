@@ -38,8 +38,8 @@ self.addEventListener("push", (event) => {
   const title = data.title || "AJKMart Vendor";
   const options = {
     body: data.body || "",
-    icon: "/favicon.svg",
-    badge: "/favicon.svg",
+    icon: "/vendor/favicon.svg",
+    badge: "/vendor/favicon.svg",
     tag: data.tag || "ajkmart-vendor",
     data: data.data || {},
   };

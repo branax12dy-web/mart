@@ -2,11 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { runSqlMigrations } from "./services/sqlMigrationRunner.js";
-
-// Import route handlers (these exist in your project)
-import adminRouter from "./routes/admin.js";
-import authRouter from "./routes/auth.js";
-import usersRouter from "./routes/users.js";
+import router from "./routes/index.js";
 
 export function createServer() {
   const app = express();
@@ -16,18 +12,16 @@ export function createServer() {
   app.use(express.json({ limit: "256kb" }));
   app.use(express.urlencoded({ extended: true, limit: "256kb" }));
   
-  // Health check
   app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
-  
-  // Mount API routes
-  app.use("/api/admin", adminRouter);
-  app.use("/api/auth", authRouter);
-  app.use("/api/users", usersRouter);
-  
-  // Run migrations in background (don't block startup)
-  // runSqlMigrations().catch(err => console.error("Migration error", err));
+
+  app.use("/api", router);
+
+  app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Unhandled error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  });
   
   return app;
 }
