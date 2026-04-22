@@ -18,6 +18,7 @@ export function setSilenceMode(enabled: boolean) {
 }
 
 interface WindowWithWebkit extends Window {
+  AudioContext?: typeof AudioContext;
   webkitAudioContext?: typeof AudioContext;
 }
 

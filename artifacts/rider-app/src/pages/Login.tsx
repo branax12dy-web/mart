@@ -77,7 +77,7 @@ export default function Login() {
   const [method, setMethod] = useState<LoginMethod>(defaultMethod);
   const [step, setStep] = useState<Step>("continue");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | null>("");
 
   const [identifier, setIdentifier] = useState("");
   const [otpChannel, setOtpChannel] = useState("");

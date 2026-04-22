@@ -13,9 +13,14 @@ export async function registerPush(): Promise<void> {
     const { publicKey } = (vj?.success === true && "data" in vj ? vj.data : vj) as { publicKey: string };
     if (!publicKey) return;
 
+    const keyBytes = urlBase64ToUint8Array(publicKey);
+    /* Copy into a fresh ArrayBuffer so the type matches BufferSource (some
+       lib.dom versions reject Uint8Array<ArrayBufferLike> directly). */
+    const keyBuffer = new ArrayBuffer(keyBytes.byteLength);
+    new Uint8Array(keyBuffer).set(keyBytes);
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
+      applicationServerKey: keyBuffer,
     });
 
     const token = localStorage.getItem("ajkmart_rider_token") ?? "";
