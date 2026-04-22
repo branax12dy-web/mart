@@ -79,6 +79,8 @@ interface OrderShape {
   distance?: number;
   _reviewed?: boolean;
   _type?: string;
+  vendorId?: string;
+  riderId?: string;
 }
 
 interface RideShape {
@@ -91,11 +93,13 @@ interface RideShape {
   dropAddress?: string;
   riderName?: string;
   riderPhone?: string;
+  riderId?: string;
+  vendorId?: string;
   createdAt?: string;
   updatedAt?: string;
   paymentMethod?: string;
   estimatedTime?: string;
-  fareBreakdown?: { baseFare?: number; gstAmount?: number; [key: string]: any };
+  fareBreakdown?: { baseFare?: number; gstAmount?: number; [key: string]: number | string | undefined };
   items?: OrderItemShape[];
   total?: number;
   estimatedFare?: number;
@@ -654,6 +658,8 @@ interface ParcelShape {
   receiverName?: string;
   receiverPhone?: string;
   paymentMethod?: string;
+  vendorId?: string;
+  riderId?: string;
   createdAt?: string;
   updatedAt?: string;
   items?: OrderItemShape[];
@@ -790,8 +796,10 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
 
 const RATING_LABELS = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
 
+type ReviewTarget = OrderShape | RideShape | ParcelShape;
+
 function ReviewModal({ target, userId, apiBase, token, language, onClose, onDone }: {
-  target: Record<string, unknown>;
+  target: ReviewTarget;
   userId: string;
   apiBase: string;
   token: string | null;
@@ -1168,9 +1176,10 @@ function OrdersScreenInner() {
     try {
       const productsRes = await fetch(`${API_BASE}/products`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (productsRes.ok) {
-        const productsData = unwrapApiResponse(await productsRes.json());
         interface LiveProduct { id: string; price: number; stock?: number; }
-        const productMap = new Map<string, LiveProduct>((productsData.products || productsData || []).map((p: LiveProduct) => [p.id, p]));
+        const productsData = unwrapApiResponse<{ products?: LiveProduct[] } | LiveProduct[]>(await productsRes.json());
+        const productList: LiveProduct[] = Array.isArray(productsData) ? productsData : (productsData.products || []);
+        const productMap = new Map<string, LiveProduct>(productList.map((p: LiveProduct) => [p.id, p]));
         const priceChangedItems: string[] = [];
         let skippedCount = 0;
         let addedCount = 0;
@@ -1918,7 +1927,7 @@ function OrdersScreenInner() {
         {isWide && (
           <View style={{ flex: 1 }}>
             {selectedOrder
-              ? <OrderDetailPanel id={selectedOrder.id} type={selectedOrder.type} orders={allOrders} rides={rides as unknown as RideShape[]} pharmOrders={pharmOrders as OrderShape[]} parcels={parcels as unknown as ParcelShape[]} onClose={() => setSelectedOrder(null)} />
+              ? <OrderDetailPanel id={selectedOrder.id} type={selectedOrder.type} orders={allOrders} rides={rides} pharmOrders={pharmOrders} parcels={parcels} onClose={() => setSelectedOrder(null)} />
               : <EmptyDetailPanel />}
           </View>
         )}
@@ -1926,7 +1935,7 @@ function OrdersScreenInner() {
 
       {reviewTarget && user && (
         <ReviewModal
-          target={reviewTarget as unknown as Record<string, unknown>}
+          target={reviewTarget}
           userId={user.id}
           apiBase={API_BASE}
           token={token}

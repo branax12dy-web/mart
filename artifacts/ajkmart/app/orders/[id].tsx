@@ -616,7 +616,7 @@ export default function OrderDetailScreen() {
                   </Text>
                 </View>
                 <View style={{ backgroundColor: C.emerald, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                  <Text style={{ ...(Typ.smallBold as object), color: C.textInverse }}>LIVE</Text>
+                  <Text style={{ ...Typ.smallBold, color: C.textInverse }}>LIVE</Text>
                 </View>
               </View>
               {order.deliveryAddress ? (

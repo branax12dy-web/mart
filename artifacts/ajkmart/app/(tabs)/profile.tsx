@@ -134,7 +134,7 @@ function ProfileMpinChangeModal({ token, onClose, onSuccess }: { token: string |
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ oldPin, newPin }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ error?: string; message?: string; lockUntil?: string | number; lockMinutes?: number; attemptsRemaining?: number }>(await res.json());
       if (!res.ok) {
         if (data.error === "pin_locked") {
           setLocked(true);
@@ -272,7 +272,7 @@ function ProfileMpinForgotModal({ token, onClose, onReset }: { token: string | n
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ message?: string; phone?: string; _dev_otp?: string }>(await res.json());
       if (!res.ok) { setError(data.message || "Failed to send OTP"); setLoading(false); return; }
       setMaskedPhone(data.phone || "");
       if (data._dev_otp) setDevOtp(data._dev_otp);
@@ -295,7 +295,7 @@ function ProfileMpinForgotModal({ token, onClose, onReset }: { token: string | n
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ otp, newPin }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ message?: string }>(await res.json());
       if (!res.ok) { setError(data.message || "Reset failed"); setLoading(false); return; }
       onReset();
     } catch { setError("Network error. Try again."); }
@@ -473,22 +473,29 @@ function ProfileScreenInner() {
           fetch(`${API}/pharmacy-orders`,   { headers: hdrs }),
           fetch(`${API}/parcel-bookings`,   { headers: hdrs }),
         ]);
-        const [oD, rD, nD, phD, parD] = await Promise.all([oR.json().then(unwrapApiResponse), rR.json().then(unwrapApiResponse), nR.json().then(unwrapApiResponse), phR.json().then(unwrapApiResponse).catch(() => ({})), parR.json().then(unwrapApiResponse).catch(() => ({}))]);
+        type ProfileOrderRow = { status?: string; total?: number | string; fare?: number | string; price?: number | string };
+        const [oD, rD, nD, phD, parD] = await Promise.all([
+          oR.json().then(j => unwrapApiResponse<{ orders?: ProfileOrderRow[] }>(j)),
+          rR.json().then(j => unwrapApiResponse<{ rides?: ProfileOrderRow[] }>(j)),
+          nR.json().then(j => unwrapApiResponse<{ unreadCount?: number }>(j)),
+          phR.json().then(j => unwrapApiResponse<{ orders?: ProfileOrderRow[]; pharmacyOrders?: ProfileOrderRow[] }>(j)).catch(() => ({} as { orders?: ProfileOrderRow[]; pharmacyOrders?: ProfileOrderRow[] })),
+          parR.json().then(j => unwrapApiResponse<{ bookings?: ProfileOrderRow[]; parcelBookings?: ProfileOrderRow[] }>(j)).catch(() => ({} as { bookings?: ProfileOrderRow[]; parcelBookings?: ProfileOrderRow[] })),
+        ]);
         const orders   = oD.orders   || [];
         const rides    = rD.rides    || [];
         const pharmacy = phD.orders  || phD.pharmacyOrders  || [];
         const parcels  = parD.bookings || parD.parcelBookings || [];
 
         const CANCELLED = "cancelled";
-        const activeOrders   = orders.filter((o: any)   => o.status   !== CANCELLED);
-        const activeRides    = rides.filter((r: any)    => r.status   !== CANCELLED);
-        const activePharmacy = pharmacy.filter((p: any) => p.status   !== CANCELLED);
-        const activeParcels  = parcels.filter((p: any)  => p.status   !== CANCELLED);
+        const activeOrders   = orders.filter(o   => o.status   !== CANCELLED);
+        const activeRides    = rides.filter(r    => r.status   !== CANCELLED);
+        const activePharmacy = pharmacy.filter(p => p.status   !== CANCELLED);
+        const activeParcels  = parcels.filter(p  => p.status   !== CANCELLED);
 
-        const spent = activeOrders.reduce((s: number, o: any)   => s + (parseFloat(o.total) || 0), 0)
-                    + activeRides.reduce((s: number,  r: any)   => s + (parseFloat(r.fare)  || 0), 0)
-                    + activePharmacy.reduce((s: number, p: any) => s + (parseFloat(p.total) || 0), 0)
-                    + activeParcels.reduce((s: number,  p: any) => s + (parseFloat(p.price || p.fare || p.total) || 0), 0);
+        const spent = activeOrders.reduce((s, o)   => s + (parseFloat(String(o.total ?? "")) || 0), 0)
+                    + activeRides.reduce((s,  r)   => s + (parseFloat(String(r.fare  ?? "")) || 0), 0)
+                    + activePharmacy.reduce((s, p) => s + (parseFloat(String(p.total ?? "")) || 0), 0)
+                    + activeParcels.reduce((s,  p) => s + (parseFloat(String(p.price ?? p.fare ?? p.total ?? "")) || 0), 0);
 
         setStats({ orders: activeOrders.length + activePharmacy.length + activeParcels.length, rides: activeRides.length, spent: Math.round(spent) });
         setUnread(nD.unreadCount || 0);

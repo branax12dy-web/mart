@@ -27,7 +27,7 @@ import { useCart } from "@/context/CartContext";
 import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
-import { useGetProducts, useGetCategories, getFlashDeals } from "@workspace/api-client-react";
+import { useGetProducts, useGetCategories, getFlashDeals, type FlashDealProduct } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { WishlistHeart } from "@/components/WishlistHeart";
 import { CartSwitchModal } from "@/components/CartSwitchModal";
@@ -141,7 +141,7 @@ function AddToCartButton({ onPress, added, disabled }: { onPress: () => void; ad
   );
 }
 
-const FlashCard = React.memo(function FlashCard({ product }: { product: MartProduct }) {
+const FlashCard = React.memo(function FlashCard({ product }: { product: FlashDealProduct }) {
   const { addItem, cartType, itemCount, clearCartAndAdd } = useCart();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
@@ -556,7 +556,7 @@ function MartScreenInner() {
 
                 <View style={styles.flashGrid}>
                   {flashDeals.map(p => (
-                    <FlashCard key={p.id} product={p as unknown as MartProduct} />
+                    <FlashCard key={p.id} product={p} />
                   ))}
                 </View>
               </>

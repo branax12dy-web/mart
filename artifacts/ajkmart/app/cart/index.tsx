@@ -245,8 +245,8 @@ function AddressPickerModal({
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || "Failed to save address");
       }
-      const d = unwrapApiResponse(await res.json());
-      const created: SavedAddress = d.address || d;
+      const d = unwrapApiResponse<{ address?: SavedAddress } & SavedAddress>(await res.json());
+      const created: SavedAddress = d.address ?? d;
       onAddressCreated(created);
       resetForm();
       onClose();
@@ -869,7 +869,19 @@ function CartScreenInner() {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         const orderGpsPayload = await buildGpsPayload();
-        order = await createOrder({
+        type CartCreateOrderPayload = Parameters<typeof createOrder>[0] & {
+          idempotencyKey: string;
+          promoCode?: string;
+          autoApplyOfferId?: string;
+          proofPhotoUrl?: string;
+          txnRef?: string;
+          pickupLat?: number;
+          pickupLng?: number;
+          dropLat?: number;
+          dropLng?: number;
+        };
+        const payload: CartCreateOrderPayload = {
+          userId: user?.id ?? "",
           type: (cartType === "mixed" ? "mart" : cartType) as "mart" | "food" | "pharmacy",
           items: items.map(i => ({
             productId: i.productId, name: i.name,
@@ -883,7 +895,8 @@ function CartScreenInner() {
           ...(uploadedProofUrl ? { proofPhotoUrl: uploadedProofUrl } : {}),
           ...(uploadedTxnRef ? { txnRef: uploadedTxnRef } : {}),
           ...orderGpsPayload,
-        } as unknown as Parameters<typeof createOrder>[0] & { autoApplyOfferId?: string; proofPhotoUrl?: string; txnRef?: string });
+        };
+        order = await createOrder(payload);
         lastError = null;
         break;
       } catch (err: any) {
@@ -1166,7 +1179,7 @@ function CartScreenInner() {
   };
 
   const uploadReceiptImage = async (uri: string): Promise<string> => {
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: "base64" as unknown as never });
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: "base64" });
     const cached = receiptMimeCache.current.get(uri);
     let mime = cached || "image/jpeg";
     if (!cached) {

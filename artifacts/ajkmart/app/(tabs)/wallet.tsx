@@ -212,7 +212,7 @@ function MpinSetupModal({ token, onClose, onSuccess }: { token: string | null; o
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ pin }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ message?: string }>(await res.json());
       if (!res.ok) { setError(data.message || "Failed to create MPIN"); setLoading(false); return; }
       showToast("MPIN created successfully!", "success");
       onSuccess();
@@ -297,7 +297,7 @@ function MpinVerifyModal({ token, onClose, onVerified }: { token: string | null;
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ pin }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ error?: string; message?: string; lockUntil?: string | number; lockMinutes?: number; attemptsRemaining?: number; pinToken?: string }>(await res.json());
       if (!res.ok) {
         if (data.error === "pin_locked") {
           setLocked(true);
@@ -312,7 +312,7 @@ function MpinVerifyModal({ token, onClose, onVerified }: { token: string | null;
         setLoading(false);
         return;
       }
-      onVerified(data.pinToken);
+      onVerified(data.pinToken ?? "");
       onClose();
     } catch { setError("Network error. Try again."); }
     setLoading(false);
@@ -408,7 +408,7 @@ function MpinForgotModal({ token, onClose, onReset }: { token: string | null; on
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ message?: string; phone?: string; _dev_otp?: string }>(await res.json());
       if (!res.ok) { setError(data.message || "Failed to send OTP"); setLoading(false); return; }
       setMaskedPhone(data.phone || "");
       if (data._dev_otp) setDevOtp(data._dev_otp);
@@ -429,7 +429,7 @@ function MpinForgotModal({ token, onClose, onReset }: { token: string | null; on
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ otp, newPin }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ message?: string }>(await res.json());
       if (!res.ok) { setError(data.message || "Reset failed"); setLoading(false); return; }
       showToast("MPIN reset successfully!", "success");
       onReset();
@@ -528,7 +528,7 @@ function MpinChangeModal({ token, onClose, onSuccess }: { token: string | null; 
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ oldPin, newPin }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ error?: string; message?: string; lockUntil?: string | number; lockMinutes?: number; attemptsRemaining?: number }>(await res.json());
       if (!res.ok) {
         if (data.error === "pin_locked") {
           setLocked(true);
@@ -716,7 +716,7 @@ function WithdrawModal({ onClose, onSuccess, onFrozen, token, balance, minWithdr
         },
         body: JSON.stringify({ amount: amt, paymentMethod: selectedMethod?.id, accountNumber: accountNumber.trim(), note: note.trim() || undefined }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ error?: string; message?: string }>(await res.json());
       if (!res.ok) {
         if (data.error === "wallet_frozen") {
           setErr("Your wallet has been temporarily frozen. Please contact support.");
@@ -1066,7 +1066,7 @@ function DepositModal({ onClose, onSuccess, onFrozen, token, minTopup, maxTopup 
           note: note.trim() || undefined,
         }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ error?: string; message?: string }>(await res.json());
       if (!res.ok && res.status !== 202) {
         if (data.error === "wallet_frozen") {
           setErr("Your wallet has been temporarily frozen. Please contact support.");
@@ -1543,7 +1543,7 @@ function WalletScreenInner() {
       fetch(`${API}/wallet`, { headers: { Authorization: `Bearer ${token}` } })
         .then(async r => {
           if (r.status === 403) {
-            const d = unwrapApiResponse(await r.json().catch(() => ({})));
+            const d = unwrapApiResponse<{ error?: string }>(await r.json().catch(() => ({})));
             if (d.error === "wallet_frozen") setWalletFrozen(true);
           } else {
             setWalletFrozen(false);
@@ -1558,7 +1558,7 @@ function WalletScreenInner() {
       try {
         const r = await fetch(`${API}/wallet`, { headers: { Authorization: `Bearer ${token}` } });
         if (r.status === 403) {
-          const d = unwrapApiResponse(await r.json().catch(() => ({})));
+          const d = unwrapApiResponse<{ error?: string }>(await r.json().catch(() => ({})));
           if (d.error === "wallet_frozen") { setWalletFrozen(true); return; }
         } else { setWalletFrozen(false); }
       } catch (err) {
@@ -1576,7 +1576,7 @@ function WalletScreenInner() {
     if (token) {
       fetch(`${API}/wallet/pending-topups`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
-        .then(unwrapApiResponse)
+        .then(j => unwrapApiResponse<{ count?: number; total?: number }>(j))
         .then(d => setPendingTopups({ count: d.count || 0, total: d.total || 0 }))
         .catch((err) => { if (__DEV__) console.warn("[Wallet] Pending topups fetch failed:", err instanceof Error ? err.message : String(err)); });
     }
@@ -1683,7 +1683,7 @@ function WalletScreenInner() {
         setSendLoading(false);
         return;
       }
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ found?: boolean; name?: string }>(await res.json());
       if (!data.found) {
         showToast(sendMode === "ajkid" ? "No account found with this AJK ID." : "No AJKMart account found with this phone number.", "error");
         setSendLoading(false);
@@ -1731,7 +1731,7 @@ function WalletScreenInner() {
           ? { ajkId: sendPhone.trim().toUpperCase(), amount: num, note: sendNote || null }
           : { receiverPhone: sendPhone.trim(), amount: num, note: sendNote || null }),
       });
-      const data = unwrapApiResponse(await res.json());
+      const data = unwrapApiResponse<{ error?: string; newBalance?: number; receiverName?: string }>(await res.json());
       if (!res.ok) {
         if (data.error === "wallet_frozen") {
           setSendFrozenError("Your wallet has been temporarily frozen. Please contact support.");
