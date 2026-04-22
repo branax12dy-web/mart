@@ -18,7 +18,7 @@ router.get("/", async (req, res) => {
   if (isDemoMode) {
     const { getDemoSnapshot } = await import("../lib/demo-snapshot.js");
     const snap = await getDemoSnapshot();
-    demoData = { vendors: snap.vendors, orders: snap.orders, riders: snap.riders, products: snap.products, source: snap.source };
+    demoData = { vendors: snap.vendors, orders: snap.orders, riders: snap.riders, products: snap.products, source: snap.source ?? "demo" };
   }
 
   const jazzcashEnabled  = (s["jazzcash_enabled"]  ?? "off") === "on";

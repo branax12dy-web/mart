@@ -73,7 +73,7 @@ router.get("/", customerAuth, async (req, res) => {
     .from(pharmacyOrdersTable)
     .where(eq(pharmacyOrdersTable.userId, userId))
     .orderBy(sql`${pharmacyOrdersTable.createdAt} DESC`);
-  sendSuccess(res, { orders: orders.map(mapOrder), total: orders.length });
+  sendSuccess(res, { orders: orders.map(o => mapOrder(o)), total: orders.length });
 });
 
 router.get("/:id", customerAuth, async (req, res) => {

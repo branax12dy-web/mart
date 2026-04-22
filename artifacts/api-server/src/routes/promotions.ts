@@ -1061,6 +1061,7 @@ router.get("/ai-recommendations", adminAuth, async (_req, res) => {
       title: "Free Delivery Offer",
       description: "Free delivery above a threshold (e.g., Rs.500) is proven to increase cart values. Consider running this during weekends.",
       impact: "medium",
+      suggestedDiscount: 0,
     });
   }
 

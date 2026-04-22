@@ -671,7 +671,7 @@ router.post("/send", customerAuth, requireWalletPin, async (req, res) => {
     db.insert(notificationsTable).values({
       id: generateId(), userId: result.receiverId,
       title: t("notifWalletCredited", sendLang) + " 💰",
-      body: t("notifWalletReceivedBody", sendLang).replace("{amount}", result.amount.toFixed(0)).replace("{sender}", result.senderName),
+      body: t("notifWalletReceivedBody", sendLang).replace("{amount}", result.amount.toFixed(0)).replace("{sender}", result.senderName ?? ""),
       type: "wallet", icon: "wallet-outline",
     }).catch(e => logger.error("receiver send notif insert failed:", e));
 

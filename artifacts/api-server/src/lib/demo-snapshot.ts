@@ -13,12 +13,13 @@ export async function isDemoMode(): Promise<boolean> {
   }
 }
 
-export interface DemoOrder { id: string; status: string; total: number }
+export interface DemoOrder { id: string; status: string; total: number; type?: string }
 export interface DemoSnapshot {
   vendors: Array<Record<string, unknown>>;
   orders: DemoOrder[];
   riders: Array<Record<string, unknown>>;
   products: Array<Record<string, unknown>>;
+  source?: string;
 }
 
 export async function getDemoSnapshot(): Promise<DemoSnapshot> {
@@ -39,7 +40,7 @@ export async function setDemoMode(enabled: boolean) {
       await db.insert(platformSettingsTable).values({
         key: "demo_mode_enabled",
         value: enabled ? "true" : "false",
-        createdAt: new Date(),
+        label: "Demo Mode Enabled",
         updatedAt: new Date(),
       });
     }

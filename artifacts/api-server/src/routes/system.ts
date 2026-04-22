@@ -250,7 +250,6 @@ async function ensureProductVendors(): Promise<void> {
         id: vid,
         phone: `+9200000${vid.replace(/\D/g, "").slice(0, 5).padEnd(5, "0")}`,
         name: product?.vendorName || vid,
-        role: "vendor",
         roles: "vendor",
         city: "Muzaffarabad",
         area: "System",

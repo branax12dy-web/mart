@@ -14,7 +14,6 @@ async function ensureSystemVendor(): Promise<void> {
       id: SYSTEM_VENDOR_ID,
       phone: "+920000000000",
       name: "AJKMart System",
-      role: "vendor",
       roles: "vendor",
       city: "Muzaffarabad",
       area: "System",

@@ -606,7 +606,8 @@ router.get("/login-history", async (req, res) => {
   });
 });
 
-async function computeLoyaltyPoints(tx: typeof db, userId: string): Promise<{ totalEarned: number; totalRedeemed: number; available: number }> {
+type DbOrTx = Parameters<Parameters<typeof db.transaction>[0]>[0] | typeof db;
+async function computeLoyaltyPoints(tx: DbOrTx, userId: string): Promise<{ totalEarned: number; totalRedeemed: number; available: number }> {
   const rows = await tx.select({ amount: walletTransactionsTable.amount, type: walletTransactionsTable.type, reference: walletTransactionsTable.reference })
     .from(walletTransactionsTable)
     .where(eq(walletTransactionsTable.userId, userId));

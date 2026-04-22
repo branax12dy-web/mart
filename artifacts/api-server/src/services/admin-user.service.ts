@@ -148,7 +148,7 @@ export class UserService {
       createdAt: now,
       updatedAt: now,
       kycStatus: "pending",
-      status: "active",
+      isActive: true,
     });
 
     logger.info({ userId, phone: canonPhone }, "[UserService] User created");
@@ -266,7 +266,7 @@ export class UserService {
       .set({
         kycStatus: "rejected",
         isActive: false,
-        kycRejectReason: reason,
+        approvalNote: reason,
         updatedAt: new Date(),
       })
       .where(eq(usersTable.id, userId));
@@ -323,9 +323,7 @@ export class UserService {
       role: input.role || "viewer",
       totpEnabled: false,
       totpSecret: null,
-      passwordHash,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      secret: passwordHash,
       lastLoginAt: null,
     });
 

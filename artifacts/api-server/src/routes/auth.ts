@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable, rateLimitsTable, pendingOtpsTable, userSessionsTable, loginHistoryTable, vendorProfilesTable } from "@workspace/db/schema";
+import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable, rateLimitsTable, pendingOtpsTable, userSessionsTable, loginHistoryTable, vendorProfilesTable, riderProfilesTable } from "@workspace/db/schema";
 import { eq, and, sql, lt, or, desc, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
@@ -899,7 +899,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     await db.insert(usersTable).values({
       id:             newUserId,
       phone,
-      role:           "customer",
+
       roles:          "customer",
       walletBalance:  "0",
       phoneVerified:  true,
@@ -936,7 +936,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       token: accessToken,
       refreshToken: refreshRaw,
       expiresAt: new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
-      user: { id: newUserId, phone, name: null, email: null, username: null, role: "customer", roles: "customer",
+      user: { id: newUserId, phone, name: null, email: null, username: null, roles: "customer",
               walletBalance: signupBonus, isActive: !requireApproval, totpEnabled: false },
       ...(requireApproval ? { pendingApproval: true } : {}),
     });
@@ -2552,7 +2552,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     name: name?.trim() || null,
     email: email ? email.toLowerCase().trim() : null,
     username: cleanUsername,
-    role: userRole,
+
     roles: userRole,
     passwordHash: hashPassword(password),
     otpCode: hashOtp(otp),
@@ -2566,21 +2566,33 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     ajkId,
     cnic: cnicValue || null,
     nationalId: cnicValue || null,
-    vehicleType: vehicleType ? normalizeVehicleTypeForStorage(vehicleType) : null,
-    vehicleRegNo: vehicleRegNo || null,
-    vehiclePlate: vehiclePlate || vehicleRegNo || null,
-    drivingLicense: drivingLicense || null,
     address: address || null,
     city: city || null,
     emergencyContact: emergencyContact || null,
-    vehiclePhoto: vehiclePhoto || null,
-    documents: documents || null,
-    businessName: businessName || storeName || null,
-    storeName: storeName || businessName || null,
-    businessType: businessType || null,
-    storeAddress: storeAddress || null,
-    ntn: ntn || null,
   });
+
+  if (userRole === "rider") {
+    await db.insert(riderProfilesTable).values({
+      userId,
+      vehicleType: vehicleType ? normalizeVehicleTypeForStorage(vehicleType) : null,
+      vehicleRegNo: vehicleRegNo || null,
+      vehiclePlate: vehiclePlate || vehicleRegNo || null,
+      drivingLicense: drivingLicense || null,
+      vehiclePhoto: vehiclePhoto || null,
+      documents: documents || null,
+    });
+  }
+
+  if (userRole === "vendor") {
+    await db.insert(vendorProfilesTable).values({
+      userId,
+      businessName: businessName || storeName || null,
+      storeName: storeName || businessName || null,
+      businessType: businessType || null,
+      storeAddress: storeAddress || null,
+      ntn: ntn || null,
+    });
+  }
 
   writeAuthAuditLog("register", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone: normalizedPhone, role: userRole } });
   emitWebhookEvent("user_registered", { userId, phone: normalizedPhone, role: userRole, method: "username_password" }).catch(() => {});
@@ -2631,7 +2643,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   res.status(201).json({
     message: "Registration successful. Please verify your phone with the OTP sent.",
     userId,
-    role: userRole,
+
     pendingApproval: needsApproval,
     otpRequired: true,
     channel: smsResult.sent ? smsResult.provider : "console",
@@ -3016,7 +3028,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     name: name?.trim() || null,
     email: normalizedEmail,
     username: cleanUsername,
-    role: userRole,
+
     roles: userRole,
     passwordHash: hashPassword(password),
     walletBalance: "0",
@@ -3026,16 +3038,22 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     emailOtpCode: tokenHash,
     emailOtpExpiry: verificationExpiry,
     ...(cnic ? { cnic: cnic.trim() } : {}),
-    ...(vehicleType ? { vehicleType: normalizeVehicleTypeForStorage(vehicleType) } : {}),
-    ...(resolvedVehicleRegNo ? { vehicleRegNo: resolvedVehicleRegNo.trim() } : {}),
-    ...(drivingLicense ? { drivingLicense: drivingLicense.trim() } : {}),
     ...(address ? { address: address.trim() } : {}),
     ...(city ? { city: city.trim() } : {}),
     ...(emergencyContact ? { emergencyContact: emergencyContact.trim() } : {}),
-    ...(vehiclePlate ? { vehiclePlate: vehiclePlate.trim() } : {}),
-    ...(vehiclePhoto ? { vehiclePhoto } : {}),
-    ...(documents ? { documents } : {}),
   });
+
+  if (userRole === "rider" && (vehicleType || resolvedVehicleRegNo || drivingLicense || vehiclePlate || vehiclePhoto || documents)) {
+    await db.insert(riderProfilesTable).values({
+      userId,
+      vehicleType: vehicleType ? normalizeVehicleTypeForStorage(vehicleType) : null,
+      vehicleRegNo: resolvedVehicleRegNo ? resolvedVehicleRegNo.trim() : null,
+      vehiclePlate: vehiclePlate ? vehiclePlate.trim() : null,
+      drivingLicense: drivingLicense ? drivingLicense.trim() : null,
+      vehiclePhoto: vehiclePhoto || null,
+      documents: documents || null,
+    });
+  }
 
   const domain = process.env["REPLIT_DEV_DOMAIN"] || process.env["APP_DOMAIN"] || "localhost";
   const verificationLink = `https://${domain}/api/auth/verify-email?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(normalizedEmail)}`;
@@ -3056,7 +3074,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
       ? "Registration successful. Please check your email to verify your account."
       : "Registration successful. Please check your email to verify your account. (Email delivery pending — contact support if not received.)",
     userId,
-    role: userRole,
+
     pendingApproval: requireApproval,
     emailSent: emailResult.sent,
     verificationLink: isDevTokenLog ? verificationLink : undefined,
@@ -3309,7 +3327,7 @@ router.post("/social/google", async (req, res) => {
     const id = generateId();
     [user] = await db.insert(usersTable).values({
       id, name, email, avatar, googleId,
-      role: "customer", roles: "customer", walletBalance: "0",
+      roles: "customer", walletBalance: "0",
       emailVerified: !!email,
       isActive: !requireApproval, approvalStatus: requireApproval ? "pending" : "approved",
     }).returning();
@@ -3407,7 +3425,7 @@ router.post("/social/facebook", async (req, res) => {
     const id = generateId();
     [user] = await db.insert(usersTable).values({
       id, name, email, avatar, facebookId,
-      role: "customer", roles: "customer", walletBalance: "0",
+      roles: "customer", walletBalance: "0",
       emailVerified: !!email,
       isActive: !requireApproval, approvalStatus: requireApproval ? "pending" : "approved",
     }).returning();

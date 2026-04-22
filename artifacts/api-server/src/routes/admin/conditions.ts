@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { usersTable, accountConditionsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { generateId } from "../../lib/id.js";
 
 const router = Router();
 
@@ -29,14 +30,18 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { userId, userRole, conditionType, isActive } = req.body;
+    const { userId, userRole, conditionType, severity, category, reason, notes, appliedBy, isActive } = req.body;
     const [newCond] = await db.insert(accountConditionsTable).values({
+      id: generateId(),
       userId,
       userRole,
       conditionType,
+      severity,
+      category: category ?? severity,
+      reason: reason ?? "Applied by admin",
+      notes: notes ?? null,
+      appliedBy: appliedBy ?? null,
       isActive: isActive ?? true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
     }).returning();
     res.json({ success: true, data: newCond });
   } catch (error) {

@@ -18,7 +18,7 @@ let _io: SocketIOServer | null = null;
    by socket ID and clear the entry on disconnect.
    Value shape: { payload: JwtPayload | null } — null means the token was
    invalid; we store that too so we never retry a known-bad token.          */
-type CachedSession = { userId: string; role?: string; roles?: string[] } | null;
+type CachedSession = { userId: string; role?: string; roles?: string } | null;
 const _sessionCache = new Map<string, CachedSession>();
 
 function getCachedSession(socketId: string, token: string | null): CachedSession {

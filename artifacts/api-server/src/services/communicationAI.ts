@@ -83,7 +83,7 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error(`Gemini API error (${response.status}): ${errorText}`);
   }
   
-  const data = await response.json();
+  const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
     throw new Error("No response text from Gemini");

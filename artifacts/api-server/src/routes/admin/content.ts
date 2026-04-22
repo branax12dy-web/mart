@@ -151,7 +151,6 @@ async function ensureSystemVendor(): Promise<void> {
       id: SYSTEM_VENDOR_ID,
       phone: "+920000000000",
       name: "AJKMart System",
-      role: "vendor",
       roles: "vendor",
       city: "Muzaffarabad",
       area: "System",
@@ -574,13 +573,13 @@ router.post("/promo-codes", async (req, res) => {
     const [code] = await db.insert(promoCodesTable).values({
       id:             generateId(),
       code:           String(body.code).toUpperCase().trim(),
-      description:    body.description    || null,
+      description:    body.description    ? String(body.description)    : null,
       discountPct:    body.discountPct    ? String(body.discountPct)    : null,
       discountFlat:   body.discountFlat   ? String(body.discountFlat)   : null,
       minOrderAmount: body.minOrderAmount ? String(body.minOrderAmount) : "0",
       maxDiscount:    body.maxDiscount    ? String(body.maxDiscount)    : null,
       usageLimit:     body.usageLimit     ? Number(body.usageLimit)     : null,
-      appliesTo:      body.appliesTo      || "all",
+      appliesTo:      body.appliesTo      ? String(body.appliesTo)      : "all",
       expiresAt:      body.expiresAt      ? new Date(body.expiresAt as string) : null,
       isActive:       body.isActive !== false,
     }).returning();
@@ -602,7 +601,7 @@ router.patch("/promo-codes/:id", async (req, res) => {
   if (body.maxDiscount    !== undefined) updates.maxDiscount    = body.maxDiscount    ? String(body.maxDiscount)    : null;
   if (body.usageLimit     !== undefined) updates.usageLimit     = body.usageLimit     ? Number(body.usageLimit)     : null;
   if (body.appliesTo      !== undefined) updates.appliesTo      = body.appliesTo;
-  if (body.expiresAt      !== undefined) updates.expiresAt      = body.expiresAt      ? new Date(body.expiresAt)    : null;
+  if (body.expiresAt      !== undefined) updates.expiresAt      = body.expiresAt      ? new Date(body.expiresAt as string)    : null;
   if (body.isActive       !== undefined) updates.isActive       = body.isActive;
   const [code] = await db.update(promoCodesTable).set(updates).where(eq(promoCodesTable.id, req.params["id"]!)).returning();
   if (!code) { sendNotFound(res, "Promo code not found"); return; }

@@ -354,7 +354,7 @@ router.post("/validate-cart", async (req, res) => {
     return;
   }
 
-  const productIds = items.map((it: Record<string, unknown>) => it.productId).filter(Boolean);
+  const productIds = items.map((it: Record<string, unknown>) => it.productId).filter(Boolean) as string[];
   if (productIds.length === 0) {
     sendSuccess(res, { valid: true, items, removed: [], priceChanges: [] });
     return;
@@ -740,7 +740,7 @@ router.post("/", customerAuth, async (req, res) => {
     sendValidationError(res, "Each item must include a valid productId"); return;
   }
 
-  const productIds = (items as Array<Record<string, unknown>>).map((it: Record<string, unknown>) => it.productId);
+  const productIds = (items as Array<Record<string, unknown>>).map((it: Record<string, unknown>) => it.productId) as string[];
   {
     const dbProducts = await db.select({
       id: productsTable.id,
