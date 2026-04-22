@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import { Request } from "express";
 import { randomBytes } from "crypto";
 import bcrypt from "bcrypt";
+import { db, platformSettingsTable } from "@workspace/db";
 
 // ========== ALL EXPORTS REQUIRED BY AUTH.TS & OTHERS ==========
 export interface AdminRequest extends Request {
@@ -110,10 +111,45 @@ export async function sendUserNotification(
   _type?: string,
   _icon?: string,
 ) { return true; }
-export async function getPlatformSettings(): Promise<Record<string, string>> { return {}; }
-export async function getCachedSettings(_k?: string): Promise<Record<string, string>> { return {}; }
-export function invalidateSettingsCache() { }
-export function invalidatePlatformSettingsCache() { }
+/* ══════════════════════════════════════════════════════════════
+   PLATFORM SETTINGS — single source of truth for runtime flags.
+   Reads `platform_settings` table and exposes as `Record<key,value>`.
+   30-second in-memory cache; `invalidateSettingsCache()` clears it.
+   On DB failure: logs and returns last-known cache (or {}) so the
+   API degrades gracefully instead of locking everyone out.
+══════════════════════════════════════════════════════════════ */
+const PLATFORM_SETTINGS_TTL_MS = 30_000;
+let _settingsCache: Record<string, string> = {};
+let _settingsCacheExpiry = 0;
+
+export async function getPlatformSettings(): Promise<Record<string, string>> {
+  try {
+    const rows = await db.select({ key: platformSettingsTable.key, value: platformSettingsTable.value }).from(platformSettingsTable);
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.key] = r.value;
+    return map;
+  } catch (err) {
+    console.error("[getPlatformSettings] DB read failed:", err);
+    return _settingsCache;
+  }
+}
+
+export async function getCachedSettings(_k?: string): Promise<Record<string, string>> {
+  if (Date.now() < _settingsCacheExpiry && Object.keys(_settingsCache).length > 0) {
+    return _settingsCache;
+  }
+  const fresh = await getPlatformSettings();
+  if (Object.keys(fresh).length > 0) {
+    _settingsCache = fresh;
+    _settingsCacheExpiry = Date.now() + PLATFORM_SETTINGS_TTL_MS;
+  }
+  return _settingsCache;
+}
+
+export function invalidateSettingsCache() {
+  _settingsCacheExpiry = 0;
+}
+export const invalidatePlatformSettingsCache = invalidateSettingsCache;
 
 export const adminAuth = (_req: any, _res: any, next: any) => next();
 export function serializeSosAlert(a: any) { return a; }
