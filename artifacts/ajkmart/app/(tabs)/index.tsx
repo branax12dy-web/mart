@@ -744,9 +744,9 @@ interface HeaderContentProps {
   platformConfig: { platform: { businessAddress?: string } };
   itemCount: number;
   handleLocationPress: () => void;
-  searchOpacity: Animated.Value | Animated.Interpolation<number | string>;
-  searchTranslateY: Animated.Value | Animated.Interpolation<number | string>;
-  searchMaxHeight: Animated.Value | Animated.Interpolation<number | string>;
+  searchOpacity: Animated.Value | Animated.AnimatedInterpolation<number | string>;
+  searchTranslateY: Animated.Value | Animated.AnimatedInterpolation<number | string>;
+  searchMaxHeight: Animated.Value | Animated.AnimatedInterpolation<number | string>;
   T: (key: Parameters<typeof tDual>[0]) => string;
   topPad?: number;
   announcement?: string;

@@ -7,7 +7,7 @@ if (!domain && __DEV__) {
 }
 export const API_BASE = domain ? `https://${domain}/api` : "";
 
-export function unwrapApiResponse<T = unknown>(json: unknown): T {
+export function unwrapApiResponse<T = Record<string, unknown>>(json: unknown): T {
   if (json != null && typeof json === "object" && "success" in json && (json as Record<string, unknown>)["success"] === true && "data" in json) {
     return (json as Record<string, unknown>)["data"] as T;
   }

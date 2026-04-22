@@ -253,12 +253,12 @@ export default function FoodRestaurantScreen() {
         </View>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
           <Ionicons name="alert-circle-outline" size={48} color={C.textMuted} />
-          <Text style={{ fontFamily: Font.semibold, fontSize: 16, color: C.text }}>Restaurant not found</Text>
+          <Text style={{ fontFamily: Font.semiBold, fontSize: 16, color: C.text }}>Restaurant not found</Text>
           <Text style={{ fontFamily: Font.regular, fontSize: 13, color: C.textMuted, textAlign: "center" }}>
             We could not load this restaurant. Please check your connection and try again.
           </Text>
           <TouchableOpacity onPress={() => refetch()} style={[styles.addBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 }]} activeOpacity={0.7}>
-            <Text style={{ fontFamily: Font.semibold, color: C.textInverse }}>Retry</Text>
+            <Text style={{ fontFamily: Font.semiBold, color: C.textInverse }}>Retry</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   statusText: {
-    fontFamily: Font.semibold,
+    fontFamily: Font.semiBold,
     fontSize: 12,
   },
   metaRow: {
@@ -566,7 +566,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   itemName: {
-    fontFamily: Font.semibold,
+    fontFamily: Font.semiBold,
     fontSize: 14,
     color: C.text,
     lineHeight: 20,
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   discountText: {
-    fontFamily: Font.semibold,
+    fontFamily: Font.semiBold,
     fontSize: 10,
     color: C.emeraldDeep,
   },
@@ -646,7 +646,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.redBg,
   },
   outOfStockText: {
-    fontFamily: Font.semibold,
+    fontFamily: Font.semiBold,
     fontSize: 10,
     color: C.redBright,
   },

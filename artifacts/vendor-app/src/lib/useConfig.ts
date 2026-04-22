@@ -4,7 +4,6 @@ import { apiFetch } from "./api";
 export interface PlatformConfig {
   currencySymbol?: string;
   currencyCode?: string;
-  regional?: { currencySymbol?: string; [key: string]: unknown };
   vendor: {
     commissionPct: number;
     settleDays: number;
