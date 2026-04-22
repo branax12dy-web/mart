@@ -544,7 +544,10 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
 
   const resetOtpMutation = useMutation({
     mutationFn: () => fetcher(`/users/${user.id}/reset-otp`, { method: "POST", body: "{}" }),
-    onSuccess: () => toast({ title: "OTP cleared", description: "User must re-authenticate on next login." }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      toast({ title: "OTP cleared", description: "User must re-authenticate on next login." });
+    },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
@@ -553,6 +556,7 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     onSuccess: (d: any) => {
       setBypassActive(true);
       setBypassUntil(d.bypassUntil);
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
       toast({ title: "OTP bypass enabled", description: `User can log in without OTP until ${new Date(d.bypassUntil).toLocaleTimeString()}` });
     },
     onError: (e: any) => toast({ title: "Failed to set bypass", description: e.message, variant: "destructive" }),
@@ -563,6 +567,7 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     onSuccess: () => {
       setBypassActive(false);
       setBypassUntil(null);
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
       toast({ title: "OTP bypass cancelled" });
     },
     onError: (e: any) => toast({ title: "Failed to cancel bypass", description: e.message, variant: "destructive" }),
@@ -1320,7 +1325,7 @@ export default function Users() {
     mutationFn: (userId: string) => fetcher(`/admin/users/${userId}/waive-debt`, { method: "PATCH" }),
     onSuccess: (data: any, userId: string) => {
       toast({ title: "Debt Waived", description: `${formatCurrency(Number(data.waived?.toFixed(0) || 0))} cancellation debt cleared.` });
-      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });

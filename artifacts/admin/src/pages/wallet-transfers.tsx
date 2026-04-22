@@ -166,6 +166,8 @@ function TransactionsPanel() {
       apiFetch(`/wallet/freeze-p2p/${uid}`, { method: "PATCH" }),
     onSuccess: (d: any) => {
       setFreezeModal(null);
+      qc.invalidateQueries({ queryKey: ["admin-p2p-txns"] });
+      qc.invalidateQueries({ queryKey: ["admin-wallet-stats"] });
       toast({ title: d?.data?.p2pFrozen ? "P2P transfers frozen" : "P2P transfers unfrozen" });
     },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
