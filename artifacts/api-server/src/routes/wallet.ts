@@ -321,6 +321,16 @@ router.post("/deposit", customerAuth, async (req, res) => {
   if (amt < minTopup) { idempotencyCache.delete(cacheKey); sendValidationError(res, `Minimum deposit is Rs. ${minTopup}`); return; }
   if (amt > maxTopup) { idempotencyCache.delete(cacheKey); sendValidationError(res, `Maximum single deposit is Rs. ${maxTopup}`); return; }
 
+  /* ── KYC gating for deposits (admin Setting: wallet_kyc_required) ── */
+  if ((s["wallet_kyc_required"] ?? "off") === "on") {
+    const [kycRow] = await db.select({ kycStatus: usersTable.kycStatus }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!kycRow || kycRow.kycStatus !== "verified") {
+      idempotencyCache.delete(cacheKey);
+      sendForbidden(res, "kyc_required", "KYC verification is required before you can top up your wallet. Please complete KYC from your profile.");
+      return;
+    }
+  }
+
   const txId = generateId();
   const desc = [
     `Manual deposit — ${paymentMethod}`,
@@ -554,6 +564,16 @@ router.post("/send", customerAuth, requireWalletPin, async (req, res) => {
   if (sendAmt > maxWithdrawal) {
     clearKey();
     sendValidationError(res, `Maximum single transfer is Rs. ${maxWithdrawal}`); return;
+  }
+
+  /* ── KYC gating for P2P transfers (admin Setting: wallet_kyc_required) ── */
+  if ((s["wallet_kyc_required"] ?? "off") === "on") {
+    const [kycRow] = await db.select({ kycStatus: usersTable.kycStatus }).from(usersTable).where(eq(usersTable.id, senderUserId)).limit(1);
+    if (!kycRow || kycRow.kycStatus !== "verified") {
+      clearKey();
+      sendForbidden(res, "kyc_required", "KYC verification is required before you can transfer money. Please complete KYC from your profile.");
+      return;
+    }
   }
 
   const maxBalance = parseFloat(s["wallet_max_balance"] ?? "50000");
@@ -868,6 +888,36 @@ router.post("/withdraw", customerAuth, requireWalletPin, async (req, res) => {
   if (!walletEnabled) { clearKey(); sendError(res, "Wallet service is currently disabled", 503); return; }
   if (amt < minWithdrawal) { clearKey(); sendValidationError(res, `Minimum withdrawal is Rs. ${minWithdrawal}`); return; }
   if (amt > maxWithdrawal) { clearKey(); sendValidationError(res, `Maximum single withdrawal is Rs. ${maxWithdrawal}`); return; }
+
+  /* ── KYC gating (admin Setting: wallet_kyc_required) ── */
+  if ((s["wallet_kyc_required"] ?? "off") === "on") {
+    const [kycRow] = await db.select({ kycStatus: usersTable.kycStatus }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!kycRow || kycRow.kycStatus !== "verified") {
+      clearKey();
+      sendForbidden(res, "kyc_required", "KYC verification is required before you can withdraw. Please complete KYC from your profile.");
+      return;
+    }
+  }
+
+  /* ── Daily wallet spend limit (covers both withdrawals and debits) ── */
+  const dailyLimit = parseFloat(s["wallet_daily_limit"] ?? "20000");
+  if (dailyLimit > 0) {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const [todayDebits] = await db
+      .select({ total: sum(walletTransactionsTable.amount) })
+      .from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.userId, userId),
+        sql`${walletTransactionsTable.type} IN ('debit', 'withdrawal')`,
+        gte(walletTransactionsTable.createdAt, todayStart),
+      ));
+    const todayTotal = parseFloat(String(todayDebits?.total ?? "0")) || 0;
+    if (todayTotal + amt > dailyLimit) {
+      clearKey();
+      sendValidationError(res, `Daily wallet limit is Rs. ${dailyLimit}. Aaj aap ne Rs. ${todayTotal.toFixed(0)} kharch kiye hain.`);
+      return;
+    }
+  }
 
   const balance = parseFloat(String(withdrawUser.walletBalance ?? "0"));
   if (balance < amt) {

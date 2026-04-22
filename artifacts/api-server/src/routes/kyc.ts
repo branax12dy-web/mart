@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { kycVerificationsTable, usersTable } from "@workspace/db/schema";
+import { kycVerificationsTable, usersTable, notificationsTable } from "@workspace/db/schema";
 import { eq, desc, and, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { customerAuth } from "../middleware/security.js";
@@ -577,6 +577,17 @@ router.post("/admin/:id/approve", adminAuth, async (req, res) => {
     })
     .where(eq(usersTable.id, record.userId));
 
+  /* ── Notify the user that KYC was approved ── */
+  await db.insert(notificationsTable).values({
+    id: randomUUID(),
+    userId: record.userId,
+    title: "KYC Verified ✅",
+    body: "Your KYC verification has been approved. You now have full access to wallet features.",
+    type: "kyc",
+    icon: "shield-checkmark-outline",
+    link: "/profile",
+  }).catch((e: Error) => logger.warn({ userId: record.userId, err: e.message }, "[kyc/approve] notification insert failed"));
+
   res.json({ success: true, message: "KYC approved and account activated" });
 });
 
@@ -609,6 +620,17 @@ router.post("/admin/:id/reject", adminAuth, async (req, res) => {
     .update(usersTable)
     .set({ kycStatus: "rejected", updatedAt: now })
     .where(eq(usersTable.id, record.userId));
+
+  /* ── Notify the user that KYC was rejected with the reason ── */
+  await db.insert(notificationsTable).values({
+    id: randomUUID(),
+    userId: record.userId,
+    title: "KYC Rejected ❌",
+    body: `Your KYC verification was rejected. Reason: ${reason.trim()}. Please re-submit with corrected information.`,
+    type: "kyc",
+    icon: "alert-circle-outline",
+    link: "/profile",
+  }).catch((e: Error) => logger.warn({ userId: record.userId, err: e.message }, "[kyc/reject] notification insert failed"));
 
   res.json({ success: true, message: "KYC rejected" });
 });

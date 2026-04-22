@@ -304,6 +304,19 @@ router.post("/bookings", customerAuth, async (req, res) => {
   const { scheduleId, travelDate, seatNumbers, paymentMethod, passengerName, passengerPhone } = parsed.data;
 
   try {
+    /* ── Feature flag + maintenance gate (mirrors orders/rides/pharmacy/parcel) ── */
+    const ps = await getPlatformSettings();
+    if ((ps["feature_van"] ?? "on") !== "on") {
+      sendError(res, "Van service is currently disabled", 503); return;
+    }
+    if ((ps["app_status"] ?? "active") === "maintenance") {
+      const mainKey = (ps["security_maintenance_key"] ?? "").trim();
+      const bypass  = ((req.headers["x-maintenance-key"] as string) ?? "").trim();
+      if (!mainKey || bypass !== mainKey) {
+        sendError(res, ps["content_maintenance_msg"] ?? "We're performing scheduled maintenance. Back soon!", 503); return;
+      }
+    }
+
     const vs = await getVanSettings();
 
     /* Enforce max seats per booking */

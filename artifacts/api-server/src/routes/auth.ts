@@ -1913,18 +1913,21 @@ async function handleUnifiedLogin(req: Request, res: any) {
 
   const { user, idType, lookupKey } = await findUserByIdentifier(identifier);
 
+  const lockoutEnabled = (settings["security_lockout_enabled"] ?? "on") === "on";
   const maxAttempts = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
   const lockoutMinutes = parseInt(settings["security_lockout_minutes"] ?? "30", 10);
 
   const lockoutKey = user ? `uid:${user.id}` : lookupKey;
 
-  const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
-  if (lockout.locked) {
-    res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+  if (lockoutEnabled) {
+    const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
+    if (lockout.locked) {
+      res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+    }
   }
 
   if (!user || !user.passwordHash) {
-    await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
+    if (lockoutEnabled) await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
     addAuditEntry({ action: "unified_login_failed", ip, details: `Not found or no password (${idType}): ${lookupKey}`, result: "fail" });
     res.status(401).json({ error: "Invalid credentials" }); return;
   }
@@ -1950,12 +1953,15 @@ async function handleUnifiedLogin(req: Request, res: any) {
 
   const passwordOk = verifyPassword(password, user.passwordHash);
   if (!passwordOk) {
+    /* recordFailedAttempt is a no-op when admin toggle security_lockout_enabled='off' */
     const updated = await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
     addAuditEntry({ action: "unified_login_failed", ip, details: `Wrong password (${idType}): ${lookupKey}`, result: "fail" });
-    if (updated.lockedUntil) {
+    if (lockoutEnabled && updated.lockedUntil) {
       res.status(429).json({ error: `Too many failed attempts. Locked for ${lockoutMinutes} minutes.` });
+    } else if (lockoutEnabled) {
+      res.status(401).json({ error: `Invalid credentials. ${Math.max(0, maxAttempts - updated.attempts)} attempt(s) remaining.` });
     } else {
-      res.status(401).json({ error: `Invalid credentials. ${maxAttempts - updated.attempts} attempt(s) remaining.` });
+      res.status(401).json({ error: "Invalid credentials" });
     }
     return;
   }
@@ -2069,12 +2075,15 @@ router.post("/login/verify-otp", async (req, res) => {
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   if (user.isBanned) { res.status(403).json({ error: "Account suspended. Contact support." }); return; }
 
+  const lockoutEnabled = (settings["security_lockout_enabled"] ?? "on") === "on";
   const maxAttempts    = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
   const lockoutMinutes = parseInt(settings["security_lockout_minutes"]    ?? "30", 10);
   const lockoutKey     = `uid:${user.id}`;
-  const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
-  if (lockout.locked) {
-    res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+  if (lockoutEnabled) {
+    const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
+    if (lockout.locked) {
+      res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+    }
   }
 
   const now = new Date();
@@ -2090,13 +2099,16 @@ router.post("/login/verify-otp", async (req, res) => {
     .returning({ id: usersTable.id });
 
   if (rows.length === 0) {
+    /* recordFailedAttempt is a no-op when admin toggle security_lockout_enabled='off' */
     const updated = await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
-    const remaining = Math.max(0, maxAttempts - updated.attempts);
     writeAuthAuditLog("otp_failed", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login_otp" } });
-    if (updated.lockedUntil) {
+    if (lockoutEnabled && updated.lockedUntil) {
       res.status(429).json({ error: `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.` });
-    } else {
+    } else if (lockoutEnabled) {
+      const remaining = Math.max(0, maxAttempts - updated.attempts);
       res.status(401).json({ error: `Invalid or expired OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
+    } else {
+      res.status(401).json({ error: "Invalid or expired OTP." });
     }
     return;
   }

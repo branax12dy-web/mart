@@ -457,11 +457,28 @@ export function verifyAdminJwt(token: string): AdminJwtPayload | null {
 /* ══════════════════════════════════════════════════════════════
    LOGIN LOCKOUT HELPERS  (DB-backed — survives restarts)
 ══════════════════════════════════════════════════════════════ */
+/**
+ * Returns `true` when the admin master toggle `security_lockout_enabled` is `on`
+ * (default). When the admin disables the toggle, every lockout helper short-circuits
+ * to a no-op so that wrong credentials no longer accumulate or trigger 429 responses.
+ * Reads the cached settings (30s TTL) so it costs nothing per call.
+ */
+async function isLockoutEnabled(): Promise<boolean> {
+  try {
+    const settings = await getCachedSettings();
+    return (settings["security_lockout_enabled"] ?? "on") === "on";
+  } catch {
+    /* Fail-open on settings read errors — preserves current security posture. */
+    return true;
+  }
+}
+
 export async function checkLockout(
   key: string,
   maxAttempts: number,
   lockoutMinutes: number
 ): Promise<{ locked: boolean; minutesLeft?: number; attempts?: number }> {
+  if (!(await isLockoutEnabled())) return { locked: false, attempts: 0 };
   try {
     const [record] = await db.select().from(rateLimitsTable).where(eq(rateLimitsTable.key, key)).limit(1);
     if (!record) return { locked: false, attempts: 0 };
@@ -484,6 +501,7 @@ export async function checkLockout(
 }
 
 export async function recordFailedAttempt(key: string, maxAttempts: number, lockoutMinutes: number) {
+  if (!(await isLockoutEnabled())) return { attempts: 0, lockedUntil: null };
   try {
     const now = new Date();
     const lockedUntil = new Date(Date.now() + lockoutMinutes * 60 * 1000);
