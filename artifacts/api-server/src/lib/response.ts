@@ -65,11 +65,14 @@ export function sendNotFound(res: Response, error = "Resource not found.", messa
   sendError(res, error, 404, message);
 }
 
-export function sendTooManyRequests(res: Response, retryAfter?: number): void {
-  if (retryAfter) {
-    res.setHeader("Retry-After", retryAfter.toString());
+export function sendTooManyRequests(res: Response, retryAfterOrMessage?: number | string): void {
+  let message = "Too many requests. Please slow down.";
+  if (typeof retryAfterOrMessage === "number") {
+    res.setHeader("Retry-After", retryAfterOrMessage.toString());
+  } else if (typeof retryAfterOrMessage === "string") {
+    message = retryAfterOrMessage;
   }
-  sendError(res, "Too many requests. Please slow down.", 429);
+  sendError(res, message, 429);
 }
 
 export function sendInternalError(res: Response): void {

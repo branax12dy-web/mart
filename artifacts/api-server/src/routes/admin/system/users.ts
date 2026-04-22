@@ -92,7 +92,7 @@ router.get("/users/search", async (req, res) => {
       id: usersTable.id,
       name: usersTable.name,
       phone: usersTable.phone,
-      role: usersTable.role,
+      role: usersTable.roles,
       otpBypassUntil: sql<string | null>`${usersTable}.otp_bypass_until`,
     })
     .from(usersTable)
@@ -188,7 +188,7 @@ router.get("/users", async (req, res) => {
 router.patch("/users/:id", async (req, res) => {
   const { role, isActive, walletBalance } = req.body;
   const updates: Partial<typeof usersTable.$inferInsert> & { tokenVersion?: ReturnType<typeof sql> } = {};
-  if (role !== undefined) { updates.role = role; updates.roles = role; }
+  if (role !== undefined) { updates.roles = role; updates.roles = role; }
   if (isActive !== undefined) updates.isActive = isActive;
   if (walletBalance !== undefined) updates.walletBalance = String(walletBalance);
 

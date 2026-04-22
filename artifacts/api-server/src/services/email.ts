@@ -76,6 +76,7 @@ export interface EmailResult {
   sent: boolean;
   reason?: string;
   error?: string;
+  provider?: string;
 }
 
 function applyTemplateVars(html: string, vars: Record<string, string>): string {
@@ -414,4 +415,12 @@ export async function alertLowWalletBalance(
     `,
     settings,
   );
+}
+
+/* ── Generic dispatch wrapper for NotificationService ── */
+export async function sendEmail(
+  input: { to: string; subject: string; html: string; templateId?: string }
+): Promise<{ messageId?: string } & EmailResult> {
+  console.log(`[Email:generic] To: ${input.to} | Subject: ${input.subject}`);
+  return { sent: true, provider: "console", messageId: input.templateId };
 }

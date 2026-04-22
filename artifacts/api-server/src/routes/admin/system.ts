@@ -1312,8 +1312,8 @@ router.get("/vendor-ratings", adminAuth, async (req, res) => {
       .select({
         userId: vendorProfilesTable.userId,
         storeName: vendorProfilesTable.storeName,
-        storeType: vendorProfilesTable.storeType,
-        isActive: vendorProfilesTable.isActive,
+        storeType: vendorProfilesTable.businessType,
+        isActive: vendorProfilesTable.storeIsOpen,
         phone: usersTable.phone,
         name: usersTable.name,
       })
@@ -1819,7 +1819,7 @@ router.get("/wallet/stats", adminAuth, async (req, res) => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
-    const [todayStats] = await db.execute(sql`
+    const todayRes = await db.execute(sql`
       SELECT
         COUNT(*) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit') as today_transfers,
         COALESCE(SUM(amount) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit'), 0) as today_volume,
@@ -1827,20 +1827,20 @@ router.get("/wallet/stats", adminAuth, async (req, res) => {
       FROM wallet_transactions
       WHERE created_at >= ${todayStart}
     `);
-    const [monthStats] = await db.execute(sql`
+    const monthRes = await db.execute(sql`
       SELECT
         COUNT(*) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit') as month_transfers,
         COALESCE(SUM(amount) FILTER (WHERE peer_id IS NOT NULL AND type = 'debit'), 0) as month_volume
       FROM wallet_transactions
       WHERE created_at >= ${monthStart}
     `);
-    const [totalFlagged] = await db.execute(sql`
+    const totalFlaggedRes = await db.execute(sql`
       SELECT COUNT(*) as total_flagged FROM wallet_transactions WHERE flagged = true AND peer_id IS NOT NULL
     `);
 
-    const r = todayStats as any;
-    const m = monthStats as any;
-    const f = totalFlagged as any;
+    const r = todayRes.rows?.[0] as any;
+    const m = monthRes.rows?.[0] as any;
+    const f = totalFlaggedRes.rows?.[0] as any;
 
     sendSuccess(res, {
       today: {
@@ -1898,13 +1898,13 @@ router.get("/wallet/p2p-transactions", adminAuth, async (req, res) => {
       LIMIT ${limit} OFFSET ${offset}
     `);
 
-    const [countRow] = await db.execute(sql`
+    const countRowRes = await db.execute(sql`
       SELECT COUNT(*) as total
       FROM wallet_transactions wt
       WHERE ${whereClause}
     `);
 
-    const total = Number((countRow as any)?.total ?? 0);
+    const total = Number((countRowRes.rows?.[0] as any)?.total ?? 0);
     sendSuccess(res, {
       transactions: rows,
       total,

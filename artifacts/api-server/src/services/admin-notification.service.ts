@@ -14,7 +14,7 @@ import {
   usersTable,
   notificationsTable,
 } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { logger } from "../lib/logger.js";
 import { sendSms } from "./sms.js";
@@ -263,7 +263,7 @@ export class NotificationService {
     return notifications.map((n) => ({
       ...n,
       createdAt: n.createdAt.toISOString(),
-      readAt: n.readAt?.toISOString() || null,
+      readAt: n.isRead ? n.createdAt.toISOString() : null,
     }));
   }
 
@@ -364,7 +364,7 @@ export class NotificationService {
   static async markAsRead(notificationId: string) {
     await db
       .update(notificationsTable)
-      .set({ readAt: new Date() })
+      .set({ isRead: true })
       .where(eq(notificationsTable.id, notificationId));
 
     return { success: true };
@@ -378,8 +378,10 @@ export class NotificationService {
       .select()
       .from(notificationsTable)
       .where(
-        eq(notificationsTable.userId, userId) &&
-        eq(notificationsTable.readAt, null)
+        and(
+          eq(notificationsTable.userId, userId),
+          eq(notificationsTable.isRead, false),
+        )
       );
 
     return { unreadCount: notifications.length };

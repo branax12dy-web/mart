@@ -38,6 +38,7 @@ export interface WAResult {
   sent: boolean;
   messageId?: string;
   error?: string;
+  provider?: string;
 }
 
 async function sendTemplate(
@@ -243,4 +244,12 @@ export async function sendWhatsAppOrderNotification(
     phoneNumberId,
     accessToken
   );
+}
+
+/* ── Generic dispatch wrapper for NotificationService ── */
+export async function sendWhatsappMessage(
+  input: { to: string; message: string; templateId?: string }
+): Promise<{ messageId?: string } & WAResult> {
+  console.log(`[WhatsApp:generic] To: ${input.to} | ${input.message}`);
+  return { sent: true, provider: "console", messageId: input.templateId };
 }

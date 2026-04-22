@@ -190,3 +190,13 @@ export async function sendOrderSMS(
   const message = applyTemplate(adminTemplate, { id: orderId, status });
   return dispatchSMS(phone, message, settings);
 }
+
+/* ── Generic dispatch wrapper for NotificationService ── */
+export async function sendSms(
+  input: { to: string; message: string; templateId?: string }
+): Promise<{ messageId?: string } & SMSResult> {
+  const { getCachedSettings } = await import("../middleware/security.js");
+  const settings = await getCachedSettings();
+  const result = await dispatchSMS(input.to, input.message, settings);
+  return { ...result, messageId: input.templateId };
+}

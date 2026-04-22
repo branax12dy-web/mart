@@ -126,8 +126,8 @@ export class UserService {
     let passwordHash = null;
     if (input.tempPassword) {
       const strengthCheck = validatePasswordStrength(input.tempPassword);
-      if (!strengthCheck.isStrong) {
-        throw new Error(`Weak password: ${strengthCheck.feedback.join(", ")}`);
+      if (!strengthCheck.ok) {
+        throw new Error(`Weak password: ${strengthCheck.message}`);
       }
       passwordHash = await hashPassword(input.tempPassword);
     }
@@ -210,7 +210,13 @@ export class UserService {
       throw new Error("User not found");
     }
 
-    await db.update(usersTable).set({ status, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+    const flags =
+      status === "active"
+        ? { isActive: true, isBanned: false }
+        : status === "suspended"
+          ? { isActive: false, isBanned: false }
+          : { isActive: false, isBanned: true };
+    await db.update(usersTable).set({ ...flags, updatedAt: new Date() }).where(eq(usersTable.id, userId));
 
     logger.info({ userId, status }, "[UserService] User status changed");
 
@@ -233,7 +239,7 @@ export class UserService {
 
     await db
       .update(usersTable)
-      .set({ kycStatus: "approved", status: "active", updatedAt: new Date() })
+      .set({ kycStatus: "approved", isActive: true, isBanned: false, updatedAt: new Date() })
       .where(eq(usersTable.id, userId));
 
     logger.info({ userId }, "[UserService] User approved");
@@ -259,7 +265,7 @@ export class UserService {
       .update(usersTable)
       .set({
         kycStatus: "rejected",
-        status: "suspended",
+        isActive: false,
         kycRejectReason: reason,
         updatedAt: new Date(),
       })
@@ -285,7 +291,7 @@ export class UserService {
     }
 
     // Soft delete by setting status
-    await db.update(usersTable).set({ status: "deleted", updatedAt: new Date() }).where(eq(usersTable.id, userId));
+    await db.update(usersTable).set({ isActive: false, isBanned: true, updatedAt: new Date() }).where(eq(usersTable.id, userId));
 
     // Revoke all sessions
     await db.delete(userSessionsTable).where(eq(userSessionsTable.userId, userId));

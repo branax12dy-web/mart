@@ -13,24 +13,16 @@ export async function isDemoMode(): Promise<boolean> {
   }
 }
 
-export async function getDemoSnapshot() {
-  const demoEnabled = await isDemoMode();
-  if (!demoEnabled) {
-    return { isDemoMode: false, snapshot: null };
-  }
-  
-  const snapshot = {
-    walletBalance: 12500.75,
-    totalOrders: 42,
-    totalRides: 18,
-    recentTransactions: [
-      { id: "txn_1", amount: 500, type: "credit", description: "Demo topup", createdAt: new Date() },
-      { id: "txn_2", amount: 250, type: "debit", description: "Demo purchase", createdAt: new Date() },
-    ],
-    demoExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-  };
-  
-  return { isDemoMode: true, snapshot };
+export interface DemoOrder { id: string; status: string; total: number }
+export interface DemoSnapshot {
+  vendors: Array<Record<string, unknown>>;
+  orders: DemoOrder[];
+  riders: Array<Record<string, unknown>>;
+  products: Array<Record<string, unknown>>;
+}
+
+export async function getDemoSnapshot(): Promise<DemoSnapshot> {
+  return { vendors: [], orders: [], riders: [], products: [] };
 }
 
 export async function setDemoMode(enabled: boolean) {

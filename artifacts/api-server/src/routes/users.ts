@@ -81,8 +81,8 @@ router.get("/profile", anyUserAuth, async (req, res) => {
     name: user.name,
     email: user.email,
     username: user.username ?? null,
-    role: user.role,
-    roles: user.roles ?? user.role ?? "customer",
+    role: user.roles,
+    roles: user.roles ?? user.roles ?? "customer",
     avatar: user.avatar,
     walletBalance: parseFloat(user.walletBalance ?? "0"),
     isActive: user.isActive,
@@ -115,11 +115,11 @@ router.post("/add-role", anyUserAuth, async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) { sendNotFound(res, "User not found"); return; }
 
-  const existingRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim()).filter(Boolean);
+  const existingRoles = (user.roles || user.roles || "customer").split(",").map((r: string) => r.trim()).filter(Boolean);
   if (existingRoles.includes("customer")) {
     sendSuccess(res, {
-      role: user.role,
-      roles: user.roles ?? user.role ?? "customer",
+      role: user.roles,
+      roles: user.roles ?? user.roles ?? "customer",
     }, "Customer role already active on this account.");
     return;
   }
@@ -133,7 +133,7 @@ router.post("/add-role", anyUserAuth, async (req, res) => {
   writeAuthAuditLog("role_added_customer", { userId, ip, userAgent: req.headers["user-agent"] as string, metadata: { previousRoles: user.roles, newRoles } });
 
   sendSuccess(res, {
-    role: user.role,
+    role: user.roles,
     roles: newRoles,
   }, "Customer access added to your account successfully.");
 });
@@ -296,7 +296,7 @@ router.post("/avatar", avatarUpload.single("avatar"), async (req, res) => {
     if (!user) { sendNotFound(res, "User not found"); return; }
     sendSuccess(res, { avatarUrl, user: {
       id: user.id, phone: user.phone, name: user.name, email: user.email,
-      role: user.role, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"),
+      role: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"),
     }});
   } catch (e: unknown) {
     const rawMsg = (e as Error)?.message || "Avatar upload failed";
@@ -385,7 +385,7 @@ router.put("/profile", async (req, res) => {
     name: user.name,
     email: user.email,
     username: user.username,
-    role: user.role,
+    role: user.roles,
     avatar: user.avatar,
     walletBalance: parseFloat(user.walletBalance ?? "0"),
     cnic: user.cnic,

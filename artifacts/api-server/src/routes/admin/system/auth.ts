@@ -515,7 +515,7 @@ router.delete("/mfa/disable", adminAuth, async (req, res) => {
   const adminId = req.adminId!;
   const adminName = req.adminName! ?? "Admin";
   if (!adminId) {
-    res.status(400).son({ error: "Super admin does not use TOTP." });
+    res.status(400).json({ error: "Super admin does not use TOTP." });
     return;
   }
 

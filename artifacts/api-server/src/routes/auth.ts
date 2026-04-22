@@ -3,8 +3,8 @@ import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable, rateLimitsTable, pendingOtpsTable, userSessionsTable, loginHistoryTable } from "@workspace/db/schema";
-import { eq, and, sql, lt, or, desc } from "drizzle-orm";
+import { usersTable, walletTransactionsTable, notificationsTable, refreshTokensTable, magicLinkTokensTable, rateLimitsTable, pendingOtpsTable, userSessionsTable, loginHistoryTable, vendorProfilesTable } from "@workspace/db/schema";
+import { eq, and, sql, lt, or, desc, ilike } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { getPlatformSettings } from "./admin.js";
 import { emitWebhookEvent } from "../lib/webhook-emitter.js";
@@ -286,7 +286,7 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
   /* ── Build available methods based on admin config + request role ──
      Use userRole (from request) for phone/email — never user?.role — so the
      response shape is identical for existing and non-existing identifiers. ── */
-  const effectiveCheckRole = (looksLikePhone || looksLikeEmail) ? userRole : (user?.role ?? userRole);
+  const effectiveCheckRole = (looksLikePhone || looksLikeEmail) ? userRole : (user?.roles ?? userRole);
   const googleEnabled    = isAuthMethodEnabled(settings, "auth_google_enabled", effectiveCheckRole);
   const facebookEnabled  = isAuthMethodEnabled(settings, "auth_facebook_enabled", effectiveCheckRole);
   const phoneOtpEnabled  = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveCheckRole);
@@ -519,7 +519,7 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     .where(eq(usersTable.phone, phone))
     .limit(1);
 
-  const effectiveRole = existingUser[0]?.role ?? ((req.body.role === "rider" || req.body.role === "vendor") ? req.body.role : "customer");
+  const effectiveRole = existingUser[0]?.roles ?? ((req.body.role === "rider" || req.body.role === "vendor") ? req.body.role : "customer");
   const otpEnabledForRole = isAuthMethodEnabled(settings, "auth_phone_otp_enabled", effectiveRole);
 
   /* ── Phone enumeration hardening ─────────────────────────────────────────
@@ -551,7 +551,7 @@ router.post("/send-otp", verifyCaptcha, sharedValidateBody(sendOtpSchema), async
     addSecurityEvent({ type: "banned_user_otp_request", ip, details: `Banned user attempted OTP: ${phone}`, severity: "high" });
   }
   const existingGoogleId = existingUser[0]?.googleId;
-  if (existingGoogleId && isAuthMethodEnabled(settings, "auth_google_enabled", existingUser[0]?.role ?? effectiveRole)) {
+  if (existingGoogleId && isAuthMethodEnabled(settings, "auth_google_enabled", existingUser[0]?.roles ?? effectiveRole)) {
     addSecurityEvent({ type: "otp_blocked_google_account", ip, details: `OTP attempt on Google-linked account: ${phone}`, severity: "low" });
   }
 
@@ -943,7 +943,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
     return;
   }
 
-  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_phone_otp_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Phone OTP login is currently disabled for your account type." });
     return;
   }
@@ -958,7 +958,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
   const isCustomerAppContext = requestedRole === "customer" || appIdHeader === "customer" || appIdQuery === "customer";
 
   if (requestedRole && !isCustomerAppContext) {
-    const userRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    const userRoles = (user.roles || user.roles || "customer").split(",").map((r: string) => r.trim());
     if (!userRoles.includes(requestedRole)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRole}`, severity: "high" });
       res.status(403).json({ error: "This account is not registered as a " + requestedRole + ". Please use the correct app.", wrongApp: true });
@@ -977,7 +977,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
      Enforcement moved here from send-otp to avoid leaking account existence.
      After OTP proof the caller is bound to this phone, so we can safely tell
      them to use Google instead without disclosing anything about other numbers. ── */
-  if (user.googleId && isAuthMethodEnabled(await getCachedSettings(), "auth_google_enabled", user.role ?? undefined)) {
+  if (user.googleId && isAuthMethodEnabled(await getCachedSettings(), "auth_google_enabled", user.roles ?? undefined)) {
     addSecurityEvent({ type: "otp_hijack_google_account", ip, userId: user.id, details: `OTP verify attempted on Google-linked account: ${phone}`, severity: "medium" });
     res.status(403).json({ error: "This account is linked to Google. Please sign in with Google.", useGoogle: true });
     return;
@@ -1126,11 +1126,11 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
      approvalStatus is the source of truth; the setting only controls NEW user creation. ── */
   if (u.approvalStatus === "pending") {
     addAuditEntry({ action: "user_login_pending", ip, details: `Pending approval login for phone: ${phone}`, result: "pending" });
-    const token = signAccessToken(u.id, phone, u.role ?? "customer", u.roles ?? "customer", u.tokenVersion ?? 0);
+    const token = signAccessToken(u.id, phone, u.roles ?? "customer", u.roles ?? "customer", u.tokenVersion ?? 0);
     res.json({
       token, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai. Approve hone par aap login kar sakenge.",
-      user: { id: u.id, phone: u.phone, name: u.name, role: u.role, roles: u.roles, approvalStatus: "pending" },
+      user: { id: u.id, phone: u.phone, name: u.name, role: u.roles, roles: u.roles, approvalStatus: "pending" },
     });
     return;
   }
@@ -1140,21 +1140,21 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
   }
 
   /* ── 2FA challenge ── */
-  if (u.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", u.role ?? undefined)) {
+  if (u.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", u.roles ?? undefined)) {
     const deviceFingerprint = req.body.deviceFingerprint ?? "";
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(u, deviceFingerprint, trustedDays)) {
-      const tempToken = sign2faChallengeToken(u.id, u.phone ?? "", u.role ?? "customer", u.roles ?? u.role ?? "customer", "phone_otp");
+      const tempToken = sign2faChallengeToken(u.id, u.phone ?? "", u.roles ?? "customer", u.roles ?? u.roles ?? "customer", "phone_otp");
       res.json({ requires2FA: true, tempToken, userId: u.id }); return;
     }
   }
 
-  addAuditEntry({ action: "user_login", ip, details: `Successful login for phone: ${phone} (role: ${u.role})`, result: "success" });
-  writeAuthAuditLog("otp_verified", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.role, method: "phone_otp", result: "success" } });
-  writeAuthAuditLog("login_success", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.role, method: "phone_otp" } });
+  addAuditEntry({ action: "user_login", ip, details: `Successful login for phone: ${phone} (role: ${u.roles})`, result: "success" });
+  writeAuthAuditLog("otp_verified", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.roles, method: "phone_otp", result: "success" } });
+  writeAuthAuditLog("login_success", { userId: u.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, role: u.roles, method: "phone_otp" } });
 
   /* ── Issue short-lived access token + long-lived refresh token ── */
-  const accessToken  = signAccessToken(u.id, phone, u.role ?? "customer", u.roles ?? u.role ?? "customer", u.tokenVersion ?? 0);
+  const accessToken  = signAccessToken(u.id, phone, u.roles ?? "customer", u.roles ?? u.roles ?? "customer", u.tokenVersion ?? 0);
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
   const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
@@ -1175,7 +1175,7 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
      If the customer app context was detected and the user doesn't have the
      customer role, return a token + canAddCustomerRole flag so the frontend
      can offer the "Add Customer Access" flow from the wrong-app screen. ── */
-  const uRoles = (u.roles || u.role || "customer").split(",").map((r: string) => r.trim());
+  const uRoles = (u.roles || u.roles || "customer").split(",").map((r: string) => r.trim());
   if (isCustomerAppContext && !uRoles.includes("customer")) {
     addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: u.id, details: `User with roles [${u.roles}] logged in to customer app context — offering add-role`, severity: "low" });
     res.json({
@@ -1192,8 +1192,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
         name:          u.name,
         email:         u.email,
         username:      u.username,
-        role:          u.role,
-        roles:         u.roles ?? u.role ?? "customer",
+        role:          u.roles,
+        roles:         u.roles ?? u.roles ?? "customer",
         avatar:        u.avatar,
         walletBalance: parseFloat(u.walletBalance ?? "0"),
         isActive:      u.isActive,
@@ -1223,8 +1223,8 @@ router.post("/verify-otp", verifyCaptcha, sharedValidateBody(verifyOtpSchema), a
       name:          u.name,
       email:         u.email,
       username:      u.username,
-      role:          u.role,
-      roles:         u.roles ?? u.role ?? "customer",
+      role:          u.roles,
+      roles:         u.roles ?? u.roles ?? "customer",
       avatar:        u.avatar,
       walletBalance: parseFloat(u.walletBalance ?? "0"),
       isActive:      u.isActive,
@@ -1281,7 +1281,7 @@ router.post("/vendor-register", async (req, res) => {
     return;
   }
 
-  const existingRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim()).filter(Boolean);
+  const existingRoles = (user.roles || user.roles || "").split(",").map((r: string) => r.trim()).filter(Boolean);
   if (existingRoles.includes("vendor")) {
     if (user.approvalStatus === "pending") {
       res.json({ success: true, status: "pending", message: "Your vendor application is already pending admin approval." });
@@ -1299,9 +1299,6 @@ router.post("/vendor-register", async (req, res) => {
 
   await db.update(usersTable).set({
     roles: newRoles.join(","),
-    role: "vendor",
-    storeName,
-    storeCategory: storeCategory || null,
     name: name || user.name,
     username: username ? String(username).toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20) : user.username || null,
     cnic: cnic || user.cnic || null,
@@ -1315,6 +1312,15 @@ router.post("/vendor-register", async (req, res) => {
     ...(acceptedTermsVersion ? { acceptedTermsVersion: String(acceptedTermsVersion) } : {}),
     updatedAt: new Date(),
   }).where(eq(usersTable.id, user.id));
+
+  await db.insert(vendorProfilesTable).values({
+    userId: user.id,
+    storeName,
+    storeCategory: storeCategory || null,
+  }).onConflictDoUpdate({
+    target: vendorProfilesTable.userId,
+    set: { storeName, storeCategory: storeCategory || null },
+  });
 
   if (acceptedTermsVersion) {
     try {
@@ -1399,7 +1405,7 @@ router.post("/validate-token", async (req, res) => {
     }
 
     const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
-    res.json({ valid: true, expiresAt, userId: user.id, role: user.role });
+    res.json({ valid: true, expiresAt, userId: user.id, role: user.roles });
   } catch {
     res.status(401).json({ valid: false, error: "Token validation failed" });
   }
@@ -1449,7 +1455,7 @@ async function handleRefreshToken(req: Request, res: any) {
   }
 
   const settings = await getCachedSettings();
-  const userRole = user.role ?? "customer";
+  const userRole = user.roles ?? "customer";
 
   const methodToSettingsKey: Record<string, string> = {
     phone_otp: "auth_phone_otp_enabled",
@@ -1486,7 +1492,7 @@ async function handleRefreshToken(req: Request, res: any) {
   /* Rotate: revoke old token and issue a new one */
   await revokeRefreshToken(tokenHash);
 
-  const newAccessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? user.role ?? "customer", user.tokenVersion ?? 0);
+  const newAccessToken = signAccessToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? user.roles ?? "customer", user.tokenVersion ?? 0);
   const { raw: newRefreshRaw, hash: newRefreshHash } = generateRefreshToken();
   const newRefreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
@@ -1615,7 +1621,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
     return;
   }
 
-  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled", user.role ?? "customer")) {
+  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled", user.roles ?? "customer")) {
     res.status(403).json({ error: "Email OTP login is currently disabled for your account type." });
     return;
   }
@@ -1721,7 +1727,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
   if (!user) { res.status(404).json({ error: "Is email se koi account nahi mila." }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled", user.role ?? "customer")) {
+  if (!isAuthMethodEnabled(settings, "auth_email_otp_enabled", user.roles ?? "customer")) {
     res.status(403).json({ error: "Email OTP login is currently disabled for your account type." });
     return;
   }
@@ -1735,7 +1741,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const emailAppIdQuery = req.query.appId as string | undefined;
   const isEmailCustomerAppCtx = requestedEmailRole === "customer" || emailAppIdHeader === "customer" || emailAppIdQuery === "customer";
   if (requestedEmailRole && !isEmailCustomerAppCtx) {
-    const userRolesEmail = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    const userRolesEmail = (user.roles || user.roles || "customer").split(",").map((r: string) => r.trim());
     if (!userRolesEmail.includes(requestedEmailRole)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried email OTP login as ${requestedEmailRole}`, severity: "high" });
       res.status(403).json({ error: "This account is not registered as a " + requestedEmailRole + ". Please use the correct app.", wrongApp: true }); return;
@@ -1790,11 +1796,11 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   addAuditEntry({ action: "email_login", ip, details: `Email OTP login for: ${normalized}`, result: "success" });
 
   /* ── 2FA challenge ── */
-  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     const deviceFingerprint = req.body.deviceFingerprint ?? "";
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
-      const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", "email_otp");
+      const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "email_otp");
       res.json({ requires2FA: true, tempToken, userId: user.id }); return;
     }
   }
@@ -1802,14 +1808,14 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const isPendingApproval = user.approvalStatus === "pending";
 
   /* Issue short-lived access token + refresh token (consistent with OTP flow) */
-  const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
+  const accessToken = signAccessToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
   const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
 
   if (isPendingApproval) {
     res.json({
       token: accessToken, expiresAt, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai.",
-      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, roles: user.roles, approvalStatus: "pending" },
+      user: { id: user.id, phone: user.phone, name: user.name, role: user.roles, roles: user.roles, approvalStatus: "pending" },
     });
     return;
   }
@@ -1823,13 +1829,13 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
 
   /* Post-OTP customer app cross-role check: issue token + wrongApp flag so frontend
      can offer "Add Customer Access" flow from the wrong-app screen */
-  const emailUserRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+  const emailUserRoles = (user.roles || user.roles || "customer").split(",").map((r: string) => r.trim());
   if (isEmailCustomerAppCtx && !emailUserRoles.includes("customer")) {
     addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] email-logged in to customer app context — offering add-role`, severity: "low" });
     res.json({
       token: accessToken, refreshToken: refreshRaw, expiresAt, sessionDays: getRefreshTokenTtlDays(),
       canAddCustomerRole: true, code: "cross_app_account", wrongApp: true,
-      user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles ?? user.role ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
+      user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.roles, roles: user.roles ?? user.roles ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
     });
     return;
   }
@@ -1840,7 +1846,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     expiresAt,
     sessionDays:  getRefreshTokenTtlDays(),
     pendingApproval: false,
-    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles ?? user.role ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
+    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.roles, roles: user.roles ?? user.roles ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
   });
 });
 
@@ -1913,7 +1919,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     res.status(401).json({ error: "Invalid credentials" }); return;
   }
 
-  if (!isAuthMethodEnabled(settings, "auth_username_password_enabled", user.role ?? "customer")) {
+  if (!isAuthMethodEnabled(settings, "auth_username_password_enabled", user.roles ?? "customer")) {
     res.status(403).json({ error: "Password login is currently disabled for your account type." });
     return;
   }
@@ -1921,7 +1927,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   /* ── Cross-role enforcement ── */
   const requestedRoleLogin = parsed.data.role;
   if (requestedRoleLogin) {
-    const userRolesLogin = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim());
+    const userRolesLogin = (user.roles || user.roles || "customer").split(",").map((r: string) => r.trim());
     if (!userRolesLogin.includes(requestedRoleLogin)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRoleLogin}`, severity: "high" });
       res.status(403).json({ error: "This account is not registered as a " + requestedRoleLogin + ". Please use the correct app.", wrongApp: true }); return;
@@ -1973,7 +1979,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     console.log(`[AUTH:OTP] Expires: ${loginOtpExpiry.toISOString()}`);
     console.log(`[AUTH:OTP] =======================\n`);
     writeAuthAuditLog("otp_sent", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login", channel: "console" } });
-    const tempToken = sign2faChallengeToken(user.id, user.phone ?? user.email ?? "", user.role ?? "customer", user.roles ?? "customer", "password_otp");
+    const tempToken = sign2faChallengeToken(user.id, user.phone ?? user.email ?? "", user.roles ?? "customer", user.roles ?? "customer", "password_otp");
     res.json({ requiresOtp: true, tempToken, userId: user.id, message: "OTP sent — check server console" });
     return;
   }
@@ -1986,23 +1992,23 @@ async function handleUnifiedLogin(req: Request, res: any) {
 
   await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
 
-  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     const deviceFingerprint = req.body.deviceFingerprint ?? "";
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
-      const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", "password");
+      const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "password");
       res.json({ requires2FA: true, tempToken, userId: user.id }); return;
     }
   }
 
-  const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
+  const accessToken = signAccessToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
   const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
 
   if (isPendingApproval) {
     res.json({
       token: accessToken, expiresAt, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai.",
-      user: { id: user.id, phone: user.phone, name: user.name, role: user.role, roles: user.roles, approvalStatus: "pending" },
+      user: { id: user.id, phone: user.phone, name: user.name, role: user.roles, roles: user.roles, approvalStatus: "pending" },
     });
     return;
   }
@@ -2022,7 +2028,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     pendingApproval: false,
     identifierType: idType,
     requirePasswordChange: user.requirePasswordChange ?? false,
-    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false },
+    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.roles, roles: user.roles, avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: user.emailVerified ?? false, phoneVerified: user.phoneVerified ?? false },
   });
 }
 
@@ -2088,16 +2094,16 @@ router.post("/login/verify-otp", async (req, res) => {
   await resetAttempts(lockoutKey);
   writeAuthAuditLog("otp_verified", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login_otp" } });
 
-  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     const deviceFingerprint = req.body.deviceFingerprint ?? "";
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
-      const totpToken = sign2faChallengeToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", "password");
+      const totpToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "password");
       res.json({ requires2FA: true, tempToken: totpToken, userId: user.id }); return;
     }
   }
 
-  const accessToken = signAccessToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
+  const accessToken = signAccessToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", user.tokenVersion ?? 0);
   const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
   await db.insert(refreshTokensTable).values({
@@ -2112,7 +2118,7 @@ router.post("/login/verify-otp", async (req, res) => {
     refreshToken: refreshRaw,
     expiresAt,
     sessionDays: getRefreshTokenTtlDays(),
-    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.role, roles: user.roles, walletBalance: parseFloat(user.walletBalance ?? "0") },
+    user: { id: user.id, phone: user.phone, name: user.name, email: user.email, username: user.username, role: user.roles, roles: user.roles, walletBalance: parseFloat(user.walletBalance ?? "0") },
   });
 });
 
@@ -2249,7 +2255,7 @@ router.post("/complete-profile", async (req, res) => {
     } catch {}
   }
 
-  const accessToken = signAccessToken(updated!.id, updated!.phone ?? "", updated!.role ?? "customer", updated!.roles ?? updated!.role ?? "customer", updated!.tokenVersion ?? 0);
+  const accessToken = signAccessToken(updated!.id, updated!.phone ?? "", updated!.roles ?? "customer", updated!.roles ?? updated!.roles ?? "customer", updated!.tokenVersion ?? 0);
   const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken();
   const refreshExpiresAt = new Date(Date.now() + getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000);
 
@@ -2270,7 +2276,7 @@ router.post("/complete-profile", async (req, res) => {
     message: "Profile update ho gaya",
     token: accessToken,
     refreshToken: refreshRaw,
-    user: { id: updated!.id, phone: updated!.phone, name: updated!.name, email: updated!.email, username: updated!.username, role: updated!.role, roles: updated!.roles, avatar: updated!.avatar, cnic: updated!.cnic, city: updated!.city, area: updated!.area, address: updated!.address, latitude: updated!.latitude, longitude: updated!.longitude, kycStatus: updated!.kycStatus, accountLevel: updated!.accountLevel, totpEnabled: updated!.totpEnabled ?? false, emailVerified: updated!.emailVerified, phoneVerified: updated!.phoneVerified, walletBalance: parseFloat(updated!.walletBalance ?? "0"), isActive: updated!.isActive, createdAt: updated!.createdAt.toISOString() },
+    user: { id: updated!.id, phone: updated!.phone, name: updated!.name, email: updated!.email, username: updated!.username, role: updated!.roles, roles: updated!.roles, avatar: updated!.avatar, cnic: updated!.cnic, city: updated!.city, area: updated!.area, address: updated!.address, latitude: updated!.latitude, longitude: updated!.longitude, kycStatus: updated!.kycStatus, accountLevel: updated!.accountLevel, totpEnabled: updated!.totpEnabled ?? false, emailVerified: updated!.emailVerified, phoneVerified: updated!.phoneVerified, walletBalance: parseFloat(updated!.walletBalance ?? "0"), isActive: updated!.isActive, createdAt: updated!.createdAt.toISOString() },
   });
 });
 
@@ -2685,7 +2691,7 @@ router.post("/forgot-password", verifyCaptcha, sharedValidateBody(forgotPassword
     return;
   }
 
-  const forgotRole = user.role ?? "customer";
+  const forgotRole = user.roles ?? "customer";
   if (phone && !isAuthMethodEnabled(settings, "auth_phone_otp_enabled", forgotRole)) {
     res.status(403).json({ error: "Phone-based password reset is currently disabled for your account type." });
     return;
@@ -2861,7 +2867,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
     return;
   }
 
-  const userRole = user.role ?? "customer";
+  const userRole = user.roles ?? "customer";
 
   if (phone && !isAuthMethodEnabled(settings, "auth_phone_otp_enabled", userRole)) {
     res.status(403).json({ error: "Phone-based password reset is currently disabled for your account type." });
@@ -3279,7 +3285,7 @@ router.post("/social/google", async (req, res) => {
   const requestedSocialRole = (req.body?.role as string | undefined) ?? null;
   if (requestedSocialRole && requestedSocialRole !== "customer") {
     if (user) {
-      const userRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
+      const userRoles = (user.roles || user.roles || "").split(",").map((r: string) => r.trim());
       if (!userRoles.includes(requestedSocialRole)) {
         addSecurityEvent({ type: "cross_role_social_login_attempt", ip, details: `Social Google cross-role: requested=${requestedSocialRole} user.roles=${user.roles}`, severity: "medium" });
         res.status(403).json({ error: `No ${requestedSocialRole} account found for this Google account. Please use the correct app.`, wrongApp: true }); return;
@@ -3290,7 +3296,7 @@ router.post("/social/google", async (req, res) => {
     }
   }
 
-  const googleEffectiveRole = user?.role ?? "customer";
+  const googleEffectiveRole = user?.roles ?? "customer";
   if (!isAuthMethodEnabledStrict(settings, "auth_google_enabled", "auth_social_google", googleEffectiveRole)) {
     res.status(403).json({ error: "Google login is currently disabled for your account type." }); return;
   }
@@ -3313,10 +3319,10 @@ router.post("/social/google", async (req, res) => {
   if (user!.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
   if (!user!.isActive && user!.approvalStatus !== "pending") { res.status(403).json({ error: "Account inactive" }); return; }
 
-  if (user!.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user!.role ?? undefined)) {
+  if (user!.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user!.roles ?? undefined)) {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user!, deviceFingerprint, trustedDays)) {
-      const tempToken = sign2faChallengeToken(user!.id, user!.phone ?? "", user!.role ?? "customer", user!.roles ?? "customer", "social_google");
+      const tempToken = sign2faChallengeToken(user!.id, user!.phone ?? "", user!.roles ?? "customer", user!.roles ?? "customer", "social_google");
       res.json({ requires2FA: true, tempToken, userId: user!.id }); return;
     }
   }
@@ -3377,7 +3383,7 @@ router.post("/social/facebook", async (req, res) => {
   const requestedFbSocialRole = (req.body?.role as string | undefined) ?? null;
   if (requestedFbSocialRole && requestedFbSocialRole !== "customer") {
     if (user) {
-      const userRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
+      const userRoles = (user.roles || user.roles || "").split(",").map((r: string) => r.trim());
       if (!userRoles.includes(requestedFbSocialRole)) {
         addSecurityEvent({ type: "cross_role_social_login_attempt", ip, details: `Social Facebook cross-role: requested=${requestedFbSocialRole} user.roles=${user.roles}`, severity: "medium" });
         res.status(403).json({ error: `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct app.`, wrongApp: true }); return;
@@ -3388,7 +3394,7 @@ router.post("/social/facebook", async (req, res) => {
     }
   }
 
-  const fbEffectiveRole = user?.role ?? "customer";
+  const fbEffectiveRole = user?.roles ?? "customer";
   if (!isAuthMethodEnabledStrict(settings, "auth_facebook_enabled", "auth_social_facebook", fbEffectiveRole)) {
     res.status(403).json({ error: "Facebook login is currently disabled for your account type." }); return;
   }
@@ -3411,10 +3417,10 @@ router.post("/social/facebook", async (req, res) => {
   if (user!.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
   if (!user!.isActive && user!.approvalStatus !== "pending") { res.status(403).json({ error: "Account inactive" }); return; }
 
-  if (user!.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user!.role ?? undefined)) {
+  if (user!.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user!.roles ?? undefined)) {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user!, deviceFingerprint, trustedDays)) {
-      const tempToken = sign2faChallengeToken(user!.id, user!.phone ?? "", user!.role ?? "customer", user!.roles ?? "customer", "social_facebook");
+      const tempToken = sign2faChallengeToken(user!.id, user!.phone ?? "", user!.roles ?? "customer", user!.roles ?? "customer", "social_facebook");
       res.json({ requires2FA: true, tempToken, userId: user!.id }); return;
     }
   }
@@ -3437,7 +3443,7 @@ router.get("/2fa/setup", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Two-factor authentication is currently disabled" }); return;
   }
   if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
@@ -3472,7 +3478,7 @@ router.post("/2fa/verify-setup", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Two-factor authentication is currently disabled" }); return;
   }
   if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
@@ -3522,7 +3528,7 @@ router.post("/2fa/verify", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, challengePayload.userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Two-factor authentication has been disabled by admin." }); return;
   }
 
@@ -3556,7 +3562,7 @@ router.post("/2fa/disable", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Two-factor authentication has been disabled by admin." }); return;
   }
 
@@ -3596,7 +3602,7 @@ router.post("/2fa/recovery", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, challengePayload.userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Two-factor authentication has been disabled by admin." }); return;
   }
 
@@ -3646,7 +3652,7 @@ router.post("/2fa/trust-device", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     res.status(403).json({ error: "Two-factor authentication has been disabled by admin." }); return;
   }
 
@@ -3708,7 +3714,7 @@ router.post("/magic-link/send", async (req, res) => {
     res.json({ message: "If an account exists with this email, a magic link has been sent." }); return;
   }
 
-  const effectiveMagicRole = user.role ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
+  const effectiveMagicRole = user.roles ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
   if (!isAuthMethodEnabledStrict(settings, "auth_magic_link_enabled", "auth_magic_link", effectiveMagicRole)) {
     res.status(403).json({ error: "Magic link login is currently disabled for your account type." }); return;
   }
@@ -3777,15 +3783,15 @@ router.post("/magic-link/verify", async (req, res) => {
   if (user.isBanned) { res.status(403).json({ error: "Account suspended" }); return; }
   if (!user.isActive) { res.status(403).json({ error: "Account inactive" }); return; }
 
-  if (!isAuthMethodEnabledStrict(settings, "auth_magic_link_enabled", "auth_magic_link", user.role ?? "customer")) {
+  if (!isAuthMethodEnabledStrict(settings, "auth_magic_link_enabled", "auth_magic_link", user.roles ?? "customer")) {
     res.status(403).json({ error: "Magic link login is currently disabled for your account type." }); return;
   }
 
-  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.role ?? undefined)) {
+  if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint ?? "", trustedDays)) {
       if (!totpCode) {
-        const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.role ?? "customer", user.roles ?? "customer", "magic_link");
+        const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "magic_link");
         res.json({ requires2FA: true, tempToken, userId: user.id }); return;
       }
       const secret = decryptTotpSecret(user.totpSecret!);

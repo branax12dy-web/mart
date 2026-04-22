@@ -140,6 +140,7 @@ router.get("/communication/conversations", async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to list conversations" });
   }
+  return;
 });
 
 router.get("/communication/conversations/:id/messages", async (req, res) => {
@@ -338,6 +339,7 @@ router.post("/communication/roles", async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to create role" });
   }
+  return;
 });
 
 router.put("/communication/roles/:id", async (req, res) => {
@@ -383,6 +385,7 @@ router.post("/communication/roles/ai-generate", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to generate role template" });
   }
+  return;
 });
 
 router.post("/communication/users/:id/block", async (req, res) => {
@@ -487,6 +490,7 @@ router.put("/communication/ajk-ids/:userId", async (req, res) => {
     logger.error({ err: e }, "[admin/comm] AJK ID update failed");
     res.status(500).json({ error: "Failed to update AJK ID" });
   }
+  return;
 });
 
 router.get("/communication/users/search", async (req, res) => {
@@ -508,6 +512,7 @@ router.get("/communication/users/search", async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to search users" });
   }
+  return;
 });
 
 router.get("/communication/export/:type", async (req, res) => {
@@ -546,6 +551,7 @@ router.get("/communication/export/:type", async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to export data" });
   }
+  return;
 });
 
 export { emitDashboardUpdate };

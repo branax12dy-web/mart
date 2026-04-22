@@ -470,7 +470,7 @@ router.post("/resolve-phone", customerAuth, async (req, res) => {
 
   try {
     const { phone, ajkId } = parsed.data;
-    let user: { name: string | null; phone: string; ajkId: string | null } | undefined;
+    let user: { name: string | null; phone: string | null; ajkId: string | null } | undefined;
     if (ajkId) {
       const [found] = await db.select({ name: usersTable.name, phone: usersTable.phone, ajkId: usersTable.ajkId })
         .from(usersTable).where(eq(usersTable.ajkId, ajkId.trim().toUpperCase())).limit(1);
@@ -562,7 +562,7 @@ router.post("/send", customerAuth, requireWalletPin, async (req, res) => {
 
   try {
     /* Resolve receiver by AJK ID or phone */
-    let receiverPre: { id: string; name: string | null; phone: string; ajkId: string | null; blockedServices: string } | undefined;
+    let receiverPre: { id: string; name: string | null; phone: string | null; ajkId: string | null; blockedServices: string } | undefined;
     if (rawAjkId) {
       const [found] = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, ajkId: usersTable.ajkId, blockedServices: usersTable.blockedServices })
         .from(usersTable).where(eq(usersTable.ajkId, rawAjkId.trim().toUpperCase())).limit(1);

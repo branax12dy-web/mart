@@ -118,3 +118,6 @@ export function getTotpUri(secret: string, adminName: string): string {
   const issuer  = encodeURIComponent(APP_NAME);
   return `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
 }
+
+/* ── Generic alias for QR code generation ── */
+export const generateTotpQr = generateQRCodeDataURL;

@@ -221,6 +221,7 @@ router.get("/me/ajk-id", async (req: any, res) => {
     logger.error({ err: e }, "[comm] Failed to get AJK ID");
     res.status(500).json({ error: "Failed to get AJK ID" });
   }
+  return;
 });
 
 router.get("/search/:ajkId", async (req: any, res) => {
@@ -237,6 +238,7 @@ router.get("/search/:ajkId", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Search failed" });
   }
+  return;
 });
 
 const sendRequestSchema = z.object({ receiverId: z.string().min(1) });
@@ -307,6 +309,7 @@ router.post("/requests", async (req: any, res) => {
     logger.error({ err: e }, "[comm] Failed to send request");
     res.status(500).json({ error: "Failed to send request" });
   }
+  return;
 });
 
 router.patch("/requests/:id/accept", async (req: any, res) => {
@@ -342,6 +345,7 @@ router.patch("/requests/:id/accept", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to accept request" });
   }
+  return;
 });
 
 router.patch("/requests/:id/reject", async (req: any, res) => {
@@ -362,6 +366,7 @@ router.patch("/requests/:id/reject", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to reject request" });
   }
+  return;
 });
 
 router.patch("/requests/:id/cancel", async (req: any, res) => {
@@ -383,6 +388,7 @@ router.patch("/requests/:id/cancel", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to cancel request" });
   }
+  return;
 });
 
 router.get("/requests", async (req: any, res) => {
@@ -546,6 +552,7 @@ router.get("/conversations/:id/messages", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to get messages" });
   }
+  return;
 });
 
 const sendMessageSchema = z.object({
@@ -666,6 +673,7 @@ router.post("/conversations/:id/messages", async (req: any, res) => {
     logger.error({ err: e }, "[comm] Failed to send message");
     res.status(500).json({ error: "Failed to send message" });
   }
+  return;
 });
 
 router.patch("/messages/:id/read", async (req: any, res) => {
@@ -692,6 +700,7 @@ router.patch("/messages/:id/read", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to mark as read" });
   }
+  return;
 });
 
 router.patch("/conversations/:id/read-all", async (req: any, res) => {
@@ -720,6 +729,7 @@ router.patch("/conversations/:id/read-all", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to mark all as read" });
   }
+  return;
 });
 
 router.post("/translate", async (req: any, res) => {
@@ -738,6 +748,7 @@ router.post("/translate", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Translation failed" });
   }
+  return;
 });
 
 router.post("/compose-assist", async (req: any, res) => {
@@ -756,6 +767,7 @@ router.post("/compose-assist", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Compose failed" });
   }
+  return;
 });
 
 const voiceUpload = multer({
@@ -829,6 +841,7 @@ router.post("/voice-notes/upload", voiceUpload.single("audio"), async (req: any,
     logger.error({ err: e }, "[comm] Voice note upload failed");
     res.status(500).json({ error: "Failed to upload voice note" });
   }
+  return;
 });
 
 interface IceServer { urls: string; username?: string; credential?: string; }
@@ -902,6 +915,7 @@ router.post("/calls/initiate", async (req: any, res) => {
     logger.error({ err: e }, "[comm] Failed to initiate call");
     res.status(500).json({ error: "Failed to initiate call" });
   }
+  return;
 });
 
 router.get("/calls/:id/ice-config", async (req: any, res) => {
@@ -917,6 +931,7 @@ router.get("/calls/:id/ice-config", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to get ICE config" });
   }
+  return;
 });
 
 router.post("/calls/:id/answer", async (req: any, res) => {
@@ -939,6 +954,7 @@ router.post("/calls/:id/answer", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to answer call" });
   }
+  return;
 });
 
 router.post("/calls/:id/end", async (req: any, res) => {
@@ -968,6 +984,7 @@ router.post("/calls/:id/end", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to end call" });
   }
+  return;
 });
 
 router.post("/calls/:id/reject", async (req: any, res) => {
@@ -989,6 +1006,7 @@ router.post("/calls/:id/reject", async (req: any, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to reject call" });
   }
+  return;
 });
 
 router.get("/calls/history", async (req: any, res) => {

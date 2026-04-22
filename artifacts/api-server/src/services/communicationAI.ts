@@ -146,20 +146,20 @@ export async function generateRoleTemplate(role: string, prompt: string): Promis
 }
 
 // Stub for translateMessage (used in routes/communication.ts)
-export async function translateMessage(text: string, targetLang: string): Promise<string> {
+export async function translateMessage(text: string, targetLang: string, _userId?: string): Promise<string> {
   console.log(`[STUB] translateMessage to ${targetLang}`);
   // Simple mock: just return original text + note
   return `${text} [translated to ${targetLang} - mock]`;
 }
 
 // Stub for composeMessage (used in routes/communication.ts)
-export async function composeMessage(context: any, type: string): Promise<string> {
+export async function composeMessage(context: any, type: string, _userId?: string): Promise<string> {
   console.log(`[STUB] composeMessage type ${type}`);
   return `Composed message for ${type}: ${JSON.stringify(context).substring(0, 100)}`;
 }
 
 // Stub for transcribeAudio (used in routes/communication.ts)
-export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
+export async function transcribeAudio(audioBuffer: Buffer, _ext?: string): Promise<string> {
   console.log(`[STUB] transcribeAudio called`);
   return "Transcription not available (stub)";
 }

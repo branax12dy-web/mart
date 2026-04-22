@@ -241,14 +241,15 @@ async function riderAuth(req: Request, res: Response, next: NextFunction) {
       sendErrorWithData(res, "Session revoked. Please log in again.", { code: "TOKEN_EXPIRED" }, 401); return;
     }
 
-    const dbRoles = (user.roles || user.role || "").split(",").map((r: string) => r.trim());
+    const dbRoles = (user.roles || user.roles || "").split(",").map((r: string) => r.trim());
     const jwtRoles = (payload.roles || payload.role || "").split(",").map((r: string) => r.trim());
     if (!dbRoles.includes("rider") || !jwtRoles.includes("rider")) {
       sendErrorWithData(res, "Access denied. This portal is for riders only.", { code: "ROLE_DENIED" }, 403); return;
     }
 
+    const [profile] = await db.select().from(riderProfilesTable).where(eq(riderProfilesTable.userId, user.id)).limit(1);
     req.riderId = user.id;
-    req.riderUser = user;
+    req.riderUser = profile ? { ...user, ...profile } : user;
     next();
   } catch (err) {
     logger.error("[riderAuth] DB error:", err instanceof Error ? err.message : err);
@@ -298,7 +299,7 @@ router.get("/me", async (req, res) => {
   sendSuccess(res, {
     id: user.id, phone: user.phone, name: user.name, email: user.email,
     username: user.username,
-    role: user.role, roles: user.roles,
+    role: user.roles, roles: user.roles,
     avatar: user.avatar, isOnline: user.isOnline,
     isRestricted: user.isRestricted ?? (!user.isActive && (user.cancelCount ?? 0) > 0),
     approvalStatus: user.approvalStatus ?? "approved",
@@ -439,16 +440,17 @@ router.patch("/profile", async (req, res) => {
   const currentUser = req.riderUser!;
   const { name, email, cnic, address, city, emergencyContact, vehicleType, vehiclePlate, vehicleRegNo, drivingLicense, bankName, bankAccount, bankAccountTitle, avatar, cnicDocUrl, licenseDocUrl, regDocUrl, vehiclePhoto } = parsed.data;
   const updates: Record<string, unknown> = { updatedAt: new Date() };
+  const profileUpdates: Record<string, unknown> = { updatedAt: new Date() };
   if (name             !== undefined) updates.name             = name;
   if (email            !== undefined) updates.email            = email;
   if (cnic             !== undefined) updates.cnic             = cnic;
   if (address          !== undefined) updates.address          = address;
   if (city             !== undefined) updates.city             = city;
   if (emergencyContact !== undefined) updates.emergencyContact = emergencyContact;
-  if (vehicleType      !== undefined) updates.vehicleType      = normalizeVehicleType(vehicleType) || vehicleType;
-  if (vehiclePlate     !== undefined) updates.vehiclePlate     = vehiclePlate;
-  if (vehicleRegNo     !== undefined) updates.vehicleRegNo     = vehicleRegNo;
-  if (drivingLicense   !== undefined) updates.drivingLicense   = drivingLicense;
+  if (vehicleType      !== undefined) profileUpdates.vehicleType      = normalizeVehicleType(vehicleType) || vehicleType;
+  if (vehiclePlate     !== undefined) profileUpdates.vehiclePlate     = vehiclePlate;
+  if (vehicleRegNo     !== undefined) profileUpdates.vehicleRegNo     = vehicleRegNo;
+  if (drivingLicense   !== undefined) profileUpdates.drivingLicense   = drivingLicense;
   if (bankName         !== undefined) updates.bankName         = bankName;
   if (bankAccount      !== undefined) updates.bankAccount      = bankAccount;
   if (bankAccountTitle !== undefined) updates.bankAccountTitle = bankAccountTitle;
@@ -459,8 +461,7 @@ router.patch("/profile", async (req, res) => {
     }
     updates.avatar = avatar;
   }
-  /* Document photo URLs — stored in the `documents` JSON column (cnicDocUrl, licenseDocUrl,
-     regDocUrl) to avoid schema migration. vehiclePhoto uses its dedicated DB column. */
+  /* Document photo URLs — stored in the rider profile `documents` JSON column. */
   if (cnicDocUrl !== undefined || licenseDocUrl !== undefined || regDocUrl !== undefined) {
     if (cnicDocUrl && !cnicDocUrl.startsWith("/api/uploads/")) {
       sendValidationError(res, "cnicDocUrl must be an uploaded file URL"); return;
@@ -476,14 +477,13 @@ router.patch("/profile", async (req, res) => {
     if (cnicDocUrl !== undefined) existingDocs.cnicDocUrl = cnicDocUrl;
     if (licenseDocUrl !== undefined) existingDocs.licenseDocUrl = licenseDocUrl;
     if (regDocUrl !== undefined) existingDocs.regDocUrl = regDocUrl;
-    updates.documents = JSON.stringify(existingDocs);
+    profileUpdates.documents = JSON.stringify(existingDocs);
   }
-  /* vehiclePhoto uses the dedicated `vehicle_photo` column in the users table */
   if (vehiclePhoto !== undefined) {
     if (vehiclePhoto && !vehiclePhoto.startsWith("/api/uploads/")) {
       sendValidationError(res, "vehiclePhoto must be an uploaded file URL"); return;
     }
-    updates.vehiclePhoto = vehiclePhoto;
+    profileUpdates.vehiclePhoto = vehiclePhoto;
   }
 
   /* Detect sensitive identity field changes — reset approval to pending so admin can re-verify */
@@ -494,10 +494,20 @@ router.patch("/profile", async (req, res) => {
     updates.isOnline = false;
   }
 
-  let user: typeof usersTable.$inferSelect;
+  let user: typeof usersTable.$inferSelect & Partial<typeof riderProfilesTable.$inferSelect>;
   try {
     const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, riderId)).returning();
-    user = updated;
+    let profile: typeof riderProfilesTable.$inferSelect | undefined;
+    if (Object.keys(profileUpdates).length > 1) {
+      const [up] = await db.insert(riderProfilesTable).values({ userId: riderId, ...profileUpdates })
+        .onConflictDoUpdate({ target: riderProfilesTable.userId, set: profileUpdates })
+        .returning();
+      profile = up;
+    } else {
+      const [existing] = await db.select().from(riderProfilesTable).where(eq(riderProfilesTable.userId, riderId)).limit(1);
+      profile = existing;
+    }
+    user = profile ? { ...updated, ...profile } : updated;
   } catch (dbErr: unknown) {
     const msg = (dbErr as Error)?.message || "";
     if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -522,7 +532,7 @@ router.patch("/profile", async (req, res) => {
     id: user.id, name: user.name, phone: user.phone, email: user.email,
     username: user.username,
     avatar: user.avatar,
-    role: user.role, isOnline: user.isOnline, walletBalance: safeNum(user.walletBalance),
+    role: user.roles, isOnline: user.isOnline, walletBalance: safeNum(user.walletBalance),
     approvalStatus: user.approvalStatus,
     cnic: user.cnic, address: user.address, city: user.city, area: user.area,
     emergencyContact: user.emergencyContact,
@@ -1852,7 +1862,7 @@ router.get("/reviews", async (req, res) => {
         customerName: usersTable.name,
       })
       .from(rideRatingsTable)
-      .leftJoin(usersTable, eq(rideRatingsTable.userId, usersTable.id))
+      .leftJoin(usersTable, eq(rideRatingsTable.customerId, usersTable.id))
       .where(legacyConditions)
       .orderBy(desc(rideRatingsTable.createdAt))
       .limit(pageLimit),

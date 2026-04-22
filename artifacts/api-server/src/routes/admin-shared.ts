@@ -8,34 +8,60 @@ export interface AdminRequest extends Request {
   admin?: any;
 }
 
-export const DEFAULT_PLATFORM_SETTINGS = {};
+export interface DefaultPlatformSetting {
+  key: string;
+  value: string;
+  label: string;
+  category: string;
+}
+export const DEFAULT_PLATFORM_SETTINGS: DefaultPlatformSetting[] = [];
 export const ADMIN_TOKEN_TTL_HRS = 24;
 export const ADMIN_MAX_ATTEMPTS = 5;
 export const ADMIN_LOCKOUT_TIME = 15 * 60 * 1000;
 export const adminLoginAttempts = new Map<string, { count: number, lastAttempt: number }>();
 
-export const ORDER_NOTIF_KEYS = { CREATED: "order_created", UPDATED: "order_updated" };
-export const RIDE_NOTIF_KEYS = { REQUESTED: "ride_requested" };
-export const PHARMACY_NOTIF_KEYS = { NEW: "pharmacy_new" };
-export const PARCEL_NOTIF_KEYS = { BOOKED: "parcel_booked" };
+export interface NotifKey { titleKey: string; bodyKey: string; icon: string }
+export const ORDER_NOTIF_KEYS: Record<string, NotifKey> = {
+  CREATED: { titleKey: "notifOrderCreated", bodyKey: "notifOrderCreatedBody", icon: "cart-outline" },
+  UPDATED: { titleKey: "notifOrderUpdated", bodyKey: "notifOrderUpdatedBody", icon: "cart-outline" },
+};
+export const RIDE_NOTIF_KEYS: Record<string, NotifKey> = {
+  REQUESTED: { titleKey: "notifRideRequested", bodyKey: "notifRideRequestedBody", icon: "car-outline" },
+  accepted: { titleKey: "notifRideAccepted", bodyKey: "notifRideAcceptedBody", icon: "car-outline" },
+  arrived: { titleKey: "notifRideArrived", bodyKey: "notifRideArrivedBody", icon: "car-outline" },
+  in_transit: { titleKey: "notifRideInTransit", bodyKey: "notifRideInTransitBody", icon: "car-outline" },
+  completed: { titleKey: "notifRideCompleted", bodyKey: "notifRideCompletedBody", icon: "checkmark-circle-outline" },
+  cancelled: { titleKey: "notifRideCancelled", bodyKey: "notifRideCancelledBody", icon: "close-circle-outline" },
+};
+export const PHARMACY_NOTIF_KEYS: Record<string, NotifKey> = {
+  NEW: { titleKey: "notifPharmacyNew", bodyKey: "notifPharmacyNewBody", icon: "medkit-outline" },
+};
+export const PARCEL_NOTIF_KEYS: Record<string, NotifKey> = {
+  BOOKED: { titleKey: "notifParcelBooked", bodyKey: "notifParcelBookedBody", icon: "cube-outline" },
+};
 
-export async function checkAdminLoginLockout(adminId: string): Promise<{ locked: boolean }> {
+export function checkAdminLoginLockout(adminId: string): { locked: boolean; minutesLeft: number } {
   const attempt = adminLoginAttempts.get(adminId);
   if (attempt && attempt.count >= ADMIN_MAX_ATTEMPTS) {
-    const isLocked = (Date.now() - attempt.lastAttempt) < ADMIN_LOCKOUT_TIME;
-    return { locked: isLocked };
+    const remaining = ADMIN_LOCKOUT_TIME - (Date.now() - attempt.lastAttempt);
+    if (remaining > 0) {
+      return { locked: true, minutesLeft: Math.ceil(remaining / 60000) };
+    }
   }
-  return { locked: false };
+  return { locked: false, minutesLeft: 0 };
 }
 
-export async function auditLog(data: any) {
-  console.log("[Audit]", data);
+export function auditLog(_data: unknown, ..._rest: unknown[]) {
   return { id: "audit_" + randomBytes(4).toString("hex") };
 }
 export const addAuditEntry = auditLog;
 
-export function signAdminJwt(p: any, e?: string) {
-  return jwt.sign(p, process.env.JWT_SECRET || "key", { expiresIn: (e || `${ADMIN_TOKEN_TTL_HRS}h`) as any });
+export function signAdminJwt(adminId: string | null, role?: string, name?: string, ttlHours?: number) {
+  return jwt.sign(
+    { adminId, role, name },
+    process.env.JWT_SECRET || "key",
+    { expiresIn: `${ttlHours ?? ADMIN_TOKEN_TTL_HRS}h` as any }
+  );
 }
 
 export function verifyAdminJwt(t: string) {
@@ -63,16 +89,29 @@ export async function recordAdminLoginFailure(id: string) {
 
 export async function resetAdminLoginAttempts(id: string) { adminLoginAttempts.delete(id); }
 
-export const logger = { info: console.log, error: console.error, warn: console.warn };
+export const logger = {
+  info: (...args: any[]) => console.log(...args),
+  error: (...args: any[]) => console.error(...args),
+  warn: (...args: any[]) => console.warn(...args),
+  debug: (...args: any[]) => console.debug(...args),
+};
+
+export type TranslationKey = string;
 
 export function stripUser(u: any) { return u; }
 export function generateId(p?: string) { return (p ? `${p}_` : '') + randomBytes(8).toString("hex"); }
-export function getUserLanguage(_u: any) { return "en"; }
-export function t(k: string) { return k; }
+export async function getUserLanguage(_u: any): Promise<string> { return "en"; }
+export function t(k: string, _lang?: string, _params?: Record<string, any>) { return k; }
 
-export async function sendUserNotification(_u: string, _d: any) { return true; }
+export async function sendUserNotification(
+  _userId: string,
+  _titleOrData: any,
+  _body?: string,
+  _type?: string,
+  _icon?: string,
+) { return true; }
 export async function getPlatformSettings(): Promise<Record<string, string>> { return {}; }
-export async function getCachedSettings(_k?: string) { return null; }
+export async function getCachedSettings(_k?: string): Promise<Record<string, string>> { return {}; }
 export function invalidateSettingsCache() { }
 export function invalidatePlatformSettingsCache() { }
 
