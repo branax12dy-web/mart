@@ -1,6 +1,14 @@
 import "dotenv/config";
 import { createServer } from "./app.js";
 
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[UnhandledRejection] at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[UncaughtException] Error:", err);
+});
+
 const rawPort = process.env.PORT;
 if (!rawPort) {
   throw new Error(

@@ -109,8 +109,10 @@ router.get("/stats", async (_req, res) => {
 });
 
 router.get("/platform-settings", async (_req, res) => {
-  /* Always seed new defaults (onConflictDoNothing keeps existing values intact) */
-  await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+  // FIXED: values() empty array crash - Added guard clause 2026-04-22
+  if (DEFAULT_PLATFORM_SETTINGS.length > 0) {
+    await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
+  }
   const rows = await db.select().from(platformSettingsTable);
   const grouped: Record<string, any[]> = {};
   for (const row of rows) {

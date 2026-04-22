@@ -230,9 +230,11 @@ function IntegrationsInit() {
     /* Register admin push when token present */
     const token = sessionStorage.getItem("ajkmart_admin_token");
     if (token) {
-      Notification.requestPermission()
-        .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })
-        .catch(() => {});
+      if (typeof Notification !== "undefined" && Notification.requestPermission) {
+        Notification.requestPermission()
+          .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })
+          .catch(() => {});
+      }
       setSentryUser("admin");
       identifyUser("admin");
     }
@@ -240,9 +242,11 @@ function IntegrationsInit() {
     /* Also listen for post-login storage events to init push */
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "ajkmart_admin_token" && e.newValue) {
-        Notification.requestPermission()
-          .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })
-          .catch(() => {});
+        if (typeof Notification !== "undefined" && Notification.requestPermission) {
+          Notification.requestPermission()
+            .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })
+            .catch(() => {});
+        }
       }
     };
     window.addEventListener("storage", handleStorage);

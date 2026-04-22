@@ -8,6 +8,11 @@ if (!databaseUrl) {
   process.exit(1);
 }
 console.log("✅ DB URL loaded (length:", databaseUrl.length, ")");
-const pool = new Pool({ connectionString: databaseUrl });
+
+const isProduction = process.env.NODE_ENV === "production";
+const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl: isProduction ? { rejectUnauthorized: true } : undefined,
+});
 export const db = drizzle(pool, { schema });
 export { pool };
