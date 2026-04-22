@@ -383,9 +383,9 @@ export default function PopupsPage() {
       stylePreset: c.stylePreset || "default",
       templateId: c.templateId || "",
       targeting: {
-        roles: c.targeting?.roles || [],
-        cities: c.targeting?.cities || [],
-        newUsers: c.targeting?.newUsers || false,
+        roles: (c.targeting?.roles as string[]) || [],
+        cities: (c.targeting?.cities as string[]) || [],
+        newUsers: Boolean(c.targeting?.newUsers),
         minOrderCount: c.targeting?.minOrderCount ? String(c.targeting.minOrderCount) : "",
         maxOrderCount: c.targeting?.maxOrderCount ? String(c.targeting.maxOrderCount) : "",
         minOrderValue: c.targeting?.minOrderValue ? String(c.targeting.minOrderValue) : "",
@@ -640,7 +640,28 @@ export default function PopupsPage() {
                     <div className="mt-4 pt-4 border-t border-border/50">
                       <p className="text-xs font-semibold text-muted-foreground mb-2">Preview</p>
                       <div className="max-w-xs">
-                        <PopupPreview campaign={c} />
+                        <PopupPreview campaign={{
+                          ...c,
+                          body: c.body ?? undefined,
+                          mediaUrl: c.mediaUrl ?? undefined,
+                          ctaText: c.ctaText ?? undefined,
+                          ctaLink: c.ctaLink ?? undefined,
+                          stylePreset: c.stylePreset ?? undefined,
+                          startDate: c.startDate ?? undefined,
+                          endDate: c.endDate ?? undefined,
+                          animation: c.animation ?? undefined,
+                          templateId: c.templateId ?? undefined,
+                          maxTotalImpressions: c.maxTotalImpressions != null ? String(c.maxTotalImpressions) : undefined,
+                          targeting: {
+                            roles: (c.targeting?.roles as string[]) || [],
+                            cities: (c.targeting?.cities as string[]) || [],
+                            newUsers: Boolean(c.targeting?.newUsers),
+                            minOrderCount: c.targeting?.minOrderCount != null ? String(c.targeting.minOrderCount) : "",
+                            maxOrderCount: c.targeting?.maxOrderCount != null ? String(c.targeting.maxOrderCount) : "",
+                            minOrderValue: c.targeting?.minOrderValue != null ? String(c.targeting.minOrderValue) : "",
+                            maxOrderValue: c.targeting?.maxOrderValue != null ? String(c.targeting.maxOrderValue) : "",
+                          },
+                        }} />
                       </div>
                     </div>
                   )}

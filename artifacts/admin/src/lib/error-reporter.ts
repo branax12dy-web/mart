@@ -3,8 +3,38 @@ let _initialized = false;
 let _queue: Array<Record<string, unknown>> = [];
 let _flushing = false;
 
+/** Deduplicate window.error and unhandledrejection events (not just console.error) */
+const _recentEventErrors = new Map<string, number>();
+const DEDUP_WINDOW_MS = 30_000;
+
 function getApiBase(): string {
   return `${window.location.origin}/api`;
+}
+
+/**
+ * DJB2-variant hash for deterministic error fingerprinting.
+ * Used to deduplicate identical errors before sending to the server.
+ */
+function computeErrorHash(errorMessage: string, errorType: string): string {
+  const key = `${errorType}::${SOURCE_APP}::${errorMessage.slice(0, 300)}`;
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash) ^ key.charCodeAt(i);
+    hash = hash >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function isDuplicate(hash: string): boolean {
+  const now = Date.now();
+  const last = _recentEventErrors.get(hash);
+  if (last !== undefined && now - last < DEDUP_WINDOW_MS) return true;
+  _recentEventErrors.set(hash, now);
+  if (_recentEventErrors.size > 200) {
+    const oldest = _recentEventErrors.keys().next().value;
+    if (oldest) _recentEventErrors.delete(oldest);
+  }
+  return false;
 }
 
 async function sendReport(report: Record<string, unknown>): Promise<void> {
@@ -44,11 +74,15 @@ export function reportError(opts: {
   metadata?: Record<string, unknown>;
   statusCode?: number;
 }): void {
+  const message = (opts.errorMessage || "Unknown error").slice(0, 5000);
+  const hash = computeErrorHash(message, opts.errorType);
+
   enqueue({
     sourceApp: SOURCE_APP,
     ...opts,
-    errorMessage: (opts.errorMessage || "Unknown error").slice(0, 5000),
+    errorMessage: message,
     stackTrace: opts.stackTrace?.slice(0, 50000),
+    errorHash: hash,
   });
 }
 
@@ -58,18 +92,24 @@ export function initErrorReporter(): void {
 
   window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
     const err = event.reason;
+    const msg = err?.message || String(err) || "Unhandled promise rejection";
+    const hash = computeErrorHash(msg, "unhandled_exception");
+    if (isDuplicate(hash)) return;
     reportError({
       errorType: "unhandled_exception",
-      errorMessage: err?.message || String(err) || "Unhandled promise rejection",
+      errorMessage: msg,
       stackTrace: err?.stack,
       functionName: "unhandledrejection",
     });
   });
 
   window.addEventListener("error", (event: ErrorEvent) => {
+    const msg = event.message || "Window error";
+    const hash = computeErrorHash(msg, "frontend_crash");
+    if (isDuplicate(hash)) return;
     reportError({
       errorType: "frontend_crash",
-      errorMessage: event.message || "Window error",
+      errorMessage: msg,
       stackTrace: event.error?.stack,
       functionName: event.filename,
       metadata: { lineno: event.lineno, colno: event.colno },

@@ -309,8 +309,8 @@ export default function CategoriesPage() {
                 <CategoryCard
                   cat={cat}
                   onEdit={openEdit}
-                  onDelete={id => { if (confirm(`Delete "${cat.name}"?`)) deleteMutation.mutate(id); }}
-                  onToggle={id => toggleMutation.mutate({ id, isActive: !cat.isActive })}
+                  onDelete={(id: string) => { if (confirm(`Delete "${cat.name}"?`)) deleteMutation.mutate(id); }}
+                  onToggle={(id: string) => toggleMutation.mutate({ id, isActive: !cat.isActive })}
                   onAddChild={() => openNew(cat.id)}
                   onMove={moveCategory}
                   onToggleExpand={toggleExpand}

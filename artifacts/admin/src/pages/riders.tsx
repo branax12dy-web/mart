@@ -344,7 +344,7 @@ export default function Riders() {
 
   const handleReject = (r: any) => {
     const note = window.prompt("Rejection reason (optional):");
-    rejectM.mutate({ id: r.id, note: note || undefined }, {
+    rejectM.mutate({ id: r.id, note: note ?? "" }, {
       onSuccess: () => { toast({ title: "Rider rejected" }); refetch(); },
       onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
     });

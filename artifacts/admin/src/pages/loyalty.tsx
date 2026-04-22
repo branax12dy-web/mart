@@ -196,7 +196,7 @@ export default function LoyaltyPage() {
   const updateSettings = useUpdatePlatformSettings();
   const { toast } = useToast();
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const handleSearchChange = (val: string) => {
     setSearch(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -239,7 +239,7 @@ export default function LoyaltyPage() {
   );
 
   return (
-    <PullToRefresh onRefresh={refetch}>
+    <PullToRefresh onRefresh={async () => { await refetch(); }}>
       <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">

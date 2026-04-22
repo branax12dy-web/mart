@@ -18,9 +18,18 @@ export function createServer() {
 
   app.use("/api", router);
 
-  app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  /* ── JSON 404 for unmatched /api/* routes ─────────────────────────────── */
+  app.use("/api/*", (req: express.Request, res: express.Response) => {
+    res.status(404).json({
+      success: false,
+      error: `API route not found: ${req.method} ${req.originalUrl}`,
+    });
+  });
+
+  /* ── Global error handler ──────────────────────────────────────────────── */
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error("Unhandled error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ success: false, error: "Internal server error" });
   });
   
   return app;

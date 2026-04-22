@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, pgEnum, integer } from "drizzle-orm/pg-core";
 
 export const sourceAppEnum = pgEnum("error_source_app", [
   "customer", "rider", "vendor", "admin", "api",
@@ -40,6 +40,10 @@ export const errorReportsTable = pgTable("error_reports", {
   resolutionNotes:  text("resolution_notes"),
   rootCause:        text("root_cause"),
   updatedAt:        timestamp("updated_at"),
+  /** SHA-256-style content fingerprint — used to group identical errors */
+  errorHash:        text("error_hash"),
+  /** How many times this exact error has fired (incremented on dedup) */
+  occurrenceCount:  integer("occurrence_count").default(1).notNull(),
 });
 
 export type ErrorReport = typeof errorReportsTable.$inferSelect;

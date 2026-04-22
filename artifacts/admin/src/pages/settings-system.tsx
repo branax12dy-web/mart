@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactElement } from "react";
 import {
   Database, Download, Upload, Trash2, HardDrive, RefreshCcw,
   FlaskConical, RotateCcw, Clock, AlertTriangle, Settings,
@@ -421,7 +421,7 @@ export function SystemSection() {
   const renderCustomForm = () => {
     if (!customFormOpen) return null;
 
-    let fields: JSX.Element[] = [];
+    let fields: ReactElement[] = [];
     if (customFormOpen === "user") {
       fields = [
         renderFormField("Name", "name", { placeholder: "Ahmed Khan" }),

@@ -32,7 +32,7 @@ export default function WishlistInsights() {
   const topCount = products.length > 0 ? products[0].wishlistCount : 0;
 
   return (
-    <PullToRefresh onRefresh={refetch}>
+    <PullToRefresh onRefresh={async () => { await refetch(); }}>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><Heart className="w-6 h-6 text-pink-500" /> Wishlist Insights</h1>

@@ -2,14 +2,27 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { fetcher, getToken } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 import {
   ShoppingBag, Car, Pill,
   Search, ArrowRight, X, User, Hash, Shield, Navigation,
   Star, BadgeCheck, BanknoteIcon,
-  Sparkles, Brain, Filter,
+  Sparkles, Brain, Filter, Zap, CheckCircle2, Loader2,
 } from "lucide-react";
+
 import { SEARCH_INDEX, type SearchEntry, type SearchCategory } from "@/lib/searchIndex";
 import { matchesKeywords } from "@/lib/romanUrdu";
+
+/* ─── Keywords that signal a command intent (not a search) ─────────────── */
+const CMD_KEYWORDS = [
+  "enable", "disable", "turn on", "turn off", "activate", "deactivate",
+  "set ", "change ", "update ", "maintenance", "band kar", "chalu kar",
+  "off kar", "on kar",
+];
+function isCommandLike(q: string): boolean {
+  const lower = q.toLowerCase();
+  return q.length >= 8 && CMD_KEYWORDS.some(kw => lower.includes(kw));
+}
 
 /* ─── Ride & Order status color ───────────────────────────────────────── */
 const STATUS_COLORS: Record<string, string> = {
@@ -67,8 +80,20 @@ interface CommandPaletteProps {
   onClose: () => void;
 }
 
+interface CmdResult {
+  executed: boolean;
+  type: string;
+  label?: string;
+  description?: string;
+  key?: string;
+  value?: string;
+  previousValue?: string;
+  path?: string;
+}
+
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("All");
@@ -76,8 +101,43 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [aiEnabled, setAiEnabled] = useState(() => {
     try { return localStorage.getItem("admin-ai-search") === "on"; } catch { return false; }
   });
+  const [cmdExecuting, setCmdExecuting] = useState(false);
+  const [cmdResult, setCmdResult] = useState<CmdResult | null>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
   const listRef   = useRef<HTMLDivElement>(null);
+
+  /* ── Execute a natural-language command via AI ─────────────────────── */
+  const executeCmd = useCallback(async (cmdText: string) => {
+    const token = getToken();
+    if (!token) { toast({ title: "Not authenticated", variant: "destructive" }); return; }
+    setCmdExecuting(true);
+    setCmdResult(null);
+    try {
+      const r = await fetch(`${window.location.origin}/api/admin/command/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ command: cmdText }),
+      });
+      const data = await r.json() as { data?: CmdResult };
+      const result = data.data ?? (data as unknown as CmdResult);
+      setCmdResult(result);
+      if (result.executed) {
+        toast({
+          title: `✅ ${result.label ?? "Setting updated"}`,
+          description: result.description ?? `Changed to: ${result.value}`,
+        });
+      } else if (result.type === "navigate" && result.path) {
+        setLocation(result.path);
+        onClose();
+      } else {
+        toast({ title: "Command info", description: result.description ?? "Command not executed" });
+      }
+    } catch {
+      toast({ title: "Command failed", variant: "destructive" });
+    } finally {
+      setCmdExecuting(false);
+    }
+  }, [toast, setLocation, onClose]);
 
   /* ── Persist AI toggle ── */
   const toggleAi = () => {
@@ -120,7 +180,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       const token = getToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["x-admin-token"] = token;
-      const res = await fetch("/api/admin/search/ai", {
+      const res = await fetch(`${window.location.origin}/api/admin/search/ai`, {
         method: "POST",
         headers,
         body: JSON.stringify({ query: debouncedQ }),
@@ -168,13 +228,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   /* ── AI results enriched with full index entries ── */
   const aiResults: AiResult[] = aiData?.data?.results ?? aiData?.results ?? [];
-  const aiEnrichedItems: (SearchEntry & { _aiReason?: string })[] = aiResults
-    .map(r => {
-      const entry = SEARCH_INDEX.find(e => e.id === r.id);
-      if (!entry) return null;
-      return { ...entry, _aiReason: r.reason };
-    })
-    .filter((e): e is SearchEntry & { _aiReason?: string } => e !== null);
+  const aiEnrichedItems: Array<SearchEntry & { _aiReason?: string }> = aiResults.flatMap(r => {
+    const entry = SEARCH_INDEX.find(e => e.id === r.id);
+    return entry ? [{ ...entry, _aiReason: r.reason }] : [];
+  });
 
   /* ── Live DB results ── */
   const liveUsers:    any[] = liveData?.users    ?? [];
@@ -205,8 +262,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     ...(showOrders ? filterByStatus([...liveOrders.map((o: any) => ({ ...o, _pharm: false })), ...livePharmacy.map((p: any) => ({ ...p, _pharm: true }))]).map((o: any) => ({ _type: "order", ...o })) : []),
   ];
 
-  /* ── Reset selection on list/query change ── */
-  useEffect(() => { setSelected(0); }, [allItems.length, debouncedQ]);
+  /* ── Reset selection on list/query change; clear stale cmd result ── */
+  useEffect(() => {
+    setSelected(0);
+    setCmdResult(null);
+  }, [allItems.length, debouncedQ]);
 
   /* ── Reset on open ── */
   useEffect(() => {
@@ -330,7 +390,35 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             <Brain className="w-3 h-3 text-violet-500 shrink-0" />
             <p className="text-[10px] text-violet-600 font-medium">
               AI mode — describe anything: "show cancelled rides today", "payment settings", "pending zaroorat"
+              {" — or "}
+              <span className="font-bold">type a command</span>: "enable maintenance", "disable rides", "set delivery radius to 10"
             </p>
+          </div>
+        )}
+
+        {/* ── AI command execution strip ── */}
+        {aiEnabled && isCommandLike(query) && (
+          <div className="px-4 py-2 bg-amber-50/80 border-b border-amber-100 flex items-center gap-3">
+            <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-bold text-amber-800">Command detected</p>
+              <p className="text-[10px] text-amber-600 truncate">"{query}"</p>
+            </div>
+            {cmdResult?.executed && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-green-700">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Done
+              </span>
+            )}
+            <button
+              onClick={() => executeCmd(query)}
+              disabled={cmdExecuting}
+              className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition-colors disabled:opacity-50"
+            >
+              {cmdExecuting
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <Zap className="w-3 h-3" />}
+              Execute
+            </button>
           </div>
         )}
 

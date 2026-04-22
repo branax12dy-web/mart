@@ -80,7 +80,7 @@ function ApproveModal({ w, onClose }: { w: Withdrawal; onClose: () => void }) {
   const handleApprove = () => {
     if (!refNo.trim()) { toast({ title: "Reference number required", variant: "destructive" }); return; }
     approve.mutate({ id: w.id, refNo: refNo.trim(), note: note.trim() || undefined }, {
-      onSuccess: () => { toast({ title: "✅ Withdrawal Approved", description: `${fc(w.amount)} marked as paid — Ref: ${refNo}` }); onClose(); },
+      onSuccess: () => { toast({ title: "✅ Withdrawal Approved", description: `${fc(Number(w.amount))} marked as paid — Ref: ${refNo}` }); onClose(); },
       onError:   (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
     });
   };
@@ -96,12 +96,12 @@ function ApproveModal({ w, onClose }: { w: Withdrawal; onClose: () => void }) {
           <div className="bg-green-50 rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm"><span className="text-gray-500">Rider / Vendor</span><span className="font-bold">{w.user?.name}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Phone</span><span className="font-bold">{w.user?.phone}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-500">{methodIcon(w.paymentMethod)} Method</span><span className="font-bold">{parsed.bank}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-500">{methodIcon(w.paymentMethod ?? null)} Method</span><span className="font-bold">{parsed.bank}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Account</span><span className="font-bold">{parsed.account}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Account Name</span><span className="font-bold">{parsed.title}</span></div>
             <div className="flex justify-between items-center pt-1 border-t border-green-200">
               <span className="text-gray-600 font-semibold">Amount to Transfer</span>
-              <span className="text-xl font-extrabold text-green-600">{fc(w.amount)}</span>
+              <span className="text-xl font-extrabold text-green-600">{fc(Number(w.amount))}</span>
             </div>
           </div>
 
@@ -163,11 +163,11 @@ function RejectModal({ w, onClose }: { w: Withdrawal; onClose: () => void }) {
             <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{parsed.bank}</span></div>
             <div className="flex justify-between items-center pt-1 border-t border-red-200">
               <span className="text-gray-600 font-semibold">Amount (will be refunded)</span>
-              <span className="text-xl font-extrabold text-red-600">{fc(w.amount)}</span>
+              <span className="text-xl font-extrabold text-red-600">{fc(Number(w.amount))}</span>
             </div>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-            <p className="text-xs text-amber-700 font-semibold">⚠️ {fc(w.amount)} automatically rider ke wallet mein wapas aa jayega aur unhe notification milegi.</p>
+            <p className="text-xs text-amber-700 font-semibold">⚠️ {fc(Number(w.amount))} automatically rider ke wallet mein wapas aa jayega aur unhe notification milegi.</p>
           </div>
 
           <div>
@@ -368,7 +368,7 @@ export default function Withdrawals() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <p className={`text-lg font-extrabold ${w.status === "paid" ? "text-green-600" : w.status === "rejected" ? "text-gray-400 line-through" : "text-red-600"}`}>
-                          {fc(w.amount)}
+                          {fc(Number(w.amount))}
                         </p>
                         {expanded ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
                       </div>
@@ -383,7 +383,7 @@ export default function Withdrawals() {
                           { label: "Bank / Method", value: `${methodIcon(w.paymentMethod || parsed.bank)} ${parsed.bank}` },
                           { label: "Account No.",   value: parsed.account },
                           { label: "Account Name",  value: parsed.title },
-                          { label: "Amount",        value: fc(w.amount) },
+                          { label: "Amount",        value: fc(Number(w.amount)) },
                           { label: "Status",        value: w.status.toUpperCase() },
                           ...(w.refNo ? [{ label: "Ref / Reason", value: w.refNo }] : []),
                         ].map(f => (
@@ -421,7 +421,7 @@ export default function Withdrawals() {
                         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
                           <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0"/>
                           <p className="text-xs text-green-700 font-medium">
-                            {fc(w.amount)} transferred to {parsed.bank} account <strong>{parsed.account}</strong>.
+                            {fc(Number(w.amount))} transferred to {parsed.bank} account <strong>{parsed.account}</strong>.
                             {w.refNo && <> Reference: <strong>{w.refNo}</strong></>}
                           </p>
                         </div>
@@ -432,7 +432,7 @@ export default function Withdrawals() {
                         <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
                           <XCircle className="w-4 h-4 text-red-500 flex-shrink-0"/>
                           <p className="text-xs text-red-700 font-medium">
-                            Request rejected. {w.refNo && <>Reason: <strong>{w.refNo}</strong>.</>} {fc(w.amount)} wapas rider wallet mein aa gaya.
+                            Request rejected. {w.refNo && <>Reason: <strong>{w.refNo}</strong>.</>} {fc(Number(w.amount))} wapas rider wallet mein aa gaya.
                           </p>
                         </div>
                       )}

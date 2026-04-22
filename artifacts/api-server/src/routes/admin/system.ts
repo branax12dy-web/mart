@@ -1075,6 +1075,163 @@ Return max 5 results. Only include results that are genuinely relevant. If unsur
   }
 });
 
+/* ── AI Natural-Language Command Executor ────────────────────────────────── */
+router.post("/command/execute", adminAuth, async (req, res) => {
+  try {
+    const { command } = req.body as { command?: string };
+    if (!command || command.trim().length < 3) {
+      sendValidationError(res, "command is required (min 3 chars)"); return;
+    }
+    const cmd = command.trim();
+
+    const baseUrl = process.env["AI_INTEGRATIONS_GEMINI_BASE_URL"];
+    const apiKey  = process.env["AI_INTEGRATIONS_GEMINI_API_KEY"];
+
+    if (!baseUrl || !apiKey) {
+      sendError(res, "AI command execution is not configured", 503); return;
+    }
+
+    const SAFE_TOGGLE_KEYS: Record<string, string> = {
+      maintenance_mode:      "Maintenance Mode",
+      rides_enabled:         "Rides Service",
+      food_enabled:          "Food Service",
+      mart_enabled:          "Mart Service",
+      wallet_enabled:        "Wallet",
+      parcel_enabled:        "Parcel Service",
+      pharmacy_enabled:      "Pharmacy Service",
+      van_enabled:           "Van Service",
+      registration_open:     "User Registration",
+      vendor_registration:   "Vendor Registration",
+      rider_registration:    "Rider Registration",
+    };
+
+    const SAFE_WRITE_KEYS: Record<string, { label: string; type: "number" | "string" }> = {
+      delivery_radius_km:         { label: "Delivery Radius (km)", type: "number" },
+      min_order_amount:           { label: "Minimum Order Amount", type: "number" },
+      max_order_amount:           { label: "Maximum Order Amount", type: "number" },
+      platform_commission_percent:{ label: "Platform Commission %", type: "number" },
+      gst_percent:                { label: "GST/Tax %", type: "number" },
+      support_phone:              { label: "Support Phone", type: "string" },
+      support_email:              { label: "Support Email", type: "string" },
+      app_name:                   { label: "App Name", type: "string" },
+    };
+
+    const systemPrompt = `You are an AJKMart admin command parser. Parse the user's natural-language command and return a JSON action. Return ONLY valid JSON, no markdown.
+
+Available toggle settings (true/false):
+${Object.entries(SAFE_TOGGLE_KEYS).map(([k, l]) => `- ${k}: ${l}`).join("\n")}
+
+Available value settings:
+${Object.entries(SAFE_WRITE_KEYS).map(([k, v]) => `- ${k} (${v.type}): ${v.label}`).join("\n")}
+
+Return one of these JSON structures:
+
+For toggle:
+{"type":"toggle","key":"<key>","value":"true"|"false","label":"<human label>","description":"<what this does>"}
+
+For setting a value:
+{"type":"set","key":"<key>","value":"<new value>","label":"<human label>","description":"<what this does>"}
+
+For navigate:
+{"type":"navigate","path":"<path>","label":"<page name>","description":"<what this opens>"}
+
+For unrecognized commands:
+{"type":"unknown","description":"Could not interpret command: <brief reason>"}
+
+Important: Only use keys from the lists above. If the command is ambiguous, map it to the closest match or return unknown.`;
+
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: `Admin command: "${cmd}"` }] }],
+      config: { systemInstruction: systemPrompt, maxOutputTokens: 512, responseMimeType: "application/json" },
+    });
+
+    const text = response.text ?? "{}";
+    interface ParsedAction {
+      type: "toggle" | "set" | "navigate" | "unknown";
+      key?: string;
+      value?: string;
+      label?: string;
+      path?: string;
+      description?: string;
+    }
+    let action: ParsedAction;
+    try {
+      action = JSON.parse(text) as ParsedAction;
+    } catch {
+      action = { type: "unknown", description: "Could not parse AI response" };
+    }
+
+    if (action.type === "unknown" || !action.type) {
+      return sendSuccess(res, {
+        executed: false,
+        type: "unknown",
+        description: action.description ?? "Command not understood",
+        command: cmd,
+      });
+    }
+
+    if (action.type === "navigate") {
+      return sendSuccess(res, {
+        executed: false,
+        type: "navigate",
+        path: action.path,
+        label: action.label,
+        description: action.description,
+        command: cmd,
+      });
+    }
+
+    /* ── Execute toggle or set ─────────────────────────────────────────── */
+    const key = action.key;
+    if (!key) {
+      return sendSuccess(res, { executed: false, type: "unknown", description: "Missing setting key", command: cmd });
+    }
+
+    const isToggle = action.type === "toggle" && key in SAFE_TOGGLE_KEYS;
+    const isSet    = action.type === "set"    && key in SAFE_WRITE_KEYS;
+
+    if (!isToggle && !isSet) {
+      return sendSuccess(res, { executed: false, type: "unknown", description: `Setting "${key}" is not in the allowed list`, command: cmd });
+    }
+
+    const newValue = action.value ?? "";
+
+    const [existing] = await db.select().from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, key))
+      .limit(1);
+
+    const previousValue = existing?.value ?? null;
+
+    await db.insert(platformSettingsTable).values({
+      key,
+      value: newValue,
+      label: SAFE_TOGGLE_KEYS[key] ?? SAFE_WRITE_KEYS[key]?.label ?? key,
+      category: "ai_command",
+    }).onConflictDoUpdate({
+      target: platformSettingsTable.key,
+      set: { value: newValue, updatedAt: new Date() },
+    });
+
+    return sendSuccess(res, {
+      executed: true,
+      type: action.type,
+      key,
+      value: newValue,
+      previousValue,
+      label: action.label ?? SAFE_TOGGLE_KEYS[key] ?? SAFE_WRITE_KEYS[key]?.label ?? key,
+      description: action.description,
+      command: cmd,
+    });
+  } catch (err) {
+    logger.error({ err }, "Command execution failed");
+    sendError(res, "Command execution failed", 500);
+  }
+});
+
 /* ══════════════════════════════════════════════════════════════════════════════
    NEW ENDPOINTS — Task 4: Operations Pages (51–100)
 ══════════════════════════════════════════════════════════════════════════════ */

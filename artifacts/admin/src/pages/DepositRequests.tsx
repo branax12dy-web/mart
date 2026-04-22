@@ -33,6 +33,7 @@ interface Deposit {
   user?: DepositUser;
   txId?: string;
   adminNote?: string;
+  refNo?: string;
 }
 
 interface BulkResult {
@@ -91,7 +92,7 @@ function ApproveModal({ d, onClose }: { d: Deposit; onClose: () => void }) {
   const handleApprove = () => {
     approve.mutate({ id: d.id, refNo: refNo.trim() || undefined, note: note.trim() || undefined }, {
       onSuccess: () => {
-        toast({ title: "✅ Deposit Approved", description: `${fc(d.amount)} wallet mein credit ho gaya.` });
+        toast({ title: "✅ Deposit Approved", description: `${fc(Number(d.amount))} wallet mein credit ho gaya.` });
         onClose();
       },
       onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -109,14 +110,14 @@ function ApproveModal({ d, onClose }: { d: Deposit; onClose: () => void }) {
           <div className="bg-green-50 rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm"><span className="text-gray-500">User</span><span className="font-bold">{d.user?.name}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Phone</span><span className="font-bold">{d.user?.phone}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{methodIcon(d.paymentMethod)} {parsed.method}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-500">Method</span><span className="font-bold">{methodIcon(d.paymentMethod ?? null)} {parsed.method}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Transaction ID</span><span className="font-bold font-mono">{parsed.txId}</span></div>
             {parsed.sender !== "—" && (
               <div className="flex justify-between text-sm"><span className="text-gray-500">Sender Account</span><span className="font-bold">{parsed.sender}</span></div>
             )}
             <div className="flex justify-between items-center pt-1 border-t border-green-200">
               <span className="text-gray-600 font-semibold">Amount to Credit</span>
-              <span className="text-xl font-extrabold text-green-600">{fc(d.amount)}</span>
+              <span className="text-xl font-extrabold text-green-600">{fc(Number(d.amount))}</span>
             </div>
           </div>
 
@@ -177,7 +178,7 @@ function RejectModal({ d, onClose }: { d: Deposit; onClose: () => void }) {
             <div className="flex justify-between text-sm"><span className="text-gray-500">Role</span><span className="font-bold capitalize">{d.user?.role}</span></div>
             <div className="flex justify-between items-center pt-1 border-t border-red-200">
               <span className="text-gray-600 font-semibold">Amount (NOT credited)</span>
-              <span className="text-xl font-extrabold text-red-600">{fc(d.amount)}</span>
+              <span className="text-xl font-extrabold text-red-600">{fc(Number(d.amount))}</span>
             </div>
           </div>
 
@@ -520,13 +521,13 @@ export default function DepositRequests() {
                               )}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              {methodIcon(d.paymentMethod)} {parsed.method} · {d.user?.phone} · {fd(d.createdAt)}
+                              {methodIcon(d.paymentMethod ?? null)} {parsed.method} · {d.user?.phone} · {fd(d.createdAt)}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <p className={`text-lg font-extrabold ${d.status === "approved" ? "text-green-600" : d.status === "rejected" ? "text-gray-400 line-through" : "text-blue-600"}`}>
-                            {fc(d.amount)}
+                            {fc(Number(d.amount))}
                           </p>
                           {expanded ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
                         </div>
@@ -538,10 +539,10 @@ export default function DepositRequests() {
                     <div className="border-t border-gray-100 px-4 py-4 bg-gray-50 space-y-4">
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {[
-                          { label: "Payment Method", value: `${methodIcon(d.paymentMethod)} ${parsed.method}` },
+                          { label: "Payment Method", value: `${methodIcon(d.paymentMethod ?? null)} ${parsed.method}` },
                           { label: "Transaction ID",  value: parsed.txId },
                           { label: "Sender Account",  value: parsed.sender },
-                          { label: "Amount",          value: fc(d.amount) },
+                          { label: "Amount",          value: fc(Number(d.amount)) },
                           { label: "Status",          value: d.status.toUpperCase() },
                           ...(d.refNo ? [{ label: "Admin Ref", value: d.refNo }] : []),
                         ].map(f => (
@@ -575,7 +576,7 @@ export default function DepositRequests() {
                         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
                           <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0"/>
                           <p className="text-xs text-green-700 font-medium">
-                            {fc(d.amount)} {d.user?.name}'s wallet mein credited.
+                            {fc(Number(d.amount))} {d.user?.name}'s wallet mein credited.
                             {d.refNo && <> Reference: <strong>{d.refNo}</strong></>}
                           </p>
                         </div>

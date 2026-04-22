@@ -60,13 +60,64 @@ const createErrorReportSchema = z.object({
   stackTrace:    z.string().max(50000).optional(),
   metadata:      z.record(z.unknown()).optional(),
   statusCode:    z.number().optional(),
+  /** Client-computed DJB2 hash for deduplication */
+  errorHash:     z.string().max(64).optional(),
 });
+
+/* ── Deterministic DJB2 fingerprint for grouping identical errors ──────── */
+function computeErrorHash(errorMessage: string, errorType: string, sourceApp: string): string {
+  const key = `${errorType}::${sourceApp}::${errorMessage.slice(0, 300)}`;
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash) ^ key.charCodeAt(i);
+    hash = hash >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+const DEDUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 router.post("/", validateBody(createErrorReportSchema), async (req, res) => {
   try {
     const body = req.body;
     const severity = classifySeverity(body.errorType, body.statusCode, body.errorMessage);
     const shortImpact = classifyImpact(body.errorType, severity);
+
+    /* ── Hash-based deduplication ──────────────────────────────────────── */
+    const hash = body.errorHash ?? computeErrorHash(body.errorMessage, body.errorType, body.sourceApp);
+    let existingByHash: (typeof errorReportsTable.$inferSelect) | undefined;
+    try {
+      const cutoff = new Date(Date.now() - DEDUP_WINDOW_MS);
+      const [row] = await db.select()
+        .from(errorReportsTable)
+        .where(and(
+          eq(errorReportsTable.errorHash, hash),
+          ne(errorReportsTable.status, "resolved"),
+          gte(errorReportsTable.timestamp, cutoff),
+        ))
+        .limit(1);
+      existingByHash = row;
+    } catch {
+      /* Columns may not exist yet on first startup — safe to skip dedup */
+    }
+
+    if (existingByHash) {
+      const newCount = (existingByHash.occurrenceCount ?? 1) + 1;
+      try {
+        await db.update(errorReportsTable)
+          .set({ occurrenceCount: newCount, updatedAt: new Date() })
+          .where(eq(errorReportsTable.id, existingByHash.id));
+      } catch {}
+      return sendSuccess(res, {
+        ...existingByHash,
+        occurrenceCount: newCount,
+        deduplicated: true,
+        timestamp: existingByHash.timestamp.toISOString(),
+        resolvedAt: existingByHash.resolvedAt?.toISOString() ?? null,
+        acknowledgedAt: existingByHash.acknowledgedAt?.toISOString() ?? null,
+        updatedAt: new Date().toISOString(),
+      }, undefined, 200);
+    }
 
     const id = generateId();
     const [report] = await db.insert(errorReportsTable).values({
@@ -81,6 +132,8 @@ router.post("/", validateBody(createErrorReportSchema), async (req, res) => {
       shortImpact,
       stackTrace: body.stackTrace || null,
       metadata: body.metadata || null,
+      errorHash: hash,
+      occurrenceCount: 1,
     }).returning();
 
     sendSuccess(res, report, undefined, 201);
@@ -1000,6 +1053,93 @@ router.post("/auto-resolve-run", adminAuth, async (_req, res) => {
   }
 });
 
+/* ── Gemini AI-powered error analysis (with rule-based fallback) ──────── */
+router.post("/:id/ai-analyze", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [report] = await db.select().from(errorReportsTable)
+      .where(eq(errorReportsTable.id, id!))
+      .limit(1);
+
+    if (!report) { sendNotFound(res, "Error report not found"); return; }
+
+    const baseUrl = process.env["AI_INTEGRATIONS_GEMINI_BASE_URL"];
+    const apiKey  = process.env["AI_INTEGRATIONS_GEMINI_API_KEY"];
+
+    /* ── Gemini primary ────────────────────────────────────────────────── */
+    if (baseUrl && apiKey) {
+      try {
+        const { GoogleGenAI } = await import("@google/genai");
+        const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+        const prompt = `You are a senior software engineer analyzing a production error. Return valid JSON only — NO markdown, NO code fences.
+
+Error Details:
+- Type: ${report.errorType}
+- Severity: ${report.severity}
+- Source App: ${report.sourceApp}
+- Error Message: ${report.errorMessage}
+- Module: ${report.moduleName ?? "N/A"}
+- Function: ${report.functionName ?? "N/A"}
+- Stack Trace: ${(report.stackTrace ?? "N/A").slice(0, 2000)}
+
+Return this JSON structure:
+{
+  "rootCause": "1-3 sentence root cause analysis",
+  "fixSteps": ["Step 1", "Step 2", "Step 3"],
+  "impactAssessment": "Impact if left unresolved",
+  "confidence": 0.0,
+  "autoResolvable": false,
+  "preventionTips": ["Tip 1", "Tip 2"]
+}`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: { maxOutputTokens: 1024, responseMimeType: "application/json" },
+        });
+
+        const text = response.text ?? "{}";
+        const parsed = JSON.parse(text) as {
+          rootCause?: string;
+          fixSteps?: string[];
+          impactAssessment?: string;
+          confidence?: number;
+          autoResolvable?: boolean;
+          preventionTips?: string[];
+        };
+
+        if (parsed.rootCause) {
+          if (parsed.rootCause) {
+            await db.update(errorReportsTable)
+              .set({ rootCause: parsed.rootCause, updatedAt: new Date() })
+              .where(eq(errorReportsTable.id, id!));
+          }
+          return sendSuccess(res, { ...parsed, fallback: false, errorId: id });
+        }
+      } catch (aiErr) {
+        logger.warn({ aiErr }, "Gemini analysis failed — switching to rule-based fallback");
+      }
+    }
+
+    /* ── Rule-based fallback ───────────────────────────────────────────── */
+    const rca = analyzeErrorCauseServer(report.errorType, report.errorMessage);
+    return sendSuccess(res, {
+      rootCause: rca.causes.join("; ") || "Root cause could not be determined automatically.",
+      fixSteps: rca.fixes,
+      impactAssessment: rca.consequences.join("; ") || report.shortImpact || "Investigate for user impact.",
+      confidence: 0.4,
+      autoResolvable: false,
+      preventionTips: [],
+      fallback: true,
+      errorId: id,
+    });
+  } catch (err) {
+    logger.error({ err }, "AI analyze failed");
+    sendError(res, "AI analysis failed", 500);
+  }
+});
+
 router.get("/auto-resolve-log", adminAuth, async (req, res) => {
   try {
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query["limit"] || "50"))));
@@ -1204,6 +1344,9 @@ export async function ensureErrorResolutionTables() {
     await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`);
     await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS root_cause TEXT`);
     await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS error_hash TEXT`);
+    await db.execute(sql`ALTER TABLE error_reports ADD COLUMN IF NOT EXISTS occurrence_count INTEGER NOT NULL DEFAULT 1`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_error_reports_hash ON error_reports (error_hash, status, timestamp)`);
   } catch {}
   try {
     await db.execute(sql`
