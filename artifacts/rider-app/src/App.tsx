@@ -199,8 +199,11 @@ function AppRoutes() {
           <Route path="/notifications" component={Notifications} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings/security" component={SecuritySettings} />
+          <Route path="/security" component={SecuritySettings} />
           <Route path="/van" component={VanDriver} />
+          <Route path="/van-driver" component={VanDriver} />
           <Route path="/chat" component={Chat} />
+          <Route path="/chat/:id" component={Chat} />
           <Route component={NotFound} />
         </Switch>
       </div>
