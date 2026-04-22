@@ -285,8 +285,13 @@ router.get("/", async (req, res) => {
       mapsDistanceMatrix:   (s["maps_distance_matrix"]     ?? "on") === "on",
     },
     auth: (() => {
-      function parseAuthToggle(val: string | undefined, _fallback: string): Record<string, boolean> | boolean {
-        if (!val) return false;
+      function parseAuthToggle(val: string | undefined, fallback: string): Record<string, boolean> | boolean {
+        // Setting missing from DB → return the default (so a fresh install
+        // doesn't lock everyone out with "No login methods available").
+        if (val === undefined || val === null || val === "") {
+          const on = fallback === "on";
+          return { customer: on, rider: on, vendor: on };
+        }
         try {
           const parsed = JSON.parse(val) as Record<string, string>;
           return { customer: parsed.customer === "on", rider: parsed.rider === "on", vendor: parsed.vendor === "on" };

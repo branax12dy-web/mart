@@ -1,15 +1,28 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendCreated } from "../lib/response.js";
 import { validateBody } from "../middleware/validate.js";
-import { requireRole } from "../middleware/security.js";
+import { requireRole, getCachedSettings } from "../middleware/security.js";
 import { getIO } from "../lib/socketio.js";
 import { db } from "@workspace/db";
 import { supportMessagesTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
+
+/* Admin toggle: feature_chat. When OFF, the customer support chat
+   endpoints return 403 so a disabled admin switch is enforced
+   server-side and not just hidden in the UI. */
+async function requireChatEnabled(_req: Request, res: Response, next: NextFunction) {
+  const s = await getCachedSettings();
+  if ((s["feature_chat"] ?? "off") !== "on") {
+    res.status(403).json({ error: "Customer support chat is currently disabled by the administrator." });
+    return;
+  }
+  next();
+}
+router.use(requireChatEnabled);
 
 const messageSchema = z.object({
   message: z.string().min(1).max(2000),

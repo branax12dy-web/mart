@@ -582,24 +582,27 @@ async function dbRateIncrement(key: string, windowMinutes: number): Promise<{ co
 
 /* ══════════════════════════════════════════════════════════════
    SETTINGS CACHE
+   Single source of truth lives in routes/admin-shared.ts. We
+   delegate to it so any admin save (which invalidates that cache)
+   is immediately visible to the auth & rate-limit middleware here.
+   The local `settingsCache` is kept only for the legacy synchronous
+   helpers above (getRefreshTokenTtlDays, getAccessTokenTtlSec).
 ══════════════════════════════════════════════════════════════ */
 let settingsCache: Record<string, string> = {};
-let settingsCacheExpiry = 0;
 
 export async function getCachedSettings(): Promise<Record<string, string>> {
-  if (Date.now() < settingsCacheExpiry) return settingsCache;
-  try {
-    settingsCache = await getPlatformSettings();
-    const cacheTtl = safeInt(settingsCache["cache_settings_ttl_sec"] ?? settingsCache["system_cache_ttl_sec"], 30, 5);
-    settingsCacheExpiry = Date.now() + Math.min(3600, cacheTtl) * 1000;
-    VPN_CACHE_TTL_MS = safeInt(settingsCache["cache_vpn_ttl_min"], 10, 1) * 60 * 1000;
-    TOR_LIST_TTL_MS = safeInt(settingsCache["cache_tor_ttl_min"], 60, 1) * 60 * 1000;
-  } catch {}
-  return settingsCache;
+  const adminShared = await import("../routes/admin-shared.js");
+  const fresh = await adminShared.getCachedSettings();
+  settingsCache = fresh;
+  // Keep TTL helpers in sync with whatever the unified cache returned.
+  VPN_CACHE_TTL_MS = safeInt(fresh["cache_vpn_ttl_min"], 10, 1) * 60 * 1000;
+  TOR_LIST_TTL_MS = safeInt(fresh["cache_tor_ttl_min"], 60, 1) * 60 * 1000;
+  return fresh;
 }
 
-export function invalidateSettingsCache() {
-  settingsCacheExpiry = 0;
+export async function invalidateSettingsCache() {
+  const adminShared = await import("../routes/admin-shared.js");
+  adminShared.invalidateSettingsCache();
 }
 
 /* ══════════════════════════════════════════════════════════════

@@ -46,6 +46,7 @@ import { t, type TranslationKey } from "@workspace/i18n";
 import { logger } from "../lib/logger.js";
 import { clearSpoofHits } from "./rider.js";
 import { canonicalizePhone } from "@workspace/phone-utils";
+import { isAuthMethodEnabled, isAuthMethodEnabledStrict } from "@workspace/auth-utils/server";
 import { validateBody as sharedValidateBody } from "../middleware/validate.js";
 
 /* OTP rate limiting is handled per-account + per-IP inside the route handler
@@ -312,15 +313,21 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
      must already know the username), so we can still route to "register" vs
      "login_password" there — but we never return social-linked flags. ── */
   let action: string;
+  let noMethodReason: string | undefined;
   let responseAvailableMethods: string[] = availableMethods;
 
   if (looksLikePhone) {
     /* Always say "send OTP" — never distinguish new vs returning user */
-    action = phoneOtpEnabled ? "send_phone_otp" : "no_method";
+    if (phoneOtpEnabled) {
+      action = "send_phone_otp";
+    } else {
+      action = "no_method";
+      noMethodReason = "phone_disabled";
+    }
   } else if (looksLikeEmail) {
     if (emailOtpEnabled)       action = "send_email_otp";
     else if (magicLinkEnabled) action = "send_magic_link";
-    else                       action = "no_method";
+    else { action = "no_method"; noMethodReason = "email_disabled"; }
   } else {
     /* Username path: determine action from existence without leaking social links */
     const usableMethods = availableMethods.filter(m => {
@@ -342,8 +349,10 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
              : first === "email_otp" ? "send_email_otp"
              : first === "magic_link" ? "send_magic_link"
              : "no_method";
+      if (action === "no_method") noMethodReason = "all_disabled";
     } else {
       action = "no_method";
+      noMethodReason = exists && !user?.passwordHash ? "password_disabled" : "all_disabled";
     }
   }
 
@@ -356,6 +365,7 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
   res.json({
     registrationOpen,
     action,
+    reason: noMethodReason,
     availableMethods: responseAvailableMethods,
     isBanned:  false,
     isLocked:  false,
@@ -2328,20 +2338,8 @@ router.post("/set-password", async (req, res) => {
   res.json({ success: true, message: "Password set ho gaya", requirePasswordChange: false });
 });
 
-function isAuthMethodEnabled(settings: Record<string, string>, key: string, role?: string): boolean {
-  const val = settings[key];
-  if (!val) return false;
-  if (val === "on") return true;
-  if (val === "off") return false;
-  try {
-    const parsed = JSON.parse(val) as Record<string, string>;
-    if (role) return (parsed[role] ?? "off") === "on";
-    /* No role given — return true if at least one role has it enabled */
-    return Object.values(parsed).some(v => v === "on");
-  } catch {
-    return val === "on";
-  }
-}
+/* isAuthMethodEnabled is now exported from @workspace/auth-utils/server
+   so the same logic is shared with any future server-side helpers. */
 
 /* ══════════════════════════════════════════════════════════════════════
    OTP Rate Limiter — per account (phone/email) + per IP address
@@ -2403,22 +2401,8 @@ async function checkAndIncrOtpRateLimit(params: {
   return { blocked: false };
 }
 
-function isAuthMethodEnabledStrict(settings: Record<string, string>, newKey: string, legacyKey: string, role?: string): boolean {
-  const newVal = settings[newKey];
-  if (newVal) {
-    try {
-      const parsed = JSON.parse(newVal) as Record<string, string>;
-      if (role && role in parsed) return parsed[role] === "on";
-      if (!role) return false;
-      return false;
-    } catch {
-      return newVal === "on";
-    }
-  }
-  const legacyVal = settings[legacyKey];
-  if (legacyVal) return legacyVal === "on";
-  return false;
-}
+/* isAuthMethodEnabledStrict is now imported from @workspace/auth-utils/server
+   above (see top of file). The previous local implementation has been removed. */
 
 const CNIC_REGEX = /^\d{5}-\d{7}-\d{1}$/;
 const PHONE_REGEX = /^0?3\d{9}$/;
@@ -2435,6 +2419,18 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
 
   if (settings["feature_new_users"] === "off") {
     res.status(403).json({ error: "New user registration is currently disabled." });
+    return;
+  }
+
+  /* Per-role registration kill-switch (admin panel: Vendor Registration / Rider Registration).
+     When the admin sets vendor_registration or rider_registration to "off",
+     the corresponding role cannot complete signup even if phone OTP is on. */
+  if (userRole === "vendor" && (settings["vendor_registration"] ?? "on") === "off") {
+    res.status(403).json({ error: "Vendor registration is currently closed by the administrator." });
+    return;
+  }
+  if (userRole === "rider" && (settings["rider_registration"] ?? "on") === "off") {
+    res.status(403).json({ error: "Rider registration is currently closed by the administrator." });
     return;
   }
 

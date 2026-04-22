@@ -165,7 +165,19 @@ export default function Login() {
         setLoading(false); return;
       }
       if (data.action === "no_method") {
-        setError("No login methods are currently available. Please contact support.");
+        const reason = (data.reason as string | undefined) || "all_disabled";
+        const detail =
+          reason === "phone_disabled"   ? "Phone OTP login is disabled for riders. Try email or username, or contact support." :
+          reason === "email_disabled"   ? "Email OTP login is disabled for riders. Try phone or username, or contact support." :
+          reason === "password_disabled"? "Username/password login is disabled for riders. Try phone or email OTP." :
+          "No login methods are currently enabled for the rider app. Please contact support.";
+        const supportPhone = config.platform.supportPhone ?? "";
+        const supportEmail = config.platform.supportEmail ?? "";
+        const contactLine =
+          supportPhone || supportEmail
+            ? `\nContact: ${[supportPhone, supportEmail].filter(Boolean).join(" / ")}`
+            : "";
+        setError(detail + contactLine);
         setLoading(false); return;
       }
       if (data.action === "register") {
