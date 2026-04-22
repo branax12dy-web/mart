@@ -55,6 +55,7 @@ interface MartProduct {
   categoryId?: string;
   inStock?: boolean;
   description?: string;
+  rating?: number | null;
 }
 
 function MartRecentlyViewed() {
@@ -160,7 +161,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: MartProd
   const { requireCustomerRole, roleBlockProps } = useRoleGate();
 
   const doAdd = () => {
-    addItem({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image, type: "mart" });
+    addItem({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image ?? undefined, type: "mart" });
     setAdded(true);
     if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
@@ -189,7 +190,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: MartProd
         targetService="Mart"
         currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : "Another service"}
         onCancel={() => setShowSwitchModal(false)}
-        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image, type: "mart" }); }}
+        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image ?? undefined, type: "mart" }); }}
       />
       <View style={styles.flashImg}>
         {product.image
@@ -214,7 +215,7 @@ const FlashCard = React.memo(function FlashCard({ product }: { product: MartProd
         )}
         <View style={styles.flashFooter}>
           <View>
-            {discount > 0 && product?.originalPrice > 0 && (
+            {discount > 0 && Number(product?.originalPrice ?? 0) > 0 && (
               <Text style={styles.flashOrigPrice}>Rs. {product.originalPrice}</Text>
             )}
             <Text style={styles.flashPrice}>Rs. {product?.price ?? 0}</Text>
@@ -244,7 +245,7 @@ const ProductCard = React.memo(function ProductCard({ product }: { product: Mart
   const { requireCustomerRole, roleBlockProps } = useRoleGate();
 
   const doAdd = () => {
-    addItem({ productId: product.id, name: product.name ?? "—", price: product.price ?? 0, quantity: 1, image: product.image, type: "mart" });
+    addItem({ productId: product.id, name: product.name ?? "—", price: product.price ?? 0, quantity: 1, image: product.image ?? undefined, type: "mart" });
     setAdded(true);
     if (addedTimerRef.current) clearTimeout(addedTimerRef.current);
     addedTimerRef.current = setTimeout(() => { setAdded(false); addedTimerRef.current = null; }, 1500);
@@ -273,7 +274,7 @@ const ProductCard = React.memo(function ProductCard({ product }: { product: Mart
         targetService="Mart"
         currentService={cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : "Another service"}
         onCancel={() => setShowSwitchModal(false)}
-        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: product.id, name: product.name ?? "—", price: product.price ?? 0, quantity: 1, image: product.image, type: "mart" }); }}
+        onConfirm={() => { setShowSwitchModal(false); clearCartAndAdd({ productId: product.id, name: product.name ?? "—", price: product.price ?? 0, quantity: 1, image: product.image ?? undefined, type: "mart" }); }}
       />
       <View style={styles.productImg}>
         {product.image
@@ -555,7 +556,7 @@ function MartScreenInner() {
 
                 <View style={styles.flashGrid}>
                   {flashDeals.map(p => (
-                    <FlashCard key={p.id} product={p} />
+                    <FlashCard key={p.id} product={p as unknown as MartProduct} />
                   ))}
                 </View>
               </>

@@ -180,7 +180,7 @@ export default function UniversalSearchScreen() {
       const results = await Promise.allSettled(
         enabledServices.map((svc) =>
           searchProducts({
-            q: q.trim() || undefined,
+            q: (q.trim() || ""),
             type: svc,
             category: effectiveCategory || undefined,
             sort: sortBy !== "relevance" ? sortBy : undefined,
@@ -198,7 +198,7 @@ export default function UniversalSearchScreen() {
               category: p.category,
               originalPrice: p.originalPrice,
               rating: p.rating,
-              vendorId: p.vendorId,
+              vendorId: (p as { vendorId?: string }).vendorId,
               vendorName: p.vendorName,
               type: svc,
             } as SearchResult)),

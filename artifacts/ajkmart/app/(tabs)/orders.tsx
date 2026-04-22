@@ -72,6 +72,11 @@ interface OrderShape {
   updatedAt?: string;
   refundStatus?: string;
   prescriptionNote?: string;
+  pickupAddress?: string;
+  dropAddress?: string;
+  fare?: number;
+  estimatedFare?: number;
+  distance?: number;
   _reviewed?: boolean;
   _type?: string;
 }
@@ -91,6 +96,9 @@ interface RideShape {
   paymentMethod?: string;
   estimatedTime?: string;
   fareBreakdown?: { baseFare?: number; gstAmount?: number; [key: string]: any };
+  items?: OrderItemShape[];
+  total?: number;
+  estimatedFare?: number;
   _reviewed?: boolean;
   _type?: string;
 }
@@ -190,7 +198,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
         {(order.items || []).length > 2 && (
           <TouchableOpacity activeOpacity={0.7} onPress={() => setItemsExpanded(prev => !prev)} style={styles.expandRow}>
             <Text style={styles.moreItems}>
-              {itemsExpanded ? T("showLess") : `+${order.items.length - 2} ${T("moreItems")}`}
+              {itemsExpanded ? T("showLess") : `+${(order.items?.length ?? 0) - 2} ${T("moreItems")}`}
             </Text>
             <Ionicons
               name={itemsExpanded ? "chevron-up" : "chevron-down"}
@@ -272,7 +280,7 @@ function OrderCard({ order, liveTracking, reviews, cancelWindowMin, refundDays, 
         </TouchableOpacity>
       )}
 
-      {(isDelivered || isCancelled) && onReorder && order.items?.length > 0 && (
+      {(isDelivered || isCancelled) && onReorder && (order.items?.length ?? 0) > 0 && (
         <TouchableOpacity activeOpacity={0.7} style={styles.reorderBtn} onPress={() => onReorder(order)} accessibilityRole="button" accessibilityLabel="Reorder these items">
           <Ionicons name="refresh-outline" size={14} color={C.primary} />
           <Text style={styles.reorderBtnText}>{T("reorder")}</Text>
@@ -405,7 +413,7 @@ function RideCard({ ride, liveTracking, reviews, ratingWindowHours, serverNow, o
         </View>
       )}
 
-      {isCompleted && ride.distance > 0 && (() => {
+      {isCompleted && (ride.distance ?? 0) > 0 && (() => {
         const totalFare = ride.fare != null ? Number(ride.fare) : 0;
         const gst = ride.fareBreakdown?.gstAmount ?? Math.round(totalFare * 0.05);
         const baseFare = ride.fareBreakdown?.baseFare ?? (totalFare - gst);
@@ -588,7 +596,7 @@ function PharmacyCard({ order, reviews, cancelWindowMin, serverNow, onRate, onCa
         {(order.items || []).length > 2 && (
           <TouchableOpacity activeOpacity={0.7} onPress={() => setItemsExpanded(prev => !prev)} style={styles.expandRow}>
             <Text style={styles.moreItems}>
-              {itemsExpanded ? T("showLess") : `+${order.items.length - 2} ${T("moreItems")}`}
+              {itemsExpanded ? T("showLess") : `+${(order.items?.length ?? 0) - 2} ${T("moreItems")}`}
             </Text>
             <Ionicons
               name={itemsExpanded ? "chevron-up" : "chevron-down"}
@@ -648,6 +656,10 @@ interface ParcelShape {
   paymentMethod?: string;
   createdAt?: string;
   updatedAt?: string;
+  items?: OrderItemShape[];
+  total?: number;
+  distance?: number;
+  type?: string;
   _reviewed?: boolean;
   _type?: string;
 }
@@ -994,9 +1006,9 @@ function OrderDetailPanel({ id, type, orders, rides, pharmOrders, parcels, onClo
   })();
 
   const cfg = (() => {
-    if (type === "ride") return RIDE_STATUS[order?.status] || RIDE_STATUS["searching"]!;
-    if (type === "parcel") return PARCEL_STATUS[order?.status] || PARCEL_STATUS["pending"]!;
-    return ORDER_STATUS[order?.status] || ORDER_STATUS["pending"]!;
+    if (type === "ride") return RIDE_STATUS[order?.status ?? ""] || RIDE_STATUS["searching"]!;
+    if (type === "parcel") return PARCEL_STATUS[order?.status ?? ""] || PARCEL_STATUS["pending"]!;
+    return ORDER_STATUS[order?.status ?? ""] || ORDER_STATUS["pending"]!;
   })();
 
   const items: OrderItemShape[] = order?.items || [];
@@ -1163,13 +1175,13 @@ function OrdersScreenInner() {
         let skippedCount = 0;
         let addedCount = 0;
         for (const item of validItems) {
-          const liveProduct = productMap.get(item.productId);
+          const liveProduct = item.productId ? productMap.get(item.productId) : undefined;
           if (liveProduct && liveProduct.stock === 0) { skippedCount++; continue; }
           const livePrice = liveProduct ? liveProduct.price : item.price;
           if (liveProduct && Number(liveProduct.price) !== Number(item.price)) {
             priceChangedItems.push(item.name);
           }
-          addItem({ productId: item.productId, name: item.name, price: livePrice, quantity: item.quantity || 1, image: item.image, type: order.type || "mart" });
+          addItem({ productId: item.productId ?? "", name: item.name, price: livePrice, quantity: item.quantity || 1, image: item.image, type: ((order.type as "mart" | "food" | "pharmacy") || "mart") });
           addedCount++;
         }
         if (skippedCount > 0 && priceChangedItems.length > 0) {
@@ -1189,7 +1201,7 @@ function OrdersScreenInner() {
     }
     let count = 0;
     for (const item of validItems) {
-      addItem({ productId: item.productId, name: item.name, price: item.price, quantity: item.quantity || 1, image: item.image, type: order.type || "mart" });
+      addItem({ productId: item.productId ?? "", name: item.name, price: item.price, quantity: item.quantity || 1, image: item.image, type: ((order.type as "mart" | "food" | "pharmacy") || "mart") });
       count++;
     }
     showToast(`${count} items added to cart — stock and prices may have changed since your last order`, "info");
@@ -1228,7 +1240,7 @@ function OrdersScreenInner() {
 
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useGetOrders(
     { userId: user?.id || "" },
-    { query: { enabled: !!user?.id && anyMartFood, refetchInterval: pollInterval } }
+    { query: { queryKey: ["orders", user?.id, pollInterval] as const, enabled: !!user?.id && anyMartFood, refetchInterval: pollInterval } }
   );
 
   const [ridesData, setRidesData] = useState<{ rides?: RideShape[] } | null>(null);
@@ -1465,14 +1477,14 @@ function OrdersScreenInner() {
 
   /* API already returns orders newest-first (ORDER BY createdAt DESC).
      Do NOT reverse — that would flip to oldest-first. */
-  const rawOrders = [...(ordersData?.orders || [])];
-  const allOrders = rawOrders.filter(o =>
+  const rawOrders: OrderShape[] = [...((ordersData?.orders as OrderShape[] | undefined) || [])];
+  const allOrders = rawOrders.filter((o: OrderShape) =>
     (o.type === "mart" && martActive) || (o.type === "food" && foodActive)
   );
-  const martOrders = martActive ? allOrders.filter(o => o.type === "mart") : [];
-  const foodOrders = foodActive ? allOrders.filter(o => o.type === "food") : [];
+  const martOrders = martActive ? allOrders.filter((o: OrderShape) => o.type === "mart") : [];
+  const foodOrders = foodActive ? allOrders.filter((o: OrderShape) => o.type === "food") : [];
   const rides = ridesActive ? (ridesData?.rides || []) : [];
-  const pharmOrders = pharmActive ? (pharmData?.orders || pharmData?.pharmacyOrders || []) : [];
+  const pharmOrders = pharmActive ? (pharmData?.orders || (pharmData as { pharmacyOrders?: OrderShape[] })?.pharmacyOrders || []) : [];
   const parcels = parcelActive ? (parcelData?.bookings || parcelData?.parcelBookings || []) : [];
 
   const totalCount = allOrders.length + rides.length + pharmOrders.length + parcels.length;
@@ -1906,7 +1918,7 @@ function OrdersScreenInner() {
         {isWide && (
           <View style={{ flex: 1 }}>
             {selectedOrder
-              ? <OrderDetailPanel id={selectedOrder.id} type={selectedOrder.type} orders={allOrders} rides={rides} pharmOrders={pharmOrders} parcels={parcels} onClose={() => setSelectedOrder(null)} />
+              ? <OrderDetailPanel id={selectedOrder.id} type={selectedOrder.type} orders={allOrders} rides={rides as unknown as RideShape[]} pharmOrders={pharmOrders as OrderShape[]} parcels={parcels as unknown as ParcelShape[]} onClose={() => setSelectedOrder(null)} />
               : <EmptyDetailPanel />}
           </View>
         )}
@@ -1914,7 +1926,7 @@ function OrdersScreenInner() {
 
       {reviewTarget && user && (
         <ReviewModal
-          target={reviewTarget}
+          target={reviewTarget as unknown as Record<string, unknown>}
           userId={user.id}
           apiBase={API_BASE}
           token={token}

@@ -11,7 +11,7 @@ export default function OrderRedirect() {
     const params: Record<string, string> = { id: orderId };
     if (type) params["type"] = type;
     if (action) params["action"] = action;
-    return <Redirect href={{ pathname: "/orders/[id]", params }} />;
+    return <Redirect href={{ pathname: "/orders/[id]", params: { ...params, id: orderId } }} />;
   }
 
   return <Redirect href="/(tabs)/orders" />;

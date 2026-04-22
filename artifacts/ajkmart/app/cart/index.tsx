@@ -870,7 +870,7 @@ function CartScreenInner() {
       try {
         const orderGpsPayload = await buildGpsPayload();
         order = await createOrder({
-          type: cartType === "mixed" ? "mart" : cartType,
+          type: (cartType === "mixed" ? "mart" : cartType) as "mart" | "food" | "pharmacy",
           items: items.map(i => ({
             productId: i.productId, name: i.name,
             price: i.price, quantity: i.quantity, image: i.image,
@@ -883,7 +883,7 @@ function CartScreenInner() {
           ...(uploadedProofUrl ? { proofPhotoUrl: uploadedProofUrl } : {}),
           ...(uploadedTxnRef ? { txnRef: uploadedTxnRef } : {}),
           ...orderGpsPayload,
-        } as Parameters<typeof createOrder>[0] & { autoApplyOfferId?: string; proofPhotoUrl?: string; txnRef?: string });
+        } as unknown as Parameters<typeof createOrder>[0] & { autoApplyOfferId?: string; proofPhotoUrl?: string; txnRef?: string });
         lastError = null;
         break;
       } catch (err: any) {
@@ -1166,7 +1166,7 @@ function CartScreenInner() {
   };
 
   const uploadReceiptImage = async (uri: string): Promise<string> => {
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: "base64" as unknown as never });
     const cached = receiptMimeCache.current.get(uri);
     let mime = cached || "image/jpeg";
     if (!cached) {
@@ -1976,7 +1976,7 @@ function CartScreenInner() {
                     }}
                   />
                   <TouchableOpacity activeOpacity={0.7}
-                    onPress={applyPromo}
+                    onPress={() => { void applyPromo(); }}
                     disabled={promoLoading || !promoInput.trim()}
                     style={{
                       backgroundColor: promoInput.trim() ? C.primary : C.border,

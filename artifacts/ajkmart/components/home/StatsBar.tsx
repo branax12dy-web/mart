@@ -14,12 +14,12 @@ export function ServiceStatsStrip({ rideCfg, features }: {
   rideCfg: { bikeMinFare: number };
   features: { mart: boolean; food: boolean; rides: boolean };
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<{ productCount?: number; restaurantCount?: number }>({
     queryKey: ["home-service-stats"],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/stats/public`);
       if (!r.ok) throw new Error("stats fetch failed");
-      return r.json().then((j: { data?: unknown }) => j?.data ?? j);
+      return r.json().then((j: { data?: { productCount?: number; restaurantCount?: number } }) => (j?.data ?? j) as { productCount?: number; restaurantCount?: number });
     },
     staleTime: 5 * 60_000,
     retry: 1,

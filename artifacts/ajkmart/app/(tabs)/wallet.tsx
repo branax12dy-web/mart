@@ -1471,10 +1471,11 @@ function WalletScreenInner() {
   const [socketBalance, setSocketBalance] = useState<number | null>(null);
   const prevUserBalanceRef = useRef<number | undefined>(user?.walletBalance);
 
-  const { data, isLoading, isFetching, isError: walletError, error: walletErrorObj, refetch } = useGetWallet(
+  const { data: rawData, isLoading, isFetching, isError: walletError, error: walletErrorObj, refetch } = useGetWallet(
     { userId: user?.id || "" },
-    { query: { enabled: !!user?.id, retry: 2, retryDelay: (attempt: number) => Math.floor(1500 * Math.pow(1.5, attempt - 1)) } }
+    { query: { queryKey: ["wallet", user?.id] as const, enabled: !!user?.id, retry: 2, retryDelay: (attempt: number) => Math.floor(1500 * Math.pow(1.5, attempt - 1)) } }
   );
+  const data = rawData as (typeof rawData & { pinSetup?: boolean; walletHidden?: boolean }) | undefined;
 
   const walletQueryKey = getGetWalletQueryKey({ userId: user?.id || "" });
   const queryState = qc.getQueryState(walletQueryKey);

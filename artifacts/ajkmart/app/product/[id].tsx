@@ -472,6 +472,9 @@ function ProductDetailScreenInner() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [notifyLoading, setNotifyLoading] = useState(false);
 
+  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
+  const { requireCustomerRole, roleBlockProps } = useRoleGate();
+
   useEffect(() => {
     setActiveImageIndex(0);
     setDescExpanded(false);
@@ -570,10 +573,10 @@ function ProductDetailScreenInner() {
     } catch {}
   }, [product]);
 
-  const productType = product?.type || "mart";
+  const productType = (product?.type || "mart") as "mart" | "food" | "pharmacy";
   const { data: relatedData } = useGetProducts(
-    { type: productType, category: product?.category },
-    { query: { enabled: !!product } }
+    { type: productType as NonNullable<Parameters<typeof useGetProducts>[0]>["type"], category: product?.category },
+    { query: { queryKey: ["related-products", productType, product?.category] as const, enabled: !!product } }
   );
   const relatedProducts = (relatedData?.products || [])
     .filter((p: Product) => p.id !== id)
@@ -671,9 +674,6 @@ function ProductDetailScreenInner() {
     }, 2000);
   }, [product, productType, addItem, scale, selectedVariant]);
 
-  const { requireAuth, sheetProps: authSheetProps } = useAuthGate();
-  const { requireCustomerRole, roleBlockProps } = useRoleGate();
-
   const handleAdd = useCallback(() => {
     if (!product) return;
     requireAuth(() => {
@@ -748,7 +748,7 @@ function ProductDetailScreenInner() {
   const serviceLabel = productType === "food" ? "Food" : productType === "pharmacy" ? "Pharmacy" : "Mart";
   const currentServiceLabel = cartType === "pharmacy" ? "Pharmacy" : cartType === "food" ? "Food" : cartType === "mart" ? "Mart" : "Another service";
 
-  const reviewsSummary = product?.reviewsSummary;
+  const reviewsSummary = (product as Product & { reviewsSummary?: { average?: number; total?: number; breakdown?: Record<string, number> } } | undefined)?.reviewsSummary;
   const summary = {
     average: reviewsSummary?.average ?? 0,
     total: reviewsSummary?.total ?? 0,

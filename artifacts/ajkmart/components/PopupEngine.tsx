@@ -368,7 +368,7 @@ export function PopupEngine({ apiBase, triggerKey = "app_open" }: PopupEnginePro
         Linking.openURL(ctaLink).catch(() => {});
       } else {
         try {
-          router.push(ctaLink as `/${string}`);
+          router.push(ctaLink as Parameters<typeof router.push>[0]);
         } catch {}
       }
     }

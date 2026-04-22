@@ -19,6 +19,7 @@ export const T = {
   smallBold: { fontFamily: "Inter_700Bold" as const, fontSize: 11, lineHeight: 14 },
   tiny: { fontFamily: "Inter_700Bold" as const, fontSize: 10, lineHeight: 12 },
   button: { fontFamily: "Inter_600SemiBold" as const, fontSize: 15, lineHeight: 20 },
+  buttonMedium: { fontFamily: "Inter_600SemiBold" as const, fontSize: 14, lineHeight: 20 },
   buttonSmall: { fontFamily: "Inter_600SemiBold" as const, fontSize: 13, lineHeight: 18 },
   tabLabel: { fontFamily: "Inter_500Medium" as const, fontSize: 11, lineHeight: 14 },
   price: { fontFamily: "Inter_700Bold" as const, fontSize: 17, lineHeight: 22 },

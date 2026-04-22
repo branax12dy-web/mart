@@ -232,10 +232,10 @@ export default function FoodRestaurantScreen() {
           <View style={{ width: 36 }} />
         </View>
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-          <SkeletonBlock height={180} borderRadius={16} />
-          <SkeletonBlock height={24} width="60%" borderRadius={8} />
-          <SkeletonBlock height={16} width="40%" borderRadius={8} />
-          {[1, 2, 3, 4].map(i => <SkeletonBlock key={i} height={88} borderRadius={12} />)}
+          <SkeletonBlock w="100%" h={180} r={16} />
+          <SkeletonBlock w="60%" h={24} r={8} />
+          <SkeletonBlock w="40%" h={16} r={8} />
+          {[1, 2, 3, 4].map(i => <SkeletonBlock key={i} w="100%" h={88} r={12} />)}
         </ScrollView>
       </View>
     );

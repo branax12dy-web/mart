@@ -41,7 +41,9 @@ import { usePlatformConfig } from "@/context/PlatformConfigContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 
-type LiveRide = Ride & {
+type LiveRide = Omit<Ride, "status" | "paymentMethod"> & {
+  status?: string;
+  paymentMethod?: string;
   tripOtp?: string;
   otpVerified?: boolean;
   updatedAt?: string;
@@ -50,6 +52,11 @@ type LiveRide = Ride & {
   estimatedTime?: string;
   broadcastTimeoutSec?: number;
   fareBreakdown?: { baseFare?: number; gstAmount?: number };
+  riderLat?: number;
+  riderLng?: number;
+  riderLocAge?: number;
+  riderAvgRating?: number;
+  bids?: Array<{ id?: string; riderId?: string; riderName?: string; offer?: number; rating?: number;[key: string]: unknown }>;
 };
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -807,7 +814,7 @@ export function RideTracker({
                 </View>
                 {vehiclePlate && (
                   <View style={{ backgroundColor: colorScheme === "dark" ? "rgba(255,255,255,0.08)" : "#F1F5F9", borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: colorScheme === "dark" ? "rgba(255,255,255,0.12)" : "#E2E8F0" }}>
-                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: colorScheme === "dark" ? "#fff" : "#0F172A", letterSpacing: 0.8 }}>{vehiclePlate}</Text>
+                    <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: colorScheme === "dark" ? "#fff" : "#0F172A", letterSpacing: 0.8 }}>{String(vehiclePlate)}</Text>
                   </View>
                 )}
               </View>

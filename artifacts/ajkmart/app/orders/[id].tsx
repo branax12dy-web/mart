@@ -74,6 +74,12 @@ interface OrderDetail {
   vendorPhone?: string;
   notes?: string;
   cancellationReason?: string;
+  pickupAddress?: string;
+  dropAddress?: string;
+  distance?: number | string;
+  fare?: number;
+  prescriptionNote?: string;
+  cancellationFee?: number;
 }
 
 export default function OrderDetailScreen() {
@@ -610,13 +616,13 @@ export default function OrderDetailScreen() {
                   </Text>
                 </View>
                 <View style={{ backgroundColor: C.emerald, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                  <Text style={{ ...Typ.smallBold, color: C.textInverse }}>LIVE</Text>
+                  <Text style={{ ...(Typ.smallBold as object), color: C.textInverse }}>LIVE</Text>
                 </View>
               </View>
               {order.deliveryAddress ? (
                 <TouchableOpacity activeOpacity={0.7}
                   onPress={() => {
-                    const encodedAddr = encodeURIComponent(order.deliveryAddress);
+                    const encodedAddr = encodeURIComponent(order.deliveryAddress ?? "");
                     const url = Platform.OS === "ios"
                       ? `maps:?q=${encodedAddr}`
                       : `geo:0,0?q=${encodedAddr}`;
@@ -702,17 +708,17 @@ export default function OrderDetailScreen() {
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
                     <Text style={{ ...Typ.small, color: C.textMuted }}>{T("distanceLabel" as TranslationKey)}</Text>
-                    <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.text, marginTop: 2 }}>{Number.isFinite(parseFloat(order.distance)) ? parseFloat(order.distance).toFixed(1) : "—"} km</Text>
+                    <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.text, marginTop: 2 }}>{Number.isFinite(parseFloat(String(order.distance ?? ""))) ? parseFloat(String(order.distance)).toFixed(1) : "—"} km</Text>
                   </View>
                   <View style={{ flex: 1, backgroundColor: C.surfaceSecondary, borderRadius: 10, padding: 10, alignItems: "center" }}>
                     <Text style={{ ...Typ.small, color: C.textMuted }}>{T("fareLabel" as TranslationKey)}</Text>
-                    <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.amber, marginTop: 2 }}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
+                    <Text style={{ ...Typ.body, fontFamily: Font.bold, color: C.amber, marginTop: 2 }}>Rs. {Number.isFinite(parseFloat(String(order.fare ?? ""))) ? parseFloat(String(order.fare)).toLocaleString() : "0"}</Text>
                   </View>
                 </View>
               ) : (
                 <View style={s.totalRow}>
                   <Text style={s.totalLabel}>{T("fareLabel" as TranslationKey)}</Text>
-                  <Text style={s.totalAmount}>Rs. {Number.isFinite(parseFloat(order.fare)) ? parseFloat(order.fare).toLocaleString() : "0"}</Text>
+                  <Text style={s.totalAmount}>Rs. {Number.isFinite(parseFloat(String(order.fare ?? ""))) ? parseFloat(String(order.fare)).toLocaleString() : "0"}</Text>
                 </View>
               )}
             </View>
@@ -851,7 +857,7 @@ export default function OrderDetailScreen() {
                 id: order.id,
                 type: isRide ? "ride" : isParcelType ? "parcel" : isPharmacy ? "pharmacy" : "order",
                 status: order.status,
-                total: isRide ? parseFloat(order.fare ?? "0") : isParcelType ? parseFloat(order.fare ?? order.total ?? "0") : order.total,
+                total: isRide ? parseFloat(String(order.fare ?? "0")) : isParcelType ? parseFloat(String(order.fare ?? order.total ?? "0")) : order.total,
                 paymentMethod: order.paymentMethod,
                 cancelMinsLeft,
               });

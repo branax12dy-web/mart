@@ -74,7 +74,7 @@ export default function CategoriesBrowseScreen() {
 
   const [catRefreshing, setCatRefreshing] = useState(false);
   const { data: productsData, isLoading: productsLoading, refetch: refetchProducts } = useGetProducts({
-    type: productType,
+    type: productType as NonNullable<Parameters<typeof useGetProducts>[0]>["type"],
     category: subFilter ?? selectedId ?? undefined,
     sort: sortBy,
   });

@@ -10,10 +10,16 @@ export interface NetworkQuality {
   effectiveType: string;
 }
 
+type NetConn = {
+  type?: string;
+  effectiveType?: string;
+  addEventListener?: (event: string, cb: () => void) => void;
+  removeEventListener?: (event: string, cb: () => void) => void;
+};
 interface NavigatorWithConnection {
-  connection?: { type?: string; effectiveType?: string };
-  mozConnection?: { type?: string; effectiveType?: string };
-  webkitConnection?: { type?: string; effectiveType?: string };
+  connection?: NetConn;
+  mozConnection?: NetConn;
+  webkitConnection?: NetConn;
   onLine?: boolean;
 }
 
