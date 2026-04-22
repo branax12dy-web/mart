@@ -57,3 +57,4 @@ export async function setDemoMode(enabled: boolean) {
     return { success: false, error: String(err) };
   }
 }
+export function invalidateDemoSnapshotCache() { }

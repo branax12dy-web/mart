@@ -56,15 +56,15 @@ import {
   type AdminRequest,
   adminLoginAttempts,
   ADMIN_MAX_ATTEMPTS,
-} from "../../admin-shared.ts";
-import { hashAdminSecret } from "../../../services/password.ts";
+} from "../../admin-shared.js";
+import { hashAdminSecret } from "../../../services/password.js";
 import {
   generateTotpSecret,
   verifyTotpToken as verifyTotp,
   generateQRCodeDataURL,
   getTotpUri,
-} from "../../../services/totp.ts";
-import { writeAuthAuditLog } from "../../../middleware/security.ts";
+} from "../../../services/totp.js";
+import { writeAuthAuditLog } from "../../../middleware/security.js";
 import {
   sendSuccess,
   sendError,
@@ -72,9 +72,9 @@ import {
   sendForbidden,
   sendUnauthorized,
   sendValidationError,
-} from "../../../lib/response.ts";
-import { UserService } from "../../../services/admin-user.service.ts";
-import { AuditService } from "../../../services/admin-audit.service.ts";
+} from "../../../lib/response.js";
+import { UserService } from "../../../services/admin-user.service.js";
+import { AuditService } from "../../../services/admin-audit.service.js";
 
 const router = Router();
 router.post("/auth", async (req, res) => {

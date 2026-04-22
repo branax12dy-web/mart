@@ -1,8 +1,14 @@
 import jwt from "jsonwebtoken";
+import { Request } from "express";
 import { randomBytes } from "crypto";
 import bcrypt from "bcrypt";
 
 // ========== ALL EXPORTS REQUIRED BY AUTH.TS & OTHERS ==========
+export interface AdminRequest extends Request {
+  admin?: any;
+}
+
+export const DEFAULT_PLATFORM_SETTINGS = {};
 export const ADMIN_TOKEN_TTL_HRS = 24;
 export const ADMIN_MAX_ATTEMPTS = 5;
 export const ADMIN_LOCKOUT_TIME = 15 * 60 * 1000;
@@ -65,7 +71,7 @@ export function getUserLanguage(_u: any) { return "en"; }
 export function t(k: string) { return k; }
 
 export async function sendUserNotification(_u: string, _d: any) { return true; }
-export async function getPlatformSettings() { return []; }
+export async function getPlatformSettings(): Promise<Record<string, string>> { return {}; }
 export async function getCachedSettings(_k?: string) { return null; }
 export function invalidateSettingsCache() { }
 export function invalidatePlatformSettingsCache() { }
@@ -80,3 +86,7 @@ export async function ensureRideBidsMigration() { return true; }
 export async function ensureOrdersGpsColumns() { return true; }
 export async function ensurePromotionsTables() { return true; }
 export async function ensureSupportMessagesTable() { return true; }
+export async function ensureDefaultRideServices() { return; }
+export async function ensureDefaultLocations() { return; }
+export function formatSvc(s: any) { return s; }
+export async function revokeAllUserSessions(_u: string) { return; }

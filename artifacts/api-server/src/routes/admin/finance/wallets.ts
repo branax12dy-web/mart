@@ -19,10 +19,10 @@ import {
   ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
   ensureDefaultRideServices, ensureDefaultLocations, formatSvc,
   type AdminRequest, type TranslationKey, revokeAllUserSessions, serializeSosAlert,
-} from "../../admin-shared.ts";
-import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../../lib/response.ts";
-import { FinanceService } from "../../../services/admin-finance.service.ts";
-import { AuditService } from "../../../services/admin-audit.service.ts";
+} from "../../admin-shared.js";
+import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError } from "../../../lib/response.js";
+import { FinanceService } from "../../../services/admin-finance.service.js";
+import { AuditService } from "../../../services/admin-audit.service.js";
 
 const router = Router();
 router.get("/transactions", async (_req, res) => {
@@ -73,7 +73,7 @@ router.get("/vendors", async (_req, res) => {
   const isDemoMode = (settings["platform_mode"] ?? "demo") === "demo";
 
   if (isDemoMode) {
-    const { getDemoSnapshot } = await import("../../../lib/demo-snapshot.ts");
+    const { getDemoSnapshot } = await import("../../../lib/demo-snapshot.js");
     const snap = await getDemoSnapshot();
     sendSuccess(res, { vendors: snap.vendors, total: snap.vendors.length, isDemo: true });
     return;
@@ -237,7 +237,7 @@ router.get("/riders", async (_req, res) => {
   const isDemoMode = (settings["platform_mode"] ?? "demo") === "demo";
 
   if (isDemoMode) {
-    const { getDemoSnapshot } = await import("../../../lib/demo-snapshot.ts");
+    const { getDemoSnapshot } = await import("../../../lib/demo-snapshot.js");
     const snap = await getDemoSnapshot();
     sendSuccess(res, { riders: snap.riders, total: snap.riders.length, isDemo: true });
     return;

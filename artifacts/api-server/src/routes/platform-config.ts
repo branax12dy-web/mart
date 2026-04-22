@@ -12,7 +12,7 @@ const router: IRouter = Router();
 
 // Public endpoint — all client apps fetch this for config + feature flags
 router.get("/", async (req, res) => {
-  const s = await getPlatformSettings();
+  const s: Record<string, string> = await getPlatformSettings();
   const isDemoMode = s["platform_mode"] !== "live";
   let demoData: { vendors: unknown[]; orders: unknown[]; riders: unknown[]; products: unknown[]; source: string } | null = null;
   if (isDemoMode) {

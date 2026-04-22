@@ -155,7 +155,7 @@ export async function sendOtpWithFailover(
       .where(eq(smsGatewaysTable.isActive, true))
       .orderBy(asc(smsGatewaysTable.priority));
   } catch (err) {
-    logger.warn({ err }, "[SMS:failover] DB gateway lookup failed, using legacy sms.ts");
+    logger.warn({ err }, "[SMS:failover] DB gateway lookup failed, using legacy sms.js");
     return sendOtpSMS(phone, otp, settings, lang);
   }
 

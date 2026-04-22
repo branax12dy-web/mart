@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -19,16 +19,18 @@ import {
   ADMIN_TOKEN_TTL_HRS, verifyTotpToken, verifyAdminSecret,
   ensureDefaultRideServices, formatSvc,
   type AdminRequest, auditLog,
-} from "../../admin-shared.ts";
-import { AuditService } from "../../../services/admin-audit.service.ts";
-import { FleetService } from "../../../services/admin-fleet.service.ts";
-import { emitRideDispatchUpdate, getIO } from "../../../lib/socketio.ts";
-import { emitRideUpdate } from "../../../lib/rideEvents.ts";
+} from "../../admin-shared.js";
+import { AuditService } from "../../../services/admin-audit.service.js";
+import { FleetService } from "../../../services/admin-fleet.service.js";
+import { emitRideDispatchUpdate, getIO } from "../../../lib/socketio.js";
+import { emitRideUpdate } from "../../../lib/rideEvents.js";
 import { RIDE_VALID_STATUSES, getSocketRoom } from "@workspace/service-constants";
-import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../../lib/response.ts";
+import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError } from "../../../lib/response.js";
+
+type AdminReq = AdminRequest & Request & { adminId?: string; adminName?: string };
 
 const router = Router();
-router.get("/rides", async (_req, res) => {
+router.get("/rides", async (_req: Request, res: Response) => {
   try {
     const rides = await FleetService.getRidesList(200);
     sendSuccess(res, { rides, total: rides.length });
@@ -48,7 +50,7 @@ const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled:   [],
 };
 
-router.get("/rides-enriched", async (req, res) => {
+router.get("/rides-enriched", async (req: Request, res: Response) => {
   const page = Math.max(1, parseInt(req.query["page"] as string || "1", 10));
   const limit = Math.min(500, Math.max(1, parseInt(req.query["limit"] as string || "50", 10)));
   const offset = (page - 1) * limit;
@@ -98,12 +100,12 @@ router.get("/rides-enriched", async (req, res) => {
   const rides = await db.select().from(ridesTable).where(whereClause).orderBy(orderFn(orderCol)).limit(limit).offset(offset);
 
   type RideRow = typeof rides[number];
-  const userIds = [...new Set(rides.map((r: RideRow) => r.userId).concat(rides.map((r: RideRow) => r.riderId).filter((id): id is string => id != null)))];
+  const userIds = [...new Set(rides.map((r: RideRow) => r.userId).concat(rides.map((r: RideRow) => r.riderId).filter((id: any): id is string => id != null)))];    
   const users = userIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone }).from(usersTable)
         .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map((id: string) => sql`${id}`), sql`, `)}]::text[])`)
     : [];
-  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  const userMap = Object.fromEntries(users.map((u: any) => [u.id, u]));
 
   const rideIds = rides.map((r: RideRow) => r.id);
   const bidCounts = rideIds.length > 0
@@ -112,7 +114,7 @@ router.get("/rides-enriched", async (req, res) => {
         .where(sql`${rideBidsTable.rideId} = ANY(ARRAY[${sql.join(rideIds.map((id: string) => sql`${id}`), sql`, `)}]::text[])`)
         .groupBy(rideBidsTable.rideId)
     : [];
-  const bidCountMap = Object.fromEntries(bidCounts.map(b => [b.rideId, Number(b.total)]));
+  const bidCountMap = Object.fromEntries(bidCounts.map((b: any) => [b.rideId, Number(b.total)]));
 
   sendSuccess(res, {
     rides: rides.map((r: RideRow) => ({
@@ -136,9 +138,9 @@ router.get("/rides-enriched", async (req, res) => {
   });
 });
 
-router.patch("/rides/:id/status", async (req, res) => {
+router.patch("/rides/:id/status", async (req: Request, res: Response) => {
   const { status, riderName, riderPhone } = req.body;
-  const adminReq = req as AdminRequest;
+  const adminReq = req as AdminReq;
 
   if (!status || !(RIDE_VALID_STATUSES as readonly string[]).includes(status)) {
     sendValidationError(res, `Invalid ride status "${status}". Valid statuses: ${RIDE_VALID_STATUSES.join(", ")}`);
@@ -190,14 +192,14 @@ router.patch("/rides/:id/status", async (req, res) => {
     }
   }
 });
-router.get("/ride-services", async (_req, res) => {
+router.get("/ride-services", async (_req: Request, res: Response) => {
   await ensureDefaultRideServices();
   const services = await db.select().from(rideServiceTypesTable).orderBy(asc(rideServiceTypesTable.sortOrder));
   sendSuccess(res, { services: services.map(formatSvc) });
 });
 
 /* POST /admin/ride-services — create custom service */
-router.post("/ride-services", async (req, res) => {
+router.post("/ride-services", async (req: Request, res: Response) => {
   const { key, name, nameUrdu, icon, description, color, baseFare, perKm, minFare, maxPassengers, allowBargaining, sortOrder } = req.body;
   if (!key || !name || !icon) { sendValidationError(res, "key, name, icon are required"); return; }
   const existing = await db.select({ id: rideServiceTypesTable.id }).from(rideServiceTypesTable).where(eq(rideServiceTypesTable.key, String(key))).limit(1);
@@ -223,7 +225,7 @@ router.post("/ride-services", async (req, res) => {
 });
 
 /* PATCH /admin/ride-services/:id — update any field */
-router.patch("/ride-services/:id", async (req, res) => {
+router.patch("/ride-services/:id", async (req: Request, res: Response) => {
   const svcId = req.params["id"]!;
   const [existing] = await db.select().from(rideServiceTypesTable).where(eq(rideServiceTypesTable.id, svcId)).limit(1);
   if (!existing) { sendNotFound(res, "Service not found"); return; }
@@ -246,7 +248,7 @@ router.patch("/ride-services/:id", async (req, res) => {
 });
 
 /* DELETE /admin/ride-services/:id — only custom services */
-router.delete("/ride-services/:id", async (req, res) => {
+router.delete("/ride-services/:id", async (req: Request, res: Response) => {
   const svcId = req.params["id"]!;
   const [existing] = await db.select().from(rideServiceTypesTable).where(eq(rideServiceTypesTable.id, svcId)).limit(1);
   if (!existing) { sendNotFound(res, "Service not found"); return; }
@@ -297,12 +299,12 @@ export async function ensureDefaultLocations() {
   }
 }
 
-router.get("/locations", async (_req, res) => {
+router.get("/locations", async (_req: Request, res: Response) => {
   await ensureDefaultLocations();
   const locs = await db.select().from(popularLocationsTable)
     .orderBy(asc(popularLocationsTable.sortOrder), asc(popularLocationsTable.name));
   sendSuccess(res, {
-    locations: locs.map(l => ({
+    locations: locs.map((l: any) => ({
       ...l,
       lat: parseFloat(String(l.lat)),
       lng: parseFloat(String(l.lng)),
@@ -310,7 +312,7 @@ router.get("/locations", async (_req, res) => {
   });
 });
 
-router.post("/locations", async (req, res) => {
+router.post("/locations", async (req: Request, res: Response) => {
   const { name, nameUrdu, lat, lng, category = "general", icon = "📍", isActive = true, sortOrder = 0 } = req.body;
   if (!name || !lat || !lng) { sendValidationError(res, "name, lat, lng required"); return; }
   const [loc] = await db.insert(popularLocationsTable).values({
@@ -321,7 +323,7 @@ router.post("/locations", async (req, res) => {
   sendCreated(res, { ...loc, lat: parseFloat(String(loc!.lat)), lng: parseFloat(String(loc!.lng)) });
 });
 
-router.patch("/locations/:id", async (req, res) => {
+router.patch("/locations/:id", async (req: Request, res: Response) => {
   const { name, nameUrdu, lat, lng, category, icon, isActive, sortOrder } = req.body;
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (name      !== undefined) patch.name      = name;
@@ -337,7 +339,7 @@ router.patch("/locations/:id", async (req, res) => {
   sendSuccess(res, { ...updated, lat: parseFloat(String(updated.lat)), lng: parseFloat(String(updated.lng)) });
 });
 
-router.delete("/locations/:id", async (req, res) => {
+router.delete("/locations/:id", async (req: Request, res: Response) => {
   const [existing] = await db.select({ id: popularLocationsTable.id })
     .from(popularLocationsTable).where(eq(popularLocationsTable.id, req.params["id"]!)).limit(1);
   if (!existing) { sendNotFound(res, "Location not found"); return; }
@@ -367,13 +369,13 @@ function fmtRoute(r: Record<string, unknown>) {
   };
 }
 
-router.get("/school-routes", async (_req, res) => {
+router.get("/school-routes", async (_req: Request, res: Response) => {
   const routes = await db.select().from(schoolRoutesTable)
     .orderBy(asc(schoolRoutesTable.sortOrder), asc(schoolRoutesTable.schoolName));
   sendSuccess(res, { routes: routes.map(fmtRoute) });
 });
 
-router.post("/school-routes", async (req, res) => {
+router.post("/school-routes", async (req: Request, res: Response) => {
   const {
     routeName, schoolName, schoolNameUrdu, fromArea, fromAreaUrdu, toAddress,
     fromLat, fromLng, toLat, toLng, monthlyPrice, morningTime, afternoonTime,
@@ -397,7 +399,7 @@ router.post("/school-routes", async (req, res) => {
   sendCreated(res, fmtRoute(route!));
 });
 
-router.patch("/school-routes/:id", async (req, res) => {
+router.patch("/school-routes/:id", async (req: Request, res: Response) => {
   const routeId = req.params["id"]!;
   const {
     routeName, schoolName, schoolNameUrdu, fromArea, fromAreaUrdu, toAddress,
@@ -428,7 +430,7 @@ router.patch("/school-routes/:id", async (req, res) => {
   sendSuccess(res, fmtRoute(updated));
 });
 
-router.delete("/school-routes/:id", async (req, res) => {
+router.delete("/school-routes/:id", async (req: Request, res: Response) => {
   const routeId = req.params["id"]!;
   /* Only delete if no active subscriptions */
   const [activeSub] = await db.select({ id: schoolSubscriptionsTable.id })
@@ -445,14 +447,14 @@ router.delete("/school-routes/:id", async (req, res) => {
   sendSuccess(res);
 });
 
-router.get("/school-subscriptions", async (req, res) => {
+router.get("/school-subscriptions", async (req: Request, res: Response) => {
   const routeIdFilter = req.query["routeId"] as string | undefined;
   const query = routeIdFilter
     ? db.select().from(schoolSubscriptionsTable).where(eq(schoolSubscriptionsTable.routeId, routeIdFilter))
     : db.select().from(schoolSubscriptionsTable);
   const subs = await query.orderBy(desc(schoolSubscriptionsTable.createdAt));
   /* Enrich with user info */
-  const enriched = await Promise.all(subs.map(async sub => {
+  const enriched = await Promise.all(subs.map(async (sub: any) => {
     const [user] = await db.select({ name: usersTable.name, phone: usersTable.phone })
       .from(usersTable).where(eq(usersTable.id, sub.userId)).limit(1);
     const [route] = await db.select({ routeName: schoolRoutesTable.routeName, schoolName: schoolRoutesTable.schoolName })
@@ -478,7 +480,7 @@ router.get("/school-subscriptions", async (req, res) => {
    enriched with their name, phone and online status.
    "Fresh" = updated within last 5 minutes.
 ══════════════════════════════════════════════════════════ */
-router.get("/live-riders", async (_req, res) => {
+router.get("/live-riders", async (_req: Request, res: Response) => {
   const settings = await getPlatformSettings();
   const staleTimeoutSec = parseInt(settings["gps_stale_timeout_sec"] ?? "300", 10);
   const STALE_MS = staleTimeoutSec * 1000;
@@ -508,7 +510,7 @@ router.get("/live-riders", async (_req, res) => {
     .leftJoin(riderProfilesTable, eq(liveLocationsTable.userId, riderProfilesTable.userId))
     .where(or(eq(liveLocationsTable.role, "rider"), eq(liveLocationsTable.role, "service_provider")));
 
-  const enriched = locs.map(loc => {
+  const enriched = locs.map((loc: any) => {
     const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt);
     const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
     const isFresh    = updatedAt >= cutoff;
@@ -534,7 +536,7 @@ router.get("/live-riders", async (_req, res) => {
   });
 
   /* Sort: online first, then by freshness */
-  enriched.sort((a, b) => {
+  enriched.sort((a: any, b: any) => {
     if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
     return a.ageSeconds - b.ageSeconds;
   });
@@ -542,7 +544,7 @@ router.get("/live-riders", async (_req, res) => {
   sendSuccess(res, {
     riders: enriched,
     total: enriched.length,
-    freshCount: enriched.filter(r => r.isFresh).length,
+    freshCount: enriched.filter((r: any) => r.isFresh).length,
     staleTimeoutSec,
   });
 });
@@ -553,7 +555,7 @@ router.get("/live-riders", async (_req, res) => {
    order placement). Shows their identity + last position.
    "Fresh" = updated within last 2 hours.
 ══════════════════════════════════════════════════════════ */
-router.get("/customer-locations", async (_req, res) => {
+router.get("/customer-locations", async (_req: Request, res: Response) => {
   const STALE_MS = 2 * 60 * 60 * 1000; /* 2 hours */
   const cutoff   = new Date(Date.now() - STALE_MS);
 
@@ -574,7 +576,7 @@ router.get("/customer-locations", async (_req, res) => {
     .where(eq(liveLocationsTable.role, "customer"))
     .orderBy(desc(liveLocationsTable.updatedAt));
 
-  const enriched = locs.map(loc => {
+  const enriched = locs.map((loc: any) => {
     const updatedAt  = loc.updatedAt instanceof Date ? loc.updatedAt : new Date(loc.updatedAt as string);
     const ageSeconds = Math.floor((Date.now() - updatedAt.getTime()) / 1000);
     const isFresh    = updatedAt >= cutoff;
@@ -592,7 +594,7 @@ router.get("/customer-locations", async (_req, res) => {
     };
   });
 
-  sendSuccess(res, { customers: enriched, total: enriched.length, freshCount: enriched.filter(c => c.isFresh).length });
+  sendSuccess(res, { customers: enriched, total: enriched.length, freshCount: enriched.filter((c: any) => c.isFresh).length });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -600,19 +602,19 @@ router.get("/customer-locations", async (_req, res) => {
    Global search across users, rides, orders, pharmacy, parcels
    Returns max 5 results per category, sorted by relevance (recency)
 ══════════════════════════════════════════════════════════════════════════════ */
-router.patch("/riders/:id/online", async (req, res) => {
+router.patch("/riders/:id/online", async (req: Request, res: Response) => {
   const { isOnline } = req.body as { isOnline: boolean };
   const [rider] = await db.update(usersTable)
     .set({ isOnline, updatedAt: new Date() } as any)
     .where(eq(usersTable.id, req.params["id"]!))
     .returning();
   if (!rider) { sendNotFound(res, "Rider not found"); return; }
-  addAuditEntry({ action: "rider_online_toggle", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Rider ${req.params["id"]} set ${isOnline ? "online" : "offline"} by admin`, result: "success" });
+  addAuditEntry({ action: "rider_online_toggle", ip: getClientIp(req), adminId: (req as AdminReq).adminId, details: `Rider ${req.params["id"]} set ${isOnline ? "online" : "offline"} by admin`, result: "success" });
   sendSuccess(res, { isOnline });
 });
 
 /* ── GET /admin/revenue-trend — 7-day rolling revenue + counts for dashboard sparklines ── */
-router.get("/revenue-trend", async (_req, res) => {
+router.get("/revenue-trend", async (_req: Request, res: Response) => {
   const now = new Date();
   const dayPromises = Array.from({ length: 7 }, (_, idx) => {
     const i = 6 - idx;
@@ -651,7 +653,7 @@ router.get("/revenue-trend", async (_req, res) => {
 });
 
 /* ── GET /admin/leaderboard — top-5 vendors and riders ── */
-router.get("/leaderboard", async (_req, res) => {
+router.get("/leaderboard", async (_req: Request, res: Response) => {
   const vendors = await db.select({
     id:     usersTable.id,
     name:   vendorProfilesTable.storeName,
@@ -682,13 +684,13 @@ router.get("/leaderboard", async (_req, res) => {
   .limit(5);
 
   sendSuccess(res, {
-    vendors: vendors.map(v => ({ ...v, totalRevenue: parseFloat(String(v.totalRevenue)), totalOrders: Number(v.totalOrders) })),
-    riders:  riders.map(r  => ({ ...r,  totalEarned: parseFloat(String(r.totalEarned)),  completedTrips: Number(r.completedTrips) })),
+    vendors: vendors.map((v: any) => ({ ...v, totalRevenue: parseFloat(String(v.totalRevenue)), totalOrders: Number(v.totalOrders) })),
+    riders:  riders.map((r: any)  => ({ ...r,  totalEarned: parseFloat(String(r.totalEarned)),  completedTrips: Number(r.completedTrips) })),
   });
 });
 
 /* ── GET /admin/dashboard-export — export dashboard stats + 7-day trend as JSON ── */
-router.get("/dashboard-export", async (_req, res) => {
+router.get("/dashboard-export", async (_req: Request, res: Response) => {
   const now = new Date();
   const [[userCount], [orderCount], [rideCount], [revenue], [rideRev]] = await Promise.all([
     db.select({ count: count() }).from(usersTable),
@@ -744,10 +746,10 @@ router.get("/dashboard-export", async (_req, res) => {
    RIDE MANAGEMENT MODULE — Admin ride actions with full audit logging
 ══════════════════════════════════════════════════════════════════════════════ */
 
-router.post("/rides/:id/cancel", async (req, res) => {
+router.post("/rides/:id/cancel", async (req: Request, res: Response) => {
   const rideId = req.params["id"]!;
   const { reason } = req.body as { reason?: string };
-  const adminReq = req as AdminRequest;
+  const adminReq = req as AdminReq;
 
   try {
     const result = await AuditService.executeWithAudit(
@@ -774,10 +776,10 @@ router.post("/rides/:id/cancel", async (req, res) => {
   }
 });
 
-router.post("/rides/:id/refund", async (req, res) => {
+router.post("/rides/:id/refund", async (req: Request, res: Response) => {
   const rideId = req.params["id"]!;
   const { amount, reason } = req.body as { amount?: number; reason?: string };
-  const adminReq = req as AdminRequest;
+  const adminReq = req as AdminReq;
 
   try {
     const result = await AuditService.executeWithAudit(
@@ -805,10 +807,10 @@ router.post("/rides/:id/refund", async (req, res) => {
   }
 });
 
-router.post("/rides/:id/reassign", async (req, res) => {
+router.post("/rides/:id/reassign", async (req: Request, res: Response) => {
   const rideId = req.params["id"]!;
   const { riderId, riderName, riderPhone } = req.body as { riderId?: string; riderName?: string; riderPhone?: string };
-  const adminReq = req as AdminRequest;
+  const adminReq = req as AdminReq;
 
   if (!riderId) {
     sendValidationError(res, "riderId is required to reassign");
@@ -849,10 +851,10 @@ router.post("/rides/:id/reassign", async (req, res) => {
   }
 });
 
-router.get("/rides/:id/audit-trail", async (req, res) => {
+router.get("/rides/:id/audit-trail", async (req: Request, res: Response) => {
   const rideId = req.params["id"]!;
   const shortId = rideId.slice(-6).toUpperCase();
-  const trail = auditLog.filter(e => e.details?.includes(rideId) || e.details?.includes(shortId)).map(e => ({
+  const trail = (auditLog as unknown as any[]).filter((e: any) => e.details?.includes(rideId) || e.details?.includes(shortId)).map((e: any) => ({
     action: e.action,
     details: e.details,
     ip: e.ip,
@@ -860,11 +862,11 @@ router.get("/rides/:id/audit-trail", async (req, res) => {
     result: e.result,
     timestamp: e.timestamp,
   }));
-  trail.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  trail.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   sendSuccess(res, { trail, rideId });
 });
 
-router.get("/rides/:id/detail", async (req, res) => {
+router.get("/rides/:id/detail", async (req: Request, res: Response) => {
   const rideId = req.params["id"]!;
   const [ride] = await db.select().from(ridesTable).where(eq(ridesTable.id, rideId)).limit(1);
   if (!ride) { sendNotFound(res, "Ride not found"); return; }
@@ -916,13 +918,13 @@ router.get("/rides/:id/detail", async (req, res) => {
     customer: customer ?? null,
     rider: rider ?? null,
     fareBreakdown: { baseFare, gstAmount, gstPct: gstEnabled ? gstPct : 0, surgeMultiplier, total: fare },
-    eventLogs: eventLogs.map(e => ({
+    eventLogs: eventLogs.map((e: any) => ({
       ...e,
       lat: e.lat ? parseFloat(e.lat) : null,
       lng: e.lng ? parseFloat(e.lng) : null,
       createdAt: e.createdAt.toISOString(),
     })),
-    bids: bidRows.map(b => ({
+    bids: bidRows.map((b: any) => ({
       ...b,
       fare: parseFloat(b.fare),
       createdAt: b.createdAt.toISOString(),
@@ -932,40 +934,40 @@ router.get("/rides/:id/detail", async (req, res) => {
   });
 });
 
-router.get("/dispatch-monitor", async (_req, res) => {
+router.get("/dispatch-monitor", async (_req: Request, res: Response) => {
   const activeRides = await db.select().from(ridesTable)
     .where(or(eq(ridesTable.status, "searching"), eq(ridesTable.status, "bargaining")))
     .orderBy(desc(ridesTable.createdAt));
 
-  const rideIds = activeRides.map(r => r.id);
+  const rideIds = activeRides.map((r: any) => r.id);
   let notifiedCounts: Record<string, number> = {};
   if (rideIds.length > 0) {
     const counts = await db.select({ rideId: rideNotifiedRidersTable.rideId, cnt: count() })
       .from(rideNotifiedRidersTable)
-      .where(sql`${rideNotifiedRidersTable.rideId} IN (${sql.join(rideIds.map(id => sql`${id}`), sql`, `)})`)
+      .where(sql`${rideNotifiedRidersTable.rideId} IN (${sql.join(rideIds.map((id: any) => sql`${id}`), sql`, `)})`)
       .groupBy(rideNotifiedRidersTable.rideId);
-    notifiedCounts = Object.fromEntries(counts.map(c => [c.rideId, Number(c.cnt)]));
+    notifiedCounts = Object.fromEntries(counts.map((c: any) => [c.rideId, Number(c.cnt)]));
   }
 
-  const userIds = [...new Set(activeRides.map(r => r.userId))];
+  const userIds = [...new Set(activeRides.map((r: any) => r.userId))];
   let userMap: Record<string, { name: string | null; phone: string | null }> = {};
   if (userIds.length > 0) {
     const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone })
       .from(usersTable)
       .where(sql`${usersTable.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
-    userMap = Object.fromEntries(users.map(u => [u.id, { name: u.name, phone: u.phone }]));
+    userMap = Object.fromEntries(users.map((u: any) => [u.id, { name: u.name, phone: u.phone }]));
   }
 
   const bidCounts = rideIds.length > 0
     ? await db.select({ rideId: rideBidsTable.rideId, total: count(rideBidsTable.id) })
         .from(rideBidsTable)
-        .where(sql`${rideBidsTable.rideId} IN (${sql.join(rideIds.map(id => sql`${id}`), sql`, `)})`)
+        .where(sql`${rideBidsTable.rideId} IN (${sql.join(rideIds.map((id: any) => sql`${id}`), sql`, `)})`) 
         .groupBy(rideBidsTable.rideId)
     : [];
-  const bidCountMap = Object.fromEntries(bidCounts.map(b => [b.rideId, Number(b.total)]));
+  const bidCountMap = Object.fromEntries(bidCounts.map((b: any) => [b.rideId, Number(b.total)]));
 
   sendSuccess(res, {
-    rides: activeRides.map(r => ({
+    rides: activeRides.map((r: any) => ({
       id: r.id,
       type: r.type,
       status: r.status,
@@ -995,7 +997,7 @@ router.get("/dispatch-monitor", async (_req, res) => {
    - peakZones: top location clusters by ping density
    - riderDistances: total estimated distance per rider (haversine over log trail)
 ══════════════════════════════════════════════════════════════════════════════ */
-router.get("/fleet-analytics", async (req, res) => {
+router.get("/fleet-analytics", async (req: Request, res: Response) => {
   const fromParam = req.query["from"] as string | undefined;
   const toParam   = req.query["to"]   as string | undefined;
 
@@ -1023,7 +1025,7 @@ router.get("/fleet-analytics", async (req, res) => {
     ))
     .limit(10000);
 
-  const heatmap = heatPoints.map(p => ({
+  const heatmap = heatPoints.map((p: any) => ({
     lat: parseFloat(String(p.latitude)),
     lng: parseFloat(String(p.longitude)),
     weight: 1,
@@ -1102,7 +1104,7 @@ router.get("/fleet-analytics", async (req, res) => {
         .from(usersTable)
         .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(riderIds.map(id => sql`${id}`), sql`, `)}])`)
     : [];
-  const nameMap = new Map(riderNames.map(r => [r.id, r.name ?? "Unknown"]));
+  const nameMap = new Map(riderNames.map((r: any) => [r.id, r.name ?? "Unknown"]));
 
   const riderDistances = [...riderDistanceMap.entries()]
     .map(([userId, distKm]) => ({
@@ -1147,7 +1149,7 @@ router.get("/fleet-analytics", async (req, res) => {
    When sinceOnline=true (or no date), the trail is scoped to the rider's current login session:
    it uses the rider's live_locations.lastSeen timestamp as the session start boundary,
    giving "current shift to now" semantics rather than calendar midnight. */
-router.get("/riders/:userId/route", async (req, res) => {
+router.get("/riders/:userId/route", async (req: Request, res: Response) => {
   const { userId } = req.params;
   const dateParam   = req.query["date"]        as string | undefined;
   const sinceOnline = req.query["sinceOnline"]  === "true";
@@ -1191,7 +1193,7 @@ router.get("/riders/:userId/route", async (req, res) => {
     )
     .orderBy(asc(locationHistoryTable.createdAt));
 
-  const points = logs.map(l => ({
+  const points = logs.map((l: any) => ({
     latitude:  (l.coords as { lat: number; lng: number }).lat,
     longitude: (l.coords as { lat: number; lng: number }).lng,
     speed:     l.speed   != null ? parseFloat(String(l.speed))   : null,
