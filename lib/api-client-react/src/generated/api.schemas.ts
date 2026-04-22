@@ -72,6 +72,7 @@ export interface Product {
   category: string;
   type: ProductType;
   image?: string;
+  videoUrl?: string | null;
   vendorId?: string;
   vendorName?: string;
   rating?: number;
@@ -271,6 +272,7 @@ export type CreateParcelBookingRequestPaymentMethod =
 export const CreateParcelBookingRequestPaymentMethod = {
   cash: "cash",
   wallet: "wallet",
+  cod: "cod",
 } as const;
 
 export interface CreateParcelBookingRequest {
@@ -284,6 +286,10 @@ export interface CreateParcelBookingRequest {
   weight?: number;
   description?: string;
   paymentMethod: CreateParcelBookingRequestPaymentMethod;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropLat?: number;
+  dropLng?: number;
 }
 
 export interface PaymentMethod {
@@ -600,6 +606,7 @@ export type GetProductsParams = {
   category?: string;
   search?: string;
   type?: GetProductsType;
+  sort?: string;
 };
 
 export type GetProductsType =

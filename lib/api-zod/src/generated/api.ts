@@ -97,6 +97,7 @@ export const GetProductsQueryParams = zod.object({
   category: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
   type: zod.enum(["mart", "food"]).optional(),
+  sort: zod.coerce.string().optional(),
 });
 
 export const GetProductsResponse = zod.object({
@@ -110,6 +111,7 @@ export const GetProductsResponse = zod.object({
       category: zod.string(),
       type: zod.enum(["mart", "food"]),
       image: zod.string().optional(),
+      videoUrl: zod.string().nullish(),
       vendorId: zod.string().optional(),
       vendorName: zod.string().optional(),
       rating: zod.number().optional(),
@@ -152,6 +154,7 @@ export const GetProductResponse = zod.object({
   category: zod.string(),
   type: zod.enum(["mart", "food"]),
   image: zod.string().optional(),
+  videoUrl: zod.string().nullish(),
   vendorId: zod.string().optional(),
   vendorName: zod.string().optional(),
   rating: zod.number().optional(),
@@ -957,7 +960,11 @@ export const CreateParcelBookingBody = zod.object({
   parcelType: zod.string(),
   weight: zod.number().optional(),
   description: zod.string().optional(),
-  paymentMethod: zod.enum(["cash", "wallet"]),
+  paymentMethod: zod.enum(["cash", "wallet", "cod"]),
+  pickupLat: zod.number().optional(),
+  pickupLng: zod.number().optional(),
+  dropLat: zod.number().optional(),
+  dropLng: zod.number().optional(),
 });
 
 /**

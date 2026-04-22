@@ -130,6 +130,10 @@ paths:
           schema:
             type: string
             enum: [mart, food]
+        - name: sort
+          in: query
+          schema:
+            type: string
       responses:
         "200":
           description: Product list
@@ -804,6 +808,9 @@ components:
           enum: [mart, food]
         image:
           type: string
+        videoUrl:
+          type: string
+          nullable: true
         vendorId:
           type: string
         vendorName:
@@ -1094,7 +1101,15 @@ components:
           type: string
         paymentMethod:
           type: string
-          enum: [cash, wallet]
+          enum: [cash, wallet, cod]
+        pickupLat:
+          type: number
+        pickupLng:
+          type: number
+        dropLat:
+          type: number
+        dropLng:
+          type: number
       required: [senderName, senderPhone, pickupAddress, receiverName, receiverPhone, dropAddress, parcelType, paymentMethod]
 
     PaymentMethod:

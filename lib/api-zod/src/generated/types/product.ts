@@ -16,6 +16,7 @@ export interface Product {
   category: string;
   type: ProductType;
   image?: string;
+  videoUrl?: string | null;
   vendorId?: string;
   vendorName?: string;
   rating?: number;

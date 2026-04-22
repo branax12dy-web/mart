@@ -622,7 +622,7 @@ export function RideTracker({
     ? staticMapUrl(mapMarkers, { width: Math.round(screenWidth * 2), height: Math.round(screenHeight * 1.2), zoom: mapZoom })
     : null;
 
-  const vehiclePlate = ride?.bids?.find((b: any) => b.vehiclePlate)?.vehiclePlate ?? null;
+  const vehiclePlate = ride?.bids?.find((b) => b.vehiclePlate)?.vehiclePlate ?? null;
   const completedColor = hdrCfg.color;
 
   return (
