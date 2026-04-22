@@ -88,5 +88,12 @@ export async function ensurePromotionsTables() { return true; }
 export async function ensureSupportMessagesTable() { return true; }
 export async function ensureDefaultRideServices() { return; }
 export async function ensureDefaultLocations() { return; }
+export async function ensureFaqsTable() { return true; }
+export async function ensureCommunicationTables() { return true; }
+export async function ensureVendorLocationColumns() { return true; }
+export async function ensureVanServiceUpgrade() { return true; }
+export async function ensureWalletP2PColumns() { return true; }
+export async function ensureComplianceTables() { return true; }
+export const DEFAULT_RIDE_SERVICES: any[] = [];
 export function formatSvc(s: any) { return s; }
 export async function revokeAllUserSessions(_u: string) { return; }
