@@ -8,10 +8,15 @@ const RIDES_REFETCH_INTERVAL = 5_000;
 // Auth
 export const useAdminLogin = () => {
   return useMutation({
-    mutationFn: (secret: string) =>
+    mutationFn: (creds: { username: string; password: string }) =>
       fetcher("/auth", {
         method: "POST",
-        body: JSON.stringify({ secret }),
+        body: JSON.stringify({
+          username: creds.username,
+          password: creds.password,
+          /* legacy field kept so older API builds still work */
+          secret: creds.password,
+        }),
       }),
   });
 };

@@ -52,6 +52,7 @@ export interface UpdateUserInput {
 
 export interface AdminAccountInput {
   name: string;
+  username?: string;
   role: string;
   secret: string;
 }
@@ -317,9 +318,11 @@ export class UserService {
 
     const adminId = generateId();
 
+    const usernameValue = (input.username ?? input.name).trim().toLowerCase();
     await db.insert(adminAccountsTable).values({
       id: adminId,
       name: input.name.trim(),
+      username: usernameValue,
       role: input.role || "viewer",
       totpEnabled: false,
       totpSecret: null,

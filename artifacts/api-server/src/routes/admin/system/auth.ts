@@ -78,9 +78,12 @@ import { AuditService } from "../../../services/admin-audit.service.js";
 
 const router = Router();
 router.post("/auth", async (req, res) => {
-  const { secret } = req.body;
+  const body = (req.body ?? {}) as { username?: string; password?: string; secret?: string };
+  const username = (body.username ?? "").trim();
+  /* Backwards-compatible: accept "password" (new) or "secret" (legacy) */
+  const password = body.password ?? body.secret ?? "";
   const ip = getClientIp(req);
-  const ADMIN_SECRET = getAdminSecret();
+  const ADMIN_SECRET = await getAdminSecret();
 
   const lockout = checkAdminLoginLockout(ip);
   if (lockout.locked) {
@@ -98,8 +101,13 @@ router.post("/auth", async (req, res) => {
     return;
   }
 
-  /* ── Attempt master secret login ── */
-  if (secret === ADMIN_SECRET) {
+  /* ── Attempt master super-admin login ──
+     Accepts:
+       - new flow: username "admin" (or "super") + password = ADMIN_SECRET
+       - legacy flow: any payload whose password equals ADMIN_SECRET (no username) */
+  const isMasterUsername =
+    username === "" || username.toLowerCase() === "admin" || username.toLowerCase() === "super";
+  if (ADMIN_SECRET && password === ADMIN_SECRET && isMasterUsername) {
     resetAdminLoginAttempts(ip);
     const adminToken = signAdminJwt(
       null,
@@ -126,14 +134,24 @@ router.post("/auth", async (req, res) => {
     return;
   }
 
-  /* ── Attempt sub-admin login via stored secret (bcrypt, legacy scrypt, or plaintext fallback) ── */
+  /* ── Attempt sub-admin login via username + password ──
+     Username matches `username` column (preferred) or falls back to `name`
+     (case-insensitive). Password verified via bcrypt / legacy scrypt / plaintext. */
   const activeSubs2 = await db
     .select()
     .from(adminAccountsTable)
     .where(eq(adminAccountsTable.isActive, true));
-  const sub = activeSubs2.find((s) =>
-    verifyAdminSecret(secret || "", s.secret),
-  );
+
+  let candidates = activeSubs2;
+  if (username) {
+    const u = username.toLowerCase();
+    candidates = activeSubs2.filter(
+      (s) =>
+        (s.username && s.username.toLowerCase() === u) ||
+        s.name.toLowerCase() === u,
+    );
+  }
+  const sub = candidates.find((s) => verifyAdminSecret(password, s.secret));
 
   if (sub) {
     resetAdminLoginAttempts(ip);
@@ -203,6 +221,7 @@ router.get("/admin-accounts", async (_req, res) => {
     .select({
       id: adminAccountsTable.id,
       name: adminAccountsTable.name,
+      username: adminAccountsTable.username,
       role: adminAccountsTable.role,
       permissions: adminAccountsTable.permissions,
       isActive: adminAccountsTable.isActive,
@@ -224,11 +243,16 @@ router.post("/admin-accounts", async (req, res) => {
   const adminReq = req as AdminRequest;
   const body = req.body as Record<string, unknown>;
 
-  if (!body.name || !body.secret) {
-    sendValidationError(res, "name and secret required");
+  /* Accept both new ("username"/"password") and legacy ("name"/"secret") shapes */
+  const name = (body.name ?? body.username) as string | undefined;
+  const password = (body.password ?? body.secret) as string | undefined;
+  const usernameField = (body.username ?? body.name) as string | undefined;
+
+  if (!name || !password) {
+    sendValidationError(res, "username and password required");
     return;
   }
-  if (body.secret === getAdminSecret()) {
+  if (password === (await getAdminSecret())) {
     sendError(res, "Cannot use the master secret", 400);
     return;
   }
@@ -241,18 +265,19 @@ router.post("/admin-accounts", async (req, res) => {
         adminIp: adminReq.adminIp || getClientIp(req),
         action: "admin_account_create",
         resourceType: "admin_account",
-        resource: body.name as string,
+        resource: name,
         details: `Role: ${body.role || "manager"}`,
       },
       () =>
         UserService.createAdminAccount({
-          name: body.name as string,
-          secret: body.secret as string,
+          name,
+          username: usernameField,
+          secret: password,
           role: (body.role as string) || "manager",
         }),
     );
 
-    sendSuccess(res, { success: true, adminName: body.name }, undefined, 201);
+    sendSuccess(res, { success: true, adminName: name }, undefined, 201);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("23505") || message.includes("duplicate")) {
@@ -267,15 +292,17 @@ router.patch("/admin-accounts/:id", async (req, res) => {
   const body = req.body as Record<string, unknown>;
   const updates: Record<string, any> = {};
   if (body.name !== undefined) updates.name = body.name;
+  if (body.username !== undefined) updates.username = body.username;
   if (body.role !== undefined) updates.role = body.role;
   if (body.permissions !== undefined) updates.permissions = body.permissions;
   if (body.isActive !== undefined) updates.isActive = body.isActive;
-  if (body.secret !== undefined) {
-    if (body.secret === getAdminSecret()) {
+  const newPassword = body.password ?? body.secret;
+  if (newPassword !== undefined) {
+    if (newPassword === (await getAdminSecret())) {
       res.status(400).json({ error: "Cannot use the master secret" });
       return;
     }
-    updates.secret = hashAdminSecret(body.secret as string);
+    updates.secret = hashAdminSecret(newPassword as string);
   }
   const [account] = await db
     .update(adminAccountsTable)

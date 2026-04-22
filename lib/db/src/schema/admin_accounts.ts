@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 export const adminAccountsTable = pgTable("admin_accounts", {
   id:          text("id").primaryKey(),
   name:        text("name").notNull(),
+  username:    text("username").unique(),
   secret:      text("secret").notNull().unique(),
   role:        text("role").notNull().default("manager"),
   permissions: text("permissions").notNull().default(""),
