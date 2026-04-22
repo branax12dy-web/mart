@@ -19,7 +19,7 @@ export function createServer() {
   app.use("/api", router);
 
   /* ── JSON 404 for unmatched /api/* routes ─────────────────────────────── */
-  app.use("/api/*", (req: express.Request, res: express.Response) => {
+  app.use("/api/*path", (req: express.Request, res: express.Response) => {
     res.status(404).json({
       success: false,
       error: `API route not found: ${req.method} ${req.originalUrl}`,
