@@ -1,6 +1,5 @@
 import { useCallback } from "react";
-import { router, type Href } from "expo-router";
-import { useNavigation } from "@react-navigation/native";
+import { router, useNavigation, type Href } from "expo-router";
 
 const HOME_ROUTE = "/(tabs)" satisfies Href;
 

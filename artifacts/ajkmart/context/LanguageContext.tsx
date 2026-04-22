@@ -31,7 +31,7 @@ async function fetchPlatformDefaultLanguage(): Promise<Language | null> {
   try {
     const res = await fetch(`https://${API_DOMAIN}/api/platform-config`, { cache: "no-store" });
     if (!res.ok) return null;
-    const data = unwrapApiResponse(await res.json());
+    const data = unwrapApiResponse<{ language?: { defaultLanguage?: string } }>(await res.json());
     const lang = data?.language?.defaultLanguage;
     if (lang && VALID_LANGS.has(lang)) return lang as Language;
   } catch (err) { if (__DEV__) console.warn("[Language] Platform default language fetch failed:", err instanceof Error ? err.message : String(err)); }
@@ -44,7 +44,7 @@ async function fetchUserLanguage(token: string): Promise<Language | null> {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
-    const data = unwrapApiResponse(await res.json());
+    const data = unwrapApiResponse<{ language?: string }>(await res.json());
     const lang = data?.language;
     if (lang && VALID_LANGS.has(lang)) return lang as Language;
   } catch (err) { if (__DEV__) console.warn("[Language] User language fetch failed:", err instanceof Error ? err.message : String(err)); }

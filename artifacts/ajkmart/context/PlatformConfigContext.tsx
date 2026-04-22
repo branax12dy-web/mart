@@ -565,9 +565,10 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           walletCashbackRides:      raw.customer?.walletCashbackRides      ?? DEFAULT.customer.walletCashbackRides,
           walletCashbackPharm:      raw.customer?.walletCashbackPharm      ?? DEFAULT.customer.walletCashbackPharm,
         },
-        regional: {
-          currencySymbol: raw.regional?.currencySymbol ?? raw.currencySymbol ?? DEFAULT.regional.currencySymbol,
-        },
+        // NOTE: full `regional` object (including phoneFormat, timezone, etc.)
+        // is built below at the bottom of the parsed object so we don't override
+        // it here. We DO NOT emit a partial `regional` here because that would
+        // create a duplicate key.
         payment: {
           jazzcashProofRequired:  raw.payment?.jazzcashProofRequired  ?? DEFAULT.payment.jazzcashProofRequired,
           paymentReceiptRequired: raw.payment?.paymentReceiptRequired ?? DEFAULT.payment.paymentReceiptRequired,
@@ -643,13 +644,13 @@ export function PlatformConfigProvider({ children }: { children: React.ReactNode
           mapCenterLng:   typeof raw.branding.mapCenterLng === "number" ? raw.branding.mapCenterLng : undefined,
           mapCenterLabel: raw.branding.mapCenterLabel,
         } : undefined,
-        regional: raw.regional ? {
-          phoneFormat:    raw.regional.phoneFormat,
-          phoneHint:      raw.regional.phoneHint,
-          timezone:       raw.regional.timezone,
-          currencySymbol: raw.regional.currencySymbol,
-          countryCode:    raw.regional.countryCode,
-        } : undefined,
+        regional: {
+          phoneFormat:    raw.regional?.phoneFormat,
+          phoneHint:      raw.regional?.phoneHint,
+          timezone:       raw.regional?.timezone,
+          currencySymbol: raw.regional?.currencySymbol ?? raw.currencySymbol ?? DEFAULT.regional?.currencySymbol ?? "Rs.",
+          countryCode:    raw.regional?.countryCode,
+        },
         serviceContent: raw.serviceContent ? {
           mart:     raw.serviceContent.mart     ?? undefined,
           food:     raw.serviceContent.food     ?? undefined,
