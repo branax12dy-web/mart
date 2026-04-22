@@ -1,12 +1,33 @@
 import jwt from "jsonwebtoken";
-import { Request } from "express";
+import { Request, Response, NextFunction } from "express";
 import { randomBytes } from "crypto";
 import bcrypt from "bcrypt";
-import { db, platformSettingsTable } from "@workspace/db";
+import { eq, and, isNull } from "drizzle-orm";
+import {
+  db,
+  platformSettingsTable,
+  authAuditLogTable,
+  notificationsTable,
+  userSessionsTable,
+  userSettingsTable,
+} from "@workspace/db";
+import {
+  t as i18nT,
+  type Language,
+  type TranslationKey as I18nKey,
+  DEFAULT_LANGUAGE,
+} from "@workspace/i18n";
+import { verifyTotpToken as totpVerify, decryptTotpSecret } from "../services/totp.js";
 
-// ========== ALL EXPORTS REQUIRED BY AUTH.TS & OTHERS ==========
+/* ══════════════════════════════════════════════════════════════
+   admin-shared.ts — single source of cross-cutting helpers used
+   by admin/auth/system routes. Real implementations only — no
+   stubs. Each helper is defensive (try/catch + structured log) so
+   one failure never cascades into a request crash.
+══════════════════════════════════════════════════════════════ */
+
 export interface AdminRequest extends Request {
-  admin?: any;
+  admin?: { adminId: string | null; role: string; name?: string };
 }
 
 export interface DefaultPlatformSetting {
@@ -19,7 +40,7 @@ export const DEFAULT_PLATFORM_SETTINGS: DefaultPlatformSetting[] = [];
 export const ADMIN_TOKEN_TTL_HRS = 24;
 export const ADMIN_MAX_ATTEMPTS = 5;
 export const ADMIN_LOCKOUT_TIME = 15 * 60 * 1000;
-export const adminLoginAttempts = new Map<string, { count: number, lastAttempt: number }>();
+export const adminLoginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 
 export interface NotifKey { titleKey: string; bodyKey: string; icon: string }
 export const ORDER_NOTIF_KEYS: Record<string, NotifKey> = {
@@ -27,12 +48,12 @@ export const ORDER_NOTIF_KEYS: Record<string, NotifKey> = {
   UPDATED: { titleKey: "notifOrderUpdated", bodyKey: "notifOrderUpdatedBody", icon: "cart-outline" },
 };
 export const RIDE_NOTIF_KEYS: Record<string, NotifKey> = {
-  REQUESTED: { titleKey: "notifRideRequested", bodyKey: "notifRideRequestedBody", icon: "car-outline" },
-  accepted: { titleKey: "notifRideAccepted", bodyKey: "notifRideAcceptedBody", icon: "car-outline" },
-  arrived: { titleKey: "notifRideArrived", bodyKey: "notifRideArrivedBody", icon: "car-outline" },
-  in_transit: { titleKey: "notifRideInTransit", bodyKey: "notifRideInTransitBody", icon: "car-outline" },
-  completed: { titleKey: "notifRideCompleted", bodyKey: "notifRideCompletedBody", icon: "checkmark-circle-outline" },
-  cancelled: { titleKey: "notifRideCancelled", bodyKey: "notifRideCancelledBody", icon: "close-circle-outline" },
+  REQUESTED:  { titleKey: "notifRideRequested",  bodyKey: "notifRideRequestedBody",  icon: "car-outline" },
+  accepted:   { titleKey: "notifRideAccepted",   bodyKey: "notifRideAcceptedBody",   icon: "car-outline" },
+  arrived:    { titleKey: "notifRideArrived",    bodyKey: "notifRideArrivedBody",    icon: "car-outline" },
+  in_transit: { titleKey: "notifRideInTransit",  bodyKey: "notifRideInTransitBody",  icon: "car-outline" },
+  completed:  { titleKey: "notifRideCompleted",  bodyKey: "notifRideCompletedBody",  icon: "checkmark-circle-outline" },
+  cancelled:  { titleKey: "notifRideCancelled",  bodyKey: "notifRideCancelledBody",  icon: "close-circle-outline" },
 };
 export const PHARMACY_NOTIF_KEYS: Record<string, NotifKey> = {
   NEW: { titleKey: "notifPharmacyNew", bodyKey: "notifPharmacyNewBody", icon: "medkit-outline" },
@@ -41,82 +62,85 @@ export const PARCEL_NOTIF_KEYS: Record<string, NotifKey> = {
   BOOKED: { titleKey: "notifParcelBooked", bodyKey: "notifParcelBookedBody", icon: "cube-outline" },
 };
 
+export const logger = {
+  info:  (...args: any[]) => console.log(...args),
+  error: (...args: any[]) => console.error(...args),
+  warn:  (...args: any[]) => console.warn(...args),
+  debug: (...args: any[]) => console.debug(...args),
+};
+
+/* ── ID + login lockout helpers ─────────────────────────────── */
+export function generateId(p?: string) {
+  return (p ? `${p}_` : "") + randomBytes(8).toString("hex");
+}
+
 export function checkAdminLoginLockout(adminId: string): { locked: boolean; minutesLeft: number } {
-  const attempt = adminLoginAttempts.get(adminId);
-  if (attempt && attempt.count >= ADMIN_MAX_ATTEMPTS) {
-    const remaining = ADMIN_LOCKOUT_TIME - (Date.now() - attempt.lastAttempt);
-    if (remaining > 0) {
-      return { locked: true, minutesLeft: Math.ceil(remaining / 60000) };
-    }
+  const a = adminLoginAttempts.get(adminId);
+  if (a && a.count >= ADMIN_MAX_ATTEMPTS) {
+    const remaining = ADMIN_LOCKOUT_TIME - (Date.now() - a.lastAttempt);
+    if (remaining > 0) return { locked: true, minutesLeft: Math.ceil(remaining / 60000) };
   }
   return { locked: false, minutesLeft: 0 };
 }
-
-export function auditLog(_data: unknown, ..._rest: unknown[]) {
-  return { id: "audit_" + randomBytes(4).toString("hex") };
-}
-export const addAuditEntry = auditLog;
-
-export function signAdminJwt(adminId: string | null, role?: string, name?: string, ttlHours?: number) {
-  return jwt.sign(
-    { adminId, role, name },
-    process.env.JWT_SECRET || "key",
-    { expiresIn: `${ttlHours ?? ADMIN_TOKEN_TTL_HRS}h` as any }
-  );
-}
-
-export function verifyAdminJwt(t: string) {
-  try { return jwt.verify(t, process.env.JWT_SECRET || "key"); } catch { return null; }
-}
-
-export async function getAdminSecret(_id?: string) {
-  return process.env.ADMIN_SECRET || null;
-}
-
-export async function verifyAdminSecret(p: string, h: string) {
-  try { return await bcrypt.compare(p, h); } catch { return p === h; }
-}
-
-export async function hashAdminSecret(s: string) {
-  return await bcrypt.hash(s, 10);
-}
-
-export async function verifyTotpToken(_s: string, _t: string) { return true; }
-
 export async function recordAdminLoginFailure(id: string) {
   const a = adminLoginAttempts.get(id) || { count: 0, lastAttempt: 0 };
   adminLoginAttempts.set(id, { count: a.count + 1, lastAttempt: Date.now() });
 }
-
 export async function resetAdminLoginAttempts(id: string) { adminLoginAttempts.delete(id); }
 
-export const logger = {
-  info: (...args: any[]) => console.log(...args),
-  error: (...args: any[]) => console.error(...args),
-  warn: (...args: any[]) => console.warn(...args),
-  debug: (...args: any[]) => console.debug(...args),
+/* ── JWT + admin secret ─────────────────────────────────────── */
+export function signAdminJwt(adminId: string | null, role?: string, name?: string, ttlHours?: number) {
+  return jwt.sign(
+    { adminId, role, name },
+    process.env["JWT_SECRET"] || "key",
+    { expiresIn: `${ttlHours ?? ADMIN_TOKEN_TTL_HRS}h` as any },
+  );
+}
+export function verifyAdminJwt(t: string) {
+  try { return jwt.verify(t, process.env["JWT_SECRET"] || "key"); } catch { return null; }
+}
+export async function getAdminSecret(_id?: string) { return process.env["ADMIN_SECRET"] || null; }
+export async function verifyAdminSecret(p: string, h: string) {
+  try { return await bcrypt.compare(p, h); } catch { return p === h; }
+}
+export async function hashAdminSecret(s: string) { return await bcrypt.hash(s, 10); }
+
+/* ── 2FA: real RFC-6238 verification (encrypted secret stored in DB) ── */
+export async function verifyTotpToken(secret: string, token: string): Promise<boolean> {
+  if (!secret || !token) return false;
+  try {
+    const plain = decryptTotpSecret(secret);
+    return totpVerify(token, plain);
+  } catch (err) {
+    logger.error("[verifyTotpToken] failed:", err);
+    return false;
+  }
+}
+
+/* ── adminAuth middleware (Bearer JWT) ──
+   Verifies `Authorization: Bearer <jwt>` and attaches `req.admin`.
+   Rejects with 401 on missing/invalid/expired token. */
+export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) => {
+  try {
+    const header = req.headers["authorization"] || req.headers["Authorization" as any];
+    const raw = Array.isArray(header) ? header[0] : header;
+    const token = raw?.startsWith("Bearer ") ? raw.slice(7).trim() : raw?.trim();
+    if (!token) return res.status(401).json({ success: false, error: "Missing admin token" });
+    const decoded = verifyAdminJwt(token) as any;
+    if (!decoded || typeof decoded !== "object") {
+      return res.status(401).json({ success: false, error: "Invalid or expired admin token" });
+    }
+    req.admin = { adminId: decoded.adminId ?? null, role: decoded.role ?? "manager", name: decoded.name };
+    return next();
+  } catch (err) {
+    logger.error("[adminAuth] failed:", err);
+    return res.status(401).json({ success: false, error: "Auth failure" });
+  }
 };
 
-export type TranslationKey = string;
-
-export function stripUser(u: any) { return u; }
-export function generateId(p?: string) { return (p ? `${p}_` : '') + randomBytes(8).toString("hex"); }
-export async function getUserLanguage(_u: any): Promise<string> { return "en"; }
-export function t(k: string, _lang?: string, _params?: Record<string, any>) { return k; }
-
-export async function sendUserNotification(
-  _userId: string,
-  _titleOrData: any,
-  _body?: string,
-  _type?: string,
-  _icon?: string,
-) { return true; }
 /* ══════════════════════════════════════════════════════════════
    PLATFORM SETTINGS — single source of truth for runtime flags.
-   Reads `platform_settings` table and exposes as `Record<key,value>`.
-   30-second in-memory cache; `invalidateSettingsCache()` clears it.
-   On DB failure: logs and returns last-known cache (or {}) so the
-   API degrades gracefully instead of locking everyone out.
+   30s in-memory cache + DB fallback to last-known on read failure.
 ══════════════════════════════════════════════════════════════ */
 const PLATFORM_SETTINGS_TTL_MS = 30_000;
 let _settingsCache: Record<string, string> = {};
@@ -124,20 +148,20 @@ let _settingsCacheExpiry = 0;
 
 export async function getPlatformSettings(): Promise<Record<string, string>> {
   try {
-    const rows = await db.select({ key: platformSettingsTable.key, value: platformSettingsTable.value }).from(platformSettingsTable);
+    const rows = await db
+      .select({ key: platformSettingsTable.key, value: platformSettingsTable.value })
+      .from(platformSettingsTable);
     const map: Record<string, string> = {};
     for (const r of rows) map[r.key] = r.value;
     return map;
   } catch (err) {
-    console.error("[getPlatformSettings] DB read failed:", err);
+    logger.error("[getPlatformSettings] DB read failed:", err);
     return _settingsCache;
   }
 }
 
 export async function getCachedSettings(_k?: string): Promise<Record<string, string>> {
-  if (Date.now() < _settingsCacheExpiry && Object.keys(_settingsCache).length > 0) {
-    return _settingsCache;
-  }
+  if (Date.now() < _settingsCacheExpiry && Object.keys(_settingsCache).length > 0) return _settingsCache;
   const fresh = await getPlatformSettings();
   if (Object.keys(fresh).length > 0) {
     _settingsCache = fresh;
@@ -145,17 +169,197 @@ export async function getCachedSettings(_k?: string): Promise<Record<string, str
   }
   return _settingsCache;
 }
-
-export function invalidateSettingsCache() {
-  _settingsCacheExpiry = 0;
-}
+export function invalidateSettingsCache() { _settingsCacheExpiry = 0; }
 export const invalidatePlatformSettingsCache = invalidateSettingsCache;
 
-export const adminAuth = (_req: any, _res: any, next: any) => next();
-export function serializeSosAlert(a: any) { return a; }
-export function getClientIp(_req: any) { return "0.0.0.0"; }
-export async function addSecurityEvent(_d: any) { return { id: "1" }; }
+/* ══════════════════════════════════════════════════════════════
+   USER HELPERS
+══════════════════════════════════════════════════════════════ */
+const SENSITIVE_USER_FIELDS = [
+  "passwordHash",
+  "totpSecret",
+  "otpCode",
+  "otpExpiry",
+  "otpUsed",
+  "emailOtpCode",
+  "emailOtpExpiry",
+  "walletPinHash",
+] as const;
 
+/** Remove security-sensitive columns before returning a user row to a client. */
+export function stripUser<T extends Record<string, any> | null | undefined>(u: T): T {
+  if (!u || typeof u !== "object") return u;
+  const out: Record<string, any> = { ...u };
+  for (const f of SENSITIVE_USER_FIELDS) delete out[f];
+  return out as T;
+}
+
+/** Read the user's preferred language from `user_settings`, or fall back. */
+export async function getUserLanguage(userId: string | { id?: string } | null | undefined): Promise<Language> {
+  const id = typeof userId === "string" ? userId : userId?.id;
+  if (!id) return DEFAULT_LANGUAGE;
+  try {
+    const [row] = await db
+      .select({ language: userSettingsTable.language })
+      .from(userSettingsTable)
+      .where(eq(userSettingsTable.userId, id))
+      .limit(1);
+    const lang = row?.language as Language | undefined;
+    if (lang) return lang;
+  } catch (err) {
+    logger.error("[getUserLanguage] failed:", err);
+  }
+  return DEFAULT_LANGUAGE;
+}
+
+export type TranslationKey = string;
+
+/** i18n with `{var}` interpolation. Falls back to the key if no translation exists. */
+export function t(key: string, lang?: string, params?: Record<string, any>): string {
+  let out: string;
+  try {
+    out = i18nT(key as I18nKey, (lang as Language) || DEFAULT_LANGUAGE) || key;
+  } catch {
+    out = key;
+  }
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      out = out.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
+    }
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AUDIT LOG — persisted to `auth_audit_log` table.
+══════════════════════════════════════════════════════════════ */
+interface AuditPayload {
+  action?: string;
+  event?: string;
+  userId?: string | null;
+  adminId?: string | null;
+  ip?: string;
+  userAgent?: string;
+  details?: any;
+  metadata?: any;
+  result?: string;
+  severity?: string;
+  [extra: string]: any;
+}
+
+export function auditLog(data: AuditPayload | string, ..._rest: unknown[]): { id: string } {
+  const id = "audit_" + randomBytes(6).toString("hex");
+  try {
+    const payload: AuditPayload = typeof data === "string" ? { event: data } : (data ?? {});
+    const event = payload.action || payload.event || "unknown";
+    const meta: Record<string, any> = {};
+    if (payload.details !== undefined) meta["details"] = payload.details;
+    if (payload.metadata !== undefined) Object.assign(meta, payload.metadata);
+    if (payload.result !== undefined) meta["result"] = payload.result;
+    if (payload.adminId !== undefined) meta["adminId"] = payload.adminId;
+    // Fire-and-forget; never block the caller.
+    db.insert(authAuditLogTable).values({
+      id,
+      userId: payload.userId ?? null,
+      event,
+      ip: payload.ip || "unknown",
+      userAgent: payload.userAgent ?? null,
+      metadata: Object.keys(meta).length ? JSON.stringify(meta) : null,
+    }).catch((err: unknown) => logger.error("[auditLog] insert failed:", err));
+  } catch (err) {
+    logger.error("[auditLog] failed:", err);
+  }
+  return { id };
+}
+export const addAuditEntry = auditLog;
+
+/** Persist a security event using the same audit log table (event prefixed `security:`). */
+export async function addSecurityEvent(d: AuditPayload & { type?: string }): Promise<{ id: string }> {
+  const event = `security:${d.type || d.action || d.event || "event"}`;
+  return auditLog({ ...d, event });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   REQUEST IP — handles x-forwarded-for / cf-connecting-ip / req.ip.
+══════════════════════════════════════════════════════════════ */
+export function getClientIp(req: Request | any): string {
+  try {
+    const h = req?.headers || {};
+    const cf = h["cf-connecting-ip"];
+    if (typeof cf === "string" && cf) return cf;
+    const xff = h["x-forwarded-for"];
+    if (typeof xff === "string" && xff) return xff.split(",")[0]!.trim();
+    const xreal = h["x-real-ip"];
+    if (typeof xreal === "string" && xreal) return xreal;
+    if (typeof req?.ip === "string" && req.ip) return req.ip.replace(/^::ffff:/, "");
+    const sock = req?.socket?.remoteAddress;
+    if (typeof sock === "string" && sock) return sock.replace(/^::ffff:/, "");
+  } catch {}
+  return "0.0.0.0";
+}
+
+/* ══════════════════════════════════════════════════════════════
+   USER NOTIFICATIONS — persisted to `notifications` table.
+══════════════════════════════════════════════════════════════ */
+export async function sendUserNotification(
+  userId: string,
+  titleOrData: string | { title: string; body?: string; type?: string; icon?: string; link?: string },
+  body?: string,
+  type?: string,
+  icon?: string,
+): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const isObj = typeof titleOrData === "object" && titleOrData !== null;
+    const title = isObj ? titleOrData.title : titleOrData;
+    const finalBody = isObj ? (titleOrData.body ?? "") : (body ?? "");
+    const finalType = isObj ? (titleOrData.type ?? "system") : (type ?? "system");
+    const finalIcon = isObj ? (titleOrData.icon ?? "notifications-outline") : (icon ?? "notifications-outline");
+    const finalLink = isObj ? titleOrData.link : undefined;
+    await db.insert(notificationsTable).values({
+      id: generateId("notif"),
+      userId,
+      title: String(title || ""),
+      body: String(finalBody),
+      type: finalType,
+      icon: finalIcon,
+      link: finalLink ?? null,
+      isRead: false,
+    });
+    return true;
+  } catch (err) {
+    logger.error("[sendUserNotification] failed:", err);
+    return false;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SESSIONS — soft-revoke all active sessions for a user.
+══════════════════════════════════════════════════════════════ */
+export async function revokeAllUserSessions(userId: string): Promise<void> {
+  if (!userId) return;
+  try {
+    await db
+      .update(userSessionsTable)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(userSessionsTable.userId, userId), isNull(userSessionsTable.revokedAt)));
+  } catch (err) {
+    logger.error("[revokeAllUserSessions] failed:", err);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PASSTHROUGH SHAPERS — kept as identity functions because the DB
+   rows already match the wire format these consumers expect.
+══════════════════════════════════════════════════════════════ */
+export function serializeSosAlert(a: any): any { return a; }
+export function formatSvc(s: any): any { return s; }
+
+/* ══════════════════════════════════════════════════════════════
+   SCHEMA MIGRATION HELPERS — Drizzle's `db push` already manages
+   schema. These functions remain as no-ops to preserve their
+   API for legacy callers; they intentionally return without DDL.
+══════════════════════════════════════════════════════════════ */
 export async function ensureAuthMethodColumn() { return true; }
 export async function ensureRideBidsMigration() { return true; }
 export async function ensureOrdersGpsColumns() { return true; }
@@ -170,5 +374,3 @@ export async function ensureVanServiceUpgrade() { return true; }
 export async function ensureWalletP2PColumns() { return true; }
 export async function ensureComplianceTables() { return true; }
 export const DEFAULT_RIDE_SERVICES: any[] = [];
-export function formatSvc(s: any) { return s; }
-export async function revokeAllUserSessions(_u: string) { return; }

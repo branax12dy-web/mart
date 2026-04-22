@@ -95,3 +95,59 @@ These are **stub implementations** that always return `{}`. The middleware (`mid
 - **Blast radius of fix:** auth (all 6 methods × 3 roles), captcha, OTP rate limits, lockout settings, registration open/closed, social login, magic link, 2FA, biometric, map provider failover, cache TTLs — all now reflect admin values in real time.
 - **Files touched:** 1 (`artifacts/api-server/src/routes/admin-shared.ts`) + `replit.md`.
 - **Standards:** DRY (1 real fn), Type-safe, Try/Catch with log, Modular (data/cache/logic separated).
+
+---
+
+## Update — Round 2: Full project stub sweep (admin-shared.ts)
+
+### Problem (root cause beyond the login bug)
+Pure routes/admin-shared.ts was a graveyard of one-line stubs that silently broke security and persistence across the whole project:
+
+| Stub | Risk |
+| --- | --- |
+| `adminAuth = (_,_,next) => next()` | **CRITICAL** — entire admin panel was unauthenticated. Any unauthenticated request to `/api/admin/*` returned 200. |
+| `verifyTotpToken = () => true` | **CRITICAL** — 2FA bypass. Any TOTP code was accepted. |
+| `stripUser = u => u` | **HIGH** — leaked `passwordHash`, `totpSecret`, `walletPinHash`, OTP fields to API responses. |
+| `auditLog`/`addAuditEntry` | Made up an ID; nothing persisted. Audit trail empty. |
+| `addSecurityEvent` | Same — security events vanished. |
+| `getClientIp = () => "0.0.0.0"` | Rate limiter & geo-IP useless. |
+| `getUserLanguage = () => "en"` | All notifications/UI text in English regardless of user pref. |
+| `t(k) => k` | i18n no-op — keys leaked into UI. |
+| `sendUserNotification = () => true` | Notifications never reached the user. |
+| `revokeAllUserSessions = () => undefined` | Banning a user did NOT log them out. |
+
+### Fix (one consolidated rewrite of `routes/admin-shared.ts`)
+- `adminAuth` → real Bearer-JWT middleware using existing `verifyAdminJwt`. 401 on missing/invalid/expired.
+- `verifyTotpToken` → delegates to RFC-6238 `services/totp.ts` after decrypting the stored secret.
+- `stripUser` → drops all 8 sensitive columns (passwordHash, totpSecret, otpCode/Expiry/Used, emailOtpCode/Expiry, walletPinHash) — single `SENSITIVE_USER_FIELDS` constant (DRY).
+- `auditLog` / `addSecurityEvent` → fire-and-forget INSERT into `auth_audit_log` with structured metadata.
+- `getClientIp` → checks `cf-connecting-ip` → `x-forwarded-for` → `x-real-ip` → `req.ip` → `socket.remoteAddress`, strips `::ffff:` IPv4-mapped prefix.
+- `getUserLanguage` → reads `user_settings.language` (accepts string id OR user object), falls back to `DEFAULT_LANGUAGE`.
+- `t` → calls `@workspace/i18n` with `{var}` interpolation.
+- `sendUserNotification` → INSERT into `notifications` (accepts both legacy positional args and the object form).
+- `revokeAllUserSessions` → `UPDATE user_sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL`.
+- `serializeSosAlert` / `formatSvc` → kept as identity (DB rows already match wire shape) — confirmed not stubs, just shape adapters.
+- `ensure*` migration helpers → kept as no-ops with comment explaining drizzle owns schema (intentional, not stubs).
+
+Every helper wrapped in try/catch → `logger.error("[name] …", err)` → safe fallback. No throw can crash a request.
+
+### Verification
+```
+✅  pnpm exec tsc --noEmit                            → clean
+✅  POST /api/auth/check-identifier (rider)           → action: send_phone_otp, 4 methods
+✅  GET  /api/admin/users   (no token)                → 401 "Missing admin token"   (was 200)
+✅  GET  /api/admin/users   (bogus token)             → 401 "Invalid or expired"    (was 200)
+```
+
+### Standards followed
+- DRY: single `SENSITIVE_USER_FIELDS` array; single `auditLog` powering both audit & security events.
+- Type-safe: `AdminRequest`, `AuditPayload`, `Language` types throughout — zero implicit `any` in new code.
+- Error handling: every DB call wrapped in try/catch with structured `[fnName]` log prefix.
+- Separation of concerns: TOTP crypto stays in `services/totp.ts`; i18n stays in `@workspace/i18n`; admin-shared just orchestrates.
+- No duplicate functions: imports the existing real implementations rather than re-implementing.
+
+### Blast radius (what this fix unlocks across artifacts)
+- **api-server**: admin panel actually requires login; 2FA actually works; bans actually log users out; audit log actually populates.
+- **admin app**: every protected page now correctly receives 401 → forces re-login on token expiry instead of silently showing data.
+- **rider/vendor/customer apps**: notifications dispatched by admin actions (suspend, payout, wallet credit) now actually arrive in the in-app inbox.
+- **rider app**: GPS rate-limit per IP now effective (was always "0.0.0.0").
