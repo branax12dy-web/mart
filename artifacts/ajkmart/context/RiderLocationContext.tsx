@@ -372,7 +372,7 @@ export function RiderLocationProvider({ children }: { children: React.ReactNode 
         }
       } catch (err) { if (__DEV__) console.warn("[RiderLocation] Auto-resume bootstrap failed:", err instanceof Error ? err.message : String(err)); }
     })();
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+   
   }, [isRider]);
 
   /* ── Bug 1 & 7 fix: goOnline now returns a status result ── */

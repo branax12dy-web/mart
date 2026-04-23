@@ -16,7 +16,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { reportError as reportErrorToBackend , initErrorReporter } from "@/utils/error-reporter";
+import { reportError as reportErrorToBackend, initErrorReporter } from "@/utils/error-reporter";
 import { PwaInstallBanner } from "@/components/PwaInstallBanner";
 import { registerServiceWorker } from "@/utils/register-service-worker";
 import { initSentry, setSentryUser } from "@/utils/sentry";

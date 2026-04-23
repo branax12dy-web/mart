@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View , TouchableOpacity, Text, Platform } from "react-native";
-import { useLocalSearchParams , router } from "expo-router";
+import { View, TouchableOpacity, Text, Platform } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";

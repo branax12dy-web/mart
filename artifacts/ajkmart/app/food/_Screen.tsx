@@ -113,7 +113,7 @@ const FoodCard = React.memo(function FoodCard({ item }: { item: any }) {
           <Text style={styles.foodPrice}>Rs. {item?.price ?? 0}</Text>
           {qtyInCart > 0 ? (
             <View style={styles.stepperRow}>
-              <TouchableOpacity activeOpacity={0.7} onPress={(e) => { e?.stopPropagation?.(); qtyInCart <= 1 ? removeItem(item.id) : updateQuantity(item.id, qtyInCart - 1); }} style={styles.stepperBtn}>
+              <TouchableOpacity activeOpacity={0.7} onPress={(e) => { e?.stopPropagation?.(); if (qtyInCart <= 1) { removeItem(item.id); } else { updateQuantity(item.id, qtyInCart - 1); } }} style={styles.stepperBtn}>
                 <Ionicons name={qtyInCart <= 1 ? "trash-outline" : "remove"} size={14} color={C.red} />
               </TouchableOpacity>
               <Text style={styles.stepperQty}>{qtyInCart}</Text>

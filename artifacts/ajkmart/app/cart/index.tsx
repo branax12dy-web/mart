@@ -496,7 +496,7 @@ function CartScreenInner() {
       setPromoInput(code);
       applyPromo(code);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [incomingPromoCode]);
 
   // Fetch available offers to show best-offer suggestions in the promo section

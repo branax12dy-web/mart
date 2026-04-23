@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { Font } from "@/constants/typography";
-import { getHierarchicalCategories , useGetProducts } from "@workspace/api-client-react";
+import { getHierarchicalCategories, useGetProducts } from "@workspace/api-client-react";
 
 const C = Colors.light;
 const { width } = Dimensions.get("window");

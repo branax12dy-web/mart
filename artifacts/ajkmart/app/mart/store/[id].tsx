@@ -148,7 +148,7 @@ function ProductGridCard({ product }: { product: MartProduct }) {
             <View style={styles.stepperRow}>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={(e) => { e.stopPropagation(); qtyInCart <= 1 ? removeItem(product.id) : updateQuantity(product.id, qtyInCart - 1); }}
+                onPress={(e) => { e.stopPropagation(); if (qtyInCart <= 1) { removeItem(product.id); } else { updateQuantity(product.id, qtyInCart - 1); } }}
                 style={styles.stepperBtn}
               >
                 <Ionicons name={qtyInCart <= 1 ? "trash-outline" : "remove"} size={14} color={C.danger} />
