@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 
 export interface AdminUser {
   id: string;
@@ -38,7 +38,8 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   // Use a ref to prevent concurrent refresh requests
-  let refreshPromise: Promise<string> | null = null;
+  // This persists across renders so concurrent calls share one in-flight promise
+  const refreshPromiseRef = useRef<Promise<string> | null>(null);
 
   /**
    * Refresh access token using refresh token cookie
@@ -46,11 +47,11 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
    */
   const refreshAccessToken = useCallback(async (): Promise<string> => {
     // If a refresh is already in progress, return the pending promise
-    if (refreshPromise) {
-      return refreshPromise;
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
     }
 
-    refreshPromise = (async () => {
+    refreshPromiseRef.current = (async () => {
       try {
         const response = await fetch('/api/admin/auth/refresh', {
           method: 'POST',
@@ -86,11 +87,11 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Token refresh failed:', err);
         throw err;
       } finally {
-        refreshPromise = null;
+        refreshPromiseRef.current = null;
       }
     })();
 
-    return refreshPromise;
+    return refreshPromiseRef.current;
   }, []);
 
   /**

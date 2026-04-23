@@ -55,9 +55,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useLanguage } from "@/lib/useLanguage";
+import { useAdminAuth } from "@/lib/adminAuthContext";
 import { tDual, type TranslationKey, LANGUAGE_OPTIONS } from "@workspace/i18n";
 import { io, type Socket } from "socket.io-client";
-import { fetcher, isTokenExpired, clearToken, getToken } from "@/lib/api";
+import { fetcher } from "@/lib/api";
 
 type NavGroup = {
   labelKey: TranslationKey;
@@ -172,6 +173,7 @@ const navItems = NAV_GROUPS.flatMap(g => g.items);
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
+  const { state, logout } = useAdminAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("ajkmart_sidebar_collapsed") === "true"; } catch { return false; }
@@ -189,7 +191,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   const [sosCount, setSosCount] = useState(0);
   const [errorCount, setErrorCount] = useState(0);
-  const [socketToken, setSocketToken] = useState(() => sessionStorage.getItem("ajkmart_admin_token") ?? "");
   const socketRef = useRef<Socket | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
@@ -212,14 +213,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  useEffect(() => {
-    if (isTokenExpired()) {
-      clearToken();
-      setLocation("/login");
-      return;
-    }
-  }, []);
-
+  // Socket + data fetching
   useEffect(() => {
     fetcher("/sos/alerts?limit=1")
       .then((data: { activeCount?: number }) => { if (typeof data.activeCount === "number") setSosCount(data.activeCount); })
@@ -236,11 +230,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     }, 60000);
     const cleanupErrorInterval = () => clearInterval(errorInterval);
 
-    const getAdminToken = () => sessionStorage.getItem("ajkmart_admin_token") ?? "";
+    // Socket uses access token from context instead of sessionStorage
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: (cb: (data: Record<string, string>) => void) => cb({ adminToken: getAdminToken() }),
+      auth: (cb: (data: Record<string, string>) => void) => cb({ adminToken: state.accessToken || "" }),
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
@@ -251,7 +245,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     });
     socket.on("sos:resolved", () => setSosCount(c => Math.max(0, c - 1)));
     return () => { socket.disconnect(); socketRef.current = null; cleanupErrorInterval(); };
-  }, [socketToken]);
+  }, [state.accessToken]);
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -292,8 +286,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     return () => { document.body.style.overflow = ""; };
   }, [isMobileMenuOpen]);
 
-  const handleLogout = () => {
-    clearToken();
+  const handleLogout = async () => {
+    await logout();
     setLocation("/login");
   };
 
@@ -778,8 +772,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", boxShadow: "0 8px 30px rgba(0,0,0,0.12)", minWidth: 190 }}
                 >
                   <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
-                    <p className="text-sm font-semibold text-slate-700">Administrator</p>
-                    <p className="text-xs text-slate-400">admin@ajkmart.pk</p>
+                    <p className="text-sm font-semibold text-slate-700">{state.user?.name || "Administrator"}</p>
+                    <p className="text-xs text-slate-400">{state.user?.email || "admin@ajkmart.pk"}</p>
                   </div>
                   <button
                     onClick={handleLogout}

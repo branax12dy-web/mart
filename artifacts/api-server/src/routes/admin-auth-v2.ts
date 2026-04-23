@@ -47,6 +47,17 @@ const loginLimiter = rateLimit({
   keyGenerator: (req) => getClientIp(req),
 });
 
+// Rate limiting for 2FA verification: max 5 failed attempts per 15 minutes per IP
+const verifyTotpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: { error: 'Too many 2FA verification attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Only count failures
+  keyGenerator: (req) => getClientIp(req),
+});
+
 // Validation schemas
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -158,7 +169,7 @@ router.post('/auth/login', loginLimiter, async (req: Request, res: Response) => 
  * POST /api/admin/auth/2fa
  * Verify TOTP and complete login
  */
-router.post('/auth/2fa', loginLimiter, async (req: Request, res: Response) => {
+router.post('/auth/2fa', verifyTotpLimiter, async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const userAgent = req.headers['user-agent'];
 

@@ -39,7 +39,8 @@ export async function fetchAdmin(
       token = await refreshToken();
     } catch (err) {
       // Refresh failed - need to redirect to login
-      window.location.href = '/admin/login';
+      const loginUrl = `${import.meta.env.BASE_URL || '/'}login`;
+      window.location.href = loginUrl;
       throw err;
     }
   }
@@ -85,7 +86,8 @@ export async function fetchAdmin(
       } catch (err) {
         // Refresh or retry failed - redirect to login
         console.error('Token refresh failed:', err);
-        window.location.href = '/admin/login';
+        const loginUrl = `${import.meta.env.BASE_URL || '/'}login`;
+        window.location.href = loginUrl;
         throw new Error('Session expired. Please log in again.');
       }
     }

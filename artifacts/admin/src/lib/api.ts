@@ -1,127 +1,280 @@
+/**
+ * Admin API Bridge Layer
+ * 
+ * This module bridges the old sessionStorage-based auth API to the new
+ * Bearer token + CSRF + auto-refresh system (adminFetcher).
+ * 
+ * All existing components continue to work without modification, but requests
+ * now use the Binance-grade auth system under the hood.
+ * 
+ * Migration path: Components gradually switch from calling these functions
+ * to using adminFetcher/useAdminAuth directly.
+ */
+
+import { fetchAdmin, setupAdminFetcherHandlers } from './adminFetcher.js';
+
+// ============================================================================
+// Legacy Auth State (now no-ops - state is in adminAuthContext)
+// ============================================================================
+
 export const getApiBase = () => {
   return `${window.location.origin}/api/admin`;
 };
 
 const ADMIN_TOKEN_KEY = "ajkmart_admin_token";
 
+/**
+ * @deprecated Use useAdminAuth() from adminAuthContext instead
+ * Kept for backward compatibility - now returns null (tokens are in-memory only)
+ */
 export const getToken = () => {
-  return sessionStorage.getItem(ADMIN_TOKEN_KEY);
+  // Tokens are stored in-memory in adminAuthContext, not sessionStorage
+  return null;
 };
 
+/**
+ * @deprecated Use useAdminAuth() from adminAuthContext instead
+ * Kept for backward compatibility - no-op (use new auth system)
+ */
 export const setToken = (token: string) => {
-  sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+  // No-op - tokens managed by adminAuthContext
 };
 
+/**
+ * @deprecated Use useAdminAuth().logout() from adminAuthContext instead
+ * Kept for backward compatibility - no-op
+ */
 export const clearToken = () => {
-  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  // No-op - tokens managed by adminAuthContext
 };
 
-function decodeJwtExp(tok: string): number | null {
-  try {
-    const parts = tok.split(".");
-    if (parts.length !== 3) return null;
-    const b64 = (parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(b64));
-    return typeof payload.exp === "number" ? payload.exp : null;
-  } catch {
-    return null;
-  }
-}
-
+/**
+ * @deprecated Use useAdminAuth() from adminAuthContext instead
+ * Kept for backward compatibility - returns false (tokens validated server-side now)
+ */
 export function isTokenExpired(): boolean {
-  const token = getToken();
-  if (!token) return true;
-  const exp = decodeJwtExp(token);
-  if (!exp) return true;
-  return exp * 1000 < Date.now();
+  // No-op - Token validation happens server-side with auto-refresh
+  // Old logic checked expiry before request; new system just does 401 + refresh
+  return false;
 }
 
+// ============================================================================
+// Image Upload - Bridged to new fetcher
+// ============================================================================
+
+/**
+ * Upload an admin image using the new auth system
+ * Automatically includes Bearer token, CSRF protection, and handles auto-refresh
+ */
 export const uploadAdminImage = async (file: File): Promise<string> => {
-  const token = getToken();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
+  try {
+    // Create FormData with file
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const endpoint = '/uploads/admin';
+    const csrfToken = getCsrfFromCookie();
+    
+    // Build the request with proper auth headers
+    // The getAccessTokenFromContext() will be populated by setupAdminFetcherHandlers
+    let response = await fetch(`/api/admin${endpoint}`, {
+      method: 'POST',
+      headers: {
+        // Authorization header set dynamically if token available
+        ...(await getAuthHeadersForUpload()),
+      },
+      credentials: 'include',
+      body: formData,
+    });
+
+    // Handle 401 - try to refresh and retry
+    if (response.status === 401) {
       try {
-        const base64 = (reader.result as string).split(",")[1];
-        const res = await fetch(`${getApiBase()}/uploads/admin`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { "x-admin-token": token } : {}),
-          },
-          body: JSON.stringify({ base64, mimeType: file.type }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || "Upload failed");
-        const data = json.data !== undefined ? json.data : json;
-        resolve(data.url as string);
-      } catch (e) {
-        reject(e);
+        // If we have the refresh handler, use it
+        if (tokenRefresher) {
+          await tokenRefresher();
+          // Retry with new token
+          response = await fetch(`/api/admin${endpoint}`, {
+            method: 'POST',
+            headers: {
+              ...(await getAuthHeadersForUpload()),
+            },
+            credentials: 'include',
+            body: formData,
+          });
+        }
+      } catch (err) {
+        console.error('Token refresh failed for upload:', err);
+        window.location.href = `${import.meta.env.BASE_URL || '/'}login`;
       }
-    };
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+    }
+
+    const json = await response.json();
+    const data = json.data !== undefined ? json.data : json;
+    return data.url as string;
+  } catch (err) {
+    console.error('Image upload failed:', err);
+    throw err;
+  }
 };
 
+// ============================================================================
+// API Fetchers - Bridged to new fetcher
+// ============================================================================
+
+/**
+ * Main fetcher function
+ * Delegates to adminFetcher which handles:
+ * - Bearer token inclusion
+ * - CSRF token validation
+ * - Automatic token refresh on 401
+ * - Retry failed requests after refresh
+ */
 export const fetcher = async (endpoint: string, options: RequestInit = {}) => {
-  const token = getToken();
-
-  const res = await fetch(`${getApiBase()}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "x-admin-token": token } : {}),
-      ...options.headers,
-    },
-  });
-
-  const json = await res.json();
-
-  if (!res.ok) {
-    if (res.status === 401 && token) {
-      const currentToken = getToken();
-      if (currentToken === token) {
-        clearToken();
-        window.location.href = import.meta.env.BASE_URL + "login";
-      }
-    }
-    try {
-      const { reportApiError } = await import("./error-reporter");
-      reportApiError(endpoint, res.status, json.error || "An error occurred");
-    } catch {}
-    throw new Error(json.error || "An error occurred");
+  try {
+    const result = await fetchAdmin(endpoint, options);
+    return result.data !== undefined ? result.data : result;
+  } catch (err) {
+    console.error('API error:', err);
+    throw err;
   }
-
-  return json.data !== undefined ? json.data : json;
 };
 
-export const fetcherWithMeta = async (endpoint: string, options: RequestInit = {}): Promise<{ data: unknown; total?: number; [key: string]: unknown }> => {
-  const token = getToken();
-
-  const res = await fetch(`${getApiBase()}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "x-admin-token": token } : {}),
-      ...options.headers,
-    },
-  });
-
-  const json = await res.json();
-
-  if (!res.ok) {
-    if (res.status === 401 && token) {
-      const currentToken = getToken();
-      if (currentToken === token) {
-        clearToken();
-        window.location.href = import.meta.env.BASE_URL + "login";
-      }
-    }
-    throw new Error(json.error || "An error occurred");
+/**
+ * Fetcher that returns full response with metadata
+ * Used when consumers need paging info, counts, etc.
+ */
+export const fetcherWithMeta = async (
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<{ data: unknown; total?: number; [key: string]: unknown }> => {
+  try {
+    const result = await fetchAdmin(endpoint, options);
+    return result;
+  } catch (err) {
+    console.error('API error:', err);
+    throw err;
   }
-
-  return json;
 };
 
+/**
+ * Alias for fetcher (for backward compatibility)
+ */
 export const apiFetch = fetcher;
+
+// ============================================================================
+// HTTP Verb Helpers (delegated to adminFetcher)
+// ============================================================================
+
+/**
+ * Get helper
+ */
+export async function apiGet(endpoint: string) {
+  return fetcher(endpoint, { method: 'GET' });
+}
+
+/**
+ * Post helper
+ */
+export async function apiPost(endpoint: string, data: any) {
+  return fetcher(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Put helper
+ */
+export async function apiPut(endpoint: string, data: any) {
+  return fetcher(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Patch helper
+ */
+export async function apiPatch(endpoint: string, data: any) {
+  return fetcher(endpoint, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Delete helper
+ */
+export async function apiDelete(endpoint: string) {
+  return fetcher(endpoint, { method: 'DELETE' });
+}
+
+// ============================================================================
+// Utility Functions (Private)
+// ============================================================================
+
+// Global token handlers set up by App.tsx via setupAdminFetcherHandlers
+let tokenGetter: (() => string | null) | null = null;
+let tokenRefresher: (() => Promise<string>) | null = null;
+
+/**
+ * Set token handlers from adminFetcher
+ * Called during App initialization
+ */
+export function setTokenHandlers(
+  getter: () => string | null,
+  refresher: () => Promise<string>
+) {
+  tokenGetter = getter;
+  tokenRefresher = refresher;
+}
+
+/**
+ * Read CSRF token from cookie
+ */
+function getCsrfFromCookie(): string {
+  const cookies = document.cookie.split(';');
+  for (const cookie of cookies) {
+    const [key, value] = cookie.trim().split('=');
+    if (key === 'csrf_token') {
+      return decodeURIComponent(value);
+    }
+  }
+  return '';
+}
+
+/**
+ * Get authorization headers for upload
+ * Returns object with Authorization and X-CSRF-Token if token is available
+ */
+async function getAuthHeadersForUpload(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  
+  const token = tokenGetter?.();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  const csrf = getCsrfFromCookie();
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf;
+  }
+  
+  return headers;
+}
+
+/**
+ * Get access token from context (for fallback/manual operations)
+ * This is a temporary measure for uploadAdminImage; prefer using adminFetcher
+ */
+function getAccessTokenFromContext(): string {
+  // Try to extract from current request context or return empty
+  // The adminFetcher handlers will be set up by App.tsx
+  return '';
+}

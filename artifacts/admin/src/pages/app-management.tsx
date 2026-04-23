@@ -5,7 +5,7 @@ import {
   Wallet, Shield, Plus, Pencil, Trash2, Save, X,
   ToggleRight, ToggleLeft, RefreshCw, CheckCircle2,
   AlertTriangle, WrenchIcon, Eye, EyeOff, ScrollText, CalendarDays, ChevronLeft, ChevronRight,
-  Zap, Activity, Download, Smartphone, FileText, List,
+  Zap, Activity, Download, Smartphone, FileText, List, LogOut, Globe,
 } from "lucide-react";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
@@ -51,6 +51,139 @@ const SERVICE_MAP = [
 ];
 
 const EMPTY_ADMIN = { name: "", secret: "", role: "manager", permissions: PERMISSIONS.join(","), isActive: true };
+
+/* ── Sessions Tab Component ── */
+function SessionsTab() {
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  // Load sessions on mount
+  const loadSessions = async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetcher("/auth/sessions");
+      setSessions(Array.isArray(data) ? data : data.sessions || []);
+    } catch (err: any) {
+      toast({ title: "Error loading sessions", description: err.message, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Remove a specific session
+  const revokeSession = async (sessionId: string) => {
+    try {
+      await fetcher(`/auth/sessions/${sessionId}`, { method: "DELETE" });
+      setSessions(sessions.filter(s => s.id !== sessionId));
+      toast({ title: "Session revoked" });
+    } catch (err: any) {
+      toast({ title: "Error revoking session", description: err.message, variant: "destructive" });
+    }
+  };
+
+  // Revoke all sessions
+  const revokeAllSessions = async () => {
+    if (!window.confirm("Are you sure? You will be logged out of all devices.")) return;
+    try {
+      await fetcher("/auth/sessions", { method: "DELETE" });
+      setSessions([]);
+      toast({ title: "All sessions revoked - logging out...", description: "You will be redirected to login." });
+      setTimeout(() => window.location.href = `${import.meta.env.BASE_URL || '/'}login`, 1500);
+    } catch (err: any) {
+      toast({ title: "Error revoking sessions", description: err.message, variant: "destructive" });
+    }
+  };
+
+  useState(() => { loadSessions(); }, []);
+
+  const formatTime = (isoDate: string | null) => {
+    if (!isoDate) return "Never";
+    return new Date(isoDate).toLocaleString("en-PK", {
+      day: "numeric", month: "short", year: "2-digit",
+      hour: "2-digit", minute: "2-digit"
+    });
+  };
+
+  const parseUA = (ua: string) => {
+    if (!ua) return "Unknown Device";
+    if (ua.includes("Chrome")) return "Chrome";
+    if (ua.includes("Safari")) return "Safari";
+    if (ua.includes("Firefox")) return "Firefox";
+    if (ua.includes("Mobile")) return "Mobile Browser";
+    return "Browser";
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-muted-foreground">Manage active admin sessions across all devices</p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={loadSessions} disabled={isLoading} className="h-9 rounded-xl gap-2">
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+          </Button>
+          {sessions.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={revokeAllSessions}
+              className="h-9 rounded-xl gap-2 bg-red-600 hover:bg-red-700"
+            >
+              <LogOut className="w-4 h-4" /> Sign out everywhere
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <Card className="rounded-2xl border-border/50 overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-muted-foreground">Loading sessions...</div>
+        ) : sessions.length === 0 ? (
+          <div className="p-12 text-center text-muted-foreground">
+            <Globe className="w-8 h-8 mx-auto mb-3 opacity-50" />
+            <p>No active sessions</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/50">
+            {sessions.map((session: any) => {
+              const isCurrentSession = session.isCurrent;
+              return (
+                <div key={session.id} className="p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <p className="font-semibold text-sm">
+                        {parseUA(session.userAgent)}
+                        {isCurrentSession && <Badge className="ml-2 bg-green-100 text-green-700 text-xs">Current Device</Badge>}
+                      </p>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                      <p className="truncate">IP: {session.ipAddress || "Unknown"}</p>
+                      <p>Created: {formatTime(session.createdAt)}</p>
+                      <p>Last used: {formatTime(session.lastUsedAt)}</p>
+                      {session.expiresAt && <p className="text-yellow-600">Expires: {formatTime(session.expiresAt)}</p>}
+                    </div>
+                  </div>
+                  {!isCurrentSession && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => revokeSession(session.id)}
+                      className="ml-2 text-red-500 hover:text-red-600 hover:bg-red-50 h-8"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
 
 /* ── Audit Log Tab Component ── */
 function AuditLogTab() {
@@ -145,7 +278,7 @@ export default function AppManagement() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"overview"|"admins"|"maintenance"|"release-notes"|"audit-log">("overview");
+  const [tab, setTab] = useState<"overview"|"admins"|"maintenance"|"release-notes"|"audit-log"|"sessions">("overview");
   const [adminForm, setAdminForm] = useState({ ...EMPTY_ADMIN });
   const [editingAdmin, setEditingAdmin] = useState<AdminAccount | null>(null);
   const [adminDialog, setAdminDialog] = useState(false);
@@ -397,6 +530,7 @@ export default function AppManagement() {
             { id: "admins",         label: "👥 Admin Accounts" },
             { id: "maintenance",    label: "🔧 Services & Maintenance" },
             { id: "release-notes",  label: "🚀 Release Notes" },
+            { id: "sessions",       label: "🌐 Active Sessions" },
             { id: "audit-log",      label: "📋 Audit Log" },
           ].map(t => (
             <button
@@ -912,6 +1046,9 @@ export default function AppManagement() {
 
       {/* ══ Audit Log Tab ══ */}
       {tab === "audit-log" && <AuditLogTab />}
+
+      {/* ══ Sessions Tab ══ */}
+      {tab === "sessions" && <SessionsTab />}
     </div>
   );
 }

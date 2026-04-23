@@ -12,6 +12,7 @@ import { registerPush } from "@/lib/push";
 import { initErrorReporter, reportError } from "@/lib/error-reporter";
 import { AdminAuthProvider, useAdminAuth } from "@/lib/adminAuthContext";
 import { setupAdminFetcherHandlers } from "@/lib/adminFetcher";
+import { setTokenHandlers } from "@/lib/api";
 
 // Layout & Pages
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -75,9 +76,8 @@ const queryClient = new QueryClient({
 });
 
 /* Auto-logout when an authenticated query returns 401.
-   Guard: only remove token + redirect if a token was actually present — this
-   prevents pre-login query failures (expected 401s) from wiping a token that
-   the user just saved after logging in. */
+   Guard: only remove token + redirect if we're actually logged in.
+   This prevents pre-login query failures (expected 401s) from redirecting. */
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const err = event.action.error as any;
@@ -87,10 +87,10 @@ queryClient.getQueryCache().subscribe(event => {
       msg.includes("session expired") ||
       msg.includes("please log in") ||
       err?.status === 401;
-    if (is401 && sessionStorage.getItem("ajkmart_admin_token")) {
-      sessionStorage.removeItem("ajkmart_admin_token");
-      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      window.location.href = `${base}/login`;
+    // Note: Auth state is managed by adminAuthContext, not sessionStorage
+    // The fetcher will handle 401 with auto-refresh + redirect
+    if (is401) {
+      console.warn("Received 401 from query - auth will be handled by fetcher");
     }
   }
 });
@@ -206,6 +206,12 @@ function IntegrationsInit() {
   useEffect(() => {
     // Setup fetcher with auth handlers
     setupAdminFetcherHandlers(
+      () => state.accessToken,
+      () => refreshAccessToken()
+    );
+    
+    // Setup token handlers for api.ts bridge layer
+    setTokenHandlers(
       () => state.accessToken,
       () => refreshAccessToken()
     );
