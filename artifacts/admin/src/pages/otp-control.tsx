@@ -5,24 +5,22 @@ import {
   UserCheck, UserX, Info, ListChecks, Plus, Trash2, CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetcher, getApiBase, getToken } from "@/lib/api";
+import { fetcher } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useOtpWhitelist, useAddOtpWhitelist, useUpdateOtpWhitelist, useDeleteOtpWhitelist } from "@/hooks/use-admin";
 
 async function api(method: string, path: string, body?: unknown) {
-  const token = getToken() ?? "";
-  const r = await fetch(`${getApiBase()}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", "x-admin-token": token },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (r.status === 401) {
-    window.location.href = (import.meta.env.BASE_URL ?? "/") + "login";
-    return null;
+  try {
+    return await fetcher(path, {
+      method,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (e: any) {
+    if (e?.status === 401) return null;
+    throw e;
   }
-  return r.json();
 }
 
 function useCountdown(targetIso: string | null) {

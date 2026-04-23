@@ -18,6 +18,7 @@ import {
   DEFAULT_LANGUAGE,
 } from "@workspace/i18n";
 import { verifyTotpToken as totpVerify, decryptTotpSecret } from "../services/totp.js";
+import { verifyAccessToken } from "../utils/admin-jwt.js";
 
 /* ══════════════════════════════════════════════════════════════
    admin-shared.ts — single source of cross-cutting helpers used
@@ -119,6 +120,8 @@ export async function verifyTotpToken(secret: string, token: string): Promise<bo
 
 /* ── adminAuth middleware (Bearer JWT) ──
    Verifies `Authorization: Bearer <jwt>` and attaches `req.admin`.
+   Accepts BOTH legacy admin tokens (signed with JWT_SECRET) AND the new
+   admin-auth-v2 access tokens (signed with ADMIN_ACCESS_TOKEN_SECRET).
    Rejects with 401 on missing/invalid/expired token. */
 export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) => {
   try {
@@ -126,12 +129,30 @@ export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) 
     const raw = Array.isArray(header) ? header[0] : header;
     const token = raw?.startsWith("Bearer ") ? raw.slice(7).trim() : raw?.trim();
     if (!token) return res.status(401).json({ success: false, error: "Missing admin token" });
-    const decoded = verifyAdminJwt(token) as any;
-    if (!decoded || typeof decoded !== "object") {
+
+    // Try legacy verification first (adminId/role/name claims)
+    let decoded: any = verifyAdminJwt(token);
+    if (decoded && typeof decoded === "object" && (decoded.adminId || decoded.sub)) {
+      req.admin = {
+        adminId: decoded.adminId ?? decoded.sub ?? null,
+        role: decoded.role ?? "manager",
+        name: decoded.name,
+      };
+      return next();
+    }
+
+    // Fall back to new admin-auth-v2 access token (sub/role/name claims)
+    try {
+      const payload = verifyAccessToken(token);
+      req.admin = {
+        adminId: payload.sub ?? null,
+        role: payload.role ?? "manager",
+        name: payload.name,
+      };
+      return next();
+    } catch {
       return res.status(401).json({ success: false, error: "Invalid or expired admin token" });
     }
-    req.admin = { adminId: decoded.adminId ?? null, role: decoded.role ?? "manager", name: decoded.name };
-    return next();
   } catch (err) {
     logger.error("[adminAuth] failed:", err);
     return res.status(401).json({ success: false, error: "Auth failure" });

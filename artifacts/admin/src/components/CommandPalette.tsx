@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { fetcher, getToken } from "@/lib/api";
+import { fetcher, apiAbsoluteFetchRaw } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
   ShoppingBag, Car, Pill,
@@ -108,17 +108,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   /* ── Execute a natural-language command via AI ─────────────────────── */
   const executeCmd = useCallback(async (cmdText: string) => {
-    const token = getToken();
-    if (!token) { toast({ title: "Not authenticated", variant: "destructive" }); return; }
     setCmdExecuting(true);
     setCmdResult(null);
     try {
-      const r = await fetch(`${window.location.origin}/api/admin/command/execute`, {
+      const data = await apiAbsoluteFetchRaw(`/api/admin/command/execute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-token": token },
         body: JSON.stringify({ command: cmdText }),
-      });
-      const data = await r.json() as { data?: CmdResult };
+      }) as { data?: CmdResult };
       const result = data.data ?? (data as unknown as CmdResult);
       setCmdResult(result);
       if (result.executed) {
@@ -173,20 +169,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     staleTime: 5_000,
   });
 
-  /* ── AI search (authenticated with x-admin-token) ── */
+  /* ── AI search (authenticated via adminFetcher) ── */
   const { data: aiData, isFetching: aiLoading } = useQuery({
     queryKey: ["cmd-ai-search", debouncedQ, aiEnabled],
     queryFn:  async () => {
-      const token = getToken();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["x-admin-token"] = token;
-      const res = await fetch(`${window.location.origin}/api/admin/search/ai`, {
+      return apiAbsoluteFetchRaw(`/api/admin/search/ai`, {
         method: "POST",
-        headers,
         body: JSON.stringify({ query: debouncedQ }),
       });
-      if (!res.ok) throw new Error(`AI search failed: ${res.status}`);
-      return res.json();
     },
     enabled: aiEnabled && debouncedQ.length >= 5,
     staleTime: 30_000,

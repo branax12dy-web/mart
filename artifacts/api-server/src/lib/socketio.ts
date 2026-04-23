@@ -2,6 +2,7 @@ import { Server as SocketIOServer } from "socket.io";
 import type { Server as HttpServer } from "http";
 import { logger } from "./logger.js";
 import { verifyUserJwt, verifyAdminJwt } from "../middleware/security.js";
+import { verifyAccessToken } from "../utils/admin-jwt.js";
 import { db } from "@workspace/db";
 import { ridesTable, ordersTable, parcelBookingsTable, pharmacyOrdersTable, liveLocationsTable, usersTable, locationHistoryTable, callLogsTable, conversationsTable, chatMessagesTable, vanBookingsTable, vanSchedulesTable } from "@workspace/db/schema";
 import { eq, or, and, sql, lt, lte } from "drizzle-orm";
@@ -74,15 +75,25 @@ function isAuthorizedForAdminFleet(
   const candidates: Array<string | undefined> = [
     query["adminToken"] as string | undefined,
     auth["adminToken"] as string | undefined,
+    auth["token"] as string | undefined,
     Array.isArray(headers["x-admin-token"]) ? headers["x-admin-token"][0] : headers["x-admin-token"] as string | undefined,
   ];
   for (const token of candidates) {
-    if (token && verifyAdminJwt(token)) return true;
+    if (!token) continue;
+    if (verifyAdminJwt(token)) return true;
+    try {
+      const payload = verifyAccessToken(token);
+      if (payload && (payload.role === "super" || payload.role === "manager" || payload.role === "support")) return true;
+    } catch { /* not a v2 token */ }
   }
   const bearer = extractBearerToken(headers["authorization"]);
   if (bearer) {
     const payload = verifyUserJwt(bearer);
     if (payload && (payload.role === "admin" || payload.roles?.includes("admin"))) return true;
+    try {
+      const v2 = verifyAccessToken(bearer);
+      if (v2 && (v2.role === "super" || v2.role === "manager" || v2.role === "support")) return true;
+    } catch { /* not a v2 token */ }
   }
   return false;
 }

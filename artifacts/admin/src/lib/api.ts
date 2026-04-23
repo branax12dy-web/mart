@@ -11,7 +11,10 @@
  * to using adminFetcher/useAdminAuth directly.
  */
 
-import { fetchAdmin, setupAdminFetcherHandlers } from './adminFetcher.js';
+import { fetchAdmin, fetchAdminAbsolute, fetchAdminAbsoluteResponse, getAdminAccessToken, setupAdminFetcherHandlers } from './adminFetcher.js';
+export { fetchAdminAbsoluteResponse };
+
+export { getAdminAccessToken } from './adminFetcher.js';
 
 // ============================================================================
 // Legacy Auth State (now no-ops - state is in adminAuthContext)
@@ -166,6 +169,26 @@ export const fetcherWithMeta = async (
  * Alias for fetcher (for backward compatibility)
  */
 export const apiFetch = fetcher;
+
+/**
+ * Admin-authenticated fetch against an absolute API path
+ * (e.g. `/api/kyc/admin/...`, `/api/payments/...`, `/api/maps/admin/...`).
+ * Use this for admin endpoints that live OUTSIDE `/api/admin/*`.
+ */
+export const apiAbsoluteFetch = async (path: string, options: RequestInit = {}) => {
+  try {
+    const result = await fetchAdminAbsolute(path, options);
+    return result?.data !== undefined ? result.data : result;
+  } catch (err) {
+    console.error('API error:', err);
+    throw err;
+  }
+};
+
+/** Like apiAbsoluteFetch but returns the full response envelope (no data unwrap). */
+export const apiAbsoluteFetchRaw = async (path: string, options: RequestInit = {}) => {
+  return fetchAdminAbsolute(path, options);
+};
 
 // ============================================================================
 // HTTP Verb Helpers (delegated to adminFetcher)

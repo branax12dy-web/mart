@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type { Language } from "@workspace/i18n";
 import { DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, isRTL } from "@workspace/i18n";
-import { fetcher, getToken } from "./api";
+import { fetcher, getAdminAccessToken } from "./api";
 
 const VALID_LANGS = new Set<string>(LANGUAGE_OPTIONS.map(o => o.value));
 const STORAGE_KEY = "ajkmart_admin_language";
@@ -36,7 +36,7 @@ export function useLanguage() {
       // race condition: the in-flight 401 response arrived after the user
       // logged in and api.ts would delete the freshly-stored token, causing
       // an immediate logout.
-      if (!getToken()) {
+      if (!getAdminAccessToken()) {
         const local = getSavedLanguage();
         if (local) {
           setLang(local);

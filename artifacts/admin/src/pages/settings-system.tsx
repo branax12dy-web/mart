@@ -7,6 +7,7 @@ import {
   Wrench, Shield, FileSpreadsheet, Calendar, BookCopy, Save, RotateCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiAbsoluteFetchRaw, fetchAdminAbsoluteResponse } from "@/lib/api";
 
 type PendingUndo = { id: string; label: string; expiresAt: string; actionId: string };
 
@@ -23,8 +24,6 @@ type CustomFormType = "user" | "product" | "order" | "promo" | "banner" | null;
 
 export function SystemSection() {
   const { toast } = useToast();
-  const adminSecret = sessionStorage.getItem("ajkmart_admin_token") || "";
-
   const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -61,13 +60,7 @@ export function SystemSection() {
   }, []);
 
   const apiFetch = async (path: string, opts?: RequestInit) => {
-    const res = await fetch(`/api/admin/system${path}`, {
-      ...opts,
-      headers: { "x-admin-token": adminSecret, "Content-Type": "application/json", ...(opts?.headers || {}) },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Request failed");
-    return data;
+    return apiAbsoluteFetchRaw(`/api/admin/system${path}`, opts);
   };
 
   const loadStats = async () => {
@@ -155,7 +148,7 @@ export function SystemSection() {
   const handleBackup = async () => {
     setActionLoading("backup");
     try {
-      const res = await fetch("/api/admin/system/backup", { headers: { "x-admin-token": adminSecret } });
+      const res = await fetchAdminAbsoluteResponse("/api/admin/system/backup");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -195,7 +188,7 @@ export function SystemSection() {
       setDemoBackups(data.data ?? data);
     } catch {}
     setDemoBackupsLoading(false);
-  }, [adminSecret]);
+  }, []);
 
   const handleSaveDemoBackup = async () => {
     const label = newBackupLabel.trim() || `Demo Backup ${new Date().toLocaleDateString("en-PK")}`;
@@ -348,13 +341,10 @@ export function SystemSection() {
         };
       }
 
-      const res = await fetch(endpoint, {
+      const data = await apiAbsoluteFetchRaw(endpoint, {
         method: "POST",
-        headers: { "x-admin-token": adminSecret, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create");
 
       toast({ title: `${customFormOpen} created`, description: `New ${customFormOpen} has been added.` });
       setCustomFormOpen(null);
@@ -551,7 +541,7 @@ export function SystemSection() {
       <DataRetentionSection apiFetch={apiFetch} toast={toast} />
 
       {/* ═══ CSV / Report Export ═══ */}
-      <CSVExportSection adminSecret={adminSecret} toast={toast} />
+      <CSVExportSection toast={toast} />
 
       <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-gradient-to-br from-slate-50 to-white p-5">
         <div className="flex items-center gap-2 mb-4">
@@ -1097,14 +1087,14 @@ function DataRetentionSection({ apiFetch, toast }: { apiFetch: (path: string, op
 }
 
 /* ═══════════ CSV Export Section ═══════════ */
-function CSVExportSection({ adminSecret, toast }: { adminSecret: string; toast: any }) {
+function CSVExportSection({ toast }: { toast: any }) {
   const [downloading, setDownloading] = useState<string | null>(null);
 
   const downloadCSV = async (endpoint: string, filename: string, params?: Record<string, string>) => {
     setDownloading(endpoint);
     try {
       const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-      const res = await fetch(`/api/admin/system/export/${endpoint}${qs}`, { headers: { "x-admin-token": adminSecret } });
+      const res = await fetchAdminAbsoluteResponse(`/api/admin/system/export/${endpoint}${qs}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Export failed" }));
         throw new Error(err.error || "Export failed");

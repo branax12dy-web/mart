@@ -1,4 +1,4 @@
-import { fetcher } from "./api";
+import { fetcher, getAdminAccessToken } from "./api";
 
 export const PLATFORM_DEFAULTS = {
   currencySymbol: "Rs.",
@@ -20,7 +20,7 @@ export const loadPlatformConfig = async () => {
   // at app startup (main.tsx), which runs before login. Making an
   // unauthenticated request here causes a 401 that the api.ts handler could
   // use to clear a freshly-saved login token (race condition).
-  if (!sessionStorage.getItem("ajkmart_admin_token")) return;
+  if (!getAdminAccessToken()) return;
   try {
     const data = await fetcher("/platform-settings");
     const settings: { key: string; value: string }[] = data.settings || [];

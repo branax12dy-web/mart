@@ -11,7 +11,7 @@ import "leaflet/dist/leaflet.css";
 import UniversalMap, { type MapMarkerData, type MapPolylineData } from "@/components/UniversalMap";
 import { PLATFORM_DEFAULTS } from "@/lib/platformConfig";
 import { io, type Socket } from "socket.io-client";
-import { fetcher } from "@/lib/api";
+import { fetcher, getAdminAccessToken } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -723,13 +723,12 @@ export default function LiveRidersMap() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = getAdminAccessToken() ?? "";
     const socketUrl = window.location.origin;
     const socket = io(socketUrl, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: { adminToken: token },
-      extraHeaders: { "x-admin-token": token },
+      auth: { token },
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;

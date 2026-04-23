@@ -87,7 +87,7 @@ queryClient.getQueryCache().subscribe(event => {
       msg.includes("session expired") ||
       msg.includes("please log in") ||
       err?.status === 401;
-    // Note: Auth state is managed by adminAuthContext, not sessionStorage
+    // Note: Auth state is managed by adminAuthContext (in-memory only)
     // The fetcher will handle 401 with auto-refresh + redirect
     if (is401) {
       console.warn("Received 401 from query - auth will be handled by fetcher");

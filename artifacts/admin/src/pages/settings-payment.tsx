@@ -5,7 +5,7 @@ import {
   Gift, Star, Percent, CreditCard, ToggleRight, Shield,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetcher } from "@/lib/api";
+import { fetcher, apiAbsoluteFetchRaw } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,10 +50,7 @@ function GatewayCard({
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const r = await fetch(`/api/payments/test-connection/${prefix}`, {
-        headers: { "x-admin-token": sessionStorage.getItem("ajkmart_admin_token") || "" },
-      });
-      const data = await r.json() as any;
+      const data = await apiAbsoluteFetchRaw(`/api/payments/test-connection/${prefix}`) as any;
       setTestResult({ ok: data.ok, message: data.message });
       toast({ title: data.ok ? `${name} Connected ✅` : `${name} Failed`, description: data.message, variant: data.ok ? "default" : "destructive" });
     } catch {

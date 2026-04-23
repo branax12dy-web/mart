@@ -14,6 +14,7 @@ import {
   usePlatformSettings, useUpdatePlatformSettings,
 } from "@/hooks/use-admin";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { getAdminAccessToken } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -712,11 +713,11 @@ function DispatchMonitor() {
   }, []);
 
   useEffect(() => {
-    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = getAdminAccessToken() ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: { adminToken: token },
+      auth: { token },
       transports: ["websocket", "polling"],
     });
 
@@ -1510,11 +1511,11 @@ export default function Rides() {
 
   /* ── Real-time ride list sync via Socket.io ── */
   useEffect(() => {
-    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = getAdminAccessToken() ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: { adminToken: token },
+      auth: { token },
       transports: ["websocket", "polling"],
     });
     socket.on("ride:dispatch-update", () => {

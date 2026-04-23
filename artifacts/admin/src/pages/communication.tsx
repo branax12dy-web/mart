@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { io } from "socket.io-client";
-import { getToken } from "@/lib/api";
+import { getAdminAccessToken } from "@/lib/api";
 import {
   MessageCircle, Phone, Mic, Settings2, Shield, Bot, Flag, Download,
   Users, BarChart2, Eye, CheckCircle, Sparkles, Search,
@@ -148,11 +148,11 @@ function DashboardTab() {
   useEffect(() => {
     fetcher("/communication/dashboard").then(setStats).catch(() => {});
 
-    const token = getToken();
+    const token = getAdminAccessToken() ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
-      auth: { adminToken: token },
-      query: { adminToken: token ?? undefined, rooms: "admin-fleet" },
+      auth: { token },
+      query: { rooms: "admin-fleet" },
       transports: ["polling", "websocket"],
     });
 

@@ -230,11 +230,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     }, 60000);
     const cleanupErrorInterval = () => clearInterval(errorInterval);
 
-    // Socket uses access token from context instead of sessionStorage
+    // Socket uses in-memory access token from adminAuthContext
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: (cb: (data: Record<string, string>) => void) => cb({ adminToken: state.accessToken || "" }),
+      auth: (cb: (data: Record<string, string>) => void) => cb({ token: state.accessToken || "" }),
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;

@@ -6,6 +6,7 @@ import {
   Zap, BarChart3, Bike, Globe, KeyRound, Users, Settings,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiAbsoluteFetchRaw } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -61,19 +62,15 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
   const [disableToken, setDisableToken] = useState("");
   const [mfaLoading,   setMfaLoading]   = useState(false);
 
-  const adminSecret = sessionStorage.getItem("ajkmart_admin_token") || "";
-  const apiHeaders  = { "Content-Type": "application/json", "x-admin-token": adminSecret };
-
   const fetchLiveData = useCallback(async () => {
-    if (!adminSecret) return;
     setLiveLoading(true);
     try {
       const [dash, lockoutData, ipsData, auditData, eventsData] = await Promise.all([
-        fetch(`${window.location.origin}/api/admin/security-dashboard`, { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/login-lockouts`,     { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/blocked-ips`,        { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/audit-log?limit=50`, { headers: apiHeaders }).then(r => r.json()),
-        fetch(`${window.location.origin}/api/admin/security-events?limit=50`, { headers: apiHeaders }).then(r => r.json()),
+        apiAbsoluteFetchRaw(`/api/admin/security-dashboard`).catch(() => ({})),
+        apiAbsoluteFetchRaw(`/api/admin/login-lockouts`).catch(() => ({})),
+        apiAbsoluteFetchRaw(`/api/admin/blocked-ips`).catch(() => ({})),
+        apiAbsoluteFetchRaw(`/api/admin/audit-log?limit=50`).catch(() => ({})),
+        apiAbsoluteFetchRaw(`/api/admin/security-events?limit=50`).catch(() => ({})),
       ]);
       setSecDash(dash);
       setLockouts(lockoutData.lockouts ?? []);
@@ -82,7 +79,7 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
       setSecEvents(eventsData.events ?? []);
     } catch {}
     setLiveLoading(false);
-  }, [adminSecret]);
+  }, []);
 
   useEffect(() => {
     if (secTab === "auth" || secTab === "fraud" || secTab === "admin") {
@@ -91,17 +88,15 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
   }, [secTab, fetchLiveData]);
 
   const unlockPhone = async (phone: string) => {
-    await fetch(`${window.location.origin}/api/admin/login-lockouts/${encodeURIComponent(phone)}`, {
-      method: "DELETE", headers: apiHeaders,
-    });
+    await apiAbsoluteFetchRaw(`/api/admin/login-lockouts/${encodeURIComponent(phone)}`, { method: "DELETE" });
     toast({ title: "Account Unlocked", description: `${phone} has been unlocked.` });
     fetchLiveData();
   };
 
   const blockIP = async () => {
     if (!newBlockIP.trim()) return;
-    await fetch(`${window.location.origin}/api/admin/blocked-ips`, {
-      method: "POST", headers: apiHeaders,
+    await apiAbsoluteFetchRaw(`/api/admin/blocked-ips`, {
+      method: "POST",
       body: JSON.stringify({ ip: newBlockIP.trim(), reason: "Manual block by admin" }),
     });
     setNewBlockIP("");
@@ -110,20 +105,17 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
   };
 
   const unblockIP = async (ip: string) => {
-    await fetch(`${window.location.origin}/api/admin/blocked-ips/${encodeURIComponent(ip)}`, {
-      method: "DELETE", headers: apiHeaders,
-    });
+    await apiAbsoluteFetchRaw(`/api/admin/blocked-ips/${encodeURIComponent(ip)}`, { method: "DELETE" });
     toast({ title: "IP Unblocked", description: `${ip} has been unblocked.` });
     fetchLiveData();
   };
 
   const fetchMfaStatus = useCallback(async () => {
-    if (!adminSecret) return;
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/status`, { headers: apiHeaders }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/status`);
       setMfaStatus(data);
     } catch {}
-  }, [adminSecret]);
+  }, []);
 
   useEffect(() => {
     if (secTab === "admin") fetchMfaStatus();
@@ -132,7 +124,7 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
   const startMfaSetup = async () => {
     setMfaLoading(true);
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/setup`, { method: "POST", headers: apiHeaders }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/setup`, { method: "POST" });
       if (data.secret) { setMfaSetupData(data); setMfaToken(""); }
       else toast({ title: "Error", description: data.error ?? "Failed to start MFA setup", variant: "destructive" });
     } catch { toast({ title: "Error", description: "Network error", variant: "destructive" }); }
@@ -143,9 +135,9 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
     if (!mfaToken || mfaToken.length !== 6) return;
     setMfaLoading(true);
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/verify`, {
-        method: "POST", headers: apiHeaders, body: JSON.stringify({ token: mfaToken }),
-      }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/verify`, {
+        method: "POST", body: JSON.stringify({ token: mfaToken }),
+      });
       if (data.success) {
         toast({ title: "MFA Activated!", description: "Two-factor authentication is now enabled for your account." });
         setMfaSetupData(null); setMfaToken(""); fetchMfaStatus();
@@ -159,9 +151,9 @@ export function SecuritySection({ localValues, dirtyKeys, handleChange, handleTo
   const disableMfa = async () => {
     setMfaLoading(true);
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/disable`, {
-        method: "DELETE", headers: apiHeaders, body: JSON.stringify({ token: disableToken }),
-      }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/disable`, {
+        method: "DELETE", body: JSON.stringify({ token: disableToken }),
+      });
       if (data.success) {
         toast({ title: "MFA Disabled", description: "Two-factor authentication has been disabled." });
         setDisableToken(""); fetchMfaStatus();

@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { useUsers, useUpdateUser, useWalletTopup, useDeleteUser, useUserActivity, usePendingUsers, useApproveUser, useRejectUser, useRequestUserCorrection, useBulkBanUsers, useCreateUser, useAdminUserSessions, useRevokeUserSession, useRevokeAllUserSessions, type CreateUserInput } from "@/hooks/use-admin";
 import { fetcher } from "@/lib/api";
+import { useAdminAuth } from "@/lib/adminAuthContext";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
@@ -1308,6 +1309,7 @@ function AddressBookModal({ user, onClose }: { user: any; onClose: () => void })
 
 export default function Users() {
   const [, navigate] = useLocation();
+  const { logout } = useAdminAuth();
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const [conditionTier, setConditionTier] = useState("all");
@@ -1687,7 +1689,7 @@ export default function Users() {
               <Button variant="outline" size="sm" onClick={() => refetch()} className="rounded-xl border-red-200 text-red-700 hover:bg-red-100">
                 <RefreshCw className="w-4 h-4 mr-2" /> Retry
               </Button>
-              <Button variant="outline" size="sm" onClick={() => { sessionStorage.removeItem("ajkmart_admin_token"); window.location.href = (import.meta.env.BASE_URL?.replace(/\/$/, "") || "") + "/login"; }} className="rounded-xl border-red-200 text-red-700 hover:bg-red-100">
+              <Button variant="outline" size="sm" onClick={async () => { try { await logout(); } finally { window.location.href = (import.meta.env.BASE_URL?.replace(/\/$/, "") || "") + "/login"; } }} className="rounded-xl border-red-200 text-red-700 hover:bg-red-100">
                 Re-Login
               </Button>
             </div>

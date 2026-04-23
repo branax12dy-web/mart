@@ -8,26 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Toggle, Field, SecretInput, SLabel } from "@/components/AdminShared";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/lib/api";
+import { apiAbsoluteFetch } from "@/lib/api";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
-const API_BASE = () => `${window.location.origin}/api`;
-
 async function mapsApiFetch(path: string, options: RequestInit = {}) {
-  const token = getToken();
-  const res = await fetch(`${API_BASE()}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "x-admin-token": token } : {}),
-      ...options.headers,
-    },
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json.data !== undefined ? json.data : json;
+  return apiAbsoluteFetch(`/api${path}`, options);
 }
 
 type TestResult = { ok: boolean; latencyMs: number; error?: string; testedAt?: string } | null;
@@ -246,7 +233,7 @@ export function MapsMgmtSection({ localValues, dirtyKeys, handleChange, handleTo
 
   const loadMapConfig = useCallback(async () => {
     try {
-      const data = await fetch(`${API_BASE()}/maps/config`).then(r => r.json());
+      const data = await mapsApiFetch(`/maps/config`);
       setMapConfig(data?.data ?? data);
     } catch { /* non-critical */ }
   }, []);

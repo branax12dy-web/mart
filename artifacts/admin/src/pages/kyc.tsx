@@ -6,11 +6,7 @@ import {
   Filter, RefreshCw, X, ChevronDown,
 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
-
-function adminHeaders() {
-  return { Authorization: `Bearer ${sessionStorage.getItem("ajkmart_admin_token")}`, "Content-Type": "application/json" };
-}
+import { apiAbsoluteFetchRaw } from "@/lib/api";
 
 const STATUS_CONFIG = {
   pending:  { label: "Pending Review", color: "text-amber-700",  bg: "bg-amber-100",  border: "border-amber-300",  dot: "bg-amber-400",  Icon: Clock },
@@ -90,18 +86,17 @@ function KycDetailPanel({ record, onClose, onApprove, onReject }: {
 
   const approveMut = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`${API_BASE}/kyc/admin/${record.id}/approve`, { method: "POST", headers: adminHeaders() });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Approval failed"); }
-      return r.json();
+      return apiAbsoluteFetchRaw(`/api/kyc/admin/${record.id}/approve`, { method: "POST" });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-kyc"] }); onApprove(); onClose(); },
   });
 
   const rejectMut = useMutation({
     mutationFn: async (reason: string) => {
-      const r = await fetch(`${API_BASE}/kyc/admin/${record.id}/reject`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ reason }) });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Rejection failed"); }
-      return r.json();
+      return apiAbsoluteFetchRaw(`/api/kyc/admin/${record.id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-kyc"] }); setShowReject(false); onReject(""); onClose(); },
   });
@@ -109,9 +104,8 @@ function KycDetailPanel({ record, onClose, onApprove, onReject }: {
   const { data: fullRecord } = useQuery({
     queryKey: ["admin-kyc-detail", record.id],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/kyc/admin/${record.id}`, { headers: adminHeaders() });
-      if (!r.ok) throw new Error("Failed to fetch details");
-      return r.json() as Promise<KycRecord>;
+      const j = await apiAbsoluteFetchRaw(`/api/kyc/admin/${record.id}`);
+      return (j?.data ?? j) as KycRecord;
     },
   });
 
@@ -261,9 +255,8 @@ export default function KycPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["admin-kyc", statusFilter],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/kyc/admin/list?status=${statusFilter}&limit=50`, { headers: adminHeaders() });
-      if (!r.ok) throw new Error("Failed to fetch KYC list");
-      return r.json() as Promise<{ records: KycRecord[] }>;
+      const j = await apiAbsoluteFetchRaw(`/api/kyc/admin/list?status=${statusFilter}&limit=50`);
+      return (j?.data ?? j) as { records: KycRecord[] };
     },
     refetchInterval: 30000,
   });

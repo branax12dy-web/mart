@@ -19,22 +19,10 @@ import {
   Settings, ChevronDown, ChevronRight, Save, Loader2, AlertTriangle,
 } from "lucide-react";
 
-const getToken = () => sessionStorage.getItem("ajkmart_admin_token");
-const apiBase = () => `${window.location.origin}/api/van`;
+import { apiAbsoluteFetch } from "@/lib/api";
 
 async function vanFetch(path: string, opts: RequestInit = {}) {
-  const token = getToken();
-  const res = await fetch(`${apiBase()}${path}`, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "x-admin-token": token } : {}),
-      ...opts.headers,
-    },
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json.data !== undefined ? json.data : json;
+  return apiAbsoluteFetch(`/api/van${path}`, opts);
 }
 
 type SeatTier = "window" | "aisle" | "economy";
@@ -1031,21 +1019,8 @@ const RULE_SECTIONS = [
   },
 ];
 
-const adminApiBase = () => `${window.location.origin}/api/admin/system`;
-
 async function adminFetch(path: string, opts: RequestInit = {}) {
-  const token = getToken();
-  const res = await fetch(`${adminApiBase()}${path}`, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "x-admin-token": token } : {}),
-      ...opts.headers,
-    },
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json.data !== undefined ? json.data : json;
+  return apiAbsoluteFetch(`/api/admin/system${path}`, opts);
 }
 
 function RuleRow({ setting, onSave, saving }: { setting: PlatformSetting; onSave: (key: string, value: string) => void; saving: string | null }) {

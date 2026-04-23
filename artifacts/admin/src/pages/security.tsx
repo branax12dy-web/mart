@@ -6,7 +6,7 @@ import {
   ShieldCheck, Loader2, Users,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetcher } from "@/lib/api";
+import { fetcher, apiAbsoluteFetchRaw } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -85,9 +85,6 @@ export default function SecurityPage() {
   const [disableToken, setDisableToken] = useState("");
   const [mfaLoading,   setMfaLoading]  = useState(false);
 
-  const adminToken  = sessionStorage.getItem("ajkmart_admin_token") || "";
-  const apiHeaders  = { "Content-Type": "application/json", "x-admin-token": adminToken };
-
   /* ── Load platform settings ── */
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -109,18 +106,13 @@ export default function SecurityPage() {
 
   /* ── Load live data (lockouts, blocked IPs, events, dashboard) ── */
   const fetchLiveData = useCallback(async () => {
-    if (!adminToken) return;
     setLiveLoading(true);
     try {
-      const checkOk = async (r: Response) => {
-        if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
-        return r.json();
-      };
       const [dash, lockoutData, ipsData, eventsData] = await Promise.all([
-        fetch(`${window.location.origin}/api/admin/security-dashboard`, { headers: apiHeaders }).then(checkOk),
-        fetch(`${window.location.origin}/api/admin/login-lockouts`,     { headers: apiHeaders }).then(checkOk),
-        fetch(`${window.location.origin}/api/admin/blocked-ips`,        { headers: apiHeaders }).then(checkOk),
-        fetch(`${window.location.origin}/api/admin/security-events?limit=30`, { headers: apiHeaders }).then(checkOk),
+        apiAbsoluteFetchRaw(`/api/admin/security-dashboard`),
+        apiAbsoluteFetchRaw(`/api/admin/login-lockouts`),
+        apiAbsoluteFetchRaw(`/api/admin/blocked-ips`),
+        apiAbsoluteFetchRaw(`/api/admin/security-events?limit=30`),
       ]);
       setSecDash(dash);
       setLockouts(lockoutData.lockouts ?? []);
@@ -130,16 +122,15 @@ export default function SecurityPage() {
       toast({ title: "Failed to load live data", description: (e as Error).message, variant: "destructive" });
     }
     setLiveLoading(false);
-  }, [adminToken]);
+  }, [toast]);
 
   /* ── Load MFA status ── */
   const fetchMfaStatus = useCallback(async () => {
-    if (!adminToken) return;
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/status`, { headers: apiHeaders }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/status`);
       setMfaStatus(data);
     } catch { /* ignore */ }
-  }, [adminToken]);
+  }, []);
 
   /* ── Auto-load live data when switching to auth or fraud tabs ── */
   useEffect(() => {
@@ -207,10 +198,7 @@ export default function SecurityPage() {
   /* ── Lockout management ── */
   const unlockPhone = async (phone: string) => {
     try {
-      const r = await fetch(`${window.location.origin}/api/admin/login-lockouts/${encodeURIComponent(phone)}`, {
-        method: "DELETE", headers: apiHeaders,
-      });
-      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
+      await apiAbsoluteFetchRaw(`/api/admin/login-lockouts/${encodeURIComponent(phone)}`, { method: "DELETE" });
       toast({ title: "Account Unlocked", description: `${phone} has been unlocked.` });
       fetchLiveData();
     } catch (e: unknown) {
@@ -229,11 +217,10 @@ export default function SecurityPage() {
       return;
     }
     try {
-      const r = await fetch(`${window.location.origin}/api/admin/blocked-ips`, {
-        method: "POST", headers: apiHeaders,
+      await apiAbsoluteFetchRaw(`/api/admin/blocked-ips`, {
+        method: "POST",
         body: JSON.stringify({ ip, reason: "Manual block by admin" }),
       });
-      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
       setNewBlockIP("");
       toast({ title: "IP Blocked", description: `${ip} has been blocked.` });
       fetchLiveData();
@@ -244,10 +231,7 @@ export default function SecurityPage() {
 
   const unblockIP = async (ip: string) => {
     try {
-      const r = await fetch(`${window.location.origin}/api/admin/blocked-ips/${encodeURIComponent(ip)}`, {
-        method: "DELETE", headers: apiHeaders,
-      });
-      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${r.status}`); }
+      await apiAbsoluteFetchRaw(`/api/admin/blocked-ips/${encodeURIComponent(ip)}`, { method: "DELETE" });
       toast({ title: "IP Unblocked", description: `${ip} has been unblocked.` });
       fetchLiveData();
     } catch (e: unknown) {
@@ -259,9 +243,7 @@ export default function SecurityPage() {
   const startMfaSetup = async () => {
     setMfaLoading(true);
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/setup`, {
-        method: "POST", headers: apiHeaders,
-      }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/setup`, { method: "POST" });
       if (data.secret) { setMfaSetupData(data); setMfaToken(""); }
       else toast({ title: "Error", description: data.error ?? "Failed to start MFA setup", variant: "destructive" });
     } catch {
@@ -277,9 +259,9 @@ export default function SecurityPage() {
     }
     setMfaLoading(true);
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/verify`, {
-        method: "POST", headers: apiHeaders, body: JSON.stringify({ token: mfaToken }),
-      }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/verify`, {
+        method: "POST", body: JSON.stringify({ token: mfaToken }),
+      });
       if (data.success) {
         toast({ title: "MFA Activated!", description: "Two-factor authentication is now enabled." });
         setMfaSetupData(null); setMfaToken(""); fetchMfaStatus();
@@ -299,9 +281,9 @@ export default function SecurityPage() {
     }
     setMfaLoading(true);
     try {
-      const data = await fetch(`${window.location.origin}/api/admin/mfa/disable`, {
-        method: "DELETE", headers: apiHeaders, body: JSON.stringify({ token: disableToken }),
-      }).then(r => r.json());
+      const data = await apiAbsoluteFetchRaw(`/api/admin/mfa/disable`, {
+        method: "DELETE", body: JSON.stringify({ token: disableToken }),
+      });
       if (data.success) {
         toast({ title: "MFA Disabled", description: "Two-factor authentication has been disabled." });
         setDisableToken(""); fetchMfaStatus();

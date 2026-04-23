@@ -10,20 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { io, type Socket } from "socket.io-client";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
-
-function adminHeaders() {
-  return {
-    Authorization: `Bearer ${sessionStorage.getItem("ajkmart_admin_token")}`,
-    "Content-Type": "application/json",
-  };
-}
+import { apiAbsoluteFetch } from "@/lib/api";
 
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers: { ...adminHeaders(), ...(opts.headers as Record<string, string> || {}) } });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json.data !== undefined ? json.data : json;
+  return apiAbsoluteFetch(`/api${path}`, opts);
 }
 
 type Conversation = {
@@ -131,13 +121,11 @@ export default function SupportChatPage() {
     if (!selectedUserId || !reply.trim() || sending) return;
     setSending(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/support-chat/conversations/${selectedUserId}/reply`, {
+      const json = await apiAbsoluteFetch(`/api/admin/support-chat/conversations/${selectedUserId}/reply`, {
         method: "POST",
-        headers: adminHeaders(),
         body: JSON.stringify({ message: reply.trim() }),
-      });
-      const json = await res.json();
-      if (res.ok && json.data?.message) {
+      }).then((d: any) => ({ data: d })).catch((e: any) => ({ error: e?.message || "Failed" }));
+      if (!("error" in json) && json.data?.message) {
         qc.setQueryData(["admin-support-messages", selectedUserId], (old: { messages: ChatMessage[] } | undefined) => {
           if (!old) return old;
           const exists = old.messages.some(m => m.id === json.data.message.id);

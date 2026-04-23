@@ -9,7 +9,7 @@ import {
   useAdminReviews, useModerationQueue, useApproveReview,
   useRejectReview, useRunRatingSuspension
 } from "@/hooks/use-admin";
-import { fetcher, getApiBase, getToken } from "@/lib/api";
+import { fetcher, fetchAdminAbsoluteResponse } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
@@ -498,10 +498,8 @@ export default function ReviewsPage() {
     const qs = new URLSearchParams();
     if (statusFilter !== "all") qs.set("status", statusFilter);
     if (typeFilter !== "all") qs.set("type", typeFilter);
-    const token = getToken();
-    const base = getApiBase();
-    const url = `${base}/reviews/export?${qs.toString()}`;
-    const res = await fetch(url, { headers: token ? { "x-admin-token": token } : {} });
+    const url = `/api/admin/reviews/export?${qs.toString()}`;
+    const res = await fetchAdminAbsoluteResponse(url);
     if (!res.ok) { toast({ title: "Export failed", variant: "destructive" }); return; }
     const blob = await res.blob();
     const a = document.createElement("a");

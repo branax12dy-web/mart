@@ -7,6 +7,7 @@ import {
   Loader2, Check, ArrowLeft, ArrowRight, Monitor,
 } from "lucide-react";
 import { fetcher } from "@/lib/api";
+import { useAdminAuth } from "@/lib/adminAuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -190,21 +191,11 @@ function PopupPreview({ campaign }: { campaign: Partial<typeof EMPTY_FORM & { ti
   );
 }
 
-function getAdminRole(): string {
-  try {
-    const token = sessionStorage.getItem("ajkmart_admin_token");
-    if (!token) return "support";
-    const payload = JSON.parse(atob(token.split(".")[1]!));
-    return payload.role || "support";
-  } catch {
-    return "support";
-  }
-}
-
 export default function PopupsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const adminRole = getAdminRole();
+  const { state: authState } = useAdminAuth();
+  const adminRole = authState.user?.role || "support";
   const canWrite = adminRole === "super" || adminRole === "manager";
   const [activeTab, setActiveTab] = useState<Tab>("campaigns");
   const [builderOpen, setBuilderOpen] = useState(false);

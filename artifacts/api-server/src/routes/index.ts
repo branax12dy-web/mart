@@ -48,7 +48,17 @@ import deepLinksPublicRouter from "./deep-links-public.js";
 const router: IRouter = Router();
 
 router.use(healthRouter);
-router.use("/auth", authRouter);
+
+/**
+ * Legacy customer-facing /api/auth router (OTP, login, refresh, 2FA, social
+ * sign-in for AJKMart users). The admin SSoT lives entirely under
+ * /api/admin/auth/* (admin-auth-v2). Set ADMIN_LEGACY_AUTH_DISABLED=1 to
+ * fully unmount this router once all clients have migrated. Defaults to
+ * mounted to keep the customer (ajkmart) app functional.
+ */
+if (process.env["ADMIN_LEGACY_AUTH_DISABLED"] !== "1") {
+  router.use("/auth", authRouter);
+}
 router.use("/users", usersRouter);
 router.use("/products", productsRouter);
 router.use("/orders", ordersRouter);

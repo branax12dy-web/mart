@@ -9,17 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
-
-function adminHeaders() {
-  return { Authorization: `Bearer ${sessionStorage.getItem("ajkmart_admin_token")}` };
-}
+import { apiAbsoluteFetch } from "@/lib/api";
 
 async function apiFetch(path: string) {
-  const res = await fetch(`${API_BASE}${path}`, { headers: adminHeaders() });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json.data !== undefined ? json.data : json;
+  return apiAbsoluteFetch(`/api${path}`);
 }
 
 type TrendingProduct = {
@@ -103,8 +96,7 @@ export default function SearchAnalyticsPage() {
   const { data: wishlistData, isLoading: wishLoading } = useQuery<{ items: WishlistItem[] }>({
     queryKey: ["admin-wishlist-analytics"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/admin/users?limit=1`, { headers: adminHeaders() });
-      if (!res.ok) return { items: [] };
+      try { await apiAbsoluteFetch(`/api/admin/users?limit=1`); } catch { /* ignore */ }
       return { items: [] };
     },
     staleTime: 5 * 60_000,

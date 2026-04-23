@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AlertTriangle, RefreshCw, Phone, MapPin, Car, Clock, CheckCircle, CheckCheck, X } from "lucide-react";
-import { fetcher } from "@/lib/api";
+import { fetcher, getAdminAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -319,12 +319,11 @@ export default function SosAlerts() {
 
   /* ── Socket.io real-time connection ── */
   useEffect(() => {
-    const token = sessionStorage.getItem("ajkmart_admin_token") ?? "";
+    const token = getAdminAccessToken() ?? "";
     const socket = io(window.location.origin, {
       path: "/api/socket.io",
       query: { rooms: "admin-fleet" },
-      auth: { adminToken: token },
-      extraHeaders: { "x-admin-token": token },
+      auth: { token },
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;

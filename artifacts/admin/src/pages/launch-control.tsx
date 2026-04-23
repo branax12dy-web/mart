@@ -9,7 +9,7 @@ import {
   Globe,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetcher } from "@/lib/api";
+import { fetcher, apiAbsoluteFetchRaw } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -236,8 +236,6 @@ export default function LaunchControl() {
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const adminSecret = sessionStorage.getItem("ajkmart_admin_token") ?? "";
-  const headers = { "Content-Type": "application/json", "x-admin-token": adminSecret };
 
   /* ── Data fetching ── */
   const { data: launchData, isLoading, refetch } = useQuery<LaunchData>({
@@ -274,10 +272,12 @@ export default function LaunchControl() {
 
   /* ── Helpers ── */
   async function apiCall(url: string, options: RequestInit): Promise<{ ok: boolean; data: Record<string, unknown> }> {
-    const resp = await fetch(url, { ...options, headers });
-    let data: Record<string, unknown> = {};
-    try { data = await resp.json() as Record<string, unknown>; } catch { /* non-json body */ }
-    return { ok: resp.ok, data };
+    try {
+      const data = await apiAbsoluteFetchRaw(url, options);
+      return { ok: true, data: (data ?? {}) as Record<string, unknown> };
+    } catch (e: any) {
+      return { ok: false, data: { message: e?.message ?? "Request failed" } };
+    }
   }
 
   /* ── Mutations ── */
