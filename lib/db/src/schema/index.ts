@@ -14,6 +14,7 @@ export * from "./platform_settings";
 export * from "./flash_deals";
 export * from "./promo_codes";
 export * from "./admin_accounts";
+export * from "./admin_sessions";
 export * from "./reviews";
 export * from "./system_snapshots";
 export * from "./demo_backups";

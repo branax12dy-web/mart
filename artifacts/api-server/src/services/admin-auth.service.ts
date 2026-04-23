@@ -1,0 +1,281 @@
+import { db } from '@workspace/db';
+import {
+  adminAccountsTable,
+  adminSessionsTable,
+  type AdminSession,
+  type AdminAccount,
+} from '@workspace/db/schema';
+import { eq, and, isNull } from 'drizzle-orm';
+import { verifyPassword } from './password.js';
+import { generateId } from '../lib/id.js';
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  sign2faChallengeToken,
+} from '../utils/admin-jwt.js';
+import { createCsrfCookie, verifyCsrfToken } from '../utils/admin-csrf.js';
+import { hashToken, verifyTokenHash } from '../utils/admin-hash.js';
+import { verifyTotpToken } from './totp.js';
+
+/**
+ * Admin login service
+ * Handles credential verification and session creation
+ */
+export async function adminLogin(
+  username: string,
+  password: string,
+  ip: string,
+  userAgent?: string
+): Promise<{
+  success: boolean;
+  admin?: AdminAccount;
+  requiresMfa?: boolean;
+  tempToken?: string;
+  error?: string;
+}> {
+  // Find admin by username or name
+  const admins = await db
+    .select()
+    .from(adminAccountsTable)
+    .where(eq(adminAccountsTable.isActive, true));
+
+  const admin = admins.find(
+    (a) =>
+      (a.username && a.username.toLowerCase() === username.toLowerCase()) ||
+      a.name.toLowerCase() === username.toLowerCase()
+  );
+
+  if (!admin) {
+    return { success: false, error: 'Invalid username or password' };
+  }
+
+  // Verify password
+  const passwordValid = verifyPassword(password, admin.secret);
+  if (!passwordValid) {
+    return { success: false, error: 'Invalid username or password' };
+  }
+
+  // Check if MFA is enabled for this admin
+  if (admin.totpEnabled && admin.totpSecret) {
+    // Generate temporary 2FA challenge token
+    const tempToken = sign2faChallengeToken(admin.id);
+    return {
+      success: false,
+      requiresMfa: true,
+      tempToken,
+      admin,
+    };
+  }
+
+  return { success: true, admin };
+}
+
+/**
+ * Verify TOTP token and issue session
+ */
+export async function verify2fa(
+  adminId: string,
+  totp: string,
+  ip: string,
+  userAgent?: string
+): Promise<{
+  success: boolean;
+  admin?: AdminAccount;
+  error?: string;
+}> {
+  const admin = await db
+    .select()
+    .from(adminAccountsTable)
+    .where(eq(adminAccountsTable.id, adminId))
+    .then((rows) => rows[0]);
+
+  if (!admin || !admin.totpSecret) {
+    return { success: false, error: 'Admin not found or MFA not configured' };
+  }
+
+  const totpValid = verifyTotpToken(admin.totpSecret, totp);
+  if (!totpValid) {
+    return { success: false, error: 'Invalid TOTP code' };
+  }
+
+  return { success: true, admin };
+}
+
+/**
+ * Create a new admin session
+ * Returns access token, refresh token, and CSRF token
+ */
+export async function createAdminSession(
+  admin: AdminAccount,
+  ip: string,
+  userAgent?: string
+): Promise<{
+  displayName: string;
+  name: string;
+  accessToken: string;
+  refreshToken: string;
+  csrfToken: string;
+  expiresAt: string;
+  sessionId: string;
+}> {
+  const sessionId = generateId();
+
+  // Generate tokens
+  const accessToken = signAccessToken(admin.id, admin.role, admin.name);
+  const refreshToken = signRefreshToken(admin.id, sessionId);
+  const csrfToken = createCsrfCookie(sessionId);
+
+  // Store refresh token hash in database
+  const refreshTokenHash = hashToken(refreshToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+  await db.insert(adminSessionsTable).values({
+    id: sessionId,
+    adminId: admin.id,
+    refreshTokenHash,
+    ip,
+    userAgent,
+    expiresAt,
+    lastUsedAt: new Date(),
+  });
+
+  // Update last login
+  await db
+    .update(adminAccountsTable)
+    .set({ lastLoginAt: new Date() })
+    .where(eq(adminAccountsTable.id, admin.id));
+
+  return {
+    displayName: admin.name,
+    name: admin.name,
+    accessToken,
+    refreshToken,
+    csrfToken,
+    expiresAt: expiresAt.toISOString(),
+    sessionId,
+  };
+}
+
+/**
+ * Refresh access token using refresh token
+ * Implements refresh token rotation for security
+ */
+export async function refreshAdminSession(
+  refreshToken: string,
+  ip: string,
+  userAgent?: string
+): Promise<{
+  success: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  csrfToken?: string;
+  admin?: AdminAccount;
+  error?: string;
+}> {
+  try {
+    const payload = verifyRefreshToken(refreshToken);
+
+    // Find and validate session
+    const session = await db
+      .select()
+      .from(adminSessionsTable)
+      .where(
+        and(
+          eq(adminSessionsTable.id, payload.sessionId),
+          eq(adminSessionsTable.adminId, payload.sub),
+          isNull(adminSessionsTable.revokedAt) // Not revoked
+        )
+      )
+      .then((rows) => rows[0]);
+
+    if (!session) {
+      return { success: false, error: 'Session not found or revoked' };
+    }
+
+    // Verify refresh token hash matches
+    try {
+      verifyTokenHash(refreshToken, session.refreshTokenHash);
+    } catch {
+      return { success: false, error: 'Invalid refresh token' };
+    }
+
+    // Check session expiry
+    if (session.expiresAt < new Date()) {
+      return { success: false, error: 'Session expired' };
+    }
+
+    // Get admin account
+    const admin = await db
+      .select()
+      .from(adminAccountsTable)
+      .where(eq(adminAccountsTable.id, payload.sub))
+      .then((rows) => rows[0]);
+
+    if (!admin || !admin.isActive) {
+      return { success: false, error: 'Admin account not found or inactive' };
+    }
+
+    // Generate new tokens with rotation
+    const newAccessToken = signAccessToken(admin.id, admin.role, admin.name);
+    const newRefreshToken = signRefreshToken(admin.id, session.id);
+    const newRefreshTokenHash = hashToken(newRefreshToken);
+    const newCsrfToken = createCsrfCookie(session.id);
+
+    // Update session with new refresh token hash
+    await db
+      .update(adminSessionsTable)
+      .set({
+        refreshTokenHash: newRefreshTokenHash,
+        lastUsedAt: new Date(),
+        ip, // Update IP (can detect suspicious activity)
+        userAgent, // Update user agent
+      })
+      .where(eq(adminSessionsTable.id, session.id));
+
+    return {
+      success: true,
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      csrfToken: newCsrfToken,
+      admin,
+    };
+  } catch (err) {
+    return { success: false, error: 'Invalid refresh token' };
+  }
+}
+
+/**
+ * Logout admin - revoke session
+ */
+export async function logoutAdminSession(sessionId: string): Promise<void> {
+  await db
+    .update(adminSessionsTable)
+    .set({ revokedAt: new Date() })
+    .where(eq(adminSessionsTable.id, sessionId));
+}
+
+/**
+ * Revoke all sessions for an admin (security measure)
+ */
+export async function revokeAllAdminSessions(adminId: string): Promise<void> {
+  await db
+    .update(adminSessionsTable)
+    .set({ revokedAt: new Date() })
+    .where(eq(adminSessionsTable.adminId, adminId));
+}
+
+/**
+ * Get all active sessions for an admin
+ */
+export async function getAdminActiveSessions(adminId: string): Promise<AdminSession[]> {
+  return db
+    .select()
+    .from(adminSessionsTable)
+    .where(
+      and(
+        eq(adminSessionsTable.adminId, adminId),
+        isNull(adminSessionsTable.revokedAt)
+      )
+    );
+}

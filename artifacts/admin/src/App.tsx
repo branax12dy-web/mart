@@ -10,6 +10,8 @@ import { initSentry, setSentryUser } from "@/lib/sentry";
 import { initAnalytics, identifyUser } from "@/lib/analytics";
 import { registerPush } from "@/lib/push";
 import { initErrorReporter, reportError } from "@/lib/error-reporter";
+import { AdminAuthProvider, useAdminAuth } from "@/lib/adminAuthContext";
+import { setupAdminFetcherHandlers } from "@/lib/adminFetcher";
 
 // Layout & Pages
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -95,29 +97,25 @@ queryClient.getQueryCache().subscribe(event => {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const [location, setLocation] = useLocation();
-  const [isChecking, setIsChecking] = useState(true);
+  const { state } = useAdminAuth();
 
   useEffect(() => {
-    const token = sessionStorage.getItem("ajkmart_admin_token");
-    if (!token) {
+    if (!state.isLoading && !state.accessToken) {
       setLocation("/login");
-      return;
     }
-    try {
-      const parts = token.split(".");
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob((parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/")));
-        if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
-          sessionStorage.removeItem("ajkmart_admin_token");
-          setLocation("/login");
-          return;
-        }
-      }
-    } catch {}
-    setIsChecking(false);
-  }, [location, setLocation]);
+  }, [state.accessToken, state.isLoading, setLocation]);
 
-  if (isChecking) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
+  if (state.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!state.accessToken) {
+    return null;
+  }
 
   return (
     <AdminLayout>
@@ -127,18 +125,19 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 }
 
 function Router() {
+  const { state } = useAdminAuth();
+  const [, setLocation] = useLocation();
+
   return (
     <Switch>
       {/* Public Route */}
       <Route path="/login" component={Login} />
       <Route path="/">
         {() => {
-          const token = sessionStorage.getItem("ajkmart_admin_token");
-          if (token) {
-            window.location.replace((import.meta.env.BASE_URL?.replace(/\/$/, "") || "") + "/dashboard");
-            return null;
+          if (state.accessToken && !state.isLoading) {
+            setLocation("/dashboard");
           }
-          return <Login />;
+          return null;
         }}
       </Route>
 
@@ -202,6 +201,16 @@ function LanguageInit() {
 }
 
 function IntegrationsInit() {
+  const { state, refreshAccessToken } = useAdminAuth();
+
+  useEffect(() => {
+    // Setup fetcher with auth handlers
+    setupAdminFetcherHandlers(
+      () => state.accessToken,
+      () => refreshAccessToken()
+    );
+  }, [state.accessToken, refreshAccessToken]);
+
   useEffect(() => {
     initErrorReporter();
 
@@ -227,31 +236,18 @@ function IntegrationsInit() {
       })
       .catch(() => {});
 
-    /* Register admin push when token present */
-    const token = sessionStorage.getItem("ajkmart_admin_token");
-    if (token) {
+    /* Register admin push when authenticated */
+    if (state.accessToken && !state.isLoading) {
       if (typeof Notification !== "undefined" && Notification.requestPermission) {
         Notification.requestPermission()
           .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })
           .catch(() => {});
       }
-      setSentryUser("admin");
-      identifyUser("admin");
+      setSentryUser(state.user?.id || "admin");
+      identifyUser(state.user?.id || "admin");
     }
+  }, [state.accessToken, state.user, state.isLoading]);
 
-    /* Also listen for post-login storage events to init push */
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "ajkmart_admin_token" && e.newValue) {
-        if (typeof Notification !== "undefined" && Notification.requestPermission) {
-          Notification.requestPermission()
-            .then(perm => { if (perm === "granted") registerPush().catch(() => {}); })
-            .catch(() => {});
-        }
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
   return null;
 }
 
