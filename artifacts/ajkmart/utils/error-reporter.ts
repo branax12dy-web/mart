@@ -3,7 +3,7 @@ import { API_BASE } from "./api";
 
 const SOURCE_APP = "customer";
 let _initialized = false;
-let _queue: Array<Record<string, unknown>> = [];
+let _queue: Record<string, unknown>[] = [];
 let _flushing = false;
 
 async function sendReport(report: Record<string, unknown>): Promise<void> {

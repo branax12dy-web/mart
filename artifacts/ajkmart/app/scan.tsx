@@ -1,9 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { Linking } from "react-native";
-import { router } from "expo-router";
-import React, { useRef, useState } from "react";
-import {
+import { Linking ,
   ActivityIndicator,
   Platform,
   StyleSheet,
@@ -11,6 +8,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { router } from "expo-router";
+import React, { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PermissionGuide } from "@/components/PermissionGuide";
 import Colors from "@/constants/colors";

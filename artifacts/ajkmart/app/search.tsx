@@ -89,7 +89,7 @@ export default function UniversalSearchScreen() {
 
   const [query, setQuery] = useState(params.q ?? "");
   const [activeCategory, setActiveCategory] = useState(params.category ?? "");
-  const [sections, setSections] = useState<Array<{ title: string; data: SearchResult[]; type: ServiceKey }>>([]);
+  const [sections, setSections] = useState<{ title: string; data: SearchResult[]; type: ServiceKey }[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [added, setAdded] = useState<Record<string, boolean>>({});
@@ -207,7 +207,7 @@ export default function UniversalSearchScreen() {
         )
       );
 
-      const newSections: Array<{ title: string; data: SearchResult[]; type: ServiceKey }> = [];
+      const newSections: { title: string; data: SearchResult[]; type: ServiceKey }[] = [];
       let anySuccess = false;
       let maxPages = 0;
       results.forEach((result, i) => {

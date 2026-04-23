@@ -16,12 +16,11 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { reportError as reportErrorToBackend } from "@/utils/error-reporter";
+import { reportError as reportErrorToBackend , initErrorReporter } from "@/utils/error-reporter";
 import { PwaInstallBanner } from "@/components/PwaInstallBanner";
 import { registerServiceWorker } from "@/utils/register-service-worker";
 import { initSentry, setSentryUser } from "@/utils/sentry";
 import { initAnalytics, trackScreen, identifyUser } from "@/utils/analytics";
-import { initErrorReporter } from "@/utils/error-reporter";
 import { registerPush } from "@/utils/push";
 import { AuthProvider, useAuth, hasRole } from "@/context/AuthContext";
 import { hasSeenOnboarding } from "./onboarding";
@@ -32,6 +31,9 @@ import { PlatformConfigProvider, usePlatformConfig } from "@/context/PlatformCon
 import { PerformanceProvider } from "@/context/PerformanceContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { ToastProvider } from "@/context/ToastContext";
+
+import { OfflineBar, SlowConnectionBar } from "@/components/OfflineBar";
+import { tDual, type TranslationKey } from "@workspace/i18n";
 
 function DeferredProviders({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -46,9 +48,6 @@ function DeferredProviders({ children }: { children: React.ReactNode }) {
     </CartProvider>
   );
 }
-
-import { OfflineBar, SlowConnectionBar } from "@/components/OfflineBar";
-import { tDual, type TranslationKey } from "@workspace/i18n";
 
 const _domain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
 if (_domain) setBaseUrl(`https://${_domain}/api`);
@@ -474,7 +473,7 @@ function TermsModal({ visible, termsVersion, onAccept }: { visible: boolean; ter
 
 function WhatsNewSheet({ visible, releaseNotes, appVersion, onDismiss }: {
   visible: boolean;
-  releaseNotes: Array<{ id: string; version: string; releaseDate: string; notes: string[]; sortOrder: number }>;
+  releaseNotes: { id: string; version: string; releaseDate: string; notes: string[]; sortOrder: number }[];
   appVersion: string;
   onDismiss: () => void;
 }) {

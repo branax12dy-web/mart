@@ -222,13 +222,13 @@ export interface PlatformConfig {
     appStoreUrl:   string;
     playStoreUrl:  string;
   };
-  releaseNotes: Array<{
+  releaseNotes: {
     id:          string;
     version:     string;
     releaseDate: string;
     notes:       string[];
     sortOrder:   number;
-  }>;
+  }[];
   uploads?: {
     maxImageMb?: number;
     maxVideoMb?: number;
@@ -242,13 +242,13 @@ export interface PlatformConfig {
     flashDealsLimit?: number;
   };
   onboarding?: {
-    slides?: Array<{
+    slides?: {
       id: string;
       title: string;
       subtitle?: string;
       image?: string;
       backgroundColor?: string;
-    }>;
+    }[];
   };
   supportHoursSchedule?: {
     [day: string]: { open: string; close: string; closed?: boolean };

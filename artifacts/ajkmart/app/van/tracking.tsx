@@ -66,9 +66,13 @@ function TrackingMap({ location, pickupLat, pickupLng }: { location: VanLocation
   const vanLng = location?.longitude ?? pickupLng;
 
   if (Platform.OS === "web") {
+    // Hook order is stable here: Platform.OS is a build-time constant per
+    // bundle, so the web vs. native branch is chosen once and never flips.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const html = buildMapHtml(vanLat, vanLng, pickupLat, pickupLng);
 
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     useEffect(() => {
       if (location && iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
@@ -90,9 +94,13 @@ function TrackingMap({ location, pickupLat, pickupLng }: { location: VanLocation
   }
 
   const WebView = require("react-native-webview").default;
+  // Hook order is stable here: Platform.OS is a build-time constant per
+  // bundle, so the web vs. native branch is chosen once and never flips.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const webViewRef = useRef<any>(null);
   const html = buildMapHtml(vanLat, vanLng, pickupLat, pickupLng);
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (location && webViewRef.current) {
       webViewRef.current.postMessage(

@@ -604,7 +604,7 @@ export function RideTracker({
   const riderLng = riderLivePos?.lng ?? ride?.riderLng;
   const hasRiderPos = riderLat != null && riderLng != null;
 
-  const mapMarkers: Array<{ lat: number; lng: number; color: string }> = [
+  const mapMarkers: { lat: number; lng: number; color: string }[] = [
     ...(hasRiderPos ? [{ lat: riderLat as number, lng: riderLng as number, color: "green" }] : []),
     ...(ride?.pickupLat != null ? [{ lat: ride.pickupLat, lng: ride.pickupLng!, color: "red" }] : []),
     ...(ride?.dropLat != null && status === "in_transit" ? [{ lat: ride.dropLat, lng: ride.dropLng!, color: "blue" }] : []),

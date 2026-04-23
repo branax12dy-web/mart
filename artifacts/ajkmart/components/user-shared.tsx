@@ -14,6 +14,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import Colors, { spacing, radii, shadows, typography } from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
 
+import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
+
 const C = Colors.light;
 export { C as userColors };
 
@@ -103,8 +105,6 @@ export function SectionHeader({
     </View>
   );
 }
-
-import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 export { SkeletonBlock };
 
 export function SkeletonRows({ count = 3 }: { count?: number }) {

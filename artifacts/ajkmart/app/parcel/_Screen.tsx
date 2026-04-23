@@ -131,7 +131,7 @@ function ParcelScreenInner() {
   const chargeableWeight = Math.max(actualWeight, volumetricWeight);
 
   const [payMethod, setPayMethod] = useState<string>("cash");
-  const [payMethods, setPayMethods] = useState<Array<{ id: string; label: string; logo: string; description: string }>>([
+  const [payMethods, setPayMethods] = useState<{ id: string; label: string; logo: string; description: string }[]>([
     { id: "cash", label: "Cash on Pickup", logo: "💵", description: "" },
   ]);
   const [payMethodsError, setPayMethodsError] = useState(false);
@@ -240,7 +240,7 @@ function ParcelScreenInner() {
     fetch(`${API_BASE}/payments/methods?serviceType=parcel`)
       .then(r => r.json())
       .then((json: any) => {
-        const methods: Array<{ id: string; label: string; logo?: string; description?: string }> =
+        const methods: { id: string; label: string; logo?: string; description?: string }[] =
           json?.data?.methods ?? json?.methods ?? [];
         if (methods.length) {
           setPayMethodsError(false);

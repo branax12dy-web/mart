@@ -155,7 +155,7 @@ export function setDefaultMapCenter(lat: number, lng: number): void {
 
 /* ─── Google Static Map URL (only works when key is configured) ─── */
 export function staticMapUrl(
-  markers: Array<{ lat: number; lng: number; color?: string }>,
+  markers: { lat: number; lng: number; color?: string }[],
   opts: { width?: number; height?: number; zoom?: number; defaultCenter?: { lat: number; lng: number } } = {},
 ): string {
   const { width = 600, height = 280, zoom = 11, defaultCenter } = opts;

@@ -38,7 +38,7 @@ type ScaledTypography = { [K in keyof typeof T]: TypEntry };
 
 function scaleTypography(scale: number): ScaledTypography {
   return Object.fromEntries(
-    (Object.keys(T) as Array<keyof typeof T>).map((key) => {
+    (Object.keys(T) as (keyof typeof T)[]).map((key) => {
       const entry = T[key];
       return [
         key,

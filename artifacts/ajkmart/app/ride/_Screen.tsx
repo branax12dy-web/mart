@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { View , TouchableOpacity, Text, Platform } from "react-native";
+import { useLocalSearchParams , router } from "expo-router";
 import { useSmartBack } from "@/hooks/useSmartBack";
 import Colors from "@/constants/colors";
 import { T as Typ, Font } from "@/constants/typography";
@@ -11,8 +11,6 @@ import { tDual, type TranslationKey } from "@workspace/i18n";
 import { RideBookingForm } from "@/components/ride/RideBookingForm";
 import { RideTracker } from "@/components/ride/RideTracker";
 import { Ionicons } from "@expo/vector-icons";
-import { TouchableOpacity, Text, Platform } from "react-native";
-import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { API_BASE, unwrapApiResponse } from "@/utils/api";
 import { useApiCall } from "@/hooks/useApiCall";
