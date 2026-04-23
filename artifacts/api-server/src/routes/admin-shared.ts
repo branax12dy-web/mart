@@ -28,7 +28,12 @@ import { verifyAccessToken } from "../utils/admin-jwt.js";
 ══════════════════════════════════════════════════════════════ */
 
 export interface AdminRequest extends Request {
-  admin?: { adminId: string | null; role: string; name?: string };
+  /** Convenience aliases populated by adminAuth */
+  adminId?: string;
+  adminRole?: string;
+  adminName?: string;
+  adminIp?: string;
+  adminPermissions?: string[];
 }
 
 export interface DefaultPlatformSetting {
@@ -133,22 +138,34 @@ export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) 
     // Try legacy verification first (adminId/role/name claims)
     let decoded: any = verifyAdminJwt(token);
     if (decoded && typeof decoded === "object" && (decoded.adminId || decoded.sub)) {
-      req.admin = {
-        adminId: decoded.adminId ?? decoded.sub ?? null,
-        role: decoded.role ?? "manager",
-        name: decoded.name,
-      };
+      const adminId = decoded.adminId ?? decoded.sub ?? null;
+      const role    = decoded.role ?? "manager";
+      const name    = decoded.name;
+      const perms: string[] = Array.isArray(decoded.perms) ? decoded.perms : [];
+      req.admin = { adminId, role, name, permissions: perms };
+      req.adminId = adminId ?? undefined;
+      req.adminRole = role;
+      req.adminName = name;
+      req.adminPermissions = perms;
+      req.adminIp = (req.ip || (req.headers["x-forwarded-for"] as string) || "").split(",")[0]?.trim();
       return next();
     }
 
-    // Fall back to new admin-auth-v2 access token (sub/role/name claims)
+    // Fall back to new admin-auth-v2 access token (sub/role/name/perms claims)
     try {
       const payload = verifyAccessToken(token);
+      const perms: string[] = Array.isArray((payload as any).perms) ? (payload as any).perms : [];
       req.admin = {
         adminId: payload.sub ?? null,
         role: payload.role ?? "manager",
         name: payload.name,
+        permissions: perms,
       };
+      req.adminId = payload.sub ?? undefined;
+      req.adminRole = payload.role;
+      req.adminName = payload.name;
+      req.adminPermissions = perms;
+      req.adminIp = (req.ip || (req.headers["x-forwarded-for"] as string) || "").split(",")[0]?.trim();
       return next();
     } catch {
       return res.status(401).json({ success: false, error: "Invalid or expired admin token" });

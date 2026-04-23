@@ -19,6 +19,7 @@ declare global {
       adminRole?: string;
       adminName?: string;
       adminIp?: string;
+      adminPermissions?: string[];
       ride?: InferSelectModel<typeof ridesTable>;
     }
   }

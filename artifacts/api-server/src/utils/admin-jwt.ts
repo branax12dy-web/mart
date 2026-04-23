@@ -8,6 +8,14 @@ export interface AccessTokenPayload {
   sub: string; // adminId
   role: string; // 'super' | 'admin' | 'moderator' etc
   name: string;
+  /**
+   * Compact form of the admin's effective permissions
+   * (catalogued ids from @workspace/auth-utils/permissions).
+   * Stored in the token so middleware can authorize without a DB hit.
+   */
+  perms?: string[];
+  /** Bumped on role/permission change so old tokens are invalidated. */
+  pv?: number;
   iat?: number;
   exp?: number;
 }
@@ -23,9 +31,15 @@ export interface RefreshTokenPayload {
  * Sign an access token (short-lived, 15 minutes)
  * Used for API calls. Should be stored in memory only on frontend.
  */
-export function signAccessToken(adminId: string, role: string, name: string): string {
+export function signAccessToken(
+  adminId: string,
+  role: string,
+  name: string,
+  perms: string[] = [],
+  pv: number = 0,
+): string {
   return jwt.sign(
-    { sub: adminId, role, name },
+    { sub: adminId, role, name, perms, pv },
     ACCESS_TOKEN_SECRET,
     {
       expiresIn: '15m',

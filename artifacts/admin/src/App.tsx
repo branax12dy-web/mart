@@ -17,6 +17,7 @@ import { setTokenHandlers } from "@/lib/api";
 // Layout & Pages
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import Login from "@/pages/login";
+import RolesPermissions from "@/pages/roles-permissions";
 import Dashboard from "@/pages/dashboard";
 import Users from "@/pages/users";
 import Orders from "@/pages/orders";
@@ -189,6 +190,7 @@ function Router() {
       <Route path="/launch-control"><ProtectedRoute component={LaunchControl} /></Route>
       <Route path="/otp-control"><ProtectedRoute component={OtpControl} /></Route>
       <Route path="/sms-gateways"><ProtectedRoute component={SmsGateways} /></Route>
+      <Route path="/roles-permissions"><ProtectedRoute component={RolesPermissions} /></Route>
 
       <Route component={NotFound} />
     </Switch>

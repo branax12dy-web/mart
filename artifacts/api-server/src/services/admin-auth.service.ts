@@ -17,6 +17,7 @@ import {
 import { createCsrfCookie, verifyCsrfToken } from '../utils/admin-csrf.js';
 import { hashToken, verifyTokenHash } from '../utils/admin-hash.js';
 import { verifyTotpToken } from './totp.js';
+import { resolveAdminPermissions } from './permissions.service.js';
 
 /**
  * Admin login service
@@ -121,8 +122,9 @@ export async function createAdminSession(
 }> {
   const sessionId = generateId();
 
-  // Generate tokens
-  const accessToken = signAccessToken(admin.id, admin.role, admin.name);
+  // Generate tokens with effective permissions baked in
+  const perms = await resolveAdminPermissions(admin.id, admin.role);
+  const accessToken = signAccessToken(admin.id, admin.role, admin.name, perms);
   const refreshToken = signRefreshToken(admin.id, sessionId);
   const csrfToken = createCsrfCookie(sessionId);
 
@@ -216,8 +218,10 @@ export async function refreshAdminSession(
       return { success: false, error: 'Admin account not found or inactive' };
     }
 
-    // Generate new tokens with rotation
-    const newAccessToken = signAccessToken(admin.id, admin.role, admin.name);
+    // Generate new tokens with rotation; recompute permissions so role/perm
+    // changes propagate within one access-token lifetime.
+    const perms = await resolveAdminPermissions(admin.id, admin.role);
+    const newAccessToken = signAccessToken(admin.id, admin.role, admin.name, perms);
     const newRefreshToken = signRefreshToken(admin.id, session.id);
     const newRefreshTokenHash = hashToken(newRefreshToken);
     const newCsrfToken = createCsrfCookie(session.id);

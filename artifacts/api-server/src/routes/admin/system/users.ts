@@ -31,6 +31,7 @@ import { canonicalizePhone } from "@workspace/phone-utils";
 import { UserService } from "../../../services/admin-user.service.js";
 import { FinanceService } from "../../../services/admin-finance.service.js";
 import { AuditService } from "../../../services/admin-audit.service.js";
+import { requirePermission } from "../../../middlewares/require-permission.js";
 
 const router = Router();
 
@@ -335,7 +336,7 @@ router.post("/users/:id/wallet-topup", async (req, res) => {
     sendError(res, message, 400);
   }
 });
-router.delete("/users/:id", async (req, res) => {
+router.delete("/users/:id", requirePermission("users.delete"), async (req, res) => {
   const adminReq = req as AdminRequest;
   const userId = req.params["id"]!;
 
@@ -682,7 +683,7 @@ router.patch("/users/:id/waive-debt", async (req, res) => {
 });
 
 /* ── PATCH /admin/users/:id/bulk-ban — ban/unban multiple users ── */
-router.patch("/users/bulk-ban", async (req, res) => {
+router.patch("/users/bulk-ban", requirePermission("users.suspend"), async (req, res) => {
   const { ids, action, reason } = req.body as { ids: string[]; action: "ban" | "unban"; reason?: string };
   if (!ids?.length) { sendValidationError(res, "ids required"); return; }
   const adminReq = req as AdminRequest;

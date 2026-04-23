@@ -1571,3 +1571,14 @@ All 30+ empty `.catch(() => {})` blocks in the API server now log meaningful mes
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — JSON string of Firebase service account (backend)
 - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID` — web apps
 - `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, etc. — Expo mobile app
+
+### Fine-Grained RBAC (Task #2)
+Permission catalog + roles + per-role permissions + admin↔role assignments. Coexists with the legacy `requireRole` middleware and CSV `permissions` field on `admin_accounts`.
+- **`lib/auth-utils/src/permissions.ts`** — canonical `PERMISSIONS` catalog, `PermissionId` type, `DEFAULT_ROLE_PERMISSIONS` for `super_admin/support_admin/finance_admin/vendor_owner/vendor_staff/rider`. Re-exported via `@workspace/auth-utils/permissions`.
+- **`lib/db/src/schema/rbac.ts`** — `rbac_permissions`, `rbac_roles`, `rbac_role_permissions`, `rbac_admin_role_assignments`, `rbac_user_role_assignments`. SQL migration `lib/db/migrations/0042_rbac_permissions.sql` is auto-applied at boot.
+- **`artifacts/api-server/src/services/permissions.service.ts`** — `seedPermissionCatalog`, `seedDefaultRoles`, `backfillAdminRoleAssignments`, role CRUD, `setRolePermissions`, `setAdminRoles`, `resolveAdminPermissions` (handles legacy `super`/`manager`/`finance`/`support` slug → built-in role mapping), and `revokeSessionsForRole` (rotates active refresh tokens when permissions change).
+- **`artifacts/api-server/src/middlewares/require-permission.ts`** — `requirePermission(perm)`, `requireAnyPermission`, `requireAllPermissions`. `super` role bypasses checks; falls back to a DB resolve when the JWT lacks a `perms` claim (legacy tokens).
+- **JWT** — `signAccessToken` now accepts `perms[]` + `pv` (permission version) claims; `admin-auth.service.ts` resolves effective permissions on login & refresh and bakes them into the access token. `adminAuth` middleware (admin-shared.ts) populates `req.adminPermissions`/`req.adminRole`/`req.adminId`/`req.adminName`/`req.adminIp`.
+- **Routes** — `/api/admin/system/rbac/permissions` (catalog), `/roles[+CRUD]`, `/roles/:id/permissions`, `/admins/:adminId/roles`, `/admins/:adminId/effective-permissions`, `/me`. High-risk gates applied so far: `users.delete` and `users.suspend` (bulk-ban). Extend with `requirePermission(...)` on additional routes as ownership becomes clear.
+- **Frontend** — `artifacts/admin/src/hooks/usePermissions.ts` decodes the in-memory access JWT and exposes `has/hasAny/hasAll` plus a `<PermissionGate>` component. New page `pages/roles-permissions.tsx` mounted at `/roles-permissions` provides role/permission management. Linked from the System nav group in `AdminLayout`.
+- **Startup** — `runStartupTasks()` in `app.ts` runs SQL migrations then seeds the permission catalog, default roles, and backfills `admin_role_assignments` from the existing `admin_accounts.role` enum.

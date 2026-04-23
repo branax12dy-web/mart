@@ -5,7 +5,16 @@ import { verifyCsrfToken } from '../utils/admin-csrf.js';
 declare global {
   namespace Express {
     interface Request {
-      admin?: AccessTokenPayload & { sessionId?: string };
+      /**
+       * Populated by either `authenticateAdmin` (admin-auth-v2) or the legacy
+       * `adminAuth` middleware. Includes a denormalised `adminId` alias so
+       * legacy callsites that read `req.admin.adminId` keep working.
+       */
+      admin?: Partial<AccessTokenPayload> & {
+        sessionId?: string;
+        adminId?: string | null;
+        permissions?: string[];
+      };
     }
   }
 }

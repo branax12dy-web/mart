@@ -75,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { nameKey: "navDashboard",     href: "/dashboard",       icon: LayoutDashboard },
       { nameKey: "navUserPermissions", href: "/users",         icon: Lock },
+      { nameKey: "navUserPermissions", href: "/roles-permissions", icon: KeyRound },
       { nameKey: "navSettings",        href: "/settings",       icon: Settings2 },
       { nameKey: "navFeatureToggles",  href: "/app-management", icon: ToggleLeft },
       { nameKey: "navLaunchControl" as TranslationKey, href: "/launch-control", icon: Rocket },
