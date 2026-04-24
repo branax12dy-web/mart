@@ -262,17 +262,19 @@ function IntegrationsInit() {
 function App() {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <LanguageInit />
-            <IntegrationsInit />
-            <Router />
-          </WouterRouter>
-          <Toaster />
-          <PwaInstallBanner />
-        </TooltipProvider>
-      </QueryClientProvider>
+      <AdminAuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <LanguageInit />
+              <IntegrationsInit />
+              <Router />
+            </WouterRouter>
+            <Toaster />
+            <PwaInstallBanner />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </AdminAuthProvider>
     </ErrorBoundary>
   );
 }
