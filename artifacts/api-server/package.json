@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "fuser -k ${PORT}/tcp 2>/dev/null || true; sleep 2 && NODE_ENV=development pnpm run start",
+    "dev": "NODE_ENV=development dotenv -e .env -- tsx --enable-source-maps ./src/index.ts",
     "build": "node ./build.mjs",
     "start": "dotenv -e .env -- tsx --enable-source-maps ./src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
