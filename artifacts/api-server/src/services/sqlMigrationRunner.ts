@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { buildPgPoolConfig } from "@workspace/db/connection-url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,7 @@ export async function runSqlMigrations() {
     console.error("[migrations] DATABASE_URL not set, skipping migrations");
     return;
   }
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = new Pool(buildPgPoolConfig(databaseUrl));
   try {
     await pool.query("SELECT 1");
     console.log("[migrations] Database connection successful");

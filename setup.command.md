@@ -2,6 +2,19 @@
 
 Yeh file GitHub, Codespaces, localhost aur VPS/server par AJKMart project chalane ke commands ke liye hai.
 
+## 0. One-Word Launchers (Recommended)
+
+Pora monorepo (API + admin + vendor + rider + ajkmart Expo + mockup sandbox) ek single command se start karne ke liye:
+
+| Environment | Command           | Kya karta hai |
+|-------------|-------------------|----------------|
+| Replit      | `replit-start`    | Replit-assigned ports par sab services start, `REPLIT_DEV_DOMAIN` wire karta hai. |
+| Codespaces  | `codespace-start` | `HOST=0.0.0.0`, `https://${CODESPACE_NAME}-<port>.app.github.dev` URLs print, `gh` se ports public marks. |
+| VPS         | `vps-start`       | Missing `pnpm`/`pm2`/`caddy` install, `pnpm install`, DB push, build, PM2, Caddy/nginx (`--proxy=nginx`) reload. |
+| Local       | `local-start`     | `.env` create from `deploy/env.example`, deps install, Postgres probe, `scripts/run-dev-all.mjs` chalata hai. |
+
+Pehli baar chalane par script khud `~/.local/bin` mein symlinks bana deti hai, phir `replit-start` (ya koi bhi) bilkul real shell command ban jata hai. `pnpm replit-start` etc. bhi kaam karta hai. Test ke liye `--dry-run` lagayen.
+
 ## 1. Required Software
 
 Har environment mein yeh cheezen honi chahiye:

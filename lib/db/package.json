@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./connection-url": "./src/connection-url.ts"
   },
   "scripts": {
     "build": "tsc",

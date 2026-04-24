@@ -65,6 +65,10 @@ const processes = [
   run("mobile-web", ["--filter", "@workspace/ajkmart", "dev:web"], {
     PORT: process.env.MOBILE_WEB_PORT || "19006",
     EXPO_PUBLIC_DOMAIN: apiDomain,
+    // ajkmart's dev:web hardcodes EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN; shadow it.
+    REPLIT_DEV_DOMAIN: process.env.REPLIT_DEV_DOMAIN || apiDomain,
+    REPLIT_EXPO_DEV_DOMAIN: process.env.REPLIT_EXPO_DEV_DOMAIN || apiDomain,
+    REPL_ID: process.env.REPL_ID || "local",
   }),
 ];
 

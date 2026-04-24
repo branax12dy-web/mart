@@ -1,5 +1,20 @@
 # AJKMart Super App — Workspace
 
+### Unified Environment Launchers
+Four single-word commands bring the entire monorepo (API + admin + vendor + rider + ajkmart Expo + mockup sandbox) up in any of four environments. Each one auto-detects/auto-fixes whatever its environment needs.
+
+- `replit-start` — Replit shell. Reuses Replit-assigned ports (8080 / 23744 / 21463 / 22969 / 20716 / 8081), wires `REPLIT_DEV_DOMAIN` and `REPLIT_EXPO_DEV_DOMAIN`, prints the Webview URL table.
+- `codespace-start` — GitHub Codespaces. Sets `HOST=0.0.0.0` for Vite, prints `https://${CODESPACE_NAME}-<port>.app.github.dev` URLs, best-effort marks ports public via `gh codespace ports visibility`.
+- `vps-start` — Ubuntu/Debian VPS. Installs missing `pnpm` / `pm2` / `caddy`, runs `pnpm install --frozen-lockfile`, pushes the DB schema, runs `scripts/build-production.mjs`, starts PM2 from `ecosystem.config.cjs`, drops `deploy/Caddyfile` (or `deploy/nginx.conf` with `--proxy=nginx`) and reloads the proxy. Prints health-probe status.
+- `local-start` — macOS / Linux / WSL laptop. Creates `.env` from `deploy/env.example` if missing, installs deps, probes the Postgres URL, then delegates to `scripts/run-dev-all.mjs` (ports 8080/5173/5174/5175/19006/8081).
+
+All four are real shell commands once the launcher symlinks itself into `~/.local/bin` (done automatically on first run; the script prints a one-line PATH hint if needed). They also work as `pnpm replit-start` / `pnpm codespace-start` / `pnpm vps-start` / `pnpm local-start`. Pass `--dry-run` to print the detected env, resolved ports/URLs, and the exact commands without spawning anything.
+
+Source: `scripts/launchers/start.mjs` (orchestrator) and the four POSIX wrappers next to it.
+
+### pg-connection-string SSL handling
+The `pg-connection-string` v3 deprecation warning ("SSL modes 'prefer', 'require', 'verify-ca' are treated as aliases for 'verify-full'") no longer prints on API server startup. `lib/db/src/connection-url.ts` exposes `buildPgPoolConfig(url)` which strips `sslmode` / `ssl` / `uselibpqcompat` from the URL and returns explicit `ssl` options for `pg.Pool` (`{ rejectUnauthorized: true }` for verify-full / verify-ca / require / prefer; `{ rejectUnauthorized: false }` for `no-verify` or when `PGSSL_ALLOW_SELF_SIGNED=1` / `PGSSL_REJECT_UNAUTHORIZED=0`; no SSL when `sslmode=disable`). It is consumed by `lib/db/src/index.ts`, `artifacts/api-server/src/lib/db.ts`, and `artifacts/api-server/src/services/sqlMigrationRunner.ts`.
+
 ### Database Connection Priority
 - The shared database package resolves the connection string in this order: `NEON_DATABASE_URL`, then `APP_DATABASE_URL`, then Replit's built-in `DATABASE_URL`.
 - Runtime DB access is centralized in `lib/db/src/connection-url.ts`, used by `lib/db/src/index.ts` and `lib/db/drizzle.config.ts`.
