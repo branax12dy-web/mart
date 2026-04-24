@@ -61,6 +61,12 @@ export async function seedDefaultSuperAdmin(): Promise<SeedResult> {
     .limit(1);
 
   if (existing.length > 0) {
+    // Idempotent no-op path. Log explicitly so operators can confirm at boot
+    // that seeding ran and decided to leave the existing admin set alone,
+    // instead of having to infer it from the absence of a "created" line.
+    console.log(
+      "[admin-seed] skipped — at least one admin account already exists",
+    );
     return { created: false };
   }
 

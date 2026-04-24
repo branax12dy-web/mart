@@ -78,6 +78,28 @@ TypeScript uses project references with a `tsconfig.base.json`, `customCondition
 - **EAS CLI** for native builds.
 - **Capacitor** (referenced for rider native shell — Android/iOS).
 
+### Admin Account Seeding
+
+On every API server boot, `bootstrapSuperAdminIfMissing` runs. Behaviour:
+
+- **No admin accounts in DB** → creates a single super admin with
+  `must_change_password = true`. The first login forces a password change
+  before any other admin route is reachable. The created credentials are
+  written to a one-time, loud console banner and a permanent
+  `admin_seed_super_admin_created` row in `admin_audit_log`.
+- **At least one admin account already exists** → skipped (no-op). Logs
+  `[admin-seed] skipped — at least one admin account already exists` so
+  operators can confirm seeding ran.
+
+Configurable via env (`ADMIN_SEED_EMAIL` defaults to `admin@ajkmart.local`,
+`ADMIN_SEED_USERNAME` to `superadmin`, `ADMIN_SEED_NAME` to
+`Super Admin`). `ADMIN_SEED_PASSWORD` is **optional** — if unset, a strong
+random password is generated and printed in the boot banner. This is
+intentional: shipping a known default credential would be a security
+hazard, so operators should either set `ADMIN_SEED_PASSWORD` (e.g. via
+Replit Secrets) or capture the generated password from first-boot logs
+before the `must_change_password` flow rotates it.
+
 ### Authentication & Security
 - **@react-oauth/google** (web Google sign-in).
 - **Facebook SDK** (JS for web, expo-auth-session provider for mobile).
