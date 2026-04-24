@@ -506,15 +506,22 @@ router.post(
       message: 'If that email is associated with an admin account, a password reset link has been sent.',
     };
 
-    let parsed: z.infer<typeof forgotPasswordSchema>;
-    try {
-      parsed = forgotPasswordSchema.parse(req.body);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        res.status(400).json({ error: 'Invalid request', details: err.errors }); return;
-      }
-      res.status(400).json({ error: 'Invalid request' }); return;
+    // Always return the same generic success — even on a malformed/missing
+    // email payload — so this endpoint cannot be used as an oracle to learn
+    // anything about the system (account existence, validation rules, etc.).
+    // Malformed inputs are still audited so brute-force probes leave a trail.
+    const parseResult = forgotPasswordSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      await logAdminAudit('admin_forgot_password_invalid_payload', {
+        ip,
+        userAgent,
+        result: 'failure',
+        reason: 'Malformed forgot-password payload',
+        metadata: { issues: parseResult.error.errors.map((e) => e.message) },
+      });
+      res.json(genericResponse); return;
     }
+    const parsed = parseResult.data;
 
     const email = parsed.email.trim().toLowerCase();
 
