@@ -222,9 +222,11 @@ router.get("/admin-accounts", async (_req, res) => {
       id: adminAccountsTable.id,
       name: adminAccountsTable.name,
       username: adminAccountsTable.username,
+      email: adminAccountsTable.email,
       role: adminAccountsTable.role,
       permissions: adminAccountsTable.permissions,
       isActive: adminAccountsTable.isActive,
+      mustChangePassword: adminAccountsTable.mustChangePassword,
       lastLoginAt: adminAccountsTable.lastLoginAt,
       createdAt: adminAccountsTable.createdAt,
     })
@@ -247,6 +249,12 @@ router.post("/admin-accounts", async (req, res) => {
   const name = (body.name ?? body.username) as string | undefined;
   const password = (body.password ?? body.secret) as string | undefined;
   const usernameField = (body.username ?? body.name) as string | undefined;
+  const emailRaw = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (emailRaw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) {
+    sendValidationError(res, "Invalid email address");
+    return;
+  }
+  const emailField = emailRaw || null;
 
   if (!name || !password) {
     sendValidationError(res, "username and password required");
@@ -272,6 +280,7 @@ router.post("/admin-accounts", async (req, res) => {
         UserService.createAdminAccount({
           name,
           username: usernameField,
+          email: emailField,
           secret: password,
           role: (body.role as string) || "manager",
         }),
@@ -293,6 +302,19 @@ router.patch("/admin-accounts/:id", async (req, res) => {
   const updates: Record<string, any> = {};
   if (body.name !== undefined) updates.name = body.name;
   if (body.username !== undefined) updates.username = body.username;
+  if (body.email !== undefined) {
+    const raw = body.email;
+    if (raw === null || raw === "") {
+      updates.email = null;
+    } else if (typeof raw === "string") {
+      const normalized = raw.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+        res.status(400).json({ error: "Invalid email address" });
+        return;
+      }
+      updates.email = normalized;
+    }
+  }
   if (body.role !== undefined) updates.role = body.role;
   if (body.permissions !== undefined) updates.permissions = body.permissions;
   if (body.isActive !== undefined) updates.isActive = body.isActive;
@@ -325,6 +347,104 @@ router.delete("/admin-accounts/:id", async (req, res) => {
     .delete(adminAccountsTable)
     .where(eq(adminAccountsTable.id, req.params["id"]!));
   res.json({ success: true });
+});
+
+/**
+ * POST /api/admin/system/admin-accounts/:id/send-reset-link
+ *
+ * Super-admin action: issue a single-use password reset link for the
+ * specified admin and email it to them. Returns the (already-emailed) URL
+ * to the caller in non-production environments so the operator can copy it
+ * out-of-band when SMTP is not configured.
+ */
+router.post("/admin-accounts/:id/send-reset-link", async (req, res) => {
+  const adminReq = req as AdminRequest;
+  if (adminReq.adminRole !== "super") {
+    res.status(403).json({
+      success: false,
+      error: "Only the super admin can send password reset links.",
+    });
+    return;
+  }
+
+  const targetId = req.params["id"]!;
+  const [target] = await db
+    .select()
+    .from(adminAccountsTable)
+    .where(eq(adminAccountsTable.id, targetId))
+    .limit(1);
+
+  if (!target) {
+    res.status(404).json({ success: false, error: "Admin account not found" });
+    return;
+  }
+  if (!target.isActive) {
+    res.status(400).json({
+      success: false,
+      error: "Cannot send a reset link to an inactive admin account.",
+    });
+    return;
+  }
+  if (!target.email) {
+    res.status(400).json({
+      success: false,
+      error: "Target admin has no email on file. Set an email first.",
+    });
+    return;
+  }
+
+  const ip = adminReq.adminIp || getClientIp(req);
+  const userAgent = req.headers["user-agent"] ?? null;
+
+  // Lazy-load to avoid a circular import at module init.
+  const { issueAdminPasswordResetToken } = await import(
+    "../../../services/admin-password.service.js"
+  );
+  const { sendAdminPasswordResetLinkEmail } = await import(
+    "../../../services/email.js"
+  );
+
+  const issued = await issueAdminPasswordResetToken({
+    adminId: target.id,
+    requestedBy: "super_admin",
+    requesterAdminId: adminReq.adminId ?? null,
+    requesterIp: ip,
+    requesterUserAgent: userAgent,
+  });
+
+  // Build the reset URL (mirrors the public flow).
+  const base =
+    process.env.ADMIN_BASE_URL ||
+    process.env.APP_BASE_URL ||
+    (process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}/admin`
+      : "http://localhost:5000/admin");
+  const resetUrl = `${base.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(
+    issued.rawToken,
+  )}`;
+
+  const sendResult = await sendAdminPasswordResetLinkEmail(target.email, {
+    resetUrl,
+    recipientName: target.name,
+    expiresAt: issued.expiresAt,
+  }).catch((err) => ({ sent: false, reason: (err as Error).message }));
+
+  addAuditEntry({
+    action: "admin_password_reset_link_sent",
+    ip,
+    details: `Super-admin ${adminReq.adminName ?? adminReq.adminId ?? "unknown"} issued reset link for admin ${target.id} (${target.email})`,
+    result: sendResult.sent ? "success" : "failure",
+  });
+
+  res.json({
+    success: true,
+    sent: sendResult.sent,
+    reason: sendResult.sent ? undefined : sendResult.reason,
+    expiresAt: issued.expiresAt.toISOString(),
+    // Reveal the URL only in non-production so a super-admin can copy it
+    // when SMTP is not yet wired up. Production never echoes the token.
+    resetUrl: process.env.NODE_ENV === "production" ? undefined : resetUrl,
+  });
 });
 
 /* ── App Management ── */

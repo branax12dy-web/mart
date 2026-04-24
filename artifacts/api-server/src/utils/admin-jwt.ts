@@ -16,6 +16,13 @@ export interface AccessTokenPayload {
   perms?: string[];
   /** Bumped on role/permission change so old tokens are invalidated. */
   pv?: number;
+  /**
+   * "Must change password" claim. When true, the access token is only
+   * accepted by an allow-list of password-change/logout endpoints —
+   * every other admin route is blocked with FORCE_PASSWORD_CHANGE until
+   * the admin rotates their password and is issued a fresh token.
+   */
+  mpc?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -37,9 +44,12 @@ export function signAccessToken(
   name: string,
   perms: string[] = [],
   pv: number = 0,
+  mustChangePassword: boolean = false,
 ): string {
+  const payload: Record<string, unknown> = { sub: adminId, role, name, perms, pv };
+  if (mustChangePassword) payload.mpc = true;
   return jwt.sign(
-    { sub: adminId, role, name, perms, pv },
+    payload,
     ACCESS_TOKEN_SECRET,
     {
       expiresIn: '15m',

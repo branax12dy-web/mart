@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AppWindow, Users, ShoppingBag, Car, Pill, Package,
@@ -11,6 +11,8 @@ import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { fetcher } from "@/lib/api";
+import { useAdminAuth } from "@/lib/adminAuthContext";
+import { Mail } from "lucide-react";
 import { useAuditLog } from "@/hooks/use-admin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,7 @@ import { ADMIN_SERVICE_LIST } from "@workspace/service-constants";
 interface AdminAccount {
   id: string; name: string; role: string; permissions: string;
   isActive: boolean; lastLoginAt: string | null; createdAt: string;
+  username?: string | null; email?: string | null;
 }
 interface AppOverview {
   users: { total: number; active: number; banned: number };
@@ -50,7 +53,7 @@ const SERVICE_MAP = [
   { key: "wallet", label: "Wallet", description: "Digital wallet for payments & transfers", icon: "💰", setting: "feature_wallet", color: "#1A56DB", colorLight: "#E5EDFF" },
 ];
 
-const EMPTY_ADMIN = { name: "", secret: "", role: "manager", permissions: PERMISSIONS.join(","), isActive: true };
+const EMPTY_ADMIN = { name: "", email: "", secret: "", role: "manager", permissions: PERMISSIONS.join(","), isActive: true };
 
 /* ── Sessions Tab Component ── */
 function SessionsTab() {
@@ -96,7 +99,7 @@ function SessionsTab() {
     }
   };
 
-  useState(() => { loadSessions(); }, []);
+  useEffect(() => { loadSessions(); }, []);
 
   const formatTime = (isoDate: string | null) => {
     if (!isoDate) return "Never";
@@ -278,6 +281,8 @@ export default function AppManagement() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { state: authState } = useAdminAuth();
+  const isSuperAdmin = authState.user?.role === "super";
   const [tab, setTab] = useState<"overview"|"admins"|"maintenance"|"release-notes"|"audit-log"|"sessions">("overview");
   const [adminForm, setAdminForm] = useState({ ...EMPTY_ADMIN });
   const [editingAdmin, setEditingAdmin] = useState<AdminAccount | null>(null);
@@ -423,6 +428,36 @@ export default function AppManagement() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-accounts"] }),
   });
 
+  /* ── Send password-reset link (super-admin only) ──
+     Calls POST /api/admin/admin-accounts/:id/send-reset-link which issues a
+     fresh single-use token (existing tokens for that account are invalidated
+     server-side) and emails it. In non-prod, the API echoes back resetUrl so
+     a super-admin can copy it directly when SMTP isn't configured. */
+  const sendResetLink = useMutation({
+    mutationFn: (id: string) =>
+      fetcher(`/admin-accounts/${id}/send-reset-link`, { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: (data: any, _id) => {
+      const resetUrl: string | undefined = data?.resetUrl;
+      if (resetUrl) {
+        try { void navigator.clipboard?.writeText(resetUrl); } catch { /* clipboard not available */ }
+        toast({
+          title: "Reset link generated",
+          description: "Email sent. Link copied to clipboard for your records.",
+        });
+      } else {
+        toast({
+          title: "Reset link sent",
+          description: "An email with the reset link is on its way.",
+        });
+      }
+    },
+    onError: (e: any) => toast({
+      title: "Could not send reset link",
+      description: e?.message || "Please try again.",
+      variant: "destructive",
+    }),
+  });
+
   /* ── Feature toggle ── */
   const toggleFeature = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) =>
@@ -452,7 +487,7 @@ export default function AppManagement() {
   };
   const openEditAdmin = (a: AdminAccount) => {
     setEditingAdmin(a);
-    setAdminForm({ name: a.name, secret: "", role: a.role, permissions: a.permissions, isActive: a.isActive });
+    setAdminForm({ name: a.name, email: a.email ?? "", secret: "", role: a.role, permissions: a.permissions, isActive: a.isActive });
     setShowSecret(false); setAdminDialog(true);
   };
   const togglePermission = (p: string) => {
@@ -464,7 +499,14 @@ export default function AppManagement() {
   const submitAdmin = () => {
     if (!adminForm.name) { toast({ title: "Name required", variant: "destructive" }); return; }
     if (!editingAdmin && !adminForm.secret) { toast({ title: "Secret required", variant: "destructive" }); return; }
+    const trimmedEmail = adminForm.email.trim().toLowerCase();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast({ title: "Invalid email", description: "Enter a valid email or leave it blank.", variant: "destructive" });
+      return;
+    }
     const body: any = { name: adminForm.name, role: adminForm.role, permissions: adminForm.permissions, isActive: adminForm.isActive };
+    if (trimmedEmail) body.email = trimmedEmail;
+    else if (editingAdmin) body.email = null;
     if (adminForm.secret) body.secret = adminForm.secret;
     saveAdmin.mutate(body);
   };
@@ -650,13 +692,36 @@ export default function AppManagement() {
                           </p>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => toggleAdmin.mutate({ id: a.id, isActive: !a.isActive })} className="p-2 hover:bg-muted rounded-lg">
+                          <button onClick={() => toggleAdmin.mutate({ id: a.id, isActive: !a.isActive })} className="p-2 hover:bg-muted rounded-lg" title={a.isActive ? "Deactivate" : "Activate"}>
                             {a.isActive ? <ToggleRight className="w-5 h-5 text-green-600"/> : <ToggleLeft className="w-5 h-5 text-muted-foreground"/>}
                           </button>
-                          <button onClick={() => openEditAdmin(a)} className="p-2 hover:bg-muted rounded-lg">
+                          {isSuperAdmin && (
+                            <button
+                              onClick={() => {
+                                if (!a.email) {
+                                  toast({
+                                    title: "No email on file",
+                                    description: "Add an email to this admin before sending a reset link.",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                if (window.confirm(`Send a password reset link to ${a.email}?`)) {
+                                  sendResetLink.mutate(a.id);
+                                }
+                              }}
+                              disabled={sendResetLink.isPending}
+                              className="p-2 hover:bg-amber-50 rounded-lg disabled:opacity-50"
+                              title={a.email ? `Send reset link to ${a.email}` : "Admin has no email on file"}
+                              data-testid={`button-send-reset-link-${a.id}`}
+                            >
+                              <Mail className="w-4 h-4 text-amber-600"/>
+                            </button>
+                          )}
+                          <button onClick={() => openEditAdmin(a)} className="p-2 hover:bg-muted rounded-lg" title="Edit">
                             <Pencil className="w-4 h-4 text-blue-600"/>
                           </button>
-                          <button onClick={() => deleteAdmin.mutate(a.id)} className="p-2 hover:bg-red-50 rounded-lg">
+                          <button onClick={() => deleteAdmin.mutate(a.id)} className="p-2 hover:bg-red-50 rounded-lg" title="Delete">
                             <Trash2 className="w-4 h-4 text-red-500"/>
                           </button>
                         </div>
@@ -963,6 +1028,22 @@ export default function AppManagement() {
             <div className="space-y-1.5">
               <label className="text-sm font-semibold">Full Name <span className="text-red-500">*</span></label>
               <Input placeholder="e.g. Ahmed Khan" value={adminForm.name} onChange={e => setAdminForm(f=>({...f, name: e.target.value}))} className="h-11 rounded-xl"/>
+            </div>
+
+            {/* Email */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold">
+                Email
+                <span className="text-xs font-normal text-muted-foreground ml-1">(used for password resets)</span>
+              </label>
+              <Input
+                type="email"
+                placeholder="ahmed@ajkmart.local"
+                value={adminForm.email}
+                onChange={e => setAdminForm(f=>({...f, email: e.target.value}))}
+                className="h-11 rounded-xl"
+                data-testid="input-admin-email"
+              />
             </div>
 
             {/* Secret */}

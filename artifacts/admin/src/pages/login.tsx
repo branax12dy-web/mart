@@ -168,6 +168,17 @@ export default function Login() {
                   </>
                 )}
               </Button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setLocation("/forgot-password")}
+                  className="text-sm font-medium text-primary hover:underline"
+                  data-testid="link-forgot-password"
+                >
+                  Forgot password?
+                </button>
+              </div>
             </form>
           ) : (
             <form onSubmit={handleMfaSubmit} className="space-y-5">

@@ -123,6 +123,26 @@ export async function verifyTotpToken(secret: string, token: string): Promise<bo
   }
 }
 
+/**
+ * Routes that remain accessible while the admin's JWT carries `mpc=true`
+ * (must change password). Anything else is blocked with FORCE_PASSWORD_CHANGE.
+ * Mirrors the allow-list in middlewares/admin-auth.ts.
+ */
+const FORCE_PASSWORD_CHANGE_ALLOWLIST = [
+  "/api/admin/auth/change-password",
+  "/api/admin/auth/logout",
+  "/api/admin/auth/me",
+  "/api/admin/auth/sessions",
+  "/api/admin/auth/refresh",
+];
+
+function isForcedPasswordChangeAllowed(originalUrl: string): boolean {
+  const path = (originalUrl || "").split("?")[0]!;
+  return FORCE_PASSWORD_CHANGE_ALLOWLIST.some(
+    (allowed) => path === allowed || path.startsWith(`${allowed}/`),
+  );
+}
+
 /* ── adminAuth middleware (Bearer JWT) ──
    Verifies `Authorization: Bearer <jwt>` and attaches `req.admin`.
    Accepts BOTH legacy admin tokens (signed with JWT_SECRET) AND the new
@@ -148,6 +168,14 @@ export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) 
       req.adminName = name;
       req.adminPermissions = perms;
       req.adminIp = (req.ip || (req.headers["x-forwarded-for"] as string) || "").split(",")[0]?.trim();
+      // Legacy tokens may also carry mpc when signed by admin-auth-v2 helpers.
+      if (decoded.mpc === true && !isForcedPasswordChangeAllowed(req.originalUrl)) {
+        return res.status(403).json({
+          success: false,
+          error: "You must change your password before using the admin panel.",
+          code: "FORCE_PASSWORD_CHANGE",
+        });
+      }
       return next();
     }
 
@@ -166,6 +194,13 @@ export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) 
       req.adminName = payload.name;
       req.adminPermissions = perms;
       req.adminIp = (req.ip || (req.headers["x-forwarded-for"] as string) || "").split(",")[0]?.trim();
+      if (payload.mpc === true && !isForcedPasswordChangeAllowed(req.originalUrl)) {
+        return res.status(403).json({
+          success: false,
+          error: "You must change your password before using the admin panel.",
+          code: "FORCE_PASSWORD_CHANGE",
+        });
+      }
       return next();
     } catch {
       return res.status(401).json({ success: false, error: "Invalid or expired admin token" });

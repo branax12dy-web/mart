@@ -17,6 +17,9 @@ import { setTokenHandlers } from "@/lib/api";
 // Layout & Pages
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import Login from "@/pages/login";
+import ForgotPassword from "@/pages/forgot-password";
+import ResetPassword from "@/pages/reset-password";
+import SetNewPassword from "@/pages/set-new-password";
 import RolesPermissions from "@/pages/roles-permissions";
 import Dashboard from "@/pages/dashboard";
 import Users from "@/pages/users";
@@ -96,15 +99,38 @@ queryClient.getQueryCache().subscribe(event => {
   }
 });
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const [location, setLocation] = useLocation();
+function ProtectedRoute({
+  component: Component,
+  /** When true, the must-change-password gate does NOT redirect away from
+   *  this route — used for the `/set-new-password` screen itself. */
+  bypassPasswordGate = false,
+}: {
+  component: React.ComponentType;
+  bypassPasswordGate?: boolean;
+}) {
+  const [, setLocation] = useLocation();
   const { state } = useAdminAuth();
 
   useEffect(() => {
     if (!state.isLoading && !state.accessToken) {
       setLocation("/login");
+      return;
     }
-  }, [state.accessToken, state.isLoading, setLocation]);
+    if (
+      !state.isLoading &&
+      state.accessToken &&
+      state.mustChangePassword &&
+      !bypassPasswordGate
+    ) {
+      setLocation("/set-new-password");
+    }
+  }, [
+    state.accessToken,
+    state.isLoading,
+    state.mustChangePassword,
+    bypassPasswordGate,
+    setLocation,
+  ]);
 
   if (state.isLoading) {
     return (
@@ -116,6 +142,16 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (!state.accessToken) {
     return null;
+  }
+
+  if (state.mustChangePassword && !bypassPasswordGate) {
+    return null;
+  }
+
+  // The set-new-password screen renders without the full admin chrome so the
+  // user is not tempted to navigate elsewhere via the sidebar.
+  if (bypassPasswordGate) {
+    return <Component />;
   }
 
   return (
@@ -131,8 +167,14 @@ function Router() {
 
   return (
     <Switch>
-      {/* Public Route */}
+      {/* Public Routes */}
       <Route path="/login" component={Login} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
+      {/* Authenticated, but reachable while the password gate is active. */}
+      <Route path="/set-new-password">
+        <ProtectedRoute component={SetNewPassword} bypassPasswordGate />
+      </Route>
       <Route path="/">
         {() => {
           if (state.isLoading) {
@@ -143,7 +185,7 @@ function Router() {
             );
           }
           if (state.accessToken) {
-            setLocation("/dashboard");
+            setLocation(state.mustChangePassword ? "/set-new-password" : "/dashboard");
             return null;
           }
           return <Login />;

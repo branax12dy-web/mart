@@ -6,7 +6,7 @@ import {
   type AdminAccount,
 } from '@workspace/db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
-import { verifyPassword } from './password.js';
+import { verifyAdminSecret } from './password.js';
 import { generateId } from '../lib/id.js';
 import {
   signAccessToken,
@@ -51,8 +51,8 @@ export async function adminLogin(
     return { success: false, error: 'Invalid username or password' };
   }
 
-  // Verify password
-  const passwordValid = verifyPassword(password, admin.secret);
+  // Verify password — accepts bcrypt (preferred) and legacy scrypt hashes.
+  const passwordValid = verifyAdminSecret(password, admin.secret);
   if (!passwordValid) {
     return { success: false, error: 'Invalid username or password' };
   }
@@ -122,9 +122,18 @@ export async function createAdminSession(
 }> {
   const sessionId = generateId();
 
-  // Generate tokens with effective permissions baked in
+  // Generate tokens with effective permissions baked in. The mpc claim
+  // surfaces "must change password" so middleware can block every
+  // non-password-change route until the admin rotates their password.
   const perms = await resolveAdminPermissions(admin.id, admin.role);
-  const accessToken = signAccessToken(admin.id, admin.role, admin.name, perms);
+  const accessToken = signAccessToken(
+    admin.id,
+    admin.role,
+    admin.name,
+    perms,
+    0,
+    !!admin.mustChangePassword,
+  );
   const refreshToken = signRefreshToken(admin.id, sessionId);
   const csrfToken = createCsrfCookie(sessionId);
 
@@ -219,9 +228,18 @@ export async function refreshAdminSession(
     }
 
     // Generate new tokens with rotation; recompute permissions so role/perm
-    // changes propagate within one access-token lifetime.
+    // changes propagate within one access-token lifetime. The mpc claim is
+    // re-read from the DB so a freshly cleared "must change password" flag
+    // takes effect on the next refresh.
     const perms = await resolveAdminPermissions(admin.id, admin.role);
-    const newAccessToken = signAccessToken(admin.id, admin.role, admin.name, perms);
+    const newAccessToken = signAccessToken(
+      admin.id,
+      admin.role,
+      admin.name,
+      perms,
+      0,
+      !!admin.mustChangePassword,
+    );
     const newRefreshToken = signRefreshToken(admin.id, session.id);
     const newRefreshTokenHash = hashToken(newRefreshToken);
     const newCsrfToken = createCsrfCookie(session.id);

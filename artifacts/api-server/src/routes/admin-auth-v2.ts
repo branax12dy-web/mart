@@ -7,6 +7,9 @@
  * - Session management with rotation and revocation
  * - CSRF protection
  * - Comprehensive audit logging
+ * - Forgot-password / reset-password flow with single-use, time-limited
+ *   tokens and audit logging
+ * - Force-password-change flow gated by the `mpc` JWT claim
  *
  * Reference: /workspaces/mart/artifacts/admin/admin-login-guide.md
  */
@@ -14,21 +17,31 @@
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { 
-  adminLogin, 
-  verify2fa, 
-  createAdminSession, 
+import { db } from '@workspace/db';
+import { adminAccountsTable } from '@workspace/db/schema';
+import { eq } from 'drizzle-orm';
+import {
+  adminLogin,
+  verify2fa,
+  createAdminSession,
   refreshAdminSession,
   logoutAdminSession,
   getAdminActiveSessions,
   revokeAllAdminSessions,
 } from '../services/admin-auth.service.js';
-import { 
-  authenticateAdmin, 
+import {
+  issueAdminPasswordResetToken,
+  verifyAdminPasswordResetToken,
+  completeAdminPasswordReset,
+  changeAdminPassword,
+} from '../services/admin-password.service.js';
+import { sendAdminPasswordResetLinkEmail } from '../services/email.js';
+import {
+  authenticateAdmin,
   csrfProtection,
 } from '../middlewares/admin-auth.js';
-import { 
-  getClientIp, 
+import {
+  getClientIp,
   logAdminAudit,
 } from '../middlewares/admin-audit.js';
 import { verify2faChallengeToken } from '../utils/admin-jwt.js';
@@ -58,6 +71,44 @@ const verifyTotpLimiter = rateLimit({
   keyGenerator: (req) => getClientIp(req),
 });
 
+/**
+ * Forgot-password is intentionally aggressive on rate limiting because it
+ * accepts an arbitrary email and emits an email if the email matches an
+ * admin account. Per-IP limit prevents enumeration / mass spam; the response
+ * is always a generic success regardless of whether the email exists.
+ */
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: { error: 'Too many password reset requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
+});
+
+/**
+ * Reset-password (token consumption) is rate-limited per IP to prevent
+ * brute-forcing the 64-hex-char token space. The token itself is high
+ * entropy, but a hard cap is cheap insurance.
+ */
+const resetPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many reset attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
+});
+
+const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many password change attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
+});
+
 // Validation schemas
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -69,9 +120,33 @@ const twoFaSchema = z.object({
   totp: z.string().length(6, 'TOTP must be 6 digits').regex(/^\d{6}$/, 'TOTP must be numeric'),
 }).strict();
 
-const refreshSchema = z.object({
-  // Refresh token comes from httpOnly cookie, but can optionally be sent in body
+const forgotPasswordSchema = z.object({
+  email: z.string().email('A valid email address is required').max(254),
 }).strict();
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(32).max(256),
+  newPassword: z.string().min(8).max(256),
+}).strict();
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required').max(256),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters').max(256),
+}).strict();
+
+/** Build a user-facing reset URL pointing at the admin SPA. */
+function buildAdminResetUrl(rawToken: string): string {
+  const base =
+    process.env.ADMIN_BASE_URL ||
+    process.env.APP_BASE_URL ||
+    (process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}/admin`
+      : "http://localhost:5000/admin");
+  // Trim trailing slash and append the SPA route. The admin SPA exposes a
+  // wouter route at `/reset-password` that consumes ?token=...
+  const trimmed = base.replace(/\/+$/, "");
+  return `${trimmed}/reset-password?token=${encodeURIComponent(rawToken)}`;
+}
 
 /**
  * POST /api/admin/auth/login
@@ -95,7 +170,7 @@ router.post('/auth/login', loginLimiter, async (req: Request, res: Response) => 
         result: 'failure',
         reason: result.error,
       });
-      return res.status(401).json({ error: result.error });
+      res.status(401).json({ error: result.error }); return;
     }
 
     // If MFA is required
@@ -107,11 +182,11 @@ router.post('/auth/login', loginLimiter, async (req: Request, res: Response) => 
         result: 'success',
       });
 
-      return res.json({
+      res.json({
         requiresMfa: true,
         tempToken: result.tempToken,
         message: 'Please provide your TOTP code',
-      });
+      }); return;
     }
 
     // No MFA - create session
@@ -140,6 +215,7 @@ router.post('/auth/login', loginLimiter, async (req: Request, res: Response) => 
       ip,
       userAgent,
       result: 'success',
+      metadata: { mustChangePassword: !!admin.mustChangePassword },
     });
 
     res.json({
@@ -147,17 +223,20 @@ router.post('/auth/login', loginLimiter, async (req: Request, res: Response) => 
       user: {
         id: admin.id,
         name: admin.name,
-        email: admin.username || admin.name,
+        email: admin.email || admin.username || admin.name,
         role: admin.role,
+        mustChangePassword: !!admin.mustChangePassword,
       },
+      mustChangePassword: !!admin.mustChangePassword,
       expiresAt: session.expiresAt,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request',
         details: err.errors,
       });
+      return;
     }
 
     console.error('Login error:', err);
@@ -188,7 +267,7 @@ router.post('/auth/2fa', verifyTotpLimiter, async (req: Request, res: Response) 
         result: 'failure',
         reason: 'Invalid temporary token',
       });
-      return res.status(401).json({ error: 'Temporary token expired or invalid' });
+      res.status(401).json({ error: 'Temporary token expired or invalid' }); return;
     }
 
     // Verify TOTP
@@ -201,7 +280,7 @@ router.post('/auth/2fa', verifyTotpLimiter, async (req: Request, res: Response) 
         result: 'failure',
         reason: 'Invalid TOTP code',
       });
-      return res.status(401).json({ error: mfaResult.error });
+      res.status(401).json({ error: mfaResult.error }); return;
     }
 
     // Create session
@@ -230,6 +309,7 @@ router.post('/auth/2fa', verifyTotpLimiter, async (req: Request, res: Response) 
       ip,
       userAgent,
       result: 'success',
+      metadata: { mustChangePassword: !!admin.mustChangePassword },
     });
 
     res.json({
@@ -237,17 +317,20 @@ router.post('/auth/2fa', verifyTotpLimiter, async (req: Request, res: Response) 
       user: {
         id: admin.id,
         name: admin.name,
-        email: admin.username || admin.name,
+        email: admin.email || admin.username || admin.name,
         role: admin.role,
+        mustChangePassword: !!admin.mustChangePassword,
       },
+      mustChangePassword: !!admin.mustChangePassword,
       expiresAt: session.expiresAt,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request',
         details: err.errors,
       });
+      return;
     }
 
     console.error('2FA verification error:', err);
@@ -266,10 +349,11 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
   const refreshToken = req.cookies.refresh_token;
 
   if (!refreshToken) {
-    return res.status(401).json({
+    res.status(401).json({
       error: 'No refresh token found',
       code: 'REFRESH_MISSING',
     });
+    return;
   }
 
   const result = await refreshAdminSession(refreshToken, ip, userAgent);
@@ -285,10 +369,11 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
       reason: result.error,
     });
 
-    return res.status(401).json({
+    res.status(401).json({
       error: result.error,
       code: 'REFRESH_INVALID',
     });
+    return;
   }
 
   // Update cookies with new tokens (rotation)
@@ -318,6 +403,47 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
   res.json({
     accessToken: result.accessToken,
     expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    mustChangePassword: !!result.admin?.mustChangePassword,
+    user: result.admin
+      ? {
+          id: result.admin.id,
+          name: result.admin.name,
+          email: result.admin.email || result.admin.username || result.admin.name,
+          role: result.admin.role,
+          mustChangePassword: !!result.admin.mustChangePassword,
+        }
+      : undefined,
+  });
+});
+
+/**
+ * GET /api/admin/auth/me
+ * Return the authenticated admin's profile (used by the SPA to learn whether
+ * the must-change-password flag is set on the current session).
+ */
+router.get('/auth/me', authenticateAdmin, async (req: Request, res: Response) => {
+  const adminId = req.admin?.sub;
+  if (!adminId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+
+  const [admin] = await db
+    .select()
+    .from(adminAccountsTable)
+    .where(eq(adminAccountsTable.id, adminId))
+    .limit(1);
+
+  if (!admin) { res.status(404).json({ error: 'Admin not found' }); return; }
+
+  res.json({
+    user: {
+      id: admin.id,
+      name: admin.name,
+      email: admin.email || admin.username || admin.name,
+      username: admin.username,
+      role: admin.role,
+      mustChangePassword: !!admin.mustChangePassword,
+      passwordChangedAt: admin.passwordChangedAt?.toISOString() ?? null,
+    },
+    mustChangePassword: !!admin.mustChangePassword,
   });
 });
 
@@ -361,6 +487,266 @@ router.post(
 );
 
 /**
+ * POST /api/admin/auth/forgot-password
+ * Public endpoint. Always returns a generic success response so callers
+ * cannot enumerate which admin emails exist. When the email matches an
+ * active admin account we issue a single-use, 30-minute reset token and
+ * email the link via the platform's email service.
+ */
+router.post(
+  '/auth/forgot-password',
+  forgotPasswordLimiter,
+  async (req: Request, res: Response) => {
+    const ip = getClientIp(req);
+    const userAgent = req.headers['user-agent'];
+
+    // Generic response — never leaks whether the email exists.
+    const genericResponse = {
+      success: true,
+      message: 'If that email is associated with an admin account, a password reset link has been sent.',
+    };
+
+    let parsed: z.infer<typeof forgotPasswordSchema>;
+    try {
+      parsed = forgotPasswordSchema.parse(req.body);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid request', details: err.errors }); return;
+      }
+      res.status(400).json({ error: 'Invalid request' }); return;
+    }
+
+    const email = parsed.email.trim().toLowerCase();
+
+    try {
+      const [admin] = await db
+        .select()
+        .from(adminAccountsTable)
+        .where(eq(adminAccountsTable.email, email))
+        .limit(1);
+
+      if (!admin || !admin.isActive) {
+        // Audit the miss (no adminId) so brute-forcing leaves a trail.
+        await logAdminAudit('admin_forgot_password_unknown', {
+          ip,
+          userAgent,
+          result: 'failure',
+          reason: 'No active admin matched the supplied email',
+          metadata: { email },
+        });
+        res.json(genericResponse); return;
+      }
+
+      const issued = await issueAdminPasswordResetToken({
+        adminId: admin.id,
+        requestedBy: 'self',
+        requesterIp: ip,
+        requesterUserAgent: userAgent ?? null,
+      });
+
+      const resetUrl = buildAdminResetUrl(issued.rawToken);
+
+      const sendResult = await sendAdminPasswordResetLinkEmail(admin.email!, {
+        resetUrl,
+        recipientName: admin.name,
+        expiresAt: issued.expiresAt,
+      }).catch((err) => {
+        console.error('[admin-auth-v2] sendAdminPasswordResetLinkEmail threw:', err);
+        return { sent: false, reason: (err as Error).message };
+      });
+
+      await logAdminAudit('admin_forgot_password_issued', {
+        adminId: admin.id,
+        ip,
+        userAgent,
+        result: sendResult.sent ? 'success' : 'failure',
+        reason: sendResult.sent ? undefined : sendResult.reason,
+        metadata: {
+          requestedBy: 'self',
+          tokenId: issued.id,
+          expiresAt: issued.expiresAt.toISOString(),
+        },
+      });
+
+      res.json(genericResponse); return;
+    } catch (err) {
+      console.error('[admin-auth-v2] forgot-password failed:', err);
+      // Still return the generic response — never expose internal failures.
+      res.json(genericResponse); return;
+    }
+  },
+);
+
+/**
+ * POST /api/admin/auth/reset-password
+ * Public endpoint. Consumes a reset token and replaces the admin's password.
+ * Single-use; revokes every session on success so the admin must log in
+ * again with the new password.
+ */
+router.post(
+  '/auth/reset-password',
+  resetPasswordLimiter,
+  async (req: Request, res: Response) => {
+    const ip = getClientIp(req);
+    const userAgent = req.headers['user-agent'];
+
+    let body: z.infer<typeof resetPasswordSchema>;
+    try {
+      body = resetPasswordSchema.parse(req.body);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid request', details: err.errors }); return;
+      }
+      res.status(400).json({ error: 'Invalid request' }); return;
+    }
+
+    const verified = await verifyAdminPasswordResetToken(body.token);
+    if (!verified) {
+      await logAdminAudit('admin_reset_password_invalid_token', {
+        ip,
+        userAgent,
+        result: 'failure',
+        reason: 'Token missing, expired, used, or admin inactive',
+      });
+      res.status(400).json({
+        error: 'This reset link is invalid or has expired. Please request a new one.',
+        code: 'RESET_TOKEN_INVALID',
+      });
+      return;
+    }
+
+    const result = await completeAdminPasswordReset({
+      rawToken: body.token,
+      newPassword: body.newPassword,
+    });
+
+    if (!result.ok) {
+      await logAdminAudit('admin_reset_password_failed', {
+        adminId: verified.admin.id,
+        ip,
+        userAgent,
+        result: 'failure',
+        reason: result.error,
+      });
+      res.status(400).json({ error: result.error }); return;
+    }
+
+    await logAdminAudit('admin_reset_password_success', {
+      adminId: result.admin.id,
+      ip,
+      userAgent,
+      result: 'success',
+      metadata: { tokenId: verified.token.id },
+    });
+
+    res.json({
+      success: true,
+      message: 'Password updated. Please sign in with your new password.',
+    });
+  },
+);
+
+/**
+ * POST /api/admin/auth/change-password
+ * Authenticated endpoint. Used both by the must-change-password flow and
+ * by self-service rotations. Verifies the current password and replaces it.
+ *
+ * This route is on the FORCE_PASSWORD_CHANGE allow-list — it is reachable
+ * even when the access token carries the `mpc` claim.
+ */
+router.post(
+  '/auth/change-password',
+  changePasswordLimiter,
+  authenticateAdmin,
+  csrfProtection,
+  async (req: Request, res: Response) => {
+    const ip = getClientIp(req);
+    const userAgent = req.headers['user-agent'];
+    const adminId = req.admin?.sub;
+
+    if (!adminId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+
+    let body: z.infer<typeof changePasswordSchema>;
+    try {
+      body = changePasswordSchema.parse(req.body);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid request', details: err.errors }); return;
+      }
+      res.status(400).json({ error: 'Invalid request' }); return;
+    }
+
+    // Determine the current session id (so we can keep it alive while
+    // revoking sibling sessions — the user shouldn't get bounced mid-change).
+    let keepSessionId: string | undefined;
+    const refreshTokenCookie = req.cookies.refresh_token;
+    if (refreshTokenCookie) {
+      try {
+        const payload = verifyRefreshToken(refreshTokenCookie);
+        keepSessionId = payload.sessionId;
+      } catch {
+        /* refresh token invalid — proceed without keeping any session */
+      }
+    }
+
+    const result = await changeAdminPassword({
+      adminId,
+      currentPassword: body.currentPassword,
+      newPassword: body.newPassword,
+      keepSessionId,
+    });
+
+    if (!result.ok) {
+      await logAdminAudit('admin_change_password_failed', {
+        adminId,
+        ip,
+        userAgent,
+        result: 'failure',
+        reason: result.error,
+      });
+      res.status(400).json({ error: result.error }); return;
+    }
+
+    await logAdminAudit('admin_change_password_success', {
+      adminId: result.admin.id,
+      ip,
+      userAgent,
+      result: 'success',
+    });
+
+    // Issue a fresh access token *without* the mpc claim so the SPA can
+    // immediately resume normal navigation. The refresh-token cookie is
+    // unchanged (the current session was kept alive on purpose).
+    const { signAccessToken } = await import('../utils/admin-jwt.js');
+    const { resolveAdminPermissions } = await import('../services/permissions.service.js');
+    const perms = await resolveAdminPermissions(result.admin.id, result.admin.role);
+    const accessToken = signAccessToken(
+      result.admin.id,
+      result.admin.role,
+      result.admin.name,
+      perms,
+      0,
+      false,
+    );
+
+    res.json({
+      success: true,
+      message: 'Password updated.',
+      accessToken,
+      mustChangePassword: false,
+      user: {
+        id: result.admin.id,
+        name: result.admin.name,
+        email: result.admin.email || result.admin.username || result.admin.name,
+        role: result.admin.role,
+        mustChangePassword: false,
+      },
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    });
+  },
+);
+
+/**
  * GET /api/admin/auth/sessions
  * Get all active sessions for the authenticated admin
  * Requires valid access token
@@ -372,7 +758,7 @@ router.get(
     const adminId = req.admin?.sub;
 
     if (!adminId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' }); return;
     }
 
     const sessions = await getAdminActiveSessions(adminId);
@@ -404,7 +790,7 @@ router.delete(
     const sessionId = req.params.sessionId;
 
     if (!adminId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' }); return;
     }
 
     // Verify the session belongs to the admin
@@ -412,7 +798,7 @@ router.delete(
     const session = sessions.find((s) => s.id === sessionId);
 
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      res.status(404).json({ error: 'Session not found' }); return;
     }
 
     await logoutAdminSession(sessionId);
@@ -434,7 +820,7 @@ router.delete(
     const adminId = req.admin?.sub;
 
     if (!adminId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' }); return;
     }
 
     await revokeAllAdminSessions(adminId);

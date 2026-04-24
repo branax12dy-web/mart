@@ -417,6 +417,95 @@ export async function alertLowWalletBalance(
   );
 }
 
+/**
+ * Send an admin password reset link email. Used by:
+ *   • the public /auth/forgot-password endpoint, and
+ *   • the super-admin "Send reset link" action in the admin user mgmt UI.
+ *
+ * Falls back to console logging when SMTP is not configured so local
+ * development still surfaces the link to the operator.
+ */
+export async function sendAdminPasswordResetLinkEmail(
+  to: string,
+  options: {
+    resetUrl: string;
+    recipientName?: string;
+    expiresAt: Date;
+    settings?: Record<string, string>;
+  },
+): Promise<{ sent: boolean; reason?: string }> {
+  const { resetUrl, recipientName, expiresAt, settings } = options;
+  const appName = settings?.["app_name"] ?? "AJKMart";
+  const subject = `${appName} admin password reset`;
+  const greeting = recipientName ? `Hi ${recipientName},` : "Hello,";
+  const expiresIso = expiresAt.toISOString();
+  const expiresMinutes = Math.max(
+    1,
+    Math.round((expiresAt.getTime() - Date.now()) / 60000),
+  );
+
+  const tr = settings ? buildTransporterFromSettings(settings) : null;
+  const transport = tr || getEnvTransporter();
+
+  if (!transport) {
+    console.log("==================================================================");
+    console.log(`[EMAIL] (SMTP not configured) Admin password reset link for ${to}`);
+    console.log(`[EMAIL]   ${resetUrl}`);
+    console.log(`[EMAIL]   expires at ${expiresIso}`);
+    console.log("==================================================================");
+    return { sent: false, reason: "SMTP not configured" };
+  }
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; color: #111827;">
+      <h2 style="color:#111827;">${appName} admin account</h2>
+      <p>${greeting}</p>
+      <p>We received a request to reset the password for your ${appName} admin account.
+         Click the button below to choose a new password. This link will expire in
+         <strong>${expiresMinutes} minute${expiresMinutes === 1 ? "" : "s"}</strong> and can only
+         be used once.</p>
+      <p style="text-align:center; margin: 28px 0;">
+        <a href="${resetUrl}" style="background:#111827;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;display:inline-block;">
+          Reset your password
+        </a>
+      </p>
+      <p style="font-size:13px;color:#6b7280;">
+        If the button does not work, copy and paste this URL into your browser:<br/>
+        <span style="word-break:break-all;">${resetUrl}</span>
+      </p>
+      <p style="font-size:12px;color:#9ca3af;">
+        If you did not request a password reset you can safely ignore this email — your
+        password will remain unchanged.
+      </p>
+    </div>
+  `;
+
+  const text = [
+    `${greeting}`,
+    "",
+    `We received a request to reset the password for your ${appName} admin account.`,
+    `Open the link below within ${expiresMinutes} minute(s) to choose a new password:`,
+    "",
+    resetUrl,
+    "",
+    "If you did not request this, you can ignore this email.",
+  ].join("\n");
+
+  try {
+    await transport.sendMail({
+      from: resolveFrom(settings),
+      to,
+      subject,
+      html,
+      text,
+    });
+    return { sent: true };
+  } catch (err: any) {
+    console.error(`[EMAIL] Failed to send admin reset link to ${to}:`, err?.message);
+    return { sent: false, reason: err?.message };
+  }
+}
+
 /* ── Generic dispatch wrapper for NotificationService ── */
 export async function sendEmail(
   input: { to: string; subject: string; html: string; templateId?: string }

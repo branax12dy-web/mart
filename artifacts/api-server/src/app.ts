@@ -9,6 +9,8 @@ import {
   seedDefaultRoles,
   backfillAdminRoleAssignments,
 } from "./services/permissions.service.js";
+import { seedDefaultSuperAdmin } from "./services/admin-seed.service.js";
+import { purgeStaleAdminPasswordResetTokens } from "./services/admin-password.service.js";
 import router from "./routes/index.js";
 
 /**
@@ -29,6 +31,22 @@ export async function runStartupTasks(): Promise<void> {
     console.log("[startup] RBAC seed + backfill complete");
   } catch (err) {
     console.error("[startup] RBAC seed/backfill failed (continuing):", err);
+  }
+  // Seed the default super-admin AFTER RBAC so the super_admin role exists
+  // and can be granted to the new account on first boot.
+  try {
+    await seedDefaultSuperAdmin();
+  } catch (err) {
+    console.error("[startup] admin seed failed (continuing):", err);
+  }
+  // Best-effort GC of stale password reset tokens (idempotent, safe to skip).
+  try {
+    const purged = await purgeStaleAdminPasswordResetTokens();
+    if (purged > 0) {
+      console.log(`[startup] purged ${purged} expired admin password reset token(s)`);
+    }
+  } catch (err) {
+    console.error("[startup] reset-token purge failed (continuing):", err);
   }
 }
 

@@ -5,6 +5,8 @@ export interface AdminUser {
   name: string;
   email: string;
   role: string;
+  /** True when the admin must rotate their password before doing anything else. */
+  mustChangePassword?: boolean;
 }
 
 interface AuthState {
@@ -12,6 +14,11 @@ interface AuthState {
   user: AdminUser | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * Lifted from the access token's `mpc` claim and the `/auth/me` payload —
+   * the SPA reads this to gate every route except `/set-new-password`.
+   */
+  mustChangePassword: boolean;
 }
 
 interface AuthContextType {
@@ -19,6 +26,11 @@ interface AuthContextType {
   login: (username: string, password: string, totp?: string, tempToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<string>;
+  /**
+   * Submits the must-change-password rotation. On success the SPA receives a
+   * fresh access token without the `mpc` claim and the gate is lifted.
+   */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -35,6 +47,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     user: null,
     isLoading: true,
     error: null,
+    mustChangePassword: false,
   });
 
   // Use a ref to prevent concurrent refresh requests
@@ -68,6 +81,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
               accessToken: null,
               user: null,
               isLoading: false,
+              mustChangePassword: false,
               error: 'Session expired. Please log in again.',
             });
             throw new Error('Session expired');
@@ -79,6 +93,13 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         setState((prev) => ({
           ...prev,
           accessToken: data.accessToken,
+          user: data.user
+            ? {
+                ...(prev.user ?? { id: '', name: '', email: '', role: '' }),
+                ...data.user,
+              }
+            : prev.user,
+          mustChangePassword: !!data.mustChangePassword,
           error: null,
         }));
 
@@ -156,6 +177,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
             user: data.user,
             isLoading: false,
             error: null,
+            mustChangePassword: !!data.mustChangePassword,
           });
           return;
         }
@@ -194,6 +216,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           user: data.user,
           isLoading: false,
           error: null,
+          mustChangePassword: !!data.mustChangePassword,
         });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Login failed';
@@ -238,6 +261,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         user: null,
         isLoading: false,
         error: null,
+        mustChangePassword: false,
       });
     } catch (err) {
       console.error('Logout error:', err);
@@ -247,9 +271,49 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         user: null,
         isLoading: false,
         error: null,
+        mustChangePassword: false,
       });
     }
   }, [state.accessToken]);
+
+  /**
+   * Submit the must-change-password rotation. Used by the
+   * `/set-new-password` screen during the forced flow and any voluntary
+   * change-password UI later. On success the SPA receives a fresh access
+   * token without the `mpc` claim and the gate is lifted automatically.
+   */
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      if (!state.accessToken) throw new Error('Not authenticated');
+      const response = await fetch('/api/admin/auth/change-password', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${state.accessToken}`,
+          'X-CSRF-Token': readCsrfFromCookie(),
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to change password');
+      }
+
+      const data = await response.json();
+      setState((prev) => ({
+        ...prev,
+        accessToken: data.accessToken ?? prev.accessToken,
+        user: data.user
+          ? { ...(prev.user ?? { id: '', name: '', email: '', role: '' }), ...data.user }
+          : prev.user,
+        mustChangePassword: false,
+        error: null,
+      }));
+    },
+    [state.accessToken],
+  );
 
   const clearError = useCallback(() => {
     setState((prev) => ({
@@ -265,6 +329,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         refreshAccessToken,
+        changePassword,
         clearError,
       }}
     >
