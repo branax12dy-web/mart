@@ -75,6 +75,8 @@ import {
 } from "../../../lib/response.js";
 import { UserService } from "../../../services/admin-user.service.js";
 import { AuditService } from "../../../services/admin-audit.service.js";
+import { requirePermission } from "../../../middlewares/require-permission.js";
+import { logAdminAudit } from "../../../middlewares/admin-audit.js";
 
 const router = Router();
 router.post("/auth", async (req, res) => {
@@ -357,15 +359,15 @@ router.delete("/admin-accounts/:id", async (req, res) => {
  * to the caller in non-production environments so the operator can copy it
  * out-of-band when SMTP is not configured.
  */
-router.post("/admin-accounts/:id/send-reset-link", async (req, res) => {
+router.post(
+  "/admin-accounts/:id/send-reset-link",
+  // Identity-management action: gated behind the same RBAC permission used
+  // for managing roles/admin identities. requirePermission auto-passes
+  // super admins, so this preserves the existing super-admin entry point
+  // while allowing fine-grained delegation later via RBAC.
+  requirePermission("system.roles.manage"),
+  async (req, res) => {
   const adminReq = req as AdminRequest;
-  if (adminReq.adminRole !== "super") {
-    res.status(403).json({
-      success: false,
-      error: "Only the super admin can send password reset links.",
-    });
-    return;
-  }
 
   const targetId = req.params["id"]!;
   const [target] = await db
@@ -437,11 +439,22 @@ router.post("/admin-accounts/:id/send-reset-link", async (req, res) => {
     expiresAt: issued.expiresAt,
   }).catch((err) => ({ sent: false, reason: (err as Error).message }));
 
-  addAuditEntry({
-    action: "admin_password_reset_link_sent",
+  // Funnel into the same admin_audit_log stream the rest of the password
+  // lifecycle uses (forgot/reset/change-password) so security teams have a
+  // single sink to read.
+  await logAdminAudit("admin_password_reset_link_sent", {
+    adminId: target.id,
     ip,
-    details: `Super-admin ${adminReq.adminName ?? adminReq.adminId ?? "unknown"} issued reset link for admin ${target.id} (${target.email})`,
+    userAgent: userAgent ?? undefined,
     result: sendResult.sent ? "success" : "failure",
+    reason: sendResult.sent ? undefined : sendResult.reason,
+    metadata: {
+      issuedBy: adminReq.adminId ?? null,
+      issuedByName: adminReq.adminName ?? null,
+      targetEmail: target.email,
+      tokenId: issued.id,
+      expiresAt: issued.expiresAt.toISOString(),
+    },
   });
 
   res.json({
@@ -453,7 +466,8 @@ router.post("/admin-accounts/:id/send-reset-link", async (req, res) => {
     // when SMTP is not yet wired up. Production never echoes the token.
     resetUrl: process.env.NODE_ENV === "production" ? undefined : resetUrl,
   });
-});
+  },
+);
 
 /* ── App Management ── */
 router.post("/rotate-secret", adminAuth, (req, res) => {
