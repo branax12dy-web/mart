@@ -105,10 +105,15 @@ export default function RolesPermissionsPage() {
     setAdminsLoading(true);
     try {
       const res = await fetchAdmin("/api/admin/admin-accounts");
-      const list: AdminAccount[] = res?.data?.adminAccounts
+      // The admin-accounts endpoint returns `{ accounts: [...] }`, but be
+      // defensive for variants we've seen elsewhere in this codebase.
+      const list: AdminAccount[] =
+        res?.data?.accounts
+        ?? res?.accounts
+        ?? res?.data?.adminAccounts
         ?? res?.adminAccounts
-        ?? res?.data
-        ?? res
+        ?? (Array.isArray(res?.data) ? res.data : null)
+        ?? (Array.isArray(res) ? res : [])
         ?? [];
       setAdmins(Array.isArray(list) ? list : []);
       // Hydrate roles for each admin in parallel (best-effort).
