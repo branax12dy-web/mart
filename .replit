@@ -174,3 +174,7 @@ LOG_LEVEL = "warn"
 
 [rules.formatter.fileExtensions.".ts"]
 id = "module:nodejs-24/languageServer:typescript-language-server"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
