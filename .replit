@@ -1,5 +1,7 @@
 modules = ["nodejs-24", "postgresql-16", "python-3.11"]
 
+run = "nix develop --command bash -lc 'pnpm install && pnpm run start:all'"
+
 [[artifacts]]
 id = "artifacts/api-server"
 

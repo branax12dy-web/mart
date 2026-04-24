@@ -135,10 +135,18 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/">
         {() => {
-          if (state.accessToken && !state.isLoading) {
-            setLocation("/dashboard");
+          if (state.isLoading) {
+            return (
+              <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            );
           }
-          return null;
+          if (state.accessToken) {
+            setLocation("/dashboard");
+            return null;
+          }
+          return <Login />;
         }}
       </Route>
 
