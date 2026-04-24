@@ -1,5 +1,19 @@
 # AJKMart Super App — Workspace
 
+### Replit Webview / Preview Routing (dev)
+The Replit IDE webview only registers an "artifact" preview for the API server (port 8080) and the mockup sandbox (port 8081). The other four web apps (admin, vendor, rider, ajkmart Expo) listen on non-standard ports and previously showed "Hmm... we couldn't reach this app" when their workflow preview tabs were clicked.
+
+To make every app visible from a single working preview window, the API server now mounts dev-only HTTP+WS proxies in `artifacts/api-server/src/app.ts`:
+- `/admin/*`    → `http://127.0.0.1:23744` (admin Vite, `BASE_PATH=/admin/`)
+- `/vendor/*`   → `http://127.0.0.1:21463` (vendor Vite, `BASE_PATH=/vendor/`)
+- `/rider/*`    → `http://127.0.0.1:22969` (rider Vite, `BASE_PATH=/rider/`)
+- `/__mockup/*` → `http://127.0.0.1:8081`  (mockup sandbox Vite)
+- everything else (after `/api`, `/health`) → `http://127.0.0.1:20716` (Expo customer app, `BASE_PATH=/`)
+
+The proxies are registered with `pathFilter` (not `app.use(prefix, ...)`) so the original `/admin/...` URL is forwarded as-is — Express's prefix mounting strips the prefix from `req.url`, which collides with each Vite server's `base` and produces a redirect loop. Ports are overridable via `ADMIN_DEV_PORT`, `VENDOR_DEV_PORT`, `RIDER_DEV_PORT`, `EXPO_DEV_PORT`, `MOCKUP_DEV_PORT`. Proxies are guarded by `NODE_ENV !== "production"` so production deployments behind Caddy/Nginx are unaffected. The proxies are registered before `helmet()` so upstream Vite headers (CSP, frame options) reach the iframe untouched, and after the `/api` router so backend routes still win.
+
+To test inside Replit: open the API Server preview tab and navigate to `/`, `/admin/`, `/vendor/`, or `/rider/`. The same paths also work via `https://${REPLIT_DEV_DOMAIN}/...`.
+
 ### Unified Environment Launchers
 Four single-word commands bring the entire monorepo (API + admin + vendor + rider + ajkmart Expo + mockup sandbox) up in any of four environments. Each one auto-detects/auto-fixes whatever its environment needs.
 

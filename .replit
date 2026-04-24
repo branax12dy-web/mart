@@ -121,19 +121,22 @@ author = "agent"
 mode = "sequential"
 
 [workflows.workflow.metadata]
-outputType = "webview"
+outputType = "console"
 artifactId = "artifacts/admin"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/admin run dev"
-cwd = "./artifacts/admin"
+args = "PORT=23744 BASE_PATH=/admin/ pnpm --filter @workspace/admin run dev"
 waitForPort = 23744
-router = "path"
 
-[workflows.workflow.tasks.env]
-PORT = "23744"
-BASE_PATH = "/admin/"
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "artifacts/admin: web"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
