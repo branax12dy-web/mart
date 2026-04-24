@@ -25,6 +25,7 @@ import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { hashAdminSecret } from "./password.js";
 import { generateId } from "../lib/id.js";
+import { logAdminAudit } from "../middlewares/admin-audit.js";
 
 const SUPER_ADMIN_SLUG = "super_admin";
 const DEFAULT_SEED_EMAIL = "admin@ajkmart.local";
@@ -128,6 +129,21 @@ export async function seedDefaultSuperAdmin(): Promise<SeedResult> {
     console.log("[admin-seed] ⚠  The admin will be forced to change it on first login.");
   }
   console.log("==================================================================");
+
+  // Persist a permanent audit-log entry so the seeded super-admin shows up
+  // in the same audit trail super-admins use day-to-day. Best-effort: a
+  // failure here is logged but does not abort the seed.
+  await logAdminAudit("admin_seed_super_admin_created", {
+    adminId: id,
+    ip: "system",
+    result: "success",
+    metadata: {
+      email,
+      username,
+      passwordSource: generated ? "generated" : "env",
+      mustChangePassword: true,
+    },
+  });
 
   return {
     created: true,

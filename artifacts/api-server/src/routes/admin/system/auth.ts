@@ -412,6 +412,14 @@ router.post("/admin-accounts/:id/send-reset-link", async (req, res) => {
     requesterUserAgent: userAgent,
   });
 
+  // Force the target admin to choose a new password on their next sign-in,
+  // even if they don't click the emailed link. This makes the action a real
+  // "lockout + reset" rather than just an out-of-band suggestion.
+  await db
+    .update(adminAccountsTable)
+    .set({ mustChangePassword: true })
+    .where(eq(adminAccountsTable.id, target.id));
+
   // Build the reset URL (mirrors the public flow).
   const base =
     process.env.ADMIN_BASE_URL ||

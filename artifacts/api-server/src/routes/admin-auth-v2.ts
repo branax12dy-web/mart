@@ -578,6 +578,60 @@ router.post(
 );
 
 /**
+ * GET /api/admin/auth/reset-password/validate?token=...
+ *
+ * Public endpoint. Lets the reset-password page check whether the token
+ * embedded in the link is still valid before the user fills out the form,
+ * so we can show a clean "this link expired / was already used" screen
+ * instead of failing on submit.
+ *
+ * The token itself is never echoed back. Only `valid: true|false` and a
+ * machine-readable `reason` are returned. Read-only — the token is NOT
+ * consumed by this endpoint.
+ */
+router.get(
+  '/auth/reset-password/validate',
+  resetPasswordLimiter,
+  async (req: Request, res: Response) => {
+    const ip = getClientIp(req);
+    const userAgent = req.headers['user-agent'];
+
+    const raw = req.query['token'];
+    const token = typeof raw === 'string' ? raw : '';
+    if (!token) {
+      res.status(400).json({ valid: false, reason: 'missing_token' });
+      return;
+    }
+
+    const verified = await verifyAdminPasswordResetToken(token);
+    if (!verified) {
+      await logAdminAudit('admin_reset_password_validate', {
+        ip,
+        userAgent,
+        result: 'failure',
+        reason: 'Token missing, expired, used, or admin inactive',
+      });
+      res.status(200).json({ valid: false, reason: 'invalid_or_expired' });
+      return;
+    }
+
+    await logAdminAudit('admin_reset_password_validate', {
+      adminId: verified.admin.id,
+      ip,
+      userAgent,
+      result: 'success',
+      metadata: { tokenId: verified.token.id },
+    });
+
+    res.json({
+      valid: true,
+      expiresAt: verified.token.expiresAt.toISOString(),
+      adminName: verified.admin.name,
+    });
+  },
+);
+
+/**
  * POST /api/admin/auth/reset-password
  * Public endpoint. Consumes a reset token and replaces the admin's password.
  * Single-use; revokes every session on success so the admin must log in

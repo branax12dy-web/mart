@@ -24,9 +24,16 @@ export async function runSqlMigrations() {
         applied_at TIMESTAMP NOT NULL DEFAULT NOW()
       )
     `);
-    // Run any pending migration files
-    const migrationsDir = path.join(__dirname, "../../../lib/db/migrations");
-    if (fs.existsSync(migrationsDir)) {
+    // Run any pending migration files. The migration directory lives at
+    // <repo>/lib/db/migrations. From this file (artifacts/api-server/src/services)
+    // that's four levels up, not three. Both candidate paths are checked so
+    // we behave correctly regardless of build layout (tsx/dev vs. dist).
+    const candidateDirs = [
+      path.join(__dirname, "../../../../lib/db/migrations"),
+      path.join(__dirname, "../../../lib/db/migrations"),
+    ];
+    const migrationsDir = candidateDirs.find((dir) => fs.existsSync(dir));
+    if (migrationsDir) {
       const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
       for (const file of files) {
         const { rows } = await pool.query("SELECT 1 FROM _schema_migrations WHERE filename = $1", [file]);

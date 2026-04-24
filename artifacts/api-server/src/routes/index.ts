@@ -73,8 +73,12 @@ router.use("/addresses", addressesRouter);
 router.use("/settings", settingsRouter);
 router.use("/seed", seedRouter);
 router.use("/admin/system", systemRouter);
-router.use("/admin", adminRouter);
+// admin-auth-v2 owns the public /api/admin/auth/* surface (forgot-password,
+// reset-password, reset-password/validate). Mount it BEFORE the legacy
+// adminRouter so its public endpoints are not shadowed by adminRouter's
+// blanket `adminAuth` middleware.
 router.use("/admin", adminAuthV2Router);
+router.use("/admin", adminRouter);
 router.use("/platform-config", platformConfigRouter);
 router.use("/rider", riderRouter);
 router.use("/vendor", vendorRouter);

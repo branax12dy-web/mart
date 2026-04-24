@@ -28,6 +28,11 @@ function validateStrength(pw: string): string | null {
   return null;
 }
 
+type ValidationState =
+  | { status: "checking" }
+  | { status: "valid"; expiresAt: string | null; adminName: string | null }
+  | { status: "invalid"; reason: "missing_token" | "invalid_or_expired" | "network" };
+
 export default function ResetPassword() {
   const [, setLocation] = useLocation();
   const token = useMemo(getTokenFromQuery, []);
@@ -37,12 +42,54 @@ export default function ResetPassword() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<ValidationState>({ status: "checking" });
 
   useEffect(() => {
+    let cancelled = false;
     if (!token) {
-      setError("This reset link is missing its token. Request a new one from the forgot-password page.");
+      setValidation({ status: "invalid", reason: "missing_token" });
+      setError(
+        "This reset link is missing its token. Request a new one from the forgot-password page.",
+      );
+      return;
     }
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/admin/auth/reset-password/validate?token=${encodeURIComponent(token)}`,
+          { method: "GET" },
+        );
+        const data = (await response.json().catch(() => ({}))) as {
+          valid?: boolean;
+          reason?: string;
+          expiresAt?: string;
+          adminName?: string;
+        };
+        if (cancelled) return;
+        if (response.ok && data.valid) {
+          setValidation({
+            status: "valid",
+            expiresAt: data.expiresAt ?? null,
+            adminName: data.adminName ?? null,
+          });
+          return;
+        }
+        setValidation({
+          status: "invalid",
+          reason:
+            data.reason === "missing_token" ? "missing_token" : "invalid_or_expired",
+        });
+      } catch {
+        if (cancelled) return;
+        setValidation({ status: "invalid", reason: "network" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
+
+  const linkUsable = validation.status === "valid";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,6 +156,38 @@ export default function ResetPassword() {
                 Your password has been changed. Redirecting you to the sign-in
                 screen…
               </p>
+            </div>
+          ) : validation.status === "checking" ? (
+            <div
+              className="flex items-center justify-center py-10 text-sm text-muted-foreground"
+              data-testid="reset-password-checking"
+            >
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Checking your reset link…
+            </div>
+          ) : validation.status === "invalid" ? (
+            <div className="space-y-4" data-testid="reset-password-invalid">
+              <p className="text-sm text-destructive">
+                {validation.reason === "missing_token"
+                  ? "This reset link is missing its token."
+                  : validation.reason === "network"
+                  ? "We couldn't reach the server to verify your link. Check your connection and try again."
+                  : "This reset link is invalid or has expired."}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Request a fresh link from the forgot-password page and try
+                again. Reset links expire 30 minutes after they're sent and
+                can only be used once.
+              </p>
+              <Link href="/forgot-password">
+                <a
+                  className="inline-flex items-center text-sm font-medium text-primary hover:underline"
+                  data-testid="link-request-new-reset"
+                >
+                  Request a new reset link
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </a>
+              </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
