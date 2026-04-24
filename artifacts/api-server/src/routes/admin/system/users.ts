@@ -683,7 +683,7 @@ router.patch("/users/:id/waive-debt", async (req, res) => {
 });
 
 /* ── PATCH /admin/users/:id/bulk-ban — ban/unban multiple users ── */
-router.patch("/users/bulk-ban", requirePermission("users.suspend"), async (req, res) => {
+router.patch("/users/bulk-ban", requirePermission("users.ban"), async (req, res) => {
   const { ids, action, reason } = req.body as { ids: string[]; action: "ban" | "unban"; reason?: string };
   if (!ids?.length) { sendValidationError(res, "ids required"); return; }
   const adminReq = req as AdminRequest;

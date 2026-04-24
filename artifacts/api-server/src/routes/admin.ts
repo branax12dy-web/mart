@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { adminAuth } from "./admin-shared.js";
 import authRoutes from "./admin/system/auth.js";
 import usersRoutes from "./admin/system/users.js";
+import rbacRoutes from "./admin/system/rbac.js";
 import ordersRoutes from "./admin/orders.js";
 import ridesRoutes from "./admin/fleet/rides.js";
 import financeRoutes from "./admin/finance/wallets.js";
@@ -65,6 +66,9 @@ router.use(ridesRoutes);
 router.use(financeRoutes);
 router.use(contentRoutes);
 router.use(systemRoutes);
+// New RBAC management routes (Task #2). Mounted explicitly because the legacy
+// systemRoutes monolith above predates the admin/system/* sub-router split.
+router.use("/system/rbac", rbacRoutes);
 router.use("/service-zones", serviceZonesRoutes);
 router.use(deliveryAccessRoutes);
 router.use(conditionsRoutes);

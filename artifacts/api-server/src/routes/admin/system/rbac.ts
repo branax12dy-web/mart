@@ -22,7 +22,7 @@ import {
   revokeSessionsForRole,
 } from "../../../services/permissions.service.js";
 import { adminAuth, addAuditEntry, type AdminRequest } from "../../admin-shared.js";
-import { requirePermission } from "../../../middlewares/require-permission.js";
+import { requirePermission, requireAnyPermission } from "../../../middlewares/require-permission.js";
 import {
   sendSuccess, sendError, sendNotFound, sendValidationError,
 } from "../../../lib/response.js";
@@ -31,18 +31,23 @@ const router = Router();
 
 router.use(adminAuth);
 
+// Read-only RBAC metadata is restricted to admins who can either manage
+// roles or view the audit log. The "/me" endpoint below is an exception —
+// every authenticated admin needs to know their own permissions.
+const canRead = requireAnyPermission(["system.roles.manage", "system.audit.view"]);
+
 /* ── Catalog ────────────────────────────────────────────────────── */
-router.get("/permissions", (_req, res) => {
+router.get("/permissions", canRead, (_req, res) => {
   sendSuccess(res, { permissions: PERMISSIONS });
 });
 
 /* ── Roles list / detail ────────────────────────────────────────── */
-router.get("/roles", async (_req, res) => {
+router.get("/roles", canRead, async (_req, res) => {
   const roles = await listRoles();
   sendSuccess(res, { roles });
 });
 
-router.get("/roles/:id", async (req, res) => {
+router.get("/roles/:id", canRead, async (req, res) => {
   const role = await getRole(req.params["id"]!);
   if (!role) return sendNotFound(res, "Role not found");
   sendSuccess(res, { role });
@@ -171,12 +176,12 @@ router.put("/admins/:adminId/roles",
     }
   });
 
-router.get("/admins/:adminId/roles", async (req, res) => {
+router.get("/admins/:adminId/roles", canRead, async (req, res) => {
   const roles = await getAdminRoles(req.params["adminId"]!);
   sendSuccess(res, { roles });
 });
 
-router.get("/admins/:adminId/effective-permissions", async (req, res) => {
+router.get("/admins/:adminId/effective-permissions", canRead, async (req, res) => {
   const adminId = req.params["adminId"]!;
   const explicit = await getEffectivePermissionsForAdmin(adminId);
   // Super admins effectively have everything; surface that to the UI
