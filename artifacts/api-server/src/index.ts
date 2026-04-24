@@ -18,9 +18,17 @@ if (!rawPort) {
 const port = parseInt(rawPort, 10);
 
 const server = createServer();
-server.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-  // Kick off DB migrations + RBAC seed/backfill once the server is up.
-  // Done after listen so the process becomes responsive immediately.
-  runStartupTasks().catch(err => console.error("[startup] failed:", err));
-});
+
+// Run DB migrations + RBAC seed/backfill BEFORE accepting traffic so we
+// never serve authorization decisions against an un-migrated schema.
+// A migration failure exits non-zero — the platform should restart us.
+runStartupTasks()
+  .then(() => {
+    server.listen(port, () => {
+      console.log(`Server listening on port ${port}`);
+    });
+  })
+  .catch(err => {
+    console.error("[startup] fatal — refusing to start:", err);
+    process.exit(1);
+  });

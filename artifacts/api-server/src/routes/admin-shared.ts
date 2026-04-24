@@ -154,7 +154,7 @@ export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction) 
     // Fall back to new admin-auth-v2 access token (sub/role/name/perms claims)
     try {
       const payload = verifyAccessToken(token);
-      const perms: string[] = Array.isArray((payload as any).perms) ? (payload as any).perms : [];
+      const perms: string[] = Array.isArray(payload.perms) ? payload.perms : [];
       req.admin = {
         adminId: payload.sub ?? null,
         role: payload.role ?? "manager",

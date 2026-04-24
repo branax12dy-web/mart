@@ -63,7 +63,15 @@ import { fetcher } from "@/lib/api";
 type NavGroup = {
   labelKey: TranslationKey;
   color: string;
-  items: { nameKey: TranslationKey; href: string; icon: React.ElementType; sosBadge?: boolean; errorBadge?: boolean }[];
+  items: {
+    nameKey: TranslationKey;
+    href: string;
+    icon: React.ElementType;
+    sosBadge?: boolean;
+    errorBadge?: boolean;
+    /** RBAC permission(s) gating this item; super always sees everything. */
+    requirePermission?: string | string[];
+  }[];
 };
 
 // Professional 3-Category Architecture: System | Finance | Fleet
@@ -75,7 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { nameKey: "navDashboard",     href: "/dashboard",       icon: LayoutDashboard },
       { nameKey: "navUserPermissions", href: "/users",         icon: Lock },
-      { nameKey: "navUserPermissions", href: "/roles-permissions", icon: KeyRound },
+      { nameKey: "navUserPermissions", href: "/roles-permissions", icon: KeyRound, requirePermission: ["system.roles.manage", "system.audit.view"] },
       { nameKey: "navSettings",        href: "/settings",       icon: Settings2 },
       { nameKey: "navFeatureToggles",  href: "/app-management", icon: ToggleLeft },
       { nameKey: "navLaunchControl" as TranslationKey, href: "/launch-control", icon: Rocket },

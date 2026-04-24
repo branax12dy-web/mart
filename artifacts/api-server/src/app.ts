@@ -11,22 +11,23 @@ import {
 import router from "./routes/index.js";
 
 /**
- * Run DB migrations + RBAC seed/backfill. Safe to call multiple times.
- * Each step logs and swallows errors so a single failure doesn't block boot.
+ * Run DB migrations + RBAC seed/backfill before the server begins
+ * accepting traffic. SQL migration failure is fatal — we throw so the
+ * boot script in `index.ts` exits non-zero rather than silently serving
+ * authorization decisions against a half-migrated schema.
+ *
+ * The RBAC seed is best-effort: a transient seed failure should not
+ * block the platform from coming up, but it is logged loudly.
  */
 export async function runStartupTasks(): Promise<void> {
-  try {
-    await runSqlMigrations();
-  } catch (err) {
-    console.error("[startup] runSqlMigrations failed:", err);
-  }
+  await runSqlMigrations();
   try {
     await seedPermissionCatalog();
     await seedDefaultRoles();
     await backfillAdminRoleAssignments();
     console.log("[startup] RBAC seed + backfill complete");
   } catch (err) {
-    console.error("[startup] RBAC seed/backfill failed:", err);
+    console.error("[startup] RBAC seed/backfill failed (continuing):", err);
   }
 }
 
