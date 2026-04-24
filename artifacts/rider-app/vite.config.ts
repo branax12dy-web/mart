@@ -4,29 +4,20 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
+/* PORT defaults to 5174 for the rider Vite dev server when not provided.
+   Capacitor builds skip dev-server config entirely. */
 const rawPort = process.env.PORT;
-const isCapacitorBuild = process.env.VITE_CAPACITOR === "true";
-
-if (!rawPort && !isCapacitorBuild) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = rawPort ? Number(rawPort) : 3000;
+const port = rawPort ? Number(rawPort) : 5174;
 
 if (rawPort && (Number.isNaN(port) || port <= 0)) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
+/* BASE_PATH defaults to "/rider/" so the in-app router base matches the
+   most common deployment (path-routed behind the Replit proxy). Standalone
+   deployments or local quick-starts override via env. */
+const basePath = process.env.BASE_PATH || "/rider/";
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8080";
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
 
 export default defineConfig({
   base: basePath,

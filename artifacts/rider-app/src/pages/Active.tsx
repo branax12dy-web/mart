@@ -8,7 +8,9 @@ import {
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { patchLeafletDefaultIcon } from "../lib/leafletIconFix";
+/* The Leaflet default-marker icon patch is applied once in src/main.tsx so it
+   covers every map (Active trip, MiniMap, dashboard widgets) before any
+   Leaflet instance is constructed. No per-page call is needed here. */
 import { api, apiFetch } from "../lib/api";
 import { logRideEvent } from "../lib/rideUtils";
 import { useState, useRef, useEffect, Component, type ReactNode, type ErrorInfo } from "react";
@@ -37,8 +39,7 @@ class MapErrorBoundary extends Component<{ children: ReactNode; fallbackMsg?: st
   }
 }
 
-/* ── Fix Leaflet default marker icons in Vite builds ── */
-patchLeafletDefaultIcon();
+/* Leaflet default marker icons are patched globally in src/main.tsx. */
 
 /* ── Tile config hook for rider map ── */
 function useRiderTileConfig() {

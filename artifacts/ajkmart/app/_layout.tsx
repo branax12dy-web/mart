@@ -49,7 +49,21 @@ function DeferredProviders({ children }: { children: React.ReactNode }) {
   );
 }
 
-const _domain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
+/* Resolve the API host the web/native bundle should talk to.
+   1. Build-time env (EXPO_PUBLIC_DOMAIN) wins — Expo statically inlines this.
+   2. On web, fall back to the page's own host so single-port production
+      deployments (where api-server serves the SPA bundle on the same origin)
+      "just work" without a separate env var.
+   On native, no fallback is possible — MisconfigScreen will be shown. */
+const _envDomain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
+const _webHost =
+  Platform.OS === "web" &&
+  typeof window !== "undefined" &&
+  typeof window.location !== "undefined" &&
+  window.location.host
+    ? window.location.host
+    : "";
+const _domain = _envDomain || _webHost;
 if (_domain) setBaseUrl(`https://${_domain}/api`);
 
 SplashScreen.preventAutoHideAsync();
@@ -193,7 +207,7 @@ function MaintenanceScreen() {
   );
 }
 
-const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}/api`;
+const API_BASE = `https://${_domain}/api`;
 
 function ImpersonationHandler() {
   const { login } = useAuth();
@@ -213,7 +227,7 @@ function ImpersonationHandler() {
 
     const doImpersonate = async () => {
       try {
-        const base = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+        const base = `https://${_domain}`;
         const profileRes = await fetch(`${base}/api/users/profile`, {
           headers: { Authorization: `Bearer ${impersonateToken}` },
         });

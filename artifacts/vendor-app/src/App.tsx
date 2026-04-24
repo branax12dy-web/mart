@@ -219,12 +219,16 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <WouterRouter base={(() => {
+              /* Use BASE_URL exactly as Vite computed it from vite.config's
+                 `base` option:
+                   "/"        → ""        (app mounted at site root)
+                   "/vendor/" → "/vendor" (path-routed behind a proxy)
+                 The previous logic forced "/vendor" whenever BASE_URL was
+                 "/", which broke standalone deployments by mounting every
+                 route under a non-existent /vendor prefix. */
               const raw = import.meta.env.BASE_URL;
-              /* Normalize: must be a non-empty string that starts with "/" and is not just "/" */
-              if (typeof raw === "string" && /^\/\S/.test(raw)) {
-                return raw.replace(/\/$/, "");
-              }
-              return "/vendor";
+              if (typeof raw !== "string" || raw.length === 0) return "";
+              return raw.replace(/\/$/, "");
             })()}>
             <AppRoutes />
           </WouterRouter>

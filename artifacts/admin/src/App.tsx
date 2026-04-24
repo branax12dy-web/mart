@@ -222,8 +222,11 @@ function IntegrationsInit() {
   useEffect(() => {
     initErrorReporter();
 
-    const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-    fetch(`${base}/api/platform-config`)
+    /* /api/* is proxied by Vite (and served by the api-server in production)
+       regardless of BASE_URL. Prefixing with BASE_URL turned this into
+       `/admin/api/platform-config`, which falls outside the proxy rule and
+       returns the SPA index.html — silently breaking integrations init. */
+    fetch(`/api/platform-config`)
       .then(r => r.ok ? r.json() : null)
       .then(raw => {
         if (!raw) return;

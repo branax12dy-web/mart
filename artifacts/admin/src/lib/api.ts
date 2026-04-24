@@ -259,15 +259,29 @@ export function setTokenHandlers(
 }
 
 /**
- * Read CSRF token from cookie
+ * Read CSRF token from cookie. Defensive — never throws even if the
+ * cookie is missing, malformed, or contains a bad %-escape sequence.
  */
 function getCsrfFromCookie(): string {
-  const cookies = document.cookie.split(';');
-  for (const cookie of cookies) {
-    const [key, value] = cookie.trim().split('=');
-    if (key === 'csrf_token') {
-      return decodeURIComponent(value);
+  if (typeof document === "undefined" || !document.cookie) return "";
+  try {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const trimmed = cookie.trim();
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = trimmed.slice(0, eqIdx);
+      const rawValue = trimmed.slice(eqIdx + 1);
+      if (key === 'csrf_token') {
+        try {
+          return decodeURIComponent(rawValue);
+        } catch {
+          return rawValue;
+        }
+      }
     }
+  } catch {
+    /* ignore */
   }
   return '';
 }
